@@ -1,0 +1,35 @@
+@font-face {
+  font-family: 'Monoton-Regular';
+  src: url('@/assets/font/Gotham-Rounded-Bold.ttf');
+}
+@font-face {
+  font-family: 'Alata-Regular';
+  src: url('@/assets/font/Alata-Regular.ttf');
+}
+
+@font-face {
+  font-family: 'Round-Regular';
+  src: url('@/assets/font/Gotham-Rounded-Book.ttf');
+}
+
+@font-face {
+  font-family: 'Round-Bold-Regular';
+  src: url('@/assets/font/Gotham-Rounded-Bold.ttf');
+}
+
+@font-face {
+  font-family: 'test-regular';
+  src: url('@/assets/font/Monoton-Regular.ttf');
+}
+
+body,
+html,
+#app {
+  min-height: 600px;
+  padding: 0px;
+  margin: 0px;
+  height: 100%;
+  width: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
+}

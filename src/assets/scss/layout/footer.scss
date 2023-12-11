@@ -1,0 +1,17 @@
+.footer {
+  width: 100%;
+  position: fixed;
+  height: var(--header-height);
+  // background-image: radial-gradient(transparent 1px,transparent 1px);
+  // background-image: radial-gradient(transparent 1px, #CCE8E1 1px);
+  background-size: 2px 2px;
+  backdrop-filter: saturate(50%) blur(4px);
+  -webkit-backdrop-filter: saturate(50%) blur(4px);
+  bottom: 0;
+  background-color: transparent;
+  z-index: 999;
+  border-bottom: 0px;
+  .footer-row {
+    height: var(--header-height);
+  }
+}

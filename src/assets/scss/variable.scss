@@ -1,0 +1,110 @@
+$zh-font-family: 'Microsoft YaHei';
+$logo-font-family: 'Monoton-Regular';
+$special-font-family: 'Alata-Regular';
+$round-font-family: 'Round-Regular';
+$test: 'test-regular';
+$round-bold-font-family: 'Round-Bold-Regular';
+$radius-regular: 40px;
+$white: '#e6e8eb';
+.g-unselect {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+:root {
+  --primary-out: ;
+  --el-color-primary: #009879;
+  --el-color-primary-light-3: #33ac93;
+  --el-color-primary-light-5: #66c0ad;
+  --el-color-primary-light-7: #99d4c7;
+  --el-color-primary-light-8: #cce8e1;
+  --el-color-primary-light-9: #e0fcf5;
+  --el-color-primary-dark-2: #007a5f;
+  --primary-light: #66c0ad;
+  --primary: #009879;
+  --primary-dark: #009879;
+  --white: #ffffff;
+  --greyLight-1: #e4ebf5;
+  --greyLight-2: #c8d0e7;
+  --greyLight-3: #bec8e4;
+  --greyDark: #9baacf;
+}
+
+body {
+  --sz: 10px;
+  --c0: #e0fcf5;
+  --c1: #cce8e1;
+  --c2: #66c0ad;
+  --c3: #99d4c7;
+  --ts: 50% / calc(var(--sz) * 12.8) calc(var(--sz) * 22);
+  --dialog-color: #2f4f4f;
+  --dialog-deep-color: #436363;
+  --vp-screen-max-width: 1362px;
+  --vp-sidebar-width-small: 14rem;
+  --header-height: 55px;
+  --nav-height: 55px;
+  --sidebar-z-index: 40;
+  --el-bg-color: #ffffff;
+  --bg-color: var(--el-bg-color);
+  --sidebar-width-xs: 20rem;
+  --el-transition-duration-fast: 0.2s;
+  --el-text-color-secondary: #909399;
+  --sidebar-width-sm: 13rem;
+  --place-default-color: #c0c0c0;
+  --global-error-color: #f89898;
+  --global-theme-color: #009879;
+  --global-theme-light-color: #28c0a1;
+  --global-theme-color-rgb: rgba(0, 152, 121, 0.1);
+  --private-bg: /*bottom*/ conic-gradient(
+        from 120deg at 50% 86.5%,
+        var(--c1) 0 120deg,
+        #fff0 0 360deg
+      )
+      var(--ts),
+    conic-gradient(from 120deg at 50% 86.5%, var(--c1) 0 120deg, #fff0 0 360deg)
+      var(--ts),
+    /*bottom dark*/
+      conic-gradient(from 120deg at 50% 74%, var(--c0) 0 120deg, #fff0 0 360deg)
+      var(--ts),
+    /*right*/
+      conic-gradient(
+        from 60deg at 60% 50%,
+        var(--c1) 0 60deg,
+        var(--c2) 0 120deg,
+        #fff0 0 360deg
+      )
+      var(--ts),
+    /*left*/
+      conic-gradient(
+        from 180deg at 40% 50%,
+        var(--c3) 0 60deg,
+        var(--c1) 0 120deg,
+        #fff0 0 360deg
+      )
+      var(--ts),
+    /*top dark*/
+      conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
+      var(--ts),
+    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
+      var(--ts),
+    conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
+      var(--ts),
+    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
+      var(--ts),
+    /*top*/
+      conic-gradient(
+        from -60deg at 50% 13.5%,
+        var(--c1) 0 120deg,
+        #fff0 0 360deg
+      )
+      var(--ts),
+    conic-gradient(from -60deg at 50% 13.5%, var(--c1) 0 120deg, #fff0 0 360deg)
+      var(--ts),
+    conic-gradient(
+        from -60deg at 50% 41%,
+        var(--c2) 0 60deg,
+        var(--c3) 0 120deg,
+        #fff0 0 360deg
+      )
+      var(--ts),
+    var(--c0);
+}

@@ -1,0 +1,278 @@
+.login-font,
+.bold-style {
+  font-family: $round-font-family;
+}
+.banner {
+  position: fixed;
+  z-index: 30;
+  box-sizing: border-box;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  line-height: 30px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(
+    90deg,
+    rgba(66, 184, 131, 1) 0%,
+    rgba(39, 179, 137, 1) 19%,
+    #ff6a6a 100%
+  );
+  button {
+    position: absolute;
+    right: 0;
+    top: 0;
+    padding: 5px;
+    cursor: pointer;
+    background-color: transparent;
+    background-image: none;
+    border: 0;
+    line-height: inherit;
+    color: inherit;
+    .close {
+      width: 20px;
+      height: 20px;
+      fill: #fff;
+      transform: rotate(45deg);
+    }
+  }
+}
+.info {
+  margin-left: 40px;
+  margin-right: 40px;
+  margin-top: 30px;
+  .submit-btn {
+    display: flex;
+    flex-flow: row nowrap;
+    width: 100%;
+    -webkit-box-pack: justify;
+    justify-content: space-between;
+    margin-top: 30px;
+    .btn-special {
+      position: relative;
+      display: grid;
+      background: transparent;
+      border: 0px;
+      width: 100%;
+      padding: 0px;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      .span-special {
+        background: rgb(0, 214, 75);
+        border-radius: 1.5rem;
+        box-sizing: border-box;
+        display: flex;
+        -webkit-box-pack: center;
+        justify-content: center;
+        -webkit-box-align: center;
+        align-items: center;
+        font-family: inherit;
+        text-align: center;
+        letter-spacing: 0.01em;
+        padding: 0px 1rem;
+        height: 3rem;
+        max-height: 3rem;
+        font-size: 1.125rem;
+        font-weight: 500;
+        line-height: 1.5rem;
+        transition-property: transform;
+        transition-duration: 80ms;
+        transition-timing-function: cubic-bezier(0, 0.3, 1, 0.5);
+      }
+    }
+  }
+  .username-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0.6rem 0.5rem 0.5rem;
+  }
+  .username-input-div {
+    width: 100%;
+    .input-special {
+      width: inherit;
+      outline: none;
+      box-sizing: border-box;
+      min-height: 50px;
+      border: none;
+      background-color: rgb(244, 244, 244);
+      appearance: none;
+      -webkit-box-align: center;
+      font-family: inherit;
+      border-radius: 1rem;
+      letter-spacing: 0.01em;
+      box-sizing: border-box;
+      font-size: 1rem;
+      font-weight: 400;
+      line-height: 1.5rem;
+      caret-color: rgb(0, 214, 75);
+      border: 2px solid rgb(244, 244, 244);
+      background-color: rgb(244, 244, 244);
+      width: 100%;
+      color: rgb(51, 51, 51);
+      padding: 0px 1rem;
+    }
+    .input-special:focus {
+      outline: none;
+      border: 2px solid rgb(0, 214, 75);
+      background: rgb(255, 255, 255);
+    }
+  }
+}
+.login-panel {
+  .desc-div {
+    margin-left: 40px;
+    margin-right: 20px;
+    .sub-span {
+      display: block;
+      font-family: $round-font-family;
+      color: rgb(102, 102, 102);
+      font-size: 1rem;
+      font-weight: 400;
+      line-height: 1.5rem;
+      word-break: break-word;
+      .sub-desc-div {
+        a {
+          color: rgb(0, 214, 75);
+          cursor: pointer;
+          font-weight: 500;
+          text-decoration: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+      }
+    }
+  }
+  .main-div {
+    position: relative;
+    z-index: 2;
+    background-color: white;
+    height: 500px;
+    width: 100%;
+    border-radius: 30px;
+    text-align: left;
+    .sub-div {
+      h2 {
+        margin: 0;
+      }
+      padding-top: 25px;
+      font-size: 0.5rem;
+      z-index: 2;
+      margin-bottom: 15px;
+      margin-left: 40px;
+      margin-right: 20px;
+      .desc-text-main {
+        color: rgb(51, 51, 51);
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 2.2rem;
+      }
+    }
+  }
+}
+.description {
+  line-height: 1.5;
+  color: rgba(41, 41, 41, 0.7);
+  transition: color 0.5s;
+  font-size: 22px;
+  margin: 24px auto 40px;
+}
+.tagline {
+  color: white;
+  font-size: 76px;
+  line-height: 1.25;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  margin: 0 auto;
+}
+.accent {
+  background: -webkit-linear-gradient(315deg, #d65656 25%, #647eff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.login-prompt {
+  color: #e6e8eb;
+}
+.row {
+  margin-bottom: 1.5rem;
+}
+
+.flex {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-section {
+  height: 100%;
+  // width: 100%;
+  min-width: 1140px;
+  background-size: 100% 100%;
+  background-color: rgb(0, 214, 75);
+  background-image: radial-gradient(
+      closest-side,
+      rgba(235, 105, 78, 1),
+      rgba(235, 105, 78, 0)
+    ),
+    radial-gradient(closest-side, rgba(0, 214, 75, 1), rgba(0, 214, 75, 0)),
+    radial-gradient(
+      closest-side,
+      rgba(254, 234, 131, 1),
+      rgba(254, 234, 131, 0)
+    ),
+    radial-gradient(closest-side, rgba(84, 255, 159, 1), rgba(84, 255, 159, 0)),
+    radial-gradient(
+      closest-side,
+      rgba(248, 192, 147, 1),
+      rgba(248, 192, 147, 0)
+    );
+  background-size: 130vmax 130vmax, 80vmax 80vmax, 90vmax 90vmax,
+    110vmax 110vmax, 90vmax 90vmax;
+  background-position: -80vmax -80vmax, 60vmax -30vmax, 10vmax 10vmax,
+    -30vmax -10vmax, 50vmax 50vmax;
+  background-repeat: no-repeat;
+  animation: 4s movement linear infinite;
+}
+
+.login-section::before {
+  z-index: 0;
+  content: '';
+  display: block;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+@keyframes movement {
+  0%,
+  100% {
+    background-size: 130vmax 130vmax, 80vmax 80vmax, 90vmax 90vmax,
+      110vmax 110vmax, 90vmax 90vmax;
+    background-position: -80vmax -80vmax, 60vmax -30vmax, 10vmax 10vmax,
+      -30vmax -10vmax, 50vmax 50vmax;
+  }
+  25% {
+    background-size: 100vmax 100vmax, 90vmax 90vmax, 100vmax 100vmax,
+      90vmax 90vmax, 60vmax 60vmax;
+    background-position: -60vmax -90vmax, 50vmax -40vmax, 0vmax -20vmax,
+      -40vmax -20vmax, 40vmax 60vmax;
+  }
+  50% {
+    background-size: 80vmax 80vmax, 110vmax 110vmax, 80vmax 80vmax,
+      60vmax 60vmax, 80vmax 80vmax;
+    background-position: -50vmax -70vmax, 40vmax -30vmax, 10vmax 0vmax,
+      20vmax 10vmax, 30vmax 70vmax;
+  }
+  75% {
+    background-size: 90vmax 90vmax, 90vmax 90vmax, 100vmax 100vmax,
+      90vmax 90vmax, 70vmax 70vmax;
+    background-position: -50vmax -40vmax, 50vmax -30vmax, 20vmax 0vmax,
+      -10vmax 10vmax, 40vmax 60vmax;
+  }
+}
