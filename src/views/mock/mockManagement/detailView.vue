@@ -189,7 +189,7 @@
                     @click="changeMenu('2')"
                     value="3"
                     id="tab-1"
-                    checked
+                    :checked="activeMenuIndex === '2'"
                   />
                   <label for="tab-1" class="segmented-control__1">
                     <p>Body</p></label
@@ -201,6 +201,7 @@
                     name="radio2"
                     value="4"
                     id="tab-2"
+                    :checked="activeMenuIndex === '1'"
                   />
                   <label for="tab-2" class="segmented-control__2">
                     <p>Headers</p></label
@@ -212,6 +213,7 @@
                     name="radio2"
                     value="5"
                     id="tab-3"
+                    :checked="activeMenuIndex === '3'"
                   />
                   <label for="tab-3" class="segmented-control__3">
                     <p>Status</p></label
@@ -223,6 +225,7 @@
                     name="radio2"
                     value="5"
                     id="tab-4"
+                    :checked="activeMenuIndex === '4'"
                   />
                   <label for="tab-4" class="segmented-control__4">
                     <p style="padding: 0px 5px">
@@ -627,7 +630,7 @@ watch(
 async function continueChangeType() {
   settingType.value = tryChangeStatus.value
   loading.value = true
-  await changeMenu('2')
+  await changeMenu(activeMenuIndex.value)
   const _data: any = {
     project: route.params.project
   }
@@ -644,7 +647,7 @@ async function updateCurrentResponse() {
     if (res) {
       settingType.value = tryChangeStatus.value
       loading.value = true
-      await changeMenu('2')
+      await changeMenu(activeMenuIndex.value)
       const _data: any = {
         project: route.params.project
       }
@@ -807,7 +810,7 @@ async function settingTypeFn(t: number) {
   } else {
     settingType.value = t
     loading.value = true
-    await changeMenu('2')
+    await changeMenu(activeMenuIndex.value)
     const _data: any = {
       project: route.params.project
     }
