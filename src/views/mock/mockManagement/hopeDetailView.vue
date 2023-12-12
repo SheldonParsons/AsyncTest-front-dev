@@ -109,20 +109,12 @@
       </el-col>
     </el-row>
     <el-row>
-      <el-col :offset="21" :span="3">
-        <NormalButtonIcon
+      <el-col :offset="23" :span="1">
+        <CButton
           @click="createCondition"
-          tt="submit"
-          :width="'100%'"
-          :height="'35px'"
-        >
-          <div class="chip-icon-btn" style="color: white">
-            <el-icon><AddIcon /></el-icon>
-          </div>
-          <p style="color: white" class="chip-p-btn">
-            {{ $t('project.mock.desc.createCondition') }}
-          </p>
-        </NormalButtonIcon>
+          style="display: inline-block; margin-right: 6px"
+          ><el-icon><CirclePlusFilled /></el-icon
+        ></CButton>
       </el-col>
     </el-row>
     <el-row style="margin-top: 1%">
@@ -302,8 +294,7 @@ import ParamsTable from './paramsTableView.vue'
 import HeadersTable from '@/components/layout/debugs/headersTable.vue'
 import TransferBar from '@/components/layout/debugs/transferBar.vue'
 import JsonEditor from '@/components/common/editor/JsonEditor.vue'
-import NormalButtonIcon from '@/components/common/button/normal_button_icon.vue'
-import AddIcon from '@/assets/svg/common/addIcon.vue'
+import CButton from '@/components/common/button/CButton.vue'
 import {
   ApiGetSingleExpect,
   ApiEditExpect,

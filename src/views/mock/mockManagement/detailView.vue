@@ -146,24 +146,30 @@
                 class="divider-text g-unselect"
                 border-style="dashed"
                 content-position="left"
-                ><div
+              >
+                <div
                   class="chip__icon"
                   style="
                     display: inline;
                     height: auto;
                     width: 2rem;
                     display: flex;
+                    margin-right: 10px;
                   "
                 >
+                  <div v-if="settingType === 1" class="wave-container">
+                    <div v-for="item in 20" class="wave"></div>
+                  </div>
                   <el-icon v-if="settingType === 0"><PublicIcon /></el-icon>
-                  <el-icon v-if="settingType === 1"><PersonalIcon /></el-icon>
+                  <!-- <el-icon v-if="settingType === 1"><PersonalIcon /></el-icon> -->
                 </div>
+
                 {{
                   settingType === 0
                     ? t('project.MockCol.divider.responseInfo')
                     : t('project.MockCol.divider.responsePrivate')
-                }}</el-divider
-              >
+                }}
+              </el-divider>
             </el-col></el-row
           >
           <div v-if="loading" class="main-loading">
@@ -232,7 +238,10 @@
                   :width="'100%'"
                   :height="'3.5rem'"
                   @click="searchExpect('5', true)"
-                  class="chip response-status g-unselect"
+                  :class="
+                    'chip response-status g-unselect' +
+                    (activeMenuIndex === '5' ? ' select-btn' : '')
+                  "
                 >
                   <div class="chip-icon-btn">
                     <el-icon><WarningFilled /></el-icon>
@@ -244,25 +253,15 @@
               </el-col>
             </el-row>
             <el-row v-if="activeMenuIndex === '5'" style="margin-bottom: 5px">
-              <el-col :offset="19" :span="4" style="padding-right: 10px">
-                <NormalButtonIcon
-                  tt="submit"
+              <el-col :offset="22" :span="3" style="padding-right: 10px">
+                <CButton
                   @click="showCreateHope"
-                  :width="'100%'"
-                  :height="'35px'"
-                >
-                  <div class="chip-icon-btn" style="color: white">
-                    <el-icon><AddIcon /></el-icon>
-                  </div>
-                  <p style="color: white" class="chip-p-btn">
-                    {{ $t('project.mock.desc.createExpect') }}
-                  </p>
-                </NormalButtonIcon>
-              </el-col>
-              <el-col :span="1">
+                  style="display: inline-block; margin-right: 6px"
+                  ><el-icon><CirclePlusFilled /></el-icon
+                ></CButton>
                 <CButton
                   @click="flashHopeList(true)"
-                  style="height: 100%"
+                  style="height: 100%; display: inline-block"
                   class="flush-btn"
                   width="40px"
                   height="100%"
@@ -426,7 +425,10 @@
             v-if="isEdit"
             :width="'100%'"
             :height="'3rem'"
-            class="chip response-status response-other g-unselect"
+            :class="
+              'chip response-status response-other g-unselect' +
+              (settingType === 1 ? ' select-btn' : '')
+            "
             @click="settingTypeFn(1)"
           >
             <div class="chip-icon-btn">
@@ -524,8 +526,6 @@ import AstButton from '@/components/common/button/ast_button.vue'
 import NormalLoading from '@/components/layout/loading/normal_loading.vue'
 import HopeDetailView from './hopeDetailView.vue'
 import tools from '@/utils/tools'
-import NormalButtonIcon from '@/components/common/button/normal_button_icon.vue'
-import AddIcon from '@/assets/svg/common/addIcon.vue'
 import PublicIcon from '@/assets/svg/common/publicIcon.vue'
 import PersonalIcon from '@/assets/svg/common/personalIcon.vue'
 import KeyIcon from '@/assets/svg/common/keyIcon.vue'
@@ -1171,10 +1171,6 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   }
 }
 
-.select-btn {
-  background-color: var(--primary);
-}
-
 /*  CHIP  */
 .chip {
   cursor: pointer;
@@ -1194,7 +1190,7 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
     width: 3rem;
     height: 3rem;
     border-radius: 1rem;
-    margin: 0 0 0 0.2rem;
+    // margin: 0 0 0 0.2rem;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1255,6 +1251,58 @@ $shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2),
     width: 100% !important;
   }
 }
+
+// fun to customize, guaranteed. act now.
+$size: 30px; // project size
+$max-w: 13em; // biggest wave
+$min-w: 0.25em; // smallest wave
+$r: $max-w - $min-w; // width range
+$speed: 1000ms; // wave speed
+$f: 20; // number of waves
+$s-w: 0.5em; // wave width
+$c: #1abc9c; // wave color
+
+body {
+  background: #2c3e50;
+}
+
+.wave-container {
+  position: relative;
+  width: 15em;
+  height: 8em;
+  font-size: ($size / ($max-w / 1em));
+  overflow: hidden;
+}
+
+.wave {
+  border-width: $s-w;
+  border-style: solid;
+  position: absolute;
+  animation: wave $speed infinite alternate;
+  transform: rotate(-44.5deg);
+  $a: 1; // alpha
+  @for $i from 1 through $f {
+    &:nth-child(#{$i}) {
+      $w: $max-w - (($r/$f) * $i);
+      @if $i > 1 {
+        $a: 1 - ((1 / ($f + 1)) * $i);
+      }
+      width: $w;
+      height: $w;
+      bottom: $w/-2;
+      left: ($max-w - $w) / 2;
+      animation-delay: $i * ($speed / $f);
+      border-color: transparent transparent rgba($c, $a) rgba($c, $a);
+      border-radius: $w;
+    }
+  }
+}
+
+@keyframes wave {
+  to {
+    transform: rotate(135deg);
+  }
+}
 </style>
 
 <style lang="scss">
@@ -1263,5 +1311,15 @@ $shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2),
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.select-btn {
+  .btn-16 {
+    background-color: var(--primary) !important;
+  }
+  .chip-icon-btn,
+  .chip-p-btn {
+    color: white !important;
+  }
 }
 </style>

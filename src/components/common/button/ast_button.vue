@@ -1,6 +1,6 @@
 <template>
   <div>
-    <button
+    <!-- <button
       v-if="btnType === 0"
       :style="dynamicStyles"
       class="custom-btn btn-1"
@@ -105,7 +105,7 @@
       class="custom-btn btn-15"
     >
       <slot class="c-icon"></slot>
-    </button>
+    </button> -->
     <button
       v-if="btnType === 15"
       :style="dynamicStyles"
@@ -943,6 +943,7 @@ const dynamicStyles: any = {
   left: auto;
   right: 0;
   width: 100%;
+  border-radius: 8px;
 }
 .btn-16:active {
   top: 2px;
