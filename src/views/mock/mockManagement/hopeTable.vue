@@ -85,9 +85,30 @@
               </tr>
             </template>
           </draggable>
-          <tr v-else>
+          <tr
+            v-if="d.list.length > 0"
+            @click="addNewHope"
+            style="border-bottom: 2px solid var(--dialog-color)"
+          >
             <td colspan="6">
-              <el-empty :image-size="100" />
+              <div class="add-new-item">
+                <span>{{ $t('project.mock.desc.createNewExpect') }}</span
+                ><el-icon><CirclePlusFilled /></el-icon>
+              </div>
+            </td>
+          </tr>
+          <tr
+            v-if="d.list.length === 0"
+            @click="addNewHope"
+            style="cursor: pointer"
+          >
+            <td colspan="6">
+              <el-empty class="hope-empty" :image-size="100" description=" ">
+                <div class="add-new-item">
+                  <span>{{ $t('project.mock.desc.createNewExpect') }}</span
+                  ><el-icon><CirclePlusFilled /></el-icon>
+                </div>
+              </el-empty>
             </td>
           </tr>
         </table>
@@ -125,7 +146,7 @@ onMounted(async () => {
   await getData()
 })
 
-const emit = defineEmits(['editHopeAction'])
+const emit = defineEmits(['editHopeAction', 'addHopeAction'])
 
 const props = defineProps({
   cols: {
@@ -153,6 +174,10 @@ watch(
 const d = reactive({
   list: [] as any
 })
+
+function addNewHope() {
+  emit('addHopeAction')
+}
 
 function deleteExpect(element: any, index: number) {
   canAction.value = false
@@ -310,7 +335,7 @@ function dragEnd(event: any) {
 }
 
 .styled-table tbody tr:last-of-type {
-  border-bottom: 2px solid var(--dialog-color);
+  // border-bottom: 2px solid var(--dialog-color);
 }
 
 .styled-table tbody tr td.active-row {
@@ -340,5 +365,31 @@ function dragEnd(event: any) {
 }
 .draggable-item {
   animation: fadeInOut 0.5s ease-in-out;
+}
+
+.add-new-item {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary);
+  height: 30px;
+  cursor: pointer;
+  span {
+    margin-right: 10px;
+  }
+}
+</style>
+
+<style lang="scss">
+.hope-empty {
+  .el-empty__image,
+  .el-empty__description {
+    display: none !important;
+  }
+  .el-empty__bottom {
+    margin: 0px;
+  }
 }
 </style>

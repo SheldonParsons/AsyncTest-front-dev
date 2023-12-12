@@ -221,6 +221,8 @@ export default {
         byCondition: 'By Condition',
         createExpect: 'Create Expect',
         createCondition: 'Create Condition',
+        createNewExpect: 'Create New Expectation',
+        createNewCondition: 'Create New Condition',
         expectTableField: {
           enabled: 'Enabled',
           condition: 'Condition',

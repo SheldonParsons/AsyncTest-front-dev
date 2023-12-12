@@ -221,6 +221,8 @@ export default {
         byCondition: '由断言决定是否通过',
         createExpect: '创建期望响应',
         createCondition: '创建条件判断',
+        createNewExpect: '创建新期望',
+        createNewCondition: '创建新条件判断',
         expectTableField: {
           enabled: '是否启用',
           condition: '条件',

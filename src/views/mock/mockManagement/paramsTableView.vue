@@ -114,9 +114,30 @@
               </tr>
             </template>
           </draggable>
-          <tr v-else>
+          <tr
+            v-if="data.length > 0"
+            @click="addCondition"
+            style="border-bottom: 2px solid var(--dialog-color)"
+          >
             <td colspan="8">
-              <el-empty :image-size="100" />
+              <div class="add-new-item">
+                <span>{{ $t('project.mock.desc.createNewCondition') }}</span
+                ><el-icon><CirclePlusFilled /></el-icon>
+              </div>
+            </td>
+          </tr>
+          <tr
+            v-if="data.length === 0"
+            @click="addCondition"
+            style="cursor: pointer"
+          >
+            <td colspan="8">
+              <el-empty class="hope-empty" :image-size="100" description=" ">
+                <div class="add-new-item">
+                  <span>{{ $t('project.mock.desc.createNewCondition') }}</span
+                  ><el-icon><CirclePlusFilled /></el-icon>
+                </div>
+              </el-empty>
             </td>
           </tr>
         </table>
@@ -143,7 +164,11 @@ const { t } = useI18n()
 
 const showDrag = ref(false)
 
-const emit = defineEmits(['onDeleteCondition', 'onRefreshCondition'])
+const emit = defineEmits([
+  'onDeleteCondition',
+  'onRefreshCondition',
+  'addConditionAction'
+])
 
 onMounted(async () => {
   await getData()
@@ -167,6 +192,10 @@ const d = reactive({
 
 // 全局对象
 // const { proxy }: any = getCurrentInstance()
+
+function addCondition() {
+  emit('addConditionAction')
+}
 
 function deleteCondition(index: number) {
   emit('onDeleteCondition', index)
@@ -265,7 +294,7 @@ function dragEnd(ele: any) {
 }
 
 .styled-table tbody tr:last-of-type {
-  border-bottom: 2px solid var(--dialog-color);
+  // border-bottom: 2px solid var(--dialog-color);
 }
 
 .styled-table tbody tr td.active-row {
@@ -300,12 +329,36 @@ function dragEnd(ele: any) {
 .draggable-item {
   animation: fadeInOut 0.3s ease-in-out;
 }
+
+.add-new-item {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary);
+  height: 30px;
+  cursor: pointer;
+  span {
+    margin-right: 10px;
+  }
+}
 </style>
 
 <style lang="scss">
 .m-2 {
   .select-trigger {
     width: 100% !important;
+  }
+}
+
+.hope-empty {
+  .el-empty__image,
+  .el-empty__description {
+    display: none !important;
+  }
+  .el-empty__bottom {
+    margin: 0px;
   }
 }
 </style>

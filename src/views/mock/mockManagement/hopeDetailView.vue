@@ -108,7 +108,7 @@
         </div>
       </el-col>
     </el-row>
-    <el-row>
+    <!-- <el-row>
       <el-col :offset="23" :span="1">
         <CButton
           @click="createCondition"
@@ -116,8 +116,8 @@
           ><el-icon><CirclePlusFilled /></el-icon
         ></CButton>
       </el-col>
-    </el-row>
-    <el-row style="margin-top: 1%">
+    </el-row> -->
+    <el-row style="margin-top: 3%">
       <el-col :span="24"
         ><ParamsTable
           :cols="[
@@ -133,6 +133,7 @@
           :data="paramsConditions.list"
           @onDeleteCondition="deleteConditionAction"
           @onRefreshCondition="refreshConditionList"
+          @addConditionAction="createCondition"
         ></ParamsTable>
       </el-col>
     </el-row>

@@ -252,11 +252,11 @@
                 </AstButton>
               </el-col>
             </el-row>
-            <el-row v-if="activeMenuIndex === '5'" style="margin-bottom: 5px">
-              <el-col :offset="22" :span="3" style="padding-right: 10px">
+            <!-- <el-row v-if="activeMenuIndex === '5'" style="margin-bottom: 5px">
+              <el-col :offset="0" :span="3" style="padding-right: 10px">
                 <CButton
                   @click="showCreateHope"
-                  style="display: inline-block; margin-right: 6px"
+                  style="display: inline-block; margin-right: 10px"
                   ><el-icon><CirclePlusFilled /></el-icon
                 ></CButton>
                 <CButton
@@ -268,7 +268,7 @@
                   ><el-icon><RefreshLeft /></el-icon
                 ></CButton>
               </el-col>
-            </el-row>
+            </el-row> -->
             <el-row class="child-row" v-if="activeMenuIndex === '1'">
               <el-col :span="12">
                 <HeadersTable
@@ -385,6 +385,7 @@
                   :params="expectTableParams"
                   :flushData="flushHopeListFlag"
                   @editHopeAction="showEditHope"
+                  @addHopeAction="showCreateHope"
                 ></HopeTable>
               </el-col>
             </el-row>
@@ -700,6 +701,10 @@ async function editData(shouldCloseWindow: boolean = true) {
 }
 
 async function searchExpect(key: string, hiddenColor = false) {
+  if (key === activeMenuIndex.value) {
+    flashHopeList(true)
+    return
+  }
   if (settingType.value === 0) {
     isPublic.value = 1
     isPrivate.value = 0
