@@ -7,7 +7,6 @@
             <el-col :span="24">
               <el-radio-group v-model="methodRadio">
                 <div class="segmented-control checkbox-control g-unselect">
-                  <!-- <input type="radio" name="radio2" value="0" checked /> -->
                   <div class="checkbox">
                     <div class="checkbox__1">
                       <input
@@ -161,7 +160,6 @@
                     <div v-for="item in 20" class="wave"></div>
                   </div>
                   <el-icon v-if="settingType === 0"><PublicIcon /></el-icon>
-                  <!-- <el-icon v-if="settingType === 1"><PersonalIcon /></el-icon> -->
                 </div>
 
                 {{
@@ -255,23 +253,6 @@
                 </AstButton>
               </el-col>
             </el-row>
-            <!-- <el-row v-if="activeMenuIndex === '5'" style="margin-bottom: 5px">
-              <el-col :offset="0" :span="3" style="padding-right: 10px">
-                <CButton
-                  @click="showCreateHope"
-                  style="display: inline-block; margin-right: 10px"
-                  ><el-icon><CirclePlusFilled /></el-icon
-                ></CButton>
-                <CButton
-                  @click="flashHopeList(true)"
-                  style="height: 100%; display: inline-block"
-                  class="flush-btn"
-                  width="40px"
-                  height="100%"
-                  ><el-icon><RefreshLeft /></el-icon
-                ></CButton>
-              </el-col>
-            </el-row> -->
             <el-row class="child-row" v-if="activeMenuIndex === '1'">
               <el-col :span="12">
                 <HeadersTable
@@ -533,7 +514,6 @@ import tools from '@/utils/tools'
 import PublicIcon from '@/assets/svg/common/publicIcon.vue'
 import PersonalIcon from '@/assets/svg/common/personalIcon.vue'
 import KeyIcon from '@/assets/svg/common/keyIcon.vue'
-import CButton from '@/components/common/button/CButton.vue'
 import FireIcon from '@/components/layout/otherwise/fire-icon.vue'
 
 import {
@@ -748,7 +728,8 @@ function getPrivateKey() {
 async function getApiGetSingleMock(data: any) {
   shouldListenerChangeResponse.value = false
   await ApiGetSingleMock(Number(route.params.mock), data).then((data: any) => {
-    hasPrivate.value = settingType.value === 1 ? true : data.data.has_private
+    hasPrivate.value =
+      settingType.value === 1 ? true : data.data.has_private === 1
     const codeValue = {
       edit: true,
       data: ''
@@ -803,7 +784,6 @@ async function copy(value: String) {
 }
 
 async function settingTypeFn(t: number) {
-  console.log(isChangeResponse.value)
   if (isChangeResponse.value) {
     showChangeDialog.value = true
     tryChangeStatus.value = t
@@ -893,7 +873,6 @@ function createData() {
     project: Number(route.params.project)
   }
   ApiAddSingleMock(data).then((data: any) => {
-    console.log(data)
     if (data.non_field_errors) {
       proxy.$message({
         message: t('project.MockCol.check.unique'),
@@ -1278,7 +1257,7 @@ body {
   position: relative;
   width: 15em;
   height: 8em;
-  font-size: ($size / ($max-w / 1em));
+  font-size: calc($size / ($max-w / 1em));
   overflow: hidden;
 }
 
@@ -1291,15 +1270,15 @@ body {
   $a: 1; // alpha
   @for $i from 1 through $f {
     &:nth-child(#{$i}) {
-      $w: $max-w - (($r/$f) * $i);
+      $w: $max-w - ((calc($r / $f)) * $i);
       @if $i > 1 {
-        $a: 1 - ((1 / ($f + 1)) * $i);
+        $a: 1 - ((calc(1 / ($f + 1))) * $i);
       }
       width: $w;
       height: $w;
-      bottom: $w/-2;
-      left: ($max-w - $w) / 2;
-      animation-delay: $i * ($speed / $f);
+      bottom: calc($w / -2);
+      left: calc(($max-w - $w) / 2);
+      animation-delay: $i * calc($speed / $f);
       border-color: transparent transparent rgba($c, $a) rgba($c, $a);
       border-radius: $w;
     }

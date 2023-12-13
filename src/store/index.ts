@@ -65,7 +65,6 @@ export function createSSRstore() {
           const { success } = res
           if (success) {
             commit('setLanguage', language)
-            console.log('保存当前语言包成功')
           }
         })
       },

@@ -220,11 +220,9 @@ function changeExpectStatus(element: any) {
 }
 
 function dragStart() {
-  console.log('dragStart')
   // 拖拽开始的处理
 }
 function dragEnd(ele: any) {
-  console.log('dragEnd')
   // 拖拽结束的处理
   emit('onRefreshCondition', ele)
 }

@@ -214,7 +214,6 @@ async function getDataServer(
     method,
     simple
   }
-  console.log(data)
 
   return ApiGetMock(data).then((res: any) => {
     if (res.detail || res.results.length === 0) {

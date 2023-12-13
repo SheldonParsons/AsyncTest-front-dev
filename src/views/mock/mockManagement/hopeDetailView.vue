@@ -349,7 +349,6 @@ const paramsConditions = reactive({
 })
 
 onMounted(() => {
-  console.log(prop.isEdit)
   editorReady.value = false
   if (prop.isEdit) {
     getEditHope()
@@ -382,7 +381,6 @@ function reset() {
 
 function getEditHope() {
   ApiGetSingleExpect(prop.editHope, {}).then((res: any) => {
-    console.log(res)
     const codeValue = {
       edit: true,
       data: ''
@@ -447,8 +445,6 @@ function updateValue(value: Boolean) {
 }
 
 function getHopeParams() {
-  console.log(code.value)
-
   const data = {
     api: Number(route.params.mock),
     is_public: prop.isPublic,
@@ -493,9 +489,7 @@ async function confirmHope() {
 async function create() {
   if (createChecking() === false) return
   const data = getHopeParams()
-  await ApiExpectPostAction({}, data).then((res) => {
-    console.log(res)
-  })
+  await ApiExpectPostAction({}, data)
   emit('update:modelValue', false)
   emit('flush', true)
 }
@@ -512,11 +506,7 @@ async function edit() {
   const data: any = getHopeParams()
   data.expect_response.id = currentResponseId.value
   data.expect_condition.id = currentConditionId.value
-  console.log(data)
-
   await ApiEditExpect(prop.editHope, {}, data).then((res) => {
-    console.log(res)
-
     emit('update:modelValue', false)
     emit('flush', true)
   })

@@ -59,7 +59,7 @@ const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
-    type: String
+    type: Object
   },
   project: {
     type: Number,
