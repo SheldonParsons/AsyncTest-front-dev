@@ -683,11 +683,35 @@ async function editData(shouldCloseWindow: boolean = true) {
   return true
 }
 
-async function searchExpect(key: string, hiddenColor = false) {
-  if (key === activeMenuIndex.value) {
-    flashHopeList(true)
-    return
+async function settingTypeFn(t: number) {
+  if (isChangeResponse.value) {
+    showChangeDialog.value = true
+    tryChangeStatus.value = t
+  } else {
+    settingType.value = t
+    loading.value = true
+    console.log(activeMenuIndex.value === '5')
+
+    if (activeMenuIndex.value === '5') {
+      searchExpect('5', true, false)
+    }
+    await changeMenu(activeMenuIndex.value)
+    const _data: any = {
+      project: route.params.project
+    }
+    if (settingType.value === 1) {
+      _data.private_default = 1
+    }
+    await getApiGetSingleMock(_data)
+    loading.value = false
   }
+}
+
+async function searchExpect(
+  key: string,
+  hiddenColor = false,
+  shouldChangeMenu = true
+) {
   if (settingType.value === 0) {
     isPublic.value = 1
     isPrivate.value = 0
@@ -703,7 +727,13 @@ async function searchExpect(key: string, hiddenColor = false) {
     api: api.value
   }
   expectTableParams.value = data
-  await changeMenu(key, hiddenColor)
+  if (key === activeMenuIndex.value) {
+    flashHopeList(true)
+    return
+  }
+  if (shouldChangeMenu) {
+    await changeMenu(key, hiddenColor)
+  }
 }
 
 async function flashHopeList(flag: boolean) {
@@ -781,25 +811,6 @@ async function copy(value: String) {
   const { toClipboard } = useClipboard()
   await toClipboard(value.toString())
   tools.message(t('notice.clipboard'), proxy, 'success')
-}
-
-async function settingTypeFn(t: number) {
-  if (isChangeResponse.value) {
-    showChangeDialog.value = true
-    tryChangeStatus.value = t
-  } else {
-    settingType.value = t
-    loading.value = true
-    await changeMenu(activeMenuIndex.value)
-    const _data: any = {
-      project: route.params.project
-    }
-    if (settingType.value === 1) {
-      _data.private_default = 1
-    }
-    await getApiGetSingleMock(_data)
-    loading.value = false
-  }
 }
 
 function changeTableHeader(data: any) {

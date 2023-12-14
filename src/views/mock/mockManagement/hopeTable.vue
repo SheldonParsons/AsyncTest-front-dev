@@ -170,6 +170,13 @@ watch(
   }
 )
 
+watch(
+  [props.flushData, props.params],
+  async ([newFlushData, newParams], [oldFlushData, oldParams]) => {
+    await getData()
+  }
+)
+
 // 数据主体！！！
 const d = reactive({
   list: [] as any
