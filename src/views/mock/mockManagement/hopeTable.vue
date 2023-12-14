@@ -239,10 +239,12 @@ function dragEnd(event: any) {
     res[d.list[i].id] = i
   }
 
-  ApiExpectPostAction({ swap_str: JSON.stringify(res) }, null).then((res) => {
-    canDrag.value = true
-    tools.message(t('notice.sorted'), proxy, 'success')
-  })
+  ApiExpectPostAction({ swap_str: 1 }, { swap_str: JSON.stringify(res) }).then(
+    (res) => {
+      canDrag.value = true
+      tools.message(t('notice.sorted'), proxy, 'success')
+    }
+  )
 }
 </script>
 
