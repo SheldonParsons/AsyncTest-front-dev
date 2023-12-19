@@ -52,7 +52,7 @@ function showDoc() {
 <style lang="scss" scoped>
 .tool {
   cursor: pointer;
-  background-image: url('@/assets/img/projectStyle/tools1.png');
+  background-image: url('@/assets/img/projectStyle/l-bg-4.png');
   height: var(--dyToolsHeight);
   width: var(--dyToolsWidth);
   //   margin-left: 20px;

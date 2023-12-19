@@ -104,7 +104,7 @@
           >
             <p class="link-text">{{ $t('menu.level4.child.a') }}</p>
           </a>
-          <a
+          <!-- <a
             class="link"
             :class="{ active: 'reporting' === activeLinkStyle }"
             @click="
@@ -114,7 +114,7 @@
             "
           >
             <p class="link-text">{{ $t('menu.level4.child.c') }}</p>
-          </a>
+          </a> -->
           <!-- <a
             class="link"
             :class="{ active: '3' === activeLinkStyle }"

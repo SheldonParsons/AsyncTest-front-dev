@@ -329,14 +329,15 @@ function intervalData(
   isAllProject: any = false
 ) {
   let count = 0
+  disInfinite.value = true
   const timer = setInterval(() => {
     instance.list.push(data.results[count])
     count = count + 1
     if (count >= data.results.length) {
       if (isAllProject) {
         currentPage.value = currentPage.value + size / 10
-        clearStatus()
       }
+      clearStatus()
       clearInterval(timer)
     }
   }, 10)

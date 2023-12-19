@@ -316,7 +316,7 @@ function closedUploadDialog() {
 .tool {
   font-family: $logo-font-family;
   cursor: pointer;
-  background-image: url('@/assets/img/projectStyle/xmind2json_bird2.png');
+  background-image: url('@/assets/img/projectStyle/l-bg-2.png');
   height: var(--dyToolsHeight);
   width: var(--dyToolsWidth);
   //   margin-left: 20px;

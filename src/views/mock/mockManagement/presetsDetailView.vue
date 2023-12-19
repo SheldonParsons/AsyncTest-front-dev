@@ -17,124 +17,10 @@
         <StandardInput
           :colorType="1"
           class="create-child"
-          v-model="hopeName"
-          :text="$t('project.mock.desc.expectName')"
+          v-model="presetsName"
+          :text="$t('project.mock.desc.presetsName')"
           :maxlength="50"
         ></StandardInput>
-      </el-col>
-    </el-row>
-    <el-row class="input-row" align="middle" style="margin-top: 20px">
-      <el-col :span="18">
-        <div class="radio">
-          <div class="radio__2" style="display: flex; align-items: center">
-            <div
-              style="display: inline-block"
-              @click="changeConditionPassRule(1)"
-            >
-              <input
-                id="radio-2"
-                type="radio"
-                name="radio"
-                value="2"
-                :checked="conditionPassRule == 1"
-              />
-              <label for="radio-2"></label>
-            </div>
-            <div
-              style="
-                display: inline;
-                margin-left: 15px;
-                font-size: 1rem;
-                font-weight: 500;
-                white-space: nowrap;
-              "
-            >
-              {{ $t('project.mock.desc.passAll') }}
-            </div>
-          </div>
-          <div class="radio__1" style="display: flex; align-items: center">
-            <div
-              style="display: inline-block"
-              @click="changeConditionPassRule(0)"
-            >
-              <input
-                id="radio-1"
-                type="radio"
-                name="radio"
-                value="1"
-                :checked="conditionPassRule == 0"
-              />
-              <label for="radio-1"></label>
-            </div>
-            <div
-              style="
-                display: inline;
-                margin-left: 15px;
-                font-size: 1rem;
-                font-weight: 500;
-                white-space: nowrap;
-              "
-            >
-              {{ $t('project.mock.desc.passOne') }}
-            </div>
-          </div>
-
-          <div class="radio__3" style="display: flex; align-items: center">
-            <div
-              style="display: inline-block"
-              @click="changeConditionPassRule(2)"
-            >
-              <input
-                id="radio-3"
-                type="radio"
-                name="radio"
-                value="3"
-                :checked="conditionPassRule == 2"
-              />
-              <label for="radio-3"></label>
-            </div>
-            <div
-              style="
-                display: inline;
-                margin-left: 15px;
-                font-size: 1rem;
-                font-weight: 500;
-                white-space: nowrap;
-              "
-            >
-              {{ $t('project.mock.desc.byCondition') }}
-            </div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-    <!-- <el-row>
-      <el-col :offset="23" :span="1">
-        <CButton
-          @click="createCondition"
-          style="display: inline-block; margin-right: 6px"
-          ><el-icon><CirclePlusFilled /></el-icon
-        ></CButton>
-      </el-col>
-    </el-row> -->
-    <el-row style="margin-top: 3%">
-      <el-col :span="24"
-        ><ParamsTable
-          :cols="[
-            '',
-            $t('project.mock.desc.expectTableField.necessary'),
-            $t('project.mock.desc.expectTableField.enabled'),
-            $t('project.mock.desc.expectTableField.position'),
-            $t('project.mock.desc.expectTableField.paramName'),
-            $t('project.mock.desc.expectTableField.compare'),
-            $t('project.mock.desc.expectTableField.value'),
-            $t('project.MockCol.action')
-          ]"
-          :data="paramsConditions.list"
-          @onDeleteCondition="deleteConditionAction"
-          @onRefreshCondition="refreshConditionList"
-          @addConditionAction="createCondition"
-        ></ParamsTable>
       </el-col>
     </el-row>
     <el-row
@@ -144,53 +30,56 @@
       style="margin-top: 3%; margin-bottom: 40px"
     >
       <el-col :span="12">
-        <div class="segmented-control-inner g-unselect">
+        <div class="segmented-control-presets g-unselect">
           <input
             type="radio"
-            name="radio2"
+            name="radio11"
             @click="changeMenu('2')"
-            value="3"
-            id="tab-7"
-            checked
+            value="11"
+            id="tab-11"
+            :checked="active === '2'"
           />
-          <label for="tab-7" class="segmented-control-inner__1">
+          <label for="tab-11" class="segmented-control-presets__1">
             <p>Body</p></label
           >
 
           <input
             type="radio"
-            name="radio2"
+            name="radio12"
             @click="changeMenu('1')"
-            value="4"
-            id="tab-8"
+            value="12"
+            id="tab-12"
+            :checked="active === '1'"
           />
-          <label for="tab-8" class="segmented-control-inner__2">
+          <label for="tab-12" class="segmented-control-presets__2">
             <p>Headers</p></label
           >
 
           <input
             type="radio"
-            name="radio2"
+            name="radio13"
             @click="changeMenu('3')"
-            value="5"
-            id="tab-9"
+            value="13"
+            id="tab-13"
+            :checked="active === '3'"
           />
-          <label for="tab-9" class="segmented-control-inner__3">
+          <label for="tab-13" class="segmented-control-presets__3">
             <p>Status</p></label
           >
 
           <input
             type="radio"
-            name="radio2"
+            name="radio14"
             @click="changeMenu('4')"
-            value="5"
-            id="tab-10"
+            value="14"
+            id="tab-14"
+            :checked="active === '4'"
           />
-          <label for="tab-10" class="segmented-control-inner__4">
+          <label for="tab-14" class="segmented-control-presets__4">
             <p>{{ $t('project.mock.desc.moreSetting') }}</p></label
           >
 
-          <div class="segmented-control-inner__color__inner"></div>
+          <div class="segmented-control-presets__color__inner"></div>
         </div>
       </el-col>
     </el-row>
@@ -229,7 +118,7 @@
         ></TransferBar> </el-col
     ></el-row>
     <el-row class="editor-row" v-if="active === '2'">
-      <el-col :span="24">
+      <el-col :span="23">
         <JsonEditor
           :colorGroup="1"
           v-if="code !== undefined || (!isEdit && editorReady)"
@@ -291,16 +180,14 @@ import GlobalStatus from '@/global'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CommonDialog from '@/components/layout/dialogs/commonDialog.vue'
 import StandardInput from '@/components/common/input/standardInput.vue'
-import ParamsTable from './paramsTableView.vue'
 import HeadersTable from '@/components/layout/debugs/headersTable.vue'
 import TransferBar from '@/components/layout/debugs/transferBar.vue'
 import JsonEditor from '@/components/common/editor/JsonEditor.vue'
-import CButton from '@/components/common/button/CButton.vue'
 import {
-  ApiGetSingleExpect,
-  ApiEditExpect,
-  ApiExpectPostAction
-} from '@/api/mock/expect'
+  ApiGetSinglePresets,
+  ApiEditPresets,
+  ApiPresetsPostAction
+} from '@/api/mock/presets'
 const { proxy }: any = getCurrentInstance()
 const { t } = useI18n()
 
@@ -313,7 +200,7 @@ const prop = defineProps({
     type: Boolean,
     default: false
   },
-  editHope: {
+  editPresets: {
     type: Number,
     default: -1
   },
@@ -322,26 +209,22 @@ const prop = defineProps({
     default: false
   }
 })
-const emit = defineEmits(['update:modelValue', 'update:hopeName', 'flush'])
+const emit = defineEmits(['update:modelValue', 'update:presetsName', 'flush'])
 
 const route = useRoute()
 
 const code: any = ref(undefined)
-const hopeName = ref('')
+const presetsName = ref('')
 const active = ref('2')
 const transferData = ref('')
 const resStatus = ref('200')
 const delayTimes = ref('0')
 const editorReady = ref(false)
 const showStatusCheck = ref(false)
-const conditionPassRule = ref(1)
 const showDelayCheck = ref(false)
 const headersData = reactive({
   list: [{ key: '', value: '' }] as any
 })
-const hopeSort = ref(0)
-const currentResponseId = ref(-1)
-const currentConditionId = ref(-1)
 
 // table 参数条件
 const paramsConditions = reactive({
@@ -351,57 +234,40 @@ const paramsConditions = reactive({
 onMounted(() => {
   editorReady.value = false
   if (prop.isEdit) {
-    getEditHope()
+    getEditPresets()
   } else {
     reset()
   }
 })
 
-function deleteConditionAction(index: number) {
-  paramsConditions.list.splice(index, 1)
-  refreshConditionList()
-}
-
-function refreshConditionList() {
-  for (let i = 0; i < paramsConditions.list.length; i++) {
-    paramsConditions.list[i].sort = i
-  }
-}
-
 function reset() {
   code.value = ''
-  paramsConditions.list = []
-  hopeName.value = ''
-  conditionPassRule.value = 1
+  presetsName.value = ''
   headersData.list = [{ key: '', value: '' }]
   resStatus.value = '200'
   delayTimes.value = '0'
   editorReady.value = true
 }
 
-function getEditHope() {
-  ApiGetSingleExpect(prop.editHope, {}).then((res: any) => {
+function getEditPresets() {
+  ApiGetSinglePresets(prop.editPresets, {}).then((res: any) => {
     const codeValue = {
       edit: true,
       data: ''
     }
     const data = res.data
-    hopeName.value = data.name
-    conditionPassRule.value = Number(data.relation)
-    paramsConditions.list = JSON.parse(data.expect_condition.condition_str)
-    if (typeof data.expect_response.body === 'string') {
-      codeValue.data = data.expect_response.body
+    presetsName.value = data.name
+    if (typeof data.body === 'string') {
+      codeValue.data = data.body
     } else {
-      codeValue.data = JSON.stringify(data.expect_response.body)
+      codeValue.data = JSON.stringify(data.body)
     }
     code.value = codeValue
-    currentResponseId.value = data.expect_response.id
-    currentConditionId.value = data.expect_condition.id
-    resStatus.value = data.expect_response.status.toString()
-    delayTimes.value = data.expect_response.delay.toString()
+    resStatus.value = data.status.toString()
+    delayTimes.value = data.delay.toString()
     headersData.list = (() => {
       const res = []
-      const _d = JSON.parse(data.expect_response.header)
+      const _d = JSON.parse(data.header)
       for (const item in _d) {
         res.push({
           key: item,
@@ -423,57 +289,25 @@ function tryString(value: any) {
   return JSON.stringify(value)
 }
 
-function createCondition() {
-  paramsConditions.list.push({
-    id: paramsConditions.list.length - 1,
-    sort: paramsConditions.list.length - 1,
-    position: 0,
-    name: '',
-    compare: 0,
-    value: '',
-    necessary: 0,
-    status: 1
-  })
-}
-
-function changeConditionPassRule(ruleIndex: number) {
-  conditionPassRule.value = ruleIndex
-}
-
 function updateValue(value: Boolean) {
   emit('update:modelValue', false)
 }
 
-function getHopeParams() {
+function getPresetsParams() {
   const data = {
     api: Number(route.params.mock),
     is_public: prop.isPublic,
-    is_private: !prop.isPublic,
-    status: 1,
-    name: hopeName.value,
-    sort: hopeSort.value,
-    relation: conditionPassRule.value,
-    expect_response: {
-      status: resStatus.value,
-      header: (() => {
-        const res: any = {}
-        for (let i = 0; i < headersData.list.length - 1; i++) {
-          res[headersData.list[i].key] = headersData.list[i].value
-        }
-        return JSON.stringify(res)
-      })(),
-      body: tryString(code.value.edit ? code.value.data : code.value),
-      delay: Number(delayTimes.value),
-      is_public: prop.isPublic,
-      is_private: !prop.isPublic,
-      is_default: false,
-      is_expect: true
-    },
-    expect_condition: {
-      condition_str: JSON.stringify(
-        paramsConditions.list.sort((a: any, b: any) => a.sort - b.sort)
-      )
-    }
+    name: presetsName.value,
+    status: resStatus.value,
+    header: (() => {
+      const res: any = {}
+      for (let i = 0; i < headersData.list.length - 1; i++) {
+        res[headersData.list[i].key] = headersData.list[i].value
+      }
+      return JSON.stringify(res)
+    })(),
+    body: tryString(code.value.edit ? code.value.data : code.value),
+    delay: Number(delayTimes.value)
   }
   return data
 }
@@ -488,26 +322,23 @@ async function confirmHope() {
 
 async function create() {
   if (createChecking() === false) return
-  const data = getHopeParams()
-  await ApiExpectPostAction({}, data)
+  const data = getPresetsParams()
+  await ApiPresetsPostAction({}, data)
   emit('update:modelValue', false)
   emit('flush', true)
 }
 
 function createChecking() {
-  if (hopeName.value.length === 0) {
-    tools.message(t('project.mock.checking.expectName'), proxy, 'success')
+  if (presetsName.value.length === 0) {
+    tools.message(t('project.mock.checking.presetsName'), proxy, 'success')
     return false
   }
   return true
 }
 
 async function edit() {
-  const data: any = getHopeParams()
-  data.expect_response.id = currentResponseId.value
-  data.expect_condition.id = currentConditionId.value
-  delete data['sort']
-  await ApiEditExpect(prop.editHope, {}, data).then((res) => {
+  const data: any = getPresetsParams()
+  await ApiEditPresets(prop.editPresets, {}, data).then((res) => {
     emit('update:modelValue', false)
     emit('flush', true)
   })
@@ -575,19 +406,6 @@ function checkDelay(value: any) {
 
 async function changeMenu(key: string, hiddenColor = false) {
   active.value = key
-  const color: any = document.getElementsByClassName(
-    'segmented-control-inner__color__inner'
-  )[0]
-  const innerColor: any = document.getElementsByClassName(
-    'segmented-control-inner'
-  )[0]
-  if (hiddenColor) {
-    color.style.display = 'none'
-    innerColor.style.setProperty('--p', 'var(--greyDark)')
-  } else {
-    color.style.display = 'block'
-    innerColor.style.setProperty('--p', 'var(--primary)')
-  }
 }
 </script>
 
@@ -604,7 +422,7 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   transition: all 0.5s ease;
 }
 /*  SEGMENTED-CONTROL */
-.segmented-control-inner {
+.segmented-control-presets {
   --p: var(--primary);
   grid-column: 3 / 4;
   grid-row: 1 / 2;
@@ -634,9 +452,7 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   &__1,
   &__2,
   &__3,
-  &__4,
-  &__5,
-  &__6 {
+  &__4 {
     width: 6.8rem;
     height: 2.6rem;
     font-size: 1rem;
@@ -662,90 +478,22 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
     pointer-events: none;
   }
 }
-.checkbox-control {
-  width: auto;
-  padding-right: 20px;
-}
 
-#tab-7:checked ~ .segmented-control-inner__color__inner {
+#tab-11:checked ~ .segmented-control-presets__color__inner {
   transform: translateX(0);
   transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
-#tab-8:checked ~ .segmented-control-inner__color__inner {
+#tab-12:checked ~ .segmented-control-presets__color__inner {
   transform: translateX(6.8rem);
   transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
-#tab-9:checked ~ .segmented-control-inner__color__inner {
+#tab-13:checked ~ .segmented-control-presets__color__inner {
   transform: translateX(13.6rem);
   transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
-#tab-10:checked ~ .segmented-control-inner__color__inner {
+#tab-14:checked ~ .segmented-control-presets__color__inner {
   transform: translateX(20.4rem);
   transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-
-.radio {
-  grid-column: 1 / 3;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  justify-items: left;
-  input {
-    display: none;
-  }
-  &__1,
-  &__3 {
-    margin-left: 15px;
-  }
-
-  &__1,
-  &__2,
-  &__3 {
-    & input:checked {
-      & ~ label {
-        box-shadow: $inner-shadow;
-        &::after {
-          background: var(--primary);
-        }
-      }
-    }
-    label {
-      box-shadow: $shadow;
-      position: relative;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      width: 2rem;
-      height: 2rem;
-      border-radius: 50%;
-      &:hover {
-        &::after {
-          background: var(--primary);
-        }
-      }
-
-      &::after {
-        content: '';
-        position: absolute;
-        width: 1rem;
-        height: 1rem;
-        background: var(--greyDark);
-        border-radius: 50%;
-        transition: 0.3s ease;
-      }
-    }
-  }
-}
-.chip-icon-btn {
-  font-size: 1.5rem;
-  color: var(--primary);
-  display: flex;
-  justify-content: center;
-}
-.editor-row {
-  margin-right: 20px;
-  height: 600px;
-  // margin-bottom: -100px;
 }
 </style>

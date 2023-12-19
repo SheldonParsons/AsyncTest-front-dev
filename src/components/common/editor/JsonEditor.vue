@@ -59,7 +59,7 @@ const { t } = useI18n()
 
 const props = defineProps({
   modelValue: {
-    type: Object
+    type: null as any
   },
   project: {
     type: Number,
@@ -222,6 +222,7 @@ function initEditorInstance(model: any) {
       SyntaxCheck(model)
     }
     // 自定义特殊字符自动补全
+
     completionSpecialWord(model, event.changes[0].text, event.changes[0].range)
     // 抛出组件双向绑定
     const value = instance.getValue()
@@ -250,30 +251,32 @@ function setTheme() {
 }
 
 // 特殊字符自动补全
-function completionSpecialWord(model: any, text: string, range: any) {
+function completionSpecialWord(model: any, text: any, range: any) {
   if (text === '{') {
-    insertWordAndNextPosition('}')
-    instance.setPosition({
-      lineNumber: range.startLineNumber,
-      column: range.endColumn + 1
-    })
+    // 在光标后立即补全一个'}'并将光标移动到中间
+    insertTextAndAdjustCursor('}', range, 1)
   }
 
-  function insertWordAndNextPosition(text: any) {
-    model.applyEdits(
-      [
-        {
-          range: {
-            startLineNumber: range.startLineNumber,
-            startColumn: range.startColumn + 1,
-            endLineNumber: range.endLineNumber,
-            endColumn: range.endColumn + 1
-          },
-          text
-        }
-      ],
-      true
-    )
+  function insertTextAndAdjustCursor(text: any, range: any, cursorOffset: any) {
+    const operations = [
+      {
+        range: {
+          startLineNumber: range.startLineNumber,
+          startColumn: range.startColumn + 1,
+          endLineNumber: range.endLineNumber,
+          endColumn: range.endColumn + 1
+        },
+        text: text
+      }
+    ]
+
+    model.pushEditOperations([], operations, () => null)
+
+    // 调整光标位置
+    instance.setPosition({
+      lineNumber: range.startLineNumber + (text === '\n\t' ? 1 : 0),
+      column: range.startColumn + cursorOffset
+    })
   }
 }
 
@@ -390,7 +393,7 @@ function initRegister() {
           endColumn: word.endColumn
         }
         const prefix = word.word.toLowerCase()
-        const suggestions = insertData
+        let suggestions = insertData
           .filter((item: any) => {
             return item.label.toLowerCase().startsWith(prefix)
           })
@@ -400,6 +403,13 @@ function initRegister() {
               range
             }
           })
+        // 判断是否在 JSON 的 key 位置
+        if (isJsonKeyPosition(model, position)) {
+          suggestions = suggestions.map((suggestion: any) => ({
+            ...suggestion,
+            label: `"${suggestion.label}"` // 包裹双引号
+          }))
+        }
         return {
           suggestions,
           incomplete: true
@@ -419,7 +429,6 @@ async function completionItems() {
     return
   }
   props.codeCompleteFn!(data).then((data: any) => {
-    console.log(data)
     for (let i = 0; i < data.results.length; i++) {
       insertData.push({
         preselect: true,
@@ -432,6 +441,19 @@ async function completionItems() {
     }
     return insertData
   })
+}
+
+function isJsonKeyPosition(model: any, position: any) {
+  const lineContent = model.getLineContent(position.lineNumber)
+  const lineTillCurrentPosition = lineContent
+    .substring(0, position.column - 1)
+    .trim()
+
+  // 简单的检查：如果当前位置之前有冒号或逗号，则可能不在 key 位置
+  return (
+    !lineTillCurrentPosition.endsWith(',') &&
+    !lineTillCurrentPosition.endsWith(':')
+  )
 }
 </script>
 

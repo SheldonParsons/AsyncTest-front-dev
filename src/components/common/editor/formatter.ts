@@ -1,25 +1,37 @@
-function JSONTrim(JSONstr:any) {
-  // .replace(/\s+/g, '')
-  try {
-    JSONstr = tryJsonStr(JSONstr)
-    JSONstr = JSONstr.replace(/<\/?.+?>/g, '').replace(/[\r\n]/g, '')
-    const j = JSONstr.split('"')
-    JSONstr = ''
-    for (let i = 0; i < j.length; i++) {
-      if (i % 2 === 0) {
-        j[i] = j[i].replace(/\s+/g, '')
-      }
+function cleanJSON(value:any):any {
+  if (Array.isArray(value)) {
+    return value.map(cleanJSON);
+  } else if (typeof value === 'object' && value !== null) {
+    const cleanedObj:any = {};
+    for (const key in value) {
+      cleanedObj[key] = cleanJSON(value[key]);
     }
-    JSONstr = j.join('"')
-    // JSONstr = JSON.stringify(JSON.parse(JSONstr))
-  } catch (error) {
-    // 转换失败错误提示
-    console.error('json数据格式有误...')
-    console.error(error)
-    JSONstr = null
+    return cleanedObj;
+  } else if (typeof value === 'string') {
+    // 移除字符串中的HTML标签
+    return value.replace(/<\/?.+?>/g, '');
   }
-  return JSONstr
+  return value;
 }
+
+function JSONTrim(JSONstr:any) {
+  try {
+    // 解析JSON字符串
+    const parsedJSON = JSON.parse(JSONstr);
+
+    // 定义一个递归函数来遍历和清理JSON对象或数组
+    
+
+    // 应用清理函数
+    const cleanedJSON = cleanJSON(parsedJSON);
+
+    // 将清理后的JSON对象转换回字符串
+    return JSON.stringify(cleanedJSON);
+  } catch (error) {
+    return JSONstr;
+  }
+}
+
 
 function tryJsonStr(value:any) {
   try {
@@ -34,46 +46,64 @@ function tryJsonStr(value:any) {
 }
 
 function JSONFormat(JSONstr:any) {
-  JSONstr = JSONTrim(JSONstr) // 初步格式化json
-  // eslint-disable-next-line prefer-regex-literals
-  const re = new RegExp('\\{{2}.*?\\}{2}|\\{|\\}|,|:', 'g') // 匹配格式化后的json中的{},:
-  let exec = null
-  let InvalidFs = 0
-  let InvalidBs = 0
-  // eslint-disable-next-line no-cond-assign
-  while (exec = re.exec(JSONstr)) { // 找{},:
-    const frontToCurrent = exec.input.slice(0, exec.index + 1) // 匹配开头到当前匹配字符之间的字符串
-    // console.log(frontToCurrent)
-    // console.log(exec.input.slice(0, exec.index + 1))
+  // 备份原始的{{}}包裹的内容
+  let specialContents:any = [];
+  JSONstr = JSONstr.replace(/{{.*?}}/g, (match:any) => {
+    specialContents.push(match);
+    return `{{SPECIAL_CONTENT_${specialContents.length - 1}}}`;
+  });
+  try {
+    // 使用JSONTrim清理JSON字符串
+    JSONstr = JSONTrim(JSONstr);
 
-    if (frontToCurrent.replace(/\\"/g, '').replace(/[^"]/g, '').length % 2 !== 0) { // 测试当前字符到开头"的数量，为双数则被断定为目标对象
-      if (exec[0] === '{') InvalidFs++
-      else if (exec[0] === '}') InvalidBs++
-      continue // 不是目标对象，手动跳过
-    }
-    const keyTimesF = frontToCurrent.replace(/[^{]/g, '').length - InvalidFs // 找出当前匹配字符以前全部{的个数
-    const keyTimesB = frontToCurrent.replace(/[^}]/g, '').length - InvalidBs // 找出当前匹配字符以前全部}的个数
-    const indentationTimes = keyTimesF - keyTimesB // 根据{个数计算缩进
+    // 解析JSON
+    const parsedJSON = JSON.parse(JSONstr);
 
-    if (exec[0].indexOf('{{') !== -1 || exec[0].indexOf('}}') !== -1) {
-      continue
-    } else if (exec[0] === '{') {
-      JSONstr = JSONstr.slice(0, exec.index + 1) + '\n' + '\t'.repeat(indentationTimes) + JSONstr.slice(exec.index + 1) // 将缩进加入字符串
-    } else if (exec[0] === '}') {
-      JSONstr = JSONstr.slice(0, exec.index) + '\n' + '\t'.repeat(indentationTimes) + JSONstr.slice(exec.index) // 将缩进加入字符串
-      re.exec(JSONstr) // 在查找目标前面插入字符串会回退本次查找，因此手动跳过本次查找
-    } else if (exec[0] === ',') {
-      JSONstr = JSONstr.slice(0, exec.index + 1) + '\n' + '\t'.repeat(indentationTimes) + JSONstr.slice(exec.index + 1)
-    } else if (exec[0] === ':') {
-      JSONstr = JSONstr.slice(0, exec.index + 1) + ' ' + JSONstr.slice(exec.index + 1)
-    } else {
-      throw Object.assign(
-        new Error(`匹配错误${exec[0]}`),
-        { code: -1 }
-      )
+    // 自定义格式化函数
+    function customStringify(obj:any, indent = 0): any {
+      const indentSpace = '  '; // 使用两个空格作为基本缩进单位
+      const currentIndent = indentSpace.repeat(indent);
+      const nextIndent = indentSpace.repeat(indent + 1);
+
+      if (Array.isArray(obj)) {
+        // 处理数组
+        const items = obj.map(item => customStringify(item, indent + 1));
+        return `[\n${nextIndent}${items.join(`,\n${nextIndent}`)}\n${currentIndent}]`;
+      } else if (typeof obj === 'object' && obj !== null) {
+        // 处理对象
+        const keys = Object.keys(obj);
+        const items = keys.map(key => `${nextIndent}"${key}": ${customStringify(obj[key], indent + 1)}`);
+        return `{\n${items.join(',\n')}\n${currentIndent}}`;
+      } else {
+        // 其他类型直接转换为字符串
+        return JSON.stringify(obj);
+      }
     }
+
+
+    // 应用自定义格式化函数
+    let formattedJSON = customStringify(parsedJSON);
+
+    // 还原{{}}包裹的特殊内容
+    formattedJSON = formattedJSON.replace(/{{SPECIAL_CONTENT_(\d+)}}/g, (match:any, index:any) => {
+      return specialContents[index];
+    });
+
+    return formattedJSON;
+  } catch (error) {
+    JSONstr = JSONstr.replace(/{{SPECIAL_CONTENT_(\d+)}}/g, (match:any, index:any) => {
+      return specialContents[index];
+    });
+    return restoreSpecialContent(JSONstr);
   }
-  return JSONstr
 }
+
+function restoreSpecialContent(str:string) {
+  return str.replace(/&#123;&#123;.*?&#125;&#125;/g, (match) => {
+    return match.replace(/&#58;/g, ':').replace(/&#44;/g, ',').replace(/&#123;/g, '{').replace(/&#125;/g, '}');
+  });
+}
+
+
 
 export default JSONFormat

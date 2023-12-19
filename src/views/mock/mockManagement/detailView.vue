@@ -6,7 +6,9 @@
           <el-row class="input-row" align="middle">
             <el-col :span="24">
               <el-radio-group v-model="methodRadio">
-                <div class="segmented-control checkbox-control g-unselect">
+                <div
+                  class="segmented-control-radio checkbox-control g-unselect"
+                >
                   <div class="checkbox">
                     <div class="checkbox__1">
                       <input
@@ -170,87 +172,31 @@
               </el-divider>
             </el-col></el-row
           >
-          <div v-if="loading" class="main-loading">
+          <div v-show="loading" class="main-loading">
             <el-row>
               <el-col :span="24">
                 <NormalLoading></NormalLoading>
               </el-col>
             </el-row>
           </div>
-          <div v-if="!loading" class="main-content" style="height: 80%">
+          <div v-show="!loading" class="main-content" style="height: 80%">
             <el-row justify="start" align="middle" class="tools-var">
               <el-col :span="12">
-                <div class="segmented-control g-unselect">
-                  <input
-                    type="radio"
-                    name="radio2"
-                    @click="changeMenu('2')"
-                    value="3"
-                    id="tab-1"
-                    :checked="activeMenuIndex === '2'"
-                  />
-                  <label for="tab-1" class="segmented-control__1">
-                    <p>Body</p></label
-                  >
-
-                  <input
-                    type="radio"
-                    @click="changeMenu('1')"
-                    name="radio2"
-                    value="4"
-                    id="tab-2"
-                    :checked="activeMenuIndex === '1'"
-                  />
-                  <label for="tab-2" class="segmented-control__2">
-                    <p>Headers</p></label
-                  >
-
-                  <input
-                    type="radio"
-                    @click="changeMenu('3')"
-                    name="radio2"
-                    value="5"
-                    id="tab-3"
-                    :checked="activeMenuIndex === '3'"
-                  />
-                  <label for="tab-3" class="segmented-control__3">
-                    <p>Status</p></label
-                  >
-
-                  <input
-                    type="radio"
-                    @click="changeMenu('4')"
-                    name="radio2"
-                    value="5"
-                    id="tab-4"
-                    :checked="activeMenuIndex === '4'"
-                  />
-                  <label for="tab-4" class="segmented-control__4">
-                    <p style="padding: 0px 5px">
-                      {{ $t('project.mock.desc.moreSetting') }}
-                    </p></label
-                  >
-
-                  <div class="segmented-control__color"></div>
-                </div>
+                <MoveSwitch
+                  :activeMenu="activeMenuIndex"
+                  @changeMenuAction="changeMenu"
+                ></MoveSwitch>
               </el-col>
-              <el-col :offset="6" :span="6" v-if="isEdit">
-                <AstButton
-                  :width="'100%'"
-                  :height="'3.5rem'"
-                  @click="searchExpect('5', true)"
-                  :class="
-                    'chip response-status g-unselect' +
-                    (activeMenuIndex === '5' ? ' select-btn' : '')
-                  "
-                >
-                  <div class="chip-icon-btn">
-                    <el-icon><WarningFilled /></el-icon>
-                  </div>
-                  <p class="chip-p-btn">
-                    {{ $t('project.mock.desc.expectSetting') }}
-                  </p>
-                </AstButton>
+              <el-col
+                :offset="6"
+                :span="6"
+                v-if="isEdit"
+                style="display: flex; justify-content: right"
+              >
+                <MoveOther
+                  :activeMenu="activeMenuIndex"
+                  @changeMenuAction="changeMenu"
+                ></MoveOther>
               </el-col>
             </el-row>
             <el-row class="child-row" v-if="activeMenuIndex === '1'">
@@ -352,6 +298,27 @@
                     @check="checkDelay"
                   ></StandardInput>
                 </el-tooltip>
+              </el-col>
+            </el-row>
+            <el-row v-if="activeMenuIndex === '6'">
+              <el-col :span="24"
+                ><PresetTable
+                  v-if="activeMenuIndex === '6'"
+                  :cols="[
+                    $t('project.MockCol.name'),
+                    $t('project.mock.desc.totalCall'),
+                    $t('project.mock.desc.lastCallTime'),
+                    $t('project.mock.desc.lastCallPersonnel'),
+                    $t('project.MockCol.creator'),
+                    $t('project.MockCol.action')
+                  ]"
+                  :params="presetsTableParams"
+                  :flushData="flushPresetsListFlag"
+                  @editPresetsAction="showEditPresets"
+                  @addPresetsAction="showCreatePresets"
+                  @showPresetResponseList="showPresetResListAction"
+                  @showPresetRecordList="showPresetRecordListAction"
+                ></PresetTable>
               </el-col>
             </el-row>
             <el-row v-if="activeMenuIndex === '5'">
@@ -466,6 +433,23 @@
       :isPublic="settingType === 0"
       @flush="flashHopeList"
     ></HopeDetailView>
+    <PresetsDetailView
+      v-if="showPresetsDialog"
+      v-model="showPresetsDialog"
+      :isEdit="isEditDetailPresets"
+      :editPresets="currentEditPresets"
+      :isPublic="settingType === 0"
+      @flush="flashPresetsList"
+    ></PresetsDetailView>
+    <PresetsResListDialog
+      v-model="showPresetsResList"
+      :data="presetsResListData"
+      @bindPresetRes="bindPresetResAction"
+    ></PresetsResListDialog>
+    <PresetsRecord
+      v-model="showPresetsRecordList"
+      :data="presetsRecordListData"
+    ></PresetsRecord>
     <el-dialog
       v-model="showChangeDialog"
       :title="t('project.mock.tips.tips')"
@@ -515,12 +499,24 @@ import PublicIcon from '@/assets/svg/common/publicIcon.vue'
 import PersonalIcon from '@/assets/svg/common/personalIcon.vue'
 import KeyIcon from '@/assets/svg/common/keyIcon.vue'
 import FireIcon from '@/components/layout/otherwise/fire-icon.vue'
+import MoveSwitch from './moveSwitchView.vue'
+import MoveOther from './moveOtherView.vue'
+import PresetTable from './presetsTable.vue'
+import PresetsDetailView from './presetsDetailView.vue'
+import PresetsResListDialog from './presetsResList.vue'
+import PresetsRecord from './presetsResRecordList.vue'
 
 import {
   ApiAddSingleMock,
   ApiGetSingleMock,
   ApiChangeSingleMock
 } from '@/api/mock/index'
+
+import {
+  ApiPresets,
+  ApiGetSinglePresets,
+  ApiPresetsRecord
+} from '@/api/mock/presets'
 
 import { ApiGetBasicConfig } from '@/api/index'
 import GlobalStatus from '@/global'
@@ -539,6 +535,7 @@ const showStatusCheck = ref(false)
 const showDelayCheck = ref(false)
 const showDialog = ref(false)
 const showHopeDialog = ref(false)
+const showPresetsDialog = ref(false)
 const methodRadio = ref('0')
 const transferData = ref('')
 const activeMenuIndex = ref('2')
@@ -547,8 +544,11 @@ const headersData = reactive({
 })
 
 const expectTableParams = ref({})
+const presetsTableParams = ref({})
 const hasPrivate = ref(false)
 const showChangeDialog = ref(false)
+const currentPresetsId = ref(-1)
+const showPresetsRecordList = ref(false)
 
 const isCommit = ref(false)
 const isEdit = ref(false)
@@ -559,10 +559,17 @@ const settingType = ref(0)
 const loading = ref(false)
 const privateKey = ref('Loading...')
 const flushHopeListFlag = ref(false)
+const flushPresetsListFlag = ref(false)
+const showPresetsResList = ref(false)
+
+const presetsResListData = ref({})
+const presetsRecordListData = ref({})
 
 // 详细期望参数
 const isEditDetailHope = ref(false)
+const isEditDetailPresets = ref(false)
 const currentEditHope = ref(-1)
+const currentEditPresets = ref(-1)
 
 // 期望搜索参数
 const isPublic = ref(0)
@@ -606,6 +613,40 @@ watch(
     shouldListenerChangeResponse.value = true
   }
 )
+
+function showPresetResListAction(params: any, presetsId: any) {
+  const s = params.api + '-' + (params.is_public ? 1 : 0)
+  const data = {
+    presets_binding: s
+  }
+  currentPresetsId.value = presetsId
+  ApiPresets(data).then((res: any) => {
+    console.log(res)
+    presetsResListData.value = res.data
+    showPresetsResList.value = true
+  })
+}
+
+function showPresetRecordListAction(presetsId: any) {
+  ApiPresetsRecord({ presets: presetsId }).then((data: any) => {
+    presetsRecordListData.value = data.results
+    showPresetsRecordList.value = true
+  })
+}
+
+function bindPresetResAction(resId: any) {
+  const data = {
+    cover_presets_res: resId
+  }
+  ApiGetSinglePresets(currentPresetsId.value, data).then((res) => {
+    showPresetsResList.value = false
+    proxy.$message({
+      message: '覆盖成功',
+      duration: 3000,
+      type: 'success'
+    })
+  })
+}
 
 async function continueChangeType() {
   settingType.value = tryChangeStatus.value
@@ -694,8 +735,11 @@ async function settingTypeFn(t: number) {
 
     if (activeMenuIndex.value === '5') {
       searchExpect('5', true, false)
+    } else if (activeMenuIndex.value === '6') {
+      searchPresets()
+    } else {
+      await changeMenu(activeMenuIndex.value, false, false)
     }
-    await changeMenu(activeMenuIndex.value)
     const _data: any = {
       project: route.params.project
     }
@@ -704,6 +748,27 @@ async function settingTypeFn(t: number) {
     }
     await getApiGetSingleMock(_data)
     loading.value = false
+  }
+  console.log(activeMenuIndex.value)
+}
+
+async function searchPresets() {
+  api.value = Number(route.params.mock)
+  if (settingType.value === 0) {
+    isPublic.value = 1
+    isPrivate.value = 0
+  } else if (settingType.value === 1) {
+    isPublic.value = 0
+    isPrivate.value = 1
+  }
+  const data = {
+    is_public: isPublic.value === 1,
+    api: api.value
+  }
+  presetsTableParams.value = data
+  if ('6' === activeMenuIndex.value) {
+    flashPresetsList(true)
+    return
   }
 }
 
@@ -743,10 +808,37 @@ async function flashHopeList(flag: boolean) {
   }
 }
 
+async function flashPresetsList(flag: boolean) {
+  if (flag) {
+    flushPresetsListFlag.value = !flushPresetsListFlag.value
+    tools.message(t('notice.flush'), proxy, 'success')
+  }
+}
+
 function showEditHope(element: any) {
   showHopeDialog.value = true
   currentEditHope.value = element.id
   isEditDetailHope.value = true
+}
+
+function showEditPresets(element: any) {
+  console.log(element.id)
+
+  showPresetsDialog.value = true
+  currentEditPresets.value = element.id
+  isEditDetailPresets.value = true
+}
+
+function showCreateHope() {
+  isEditDetailHope.value = false
+  showHopeDialog.value = true
+}
+
+function showCreatePresets() {
+  console.log('show ...')
+
+  isEditDetailPresets.value = false
+  showPresetsDialog.value = true
 }
 
 function getPrivateKey() {
@@ -799,11 +891,6 @@ async function getApiGetSingleMock(data: any) {
     editorReady.value = true
     isChangeResponse.value = false
   })
-}
-
-function showCreateHope() {
-  isEditDetailHope.value = false
-  showHopeDialog.value = true
 }
 
 // 复制至剪贴板
@@ -898,19 +985,34 @@ function createData() {
   })
 }
 
-async function changeMenu(key: string, hiddenColor = false) {
-  activeMenuIndex.value = key
+async function changeMenu(
+  key: string,
+  hiddenColor = false,
+  searchAgain = true
+) {
   const color: any = document.getElementsByClassName(
-    'segmented-control__color'
+    'segmented-control' + (Number(key) > 4 ? '' : '-other') + '__color'
   )[0]
-  const innerColor: any =
-    document.getElementsByClassName('segmented-control')[1]
-  if (hiddenColor) {
-    color.style.display = 'none'
-    innerColor.style.setProperty('--p', 'var(--greyDark)')
-  } else {
-    color.style.display = 'block'
-    innerColor.style.setProperty('--p', 'var(--primary)')
+  const innerColor: any = document.getElementsByClassName(
+    'segmented-control' + (Number(key) > 4 ? '' : '-other')
+  )[0]
+  color.style.display = 'none'
+  innerColor.style.setProperty('--p', 'var(--greyDark)')
+
+  const anotherInnerColor: any = document.getElementsByClassName(
+    'segmented-control' + (Number(key) > 4 ? '-other' : '')
+  )[0]
+  const anotherColor: any = document.getElementsByClassName(
+    'segmented-control' + (Number(key) > 4 ? '-other' : '') + '__color'
+  )[0]
+
+  anotherColor.style.display = 'block'
+  anotherInnerColor.style.setProperty('--p', 'var(--primary)')
+  activeMenuIndex.value = key
+  if (Number(key) === 5 && searchAgain) {
+    searchExpect(key, true, false)
+  } else if (Number(key) === 6 && searchAgain) {
+    searchPresets()
   }
 }
 
@@ -995,38 +1097,7 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;
 }
-.container {
-  padding-top: 100px;
-  height: 100%;
-  margin-left: 5%;
-  .editor-row {
-    height: 70%;
-  }
-  .input-row {
-    margin-bottom: 20px;
-    .method-info {
-      font-size: 20px;
-      cursor: pointer;
-    }
-  }
-}
-.exe-col {
-  box-shadow: $shadow;
-  border-radius: 0px 8px 8px 0px;
-  transition: all 0.5s ease;
-}
-
-.res-divider-span {
-  font-size: 1.1rem;
-  color: var(--global-theme-color);
-}
-
-.tools-var {
-  margin-bottom: 20px;
-}
-
-/*  SEGMENTED-CONTROL */
-.segmented-control {
+.segmented-control-radio {
   --p: var(--primary);
   grid-column: 3 / 4;
   grid-row: 1 / 2;
@@ -1084,37 +1155,38 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
     pointer-events: none;
   }
 }
-.checkbox-control {
-  width: auto;
-  padding-right: 20px;
+.container {
+  padding-top: 100px;
+  height: 100%;
+  margin-left: 5%;
+  .editor-row {
+    height: 70%;
+  }
+  .input-row {
+    margin-bottom: 20px;
+    .method-info {
+      font-size: 20px;
+      cursor: pointer;
+    }
+  }
+}
+.exe-col {
+  box-shadow: $shadow;
+  border-radius: 0px 8px 8px 0px;
+  transition: all 0.5s ease;
 }
 
-#tab-1:checked ~ .segmented-control__color {
-  transform: translateX(0);
-  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-#tab-2:checked ~ .segmented-control__color {
-  transform: translateX(6.8rem);
-  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-#tab-3:checked ~ .segmented-control__color {
-  transform: translateX(13.6rem);
-  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+.res-divider-span {
+  font-size: 1.1rem;
+  color: var(--global-theme-color);
 }
 
-#tab-4:checked ~ .segmented-control__color {
-  transform: translateX(20.4rem);
-  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+.tools-var {
+  margin-bottom: 20px;
 }
-#tab-5:checked ~ .segmented-control__color {
-  display: none;
-  // transform: translateX(6.8rem);
-  // transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-#tab-6:checked ~ .segmented-control__color {
-  transform: translateX(13.6rem);
-  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
+
+/*  SEGMENTED-CONTROL */
+
 /*  CHECKBOX  */
 .checkbox {
   grid-column: 1 / 2;
@@ -1229,6 +1301,12 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   display: flex;
   justify-content: center;
 }
+
+.checkbox-control {
+  width: auto;
+  padding-right: 20px;
+}
+
 .chip-p-btn {
   font-size: 0.9rem;
   color: var(--greyDark);
