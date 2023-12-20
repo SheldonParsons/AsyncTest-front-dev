@@ -13,7 +13,7 @@
         <el-card
           style="cursor: pointer"
           shadow="always"
-          @click="bindRes(data.default_res_data.id)"
+          @click="bindRes(data.default_res_data.id, true)"
         >
           <div class="res-default-list">
             <div class="chip-icon-btn">
@@ -55,7 +55,7 @@
         <el-card
           style="cursor: pointer"
           shadow="always"
-          @click="bindRes(item.res_id)"
+          @click="bindRes(item.res_id, false)"
         >
           <div class="res-default-list">
             <div class="chip-icon-btn">
@@ -105,8 +105,8 @@ function updateValue(value: Boolean) {
   emit('update:modelValue', false)
 }
 
-function bindRes(resId: any) {
-  emit('bindPresetRes', resId)
+function bindRes(resId: any, shouldFlushDefault: boolean) {
+  emit('bindPresetRes', resId, shouldFlushDefault)
 }
 </script>
 

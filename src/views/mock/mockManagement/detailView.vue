@@ -634,17 +634,26 @@ function showPresetRecordListAction(presetsId: any) {
   })
 }
 
-function bindPresetResAction(resId: any) {
+async function bindPresetResAction(resId: any, flushDefault: boolean) {
   const data = {
     cover_presets_res: resId
   }
-  ApiGetSinglePresets(currentPresetsId.value, data).then((res) => {
+  await ApiGetSinglePresets(currentPresetsId.value, data).then(async (res) => {
     showPresetsResList.value = false
     proxy.$message({
       message: '覆盖成功',
       duration: 3000,
       type: 'success'
     })
+    if (flushDefault) {
+      const _data: any = {
+        project: route.params.project
+      }
+      if (settingType.value === 1) {
+        _data.private_default = 1
+      }
+      await getApiGetSingleMock(_data)
+    }
   })
 }
 
