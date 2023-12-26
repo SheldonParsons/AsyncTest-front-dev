@@ -87,6 +87,7 @@ watch(
       } catch (error) {
         instance.setValue(newVal)
       }
+      stopChangeCodeAction()
     }
   }
 )
@@ -95,7 +96,7 @@ watch(
 const { proxy }: any = getCurrentInstance()
 
 // 双向绑定，抛出model
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'stopChangeCode'])
 
 // 编辑器组件实例
 const dom = ref()
@@ -118,6 +119,10 @@ const languageMapping: any = {
   text: 'TEXT',
   python: 'Python',
   javascript: 'JavaScript'
+}
+
+function stopChangeCodeAction() {
+  emit('stopChangeCode')
 }
 
 // 当前语言
@@ -222,7 +227,6 @@ function initEditorInstance(model: any) {
       SyntaxCheck(model)
     }
     // 自定义特殊字符自动补全
-
     completionSpecialWord(model, event.changes[0].text, event.changes[0].range)
     // 抛出组件双向绑定
     const value = instance.getValue()

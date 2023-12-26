@@ -227,6 +227,7 @@ export default {
         createNewExpect: '创建新期望',
         createNewPresets: '创建新预置响应',
         createNewCondition: '创建新条件判断',
+        callTimes: '调用次数',
         totalCall:'总调用次数',
         lastCallTime: '最近调用时间',
         lastCallPersonnel: '最近覆盖人员',

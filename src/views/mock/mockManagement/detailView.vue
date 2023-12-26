@@ -242,6 +242,8 @@
                   class="create-child"
                   v-model="code"
                   :project="Number(route.params.project)"
+                  :changeValue="isChangeCode"
+                  @stopChangeCode="closeChangeCode"
                 ></JsonEditor>
               </el-col>
             </el-row>
@@ -539,6 +541,7 @@ const showPresetsDialog = ref(false)
 const methodRadio = ref('0')
 const transferData = ref('')
 const activeMenuIndex = ref('2')
+const isChangeCode = ref(false)
 const headersData = reactive({
   list: [{ key: '', value: '' }] as any
 })
@@ -755,7 +758,7 @@ async function settingTypeFn(t: number) {
     if (settingType.value === 1) {
       _data.private_default = 1
     }
-    await getApiGetSingleMock(_data)
+    await getApiGetSingleMockEdit(_data)
     loading.value = false
   }
   console.log(activeMenuIndex.value)
@@ -856,6 +859,57 @@ function getPrivateKey() {
   })
 }
 
+function closeChangeCode() {
+  isChangeCode.value = false
+}
+
+async function getApiGetSingleMockEdit(data: any) {
+  shouldListenerChangeResponse.value = false
+  await ApiGetSingleMock(Number(route.params.mock), data).then((data: any) => {
+    hasPrivate.value =
+      settingType.value === 1 ? true : data.data.has_private === 1
+    const codeValue = {
+      edit: true,
+      data: ''
+    }
+    let coreRes = data.data.public_default_response
+    if (settingType.value === 1) {
+      coreRes = data.data
+    } else {
+      path.value = data.data.path
+      desc.value = data.data.desc
+      methodRadio.value = data.data.method.toString()
+    }
+    if (typeof coreRes.body === 'string') {
+      codeValue.data = coreRes.body
+    } else {
+      codeValue.data = JSON.stringify(coreRes.body)
+    }
+    isChangeCode.value = true
+    code.value = codeValue.data
+    resStatus.value = coreRes.status.toString()
+    delayTimes.value = coreRes.delay.toString()
+    // headers
+    headersData.list = (() => {
+      const res = []
+      const _d = JSON.parse(coreRes.header)
+      for (const item in _d) {
+        res.push({
+          key: item,
+          value: _d[item]
+        })
+      }
+      res.push({
+        key: '',
+        value: ''
+      })
+      return res
+    })()
+    editorReady.value = true
+    isChangeResponse.value = false
+  })
+}
+
 async function getApiGetSingleMock(data: any) {
   shouldListenerChangeResponse.value = false
   await ApiGetSingleMock(Number(route.params.mock), data).then((data: any) => {
@@ -878,7 +932,7 @@ async function getApiGetSingleMock(data: any) {
     } else {
       codeValue.data = JSON.stringify(coreRes.body)
     }
-    code.value = codeValue
+    code.value = codeValue.data
     resStatus.value = coreRes.status.toString()
     delayTimes.value = coreRes.delay.toString()
     // headers

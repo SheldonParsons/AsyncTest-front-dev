@@ -48,10 +48,16 @@ function tryJsonStr(value:any) {
 function JSONFormat(JSONstr:any) {
   // 备份原始的{{}}包裹的内容
   let specialContents:any = [];
+  let bigNumberContents:any = [];
   JSONstr = JSONstr.replace(/{{.*?}}/g, (match:any) => {
     specialContents.push(match);
     return `{{SPECIAL_CONTENT_${specialContents.length - 1}}}`;
   });
+  JSONstr = JSONstr.replace(/\d{15,}/g, (match:any) => {
+    bigNumberContents.push(match);
+    return `111111${bigNumberContents.length - 1}`;
+  });
+
   try {
     // 使用JSONTrim清理JSON字符串
     JSONstr = JSONTrim(JSONstr);
@@ -89,10 +95,18 @@ function JSONFormat(JSONstr:any) {
       return specialContents[index];
     });
 
+    // 还原超过14位的数字
+    formattedJSON = formattedJSON.replace(/111111(\d+)/g, (match:any, index:any) => {
+      return bigNumberContents[index];
+    });
+
     return formattedJSON;
   } catch (error) {
     JSONstr = JSONstr.replace(/{{SPECIAL_CONTENT_(\d+)}}/g, (match:any, index:any) => {
       return specialContents[index];
+    });
+    JSONstr = JSONstr.replace(/111111(\d+)/g, (match:any, index:any) => {
+      return bigNumberContents[index];
     });
     return restoreSpecialContent(JSONstr);
   }

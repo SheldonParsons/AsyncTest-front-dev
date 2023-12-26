@@ -46,8 +46,10 @@
       >
         <thead>
           <tr>
-            <th class="disappear-auto">ID</th>
             <th class="disappear-auto">{{ t('project.MockCol.method') }}</th>
+            <th class="disappear-auto">
+              {{ t('project.mock.desc.callTimes') }}
+            </th>
             <th>{{ t('project.MockCol.path') }}</th>
             <th class="disappear-auto">{{ t('project.MockCol.desc') }}</th>
             <th class="disappear-auto">{{ t('project.MockCol.creator') }}</th>
@@ -58,18 +60,15 @@
           <transition-group name="fade" appear>
             <tr v-for="item in d.list" :key="item">
               <td
-                class="active-row disappear-auto copy-instance id-col"
-                @click="copy(item.id)"
-              >
-                <div>{{ item.id }}</div>
-              </td>
-              <td
                 class="active-row disappear-auto"
                 :style="{
                   '--method-color': GlobalStatus.methodColor[item.method]
                 }"
               >
                 {{ method[item.method] }}
+              </td>
+              <td class="active-row disappear-auto id-col">
+                <div>{{ item.call_times }}</div>
               </td>
               <td
                 class="active-row copy-instance long-td"

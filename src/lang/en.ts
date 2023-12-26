@@ -227,6 +227,7 @@ export default {
         createNewExpect: 'Create New Expectation',
         createNewPresets: 'Create New Presetting',
         createNewCondition: 'Create New Condition',
+        callTimes: 'Call Times',
         totalCall:'Total Call',
         lastCallTime: 'Last Call Time',
         lastCallPersonnel: 'Last covered personnel',
