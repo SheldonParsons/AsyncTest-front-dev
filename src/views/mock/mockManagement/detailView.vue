@@ -1054,19 +1054,29 @@ async function changeMenu(
   searchAgain = true
 ) {
   const color: any = document.getElementsByClassName(
-    'segmented-control' + (Number(key) > 4 ? '' : '-other') + '__color'
+    'segmented-control' +
+      (Number(key) > 4 || isEdit.value === false ? '' : '-other') +
+      '__color'
   )[0]
   const innerColor: any = document.getElementsByClassName(
-    'segmented-control' + (Number(key) > 4 ? '' : '-other')
+    'segmented-control' +
+      (Number(key) > 4 || isEdit.value === false ? '' : '-other')
   )[0]
+  console.log(key)
+
+  console.log(color)
+
   color.style.display = 'none'
   innerColor.style.setProperty('--p', 'var(--greyDark)')
 
   const anotherInnerColor: any = document.getElementsByClassName(
-    'segmented-control' + (Number(key) > 4 ? '-other' : '')
+    'segmented-control' +
+      (Number(key) > 4 && isEdit.value === true ? '-other' : '')
   )[0]
   const anotherColor: any = document.getElementsByClassName(
-    'segmented-control' + (Number(key) > 4 ? '-other' : '') + '__color'
+    'segmented-control' +
+      (Number(key) > 4 && isEdit.value === true ? '-other' : '') +
+      '__color'
   )[0]
 
   anotherColor.style.display = 'block'
