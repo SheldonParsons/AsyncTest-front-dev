@@ -457,8 +457,9 @@
       :title="t('project.mock.tips.tips')"
       width="30%"
       style="border-radius: 15px"
+      class="change-dialog"
     >
-      <span style="font-size: 16px; font-weight: 500">{{
+      <span style="font-size: 16px; font-weight: 400">{{
         t('project.mock.tips.content')
       }}</span>
       <template #footer>
@@ -1157,6 +1158,17 @@ function checkDelay(value: any) {
   return true
 }
 </script>
+
+<style lang="scss">
+.change-dialog {
+  .el-dialog__header {
+    .el-dialog__title {
+      font-size: 18px;
+      font-weight: 500;
+    }
+  }
+}
+</style>
 
 <style lang="scss" scoped>
 /* new style */

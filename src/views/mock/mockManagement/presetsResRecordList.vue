@@ -50,7 +50,6 @@ import CommonDialog from '@/components/layout/dialogs/commonDialog.vue'
 import tools from '@/utils/tools'
 import PublicIcon from '@/assets/svg/common/publicIcon.vue'
 import PersonalIcon from '@/assets/svg/common/personalIcon.vue'
-import { da } from 'element-plus/es/locale'
 const { proxy }: any = getCurrentInstance()
 const { t } = useI18n()
 

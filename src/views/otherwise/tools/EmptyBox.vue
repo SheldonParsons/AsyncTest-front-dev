@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ref, onMounted, getCurrentInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-const dyWidth = ref(210)
+const dyWidth = ref(180)
 const dyHeight = ref(70)
 const { proxy }: any = getCurrentInstance()
 const { t } = useI18n()

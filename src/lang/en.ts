@@ -151,6 +151,8 @@ export default {
     addFavorite: 'Added your favorite project.',
     cancelDefault: 'Has been cancel your default project.',
     addDefault: 'Added your default project.',
+    defaultProject: 'Default',
+    enterProject: 'Enter',
     search: {
       placeholder: 'Searching By: Project name'
     },

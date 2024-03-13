@@ -15,137 +15,46 @@
       <div style="width: 180px; height: 70px; margin-bottom: 40px">
         <MockBox :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
-      <!-- 滚动条要包裹的内容 -->
-      <!-- <div class="production">production</div> -->
       <div class="sidebar-groups">
-        <section class="sidebar-group">
-          <p class="sidebar-group__title">{{ $t('menu.level1.father') }}</p>
-          <a
-            class="link"
-            :class="{ active: 'data' === activeLinkStyle }"
-            @click="
-              switchRouter('data', { project: Number(route.params.project) })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level1.child.a') }}</p>
-          </a>
-        </section>
-        <section class="sidebar-group">
-          <p class="sidebar-group__title">{{ $t('menu.level2.father') }}</p>
-          <a
-            class="link"
-            :class="{ active: 'mockData' === activeLinkStyle }"
-            @click="
-              switchRouter('mockData', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level2.child.a') }}</p>
-          </a>
-          <a
-            class="link"
-            :class="{ active: 'mockRecord' === activeLinkStyle }"
-            @click="
-              switchRouter('mockRecord', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level2.child.b') }}</p>
-          </a>
-        </section>
-        <section class="sidebar-group">
-          <p class="sidebar-group__title">{{ $t('menu.level3.father') }}</p>
-          <a
-            class="link"
-            :class="{ active: 'apiAuthorization' === activeLinkStyle }"
-            @click="
-              switchRouter('apiAuthorization', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level3.child.a') }}</p>
-          </a>
-          <a
-            class="link"
-            :class="{ active: 'apiData' === activeLinkStyle }"
-            @click="
-              switchRouter('apiData', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level3.child.b') }}</p>
-          </a>
-          <a
-            class="link"
-            :class="{ active: 'apiMock' === activeLinkStyle }"
-            @click="
-              switchRouter('apiMock', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level3.child.c') }}</p>
-          </a>
-        </section>
-        <section class="sidebar-group">
-          <p class="sidebar-group__title">{{ $t('menu.level4.father') }}</p>
-          <a
-            class="link"
-            :class="{ active: 'otherwise' === activeLinkStyle }"
-            @click="
-              switchRouter('otherwise', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level4.child.a') }}</p>
-          </a>
-          <!-- <a
-            class="link"
-            :class="{ active: 'reporting' === activeLinkStyle }"
-            @click="
-              switchRouter('reporting', {
-                project: Number(route.params.project)
-              })
-            "
-          >
-            <p class="link-text">{{ $t('menu.level4.child.c') }}</p>
-          </a> -->
-          <!-- <a
-            class="link"
-            :class="{ active: '3' === activeLinkStyle }"
-            @click="switchRouter('3')"
-          >
-            <p class="link-text">{{ $t('menu.level4.child.b') }}</p>
-          </a> -->
-        </section>
-        <section v-if="authLevel === 1" class="sidebar-group">
-          <p class="sidebar-group__title">{{ $t('menu.level5.father') }}</p>
-          <a
-            class="link"
-            :class="{ active: 'update' === activeLinkStyle }"
-            @click="switchRouter('update')"
-          >
-            <p class="link-text">{{ $t('menu.level5.child.a') }}</p>
-          </a>
-        </section>
+        <Interface 
+        v-if="routeName === 'interface'"
+        :activeLinkStyle="activeLinkStyle" 
+        @switchRouterAction ="switchRouter"></Interface>
+        <Data 
+        v-if="routeName === 'data'"
+        :activeLinkStyle="activeLinkStyle" 
+        @switchRouterAction ="switchRouter"></Data>
+        <Mock 
+        v-if="routeName.indexOf('mock') !== -1"
+        :activeLinkStyle="activeLinkStyle" 
+        @switchRouterAction ="switchRouter"></Mock>
+        <Open
+        v-if="routeName.indexOf('api') !== -1"
+        :activeLinkStyle="activeLinkStyle" 
+        @switchRouterAction ="switchRouter"
+        ></Open>
+        <Otherwise 
+        v-if="routeName === 'otherwise' || routeName === 'update'"
+        :activeLinkStyle="activeLinkStyle" 
+        @switchRouterAction ="switchRouter" ></Otherwise>
       </div>
     </el-scrollbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, getCurrentInstance } from 'vue'
+import { ref, watch, defineProps, onMounted, getCurrentInstance } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 // import X2E from '@/views/otherwise/tools/X2E.vue'
 import MockBox from '@/views/otherwise/tools/MockBox.vue'
 import tools from '@/utils/tools'
 import { useI18n } from 'vue-i18n'
 import { useStore } from '@/store'
+import Data from "./child/dataMenu.vue"
+import Mock from './child/mockMenu.vue'
+import Open from './child/openMenu.vue'
+import Otherwise from './child/otherwiseMenu.vue'
+import Interface from './child/interfaceMenu.vue'
 const activeLinkStyle = ref('')
 const router: any = useRouter()
 const route: any = useRoute()
@@ -158,11 +67,21 @@ const authLevel = ref(0)
 // 全局对象
 const { proxy }: any = getCurrentInstance()
 onMounted(() => {
+  console.log(router.currentRoute);
+  
   switchMenu(router.currentRoute.value.name)
   checkAuth(1).then((data: any) => {
     authLevel.value = data
   })
-  console.log(authLevel.value)
+})
+
+
+
+const props = defineProps({
+  routeName: {
+        type: String,
+        default: 'data'
+    }
 })
 
 router.beforeEach((to: any, from: any, next: any) => {
@@ -188,7 +107,10 @@ function switchMenu(routerName: string) {
   activeLinkStyle.value = routerName
 }
 
-function switchRouter(routerName: string, params: any = null) {
+function switchRouter(routerName: string) {
+  console.log(routerName);
+  
+  const params = { project: Number(route.params.project) }
   console.log(routerName)
 
   if (routerName === '3') {

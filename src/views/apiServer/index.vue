@@ -3,7 +3,7 @@
     <el-row
       v-for="item in api"
       :key="item.id"
-      style="width: 75%; padding: 64px 0px 42px 64px"
+      style="width: 75%; padding: 64px 0px 42px 120px"
       class="main"
     >
       <el-col :span="23">

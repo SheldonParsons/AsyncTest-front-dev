@@ -58,13 +58,17 @@
                   <span class="card-favorite-span-name card-span-line"
                     >{{ item.name
                     }}<el-tag
-                      style="margin-left: 5px"
+                      style="
+                        margin-left: 5px;
+                        border-color: white;
+                        border: 1px solid;
+                      "
                       v-if="item.is_default"
                       class="mx-1"
                       effect="dark"
                       round
                     >
-                      默认项目
+                      {{ t('project.defaultProject') }}
                     </el-tag></span
                   >
                   <span class="Label Label--secondary v-align-middle ml-1">{{
@@ -367,7 +371,7 @@ async function setDefault(project: any) {
     // 1、取消默认项目
     await cancelDefault(project)
     favoriteProjects.list.forEach((item: any) => {
-      item.is_default = item.id === project.id
+      item.is_default = false
     })
     proxy.$message({
       message: t('project.cancelDefault'),
@@ -390,9 +394,44 @@ async function setDefault(project: any) {
       duration: 3000,
       type: 'warning'
     })
+    if (project.is_favorite === false) {
+      addFavoriteAction(project)
+      project.is_favorite = true
+    }
   }
   project.is_default = !project.is_default
   clickAllowed.value = true
+}
+
+async function cancelFavoriteAction(project: any) {
+  // 1、取消收藏
+  await cancelFavorite(project)
+  // message提示
+  proxy.$message({
+    message: t('project.cancelFavorite'),
+    duration: 3000,
+    type: 'warning'
+  })
+  for (let i = 0; i < favoriteProjects.list.length; i++) {
+    if (favoriteProjects.list[i].id === project.id) {
+      favoriteProjects.list.splice(i, 1)
+      break
+    }
+  }
+}
+
+async function addFavoriteAction(project: any) {
+  // 2、设置收藏
+  const res: any = await addFavorite(project)
+  res.data.forEach((item: any) => {
+    favoriteProjects.list.push(item)
+  })
+  // message提示
+  proxy.$message({
+    message: t('project.addFavorite'),
+    duration: 3000,
+    type: 'warning'
+  })
 }
 
 // 设置收藏项目
@@ -404,32 +443,9 @@ async function setFavorite(project: any) {
   clickAllowed.value = false
   // 获取当前行为是设置收藏项目还是取消收藏项目
   if (project.is_favorite) {
-    // 1、取消收藏
-    await cancelFavorite(project)
-    // message提示
-    proxy.$message({
-      message: t('project.cancelFavorite'),
-      duration: 3000,
-      type: 'warning'
-    })
-    for (let i = 0; i < favoriteProjects.list.length; i++) {
-      if (favoriteProjects.list[i].id === project.id) {
-        favoriteProjects.list.splice(i, 1)
-        break
-      }
-    }
+    await cancelFavoriteAction(project)
   } else {
-    // 2、设置收藏
-    const res: any = await addFavorite(project)
-    res.data.forEach((item: any) => {
-      favoriteProjects.list.push(item)
-    })
-    // message提示
-    proxy.$message({
-      message: t('project.addFavorite'),
-      duration: 3000,
-      type: 'warning'
-    })
+    await addFavoriteAction(project)
   }
   project.is_favorite = !project.is_favorite
   clickAllowed.value = true

@@ -1,74 +1,119 @@
 <template>
-  <div class="menu sidebar el-scrollbar"><Menu></Menu></div>
-  <main class="main page-content has-sidebar">
-    <router-view></router-view>
-  </main>
+  <div class="main-container">
+  <div class="content menu-sidebar" :style="{ width: contentWidth + 'px' }">
+    <div class="main-menu">
+    <NewMenu class="new-content-menu" style="width: 80px;" @switchRouterAction="changeChildMenu" />
+    <div class="content-menu">
+      <Menu :routeName="routername" class="detail-menu" />
+      <div class="resize-handle" @mousedown="startResize"></div>
+    </div>
+  </div>
+  </div>
+  <div class="main page-content has-sidebar" :style="{ width: mainContentWidth + 'px' }">
+    <router-view />
+  </div>
+</div>
 </template>
+
 <script setup lang="ts">
+import { ref,onMounted,watch } from 'vue'
 import Menu from '@/components/layout/menus/commonMenu.vue'
+import NewMenu from "@/components/layout/menus/newMenu.vue";
+
+const routername = ref('data')
+const contentWidth = ref(0); // 初始宽度
+const mainContentWidth = ref(0)
+
+
+onMounted(() => {
+  // 初始化宽度为当前窗口宽度的百分比
+  contentWidth.value = Math.floor((window.innerWidth * 0.21)); 
+  mainContentWidth.value = window.innerWidth - contentWidth.value
+});
+
+// 监听窗口大小变化
+window.addEventListener('resize', () => {
+  contentWidth.value = (contentWidth.value / window.innerWidth)*window.innerWidth
+  mainContentWidth.value = window.innerWidth - contentWidth.value
+})
+
+
+function changeChildMenu(name: string) {
+  routername.value = name
+}
+
+const startResize = (e: MouseEvent) => {
+  const startX = e.pageX;
+  const initialWidth = contentWidth.value;
+  const minWidth = Math.floor((window.innerWidth * 0.21)); 
+  const maxWidth = Math.floor((window.innerWidth * 0.5)); 
+
+  const onMouseMove = (event: MouseEvent) => {
+    const diffX = event.pageX - startX;
+    const newWidth = initialWidth + diffX; 
+
+    // 限制宽度在 10% 和 40% 之间
+    contentWidth.value = Math.min(Math.max(minWidth, event.pageX), maxWidth);
+    mainContentWidth.value = window.innerWidth - contentWidth.value
+  };
+
+  const onMouseUp = () => {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+};
+
 </script>
 
 <style scoped lang="scss">
-.sidebar {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 40;
-  width: var(--sidebar-width-xs);
-  background-color: var(--bg-color);
-  // padding: 48px 0px 0 39px;
-  padding: 48px 0px 96px 25px;
-  overflow-y: auto;
-  border-right: 1px solid transparent;
-  background-clip: padding-box, border-box;
-  background-origin: padding-box, border-box;
-  background-image: linear-gradient(to right, #ffffff, #ffffff),
-    linear-gradient(90deg, hsl(240 30% 96%), hsl(240 30% 96%));
-  transform: translate(-100%);
-  transition: background-color var(--el-transition-duration-fast), opacity 0.25s,
-    transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
-  @media screen and (min-width: 1440px) {
-    width: calc(
-      (100vw - var(--vp-screen-max-width)) / 2 + var(--vp-sidebar-width-small)
-    );
-  }
-  @media screen and (min-width: 1200px) {
-    top: var(--header-height);
-    transform: translate(0);
-  }
-  @media screen and (min-width: 768px) {
-    width: calc(var(--vp-sidebar-width-small));
-  }
+.main-container {
+  position: relative;
+  top: 56px;
 }
-.el-scrollbar {
-  overflow: hidden;
+.main-menu {
+  display: flex;
+  height: 100%;
+}
+.content-menu {
+  width: 100%;
+}
+.menu-sidebar {
+  display: flex;
   height: 100%;
 }
 
-.el-scrollbar {
-  --el-scrollbar-opacity: 0.3;
-  --el-scrollbar-bg-color: var(--el-text-color-secondary);
-  --el-scrollbar-hover-opacity: 0.5;
-  --el-scrollbar-hover-bg-color: var(--el-text-color-secondary);
+.content {
+  flex: 1;
+  overflow: hidden;
+  position: fixed;
+  display: inline-block;
+}
+
+.detail-menu {
+  margin-top: 1rem;
+  margin-left: 1rem;
+  background-color: #FFFFFF;
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px; /* 调整手柄的位置 */
+  width: 10px;
+  height: 100%;
+  cursor: col-resize; /* 设置鼠标样式为调整宽度 */
+  background-color: #F5F5F5;
+}
+.new-content-menu {
+  border-right: 1px solid #F5F5F5;
 }
 
 .page-content.has-sidebar {
-  box-sizing: border-box;
-  @media screen and (min-width: 1440px) {
-    padding-left: calc(
-      (100% - var(--vp-screen-max-width)) / 2 + var(--vp-sidebar-width-small)
-    );
-  }
-  @media screen and (min-width: 1200px) {
-    padding-left: calc(var(--sidebar-width-sm) + 25px + 2px);
-  }
-}
-.page-content {
-  padding-top: var(--nav-height);
-}
-main {
-  display: block;
-  height: 100%;
+  display: inline-block;
+  position: relative;
+  float: right;
 }
 </style>

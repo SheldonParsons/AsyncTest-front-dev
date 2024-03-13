@@ -123,8 +123,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import zhCn from 'element-plus/lib/locale/lang/zh-cn'
-import en from 'element-plus/lib/locale/lang/en'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import en from 'element-plus/es/locale/lang/en'
 import { useI18n } from 'vue-i18n'
 import { useStore } from '@/store'
 import { useRouter } from 'vue-router'

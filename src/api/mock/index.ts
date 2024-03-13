@@ -48,7 +48,7 @@ export function ApiChangeSingleMock(id:number, data:any, params:any = {}):Promis
 // Mock获取内置函数列表
 export function ApiGetMockBuildInArgs(params:any):Promise<String> {
   return new Promise(resolve => {
-    http.httpGet('/basic/mock/global/utils/', params).then((res: any) => {
+    http.httpGet('/basic/mock/global/_utils/', params).then((res: any) => {
       resolve(res)
     })
   })

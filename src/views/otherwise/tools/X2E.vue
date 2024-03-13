@@ -116,10 +116,10 @@ import * as XLSX from 'xlsx'
 
 const { t } = useI18n()
 
-const dyWidth = ref(210)
+const dyWidth = ref(180)
 const dyHeight = ref(70)
 const dyPaddingTop = ref(5)
-const dyFontSize = ref(14)
+const dyFontSize = ref(12)
 const dyOtherHeight = ref(30)
 
 onMounted(() => {

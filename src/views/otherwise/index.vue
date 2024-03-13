@@ -1,6 +1,6 @@
 <template>
   <el-row class="tools-row">
-    <el-col class="tools-col" :span="5" :offset="1">
+    <el-col class="tools-col" :span="5" :offset="2">
       <X2E></X2E>
     </el-col>
     <el-col class="tools-col" :span="5">

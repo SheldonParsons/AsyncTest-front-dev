@@ -1,5 +1,5 @@
 <template>
-  <el-affix position="top" :offset="85" class="action-bar">
+  <!-- <el-affix position="top" :offset="85" class="action-bar">
     <ul style="list-style: none">
       <li @click="addData">
         <CButton
@@ -19,7 +19,7 @@
         </li>
       </el-backtop>
     </ul>
-  </el-affix>
+  </el-affix> -->
   <el-row class="search">
     <el-affix
       position="top"
@@ -27,7 +27,7 @@
       :style="{ width: searchWidth + '%' }"
       @change="onSearchChange"
     >
-      <el-col :offset="1" :span="searchInputWidth" class="search-col">
+      <el-col :offset="2" :span="searchInputWidth" class="search-col">
         <SpecialInput
           v-model="search"
           :show-date-tag="showDateTag"
@@ -43,13 +43,26 @@
     </el-affix>
   </el-row>
   <el-row v-if="d.list.length > 0" class="main-data">
-    <el-col :offset="1" :span="20">
+    <el-col :offset="2" :span="20">
       <table
         class="styled-table"
         v-infinite-scroll="getData"
         :infinite-scroll-disabled="disInfinite"
       >
         <thead>
+          <tr>
+            <th colspan="4" style="text-align: start;">
+              Mock请求记录
+            </th>
+            <th colspan="1" style="text-align: end; display: flex;">
+              <CButton style="width: 40px;" @click="addData"
+          ><el-icon><CirclePlus/></el-icon
+        ></CButton>
+        <CButton style="width: 40px; margin-left: 1rem;" @click="clearDataFromSearch"
+          ><el-icon><RefreshLeft /></el-icon
+        ></CButton>
+            </th>
+          </tr>
           <tr>
             <th class="disappear-auto">{{ t('project.MockCol.method') }}</th>
             <th>{{ t('project.MockCol.path') }}</th>
@@ -430,12 +443,13 @@ function openEditor(name: string, params: any) {
 }
 
 .styled-table {
+  border-top: 2px solid var(--global-theme-color);
   border-collapse: collapse;
   margin: 25px 0;
   font-size: 0.9em;
   font-family: sans-serif;
   width: 100%;
-  border-radius: 5px 5px 0px 0px;
+  // border-radius: 5px 5px 0px 0px;
   overflow: hidden;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
   .action-td {
@@ -479,13 +493,9 @@ function openEditor(name: string, params: any) {
 }
 
 .styled-table thead tr {
-  background-image: linear-gradient(
-    90deg,
-    var(--global-theme-color) 70%,
-    var(--global-theme-light-color)
-  );
-  color: #ffffff;
   text-align: left;
+  color: black;
+  border-bottom: 1px solid #E6E6E6;
 }
 
 .styled-table th,

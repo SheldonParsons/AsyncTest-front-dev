@@ -26,7 +26,9 @@
           ><span
             class="card-favorite-span-name card-span-line"
             @click="enterProject"
-            ><el-tag class="mx-1" effect="dark"> 进入项目 </el-tag></span
+            ><el-tag class="mx-1" effect="dark">
+              {{ t('project.enterProject') }}
+            </el-tag></span
           ></el-col
         >
       </el-row>

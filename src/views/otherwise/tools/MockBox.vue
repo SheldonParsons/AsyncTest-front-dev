@@ -16,13 +16,14 @@
 </template>
 
 <script setup lang="ts">
+import { emit } from 'process'
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 const router = useRouter()
 const route = useRoute()
-const dyWidth = ref(220)
+const dyWidth = ref(200)
 const dyHeight = ref(80)
-const spanWidth = ref('70%')
+const spanWidth = ref('80%')
 
 onMounted(() => {
   if (!props.fixSize) {
@@ -38,6 +39,8 @@ const props = defineProps({
     default: false
   }
 })
+
+
 
 function showDoc() {
   router.push({
@@ -64,7 +67,7 @@ function showDoc() {
     margin: 0;
     font-family: $round-font-family;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 14px;
     text-align: center;
     padding-top: 6%;
     color: aliceblue;
