@@ -27,12 +27,11 @@ const { width, height } = toRefs(props)
 
 <style lang="scss" scoped>
 /* new style */
-$shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2),
-  -0.2rem -0.2rem 0.5rem var(--white);
+$shadow: 0.2rem 0.2rem 0.3rem var(--greyLight-2),
+  -0.1rem -0.1rem 0.3rem var(--white);
 $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   inset -0.2rem -0.2rem 0.5rem var(--white);
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;
@@ -58,8 +57,8 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
     grid-column: 1 / 2;
     grid-row: 4 / 5;
     background: var(--primary);
-    box-shadow: inset 0.2rem 0.2rem 1rem var(--primary-light),
-      inset -0.2rem -0.2rem 1rem var(--primary-dark), $shadow;
+    // box-shadow: inset 0.2rem 0.2rem 1rem var(--primary-light),
+    //   inset -0.2rem -0.2rem 1rem var(--primary-dark), $shadow;
     color: var(--greyLight-1);
 
     &:hover {

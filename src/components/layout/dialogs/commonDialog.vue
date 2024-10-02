@@ -131,7 +131,7 @@ function closeDialog() {
 .dialog {
   border-radius: 10px !important;
   .el-dialog__body {
-    padding: 20px;
+    padding: 20px!important;
   }
   .el-dialog__header {
     margin: 0px;
@@ -146,7 +146,6 @@ function closeDialog() {
     p {
       color: white;
       font-size: 16px;
-      font-family: $special-font-family;
       font-weight: normal;
       font-style: normal;
       display: table-cell;
@@ -154,6 +153,9 @@ function closeDialog() {
       height: 35px;
       padding-left: 20px;
     }
+  }
+  .el-dialog__footer {
+    padding: var(--el-dialog-padding-primary);
   }
 }
 </style>

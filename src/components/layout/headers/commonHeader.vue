@@ -9,7 +9,7 @@
             src="../../../assets/img/projectStyle/bird1.png"
             alt="" /></el-col
         ><el-col :span="18"
-          ><span class="g-unselect" style="margin-left: 5px">{{
+          ><span class="g-unselect project-name" style="margin-left: 5px">{{
             $t('main.name')
           }}</span></el-col
         ></el-row

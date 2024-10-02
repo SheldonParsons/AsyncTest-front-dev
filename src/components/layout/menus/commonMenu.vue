@@ -3,8 +3,9 @@
     <el-scrollbar style="height: 100%" class="sidebar">
       <div
         style="
-          margin-bottom: 10px;
+          margin-bottom: 5px;
           margin-left: 5px;
+          margin-top: 5px;
           font-size: 14px;
           font-weight: 300;
           color: gray;
@@ -12,11 +13,11 @@
       >
         {{ $t('menu.news') }}
       </div>
-      <div style="width: 180px; height: 70px; margin-bottom: 40px">
+      <div style="width: 180px; height: 70px; margin-bottom: 25px">
         <MockBox :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
       <div class="sidebar-groups">
-        <Interface 
+        <Interface
         v-if="routeName === 'interface'"
         :activeLinkStyle="activeLinkStyle" 
         @switchRouterAction ="switchRouter"></Interface>
@@ -43,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, defineProps, onMounted, getCurrentInstance } from 'vue'
+import { ref, watch, onMounted, getCurrentInstance } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 // import X2E from '@/views/otherwise/tools/X2E.vue'
 import MockBox from '@/views/otherwise/tools/MockBox.vue'
@@ -67,28 +68,21 @@ const authLevel = ref(0)
 // 全局对象
 const { proxy }: any = getCurrentInstance()
 onMounted(() => {
-  console.log(router.currentRoute);
-  
   switchMenu(router.currentRoute.value.name)
   checkAuth(1).then((data: any) => {
     authLevel.value = data
   })
 })
-
-
-
 const props = defineProps({
   routeName: {
         type: String,
         default: 'data'
     }
 })
-
 router.beforeEach((to: any, from: any, next: any) => {
   switchMenu(to.name)
   next()
 })
-
 async function checkAuth(type: Number = 1) {
   if (type === 1) {
     return await store.dispatch('getUser').then((res: any) => {
@@ -99,7 +93,6 @@ async function checkAuth(type: Number = 1) {
       }
     })
   }
-
   return 0
 }
 
@@ -145,7 +138,7 @@ a {
   .sidebar {
     --el-scrollbar-bg-color: transparent;
     .sidebar-groups {
-      padding: 0px 30px 10rem 10px;
+      padding: 0px 30px 0rem 0px;
       .sidebar-group {
         .sidebar-group__title {
           font-size: 1rem;

@@ -146,7 +146,6 @@ const dynamicStyles: any = {
   color: #fff;
   border-radius: 8px;
   padding: 10px 25px;
-  font-family: 'Lato', sans-serif;
   font-weight: 500;
   background: transparent;
   cursor: pointer;

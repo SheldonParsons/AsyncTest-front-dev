@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import config from './app.config.js'
 import vitePluginCompression from 'vite-plugin-compression'
 // http://172.28.6.152:8070
+console.log(config);
+
 export default defineConfig({
   define: {
     __VUE_I18N_FULL_INSTALL__: true,
@@ -14,12 +17,11 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api/server': {
-        target: 'http://localhost:6001',
+        target: config.server,
         rewrite: path => path.replace(/^\/api\/server/, '')
       },
       '/api': {
-        target: 'http://localhost:6001',
-        // target: 'http://localhost:6001',
+        target: config.server,
         rewrite: path => path.replace(/^\/api/, '')
       }
     }
@@ -50,5 +52,13 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, 'src')
     }
+  },
+  optimizeDeps: {
+    include: [
+      '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/lang-javascript',
+      '@codemirror/basic-setup',
+    ]
   }
 })

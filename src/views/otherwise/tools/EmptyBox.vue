@@ -46,7 +46,6 @@ function showTips() {
   text-align: center;
   .tools-p {
     margin: 0;
-    font-family: $round-font-family;
     font-weight: 700;
     font-size: 16px;
     text-align: center;
@@ -65,7 +64,6 @@ function showTips() {
     border-radius: 5px;
     margin-top: 5px;
     margin-bottom: 5px;
-    font-family: $round-font-family;
     font-size: 13px;
     color: #fff;
   }

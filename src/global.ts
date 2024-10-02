@@ -1,8 +1,6 @@
 const GlobalStatus = {
-  // server: 'http://172.28.6.152:8070',
+  // server: 'http://172.28.14.131:6001',
   server: 'http://localhost:6001',
-  // domain tag
-  // localhost: 'http://172.28.14.31:3000',
   localhost: 'http://localhost:3000',
   cookieTag: 'DjangoToken',
   anonymousPage: 'login',
@@ -12,7 +10,7 @@ const GlobalStatus = {
   methodColor: ['#009879', '#F6CA75', '#5C91E7', '#E27266'],
   colorList: [['#009879', '#28c0a1'], ['#436363', '#2f4f4f']],
   lightColor: '#28c0a1',
-  regular_response_status_map: (index:any) => {
+  regular_response_status_map: () => {
     return {
       100: 'Continue',
       101: 'Switching Protocol',
@@ -54,7 +52,7 @@ const GlobalStatus = {
       503: 'Service Unavailable',
       504: 'Gateway Timeout',
       505: 'HTTP Version Not Supported'
-    }[Number(index)]
+    }
   }
 }
 

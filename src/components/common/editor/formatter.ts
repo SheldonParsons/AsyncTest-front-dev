@@ -1,123 +1,224 @@
-function cleanJSON(value:any):any {
-  if (Array.isArray(value)) {
-    return value.map(cleanJSON);
-  } else if (typeof value === 'object' && value !== null) {
-    const cleanedObj:any = {};
-    for (const key in value) {
-      cleanedObj[key] = cleanJSON(value[key]);
-    }
-    return cleanedObj;
-  } else if (typeof value === 'string') {
-    // 移除字符串中的HTML标签
-    return value.replace(/<\/?.+?>/g, '');
+export function JSONFormat(JSONstr: any) {
+  if (JSONstr === "") {
+    return JSONstr;
   }
-  return value;
-}
-
-function JSONTrim(JSONstr:any) {
   try {
-    // 解析JSON字符串
-    const parsedJSON = JSON.parse(JSONstr);
-
-    // 定义一个递归函数来遍历和清理JSON对象或数组
-    
-
-    // 应用清理函数
-    const cleanedJSON = cleanJSON(parsedJSON);
-
-    // 将清理后的JSON对象转换回字符串
-    return JSON.stringify(cleanedJSON);
+    const { processedJson, placeholders } = processJson(JSONstr);
+    const formattedJson = JSON.stringify(JSON.parse(processedJson), null, 2);
+    return restorePlaceholders(formattedJson, placeholders);
   } catch (error) {
     return JSONstr;
   }
+  // // 备份原始的{{}}包裹的内容
+  // let specialContents: any = [];
+  // let bigNumberContents: any = [];
+  // console.log(preprocessJson(JSONstr));
+
+  // JSONstr = JSONstr.replace(/{{.*?}}/g, (match: any) => {
+  //   specialContents.push(match);
+  //   return `647889${specialContents.length - 1}`;
+  // });
+  // JSONstr = JSONstr.replace(/\d{15,}/g, (match: any) => {
+  //   bigNumberContents.push(match);
+  //   return `111111${bigNumberContents.length - 1}`;
+  // });
+
+  // try {
+  //   // 解析JSON
+  //   const parsedJSON = JSON.parse(JSONstr);
+  //   console.log(parsedJSON);
+
+  //   // 应用自定义格式化函数
+  //   let formattedJSON = JSON.stringify(parsedJSON, null, 2);
+
+  //   // 还原{{}}包裹的特殊内容
+  //   formattedJSON = formattedJSON.replace(
+  //     /647889(\d+)/g,
+  //     (match: any, index: any) => {
+  //       return specialContents[index];
+  //     }
+  //   );
+  //   // 还原超过14位的数字
+  //   formattedJSON = formattedJSON.replace(
+  //     /111111(\d+)/g,
+  //     (match: any, index: any) => {
+  //       return bigNumberContents[index];
+  //     }
+  //   );
+  //   return formattedJSON;
+  // } catch (error) {
+  //   JSONstr = JSONstr.replace(/647889(\d+)/g, (match: any, index: any) => {
+  //     return specialContents[index];
+  //   });
+  //   JSONstr = JSONstr.replace(/111111(\d+)/g, (match: any, index: any) => {
+  //     return bigNumberContents[index];
+  //   });
+  //   return restoreSpecialContent(JSONstr);
+  // }
 }
 
+function processJson(jsonString: string) {
+  let result = "";
+  let placeholders = [];
+  let index = 0;
+  let inQuotes = false;
+  let escaped = false;
 
-function tryJsonStr(value:any) {
-  try {
-    if (typeof value === 'string') {
-      return value
-    } else {
-      return JSON.stringify(value)
+  let i = 0;
+  while (i < jsonString.length) {
+    const char = jsonString[i];
+
+    if (char === "\\" && !escaped) {
+      escaped = true;
+      result += char;
+      i++;
+      continue;
     }
-  } catch (error) {
-    return value
+
+    if (char === '"' && !escaped) {
+      inQuotes = !inQuotes;
+      result += char;
+      i++;
+      continue;
+    }
+
+    escaped = false;
+
+    if (!inQuotes) {
+      // Checking for placeholders
+      if (
+        jsonString.substring(i, i + 2) === "{{" &&
+        jsonString.indexOf("}}", i) !== -1
+      ) {
+        const endIdx = jsonString.indexOf("}}", i) + 2;
+        const placeholderContent = jsonString.substring(i, endIdx);
+        const placeholder = `"@@PLACEHOLDER_${index++}@@"`;
+        placeholders.push({ placeholder, original: placeholderContent });
+        result += placeholder;
+        i = endIdx;
+        continue;
+      }
+
+      // Checking for large numbers
+      const numMatch = jsonString.substring(i).match(/^\d+/);
+      if (numMatch) {
+        const numString = numMatch[0];
+        if (numString.length >= 15) {
+          const placeholder = `"@@PLACEHOLDER_${index++}@@"`;
+          placeholders.push({ placeholder, original: numString });
+          result += placeholder;
+          i += numString.length;
+          continue;
+        }
+      }
+    }
+
+    result += char;
+    i++;
   }
+
+  return { processedJson: result, placeholders };
 }
 
-function JSONFormat(JSONstr:any) {
-  // 备份原始的{{}}包裹的内容
-  let specialContents:any = [];
-  let bigNumberContents:any = [];
-  JSONstr = JSONstr.replace(/{{.*?}}/g, (match:any) => {
+function restorePlaceholders(formattedJson: any, placeholders: any) {
+  let result = formattedJson;
+  for (const { placeholder, original } of placeholders) {
+    result = result.replace(`${placeholder}`, original);
+  }
+  return result;
+}
+
+function restoreSpecialContent(str: string) {
+  return str.replace(/&#123;&#123;.*?&#125;&#125;/g, (match) => {
+    return match
+      .replace(/&#58;/g, ":")
+      .replace(/&#44;/g, ",")
+      .replace(/&#123;/g, "{")
+      .replace(/&#125;/g, "}");
+  });
+}
+
+export function replaceSpecialContents(JSONstr: any) {
+  let specialContents: any = [];
+  let bigNumberContents: any = [];
+
+  const replacedJSON = JSONstr.replace(/{{.*?}}/g, (match: any) => {
     specialContents.push(match);
     return `{{SPECIAL_CONTENT_${specialContents.length - 1}}}`;
-  });
-  JSONstr = JSONstr.replace(/\d{15,}/g, (match:any) => {
+  }).replace(/\d{15,}/g, (match: any) => {
     bigNumberContents.push(match);
     return `111111${bigNumberContents.length - 1}`;
   });
 
-  try {
-    // 使用JSONTrim清理JSON字符串
-    JSONstr = JSONTrim(JSONstr);
+  return {
+    replacedJSON,
+    specialContents,
+    bigNumberContents,
+  };
+}
 
-    // 解析JSON
-    const parsedJSON = JSON.parse(JSONstr);
+export function restoreSpecialContents(
+  JSONstr: any,
+  specialContents: any,
+  bigNumberContents: any
+) {
+  const restoredJSON = JSONstr.replace(
+    /{{SPECIAL_CONTENT_(\d+)}}/g,
+    (match: any, index: any) => {
+      return specialContents[index];
+    }
+  ).replace(/111111(\d+)/g, (match: any, index: any) => {
+    return bigNumberContents[index];
+  });
 
-    // 自定义格式化函数
-    function customStringify(obj:any, indent = 0): any {
-      const indentSpace = '  '; // 使用两个空格作为基本缩进单位
-      const currentIndent = indentSpace.repeat(indent);
-      const nextIndent = indentSpace.repeat(indent + 1);
+  return restoredJSON;
+}
 
-      if (Array.isArray(obj)) {
-        // 处理数组
-        const items = obj.map(item => customStringify(item, indent + 1));
-        return `[\n${nextIndent}${items.join(`,\n${nextIndent}`)}\n${currentIndent}]`;
-      } else if (typeof obj === 'object' && obj !== null) {
-        // 处理对象
-        const keys = Object.keys(obj);
-        const items = keys.map(key => `${nextIndent}"${key}": ${customStringify(obj[key], indent + 1)}`);
-        return `{\n${items.join(',\n')}\n${currentIndent}}`;
-      } else {
-        // 其他类型直接转换为字符串
-        return JSON.stringify(obj);
+export function preprocessJson(jsonString: string) {
+  let inQuotes = false;
+  let escaped = false;
+  let result = "";
+  let i = 0;
+
+  while (i < jsonString.length) {
+    const char = jsonString[i];
+
+    // Check for escape character
+    if (char === "\\" && !escaped) {
+      escaped = true;
+      result += char;
+      i++;
+      continue;
+    }
+
+    // Toggle inQuotes flag when encountering unescaped quotes
+    if (char === '"' && !escaped) {
+      inQuotes = !inQuotes;
+      result += char;
+      i++;
+      continue;
+    }
+
+    // Reset escaped flag
+    if (escaped) escaped = false;
+
+    // Check for placeholders when not inside quotes
+    if (!inQuotes && jsonString.substr(i, 2) === "{{") {
+      const endIndex = jsonString.indexOf("}}", i) + 2;
+      if (endIndex !== -1) {
+        // Compute the length of the placeholder and replace with equal number of '0's
+        const placeholderLength = endIndex - i;
+        const replacement = '"' + "0".repeat(placeholderLength - 4) + '"';
+        result += replacement;
+        i = endIndex;
+        continue;
       }
     }
 
-
-    // 应用自定义格式化函数
-    let formattedJSON = customStringify(parsedJSON);
-
-    // 还原{{}}包裹的特殊内容
-    formattedJSON = formattedJSON.replace(/{{SPECIAL_CONTENT_(\d+)}}/g, (match:any, index:any) => {
-      return specialContents[index];
-    });
-
-    // 还原超过14位的数字
-    formattedJSON = formattedJSON.replace(/111111(\d+)/g, (match:any, index:any) => {
-      return bigNumberContents[index];
-    });
-
-    return formattedJSON;
-  } catch (error) {
-    JSONstr = JSONstr.replace(/{{SPECIAL_CONTENT_(\d+)}}/g, (match:any, index:any) => {
-      return specialContents[index];
-    });
-    JSONstr = JSONstr.replace(/111111(\d+)/g, (match:any, index:any) => {
-      return bigNumberContents[index];
-    });
-    return restoreSpecialContent(JSONstr);
+    // Append current character to result and move to next
+    result += char;
+    i++;
   }
+
+  return result;
 }
-
-function restoreSpecialContent(str:string) {
-  return str.replace(/&#123;&#123;.*?&#125;&#125;/g, (match) => {
-    return match.replace(/&#58;/g, ':').replace(/&#44;/g, ',').replace(/&#123;/g, '{').replace(/&#125;/g, '}');
-  });
-}
-
-
-
-export default JSONFormat

@@ -274,6 +274,7 @@ function clearStatus() {
 async function detailsTask(item: any) {
   const data: any = await getApiGetSingleTask(item.id)
   showTaskDetailDialog.value = true
+  console.log(data)
   detailData.value = data.data.approve
 }
 function approveTask(item: any) {
@@ -286,7 +287,6 @@ function approveTask(item: any) {
 .styled-table {
   border-collapse: collapse;
   font-size: 0.9em;
-  font-family: sans-serif;
   width: 100%;
   border-radius: 5px 5px 0px 0px;
   overflow: hidden;

@@ -12,8 +12,8 @@
         style="text-align: center"
       >
         <h1 class="tagline g-unselect">
-          An <span class="accent">Async</span><br />Ways of
-          <span class="accent">Testing</span> for Any Interface
+          <span class="accent">Async</span>hronous<br />Way of
+          <span class="accent">Test</span>ing for Any Interface
         </h1>
         <div class="description bold-style g-unselect wrapper">
           <div class="typing-demo">
@@ -266,19 +266,19 @@ function validateUser() {
 
 <style scoped lang="scss">
 @import '@/assets/scss/layout/login.scss';
-#tt:before {
-  content: '';
-  position: absolute;
-  height: 200px;
-  width: 200px;
-  background-size: 200px;
-  background-repeat: no-repeat;
-  overflow: auto;
-  background-image: url('../../assets/img/projectStyle/bird6.png');
-  top: -85px;
-  margin-left: -90px;
-  opacity: 0.7;
-}
+// #tt:before {
+//   content: '';
+//   position: absolute;
+//   height: 200px;
+//   width: 200px;
+//   background-size: 200px;
+//   background-repeat: no-repeat;
+//   overflow: auto;
+//   background-image: url('../../assets/img/projectStyle/bird6.png');
+//   top: -85px;
+//   margin-left: -90px;
+//   opacity: 0.7;
+// }
 .wrapper {
   // height: 100vh;
   display: grid;

@@ -74,7 +74,6 @@ const value = computed({
   p {
     color: white;
     font-size: 16px;
-    font-family: $special-font-family;
     font-weight: normal;
     font-style: normal;
     display: table-cell;

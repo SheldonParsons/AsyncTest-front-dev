@@ -65,7 +65,6 @@ function showDoc() {
   text-align: center;
   .tools-p {
     margin: 0;
-    font-family: $round-font-family;
     font-weight: 700;
     font-size: 14px;
     text-align: center;
@@ -88,7 +87,6 @@ function showDoc() {
     border-radius: 5px;
     margin-top: 5px;
     margin-bottom: 5px;
-    font-family: $round-font-family;
     font-size: 14px;
     color: #fff;
   }

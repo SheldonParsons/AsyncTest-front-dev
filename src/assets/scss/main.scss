@@ -30,6 +30,25 @@ html,
   margin: 0px;
   height: 100%;
   width: 100%;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
+}
+
+
+body,
+html,
+#app,
+button,
+label,
+input,
+h1,
+h2,
+h3,
+h4,
+div,
+h5 {
+  font-family:  'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+  'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
+}
+.project-name {
+  font-family: 'Monoton-Regular', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+  'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
 }

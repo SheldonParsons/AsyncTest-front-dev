@@ -10,6 +10,8 @@ import 'element-plus/dist/index.css'
 import './assets/css/preset.scss'
 import { createSSRstore, key } from './store'
 
+
+
 export function createApp() {
   const app = createSSRApp(App)
   const store = createSSRstore()

@@ -174,7 +174,6 @@ function check() {
 }
 .standard-input::-webkit-input-placeholder {
   color: var(--place-default-color);
-  font-family: $zh-font-family;
   font-size: 1rem;
 }
 .standard-input:focus {

@@ -19,8 +19,6 @@ const { value } = toRefs(props)
 
 <style lang="scss" scoped>
 .login-button {
-  //   background: #337ecc !important;
-
   background: #e6e8eb;
   border: 1px solid #282b5d !important;
   color: #303133 !important;
@@ -34,7 +32,6 @@ const { value } = toRefs(props)
   transition: 0.3s;
   font-weight: 400;
   outline: 0;
-  font-family: $zh-font-family;
 }
 .login-button:active {
   background: rgba($color: #e6e8eb, $alpha: 0.8);

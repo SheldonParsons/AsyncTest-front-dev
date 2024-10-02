@@ -58,8 +58,8 @@
       <el-tag size="small">{{
         data.status +
         ' ' +
-        (GlobalStatus.regular_response_status_map(data.status) !== undefined
-          ? GlobalStatus.regular_response_status_map(data.status)
+        (GlobalStatus.regular_response_status_map()[Number(data.status)] !== undefined
+          ? GlobalStatus.regular_response_status_map()[Number(data.status)]
           : 'Customize Code')
       }}</el-tag>
     </el-descriptions-item>

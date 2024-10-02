@@ -110,7 +110,6 @@ function changeType() {
 
 .login-input::-webkit-input-placeholder {
   color: white;
-  font-family: $zh-font-family;
   font-size: 1rem;
 }
 .login-input:focus {

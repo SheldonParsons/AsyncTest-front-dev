@@ -88,31 +88,11 @@
         </el-col>
       </el-row>
     </div>
-    <el-empty v-else :image-size="200" />
-    <!-- <el-row>
-      <el-col :span="24"
-        ><h2>{{ $t('about.source') }}</h2></el-col
+    <el-row v-else class="title-row">
+      <el-col class="title-col" :offset="6" :span="4"
+        ><el-empty :image-size="200" /></el-col
       >
     </el-row>
-    <el-row align="middle">
-      <el-col :span="24"
-        ><p style="line-height: 1.7">
-          <a
-            class="source-a"
-            target="_blank"
-            href="http://10.2.59.79:10101/summary/~a80646%2FAsyncTest-front.git"
-            >{{ $t('about.front')
-            }}<el-icon class="source-icon"><Link /></el-icon
-          ></a>
-          •
-          <a
-            class="source-a"
-            target="_blank"
-            href="http://10.2.59.79:10101/summary/~a80646%2FAsyncTest-server.git"
-            >Django<el-icon class="source-icon"><Link /></el-icon
-          ></a></p
-      ></el-col>
-    </el-row> -->
     <el-row>
       <el-col :span="24"
         ><h2>{{ $t('about.contributor') }}</h2></el-col
@@ -143,20 +123,6 @@
               class="contributor-name"
               style="margin-left: 10px; font-weight: 500"
               >Haoppy</span
-            >
-          </div>
-        </el-tooltip>
-      </el-col>
-      <el-col :span="3">
-        <el-tooltip
-          effect="dark"
-          :content="$t('about.contact') + ' +86 166 2621 9785'"
-          placement="top"
-          ><div class="contributor-div">
-            <img class="contributor-img" src="@/assets/img/jiaxin.jpg" /><span
-              class="contributor-name"
-              style="margin-left: 10px; font-weight: 500"
-              >JiaXin</span
             >
           </div>
         </el-tooltip>
@@ -240,8 +206,7 @@ function getCurrentLanguage() {
 
 <style lang="scss" scoped>
 .content {
-  font-family: Helvetica Neue, Helvetica, PingFang SC, Hiragino Sans GB,
-    Microsoft YaHei, SimSun, sans-serif;
+  width: 100%;
   padding-top: 50px;
   padding-left: 10%;
   padding-bottom: 50px;

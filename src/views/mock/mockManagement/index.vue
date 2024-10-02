@@ -137,7 +137,9 @@
       </table>
     </el-col>
   </el-row>
-  <el-empty v-else :image-size="200" />
+  <el-empty description="暂无数据" v-else :image-size="200">
+    <SpecialButton @click="addData">点击添加您的数据<el-icon><Plus /></el-icon></SpecialButton>
+  </el-empty>
 </template>
 
 <script lang="ts" setup>
@@ -146,6 +148,7 @@ import SpecialInput from '@/components/common/input/specialInput.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiGetMock, ApiDeleteMock } from '@/api/mock'
 import CButton from '@/components/common/button/CButton.vue'
+import SpecialButton from '@/components/common/button/special_button.vue'
 import { useI18n } from 'vue-i18n'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
 import tools from '@/utils/tools'
@@ -400,7 +403,6 @@ function openEditor(name: string, params: any) {
   border-collapse: collapse;
   margin: 25px 0;
   font-size: 0.9em;
-  font-family: sans-serif;
   width: 100%;
   // border-radius: 5px 5px 0px 0px;
   overflow: hidden;

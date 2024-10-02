@@ -28,7 +28,7 @@ export default {
     ld: 'Last day'
   },
   menu: {
-    news: 'New Functions',
+    news: 'New Features Update',
     level1: {
       father: 'DataCenter',
       child: {

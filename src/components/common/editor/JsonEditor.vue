@@ -4,18 +4,18 @@
       class="ed"
       :style="{
         '--color-group': GlobalStatus.colorList[colorGroup][0],
-        '--color-group-light': GlobalStatus.colorList[colorGroup][1]
+        '--color-group-light': GlobalStatus.colorList[colorGroup][1],
       }"
     >
       <div class="ed-header">
         <el-row>
           <el-col :span="18"
-            ><p class="g-unselect">{{ $t('main.editor') }}</p></el-col
+            ><p class="g-unselect">{{ $t("main.editor") }}</p></el-col
           >
-          <el-col :span="6" class="language-col">
+          <!-- <el-col :span="6" class="language-col">
             <el-dropdown trigger="click" @command="choiceLanguage">
               <span class="el-dropdown-link g-unselect">
-                {{ $t('component.editor.language') }}-{{
+                {{ $t("component.editor.language") }}-{{
                   languageMapping[defaultLanguage]
                 }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
               </span>
@@ -32,7 +32,7 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-          </el-col>
+          </el-col> -->
         </el-row>
       </div>
       <div class="ed editor" ref="dom"></div>
@@ -41,274 +41,325 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, getCurrentInstance, watch } from 'vue'
-import JSONFormat from './formatter'
-import tools from '@/utils/tools'
-import { useI18n } from 'vue-i18n'
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-import GlobalStatus from '@/global'
-// import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
+import { onMounted, ref, getCurrentInstance, watch } from "vue";
+import { JSONFormat, preprocessJson } from "./formatter";
+
+import tools from "@/utils/tools";
+import { useI18n } from "vue-i18n";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import GlobalStatus from "@/global";
+import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
+import { parse } from "@prantlf/jsonlint";
 
 self.MonacoEnvironment = {
   getWorker(workerId, label) {
-    return new EditorWorker()
-  }
-}
+    return new EditorWorker();
+  },
+};
 
-const { t } = useI18n()
+const { t } = useI18n();
 
 const props = defineProps({
   modelValue: {
-    type: null as any
+    type: null as any,
   },
   project: {
     type: Number,
-    default: -1
+    default: -1,
   },
   codeCompleteFn: {
     type: Function,
-    default: null
+    default: null,
   },
   changeValue: {
     type: Boolean,
-    default: false
+    default: false,
   },
   colorGroup: {
     type: Number,
-    default: 0
-  }
-})
+    default: 0,
+  },
+});
 watch(
   () => props.modelValue,
   (newVal: any, oldVal) => {
+    console.log(instance);
     if (props.changeValue && instance) {
       try {
-        instance.setValue(JSONFormat(newVal))
+        instance.setValue(JSONFormat(newVal));
       } catch (error) {
-        instance.setValue(newVal)
+        instance.setValue(newVal);
       }
-      stopChangeCodeAction()
+      stopChangeCodeAction();
     }
   }
-)
+);
 
 // 全局对象
-const { proxy }: any = getCurrentInstance()
+const { proxy }: any = getCurrentInstance();
 
 // 双向绑定，抛出model
-const emit = defineEmits(['update:modelValue', 'stopChangeCode'])
+const emit = defineEmits(["update:modelValue", "stopChangeCode"]);
 
 // 编辑器组件实例
-const dom = ref()
+const dom = ref();
 
 // monaco实例
-const monaco = ref()
+const monaco = ref();
 
 // {{}}正则
-const localRe = /\{{2}.*?\}{2}/g
+const localRe = /\{{2}.*?\}{2}/g;
 
 // model生成出来的编辑器结构化实例
-let instance: any
+let instance: any;
 
 // 自定义语言
-const _CUSTOMER = 'private'
+const _CUSTOMER = "json_custom";
 
 // 语言文本映射
 const languageMapping: any = {
-  private: 'JSON',
-  text: 'TEXT',
-  python: 'Python',
-  javascript: 'JavaScript'
-}
+  json_custom: "json_custom",
+  json: "json",
+  private: "json",
+  text: "TEXT",
+  python: "Python",
+  javascript: "JavaScript",
+};
 
 function stopChangeCodeAction() {
-  emit('stopChangeCode')
+  emit("stopChangeCode");
 }
 
 // 当前语言
-const defaultLanguage = ref(_CUSTOMER)
+const defaultLanguage = ref(_CUSTOMER);
 
 // 编辑器注册列表
-const registerList: any = []
+const registerList: any = [];
 
 // 插入数据列表
-const insertData: any = []
+const insertData: any = [];
 
 function choiceLanguage(command: any) {
-  dispose()
-  defaultLanguage.value = command
-  createLanguage(monaco.value)
+  dispose();
+  defaultLanguage.value = command;
+  createLanguage(monaco.value);
   tools.message(
-    t('component.editor.changeLanguage') +
+    t("component.editor.changeLanguage") +
       languageMapping[defaultLanguage.value],
     proxy
-  )
+  );
 }
 
 onMounted(async () => {
   // 动态加载monaco
-  import('monaco-editor').then(async (m) => {
-    await createLanguage(m)
-  })
-})
+  import("monaco-editor").then(async (m) => {
+    await createLanguage(m);
+  });
+});
 
 function dispose() {
   for (let i = 0; i < registerList.length; i++) {
-    registerList[i].dispose()
+    registerList[i].dispose();
   }
 }
 
 async function createLanguage(m: any) {
-  monaco.value = m
-  // 设置自定义皮肤
-  setTheme()
-  monaco.value.languages.register({ id: defaultLanguage.value })
+  monaco.value = m;
+  monaco.value.languages.register({ id: defaultLanguage.value });
   // 创建保存格式化代码快捷键
   monaco.value.editor.addEditorAction({
-    id: 'save',
-    label: 'save',
+    id: "save",
+    label: "save",
     keybindings: [
       monaco.value.KeyMod.chord(
         monaco.value.KeyMod.CtrlCmd | monaco.value.KeyCode.KeyS
-      )
+      ),
     ],
-    run: saveEditor // 方法
-  })
-  const _t: any = props.modelValue
+    run: saveEditor, // 方法
+  });
+  const _t: any = props.modelValue;
+  // 定义语言规则和配置
+  monaco.value.languages.setMonarchTokensProvider(defaultLanguage.value, {
+    tokenizer: {
+      root: [
+        [/\{\{.*?\}\}/, { token: "custom-brackets" }], // 自定义匹配 {{}}
+        [/[{}]/, "@brackets"], // 匹配普通的括号
+        [/"/, { token: "string.quote", bracket: "@open", next: "@string" }],
+        [/\b\d+\b/, "number"], // 在字符串外匹配数字，显示为蓝色
+        [/[,:]/, "delimiter"],
+        [/[[]/, "delimiter.square"],
+      ],
+      string: [
+        [/\{\{.*?\}\}/, { token: "custom-brackets" }], // 在字符串内也匹配 {{}}
+        [/\b\d+\b/, "number-in-string"], // 在字符串内匹配数字，显示为绿色
+        [/[^\\"]+/, "string"], // 匹配非转义的字符串内容
+        [/\\./, "string.escape.invalid"], // 匹配非法转义
+        [/"/, { token: "string.quote", bracket: "@close", next: "@pop" }],
+      ],
+    },
+  });
+  // 设置自定义皮肤
+  monaco.value.editor.defineTheme("fizz", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "custom-brackets", foreground: "FFA500", fontStyle: "italic" }, // 橙色
+      { token: "number", foreground: "0000FF" }, // 数字显示为蓝色
+      { token: "number-in-string", foreground: "CD5555" }, // 字符串内的数字显示为绿色
+      { token: "string", foreground: "CD5555" }, // 深绿色，斜体
+      { token: "string.quote", foreground: "CD5555" }, // 红色
+      { token: "delimiter", foreground: "000000" }, // 蓝色
+      { token: "delimiter.square", foreground: "000000" }, // 粉红色 // 指定双引号的颜色
+      { background: "F5F5F5" },
+    ],
+    colors: {
+      "editor.foreground": "#000000",
+      "editor.background": "#ffffff",
+      "editorCursor.foreground": "#000000",
+      "editor.lineHighlightBackground": "#f5f5f5",
+      "editor.lineHighlightBorder": "#ff0000",
+      "editorLineNumber.foreground": "#008800",
+      "editor.selectionBackground": "#CDCDB4",
+      "editor.inactiveSelectionBackground": "#88000015",
+    },
+  });
+  monaco.value.editor.setTheme("fizz");
+
+  // 语言配置
+  monaco.value.languages.setLanguageConfiguration(defaultLanguage.value, {
+    brackets: [
+      ["{", "}"],
+      ["[", "]"],
+      ['"', '"'],
+    ],
+    autoClosingPairs: [
+      { open: "{", close: "}" },
+      { open: "[", close: "]" },
+      { open: '"', close: '"' },
+      { open: "{{", close: "}}" },
+    ],
+    surroundingPairs: [
+      { open: "{", close: "}" },
+      { open: "[", close: "]" },
+      { open: '"', close: '"' },
+      { open: "{{", close: "}}" },
+    ],
+  });
   // 创建编辑器model
   const model = monaco.value.editor.createModel(
     _t.data === undefined ? JSONFormat(_t) : JSONFormat(_t.data),
     defaultLanguage.value
-  )
+  );
   // 创建编辑器实例
   instance = monaco.value.editor.create(dom.value, {
     model,
     tabSize: 2,
-    fontSize: '16px',
+    fontSize: "13px",
     automaticLayout: true,
     scrollBeyondLastLine: false,
+    autoClosingBrackets: "always", // 确保开启自动闭合括号
+    formatOnType: true, // 开启键入时自动格式化
+    renderWhitespace: "all",
     minimap: {
-      enabled: true,
+      enabled: false,
       maxColumn: 80,
       renderCharacters: true,
-      showSlider: 'always', // "always" | "mouseover"
-      side: 'right', // "right" | "left"
-      size: 'fit' // "proportional" | "fill" | "fit"
-    }
-  })
-  initEditorInstance(model)
+      showSlider: "always", // "always" | "mouseover"
+      side: "right", // "right" | "left"
+      size: "fit", // "proportional" | "fill" | "fit"
+    },
+  });
+
+  initEditorInstance(model, instance);
   function saveEditor() {
     if (defaultLanguage.value === _CUSTOMER) {
-      // 格式化代码
-      instance.setValue(JSONFormat(instance.getValue()))
-      tools.message(t('component.editor.formatted'), proxy)
-    } else {
-      console.log('text...')
+      // const model = instance.getModel(); // 获取编辑器模型
+      const fullRange = model.getFullModelRange(); // 获取模型的完整范围
+      const formattedValue = JSONFormat(instance.getValue()); // 获取格式化后的值
+
+      // 执行编辑操作，更新内容但保留撤销堆栈
+      model.pushEditOperations(
+        [], // 当前选区，因为我们不需要替换选区
+        [{ range: fullRange, text: formattedValue }], // 一系列编辑操作
+        () => null // 不需要处理选区变化
+      );
+      tools.message(t("component.editor.formatted"), proxy);
     }
   }
-  switchRegister()
-  await completionItems()
+  switchRegister();
+  await completionItems();
 }
 
 function switchRegister() {
   if (defaultLanguage.value === _CUSTOMER) {
-    initRegister()
-    initPrivateRegister()
-  } else if (defaultLanguage.value === 'text') {
-    initRegister()
+    // initRegister();
+    // initPrivateRegister();
+  } else if (defaultLanguage.value === "text") {
+    initRegister();
   }
 }
+let debounceTimer: any;
+const debounceDelay = 500; // 防抖延迟时间，单位为毫秒
 
-function initEditorInstance(model: any) {
+function initEditorInstance(model: any, editor: any) {
   // 创建修改监听事件
   instance.onDidChangeModelContent((event: any) => {
-    if (defaultLanguage.value === _CUSTOMER) {
-      // 代码检查
-      SyntaxCheck(model)
-    }
-    // 自定义特殊字符自动补全
-    completionSpecialWord(model, event.changes[0].text, event.changes[0].range)
-    // 抛出组件双向绑定
-    const value = instance.getValue()
-    emit('update:modelValue', value)
-  })
-  registerList.push(instance)
-}
-
-// 设置自定义主题
-function setTheme() {
-  monaco.value.editor.defineTheme('fizz', {
-    base: 'vs',
-    inherit: true,
-    rules: [{ background: 'F5F5F5' }],
-    colors: {
-      'editor.foreground': '#000000',
-      'editor.background': '#F5F5F5',
-      'editorCursor.foreground': '#000000',
-      'editor.lineHighlightBackground': '#DCDCDC',
-      'editorLineNumber.foreground': '#008800',
-      'editor.selectionBackground': '#CDCDB4',
-      'editor.inactiveSelectionBackground': '#88000015'
-    }
-  })
-  monaco.value.editor.setTheme('fizz')
-}
-
-// 特殊字符自动补全
-function completionSpecialWord(model: any, text: any, range: any) {
-  if (text === '{') {
-    // 在光标后立即补全一个'}'并将光标移动到中间
-    insertTextAndAdjustCursor('}', range, 1)
-  }
-
-  function insertTextAndAdjustCursor(text: any, range: any, cursorOffset: any) {
-    const operations = [
-      {
-        range: {
-          startLineNumber: range.startLineNumber,
-          startColumn: range.startColumn + 1,
-          endLineNumber: range.endLineNumber,
-          endColumn: range.endColumn + 1
-        },
-        text: text
+    const value = instance.getValue();
+    clearTimeout(debounceTimer); // 每次事件触发时清除上一个定时器
+    debounceTimer = setTimeout(async () => {
+      // 设置新的定时器
+      try {
+        if (value === "") {
+          monaco.value.editor.setModelMarkers(model, "jsonlint", []);
+        } else {
+          parse(preprocessJson(value));
+          monaco.value.editor.setModelMarkers(model, "jsonlint", []);
+        }
+      } catch (error: any) {
+        const markers = [
+          {
+            startLineNumber: error.location.start.line,
+            startColumn: error.location.start.column,
+            endLineNumber: error.location.start.line,
+            endColumn: error.location.start.offset,
+            message: error.message,
+            severity: monaco.value.MarkerSeverity.Error,
+          },
+        ];
+        monaco.value.editor.setModelMarkers(model, "jsonlint", markers);
       }
-    ]
-
-    model.pushEditOperations([], operations, () => null)
-
-    // 调整光标位置
-    instance.setPosition({
-      lineNumber: range.startLineNumber + (text === '\n\t' ? 1 : 0),
-      column: range.startColumn + cursorOffset
-    })
-  }
+    }, debounceDelay);
+    emit('update:modelValue', value)
+  });
+  // model.onDidChangeContent(async () => {});
+  registerList.push(instance);
 }
 
 // 代码检查
 function SyntaxCheck(model: any) {
   try {
     // 获取替换字符长度，用于等长度替换
-    const match = localRe.exec(instance.getValue())
-    let addLength: number = 0
+    const match = localRe.exec(instance.getValue());
+    let addLength: number = 0;
     if (match !== null) {
       match.map((item: any) => {
-        addLength += item.length
-      })
+        addLength += item.length;
+      });
     }
     // JSON.parse语法检查
     JSON.parse(
       instance.getValue().replaceAll(localRe, Math.pow(10, addLength - 1))
-    )
+    );
     // 语法检查通过清空编辑器marker内容
-    monaco.value.editor.setModelMarkers(model, defaultLanguage.value, [])
+    monaco.value.editor.setModelMarkers(model, defaultLanguage.value, []);
   } catch (error: any) {
     // 匹配数字
-    const re = /\d+/g
-    let errorIndex: any = re.exec(error.message)
+    const re = /\d+/g;
+    let errorIndex: any = re.exec(error.message);
     if (errorIndex) {
-      errorIndex = parseInt(errorIndex[0])
-      let sumLength = 0
-      const dataRows = instance.getValue().split('\n')
+      errorIndex = parseInt(errorIndex[0]);
+      let sumLength = 0;
+      const dataRows = instance.getValue().split("\n");
       for (let i = 0; i < dataRows.length; i++) {
         // 区间匹配
         if (
@@ -324,12 +375,12 @@ function SyntaxCheck(model: any) {
               endColumn: errorIndex - sumLength + 1,
               code: error.code,
               severity: monaco.value.MarkerSeverity.Error,
-              message: error.message
-            }
-          ])
-          break
+              message: error.message,
+            },
+          ]);
+          break;
         } else {
-          sumLength += dataRows[i].length + 1
+          sumLength += dataRows[i].length + 1;
         }
       }
     }
@@ -352,85 +403,70 @@ function initPrivateRegister() {
           return [
             {
               range: model.getFullModelRange(),
-              text: JSONFormat(model.getValue())
-            }
-          ]
-        }
+              text: JSONFormat(model.getValue()),
+            },
+          ];
+        },
       }
-    )
-  registerList.push(formatter)
+    );
+  registerList.push(formatter);
 }
 // 注册通用功能
 function initRegister() {
-  // 自定义代码高亮
-  const highlight = monaco.value.languages.setMonarchTokensProvider(
-    defaultLanguage.value,
-    {
-      ignoreCase: true,
-      tokenizer: {
-        root: [
-          // [/\d+/, { token: 'keyword' }],
-          ['\\d+|[\u4e00-\u9fa5]|\\w+|\\"', { token: 'string' }],
-          ['\\{{2}.*?\\}{2}', { token: 'keyword' }]
-        ]
-      }
-    }
-  )
-  registerList.push(highlight)
   // 补全代码监听
   const codeComplete = monaco.value.languages.registerCompletionItemProvider(
     defaultLanguage.value,
     {
       triggerCharacters:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"'.split(''),
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"'.split(""),
       provideCompletionItems: function (
         model: any,
         position: any,
         context: any,
         token: any
       ) {
-        const word = model.getWordUntilPosition(position)
+        const word = model.getWordUntilPosition(position);
         const range = {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
           startColumn: word.startColumn,
-          endColumn: word.endColumn
-        }
-        const prefix = word.word.toLowerCase()
+          endColumn: word.endColumn,
+        };
+        const prefix = word.word.toLowerCase();
         let suggestions = insertData
           .filter((item: any) => {
-            return item.label.toLowerCase().startsWith(prefix)
+            return item.label.toLowerCase().startsWith(prefix);
           })
           .map((item: any) => {
             return {
               ...item,
-              range
-            }
-          })
+              range,
+            };
+          });
         // 判断是否在 JSON 的 key 位置
         if (isJsonKeyPosition(model, position)) {
           suggestions = suggestions.map((suggestion: any) => ({
             ...suggestion,
-            label: `"${suggestion.label}"` // 包裹双引号
-          }))
+            label: `"${suggestion.label}"`, // 包裹双引号
+          }));
         }
         return {
           suggestions,
-          incomplete: true
-        }
-      }
+          incomplete: true,
+        };
+      },
     }
-  )
-  registerList.push(codeComplete)
+  );
+  registerList.push(codeComplete);
 }
 
 async function completionItems() {
   const data = {
     project: props.project,
-    simple: 1
-  }
+    simple: 1,
+  };
   if (props.codeCompleteFn === null) {
-    return
+    return;
   }
   props.codeCompleteFn!(data).then((data: any) => {
     for (let i = 0; i < data.results.length; i++) {
@@ -438,26 +474,26 @@ async function completionItems() {
         preselect: true,
         label: data.results[i].name,
         kind: monaco.value.languages.CompletionItemKind.Variable,
-        documentation: data.results[i].id + ':' + data.results[i].desc,
+        documentation: data.results[i].id + ":" + data.results[i].desc,
         insertText: data.results[i].name,
-        detail: data.results[i].desc
-      })
+        detail: data.results[i].desc,
+      });
     }
-    return insertData
-  })
+    return insertData;
+  });
 }
 
 function isJsonKeyPosition(model: any, position: any) {
-  const lineContent = model.getLineContent(position.lineNumber)
+  const lineContent = model.getLineContent(position.lineNumber);
   const lineTillCurrentPosition = lineContent
     .substring(0, position.column - 1)
-    .trim()
+    .trim();
 
   // 简单的检查：如果当前位置之前有冒号或逗号，则可能不在 key 位置
   return (
-    !lineTillCurrentPosition.endsWith(',') &&
-    !lineTillCurrentPosition.endsWith(':')
-  )
+    !lineTillCurrentPosition.endsWith(",") &&
+    !lineTillCurrentPosition.endsWith(":")
+  );
 }
 </script>
 
@@ -480,7 +516,6 @@ function isJsonKeyPosition(model: any, position: any) {
   p {
     color: white;
     font-size: 16px;
-    font-family: $special-font-family;
     font-weight: normal;
     font-style: normal;
     display: table-cell;

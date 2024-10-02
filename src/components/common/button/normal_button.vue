@@ -48,7 +48,6 @@ $shadow: 0.3rem 0.3rem 0.6rem var(--greyLight-2),
 $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   inset -0.2rem -0.2rem 0.5rem var(--white);
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;
@@ -72,7 +71,6 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
     box-shadow: inset 0.2rem 0.2rem 1rem var(--primary-light),
       inset -0.2rem -0.2rem 1rem var(--primary-dark), $shadow;
     color: var(--greyLight-1);
-
     &:hover {
       color: var(--white);
     }

@@ -260,7 +260,6 @@ async function copy(value: string) {
 }
 
 function handelMethod(command: any) {
-  console.log(command)
   currentMethod.value = command
 }
 
@@ -528,6 +527,9 @@ function splitUrl() {
 <style lang="scss">
 .debug-tools {
   border-radius: 10px !important;
+  .el-dialog__body {
+    padding: 20px!important;
+  }
   .el-dialog__header {
     margin: 0px;
     padding: 10px 0px 10px 5px;
@@ -541,7 +543,6 @@ function splitUrl() {
     p {
       color: white;
       font-size: 16px;
-      font-family: $special-font-family;
       font-weight: normal;
       font-style: normal;
       display: table-cell;

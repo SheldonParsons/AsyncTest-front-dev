@@ -212,7 +212,6 @@ function detailsTask(item: any) {
 .styled-table {
   border-collapse: collapse;
   font-size: 0.9em;
-  font-family: sans-serif;
   width: 100%;
   border-radius: 5px 5px 0px 0px;
   overflow: hidden;

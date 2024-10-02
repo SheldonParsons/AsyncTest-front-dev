@@ -3,7 +3,7 @@
     <el-col class="tools-col" :span="5" :offset="2">
       <X2E></X2E>
     </el-col>
-    <el-col class="tools-col" :span="5">
+    <el-col class="tools-col" :offset="1" :span="5">
       <Only></Only>
     </el-col>
   </el-row>

@@ -716,8 +716,8 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
       justify-content: center;
       align-items: center;
       cursor: pointer;
-      width: 2rem;
-      height: 2rem;
+      width: 1.5rem;
+      height: 1.5rem;
       border-radius: 50%;
       &:hover {
         &::after {
@@ -728,8 +728,8 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
       &::after {
         content: '';
         position: absolute;
-        width: 1rem;
-        height: 1rem;
+        width: .8rem;
+        height: .8rem;
         background: var(--greyDark);
         border-radius: 50%;
         transition: 0.3s ease;

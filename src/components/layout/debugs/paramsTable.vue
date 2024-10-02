@@ -174,7 +174,6 @@ function splitUrl() {
 .styled-table {
   border-collapse: collapse;
   font-size: 1em;
-  font-family: sans-serif;
   width: 100%;
   border-radius: 5px 5px 0px 0px;
   overflow: hidden;

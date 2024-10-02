@@ -110,8 +110,8 @@ body {
   width: 100%;
   height: 100%;
   position: relative;
-  left: 43%;
-  top: 54%;
+  // left: 43%;
+  // top: 54%;
 }
 .tri .side {
   width: 50px;
@@ -134,6 +134,8 @@ body {
 .tri .ring {
   width: 5px;
   height: 5px;
+  top: 60%;
+  left: 43%;
   position: absolute;
   background: white;
   -webkit-animation-name: rotate, cromatic;

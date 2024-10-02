@@ -3,6 +3,7 @@
     <input
       class="special-input g-unselect"
       :style="{
+        '--dynamic-height': height,
         '--dynamic-radius': radius,
         '--dynamic-tran-color': isTransColor
           ? GlobalStatus.lightColor
@@ -138,6 +139,10 @@ const props = defineProps({
   dateTagValue: {
     type: String,
     default: ''
+  },
+  height: {
+    type: String,
+    default: '50px'
   }
 })
 // eslint-disable-next-line vue/no-setup-props-destructure
@@ -247,7 +252,7 @@ function searchTimeString(value: string, originDate: Array<any>) {
   -o-transition: 0.3s;
   transition: 0.3s;
   width: 100%;
-  height: 50px;
+  height: var(--dynamic-height);
   padding: 0.375rem 2rem 0.375rem 0.75rem;
   font-size: 1.1rem;
   font-weight: 400;
@@ -264,7 +269,6 @@ function searchTimeString(value: string, originDate: Array<any>) {
 
 .special-input::-webkit-input-placeholder {
   color: var(--place-default-color);
-  font-family: $zh-font-family;
   font-size: 1rem;
 }
 .special-input:focus {

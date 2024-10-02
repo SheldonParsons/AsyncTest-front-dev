@@ -1,7 +1,7 @@
 <template>
     <div class="container">
         <div class="menu-container">
-            <div :class="{'ele-container': true, 'focuse-icon': currentFocuseIcon === 'interface'}" @click="opening">
+            <div :class="{'ele-container': true, 'focuse-icon': currentFocuseIcon === 'interface'}" @click="switchRouter('interface')">
                 <API class="icon-menu api"></API>
                 <span>APIs</span>
             </div>
@@ -76,6 +76,7 @@ function switchRouter(routerName: string) {
     margin-top: 1rem;
     justify-content: top;
     flex-direction: column;
+    align-items: center;
 }
 
 .icon-menu {
@@ -87,7 +88,6 @@ function switchRouter(routerName: string) {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    font-family: $round-font-family;
     font-weight: 400;
     cursor: pointer;
 
@@ -99,7 +99,8 @@ function switchRouter(routerName: string) {
 }
 
 .ele-other {
-    margin-top: 300%;
+    position: fixed;
+    bottom: 10px;
 }
 </style>
 

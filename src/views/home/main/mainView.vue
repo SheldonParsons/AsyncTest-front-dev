@@ -27,7 +27,7 @@ const mainContentWidth = ref(0)
 
 onMounted(() => {
   // 初始化宽度为当前窗口宽度的百分比
-  contentWidth.value = Math.floor((window.innerWidth * 0.21)); 
+  contentWidth.value = Math.floor((window.innerWidth * 0.24)); 
   mainContentWidth.value = window.innerWidth - contentWidth.value
 });
 
@@ -79,6 +79,7 @@ const startResize = (e: MouseEvent) => {
 }
 .content-menu {
   width: 100%;
+  // margin-bottom: 100px;
 }
 .menu-sidebar {
   display: flex;
@@ -93,7 +94,7 @@ const startResize = (e: MouseEvent) => {
 }
 
 .detail-menu {
-  margin-top: 1rem;
+  // margin-top: 1rem;
   margin-left: 1rem;
   background-color: #FFFFFF;
 }
@@ -102,7 +103,7 @@ const startResize = (e: MouseEvent) => {
   position: absolute;
   top: 0;
   right: -5px; /* 调整手柄的位置 */
-  width: 10px;
+  width: 7px;
   height: 100%;
   cursor: col-resize; /* 设置鼠标样式为调整宽度 */
   background-color: #F5F5F5;

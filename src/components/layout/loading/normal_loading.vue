@@ -40,7 +40,6 @@ $brand: #009879;
 //   display: flex;
 //   flex-wrap: wrap;
 //   background: $base;
-//   font-family: Arial, Helvetica, sans-serif;
 //   &.pop {
 //     overflow: hidden;
 //   }
