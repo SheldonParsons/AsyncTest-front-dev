@@ -136,8 +136,6 @@ import tools from '@/utils/tools'
 import _ from 'lodash'
 import { InfoFilled } from '@element-plus/icons-vue'
 import GlobalStatus from '@/global'
-import Add from '@/assets/svg/public/add.vue'
-import Refresh from '@/assets/svg/public/refresh.vue'
 
 const searchWidth = ref('100')
 const { t } = useI18n()
