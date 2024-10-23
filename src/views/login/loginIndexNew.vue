@@ -112,7 +112,8 @@
     </el-row>
   </section>
   <div class="banner" v-if="showNews">
-    <a><span>News: </span>Mock模块更新：新增Expect Mock - 12-10-2023</a>
+    <a><span>News: </span>AI Agent模块：在新的AsyncTest中用AI来帮助您构建接口和用例 - 10-09-2024</a>
+    <a style="text-decoration: none;color: inherit;" rel="nofollow" href="https://beian.miit.gov.cn" target="_blank">  （粤ICP备2024322282号-1）</a>
     <button @click="showNews = false">
       <svg
         aria-hidden="true"
