@@ -8,9 +8,9 @@
       '--spanWidth': spanWidth
     }"
   >
-    <p class="tools-p">{{ $t('tool.mocking') }}</p>
+    <p class="tools-p">{{ $t('global.news') }}</p>
     <div class="fake-btn">
-      <span>Dynamic Mocking</span>
+      <span>LLM AI Agent</span>
     </div>
   </div>
 </template>
@@ -55,7 +55,7 @@ function showDoc() {
 <style lang="scss" scoped>
 .tool {
   cursor: pointer;
-  background-image: url('@/assets/img/projectStyle/l-bg-4.png');
+  background-image: url('@/assets/img/projectStyle/l-bg-4.webp');
   height: var(--dyToolsHeight);
   width: var(--dyToolsWidth);
   //   margin-left: 20px;
@@ -69,8 +69,8 @@ function showDoc() {
     font-size: 14px;
     text-align: center;
     padding-top: 6%;
-    color: aliceblue;
-    background: -webkit-linear-gradient(315deg, #ffffff 45%, #caff70);
+    color: black;
+    background: -webkit-linear-gradient(315deg, #000 45%, #caff70);
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -83,7 +83,7 @@ function showDoc() {
     width: var(--spanWidth);
     height: 30%;
     margin: auto;
-    background: -webkit-linear-gradient(315deg, #00cd66 20%, #008b45);
+    background: -webkit-linear-gradient(315deg, #00cd66 40%, #008b45);
     border-radius: 5px;
     margin-top: 5px;
     margin-bottom: 5px;

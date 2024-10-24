@@ -9,7 +9,7 @@
     </div>
   </div>
   </div>
-  <div class="main page-content has-sidebar" :style="{ width: mainContentWidth + 'px' }">
+  <div class="main page-content has-sidebar" :style="{ left: contentWidth + 'px', width: mainContentWidth + 'px' }">
     <router-view />
   </div>
 </div>
@@ -27,7 +27,7 @@ const mainContentWidth = ref(0)
 
 onMounted(() => {
   // 初始化宽度为当前窗口宽度的百分比
-  contentWidth.value = Math.floor((window.innerWidth * 0.24)); 
+  contentWidth.value = Math.floor((window.innerWidth * 0.2)); 
   mainContentWidth.value = window.innerWidth - contentWidth.value
 });
 
@@ -78,7 +78,7 @@ const startResize = (e: MouseEvent) => {
   height: 100%;
 }
 .content-menu {
-  width: 100%;
+  width: 65%;
   // margin-bottom: 100px;
 }
 .menu-sidebar {
@@ -111,10 +111,14 @@ const startResize = (e: MouseEvent) => {
 .new-content-menu {
   border-right: 1px solid #F5F5F5;
 }
-
+.page-content{
+  // height: 100%;
+}
 .page-content.has-sidebar {
   display: inline-block;
-  position: relative;
+  position: fixed;
   float: right;
+  height: 100%;
+  overflow: hidden;
 }
 </style>

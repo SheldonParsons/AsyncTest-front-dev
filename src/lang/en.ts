@@ -9,7 +9,8 @@ export default {
     confirm: 'Confirm',
     cancel: 'Cancel',
     questionSure: 'Are you sure to ',
-    questionSure2: ' it?'
+    questionSure2: ' it?',
+    news: 'Artificial Intelligence'
   },
   message: {
     home: 'home',

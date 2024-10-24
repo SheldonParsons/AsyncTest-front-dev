@@ -9,7 +9,8 @@ export default {
     confirm: '确认',
     cancel: '取消',
     questionSure: '您确定要 ',
-    questionSure2: ' 吗？'
+    questionSure2: ' 吗？',
+    news: '大语言模型AI智能体'
   },
   message: {
     home: '首页',
