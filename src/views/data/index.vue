@@ -1,25 +1,4 @@
 <template>
-  <!-- <el-affix position="top" :offset="85" class="action-bar">
-    <ul style="list-style: none">
-      <li @click="addData">
-        <CButton
-          ><el-icon><CirclePlusFilled /></el-icon
-        ></CButton>
-      </li>
-      <li @click="clearDataFromSearch">
-        <CButton
-          ><el-icon><RefreshLeft /></el-icon
-        ></CButton>
-      </li>
-      <el-backtop class="action-bar-back-top">
-        <li>
-          <CButton
-            ><el-icon><ArrowUp /></el-icon
-          ></CButton>
-        </li>
-      </el-backtop>
-    </ul>
-  </el-affix> -->
   <el-row class="search">
     <el-affix
       position="top"
@@ -242,10 +221,6 @@ async function getData() {
 
 // 搜索框固定触顶状态改变回调函数
 function onSearchChange(item: any): void {
-  console.log(item)
-
-  console.log(isSearchEleOnTop.value)
-
   if (isSearchEleOnTop.value !== item) {
     searchInputWidth.value = searchInputWidth.value === 13 ? 20 : 13
   }

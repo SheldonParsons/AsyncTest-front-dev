@@ -20,7 +20,7 @@ class Http {
 
   // 请求拦截
   private httpInterceptorsRequest () {
-    Http.axiosInstance.interceptors.request.use((config: AxiosRequestConfig) => {
+    Http.axiosInstance.interceptors.request.use((config: any) => {
       if (config.url?.indexOf(GlobalStatus.anonymousPath) === -1) {
         // 获取当前token
         const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag)
@@ -92,8 +92,8 @@ class Http {
     })
   }
 
-  public httpPost<T> (url:string, data:AxiosRequestConfig, params = {}):Promise<T> {
-    return Http.axiosInstance.post(url, data, { params }).then(res => {
+  public httpPost<T> (url:string, data:AxiosRequestConfig, params = {},headers={}):Promise<T> {
+    return Http.axiosInstance.post(url, data, { params,headers }).then(res => {
       return res.data
     }).catch((err:any) => {
       console.log(err)
@@ -130,8 +130,8 @@ class Http {
     })
   }
 
-  public httpPut<T> (url:string, data:any = undefined, params = {}):Promise<T> {
-    return Http.axiosInstance.put(url, data, { params }).then(res => {
+  public httpPut<T> (url:string, data:any = undefined, params = {},headers={}):Promise<T> {
+    return Http.axiosInstance.put(url, data, { params,headers }).then(res => {
       return res.data
     }).catch((err:any) => {
       console.log(err)

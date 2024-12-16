@@ -20,6 +20,7 @@ async function createServer() {
     server: { middlewareMode: true },
     appType: 'custom'
   })
+  
   if (isProduction) {
     app.use(serveStatic(path.resolve(__dirname, 'dist/client')))
     app.use(bodyParser.urlencoded({ extended: true }))

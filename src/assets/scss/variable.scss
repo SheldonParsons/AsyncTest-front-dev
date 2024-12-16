@@ -10,8 +10,17 @@ $white: '#e6e8eb';
   -webkit-user-select: none;
   -moz-user-select: none;
 }
+.no-scoll::-webkit-scrollbar {
+  display: none; /* 隐藏滚动条 */
+}
+.g-flex {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 :root {
   --primary-out: ;
+  --primary-error: #B2001F;
   --el-color-primary: #009879;
   --el-color-primary-light-3: #33ac93;
   --el-color-primary-light-5: #66c0ad;
@@ -23,9 +32,11 @@ $white: '#e6e8eb';
   --primary: #009879;
   --primary-dark: #009879;
   --white: #ffffff;
+  --greyLight-0: #F5F5F5;
   --greyLight-1: #e4ebf5;
   --greyLight-2: #c8d0e7;
   --greyLight-3: #bec8e4;
+  --greyLight-4:#D1D5DB;
   --greyDark: #9baacf;
   --dark: black;
 }

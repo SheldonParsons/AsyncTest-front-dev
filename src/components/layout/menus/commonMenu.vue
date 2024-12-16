@@ -11,107 +11,123 @@
           color: gray;
         "
       >
-        {{ $t('menu.news') }}
+        {{ $t("menu.news") }}
       </div>
-      <div style="width: 180px; height: 70px; margin-bottom: 25px">
+      <div style="width: 100%; height: 80px; margin-bottom: 25px">
         <MockBox :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
       <div class="sidebar-groups">
         <Interface
-        v-if="routeName === 'interface'"
-        :activeLinkStyle="activeLinkStyle" 
-        @switchRouterAction ="switchRouter"></Interface>
-        <Data 
-        v-if="routeName === 'data'"
-        :activeLinkStyle="activeLinkStyle" 
-        @switchRouterAction ="switchRouter"></Data>
-        <Mock 
-        v-if="routeName.indexOf('mock') !== -1"
-        :activeLinkStyle="activeLinkStyle" 
-        @switchRouterAction ="switchRouter"></Mock>
+          v-if="routeName === 'interface'"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        ></Interface>
+        <Data
+          v-if="routeName === 'data'"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        ></Data>
+        <AI
+          v-if="routeName.indexOf('ai') !== -1"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        ></AI>
+        <AppConversation
+          v-if="routeName.indexOf('application_conversation') !== -1"
+          @switchRouterAction="switchRouter"
+        >
+        </AppConversation>
+        <Mock
+          v-if="routeName.indexOf('mock') !== -1"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        ></Mock>
         <Open
-        v-if="routeName.indexOf('api') !== -1"
-        :activeLinkStyle="activeLinkStyle" 
-        @switchRouterAction ="switchRouter"
+          v-if="routeName.indexOf('api') !== -1"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
         ></Open>
-        <Otherwise 
-        v-if="routeName === 'otherwise' || routeName === 'update'"
-        :activeLinkStyle="activeLinkStyle" 
-        @switchRouterAction ="switchRouter" ></Otherwise>
+        <Otherwise
+          v-if="routeName === 'otherwise' || routeName === 'update'"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        ></Otherwise>
       </div>
     </el-scrollbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, getCurrentInstance } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, watch, onMounted, getCurrentInstance } from "vue";
+import { useRouter, useRoute } from "vue-router";
 // import X2E from '@/views/otherwise/tools/X2E.vue'
-import MockBox from '@/views/otherwise/tools/MockBox.vue'
-import tools from '@/utils/tools'
-import { useI18n } from 'vue-i18n'
-import { useStore } from '@/store'
-import Data from "./child/dataMenu.vue"
-import Mock from './child/mockMenu.vue'
-import Open from './child/openMenu.vue'
-import Otherwise from './child/otherwiseMenu.vue'
-import Interface from './child/interfaceMenu.vue'
-const activeLinkStyle = ref('')
-const router: any = useRouter()
-const route: any = useRoute()
-const store = useStore()
+import MockBox from "@/views/otherwise/tools/MockBox.vue";
+import tools from "@/utils/tools";
+import { useI18n } from "vue-i18n";
+import { useStore } from "@/store";
+import Data from "./child/dataMenu.vue";
+import Mock from "./child/mockMenu.vue";
+import Open from "./child/openMenu.vue";
+import Otherwise from "./child/otherwiseMenu.vue";
+import Interface from "./child/interfaceMenu.vue";
+import AI from "./child/aiMenu.vue";
+import AppConversation from "./child/app_conversation.vue";
+const activeLinkStyle = ref("");
+const router: any = useRouter();
+const route: any = useRoute();
+const store = useStore();
 
-const { t } = useI18n()
+const { t } = useI18n();
 
-const authLevel = ref(0)
+const authLevel = ref(0);
 
 // 全局对象
-const { proxy }: any = getCurrentInstance()
+const { proxy }: any = getCurrentInstance();
 onMounted(() => {
-  switchMenu(router.currentRoute.value.name)
+  switchMenu(router.currentRoute.value.name);
   checkAuth(1).then((data: any) => {
-    authLevel.value = data
-  })
-})
+    authLevel.value = data;
+  });
+});
 const props = defineProps({
   routeName: {
-        type: String,
-        default: 'data'
-    }
-})
+    type: String,
+    default: "data",
+  },
+});
 router.beforeEach((to: any, from: any, next: any) => {
-  switchMenu(to.name)
-  next()
-})
+  switchMenu(to.name);
+  next();
+});
 async function checkAuth(type: Number = 1) {
   if (type === 1) {
-    return await store.dispatch('getUser').then((res: any) => {
+    return await store.dispatch("getUser").then((res: any) => {
       if (res && res.username) {
-        if (['a80646', '180230', 'a80308'].indexOf(res.username) !== -1) {
-          return 1
+        if (["a80646", "180230", "a80308"].indexOf(res.username) !== -1) {
+          return 1;
         }
       }
-    })
+    });
   }
-  return 0
+  return 0;
 }
 
 function switchMenu(routerName: string) {
-  activeLinkStyle.value = routerName
+  activeLinkStyle.value = routerName;
 }
 
-function switchRouter(routerName: string) {
-  console.log(routerName);
-  
-  const params = { project: Number(route.params.project) }
-  console.log(routerName)
-
-  if (routerName === '3') {
-    tools.message(t('global.open'), proxy)
-    return
+function switchRouter(routerName: string, call_back:any=()=>{}) {
+  const params = { project: Number(route.params.project) };
+  if (routerName === "3") {
+    tools.message(t("global.open"), proxy);
+    return;
   }
   if (router.currentRoute.value.name !== routerName) {
-    router.push({ name: routerName, params })
+    router.push({ name: routerName, params }).then(() => {
+      call_back()
+    });
+  } else {
+    call_back()
   }
 }
 </script>
@@ -138,7 +154,7 @@ a {
   .sidebar {
     --el-scrollbar-bg-color: transparent;
     .sidebar-groups {
-      padding: 0px 30px 0rem 0px;
+      // padding: 0px 30px 0rem 0px;
       .sidebar-group {
         .sidebar-group__title {
           font-size: 1rem;

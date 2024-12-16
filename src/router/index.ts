@@ -37,6 +37,70 @@ const routes = [
             component: () => import('@/views/api/index.vue')
           },
           {
+            path: '/home/main/project/ai/:project',
+            name: 'ai',
+            component: () => import('@/views/ai/index.vue'),
+            children: [
+              {
+                path: '/home/main/project/ai/application/arrange/project/:project/:application',
+                name: 'ai_application_arrange',
+                component: () => import('@/views/ai/application/arrange/index.vue')
+              },
+              {
+                path: '/home/main/project/ai/requirement/project/:project/',
+                name: 'ai_requirement_group',
+                component: () => import('@/views/ai/requirement/index.vue')
+              },
+              {
+                path: '/home/main/project/ai/requirement/project/:project/group/:group',
+                name: 'ai_requirement',
+                component: () => import('@/views/ai/requirement/requirement.vue')
+              },
+              {
+                path: '/home/main/project/ai/application/conversation/project/:project/:application',
+                name: 'application_conversation',
+                component: () => import('@/views/ai//application/conversation/index.vue')
+              },
+              {
+                path: '/home/main/project/ai/application/ground/project/:project',
+                name: 'ai_application_ground',
+                component: () => import('@/views/ai/application/index.vue')
+              },
+              {
+                path: '/home/main/project/ai/custom/plugin/project/:project',
+                name: 'ai_custom_plugin',
+                component: () => import('@/views/ai/custom_plugin/index.vue')
+              }, 
+              {
+                path: '/home/main/project/ai/knwoledge/project/:project',
+                name: 'ai_knowledge',
+                component: () => import('@/views/ai/knowledge/index.vue'),
+                children: [
+                  {
+                    path: '/home/main/project/ai/knwoledge/base/project/:project/',
+                    name: 'ai_knowledge_base',
+                    component: () => import('@/views/ai/knowledge/base/index.vue')
+                  },
+                  {
+                    path: '/home/main/project/ai/knwoledge/document/project/:project/:knowledge',
+                    name: 'ai_knowledge_document',
+                    component: () => import('@/views/ai/knowledge/document/index.vue')
+                  },
+                  {
+                    path: '/home/main/project/ai/knwoledge/document/create/project/:project/:knowledge',
+                    name: 'ai_knowledge_createdocument',
+                    component: () => import('@/views/ai/knowledge/create_document/index.vue')
+                  },
+                  {
+                    path: '/home/main/project/ai/knwoledge/document/segment/project/:project/:knowledge/:document',
+                    name: 'ai_knowledge_document_segment',
+                    component: () => import('@/views/ai/knowledge/segment/index.vue')
+                  }
+                ]
+              }
+            ]
+          },
+          {
             path: '/home/main/project/data/project/:project',
             name: 'data',
             component: () => import('@/views/data/index.vue')

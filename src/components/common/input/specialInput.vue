@@ -118,7 +118,7 @@ const props = defineProps({
   },
   radius: {
     type: String,
-    default: '10px 10px 10px 10px'
+    default: '9999px'
   },
   max: {
     type: Number,
@@ -201,6 +201,7 @@ function searchTimeString(value: string, originDate: Array<any>) {
 
 <style lang="scss">
 .form-group {
+  z-index: 999;
   .el-range-editor {
     font-size: 16px !important;
     width: 10px !important;
@@ -262,7 +263,7 @@ function searchTimeString(value: string, originDate: Array<any>) {
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
   background-image: linear-gradient(to right, #ffffff, #ffffff),
-    linear-gradient(90deg, var(--dynamic-tran-color), var(--global-theme-color));
+    linear-gradient(90deg, #000, #000);
   outline: none;
   box-sizing: border-box;
 }

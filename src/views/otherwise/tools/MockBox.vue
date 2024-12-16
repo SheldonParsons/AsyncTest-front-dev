@@ -56,8 +56,8 @@ function showDoc() {
 .tool {
   cursor: pointer;
   background-image: url('@/assets/img/projectStyle/l-bg-4.webp');
-  height: var(--dyToolsHeight);
-  width: var(--dyToolsWidth);
+  height: 100%;
+  width: 100%;
   //   margin-left: 20px;
   border-radius: 10px;
   background-size: cover;

@@ -1,5 +1,5 @@
 <template>
-  <div style="font-size: 20px">
+  <div :style="{'font-size': size + 'px'}">
     <svg
       t="1669704142083"
       class="language-icon"
@@ -17,6 +17,13 @@
   </div>
 </template>
 
-<script setup></script>
+<script setup>
+
+const props = defineProps({
+  size: {
+    type: Number,
+    default: 20,
+  }
+});</script>
 
 <style lang="scss" scoped></style>

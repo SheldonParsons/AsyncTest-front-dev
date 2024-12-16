@@ -2,6 +2,7 @@ const GlobalStatus = {
   // server: 'http://172.28.14.131:6001',
   server: 'http://localhost:6001',
   localhost: 'http://localhost:3000',
+  localhost_server:'http://localhost:6001',
   cookieTag: 'DjangoToken',
   anonymousPage: 'login',
   anonymousPath: 'anonymous',

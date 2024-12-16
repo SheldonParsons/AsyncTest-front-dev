@@ -105,6 +105,9 @@
         </el-dropdown>
       </el-col>
       <el-col v-if="isLogin" :span="2" :md="1" :sm="1" :xs="2">
+        <el-avatar :size="40" :src="userImage" />
+      </el-col>
+      <el-col v-if="isLogin" :span="2" :md="1" :sm="1" :xs="2">
         <el-tooltip class="box-item" effect="light" placement="bottom">
           <template #content>
             <span @click="logout" style="cursor: pointer">{{
@@ -144,12 +147,14 @@ const isWorkingCenter = ref(false)
 const isGlobalZone = ref(false)
 const showDebugPanel = ref(false)
 const { locale: localeLang } = useI18n()
+const userImage = ref('https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png')
 
 const globalZoneList = ['task']
 
 onMounted(() => {
   getLanguage()
   getHeader(router.currentRoute.value)
+  getUserImage()
 })
 
 const emit = defineEmits(['up'])
@@ -157,6 +162,14 @@ const emit = defineEmits(['up'])
 watch(showDebugPanel, (n, o) => {
   emit('up', n)
 })
+
+function getUserImage() {
+  store.dispatch('getUser').then((res:any) => {
+    if (res && res.id) {
+      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.id % 100}.png`
+    }
+  })
+}
 
 router.beforeEach((to: any, from: any, next: any) => {
   getLanguage()

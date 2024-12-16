@@ -23,6 +23,10 @@ export default defineConfig({
       '/api': {
         target: config.server,
         rewrite: path => path.replace(/^\/api/, '')
+      },
+      '/sse': {
+        target: config.server,
+        rewrite: path => path.replace(/^\/sse/, '')
       }
     }
   },
