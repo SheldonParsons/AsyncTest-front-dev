@@ -2,7 +2,7 @@
   <el-row class="top-menu">
     <el-col :span="24">
       <div class="title-main">
-        <el-page-header class="back-icon" @back="onBack" title="需求列表">
+        <el-page-header class="back-icon-requirement" @back="onBack" title="需求列表">
           <template #content style="width: 60%">
             <el-row justify="start">
               <el-col :span="10" style="display: flex; justify-content: start">
@@ -35,7 +35,7 @@
               <el-button-group class="ml-4">
                 <el-button
                   type="primary"
-                  @click=""
+                  @click="openVersionDrawer"
                   style="
                     font-size: 16px;
                     background-color: black;
@@ -671,11 +671,209 @@
     <template #footer>
       <el-divider style="margin: 0px"></el-divider>
       <div class="dialog-footer" style="padding: 15px">
-        <el-button @click="">取消</el-button>
+        <el-button @click="showGenerationDialog = false">取消</el-button>
         <el-button type="primary" @click="download_case_file">下载用例</el-button>
       </div>
     </template>
   </el-dialog>
+  <el-drawer
+    v-model="showVersionPlatform"
+    title="版本信息"
+    :direction="direction"
+  >
+  <el-tabs v-model="activeName" class="demo-tabs" @tab-click="handleClick">
+    <el-tab-pane label="生成用例历史" name="first">
+      <el-row style="width: 100%">
+      <el-col :span="24">
+        <div
+          style="
+            width: 100%;
+            border: 1px solid #dcdfe6;
+            border-radius: 5px;
+            padding: 5px;
+            background-color: #f5f5f5;
+          "
+        >
+          <span style="font-size: 14px; font-weight: 500"
+            >当前tab展示了您当前版本下生成的所有用例列表</span
+          >
+        </div>
+      </el-col>
+    </el-row>
+    <el-row class="no-scoll">
+      <el-timeline style="margin-top: 20px; padding-left: 0px; width: 100%">
+        <el-timeline-item
+          v-for="(item, index) in history"
+          :key="index"
+        >
+          <el-row
+            style="display: flex; justify-content: start; align-items: center"
+          >
+            <el-col :span="18">
+              <el-row>
+                <el-col :span="5"
+                  ><span
+                    style="
+                      font-size: 16px;
+                      font-weight: 600;
+                      display: flex;
+                      align-items: center;
+                    "
+                    >用例</span
+                  ></el-col
+                >
+                <el-col :span="5" style="display: flex; align-items: center"
+                  ><div
+                    style="
+                      border: 1px solid #f5f5f5;
+                      width: 100%;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #f5f5f5;
+                      border-radius: 5px;
+                    "
+                  >
+                    #{{ item.id }}
+                  </div></el-col
+                >
+                <el-col v-if="item.status !== 'generated'" :span="5" :offset="1" style="display: flex; align-items: center"
+                  ><div
+                    style="
+                      border: 1px solid #f5f5f5;
+                      width: 100%;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #ff9966;
+                      border-radius: 5px;
+                      color: white;
+                    "
+                  >
+                    {{ generation_statue[item.status] }}
+                  </div></el-col
+                > 
+                <el-col v-if="item.status === 'generated'" :span="5" :offset="1" style="display: flex; align-items: center"
+                  ><div
+                    style="
+                      border: 1px solid #f5f5f5;
+                      width: 100%;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #99cc33;
+                      border-radius: 5px;
+                      color: white;
+                    "
+                  >
+                    {{ generation_statue[item.status] }}
+                  </div></el-col
+                > 
+              </el-row>
+              <el-row>
+                <el-col :span="24">
+                  <span style="font-size: 14px">生成时间：</span
+                  >{{ new Date(item.add_time).toLocaleString() }}
+                </el-col>
+              </el-row>
+            </el-col>
+            <el-col :span="6"
+              ><el-button type="primary" @click="download_case(item)">
+                下载用例
+              </el-button></el-col
+            >
+          </el-row>
+        </el-timeline-item>
+      </el-timeline>
+    </el-row>
+    </el-tab-pane>
+    <el-tab-pane label="版本列表" name="second">
+      <el-row style="width: 100%">
+      <el-col :span="24">
+        <div
+          style="
+            width: 100%;
+            border: 1px solid #dcdfe6;
+            border-radius: 5px;
+            padding: 5px;
+            background-color: #f5f5f5;
+          "
+        >
+          <span style="font-size: 14px; font-weight: 500"
+            >当前tab展示了您发布的所有版本</span
+          >
+        </div>
+      </el-col>
+    </el-row>
+    <el-row class="no-scoll">
+      <el-timeline style="margin-top: 20px; padding-left: 0px; width: 100%">
+        <el-timeline-item
+          v-for="(item, index) in versions"
+          :key="index"
+        >
+          <el-row
+            style="display: flex; justify-content: start; align-items: center"
+          >
+            <el-col :span="18">
+              <el-row>
+                <el-col :span="5"
+                  ><span
+                    style="
+                      font-size: 16px;
+                      font-weight: 600;
+                      display: flex;
+                      align-items: center;
+                    "
+                    >版本</span
+                  ></el-col
+                >
+                <el-col :span="8" style="display: flex; align-items: center"
+                  ><div
+                    style="
+                      border: 1px solid #f5f5f5;
+                      width: 100%;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #f5f5f5;
+                      border-radius: 5px;
+                      padding: 2px;
+                    "
+                  >
+                    #{{ item.version }}
+                  </div></el-col
+                >
+                <el-col v-if="item.current_version === true"  :span="6" :offset="1" style="display: flex; align-items: center"
+                  ><div
+                    style="
+                      border: 1px solid #f5f5f5;
+                      width: 100%;
+                      display: flex;
+                      justify-content: center;
+                      background-color: #99cc33;
+                      border-radius: 5px;
+                      color: white;
+                    "
+                  >
+                    当前版本
+                  </div></el-col
+                > 
+              </el-row>
+              <el-row>
+                <el-col :span="24">
+                  <span style="font-size: 14px">生成时间：</span
+                  >{{ new Date(item.add_time).toLocaleString() }}
+                </el-col>
+              </el-row>
+            </el-col>
+            <el-col :span="6"
+              ><el-button type="primary" @click="switch_version(item)">
+                切换版本
+              </el-button></el-col
+            >
+          </el-row>
+        </el-timeline-item>
+      </el-timeline>
+    </el-row>
+    </el-tab-pane>
+  </el-tabs>
+  </el-drawer>
 </template>
 <script setup lang="ts">
 import {
@@ -692,12 +890,15 @@ import type { ComponentSize } from "element-plus";
 import { streamApi } from "@/api/sse/index";
 import Loading from "@/components/layout/menus/child/icon/loading.vue";
 import Right from "@/assets/svg/common/right.vue"
+import type { DrawerProps } from 'element-plus'
 import {
   getRequirementCase,
   createRequirementCase,
   updateRequirementCase,
+  getRequirementCaseHistory
 } from "@/api/ai/requirement";
 import tools from "@/utils/tools";
+const direction = ref<DrawerProps['direction']>('rtl')
 const downloadCaseFile = ref(false)
 const { proxy }: any = getCurrentInstance();
 const router = useRouter();
@@ -711,6 +912,14 @@ const d = reactive({
 const generation_process = reactive({
   value: {} as any,
 });
+const activeName = ref('first')
+
+const handleClick = (tab:any, event: Event) => {
+  console.log(tab, event)
+}
+const history = ref([])
+const versions = ref([])
+const showVersionPlatform = ref(false)
 const showGenerationDialog = ref(false);
 const req_system_name_show = ref(false);
 const req_version_show = ref(false);
@@ -746,6 +955,11 @@ const options: any = [
     label: "禁用",
   },
 ];
+const generation_statue = {
+  "generated": "已生成",
+  "generating": "生成中",
+  "un_generation": "未生成",
+}
 onMounted(() => {
   // 添加全局事件监听
   window.addEventListener("keydown", addAltS);
@@ -754,6 +968,36 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", addAltS);
 });
 
+function switch_version(item:any) {
+  current_case.value = item.id
+  const data = {
+    current_version: true
+  }
+  updateRequirementCase(current_case.value, data).then((res: any) => {
+      tools.message("已保存", proxy);
+      d.obj.update_time = res.update_time;
+      showVersionPlatform.value = false;
+      getData()
+    });
+}
+
+function openVersionDrawer() {
+  const data = {
+    case_generation: current_case.value
+  }
+  getRequirementCaseHistory(data).then((res:any) => {
+    console.log(res);
+    history.value = res.results
+  })
+  const version_data = {
+    group: Number(route.params.group)
+  };
+  getRequirementCase(data).then((res:any) => {
+    versions.value = res.results
+  })
+  showVersionPlatform.value = true
+}
+
 function download_case_file() {
   if (downloadCaseFile.value === false) {
     tools.message("别急，等用例构建完成再下载吧！", proxy);
@@ -761,6 +1005,17 @@ function download_case_file() {
     // 使用a标签下载文件
     const link = document.createElement("a");
     link.href = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/${downloadCaseFile.value}`;
+    link.download = `case_${current_case.value}.json`;
+    link.click();
+  }
+}
+function download_case(item: any) {
+  if (item.status !== "generated") {
+    tools.message("别急，等用例构建完成再下载吧！", proxy);
+  } else {
+    // 使用a标签下载文件
+    const link = document.createElement("a");
+    link.href = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/${item.path}`;
     link.download = `case_${current_case.value}.json`;
     link.click();
   }
@@ -969,7 +1224,8 @@ function add_search_default_btn(item: any) {
     content: "",
   });
 }
-onMounted(() => {
+
+function getData() {
   const data = {
     group: Number(route.params.group),
     current_version: true,
@@ -1056,6 +1312,9 @@ onMounted(() => {
       d.obj.structure = JSON.parse(res.results[0].structure);
     }
   });
+}
+onMounted(() => {
+  getData()
 });
 const enum_options = ref(["use", "unuse"]);
 function onBack() {
@@ -1248,15 +1507,6 @@ const iconStyle = computed(() => {
   animation: blink 1s step-end infinite;
   vertical-align: middle;
 }
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
 .my-header {
   padding: 20px;
   padding-bottom: 0px;
@@ -1320,7 +1570,7 @@ const iconStyle = computed(() => {
     height: inherit;
   }
 }
-.back-icon {
+.back-icon-requirement {
   .el-page-header__back {
     margin-left: 10px;
   }

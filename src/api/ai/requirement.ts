@@ -54,3 +54,12 @@ export function updateRequirementCase(id: number, data: any): Promise<String> {
       });
     });
   }
+
+// 获取生成用例历史列表
+export function getRequirementCaseHistory(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet("/llm/requirement/generation/history/", params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
