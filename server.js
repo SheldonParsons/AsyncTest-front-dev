@@ -21,29 +21,41 @@ async function createServer() {
     appType: 'custom'
   })
   
+  
   if (isProduction) {
-    app.use(serveStatic(path.resolve(__dirname, 'dist/client')))
-    app.use(bodyParser.urlencoded({ extended: true }))
-    app.use(bodyParser.json())
-    app.all(config.serverTag + '/*', async (req, res) => {
-      // 代理路由获取到接口信息，转发至后端服务器，跳过跨域
-      http()
-        .request(
-          req.method,
-          req.url.replace(config.serverTag, ''),
-          req.body,
-          req.headers
-        )
-        .then((data) => {
-          if (data.response) {
-            res.status(data.response.status)
-            res.send(data.response.data)
-          } else {
-            res.status(data.status)
-            res.send(data.data)
-          }
-        })
-    })
+    app.use(vite.middlewares)
+    // app.use(serveStatic(path.resolve(__dirname, 'dist/client')))
+    // app.use(bodyParser.urlencoded({ extended: true }))
+    // app.use(bodyParser.json())
+    // app.use(upload.any());
+    // app.all(config.serverTag + '/*', async (req, res) => {
+    //   console.log(req.body);
+    //   console.log(req.file);
+    //   console.log(req.files);
+    //   if (req.files) {
+    //     for (let i = 0; i < req.files.length; i++) {
+    //       req.body[req.files[i].fieldname] = req.files[i];
+    //     }
+    //   }
+    //   console.log(req.url);
+    //   // 代理路由获取到接口信息，转发至后端服务器，跳过跨域
+    //   http()
+    //     .request(
+    //       req.method,
+    //       req.url.replace(config.serverTag, ''),
+    //       req.body,
+    //       req.headers
+    //     )
+    //     .then((data) => {
+    //       if (data.response) {
+    //         res.status(data.response.status)
+    //         res.send(data.response.data)
+    //       } else {
+    //         res.status(data.status)
+    //         res.send(data.data)
+    //       }
+    //     })
+    // })
   } else {
     // 以中间件模式创建 Vite 应用，这将禁用 Vite 自身的 HTML 服务逻辑
     // 并让上级服务器接管控制
@@ -55,32 +67,51 @@ async function createServer() {
     let template
     let render
     try {
-      if (isProduction) {
-        // 1. 读取 index.html
-        template = fs.readFileSync(
-          path.resolve(__dirname, 'dist/client/index.html'),
-          'utf-8'
-        )
-        // 3. 加载服务器入口
-        render = (await import('./dist/server/entry-server.js')).render
-        // render = require('./dist/server/entry-server').render
-      } else {
-        // 1. 读取 index.html
-        template = fs.readFileSync(
-          path.resolve(__dirname, 'index.html'),
-          'utf-8'
-        )
+      // if (isProduction) {
+      //   // 1. 读取 index.html
+      //   template = fs.readFileSync(
+      //     path.resolve(__dirname, 'dist/client/index.html'),
+      //     'utf-8'
+      //   )
+      //   // 3. 加载服务器入口
+      //   render = (await import('./dist/server/entry-server.js')).render
+      //   // render = require('./dist/server/entry-server').render
+      // } else {
+      //   // 1. 读取 index.html
+      //   template = fs.readFileSync(
+      //     path.resolve(__dirname, 'index.html'),
+      //     'utf-8'
+      //   )
 
-        // 2. 应用 Vite HTML 转换。这将会注入 Vite HMR 客户端，
-        //    同时也会从 Vite 插件应用 HTML 转换。
-        //    例如：@vitejs/plugin-react 中的 global preambles
-        template = await vite.transformIndexHtml(url, template)
+      //   // 2. 应用 Vite HTML 转换。这将会注入 Vite HMR 客户端，
+      //   //    同时也会从 Vite 插件应用 HTML 转换。
+      //   //    例如：@vitejs/plugin-react 中的 global preambles
+      //   template = await vite.transformIndexHtml(url, template)
 
-        // 3. 加载服务器入口。vite.ssrLoadModule 将自动转换
-        //    你的 ESM 源码使之可以在 Node.js 中运行！无需打包
-        //    并提供类似 HMR 的根据情况随时失效。
-        render = (await vite.ssrLoadModule('/src/entry-server.ts')).render
-      }
+      //   // 3. 加载服务器入口。vite.ssrLoadModule 将自动转换
+      //   //    你的 ESM 源码使之可以在 Node.js 中运行！无需打包
+      //   //    并提供类似 HMR 的根据情况随时失效。
+      //   render = (await vite.ssrLoadModule('/src/entry-server.ts')).render
+      // }
+
+
+      // 1. 读取 index.html
+      template = fs.readFileSync(
+        path.resolve(__dirname, 'index.html'),
+        'utf-8'
+      )
+
+      // 2. 应用 Vite HTML 转换。这将会注入 Vite HMR 客户端，
+      //    同时也会从 Vite 插件应用 HTML 转换。
+      //    例如：@vitejs/plugin-react 中的 global preambles
+      template = await vite.transformIndexHtml(url, template)
+
+      // 3. 加载服务器入口。vite.ssrLoadModule 将自动转换
+      //    你的 ESM 源码使之可以在 Node.js 中运行！无需打包
+      //    并提供类似 HMR 的根据情况随时失效。
+      render = (await vite.ssrLoadModule('/src/entry-server.ts')).render
+
+      
       // 4. 渲染应用的 HTML。这假设 entry-server.ts 导出的 `render`
       //    函数调用了适当的 SSR 框架 API。
       //    例如 ReactDOMServer.renderToString()
