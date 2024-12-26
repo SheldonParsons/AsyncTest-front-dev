@@ -1,4 +1,89 @@
 <template>
+  <div
+    v-if="talkingList.length === 0"
+    style="
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      padding-top: 35vh;
+    "
+  >
+    <el-row>
+      <el-col :span="24" class="help-text"
+        ><span style="font-size: 1.875rem; font-weight: 600"
+          >有什么可以帮忙的？</span
+        ></el-col
+      >
+    </el-row>
+    <el-row style="width: 100%">
+      <el-col>
+        <div>
+          <el-row class="sending">
+            <el-col :span="14" class="flex-core">
+              <div class="input-main">
+                <input
+                  @input="inputChange"
+                  @keydown.enter="send"
+                  v-model="sendContent"
+                  type="text"
+                  :class="{ 'input-input': true }"
+                />
+                <div
+                  :class="{
+                    'send-main-btn': true,
+                    'has-content': hasContent,
+                    'not-has-content': !hasContent,
+                  }"
+                >
+                  <svg
+                    @click="stop"
+                    style="cursor: pointer"
+                    v-if="loading"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="icon-lg"
+                  >
+                    <rect
+                      x="7"
+                      y="7"
+                      width="10"
+                      height="10"
+                      rx="1.25"
+                      fill="currentColor"
+                    ></rect>
+                  </svg>
+                  <svg
+                    v-else
+                    @click="send"
+                    style="cursor: pointer"
+                    width="32"
+                    height="32"
+                    viewBox="0 0 32 32"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="icon-2xl"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      clip-rule="evenodd"
+                      d="M15.1918 8.90615C15.6381 8.45983 16.3618 8.45983 16.8081 8.90615L21.9509 14.049C22.3972 14.4953 22.3972 15.2189 21.9509 15.6652C21.5046 16.1116 20.781 16.1116 20.3347 15.6652L17.1428 12.4734V22.2857C17.1428 22.9169 16.6311 23.4286 15.9999 23.4286C15.3688 23.4286 14.8571 22.9169 14.8571 22.2857V12.4734L11.6652 15.6652C11.2189 16.1116 10.4953 16.1116 10.049 15.6652C9.60265 15.2189 9.60265 14.4953 10.049 14.049L15.1918 8.90615Z"
+                      fill="currentColor"
+                    ></path>
+                  </svg>
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+        </div>
+      </el-col>
+    </el-row>
+  </div>
   <el-row>
     <el-col :span="20" :offset="2">
       <div ref="contentDiv" class="content-div top-content">
@@ -42,25 +127,13 @@
       </div>
     </el-col>
   </el-row>
-
-  <div class="send-div">
+  <div class="send-div" v-if="talkingList.length > 0">
     <el-row class="sending">
-      <el-col
-        :span="1"
-        class="flex-core"
-        style="display: flex; justify-content: end; padding-right: 20px"
-        :offset="0"
-        ><el-avatar
-          @click="clean"
-          style="background-color: white; cursor: pointer"
-          :size="16"
-          :src="deleteLogo"
-      /></el-col>
-      <el-col :span="18" class="flex-core">
+      <el-col :span="14" class="flex-core">
         <div class="input-main">
           <input
             @input="inputChange"
-            @keyup.enter="send"
+            @keydown.enter="send"
             v-model="sendContent"
             type="text"
             :class="{ 'input-input': true }"
@@ -94,6 +167,8 @@
             </svg>
             <svg
               v-else
+              @click="send"
+              style="cursor: pointer"
               width="32"
               height="32"
               viewBox="0 0 32 32"
@@ -157,6 +232,7 @@ const hasContent = ref(false);
 const loading = ref(false);
 const talkingList = ref<{ content: string; type: string; end?: boolean }[]>([]);
 const md: any = ref(null);
+const isComposing = ref(false);
 const code_start = ref(false);
 const pageInstance: any = getCurrentInstance();
 const { proxy }: any = getCurrentInstance();
@@ -193,6 +269,11 @@ watch(
     if (val.indexOf("showConversation") != -1) {
       talkingList.value = [];
       getConversation(state.data.id, state.data.index);
+    }
+    if (val.indexOf("emptyConversation") != -1) {
+      talkingList.value = [];
+      current_conversation.value = null;
+      stop_message_scroll.value = false;
     }
   }
 );
@@ -307,11 +388,7 @@ function scrollToBottom(scrollableElement: any) {
   });
 }
 function setClickListeners() {
-  console.log("inin");
-
   const parentElement = document.querySelectorAll(".hljs");
-  console.log(parentElement);
-
   for (let i = 0; i < parentElement.length; i++) {
     const buttons = parentElement[i].querySelectorAll("button");
     buttons.forEach((button: any) => {
@@ -319,7 +396,10 @@ function setClickListeners() {
     });
   }
 }
-async function send() {
+async function send(event: any) {
+  if (event.isComposing) {
+    return;
+  }
   if (loading.value) {
     return;
   }
@@ -379,6 +459,17 @@ async function send() {
             cleanContent();
           }
         }
+        if (current_conversation.value === null && event === "agent_end") {
+          current_conversation.value = Number(data.conversation_id);
+          const _data = {
+            id: current_conversation.value,
+            description: "New Conversation",
+          };
+          state.setMessage(
+            "blankConversation" + Math.random().toString(),
+            _data
+          );
+        }
       }
     );
   } finally {
@@ -395,6 +486,11 @@ function inputChange() {
 </script>
 
 <style scoped lang="scss">
+.help-text {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
 .cursor {
   align-items: center;
   display: inline-block;

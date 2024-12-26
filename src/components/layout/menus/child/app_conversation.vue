@@ -34,6 +34,9 @@
         <el-icon class="more-icon"><MoreFilled /></el-icon>
         <template #dropdown>
           <el-dropdown-menu class="more-menu">
+            <el-dropdown-item @click="cancel_top_conversation(item)"
+              ><span>取消置顶</span></el-dropdown-item
+            >
             <el-dropdown-item @click="delete_pinned_conversation(item)"
               ><span style="color: brown">删除</span></el-dropdown-item
             >
@@ -73,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { getConversationList, editConversation,deleteConversation,createBlankConversation } from "@/api/ai/conversation";
 import { state } from "@/state";
 import Edit from "@/assets/svg/common/edit.vue";
@@ -91,13 +94,31 @@ onMounted(() => {
         history_list.value.push(res.results[i]);
       }
     }
-    if (pinned_list.value.length > 0) {
+    showConversationStandard()
+  });
+});
+
+function showConversationStandard() {
+  if (pinned_list.value.length > 0) {
       getConversation(pinned_list.value[0]);
     } else if (history_list.value.length > 0) {
       getConversation(history_list.value[0]);
+    } else {
+      blankConversation()
     }
-  });
-});
+}
+
+watch(
+  () => state.message,
+  (val) => {
+    if (val.indexOf("blankConversation") != -1) {
+      history_list.value.unshift({
+        id: state.data.id,
+        description: state.data.description
+      })
+    }
+  }
+);
 
 function new_conversation() {
   const data = {
@@ -119,6 +140,7 @@ async function delete_history_conversation(item: any) {
       break;
     }
   }
+  showConversationStandard()
 }
 
 async function delete_pinned_conversation(item: any) {
@@ -129,10 +151,26 @@ async function delete_pinned_conversation(item: any) {
       break;
     }
   }
+  showConversationStandard()
 }
 
 async function drop_conversation(id:any) {
   await deleteConversation(id, {})
+}
+
+function cancel_top_conversation(item: any) {
+  const data = {
+    is_pinned: false,
+  };
+  editConversation(item.id, data).then((res) => {
+    for (let i = 0; i < pinned_list.value.length; i++) {
+      if (pinned_list.value[i].id == item.id) {
+        pinned_list.value.splice(i, 1);
+        history_list.value.unshift(item);
+        break;
+      }
+    }
+  });
 }
 
 function top_conversation(item: any) {
@@ -156,6 +194,10 @@ function getConversation(item: any, index = null) {
     index: index,
   };
   state.setMessage("showConversation" + Math.random().toString(), data);
+}
+
+function blankConversation() {
+  state.setMessage("emptyConversation" + Math.random().toString());
 }
 </script>
 
