@@ -15,6 +15,23 @@ type FetchOptionType = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, any> | null;
 };
 
+export const webApp = (
+  url: string,
+  query: string,
+  app_id: any,
+  conversation_id: any,
+  project_id:any,
+  onData: (event_response: { [key: string]: any }) => void
+) => {
+  return ssePost(
+    url,
+    {
+      body: { query: query, app_id: app_id, conversation_id: conversation_id, project_id: project_id },
+    },
+    onData
+  );
+};
+
 export const debugApp = (
   url: string,
   query: string,

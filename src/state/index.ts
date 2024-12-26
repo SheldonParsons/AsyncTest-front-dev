@@ -6,9 +6,10 @@ import { reactive } from 'vue'
 export const state = reactive({
   // 设置一个属性并赋予初始值
   message: 'Global State',
-
+  data: {},
   // 添加一个更新数据的方法
-  setMessage(msg: string) {
+  setMessage(msg: string, data:any=null) {
     this.message = msg
+    this.data = data
   },
 })
