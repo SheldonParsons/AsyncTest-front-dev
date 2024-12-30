@@ -24,7 +24,7 @@
     <el-row style="padding-top: 30px">
       <el-col :offset="2" :span="20">
         <el-divider content-position="left">{{
-          t('project.favorite')
+          t("project.favorite")
         }}</el-divider>
         <el-row
           v-if="favoriteProjects.list.length > 0"
@@ -42,12 +42,12 @@
             <transition name="fade" mode="out-in" appear>
               <el-card
                 :body-style="{
-                  padding: '0px'
+                  padding: '0px',
                 }"
                 :style="{ '--el-card-border-radius': '5px' }"
                 shadow="hover"
                 :class="{
-                  'favorite-card-main': true
+                  'favorite-card-main': true,
                 }"
               >
                 <div
@@ -68,19 +68,51 @@
                       effect="dark"
                       round
                     >
-                      {{ t('project.defaultProject') }}
+                      {{ t("project.defaultProject") }}
                     </el-tag></span
                   >
                   <span class="Label Label--secondary v-align-middle ml-1">{{
-                    t('project.public')
+                    t("project.public")
                   }}</span>
                 </div>
               </el-card>
             </transition></el-col
-          ></el-row
-        >
+          >
+          <el-col
+            class="favorite-card-col"
+            :md="6"
+            :lg="12"
+            style="height: 60px"
+          >
+            <transition name="fade" mode="out-in" appear>
+              <el-card
+                :body-style="{
+                  padding: '0px',
+                }"
+                :style="{ '--el-card-border-radius': '5px' }"
+                shadow="hover"
+                :class="{
+                  'favorite-card-main': true,
+                }"
+              >
+                <div
+                  :class="{ 'favorite-card': true }"
+                  style="height: 60px; text-align: center"
+                  @click="showCreateProject()"
+                >
+                  <span class="card-favorite-span-name card-span-line"
+                    >创建新项目+</span
+                  >
+                  <span class="Label Label--secondary v-align-middle ml-1">{{
+                    t("project.public")
+                  }}</span>
+                </div>
+              </el-card>
+            </transition></el-col
+          >
+        </el-row>
         <el-empty v-else :image-size="80" :description="t('global.empty')" />
-        <el-divider content-position="left">{{ t('project.all') }}</el-divider>
+        <el-divider content-position="left">{{ t("project.all") }}</el-divider>
         <el-row
           v-if="projects.list.length > 0"
           :gutter="30"
@@ -138,190 +170,261 @@
       :maxlength="500"
     ></CommonTextarea>
   </CommonDialog>
+  <CommonDialog
+    :dialog="show_create_project"
+    :dWidth="45"
+    :dTop="10"
+    :hasFooter="true"
+    footerConfirmDesc="创建"
+    footerCancelDesc="取消"
+    headerText="创建个人项目"
+    :cancelDoubleCheck="false"
+    @closed="closedCreateProjectDialog"
+    @cancel="closedCreateProjectDialog"
+    @confirm="create_project"
+  >
+    <el-row>
+      <el-col :span="3"
+        ><span style="font-size: 14px; font-weight: 600">项目名称</span></el-col
+      >
+      <el-col :span="21"
+        ><el-input v-model="project_name" placeholder="项目名"></el-input
+      ></el-col>
+    </el-row>
+    <el-row style="margin-top: 20px">
+      <el-col :span="3"
+        ><span style="font-size: 14px; font-weight: 600">项目描述</span></el-col
+      >
+      <el-col :span="21"
+        ><el-input
+          v-model="project_desc"
+          :autosize="{ minRows: 2, maxRows: 4 }"
+          type="textarea"
+          placeholder="项目描述信息"
+      /></el-col>
+    </el-row>
+  </CommonDialog>
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, onMounted, getCurrentInstance } from 'vue'
-import tools from '@/utils/tools'
-import SpecialInput from '@/components/common/input/specialInput.vue'
-import CommonDialog from '@/components/layout/dialogs/commonDialog.vue'
-import CommonTextarea from '@/components/common/input/commonTextarea.vue'
-import { ApiCreateTouchPixel } from '@/api/pixel/project'
+import { ref, reactive, onMounted, getCurrentInstance } from "vue";
+import tools from "@/utils/tools";
+import SpecialInput from "@/components/common/input/specialInput.vue";
+import CommonDialog from "@/components/layout/dialogs/commonDialog.vue";
+import CommonTextarea from "@/components/common/input/commonTextarea.vue";
+import { ApiCreateTouchPixel } from "@/api/pixel/project";
+import { createProjects } from "@/api/project/index";
 import {
   ApiGetProjects,
   ApiGetFavoriteProjects,
   ApiDeleteFavoriteProjects,
   ApiAddFavoriteProjects,
   ApiDeleteDefaultProjects,
-  ApiAddDefaultProjects
-} from '@/api/project/index'
-import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import PanelViewNewCard from './panelViewNewCard.vue'
-import _ from 'lodash'
-const router = useRouter()
-const { t } = useI18n()
+  ApiAddDefaultProjects,
+} from "@/api/project/index";
+import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
+import PanelViewNewCard from "./panelViewNewCard.vue";
+import _ from "lodash";
+const router = useRouter();
+const { t } = useI18n();
+// 打开创建项目
+const show_create_project = ref(false);
+// 项目名称
+const project_name = ref("");
+// 项目描述
+const project_desc = ref("");
 // 搜索输入框动态数据
-const search = ref('')
+const search = ref("");
 // 搜索输入框栅格宽度
-const searchInputWidth = ref(20)
+const searchInputWidth = ref(20);
 // 搜索输入框是否触顶
-const isSearchEleOnTop = ref(false)
+const isSearchEleOnTop = ref(false);
 // 搜索框触顶偏移量
-const searchOffsetIndex = ref(2)
+const searchOffsetIndex = ref(2);
 // 搜索宽度
-const searchWidth = ref('100')
+const searchWidth = ref("100");
 // 当前页数
-const currentPage = ref(1)
+const currentPage = ref(1);
 // 是否禁用无限滚动
-const disInfinite = ref(true)
+const disInfinite = ref(true);
 // 永久禁止无限滚动
-const alwaysDisInfinite = ref(false)
+const alwaysDisInfinite = ref(false);
 // 申请加入项目对话框
-const showApproveProjectDialog = ref(false)
+const showApproveProjectDialog = ref(false);
 // 申请理由
-const approveDesc = ref('')
+const approveDesc = ref("");
 // 当前项目
-const currentProject = ref(0)
+const currentProject = ref(0);
 // 项目列表对象，用于装载响应体的project对象，差别不大，主要为解决动画显示的连贯性
 const projects = reactive({
-  list: [] as any
-})
+  list: [] as any,
+});
 const favoriteProjects = reactive({
-  list: [] as any
-})
-const clickAllowed = ref(true)
-const { proxy }: any = getCurrentInstance()
+  list: [] as any,
+});
+const clickAllowed = ref(true);
+const { proxy }: any = getCurrentInstance();
 onMounted(async () => {
-  disInfinite.value = true
-  await getProjects(20, search.value)
-  await getFavoriteProject(30, search.value)
-})
+  disInfinite.value = true;
+  await getProjects(20, search.value);
+  await getFavoriteProject(30, search.value);
+});
+
+function closedCreateProjectDialog() {
+  show_create_project.value = false;
+  project_name.value = "";
+  project_desc.value = "";
+}
+
+function showCreateProject() {
+  show_create_project.value = true;
+}
+
+function create_project() {
+  if (project_name.value === "" || project_desc.value === "") {
+    proxy.$message({
+      message: "请输入项目名称和描述",
+      duration: 3000,
+      type: "warning",
+    });
+    return;
+  }
+  const data = {
+    name: project_name.value,
+    desc: project_desc.value,
+    source: 0,
+  };
+  createProjects(data).then((res: any) => {
+    clearDataFromSearch();
+    closedCreateProjectDialog();
+  });
+}
 
 // 清空输入框，重新请求所有项目
 function clearDataFromSearch() {
-  alwaysDisInfinite.value = false
-  disInfinite.value = true
-  projects.list = []
-  favoriteProjects.list = []
-  currentPage.value = 1
-  search.value = ''
-  getProjects(20, search.value)
-  getFavoriteProject(10, search.value)
+  alwaysDisInfinite.value = false;
+  disInfinite.value = true;
+  projects.list = [];
+  favoriteProjects.list = [];
+  currentPage.value = 1;
+  search.value = "";
+  getProjects(20, search.value);
+  getFavoriteProject(10, search.value);
 }
 
 // 通过项目名称模糊搜索，防抖
 const searching = _.debounce(
   function (e) {
-    disInfinite.value = true
-    projects.list = []
-    favoriteProjects.list = []
-    currentPage.value = 1
-    alwaysDisInfinite.value = false
-    getProjects(20, search.value)
-    getFavoriteProject(10, search.value)
+    disInfinite.value = true;
+    projects.list = [];
+    favoriteProjects.list = [];
+    currentPage.value = 1;
+    alwaysDisInfinite.value = false;
+    getProjects(20, search.value);
+    getFavoriteProject(10, search.value);
   },
   500,
   { maxWait: 1500 }
-)
+);
 
 // 搜索框固定触顶状态改变回调函数
 function onSearchChange(item: any): void {
   if (isSearchEleOnTop.value !== item) {
-    searchInputWidth.value = searchInputWidth.value === 15 ? 20 : 15
+    searchInputWidth.value = searchInputWidth.value === 15 ? 20 : 15;
   }
   if (item) {
-    searchWidth.value = '80'
-    searchOffsetIndex.value = 6
+    searchWidth.value = "80";
+    searchOffsetIndex.value = 6;
   } else {
-    searchWidth.value = '100'
-    searchOffsetIndex.value = 2
+    searchWidth.value = "100";
+    searchOffsetIndex.value = 2;
   }
-  isSearchEleOnTop.value = item
+  isSearchEleOnTop.value = item;
 }
 
 // 进入项目，路由跳转
 function enterProject(project: any) {
   if (project.is_member) {
-    router.push({ name: 'data', params: { project: project.id } })
+    router.push({ name: "data", params: { project: project.id } });
   } else {
-    currentProject.value = project.id
-    showApproveProjectDialog.value = true
+    currentProject.value = project.id;
+    showApproveProjectDialog.value = true;
   }
 }
 // 获取收藏项目
-function getFavoriteProject(size = 10, name = '') {
+function getFavoriteProject(size = 10, name = "") {
   ApiGetFavoriteProjects({ page: 1, size, name }).then((data: any) => {
     if (data.results && data.results.length > 0) {
-      intervalData(data, favoriteProjects, size, false)
+      intervalData(data, favoriteProjects, size, false);
     } else {
-      clearStatus()
+      clearStatus();
     }
-  })
+  });
 }
 // 获取项目列表API，每成功调用一次page自增1
-async function getProjects(size = 10, name = '') {
+async function getProjects(size = 10, name = "") {
   ApiGetProjects({ page: currentPage.value, size, name }).then((data: any) => {
     if (data.detail) {
       proxy.$message({
-        message: t('response.lessData'),
+        message: t("response.lessData"),
         duration: 3000,
-        type: 'warning'
-      })
-      clearStatus()
-      alwaysDisInfinite.value = true
-      return
+        type: "warning",
+      });
+      clearStatus();
+      alwaysDisInfinite.value = true;
+      return;
     }
     if (data.results && data.results.length > 0) {
-      intervalData(data, projects, size, true)
+      intervalData(data, projects, size, true);
     } else {
       // 未知错误，解锁无限滚动
-      clearStatus()
+      clearStatus();
     }
-  })
+  });
 }
 
 function closedApproveProjectDialog() {
-  approveDesc.value = ''
-  showApproveProjectDialog.value = false
+  approveDesc.value = "";
+  showApproveProjectDialog.value = false;
 }
 
 function confirmApproveProject() {
-  if (approveDesc.value === '') {
+  if (approveDesc.value === "") {
     proxy.$message({
-      message: t('project.approve.emptyApproveReason'),
+      message: t("project.approve.emptyApproveReason"),
       duration: 3000,
-      type: 'warning'
-    })
+      type: "warning",
+    });
   } else {
     const data = {
       type: 1,
       project: currentProject.value,
-      desc: approveDesc.value
-    }
+      desc: approveDesc.value,
+    };
     ApiCreateTouchPixel(data).then((data: any) => {
       if (data.non_field_errors) {
         proxy.$message({
-          message: t('project.approve.dupApprove'),
+          message: t("project.approve.dupApprove"),
           duration: 3000,
-          type: 'warning'
-        })
+          type: "warning",
+        });
       } else if (data.result === 0) {
         proxy.$message({
-          message: t('project.approve.abandonApplySystem'),
+          message: t("project.approve.abandonApplySystem"),
           duration: 3000,
-          type: 'warning'
-        })
+          type: "warning",
+        });
       } else {
         proxy.$message({
-          message: t('project.approve.successApply'),
+          message: t("project.approve.successApply"),
           duration: 3000,
-          type: 'success'
-        })
-        showApproveProjectDialog.value = false
-        approveDesc.value = ''
+          type: "success",
+        });
+        showApproveProjectDialog.value = false;
+        approveDesc.value = "";
       }
-    })
+    });
   }
 }
 
@@ -332,168 +435,168 @@ function intervalData(
   size: number,
   isAllProject: any = false
 ) {
-  let count = 0
-  disInfinite.value = true
+  let count = 0;
+  disInfinite.value = true;
   const timer = setInterval(() => {
-    instance.list.push(data.results[count])
-    count = count + 1
+    instance.list.push(data.results[count]);
+    count = count + 1;
     if (count >= data.results.length) {
       if (isAllProject) {
-        currentPage.value = currentPage.value + size / 10
+        currentPage.value = currentPage.value + size / 10;
       }
-      clearStatus()
-      clearInterval(timer)
+      clearStatus();
+      clearInterval(timer);
     }
-  }, 10)
+  }, 10);
 }
 
 // 开启无限滚动
 function clearStatus() {
-  disInfinite.value = false
+  disInfinite.value = false;
 }
 
 // 滚动加载
 async function load() {
   if (alwaysDisInfinite.value === false) {
-    disInfinite.value = true
-    await getProjects(10, search.value)
+    disInfinite.value = true;
+    await getProjects(10, search.value);
   }
 }
 // 设置默认项目
 async function setDefault(project: any) {
   if (!clickAllowed.value) {
-    clickAllowMessage()
-    return
+    clickAllowMessage();
+    return;
   }
-  clickAllowed.value = false
+  clickAllowed.value = false;
   // 获取当前行为是设置默认项目还是取消默认项目
   if (project.is_default) {
     // 1、取消默认项目
-    await cancelDefault(project)
+    await cancelDefault(project);
     favoriteProjects.list.forEach((item: any) => {
-      item.is_default = false
-    })
+      item.is_default = false;
+    });
     proxy.$message({
-      message: t('project.cancelDefault'),
+      message: t("project.cancelDefault"),
       duration: 3000,
-      type: 'warning'
-    })
+      type: "warning",
+    });
   } else {
     // 2、设置默认项目
-    await addDefault(project)
+    await addDefault(project);
     projects.list.forEach((item: any) => {
       if (item.is_default && item.id !== project.id) {
-        item.is_default = false
+        item.is_default = false;
       }
-    })
+    });
     favoriteProjects.list.forEach((item: any) => {
-      item.is_default = item.id === project.id
-    })
+      item.is_default = item.id === project.id;
+    });
     proxy.$message({
-      message: t('project.addDefault'),
+      message: t("project.addDefault"),
       duration: 3000,
-      type: 'warning'
-    })
+      type: "warning",
+    });
     if (project.is_favorite === false) {
-      addFavoriteAction(project)
-      project.is_favorite = true
+      addFavoriteAction(project);
+      project.is_favorite = true;
     }
   }
-  project.is_default = !project.is_default
-  clickAllowed.value = true
+  project.is_default = !project.is_default;
+  clickAllowed.value = true;
 }
 
 async function cancelFavoriteAction(project: any) {
   // 1、取消收藏
-  await cancelFavorite(project)
+  await cancelFavorite(project);
   // message提示
   proxy.$message({
-    message: t('project.cancelFavorite'),
+    message: t("project.cancelFavorite"),
     duration: 3000,
-    type: 'warning'
-  })
+    type: "warning",
+  });
   for (let i = 0; i < favoriteProjects.list.length; i++) {
     if (favoriteProjects.list[i].id === project.id) {
-      favoriteProjects.list.splice(i, 1)
-      break
+      favoriteProjects.list.splice(i, 1);
+      break;
     }
   }
 }
 
 async function addFavoriteAction(project: any) {
   // 2、设置收藏
-  const res: any = await addFavorite(project)
+  const res: any = await addFavorite(project);
   res.data.forEach((item: any) => {
-    favoriteProjects.list.push(item)
-  })
+    favoriteProjects.list.push(item);
+  });
   // message提示
   proxy.$message({
-    message: t('project.addFavorite'),
+    message: t("project.addFavorite"),
     duration: 3000,
-    type: 'warning'
-  })
+    type: "warning",
+  });
 }
 
 // 设置收藏项目
 async function setFavorite(project: any) {
   if (!clickAllowed.value) {
-    clickAllowMessage()
-    return
+    clickAllowMessage();
+    return;
   }
-  clickAllowed.value = false
+  clickAllowed.value = false;
   // 获取当前行为是设置收藏项目还是取消收藏项目
   if (project.is_favorite) {
-    await cancelFavoriteAction(project)
+    await cancelFavoriteAction(project);
   } else {
-    await addFavoriteAction(project)
+    await addFavoriteAction(project);
   }
-  project.is_favorite = !project.is_favorite
-  clickAllowed.value = true
+  project.is_favorite = !project.is_favorite;
+  clickAllowed.value = true;
 }
 
 // 取消默认
 async function cancelDefault(project: any) {
   return ApiDeleteDefaultProjects(project.id).then((data) => {
-    return data
-  })
+    return data;
+  });
 }
 
 // 设置为默认
 async function addDefault(project: any) {
   const data = {
-    project_id: project.id.toString()
-  }
+    project_id: project.id.toString(),
+  };
   return ApiAddDefaultProjects(data).then((data) => {
-    return data
-  })
+    return data;
+  });
 }
 // 取消收藏
 async function cancelFavorite(project: any) {
   const data = {
-    project_ids: project.id.toString()
-  }
+    project_ids: project.id.toString(),
+  };
   return ApiDeleteFavoriteProjects(project.id, data).then((data) => {
-    return data
-  })
+    return data;
+  });
 }
 
 // 加入收藏
 async function addFavorite(project: any) {
   const data = {
-    project_ids: project.id.toString()
-  }
+    project_ids: project.id.toString(),
+  };
   return ApiAddFavoriteProjects(data).then((data) => {
-    return data
-  })
+    return data;
+  });
 }
 
 // 禁止点击提示
 function clickAllowMessage() {
   proxy.$message({
-    message: t('noticeError.clickAllowed'),
+    message: t("noticeError.clickAllowed"),
     duration: 3000,
-    type: 'warning'
-  })
+    type: "warning",
+  });
 }
 </script>
 

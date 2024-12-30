@@ -57,7 +57,7 @@ const routes = [
                 component: () => import('@/views/ai/requirement/requirement.vue')
               },
               {
-                path: '/home/main/project/ai/application/conversation/project/:project/:application',
+                path: '/home/main/project/ai/application/conversation/project/:project/',
                 name: 'application_conversation',
                 component: () => import('@/views/ai//application/conversation/index.vue')
               },

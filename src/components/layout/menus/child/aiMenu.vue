@@ -5,7 +5,7 @@
   >
     创建 AI 应用
   </div>
-  <section class="sidebar-group" style="margin-top: 20px">
+  <section class="sidebar-group" style="margin-top: 20px" @click="switchRouter('application_conversation')">
     <a
       class="link"
       :class="{ active: 'ai_main' === activeLinkStyle }"

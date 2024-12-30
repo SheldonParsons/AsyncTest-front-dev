@@ -1,4 +1,64 @@
 <template>
+  <div class="app-choice" style="margin-top: 20px">
+    <el-row>
+      <el-col :span="20" style="margin-left: 10px;">
+        <el-select class="model-select" v-model="choice_app" placeholder="">
+          <el-option
+            class="app-option"
+            v-for="(item, index) in web_app_list"
+            :key="index"
+            :label="item"
+            :value="item.id"
+          >
+            <div
+              style="display: flex; justify-content: start; align-items: center"
+            >
+              <el-avatar
+                shape="square"
+                style="margin-left: 10px; cursor: pointer"
+                :size="28"
+                :src="item.icon"
+              />
+              <span style="font-size: 14px; font-weight: 500;margin-left: 10px;">{{
+                item.name
+              }}</span>
+            </div>
+          </el-option>
+          <el-option
+            :label="{name: '默认配置',icon:OpenAi}"
+            :value="-1"
+          >
+            <div
+              style="display: flex; justify-content: start; align-items: center"
+            >
+            <el-avatar
+                shape="square"
+                style="margin-left: 10px; cursor: pointer"
+                :size="32"
+                :src="OpenAi"
+              />
+              <span style="font-size: 14px; font-weight: 500;margin-left: 10px;">默认配置</span>
+            </div>
+          </el-option>
+          <template #label="{ label, value }">
+            <div
+              style="display: flex; justify-content: start; align-items: center"
+            >
+              <el-avatar
+                shape="square"
+                style="margin-left: 10px; cursor: pointer"
+                :size="32"
+                :src="label.icon"
+              />
+              <span style="font-weight: bold; margin-left: 10px">{{
+                label.name
+              }}</span>
+            </div>
+          </template>
+        </el-select>
+      </el-col>
+    </el-row>
+  </div>
   <div
     v-if="talkingList.length === 0"
     style="
@@ -220,6 +280,10 @@ import hljs from "highlight.js";
 import "highlight.js/styles/atom-one-light.css";
 import { useRoute, useRouter } from "vue-router";
 import { getConversationSingle } from "@/api/ai/conversation";
+import { getAppList } from "@/api/ai/index";
+import OpenAi from "@/assets/img/openai.png";
+const choice_app: any = ref(-1);
+const web_app_list: any = ref([]);
 const route = useRoute();
 const router = useRouter();
 function cleanContent() {
@@ -261,8 +325,19 @@ onMounted(() => {
       }
     }
   });
+  get_web_app_list();
 });
-
+function get_web_app_list() {
+  const data = {
+    page: 1,
+    size: 100,
+    project: route.params.project,
+    mixins: "",
+  };
+  getAppList(data).then((res: any) => {
+    web_app_list.value = res.results;
+  });
+}
 watch(
   () => state.message,
   (val) => {
@@ -425,7 +500,7 @@ async function send(event: any) {
     await webApp(
       "llm/app/conversation/app/",
       sendContent.value,
-      null,
+      choice_app.value === -1 ? null : choice_app.value,
       current_conversation.value,
       current_project_id.value,
       async (event_response) => {
@@ -475,7 +550,16 @@ async function send(event: any) {
   } finally {
   }
 }
-function stop() {}
+function stop() {
+//     const data = {
+//     task_id: current_task_id.value,
+//   };
+//   stopDebugConversation(app.value.id, data).then((res) => {
+//     console.log(res);
+//     loading.value = false;
+//     cleanContent();
+//   });
+}
 function inputChange() {
   if (sendContent.value.length > 0) {
     hasContent.value = true;
@@ -605,6 +689,14 @@ function inputChange() {
   --tw-bg-opacity: 1;
   background-color: rgb(215 215 215 / var(--tw-bg-opacity));
 }
+.app-option {
+    margin-top: 5px;
+}
+.app-choice {
+    position: fixed;
+    width: 20%;
+    z-index: 999;
+}
 </style>
 <style lang="scss">
 .core-content {
@@ -618,5 +710,11 @@ function inputChange() {
   pre {
     max-width: 95%;
   }
+}
+.model-select .el-select__wrapper {
+    height: 50px!important;
+}
+.el-select__wrapper.is-focused {
+    box-shadow: 0 0 0 1px black;
 }
 </style>

@@ -44,7 +44,7 @@ const props = defineProps({
 
 function showDoc() {
   router.push({
-    name: 'apiMock',
+    name: 'ai_application_ground',
     params: {
       project: Number(route.params.project)
     }

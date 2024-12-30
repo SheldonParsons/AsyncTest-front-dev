@@ -167,8 +167,7 @@ function openPluginDialog() {
 }
 function enter_application_conversation() {
   const params = {
-    project: Number(route.params.project),
-    application: props.application,
+    project: Number(route.params.project)
   };
   router.push({name:"application_conversation",params})
 }

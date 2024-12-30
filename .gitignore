@@ -13,6 +13,7 @@ public
 dist-ssr
 *.local
 .history
+uploads
 
 # Editor directories and files
 .vscode/*

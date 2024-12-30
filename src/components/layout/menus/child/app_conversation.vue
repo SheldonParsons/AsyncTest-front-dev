@@ -86,7 +86,10 @@ const router = useRouter();
 const pinned_list: any = ref([]);
 const history_list: any = ref([]);
 onMounted(() => {
-  getConversationList({}).then((res: any) => {
+  const data = {
+    project: route.params.project
+  }
+  getConversationList(data).then((res: any) => {
     for (let i = 0; i < res.results.length; i++) {
       if (res.results[i].is_pinned) {
         pinned_list.value.push(res.results[i]);

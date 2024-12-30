@@ -52,3 +52,12 @@ export function ApiAddDefaultProjects(data:any):Promise<String> {
     })
   })
 }
+
+// 创建项目
+export function createProjects(data:any):Promise<String> {
+  return new Promise(resolve => {
+    http.httpPost('/project/', data).then((res:any) => {
+      resolve(res)
+    })
+  })
+}
