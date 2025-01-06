@@ -86,6 +86,17 @@
         <span>Docs</span>
       </div>
       <div
+      v-if="showMenu"
+        :class="{
+          'ele-container': true,
+          'focuse-icon': currentFocuseIcon.indexOf('audit') !== -1,
+        }"
+        @click="switchRouter('audit')"
+      >
+        <AUDIT class="icon-menu api"></AUDIT>
+        <span>Audit</span>
+      </div>
+      <div
         :class="{
           'ele-container': true,
           'ele-other': true,
@@ -109,8 +120,13 @@ import MOCK from "@/assets/svg/menu/mock.vue";
 import OTHER from "@/assets/svg/menu/other.vue";
 import OPEN from "@/assets/svg/menu/open.vue";
 import DATA from "@/assets/svg/menu/data.vue";
+import AUDIT from "@/assets/svg/menu/audit.vue";
 import tools from "@/utils/tools";
+import { useStore } from "@/store";
 import { useI18n } from "vue-i18n";
+
+const showMenu = ref(false);
+const store = useStore();
 const route: any = useRoute();
 const router: any = useRouter();
 const currentFocuseIcon = ref("data");
@@ -119,6 +135,13 @@ onMounted(() => {
   switchRouter(router.currentRoute.value.name);
   createBubbles();
   setInterval(createBubbles, 600);
+  store.dispatch("getUser").then((res: any) => {
+      if (res && res.username) {
+        if (["a80646"].indexOf(res.username) !== -1) {
+          showMenu.value = true
+        }
+      }
+    });
 });
 
 const emit = defineEmits(["switchRouterAction"]);

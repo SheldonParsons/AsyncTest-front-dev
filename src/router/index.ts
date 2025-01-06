@@ -42,6 +42,11 @@ const routes = [
             component: () => import('@/views/ai/index.vue'),
             children: [
               {
+                path: '/home/main/project/audit/interface/project/:project/',
+                name: 'audit',
+                component: () => import('@/views/audit/index.vue')
+              },
+              {
                 path: '/home/main/project/ai/application/arrange/project/:project/:application',
                 name: 'ai_application_arrange',
                 component: () => import('@/views/ai/application/arrange/index.vue')

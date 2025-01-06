@@ -1,25 +1,4 @@
 <template>
-  <!-- <el-affix position="top" :offset="85" class="action-bar">
-    <ul style="list-style: none">
-      <li @click="addData">
-        <CButton
-          ><el-icon><CirclePlusFilled /></el-icon
-        ></CButton>
-      </li>
-      <li @click="clearDataFromSearch">
-        <CButton
-          ><el-icon><RefreshLeft /></el-icon
-        ></CButton>
-      </li>
-      <el-backtop class="action-bar-back-top">
-        <li>
-          <CButton
-            ><el-icon><ArrowUp /></el-icon
-          ></CButton>
-        </li>
-      </el-backtop>
-    </ul>
-  </el-affix> -->
   <el-row class="search">
     <el-affix
       position="top"

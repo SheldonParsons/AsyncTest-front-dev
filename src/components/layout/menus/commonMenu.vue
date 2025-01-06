@@ -52,6 +52,12 @@
           :activeLinkStyle="activeLinkStyle"
           @switchRouterAction="switchRouter"
         ></Otherwise>
+        <Audit
+        v-if="routeName.indexOf('audit') !== -1"
+          :activeLinkStyle="activeLinkStyle"
+          @switchRouterAction="switchRouter"
+        >
+        </Audit>
       </div>
     </el-scrollbar>
   </div>
@@ -72,6 +78,7 @@ import Otherwise from "./child/otherwiseMenu.vue";
 import Interface from "./child/interfaceMenu.vue";
 import AI from "./child/aiMenu.vue";
 import AppConversation from "./child/app_conversation.vue";
+import Audit from "./child/auditMenu.vue";
 const activeLinkStyle = ref("");
 const router: any = useRouter();
 const route: any = useRoute();
