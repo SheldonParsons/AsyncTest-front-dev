@@ -9,9 +9,9 @@
     }"
   >
     <p class="tools-p">{{ $t('global.news') }}</p>
-    <!-- <div class="fake-btn">
+    <div class="fake-btn">
       <span>LLM AI Agent</span>
-    </div> -->
+    </div>
   </div>
 </template>
 
@@ -55,8 +55,8 @@ function showDoc() {
 <style lang="scss" scoped>
 .tool {
   cursor: pointer;
-  background-image: url('@/assets/img/projectStyle/tag-4.webp');
-  height: 80px;
+  background-image: url('@/assets/img/projectStyle/l-bg-4.webp');
+  height: 100%;
   width: 100%;
   //   margin-left: 20px;
   border-radius: 10px;
@@ -68,9 +68,9 @@ function showDoc() {
     font-weight: 700;
     font-size: 14px;
     text-align: center;
-    padding-top: 12%;
-    color: white;
-    background: -webkit-linear-gradient(315deg, white 45%, white);
+    padding-top: 6%;
+    color: black;
+    background: -webkit-linear-gradient(315deg, #000 45%, #caff70);
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
