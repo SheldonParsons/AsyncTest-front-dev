@@ -1,7 +1,7 @@
 <template>
   <div class="app-choice" style="margin-top: 20px">
     <el-row>
-      <el-col :span="20" style="margin-left: 10px;">
+      <el-col :span="20" style="margin-left: 10px">
         <el-select class="model-select" v-model="choice_app" placeholder="">
           <el-option
             class="app-option"
@@ -19,25 +19,25 @@
                 :size="28"
                 :src="item.icon"
               />
-              <span style="font-size: 14px; font-weight: 500;margin-left: 10px;">{{
-                item.name
-              }}</span>
+              <span
+                style="font-size: 14px; font-weight: 500; margin-left: 10px"
+                >{{ item.name }}</span
+              >
             </div>
           </el-option>
-          <el-option
-            :label="{name: '默认配置',icon:OpenAi}"
-            :value="-1"
-          >
+          <el-option :label="{ name: '默认配置', icon: OpenAi }" :value="-1">
             <div
               style="display: flex; justify-content: start; align-items: center"
             >
-            <el-avatar
+              <el-avatar
                 shape="square"
                 style="margin-left: 10px; cursor: pointer"
                 :size="32"
                 :src="OpenAi"
               />
-              <span style="font-size: 14px; font-weight: 500;margin-left: 10px;">默认配置</span>
+              <span style="font-size: 14px; font-weight: 500; margin-left: 10px"
+                >默认配置</span
+              >
             </div>
           </el-option>
           <template #label="{ label, value }">
@@ -71,7 +71,7 @@
       padding-top: 35vh;
     "
   >
-    <el-row>
+    <el-row style="margin-bottom: 20px">
       <el-col :span="24" class="help-text"
         ><span style="font-size: 1.875rem; font-weight: 600"
           >有什么可以帮忙的？</span
@@ -154,7 +154,7 @@
         >
           <el-col v-if="item.type === 'user'" :span="24" class="user-content">
             <div>
-              <span>{{ item.content }}</span>
+              <pre>{{ item.content }}</pre>
             </div>
           </el-col>
           <el-col class="ai-content" :span="24" v-if="item.type === 'ai'">
@@ -181,6 +181,10 @@
               <span class="ai-content-span"
                 ><div class="core-content" v-html="md.parse(item.content)"></div
               ></span>
+              <div class="rotation-tag" v-if="item.content.length === 0">
+                <!-- <img style="width: 30px;" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/static/tag_color_rotation.gif" alt="动态图标" /> -->
+                <div class="loading-text">正在分析...</div>
+              </div>
             </div>
           </el-col>
         </el-row>
@@ -191,11 +195,12 @@
     <el-row class="sending">
       <el-col :span="14" class="flex-core">
         <div class="input-main">
-          <input
+          <el-input
             @input="inputChange"
             @keydown.enter="send"
             v-model="sendContent"
-            type="text"
+            type="textarea"
+            autosize
             :class="{ 'input-input': true }"
           />
           <div
@@ -551,14 +556,14 @@ async function send(event: any) {
   }
 }
 function stop() {
-//     const data = {
-//     task_id: current_task_id.value,
-//   };
-//   stopDebugConversation(app.value.id, data).then((res) => {
-//     console.log(res);
-//     loading.value = false;
-//     cleanContent();
-//   });
+  //     const data = {
+  //     task_id: current_task_id.value,
+  //   };
+  //   stopDebugConversation(app.value.id, data).then((res) => {
+  //     console.log(res);
+  //     loading.value = false;
+  //     cleanContent();
+  //   });
 }
 function inputChange() {
   if (sendContent.value.length > 0) {
@@ -570,6 +575,29 @@ function inputChange() {
 </script>
 
 <style scoped lang="scss">
+.loading-text {
+  margin-left: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  background: linear-gradient(90deg, #ffffff, black, #ffffff);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
 .help-text {
   display: flex;
   justify-content: center;
@@ -647,21 +675,8 @@ function inputChange() {
   justify-content: center;
   align-items: baseline;
 }
-.input-input {
-  background: none; /* 移除背景 */
-  border: none; /* 移除边框 */
-  outline: none; /* 移除焦点时的轮廓线 */
-  box-shadow: none; /* 移除阴影 */
-  appearance: none; /* 移除特定于浏览器的默认样式 */
-  -moz-appearance: none; /* Firefox的特定样式清除 */
-  -webkit-appearance: none; /* Chrome和Safari的特定样式清除 */
-  width: 90%;
-  background-color: transparent;
-  height: 40px;
-  font-size: 1rem;
-}
 .input-main {
-  height: 52px;
+  // height: 52px;
   width: 100%;
   background-color: #f4f4f4;
   border-radius: 26px;
@@ -690,12 +705,12 @@ function inputChange() {
   background-color: rgb(215 215 215 / var(--tw-bg-opacity));
 }
 .app-option {
-    margin-top: 5px;
+  margin-top: 5px;
 }
 .app-choice {
-    position: fixed;
-    width: 20%;
-    z-index: 999;
+  position: fixed;
+  width: 20%;
+  z-index: 999;
 }
 </style>
 <style lang="scss">
@@ -712,9 +727,27 @@ function inputChange() {
   }
 }
 .model-select .el-select__wrapper {
-    height: 50px!important;
+  height: 50px !important;
 }
 .el-select__wrapper.is-focused {
-    box-shadow: 0 0 0 1px black;
+  box-shadow: 0 0 0 1px black;
+}
+.input-input {
+  .el-textarea__inner {
+    background: none; /* 移除背景 */
+    border: none; /* 移除边框 */
+    outline: none; /* 移除焦点时的轮廓线 */
+    box-shadow: none; /* 移除阴影 */
+    appearance: none; /* 移除特定于浏览器的默认样式 */
+    -moz-appearance: none; /* Firefox的特定样式清除 */
+    -webkit-appearance: none; /* Chrome和Safari的特定样式清除 */
+    width: 90%;
+    background-color: transparent;
+    height: 40px;
+    font-size: 1rem;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    resize: none;
+  }
 }
 </style>
