@@ -26,7 +26,6 @@
 <script lang="ts" setup>
 import Input from "@/components/common/input/search.vue";
 import { getAuditInterfaceList } from "@/api/audit";
-import tools from "@/utils/tools";
 </script>
 
 <style lang="scss" scoped>
