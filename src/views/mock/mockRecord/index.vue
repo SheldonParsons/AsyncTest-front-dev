@@ -440,6 +440,7 @@ function openEditor(name: string, params: any) {
 }
 .main-data {
   padding-top: 20px;
+  margin-bottom: 100px;
 }
 
 .styled-table {
