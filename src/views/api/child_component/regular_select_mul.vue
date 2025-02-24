@@ -40,7 +40,7 @@
   </el-select>
 </template>
 <script lang="ts" setup>
-import { ref, computed, defineProps, watch, defineEmits } from "vue";
+import { ref, watch, defineEmits } from "vue";
 
 const isFooterEnter = ref(false);
 

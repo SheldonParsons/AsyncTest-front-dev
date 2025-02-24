@@ -26,6 +26,7 @@
     "marked": "^15.0.1",
     "marked-highlight": "^2.2.1",
     "monaco-editor": "^0.34.1",
+    "python": "^0.0.4",
     "vue": "^3.2.41",
     "vue-clipboard3": "^2.0.0",
     "vue-i18n": "^9.2.2",

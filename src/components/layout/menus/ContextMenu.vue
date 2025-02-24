@@ -70,9 +70,22 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
 
-const visible = ref(false);
-const x = ref(0);
-const y = ref(0);
+
+// props
+const props = defineProps({
+  x: {
+    type: Number,
+    default: 0,
+  },
+  y: {
+    type: Number,
+    default: 0,
+  },
+  visible: {
+    type: Boolean,
+    default: false,
+  }
+});
 
 function showMenu(event) {
   event.preventDefault();
@@ -95,17 +108,6 @@ function handleClickOutside(event) {
     hideMenu(); // 点击发生在目标元素之外时，隐藏菜单
   }
 }
-
-onMounted(() => {
-  const elements = document.querySelectorAll(".filter-li");
-  elements.forEach((element) => {
-    element.addEventListener("contextmenu", showMenu);
-  });
-  // 监听全局点击事件，用于隐藏菜单
-  window.addEventListener("click", handleClickOutside);
-  // 添加全局右键事件监听，以处理点击非目标元素的情况
-  window.addEventListener("contextmenu", handleClickOutside);
-});
 
 onUnmounted(() => {
   const elements = document.querySelectorAll(".filter-li");

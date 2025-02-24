@@ -64,6 +64,7 @@ export default defineConfig({
       '@codemirror/view',
       '@codemirror/lang-javascript',
       '@codemirror/basic-setup',
-    ]
+    ],
+    exclude: ["fsevents"]
   }
 })

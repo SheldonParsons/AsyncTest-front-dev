@@ -1,5 +1,5 @@
 <template>
-  <el-row style="margin-top: 20px">
+  <el-row style="margin-top: 60px">
     <el-col :offset="1" :span="3"
       ><el-dropdown trigger="click" @command="handelMethod">
         <el-button type="primary" class="method-btn">

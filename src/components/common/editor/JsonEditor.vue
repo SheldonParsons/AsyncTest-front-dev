@@ -83,7 +83,6 @@ const props = defineProps({
 watch(
   () => props.modelValue,
   (newVal: any, oldVal) => {
-    console.log(instance);
     if (props.changeValue && instance) {
       try {
         instance.setValue(JSONFormat(newVal));

@@ -22,6 +22,16 @@
   src: url('@/assets/font/Monoton-Regular.woff');
 }
 
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('@/assets/font/JetBrainsMono-Bold.woff2');
+}
+
+@font-face {
+  font-family: 'Playball';
+  src: url('@/assets/font/Playball-Regular.ttf');
+}
+
 body,
 html,
 #app {
@@ -43,14 +53,13 @@ h1,
 h2,
 h3,
 h4,
-div,
 h5 {
   font-family:  'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-  'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
+  'Microsoft YaHei', '微软雅黑', Arial, sans-serif ;
 }
 .project-name {
   font-family: 'Monoton-Regular', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-  'Microsoft YaHei', '微软雅黑', Arial, sans-serif !important;
+  'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
 }
 body::-webkit-scrollbar {
   display: none; /* 隐藏滚动条 */

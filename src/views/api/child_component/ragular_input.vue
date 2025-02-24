@@ -3,7 +3,7 @@
       <el-col :offset="1" :span="22">
         <form>
           <div class="group">
-            <input type="text" required value="测试文档 Level two 2-2" />
+            <input type="text" required placeholder="未命名接口" value="" />
             <span class="highlight"></span>
             <span class="bar"></span>
             <!-- <label>Http Documentation Title</label> -->

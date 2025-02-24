@@ -8,7 +8,7 @@
           @switchRouterAction="changeChildMenu"
         />
         <div class="content-menu">
-          <Menu :routeName="routername" class="detail-menu" />
+          <Menu :routeName="routername" class="detail-menu" :apiItem="apiItem" @changeMenu="changeMenu"/>
           <div class="resize-handle" @mousedown="startResize"></div>
         </div>
       </div>
@@ -17,7 +17,7 @@
       class="main page-content has-sidebar"
       :style="{ left: contentWidth + 'px', width: mainContentWidth + 'px' }"
     >
-      <router-view />
+      <router-view @change_page="changePage" :changeApiContent="changeApiContent" />
     </div>
   </div>
 </template>
@@ -31,6 +31,8 @@ import { onBeforeRouteUpdate } from "vue-router";
 const routername: any = ref("data");
 const contentWidth = ref(0); // 初始宽度
 const mainContentWidth = ref(0);
+const apiItem:any = ref(null)
+const changeApiContent:any = ref(null)
 
 onBeforeRouteUpdate((to: any, from) => {
   // 在路由更新时执行的逻辑
@@ -49,6 +51,17 @@ window.addEventListener("resize", () => {
     (contentWidth.value / window.innerWidth) * window.innerWidth;
   mainContentWidth.value = window.innerWidth - contentWidth.value;
 });
+
+function changeMenu(data:any, node:any) {
+  changeApiContent.value = {
+    data: data,
+    node:node
+  }
+}
+
+function changePage(item:any) {
+  apiItem.value = item
+}
 
 function changeChildMenu(name: string, call_back:any=()=>{}) {
   routername.value = name;

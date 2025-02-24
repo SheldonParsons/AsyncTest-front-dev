@@ -25,7 +25,6 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps } from 'vue'
 // 定义一个 prop 来接收外部传入的内容
 const props = defineProps({
   contentText: {

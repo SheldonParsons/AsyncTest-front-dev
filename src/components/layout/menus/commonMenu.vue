@@ -20,7 +20,9 @@
         <Interface
           v-if="routeName === 'interface'"
           :activeLinkStyle="activeLinkStyle"
+          :apiItem="apiItem"
           @switchRouterAction="switchRouter"
+          @changeMenu="changeMenu"
         ></Interface>
         <Data
           v-if="routeName === 'data'"
@@ -90,6 +92,7 @@ const authLevel = ref(0);
 
 // 全局对象
 const { proxy }: any = getCurrentInstance();
+const emit = defineEmits(["changeMenu"]);
 onMounted(() => {
   switchMenu(router.currentRoute.value.name);
   checkAuth(1).then((data: any) => {
@@ -101,6 +104,12 @@ const props = defineProps({
     type: String,
     default: "data",
   },
+  apiItem: {
+    type: Object,
+    default: () => {
+      return {};
+    }
+  }
 });
 router.beforeEach((to: any, from: any, next: any) => {
   switchMenu(to.name);
@@ -117,6 +126,10 @@ async function checkAuth(type: Number = 1) {
     });
   }
   return 0;
+}
+
+function changeMenu(data:any, node:any) {
+  emit("changeMenu", data, node);
 }
 
 function switchMenu(routerName: string) {
