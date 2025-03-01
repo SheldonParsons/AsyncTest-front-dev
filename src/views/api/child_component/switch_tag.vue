@@ -71,8 +71,9 @@ body {
   display: flex;
   position: relative;
   background-color: #fff;
-  box-shadow: 0 0 1px 0 rgba(#185ee0, 0.15), 0 6px 12px 0 rgba(#185ee0, 0.15);
+  // box-shadow: 0 0 0px 0 rgba(#185ee0, 0.9), 0 1px 1px 0 rgba(#185ee0, 0.9);
   padding: 0.75rem;
+  border: 1px solid #e7e7e7;
   border-radius: 14px; // just a high number to create pill effect
   * {
     z-index: 2;

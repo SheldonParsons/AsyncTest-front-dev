@@ -7,11 +7,19 @@
     </el-col>
     <el-col :span="9" style="display: flex; align-items: center">
       <div class="close-icon">
-        <el-icon><CloseBold /></el-icon>
+        <el-icon @click="close"><CloseBold /></el-icon>
       </div>
     </el-col>
   </el-row>
 </template>
+
+<script setup lang="ts">
+const emit = defineEmits(["close"]);
+
+function close() {
+  emit("close");
+}
+</script>
 
 <style lang="scss" scoped>
 .close-icon {
@@ -20,6 +28,9 @@
   justify-content: end;
   align-items: center;
   padding-right: 10px;
+  i {
+    cursor: pointer;
+  }
 }
 
 .default-insert {

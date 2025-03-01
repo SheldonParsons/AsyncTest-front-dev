@@ -16,7 +16,7 @@
       >
     </div>
     <el-row justify="end" class="header-row" align="middle">
-      <el-col
+      <!-- <el-col
         v-if="isLogin && !isWorkingCenter && !isGlobalZone"
         :span="2"
         :md="1"
@@ -36,7 +36,7 @@
             <SenderIcon></SenderIcon>
           </div>
         </el-tooltip>
-      </el-col>
+      </el-col> -->
       <el-col
         v-if="isLogin && !isWorkingCenter"
         :span="2"

@@ -239,7 +239,7 @@ function changeExpanded(node: any) {
   text-overflow: ellipsis;
   overflow: hidden;
   line-height: 28px;
-  color: #344054;
+  color: black;
   cursor: pointer;
   font-family: -apple-system, "BlinkMacSystemFont", "Segoe UI", roboto,
     "Helvetica Neue", arial, "Noto Sans", sans-serif, "Apple Color Emoji",

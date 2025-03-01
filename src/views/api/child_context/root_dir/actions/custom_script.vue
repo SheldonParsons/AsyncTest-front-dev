@@ -1,7 +1,22 @@
 <template>
-  <div v-if="props.element.type === 1" class="script-container">
+  <div class="script-container">
     <div class="script-header" :class="{ 'default-active': open_script }" @click="open_script = !open_script">
       <div style="box-sizing: border-box" class="script-header-icon">
+        <el-switch
+          class="script-action-switch"
+          v-model="props.element.data.status"
+          @click.stop
+          size="small"
+        />
+        <el-dropdown @command="handleDupDelete" ref="dropdownRef" trigger="contextmenu" class="script-action-dropdown">
+          <el-icon><MoreFilled @click.stop="handleTriggerClick"/></el-icon>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="dup">复制</el-dropdown-item>
+              <el-dropdown-item command="delete">删除</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-icon class="script-action-icon" size="12">
           <ArrowRightBold v-if="open_script === false" />
           <ArrowDownBold v-if="open_script === true" />
@@ -36,6 +51,8 @@
                 <el-col :span="4" class="tran-base">
                     <div class="script-code-fast">
                         <div class="script-code-fast-title">快捷代码</div>
+                        <div class="script-code-fast-div" @click="insert_code('at.global.get(\'variable_key\')\n')">获取全局变量</div>
+                        <div class="script-code-fast-div" @click="insert_code('at.global.set(\'variable_key\', \'variable_value\')\n')">设置环境变量</div>
                         <div class="script-code-fast-div" @click="insert_code('at.environment.get(\'variable_key\')\n')">获取环境变量</div>
                         <div class="script-code-fast-div" @click="insert_code('at.environment.set(\'variable_key\', \'variable_value\')\n')">设置环境变量</div>
                         <div class="script-code-fast-div" @click="insert_code('at.variables.get(\'variable_key\')\n')">获取临时变量</div>
@@ -53,12 +70,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref,onMounted } from "vue";
 import PythonEditor from '@/components/common/editor/PythonEditor.vue'
 import { useRoute } from 'vue-router'
 const route = useRoute()
 const code: any = ref("")
 const open_script = ref(false);
+const dropdownRef:any = ref(null)
 const props = defineProps({
   element: {
     type: Object,
@@ -73,6 +91,26 @@ defineExpose({
     close_expand
 });
 
+onMounted(async () => {
+  script_desc.value = props.element.data.code;
+  code.value = props.element.data.code;
+});
+
+const emit = defineEmits(["dup_action","delete_action","change_code"]);
+
+const handleTriggerClick = (e:any) => {
+  e.stopPropagation()
+  dropdownRef.value?.handleOpen()  // 手动控制下拉状态
+}
+function handleDupDelete(type:string){
+  if (type === 'dup') {
+    emit("dup_action")
+  }
+  if (type === 'delete') {
+    emit("delete_action")
+  }
+}
+
 const script_desc:any = ref("")
 const ediorPython:any = ref(null)
 
@@ -80,8 +118,9 @@ function insert_code(text: string) {
     ediorPython.value?.insertText(text)
 }
 
-function code_change(value: string) {
-    script_desc.value = value
+async function code_change(value: string) {
+  script_desc.value = value;
+  emit("change_code", value)
 }
 </script>
 
@@ -137,15 +176,17 @@ function code_change(value: string) {
     }
     .script-code-fast-div {
         padding: 6px 12px;
-        color: #039e74;
+        color: black;
         cursor: pointer;
     }
 }
 .script-code-fast-div:hover {
-    background-color: var(--el-color-primary-light-9);
+    background-color: black;
+    color: white;
+    border-radius: 10px;
 }
 .script-container {
-  margin-top: 10px;
+  margin-top: 5px;
   margin-bottom: 4px;
   border: 0 !important;
   box-sizing: border-box;
@@ -210,6 +251,28 @@ function code_change(value: string) {
         top: 50%;
         left: auto;
         right: 16px;
+        transform: translateY(-50%);
+      }
+      .script-action-switch {
+        box-sizing: border-box;
+        cursor: pointer;
+        font-size: 18px;
+        margin: 0;
+        position: absolute;
+        top: 50%;
+        left: auto;
+        right: 60px;
+        transform: translateY(-50%);
+      }
+      .script-action-dropdown {
+        box-sizing: border-box;
+        cursor: pointer;
+        font-size: 18px;
+        margin: 0;
+        position: absolute;
+        top: 50%;
+        left: auto;
+        right: 32px;
         transform: translateY(-50%);
       }
     }

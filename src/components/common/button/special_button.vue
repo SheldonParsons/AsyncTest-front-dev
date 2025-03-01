@@ -1,7 +1,9 @@
 <template>
+  <div class="bubbly-container">
   <button class="bubbly-button">
     <slot class="c-icon"></slot>
   </button>
+</div>
 </template>
 
 <script setup lang="ts">
@@ -29,7 +31,12 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-$fuschia: #009879;
+.bubbly-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+$fuschia: black;
 $button-bg: $fuschia;
 $button-text-color: #fff;
 $baby-blue: #f8faff;
@@ -40,7 +47,9 @@ body {
   background-color: $baby-blue;
 }
 .bubbly-button {
-  display: inline-block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   font-size: 0.8em;
   padding: 0.5em 0.5em;
   -webkit-appearance: none;

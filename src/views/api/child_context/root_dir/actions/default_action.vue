@@ -1,7 +1,7 @@
 <template>
-  <div v-if="props.element.type === 0">
+  <div>
     <div class="drag-div">
-      <button class="pre-action-default-btn">
+      <button @click="show_action_list_dialog" class="pre-action-default-btn">
         添加前置操作
         <el-icon><Plus /></el-icon>
       </button>
@@ -76,14 +76,16 @@
         </Transition>
       </div>
     </Transition>
+    <ActionListDialog ref="actionListDialog" @add_action="add_action"></ActionListDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
-import draggable from "vuedraggable";
+import ActionListDialog from "@/views/api/public_dialog/action_list_dialog.vue"
 const open_default = ref(false);
 const isDefaultOpen = ref(false);
+const actionListDialog:any = ref(null)
 const props = defineProps({
   element: {
     type: Object,
@@ -94,6 +96,16 @@ const props = defineProps({
 const onDragHandleClick = (event: MouseEvent) => {
   event.stopPropagation();
 };
+
+const emit = defineEmits(["add_action"]);
+
+function add_action(action_name:string) {
+  emit('add_action', action_name)
+}
+
+function show_action_list_dialog() {
+  actionListDialog.value.open_dialog()
+}
 </script>
 
 <style scoped>
@@ -173,11 +185,11 @@ const onDragHandleClick = (event: MouseEvent) => {
   border: 2px solid #00bcd4; /* 可选：为目标区域添加边框 */
 }
 .pre-action-default-btn {
-  color: #039e74;
+  color: black;
   width: 100%;
   height: 40px;
   font-weight: 400;
-  font-size: 16px;
+  font-size: 14px;
   border-radius: 8px;
   border-style: dashed;
   background-color: #fff;

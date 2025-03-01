@@ -56,17 +56,17 @@ $inner-shadow: inset 0.2rem 0.2rem 0.5rem var(--greyLight-2),
   &__primary {
     grid-column: 1 / 2;
     grid-row: 4 / 5;
-    background: var(--primary);
+    background: black;
     // box-shadow: inset 0.2rem 0.2rem 1rem var(--primary-light),
     //   inset -0.2rem -0.2rem 1rem var(--primary-dark), $shadow;
-    color: var(--greyLight-1);
+    color: white;
 
     &:hover {
       color: var(--white);
     }
     &:active {
-      box-shadow: inset 0.2rem 0.2rem 1rem var(--primary-dark),
-        inset -0.2rem -0.2rem 1rem var(--primary-light);
+      box-shadow: inset 0.2rem 0.2rem 1rem rgb(91, 91, 91),
+        inset -0.2rem -0.2rem 1rem rgb(91, 91, 91);
     }
   }
 

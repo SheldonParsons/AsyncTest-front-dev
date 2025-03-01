@@ -16,7 +16,6 @@
 </template>
 
 <script setup lang="ts">
-import { emit } from 'process'
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 const router = useRouter()
@@ -24,6 +23,7 @@ const route = useRoute()
 const dyWidth = ref(200)
 const dyHeight = ref(80)
 const spanWidth = ref('80%')
+const emit = defineEmits(['changeMenu'])
 
 onMounted(() => {
   if (!props.fixSize) {
@@ -43,6 +43,7 @@ const props = defineProps({
 
 
 function showDoc() {
+  emit('changeMenu', 'ai_application_ground')
   router.push({
     name: 'ai_application_ground',
     params: {

@@ -14,7 +14,7 @@
         {{ $t("menu.news") }}
       </div>
       <div style="width: 100%; height: 80px; margin-bottom: 25px">
-        <MockBox :fixSize="true" :shouldTurn="true"></MockBox>
+        <MockBox @changeMenu="changeSubMenu" :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
       <div class="sidebar-groups">
         <Interface
@@ -92,7 +92,7 @@ const authLevel = ref(0);
 
 // 全局对象
 const { proxy }: any = getCurrentInstance();
-const emit = defineEmits(["changeMenu"]);
+const emit = defineEmits(["changeMenu", "change_sub_menu"]);
 onMounted(() => {
   switchMenu(router.currentRoute.value.name);
   checkAuth(1).then((data: any) => {
@@ -115,6 +115,11 @@ router.beforeEach((to: any, from: any, next: any) => {
   switchMenu(to.name);
   next();
 });
+
+function changeSubMenu(menu:string) {
+  emit("change_sub_menu", menu);
+}
+
 async function checkAuth(type: Number = 1) {
   if (type === 1) {
     return await store.dispatch("getUser").then((res: any) => {

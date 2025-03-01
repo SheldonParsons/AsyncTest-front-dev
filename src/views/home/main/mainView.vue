@@ -3,12 +3,13 @@
     <div class="content menu-sidebar" :style="{ width: contentWidth + 'px' }">
       <div class="main-menu">
         <NewMenu
+        ref="new_menu"
           class="new-content-menu"
           style="width: 80px"
           @switchRouterAction="changeChildMenu"
         />
         <div class="content-menu">
-          <Menu :routeName="routername" class="detail-menu" :apiItem="apiItem" @changeMenu="changeMenu"/>
+          <Menu @change_sub_menu="change_sub_menu" :routeName="routername" class="detail-menu" :apiItem="apiItem" @changeMenu="changeMenu"/>
           <div class="resize-handle" @mousedown="startResize"></div>
         </div>
       </div>
@@ -33,6 +34,7 @@ const contentWidth = ref(0); // 初始宽度
 const mainContentWidth = ref(0);
 const apiItem:any = ref(null)
 const changeApiContent:any = ref(null)
+const new_menu:any = ref(null)
 
 onBeforeRouteUpdate((to: any, from) => {
   // 在路由更新时执行的逻辑
@@ -51,6 +53,10 @@ window.addEventListener("resize", () => {
     (contentWidth.value / window.innerWidth) * window.innerWidth;
   mainContentWidth.value = window.innerWidth - contentWidth.value;
 });
+
+function change_sub_menu(data:any) {
+  new_menu.value.change_focus(data)
+}
 
 function changeMenu(data:any, node:any) {
   changeApiContent.value = {

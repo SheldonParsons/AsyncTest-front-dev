@@ -1,7 +1,7 @@
 <template>
   <div class="container">
     <div class="menu-container">
-      <div
+      <!-- <div
         :class="{
           'ele-container': true,
           'focuse-icon': currentFocuseIcon === 'ai_application',
@@ -44,7 +44,13 @@
             ></feColorMatrix>
           </filter>
         </defs>
-      </svg>
+      </svg> -->
+      <div
+      class="ai_logo"
+        @click="switchRouter('ai_application_ground')"
+      >
+        <AiLogo style="cursor: pointer;"></AiLogo>
+      </div>
       <div
         :class="{
           'ele-container': true,
@@ -121,6 +127,7 @@ import OTHER from "@/assets/svg/menu/other.vue";
 import OPEN from "@/assets/svg/menu/open.vue";
 import DATA from "@/assets/svg/menu/data.vue";
 import AUDIT from "@/assets/svg/menu/audit.vue";
+import AiLogo from "@/components/layout/menus/child/icon/ai_logo.vue"
 import tools from "@/utils/tools";
 import { useStore } from "@/store";
 import { useI18n } from "vue-i18n";
@@ -133,8 +140,8 @@ const currentFocuseIcon = ref("data");
 
 onMounted(() => {
   switchRouter(router.currentRoute.value.name);
-  createBubbles();
-  setInterval(createBubbles, 600);
+  // createBubbles();
+  // setInterval(createBubbles, 600);
   store.dispatch("getUser").then((res: any) => {
       if (res && res.username) {
         if (["a80646"].indexOf(res.username) !== -1) {
@@ -143,6 +150,14 @@ onMounted(() => {
       }
     });
 });
+
+defineExpose({
+  change_focus
+})
+
+function change_focus(menu: string) {
+  currentFocuseIcon.value = menu;
+}
 
 const emit = defineEmits(["switchRouterAction"]);
 
@@ -163,38 +178,38 @@ function switchRouter(routerName: string) {
   currentFocuseIcon.value = routerName;
 }
 
-function createBubbles() {
-  const bubbles: any = document.querySelector(".bubbles");
-  const animationName = getComputedStyle(
-    document.querySelector(".bubble")
-  ).animationName;
-  bubbles.addEventListener("animationend", (e: any) => {
-    e.target.remove();
-  });
+// function createBubbles() {
+//   const bubbles: any = document.querySelector(".bubbles");
+//   const animationName = getComputedStyle(
+//     document.querySelector(".bubble")
+//   ).animationName;
+//   bubbles.addEventListener("animationend", (e: any) => {
+//     e.target.remove();
+//   });
 
-  for (let i = 0; i < 20; i++) {
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    const s = Math.random() * 12 + 7;
-    const x = Math.random() * 50 + 0;
-    const d = Math.random() * 3 + 1;
-    bubble.style.setProperty("--s", `${s}px`);
-    bubble.style.setProperty("--x", `${x}px`);
-    bubble.style.setProperty("--d", `${d}s`);
-    bubble.style.setProperty("position", "absolute");
-    bubble.style.setProperty("border-radius", "50%");
-    bubble.style.setProperty("background", "#99d4c7");
-    bubble.style.setProperty("width", `${s}px`);
-    bubble.style.setProperty("height", `${s}px`);
-    bubble.style.setProperty("left", `${x}px`);
-    bubble.style.setProperty("top", `50px`);
-    bubble.style.filter = "url(#blob)";
-    bubble.style.animation = `${animationName} var(--d) ease-in forwards`;
-    bubble.animate;
+//   for (let i = 0; i < 20; i++) {
+//     const bubble = document.createElement("div");
+//     bubble.className = "bubble";
+//     const s = Math.random() * 12 + 7;
+//     const x = Math.random() * 50 + 0;
+//     const d = Math.random() * 3 + 1;
+//     bubble.style.setProperty("--s", `${s}px`);
+//     bubble.style.setProperty("--x", `${x}px`);
+//     bubble.style.setProperty("--d", `${d}s`);
+//     bubble.style.setProperty("position", "absolute");
+//     bubble.style.setProperty("border-radius", "50%");
+//     bubble.style.setProperty("background", "#99d4c7");
+//     bubble.style.setProperty("width", `${s}px`);
+//     bubble.style.setProperty("height", `${s}px`);
+//     bubble.style.setProperty("left", `${x}px`);
+//     bubble.style.setProperty("top", `50px`);
+//     bubble.style.filter = "url(#blob)";
+//     bubble.style.animation = `${animationName} var(--d) ease-in forwards`;
+//     bubble.animate;
 
-    bubbles.appendChild(bubble);
-  }
-}
+//     bubbles.appendChild(bubble);
+//   }
+// }
 </script>
 
 <style lang="scss" scoped>
@@ -268,20 +283,24 @@ function createBubbles() {
 
 <style lang="scss">
 .focuse-icon {
-  color: #007a5f;
+  color: black;
+  span {
+    font-weight: 600;
+    font-family: "Poppins", sans-serif;
+  }
 
   .icon-menu {
     .api-path {
-      fill: #007a5f !important;
+      fill: black !important;
     }
   }
 }
 .ele-container:hover {
-  color: #007a5f;
+  color: black;
 
   .icon-menu {
     .api-path {
-      fill: #007a5f !important;
+      fill: black !important;
     }
   }
 }

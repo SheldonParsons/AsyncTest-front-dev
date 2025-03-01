@@ -14,11 +14,6 @@
         <template #item="{ element, index }">
           <el-row class="drag-item">
             <el-col :offset="1" :span="22">
-              <DefaultAction
-                v-if="element.t === 0"
-                @add_action="add_action"
-                :element="element"
-              ></DefaultAction>
               <CustomScript
                 v-if="element.t === 1"
                 :element="element"
@@ -32,6 +27,12 @@
                 v-if="element.t === 2"
                 :element="element"
               ></WaitTime>
+              <Extract
+              @dup_action="dup_action(element, index)"
+                @delete_action="delete_action(index)"
+                v-if="element.t === 4"
+                :element="element"
+              ></Extract>
               <DataBase
                 @add_database_param="
                   (payload) => add_database_param(element, payload)
@@ -49,6 +50,10 @@
           </el-row>
         </template>
       </draggable>
+      <el-row class="drag-item">
+        <el-col :offset="1" :span="22">
+          <AfterDefaultAction @add_action="add_action"></AfterDefaultAction> </el-col
+      ></el-row>
     </div>
   </div>
 </template>
@@ -56,22 +61,39 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import draggable from "vuedraggable";
-import DefaultAction from "./actions/default_action.vue";
+import AfterDefaultAction from "./actions/after_default_action.vue";
 import CustomScript from "./actions/custom_script.vue";
 import WaitTime from "./actions/wait_time.vue";
 import DataBase from "./actions/data_base.vue";
+import Extract from './actions/extract.vue'
 onMounted(() => {
   origin_data.value = JSON.parse(JSON.stringify(items.value));
 });
 const origin_data: any = ref([]);
-const items: any = ref([
-  {
-    id: -1,
-    t: 0,
-    status: true,
-    name: "default",
-  },
-]);
+const items: any = ref([{
+      name: "extract",
+      id: "NEW-" + Date.now().toString(),
+      t: 4,
+      data: {
+        status: true,
+        name: "",
+        source: "body",
+        extract_range: "all",
+        regexp: {
+            expression: "",
+            template: "" 
+        },
+        jsonpath: {
+            expression: ""
+        },
+        xpath: {
+            expression: ""
+        },
+        header_name: "",
+        cookie_name: "",
+        waste_time_unit: ""
+      },
+    }]);
 function save() {
   const { updates, newItems, order } = compareLists(
     origin_data.value,
@@ -163,7 +185,7 @@ function delete_database_param(element: any, call_back: Function = () => {}) {
 function add_action(action_name: string) {
   const index = items.value.findIndex((item: any) => item.name === "default");
   if (action_name === "database") {
-    items.value.splice(index, 0, {
+    items.value.push({
       name: action_name,
       id: "NEW-" + Date.now().toString(),
       t: 3,
@@ -183,7 +205,7 @@ function add_action(action_name: string) {
     });
   }
   if (action_name === "script") {
-    items.value.splice(index, 0, {
+    items.value.push({
       name: action_name,
       id: "NEW-" + Date.now().toString(),
       t: 1,
@@ -194,13 +216,39 @@ function add_action(action_name: string) {
     });
   }
   if (action_name === "wait") {
-    items.value.splice(index, 0, {
+    items.value.push({
       name: action_name,
       id: "NEW-" + Date.now().toString(),
       t: 2,
       data: {
         status: true,
         time: 1000,
+      },
+    });
+  }
+  if (action_name === "extract") {
+    items.value.push({
+      name: action_name,
+      id: "NEW-" + Date.now().toString(),
+      t: 4,
+      data: {
+        status: true,
+        name: "",
+        source: "body",
+        extract_range: "all",
+        regexp: {
+            expression: "",
+            template: "" 
+        },
+        jsonpath: {
+            expression: ""
+        },
+        xpath: {
+            expression: ""
+        },
+        header_name: "",
+        cookie_name: "",
+        waste_time_unit: ""
       },
     });
   }

@@ -403,7 +403,7 @@ nav.amazing-tabs {
   user-select: none;
   position: fixed;
   width: 80%;
-  z-index: 9999;
+  z-index: 999;
   // padding-top: 1rem;
 }
 

@@ -1,8 +1,60 @@
 .el-message {
     --el-message-bg-color: white;
-    border-radius: 40px;
+    border-radius: 10px;
     font-family: 'Microsoft YaHei';
+    border-color: #d4d4d4;
+    i {
+        svg {
+            color: black;
+        }
+    }
 }
 .el-message .el-message__content {
     color: black!important;
+}
+.el-dropdown-menu__item:not(.is-disabled):focus, .el-dropdown-menu__item:not(.is-disabled):hover {
+    background-color: black;
+    color: white;
+  }
+  .el-scrollbar__wrap,.el-dropdown-menu__item {
+    border-radius: 10px;
+  }
+  
+  .el-input__wrapper.is-focus {
+    box-shadow: 0 0 0 1px #000000 inset !important;
+  }
+
+  .el-switch.is-checked .el-switch__core {
+    background-color: black;
+    border-color: black;
+  }
+
+  .el-button:hover{
+    color: black;
+    background-color: rgb(241, 241, 241);
+    border-color: rgb(208, 208, 208);
+  }
+
+  .el-button:active {
+    background-color: rgb(208, 208, 208);
+    border-color: rgb(161, 161, 161);
+  }
+
+  .el-button--primary {
+    --el-button-bg-color: black;
+    background-color: var(--el-button-bg-color);
+    border-color: var(--el-button-bg-color);
+  }
+  .el-button--primary:hover {
+    color: white;
+    background-color: rgb(54, 54, 54);
+    border-color: rgb(70, 70, 70);
+  }
+
+  .el-button--primary:active {
+    --el-button-active-bg-color: rgb(42, 42, 42);
+    background-color: var(--el-button-active-bg-color);
+    border-color: var(--el-button-active-bg-color);
+    color: white;
+    outline: none;
 }
