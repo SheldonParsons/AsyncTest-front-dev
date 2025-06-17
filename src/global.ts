@@ -1,8 +1,6 @@
 const GlobalStatus = {
-  // server: 'http://172.28.14.131:6001',
-  server: "http://localhost:6001",
-  localhost: "http://localhost:3000",
-  localhost_server: "http://localhost:6001",
+  localhost: "http://localhost:3333",
+  product_host: "https://www.asynctest.com",
   cookieTag: "DjangoToken",
   anonymousPage: "login",
   anonymousPath: "anonymous",
@@ -40,7 +38,7 @@ const GlobalStatus = {
       files: {
         color: "#9373ee",
       },
-    }
+    };
   },
   regular_reqeust_method_info_map: () => {
     return {
@@ -58,8 +56,8 @@ const GlobalStatus = {
       },
       patch: {
         color: "#FFC125",
-      }
-    }
+      },
+    };
   },
   regular_content_type_map: () => {
     return [
@@ -282,8 +280,8 @@ const GlobalStatus = {
       {
         value: "text/xml",
         label: "text/xml",
-      }
-    ]
+      },
+    ];
   },
   regular_headers_map: () => {
     return [

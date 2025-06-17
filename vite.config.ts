@@ -11,7 +11,7 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 3000,
+    port: 3333,
     hmr: {
       //host: '0.0.0.0',
       port: 24678,
@@ -24,18 +24,6 @@ export default defineConfig({
       "/api/mock": {
         target: "http://120.78.204.43:6001",
         rewrite: (path) => path.replace(/^\/api/, ""),
-      },
-      "/api/t": {
-        target: "http://120.78.204.43:6001",
-        rewrite: (path) => {
-          return path.replace(/^\/api\/t/, "");
-        },
-      },
-      "/server/t": {
-        target: "http://120.78.204.43:6001",
-        rewrite: (path) => {
-          return path.replace(/^\/server\/t/, "");
-        },
       },
       "/api/server": {
         target: config.server,

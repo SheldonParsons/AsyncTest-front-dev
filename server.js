@@ -105,13 +105,22 @@ async function createServer() {
       next(e);
     }
   });
-
-  app.listen(3000, () => {
+  if (isProduction) {
+    app.listen(3000, () => {
     console.log(
       "server running in ",
       isProduction ? "Production env" : "Development env"
     );
   });
+  } else {
+    app.listen(3333, () => {
+    console.log(
+      "server running in ",
+      isProduction ? "Production env" : "Development env"
+    );
+  });
+  }
+  
 }
 
 createServer();

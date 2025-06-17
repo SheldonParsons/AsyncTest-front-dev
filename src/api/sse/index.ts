@@ -101,7 +101,7 @@ export const ssePost = async (
   // 5.2 组装请求URL
   const urlWithPrefix = `${
     import.meta.env.PROD
-      ? GlobalStatus.localhost + "/server"
+      ? GlobalStatus.product_host + "/server"
       : GlobalStatus.localhost + "/api"
   }${url.startsWith("/") ? url : `/${url}`}`;
 
