@@ -119,6 +119,7 @@ const startResize = (e: MouseEvent) => {
   padding-left: 1rem;
   padding-right: 1rem;
   flex: 1;
+  max-width: 300px;
 }
 .menu-sidebar {
   display: flex;
@@ -130,6 +131,8 @@ const startResize = (e: MouseEvent) => {
   // overflow: hidden;
   // display: inline-block;
   flex: 25;
+  // min-width: 0;
+  // overflow: hidden;
 }
 
 .detail-menu {
