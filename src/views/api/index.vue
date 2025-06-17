@@ -10,8 +10,8 @@
             ><ArrowLeftBold
           /></el-icon>
         </div>
-        <div style="flex: 1">
-          <ul class="margin-cls filter-tabs ignore-scrollbar">
+        <div style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: hidden;">
+          <ul class="margin-cls filter-tabs ignore-scrollbar" style="margin: 0px;">
             <transition-group
               name="fade"
               tag="ul"
@@ -69,7 +69,7 @@
             </transition-group>
           </ul>
         </div>
-        <div class="icon-div" style="border-left: 1px solid #f5f5f5">
+        <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
           <el-icon
             @click="scrollToRight"
             class="margin-cls scroll-btn"
@@ -85,7 +85,7 @@
             ><PlusBold
           /></el-icon>
         </div>
-        <div class="icon-div env-div" style="border-left: 1px solid #f5f5f5">
+        <div class="env-div" style="border-left: 1px solid #f5f5f5">
           <div class="env-select">
             <el-select
               placeholder="环境"
@@ -558,7 +558,7 @@ function addTab(
   console.log(editableTabs.value);
 
   current_tab_name.value = tab_name;
-  band_context();
+  // band_context();
   return editableTabs.value[editableTabs.value.length - 1];
 }
 
@@ -825,13 +825,24 @@ nav.amazing-tabs {
     justify-content: center;
     align-items: center;
   }
+  display: flex;
+  height: inherit;
+  justify-content: center;
+  align-items: center;
   i {
+    border: 1px;
+    border-radius: 5px;
+    width: 80%;
+    height: 80%;
+  }
+  i:hover {
+    background-color: #f5f5f5;
   }
 }
 .icon-div {
   display: flex;
   height: inherit;
-  width: 70px;
+  width: 70px!important;
   justify-content: center;
   align-items: center;
   i {

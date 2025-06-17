@@ -345,7 +345,7 @@ function onSearchChange(item: any): void {
 // 进入项目，路由跳转
 function enterProject(project: any) {
   if (project.is_member) {
-    router.push({ name: "data", params: { project: project.id } });
+    router.push({ name: "interface", params: { project: project.id } });
   } else {
     currentProject.value = project.id;
     showApproveProjectDialog.value = true;
