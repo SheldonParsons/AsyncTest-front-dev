@@ -1,6 +1,10 @@
 <template>
   <div class="script-container">
-    <div class="script-header" :class="{ 'default-active': open_script }" @click="open_script = !open_script">
+    <div
+      class="script-header"
+      :class="{ 'default-active': open_script }"
+      @click="open_script = !open_script"
+    >
       <div style="box-sizing: border-box" class="script-header-icon">
         <el-switch
           class="script-action-switch"
@@ -8,8 +12,14 @@
           @click.stop
           size="small"
         />
-        <el-dropdown @command="handleDupDelete" ref="dropdownRef" trigger="contextmenu" class="script-action-dropdown">
-          <el-icon><MoreFilled @click.stop="handleTriggerClick"/></el-icon>
+        <el-dropdown
+        v-if="disable === false"
+          @command="handleDupDelete"
+          ref="dropdownRef"
+          trigger="contextmenu"
+          class="script-action-dropdown"
+        >
+          <el-icon><MoreFilled @click.stop="handleTriggerClick" /></el-icon>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="dup">复制</el-dropdown-item>
@@ -23,7 +33,7 @@
         </el-icon>
       </div>
       <div class="script-header-content">
-        <div class="script-rank" @mousedown.stop="open_script = false">
+        <div class="script-rank" v-if="disable === false" @mousedown.stop="open_script = false">
           <div class="drag-handle">
             <el-icon color="#d0d5dd"><Rank /></el-icon>
           </div>
@@ -37,58 +47,122 @@
       </div>
     </div>
     <Transition name="slide">
-    <div v-show="open_script" class="script-body">
-      <div class="script-content">
-        <div class="script-content-item">
-            <el-row style="width: 100%;">
-                <el-col :span="20">
-                    <div class="editor-header">
-                        <div style="font-size: 14px;font-weight: 400;">Python-12.0</div>
-                    </div>
-                    <PythonEditor ref="ediorPython" :code="code" @change="code_change"></PythonEditor>
-                </el-col>
-                <Transition name="slide">
+      <div v-show="open_script" class="script-body">
+        <div class="script-content">
+          <div class="script-content-item">
+            <el-row style="width: 100%">
+              <el-col :span="20">
+                <div class="editor-header">
+                  <div style="font-size: 14px; font-weight: 400">
+                    Python-12.0
+                  </div>
+                </div>
+                <PythonEditor
+                  ref="ediorPython"
+                  :code="code"
+                  :disable="props.disable"
+                  @change="code_change"
+                ></PythonEditor>
+              </el-col>
+              <Transition name="slide">
                 <el-col :span="4" class="tran-base">
-                    <div class="script-code-fast">
-                        <div class="script-code-fast-title">快捷代码</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.global.get(\'variable_key\')\n')">获取全局变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.global.set(\'variable_key\', \'variable_value\')\n')">设置环境变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.environment.get(\'variable_key\')\n')">获取环境变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.environment.set(\'variable_key\', \'variable_value\')\n')">设置环境变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.variables.get(\'variable_key\')\n')">获取临时变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('at.variables.set(\'variable_key\', \'variable_value\')\n')">设置临时变量</div>
-                        <div class="script-code-fast-div" @click="insert_code('requests.get(\'http://localhost:6001\')\n')">发送接口请求</div>
+                  <div class="script-code-fast">
+                    <div class="script-code-fast-title">快捷代码</div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="insert_code('at.gv.get(\'variable_key\')\n')"
+                    >
+                      获取全局变量
                     </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.gv.set(\'variable_key\', \'variable_value\')\n'
+                        )
+                      "
+                    >
+                      设置全局变量
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code('at.environment.get(\'variable_key\')\n')
+                      "
+                    >
+                      获取环境变量
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.environment.set(\'variable_key\', \'variable_value\')\n'
+                        )
+                      "
+                    >
+                      设置环境变量
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code('at.variables.get(\'variable_key\')\n')
+                      "
+                    >
+                      获取临时变量
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.variables.set(\'variable_key\', \'variable_value\')\n'
+                        )
+                      "
+                    >
+                      设置临时变量
+                    </div>
+                    <!-- <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code('requests.get(\'http://localhost:6001\')\n')
+                      "
+                    >
+                      发送接口请求
+                    </div> -->
+                  </div>
                 </el-col>
-            </Transition>
+              </Transition>
             </el-row>
+          </div>
         </div>
       </div>
-    </div>
-</Transition>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref,onMounted } from "vue";
-import PythonEditor from '@/components/common/editor/PythonEditor.vue'
-import { useRoute } from 'vue-router'
-const route = useRoute()
-const code: any = ref("")
+import { ref, onMounted } from "vue";
+import PythonEditor from "@/components/common/editor/PythonEditor.vue";
+import { useRoute } from "vue-router";
+const route = useRoute();
+const code: any = ref("");
 const open_script = ref(false);
-const dropdownRef:any = ref(null)
+const dropdownRef: any = ref(null);
 const props = defineProps({
   element: {
     type: Object,
     default: {},
   },
+  disable: {
+    type: Boolean,
+    defaule: false,
+  },
 });
 function close_expand() {
-    open_script.value = false
+  open_script.value = false;
 }
 // 暴露给父组件调用
 defineExpose({
-    close_expand
+  close_expand,
 });
 
 onMounted(async () => {
@@ -96,31 +170,32 @@ onMounted(async () => {
   code.value = props.element.data.code;
 });
 
-const emit = defineEmits(["dup_action","delete_action","change_code"]);
+const emit = defineEmits(["dup_action", "delete_action", "change_code"]);
 
-const handleTriggerClick = (e:any) => {
-  e.stopPropagation()
-  dropdownRef.value?.handleOpen()  // 手动控制下拉状态
-}
-function handleDupDelete(type:string){
-  if (type === 'dup') {
-    emit("dup_action")
+const handleTriggerClick = (e: any) => {
+  e.stopPropagation();
+  dropdownRef.value?.handleOpen(); // 手动控制下拉状态
+};
+function handleDupDelete(type: string) {
+  if (type === "dup") {
+    emit("dup_action");
   }
-  if (type === 'delete') {
-    emit("delete_action")
+  if (type === "delete") {
+    emit("delete_action");
   }
 }
 
-const script_desc:any = ref("")
-const ediorPython:any = ref(null)
+const script_desc: any = ref("");
+const ediorPython: any = ref(null);
 
 function insert_code(text: string) {
-    ediorPython.value?.insertText(text)
+  if (props.disable) return;
+  ediorPython.value?.insertText(text);
 }
 
 async function code_change(value: string) {
   script_desc.value = value;
-  emit("change_code", value)
+  emit("change_code", value);
 }
 </script>
 
@@ -147,43 +222,43 @@ async function code_change(value: string) {
   max-height: 1000px; /* 设置一个足够大的值 */
 }
 .tran-base {
-    transition: max-height 0.3s ease;
+  transition: max-height 0.3s ease;
 }
 .editor-header {
-    height: 2.5rem;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
-    padding-left: .75rem;
-    padding-right: .75rem;
-    flex-flow: wrap;
-    min-width: 0;
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    flex-wrap: nowrap;
-    border-bottom: 1px solid #f3f5f6;
+  height: 2.5rem;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  flex-flow: wrap;
+  min-width: 0;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  border-bottom: 1px solid #f3f5f6;
 }
 .script-code-fast {
-    display: flex;
-    flex-direction: column;
-    justify-content:left;
-    border-left: 1px solid #f3f5f6;
-    height: 100%;
-    .script-code-fast-title {
-        padding: 12px;
-        font-size: 14px;
-        font-weight: 500;
-    }
-    .script-code-fast-div {
-        padding: 6px 12px;
-        color: black;
-        cursor: pointer;
-    }
+  display: flex;
+  flex-direction: column;
+  justify-content: left;
+  border-left: 1px solid #f3f5f6;
+  height: 100%;
+  .script-code-fast-title {
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .script-code-fast-div {
+    padding: 6px 12px;
+    color: black;
+    cursor: pointer;
+  }
 }
 .script-code-fast-div:hover {
-    background-color: black;
-    color: white;
-    border-radius: 10px;
+  background-color: black;
+  color: white;
+  border-radius: 10px;
 }
 .script-container {
   margin-top: 5px;
@@ -227,7 +302,7 @@ async function code_change(value: string) {
   .script-header {
     border-radius: 10px;
     background-color: #5657580a;
-    padding: 0px 40px 0px 12px;
+    padding: 0px 100px 0px 12px;
     cursor: pointer;
     border: 0;
     align-items: center;

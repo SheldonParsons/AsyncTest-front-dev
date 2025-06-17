@@ -12,8 +12,14 @@
           @click.stop
           size="small"
         />
-        <el-dropdown @command="handleDupDelete" ref="dropdownRef" trigger="contextmenu" class="script-action-dropdown">
-          <el-icon><MoreFilled @click.stop="handleTriggerClick"/></el-icon>
+        <el-dropdown
+          v-if="disable === false"
+          @command="handleDupDelete"
+          ref="dropdownRef"
+          trigger="contextmenu"
+          class="script-action-dropdown"
+        >
+          <el-icon><MoreFilled @click.stop="handleTriggerClick" /></el-icon>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="dup">复制</el-dropdown-item>
@@ -27,7 +33,11 @@
         </el-icon>
       </div>
       <div class="script-header-content">
-        <div class="script-rank" @mousedown.stop="open_script = false">
+        <div
+          class="script-rank"
+          v-if="disable === false"
+          @mousedown.stop="open_script = false"
+        >
           <div class="drag-handle">
             <el-icon color="#d0d5dd"><Rank /></el-icon>
           </div>
@@ -59,7 +69,10 @@
                 >
               </div>
               <div style="width: 600px">
-                <el-input v-model="props.element.data.name"></el-input>
+                <el-input
+                  :disabled="props.disable"
+                  v-model="props.element.data.name"
+                ></el-input>
               </div>
             </div>
           </el-col>
@@ -82,18 +95,29 @@
               </div>
               <div style="width: 600px">
                 <el-select
+                  :disabled="props.disable"
+                  ref="databaseSelect"
                   v-model="props.element.data.database"
-                  placeholder="Select"
+                  placeholder="选择数据库信息"
                   style="width: 600px"
+                  :empty-values="[null, undefined]"
+                  :value-on-clear="null"
                 >
                   <el-option
-                    v-for="item in [{ value: 0, label: 'Testing' }]"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
+                    v-for="item in databse_list"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  >
+                    <div class="flex items-center">
+                      <span>{{ item.name }}</span>
+                      <span class="items-server"> {{ item.remark }} </span>
+                    </div>
+                  </el-option>
                   <template #footer>
-                    <el-button text bg size="small"> 数据库连接管理 </el-button>
+                    <el-button text bg size="small" @click="open_database">
+                      数据库连接管理
+                    </el-button>
                   </template>
                 </el-select>
               </div>
@@ -122,9 +146,14 @@
                 "
               >
                 <div class="editor-header">
-                  <Params @insert_action="insert_params"></Params>
+                  <Params
+                    :disable="props.disable"
+                    @insert_action="insert_params"
+                    :interface="interface"
+                  ></Params>
                 </div>
                 <SqlEditor
+                  :disable="props.disable"
                   ref="ediorSql"
                   :code="code"
                   @change="code_change"
@@ -173,15 +202,15 @@
                 >
                   <template #empty>
                     <SpecialButton @click="addNode"
-                      >点击添加您的数据<el-icon><Plus /></el-icon
-                    ></SpecialButton>
+                      >点击添加您的数据</SpecialButton
+                    >
                   </template>
                   <el-table-column label="变量名">
                     <template #default="scope">
                       <el-row style="width: 100%">
                         <el-col :span="21">
                           <input
-                            placeholder="变量名"
+                            :disabled="props.disable"
                             v-model="scope.row.name"
                             class="private-input"
                           />
@@ -189,7 +218,45 @@
                       </el-row>
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量类型" min-width="30%">
+                  <el-table-column label="变量类型" min-width="40">
+                    <template #header>
+                      <div
+                        style="
+                          display: flex;
+                          justify-content: start;
+                          align-items: center;
+                        "
+                      >
+                        <div>变量类型</div>
+                        <div>
+                          <el-popover
+                            class="box-item"
+                            title="关于变量类型的解释"
+                            placement="top"
+                            :width="350"
+                            trigger="click"
+                          >
+                            <el-divider></el-divider>
+                            <div>
+                              <span style="font-weight: 500;">临时变量</span>：它仅作用于当前被执行的接口，当接口生命周期结束，该变量也随之销毁。
+                            </div>
+                            <el-divider></el-divider>
+                            <div>
+                              <span style="font-weight: 500;">环境变量</span>：它将作用于当前用例，但在性能模式下，它是当前协程独享的。
+                            </div>
+                            <el-divider></el-divider>
+                            <div>
+                              <span style="font-weight: 500;">全局变量</span>：它将作用于当前整个任务，无论是单用例还是性能模式下，它都是全局唯一的。
+                            </div>
+                            <template #reference>
+                              <el-icon style="cursor: pointer"
+                                ><InfoFilled
+                              /></el-icon>
+                            </template>
+                          </el-popover>
+                        </div>
+                      </div>
+                    </template>
                     <template #default="scope">
                       <el-dropdown trigger="click" @command="handle_command">
                         <span class="typing-span">{{
@@ -200,6 +267,7 @@
                         <template #dropdown>
                           <el-dropdown-menu>
                             <el-dropdown-item
+                              :disabled="props.disable"
                               :command="[scope.row, item]"
                               v-for="(item, index) in variable_options"
                               >{{ item.label }}</el-dropdown-item
@@ -214,7 +282,7 @@
                       <el-row style="width: 100%">
                         <el-col :span="21">
                           <input
-                            placeholder="表达式"
+                            :disabled="props.disable"
                             v-model="scope.row.jsonpath"
                             class="private-input"
                           />
@@ -222,7 +290,7 @@
                       </el-row>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" min-width="20%">
+                  <el-table-column v-if="!disable" label="操作" min-width="20%">
                     <template #default="scope">
                       <el-tooltip
                         content="添加相邻节点"
@@ -258,18 +326,27 @@
       </div>
     </Transition>
   </div>
+  <DatabaseDialog
+    v-model="show_database_dialog"
+    @changeDatabase="changeDatabaseHandle"
+  ></DatabaseDialog>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import SqlEditor from "@/components/common/editor/SqlEditor.vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import Params from "@/views/api/child_component/params.vue";
 import SpecialButton from "@/components/common/button/special_button.vue";
-const code = ref("")
+import { ApiGetDatabaseInfo } from "@/api/project/index";
+import DatabaseDialog from "@/views/api/child_component/show_database.vue";
+const code = ref("");
 const route = useRoute();
+const databaseSelect: any = ref(null);
 const open_script = ref(false);
-const dropdownRef:any = ref(null)
+const dropdownRef: any = ref(null);
+const databse_list: any = ref([]);
+const show_database_dialog = ref(false);
 const variable_options = ref([
   {
     label: "临时变量",
@@ -289,12 +366,42 @@ const props = defineProps({
     type: Object,
     default: {},
   },
+  disable: {
+    type: Boolean,
+    default: false,
+  },
+  interface: {
+    type: Number,
+    default: -1,
+  },
 });
-const emit = defineEmits(["add_database_param", "delete_database_param","dup_action","delete_action","change_code"]);
+const emit = defineEmits([
+  "add_database_param",
+  "delete_database_param",
+  "dup_action",
+  "delete_action",
+  "change_code",
+]);
 onMounted(async () => {
   script_desc.value = props.element.data.code;
   code.value = props.element.data.code;
+  await get_databases();
 });
+
+function changeDatabaseHandle(databases: any) {
+  console.log(databases);
+  databse_list.value = databases;
+}
+
+async function get_databases() {
+  const data = {
+    project: route.params.project,
+    simple: 1,
+  };
+  ApiGetDatabaseInfo({ params: data }).then((res: any) => {
+    databse_list.value = res.data;
+  });
+}
 function close_expand() {
   open_script.value = false;
 }
@@ -303,18 +410,23 @@ defineExpose({
   close_expand,
 });
 
-const handleTriggerClick = (e:any) => {
-  e.stopPropagation()
-  dropdownRef.value?.handleOpen()  // 手动控制下拉状态
-}
-function handleDupDelete(type:string){
-  if (type === 'dup') {
-    emit("dup_action")
+const handleTriggerClick = (e: any) => {
+  e.stopPropagation();
+  dropdownRef.value?.handleOpen(); // 手动控制下拉状态
+};
+function handleDupDelete(type: string) {
+  if (type === "dup") {
+    emit("dup_action");
   }
-  if (type === 'delete') {
-    emit("delete_action")
+  if (type === "delete") {
+    emit("delete_action");
   }
 }
+
+const open_database = () => {
+  databaseSelect.value?.blur();
+  show_database_dialog.value = true;
+};
 
 const script_desc: any = ref("");
 const ediorSql: any = ref(null);
@@ -323,11 +435,11 @@ function handle_command(command: any) {
   command[0].t = command[1].value;
 }
 
-function addNearNode(index:number) {
+function addNearNode(index: number) {
   function _inner(item: any) {
     const emptyNode = {
       name: "",
-      t: "temp",
+      t: "env",
       jsonpath: "",
     };
     item.splice(index + 1, 0, emptyNode);
@@ -336,10 +448,11 @@ function addNearNode(index:number) {
 }
 
 function addNode() {
+  if (props.disable) return;
   function _inner(item: any) {
     const emptyNode = {
       name: "",
-      t: "temp",
+      t: "env",
       jsonpath: "",
     };
     item.push(emptyNode);
@@ -360,7 +473,7 @@ function insert_code(text: string) {
 
 async function code_change(value: string) {
   script_desc.value = value;
-  emit("change_code", value)
+  emit("change_code", value);
 }
 
 function insert_params(text: string) {
@@ -446,6 +559,7 @@ function insert_params(text: string) {
   outline: none;
   background-color: transparent;
   font-size: 14px;
+  font-weight: 500;
   width: 100%;
   transition: border-color 0.3s ease, color 0.3s ease;
 }
@@ -551,7 +665,7 @@ function insert_params(text: string) {
   .script-header {
     border-radius: 10px;
     background-color: #5657580a;
-    padding: 0px 40px 0px 12px;
+    padding: 0px 100px 0px 12px;
     cursor: pointer;
     border: 0;
     align-items: center;

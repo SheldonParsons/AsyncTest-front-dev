@@ -730,7 +730,7 @@ async function editData(shouldCloseWindow: boolean = true) {
         isCommit.value = false
       } else {
         changeStorage('editMock', JSON.stringify(data.data))
-        if (shouldCloseWindow) window.close()
+        // if (shouldCloseWindow) window.close()
       }
     }
   )

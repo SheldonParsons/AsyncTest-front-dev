@@ -10,7 +10,7 @@
     ><template #header>
       <el-row class="tools-header" justify="start" align="middle">
         <el-col :span="20"
-          ><p>{{ headerText }}</p>
+          ><p style="color: black;">{{ headerText }}</p>
         </el-col>
         <el-col :offset="3" :span="1"><slot name="icon"></slot></el-col>
       </el-row>
@@ -128,6 +128,10 @@ function closeDialog() {
 <style lang="scss" scoped></style>
 
 <style lang="scss">
+.tools-header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
 .dialog {
   border-radius: 10px !important;
   .el-dialog__body {
@@ -138,14 +142,9 @@ function closeDialog() {
     padding: 10px 0px 10px 5px;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
-    background-image: linear-gradient(
-      90deg,
-      var(--dialog-color) 70%,
-      var(--dialog-color)
-    );
     p {
       color: white;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: normal;
       font-style: normal;
       display: table-cell;

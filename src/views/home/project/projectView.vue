@@ -27,7 +27,6 @@
           t("project.favorite")
         }}</el-divider>
         <el-row
-          v-if="favoriteProjects.list.length > 0"
           :gutter="20"
           style="padding-top: 4px; padding-bottom: 50px; min-height: 200px"
         >
@@ -111,7 +110,7 @@
             </transition></el-col
           >
         </el-row>
-        <el-empty v-else :image-size="80" :description="t('global.empty')" />
+        <!-- <el-empty v-else :image-size="80" :description="t('global.empty')" /> -->
         <el-divider content-position="left">{{ t("project.all") }}</el-divider>
         <el-row
           v-if="projects.list.length > 0"
@@ -437,6 +436,7 @@ function intervalData(
 ) {
   let count = 0;
   disInfinite.value = true;
+  instance.list = []
   const timer = setInterval(() => {
     instance.list.push(data.results[count]);
     count = count + 1;
@@ -602,6 +602,7 @@ function clickAllowMessage() {
 
 <style lang="scss" scoped>
 .container {
+overflow: scroll;
   width: inherit;
   display: flex;
   flex-direction: column;

@@ -1,36 +1,28 @@
 <template>
   <h4 class="doc-base-title">{{ label }}</h4>
-  <el-select v-model="localValue" placeholder="Select">
+  <el-select v-model="localValue" placeholder="服务">
     <el-option-group
-      v-for="group in options"
-      :key="group.label"
+      v-for="(group, index) in options"
+      :key="index"
       :label="group.label"
     >
       <el-option
         class="doc-base-option-mul"
         v-for="item in group.options"
-        :key="item.value"
-        :label="item.label"
-        :value="item.value"
+        :key="item.id"
+        :label="item.name"
+        :value="item.name === '继承父类' ? 'inherit' : item.name"
       >
         <div class="flex items-center">
-          <span>{{item.label}}</span>
-          <span
-        style="
-          float: right;
-          color: var(--el-text-color-secondary);
-          font-size: 13px;
-        "
-      >
-        {{ item.desc }}
-      </span>
+          <span>{{ item.name }}</span>
+          <span class="items-server"> {{ item.prefix }} </span>
         </div>
       </el-option>
     </el-option-group>
   </el-select>
 </template>
 <script lang="ts" setup>
-import { ref, computed, defineProps, watch, defineEmits } from "vue";
+import { ref, watch } from "vue";
 
 // 定义接收的属性
 const props = defineProps<{
@@ -62,6 +54,16 @@ watch(localValue, (newValue) => {
 <style lang="scss" scoped></style>
 
 <style lang="scss">
+.items-center {
+  gap: 5px;
+  display: flex;
+  justify-content: start;
+  .items-server {
+    float: right;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+}
 .doc-base-select
   .el-select__wrapper
   .el-select__selection

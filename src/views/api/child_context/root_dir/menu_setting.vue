@@ -1,5 +1,5 @@
 <template>
-  <el-row style="margin-top: 10px">
+  <el-row>
     <el-col :offset="1" :span="14">
       <div class="function-container">
         <div class="function-content">
@@ -81,34 +81,25 @@
         </div>
         <div style="width: 200px">
           <el-select
-            v-model="serverValue"
-            @change="changeUrl"
-            placeholder="服务 (前置URL)"
+            v-model="server_value"
+            placeholder="服务"
+            @change="changeServer"
           >
             <el-option-group
-              v-for="group in serverOptions"
-              :key="group.label"
+              v-for="(group, index) in serverOptions"
+              :key="index"
               :label="group.label"
             >
               <el-option
                 class="doc-base-option-mul"
                 v-for="item in group.options"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
+                :key="item.id"
+                :label="item.name"
+                :value="item.name === '继承父类' ? 'inherit' : item.name"
               >
                 <div class="flex items-center">
-                  <span>{{ item.label }}</span>
-                  <span
-                    style="
-                      margin-left: 5px;
-                      float: right;
-                      color: var(--el-text-color-secondary);
-                      font-size: 13px;
-                    "
-                  >
-                    {{ item.desc }}
-                  </span>
+                  <span>{{ item.name }}</span>
+                  <span class="items-server"> {{ item.prefix }} </span>
                 </div>
               </el-option>
             </el-option-group>
@@ -153,53 +144,129 @@
   </el-row>
 </template>
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, getCurrentInstance } from "vue";
+import { useRoute } from "vue-router";
+import { GlobalState } from "@/state/index";
+import { ApiGetSummarySource, ApiUpdateDir } from "@/api/interface/index";
+import tools from "@/utils/tools";
+const route = useRoute();
+const { proxy }: any = getCurrentInstance();
 const visibel = ref(0);
 const serverValue = ref("Test");
-const serverDesc = ref("设置的默认服务");
-const serverOptions = [
-  {
-    label: "默认设置",
-    options: [
-      {
-        value: "default",
-        label: "使用默认设置",
-        desc: "设置的默认服务",
-      },
-    ],
+const serverDesc = ref("跟随接口设置");
+const serverOptions: any = ref([]);
+const server_value = ref("default");
+const props = defineProps({
+  target_type: {
+    type: Number,
+    default: -1,
   },
-  {
-    label: "手动指定",
-    options: [
-      {
-        value: "Test",
-        label: "Test",
-        desc: "http://127.0.0.1:4523/m1/2273535-0-target1",
-      },
-      {
-        value: "UAT",
-        label: "UAT",
-        desc: "http://127.0.0.1:4523/m1/2273535-0-target2",
-      },
-    ],
+  dir: {
+    type: Object,
+    default: null,
   },
-];
-
-onMounted(() => {
-  changeUrl(serverValue.value);
+});
+onMounted(async () => {
+  // changeUrl(serverValue.value);
+  const res = await get_source();
+  search_and_set_env_by_name(res, GlobalState.user_env);
+  server_value.value = props.dir.server;
+  changeServer(server_value.value, false);
 });
 
-function changeUrl(value: any) {
-  if (value == "default") {
-    serverDesc.value = "设置的默认服务";
+async function changeServer(value: any, send_post = true) {
+  if (value === "inherit") {
+    serverDesc.value = "跟随父级目录设置（推荐）";
   } else {
-    for (let i = 0; i < serverOptions[1].options.length; i++) {
-      if (value === serverOptions[1].options[i].value) {
-        serverDesc.value = serverOptions[1].options[i].desc;
+    const search_range =
+      props.target_type === 0
+        ? serverOptions.value[0].options
+        : serverOptions.value[1].options;
+    for (let i = 0; i < search_range.length; i++) {
+      if (search_range[i].name === value) {
+        console.log(search_range[i]);
+
+        serverDesc.value = search_range[i].prefix;
         break;
       }
     }
   }
+  if (send_post === true) {
+    const result = await update_dir({ server: value });
+    if (result === false) return;
+    tools.message("更新服务成功", proxy, "success");
+  }
+}
+
+async function update_dir(update_fields: any) {
+  const _data = {
+    type: 0,
+    child_action_type: "update_dir",
+    content: {
+      id: props.dir.id,
+      ...update_fields,
+    },
+  };
+  return await ApiUpdateDir(_data).then((res: any) => {
+    const checking = tools.result_check(res, proxy);
+    if (checking === true) {
+      return res;
+    } else {
+      return checking;
+    }
+  });
+}
+
+function search_and_set_env_by_name(all_env: any, env_name: string | null) {
+  for (let i = 0; i < all_env.length; i++) {
+    if (all_env[i].name === env_name) {
+      set_server_options(all_env[i].server_mappings);
+      break;
+    }
+  }
+}
+
+function set_server_options(server_mappings: any) {
+  if (Number(props.target_type) === 0) {
+    serverOptions.value = [
+      {
+        label: "手动指定",
+        options: server_mappings,
+      },
+    ];
+  } else {
+    serverOptions.value = [
+      {
+        label: "默认设置",
+        options: [
+          {
+            id: 0,
+            name: "继承父类",
+            server: "跟随父级目录设置（推荐）",
+          },
+        ],
+      },
+      {
+        label: "手动指定",
+        options: server_mappings,
+      },
+    ];
+  }
+}
+
+async function get_source() {
+  const _data = {
+    project: route.params.project,
+    source: "env",
+  };
+  return await ApiGetSummarySource(_data).then((res: any) => {
+    const checking = tools.result_check(res, proxy);
+    if (checking === true) {
+      return res;
+    } else {
+      return checking;
+    }
+  });
 }
 </script>
 
@@ -223,7 +290,7 @@ function changeUrl(value: any) {
   background-position: center center;
   background-size: cover;
   border: 1px solid #eaecf0;
-  margin-top: 30px;
+  margin-top: 20px;
   padding: 16px 20px 20px;
   border-radius: 8px;
 }

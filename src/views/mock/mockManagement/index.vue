@@ -25,27 +25,27 @@
       >
         <thead>
           <tr>
-            <th colspan="5" style="text-align: start;">
-              Mock请求记录
-            </th>
-            <th colspan="1" style="text-align: end; display: flex;">
-              <CButton style="width: 40px;" @click="addData"
-          ><el-icon><CirclePlus/></el-icon
-        ></CButton>
-        <CButton style="width: 40px; margin-left: 1rem;" @click="clearDataFromSearch"
-          ><el-icon><RefreshLeft /></el-icon
-        ></CButton>
+            <th colspan="5" style="text-align: start">Mock请求记录</th>
+            <th colspan="1" style="text-align: end; display: flex">
+              <CButton style="width: 40px" @click="addData"
+                ><el-icon><CirclePlus /></el-icon
+              ></CButton>
+              <CButton
+                style="width: 40px; margin-left: 1rem"
+                @click="clearDataFromSearch"
+                ><el-icon><RefreshLeft /></el-icon
+              ></CButton>
             </th>
           </tr>
           <tr>
-            <th class="disappear-auto">{{ t('project.MockCol.method') }}</th>
+            <th class="disappear-auto">{{ t("project.MockCol.method") }}</th>
             <th class="disappear-auto">
-              {{ t('project.mock.desc.callTimes') }}
+              {{ t("project.mock.desc.callTimes") }}
             </th>
-            <th>{{ t('project.MockCol.path') }}</th>
-            <th class="disappear-auto">{{ t('project.MockCol.desc') }}</th>
-            <th class="disappear-auto">{{ t('project.MockCol.creator') }}</th>
-            <th>{{ t('project.MockCol.action') }}</th>
+            <th>{{ t("project.MockCol.path") }}</th>
+            <th class="disappear-auto">{{ t("project.MockCol.desc") }}</th>
+            <th class="disappear-auto">{{ t("project.MockCol.creator") }}</th>
+            <th>{{ t("project.MockCol.action") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -54,7 +54,7 @@
               <td
                 class="active-row disappear-auto"
                 :style="{
-                  '--method-color': GlobalStatus.methodColor[item.method]
+                  '--method-color': GlobalStatus.methodColor[item.method],
                 }"
               >
                 {{ method[item.method] }}
@@ -117,79 +117,78 @@
     </el-col>
   </el-row>
   <el-empty description="暂无数据" v-else :image-size="200">
-    <SpecialButton @click="addData">点击添加您的数据<el-icon><Plus /></el-icon></SpecialButton>
+    <SpecialButton @click="addData">点击添加您的数据</SpecialButton>
   </el-empty>
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, getCurrentInstance } from 'vue'
-import SpecialInput from '@/components/common/input/specialInput.vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ApiGetMock, ApiDeleteMock } from '@/api/mock'
-import CButton from '@/components/common/button/CButton.vue'
-import SpecialButton from '@/components/common/button/special_button.vue'
-import { useI18n } from 'vue-i18n'
-import useClipboard from 'vue-clipboard3/dist/esm/index.js'
-import tools from '@/utils/tools'
-import _ from 'lodash'
-import { InfoFilled } from '@element-plus/icons-vue'
-import GlobalStatus from '@/global'
+import { ref, reactive, getCurrentInstance, onMounted } from "vue";
+import SpecialInput from "@/components/common/input/specialInput.vue";
+import { useRoute, useRouter } from "vue-router";
+import { ApiGetMock, ApiDeleteMock } from "@/api/mock";
+import CButton from "@/components/common/button/CButton.vue";
+import SpecialButton from "@/components/common/button/special_button.vue";
+import { useI18n } from "vue-i18n";
+import useClipboard from "vue-clipboard3/dist/esm/index.js";
+import tools from "@/utils/tools";
+import _ from "lodash";
+import { InfoFilled } from "@element-plus/icons-vue";
+import GlobalStatus from "@/global";
 
-const searchWidth = ref('100')
-const method = ['GET', 'POST', 'PUT', 'DEL']
-const { t } = useI18n()
+const searchWidth = ref("100");
+const method = ["GET", "POST", "PUT", "DEL"];
+const { t } = useI18n();
 
 // 数据主体！！！
 const d = reactive({
-  list: [] as any
-})
+  list: [] as any,
+});
 // 路由
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 // 项目ID
-const projectId = ref(0)
+const projectId = ref(0);
 // 搜索输入框动态数据
-const search = ref('')
+const search = ref("");
 // 搜索输入框栅格宽度
-const searchInputWidth = ref(20)
+const searchInputWidth = ref(20);
 // 搜索输入框是否触顶
-const isSearchEleOnTop = ref(false)
+const isSearchEleOnTop = ref(false);
 // 是否禁用无限滚动
-const disInfinite = ref(false)
+const disInfinite = ref(false);
 // 当前页码
-const currentPage = ref(1)
+const currentPage = ref(1);
 // 当前页码大小
-const currentPageSize = ref(10)
+const currentPageSize = ref(10);
 // 全局对象
-const { proxy }: any = getCurrentInstance()
+const { proxy }: any = getCurrentInstance();
 // 永久禁止无限滚动
-const alwaysDisInfinite = ref(false)
+const alwaysDisInfinite = ref(false);
 
 // 当前页面初始化执行内容
-;(function () {
-  // 获取路由项目ID
-  projectId.value = Number(route.params.project)
+onMounted(() => {
+  projectId.value = Number(route.params.project);
   // 获取默认数据
-  getData()
-  listenerStorage()
-})()
+  getData();
+  listenerStorage();
+});
 
 function listenerStorage() {
-  window.addEventListener('storage', (event) => {
-    if (event.key === 'createMock') {
-      d.list.unshift(JSON.parse(localStorage.createMock))
-    } else if (event.key === 'editMock') {
-      const _editData = JSON.parse(localStorage.editMock)
+  window.addEventListener("storage", (event) => {
+    if (event.key === "createMock") {
+      d.list.unshift(JSON.parse(localStorage.createMock));
+    } else if (event.key === "editMock") {
+      const _editData = JSON.parse(localStorage.editMock);
       for (let i = 0; i < d.list.length; i++) {
         if (d.list[i].id === _editData.id) {
-          d.list[i].method = _editData.method
-          d.list[i].desc = _editData.desc
-          d.list[i].path = _editData.path
-          break
+          d.list[i].method = _editData.method;
+          d.list[i].desc = _editData.desc;
+          d.list[i].path = _editData.path;
+          break;
         }
       }
     }
-  })
+  });
 }
 
 async function getDataServer(
@@ -206,165 +205,165 @@ async function getDataServer(
     project,
     mixins,
     method,
-    simple
-  }
+    simple,
+  };
 
   return ApiGetMock(data).then((res: any) => {
     if (res.detail || res.results.length === 0) {
-      tools.message(t('response.lessData'), proxy)
-      alwaysDisInfinite.value = true
-      return false
+      tools.message(t("response.lessData"), proxy);
+      alwaysDisInfinite.value = true;
+      return false;
     }
-    return res.results
-  })
+    return res.results;
+  });
 }
 
 function getMethodStr() {
-  const _v = method.indexOf(search.value.toUpperCase())
-  return _v === -1 ? null : _v
+  const _v = method.indexOf(search.value.toUpperCase());
+  return _v === -1 ? null : _v;
 }
 
 function getSearchStr() {
   if (getMethodStr() === null) {
-    return search.value
+    return search.value;
   }
-  return null
+  return null;
 }
 
 // 增加数据
 async function getData() {
-  switchInfiniteScroll()
+  switchInfiniteScroll();
   const res = await getDataServer(
     currentPage.value,
     currentPageSize.value,
     projectId.value,
     getSearchStr(),
     getMethodStr()
-  )
+  );
   if (!res) {
-    switchInfiniteScroll()
-    return
+    switchInfiniteScroll();
+    return;
   }
-  let pushCount = 0
+  let pushCount = 0;
   // 刻意延迟，表现过度效果
   const timer = setInterval(() => {
-    d.list.push(res[pushCount])
-    pushCount += 1
+    d.list.push(res[pushCount]);
+    pushCount += 1;
     if (pushCount === res.length) {
-      clearInterval(timer)
-      switchInfiniteScroll()
+      clearInterval(timer);
+      switchInfiniteScroll();
     }
-  }, 50)
+  }, 50);
 
-  currentPage.value += currentPageSize.value / 10
+  currentPage.value += currentPageSize.value / 10;
 }
 
 // 搜索框固定触顶状态改变回调函数
 function onSearchChange(item: any): void {
   if (isSearchEleOnTop.value !== item) {
-    searchInputWidth.value = searchInputWidth.value === 13 ? 20 : 13
+    searchInputWidth.value = searchInputWidth.value === 13 ? 20 : 13;
   }
   if (item) {
-    searchWidth.value = '80'
+    searchWidth.value = "80";
   } else {
-    searchWidth.value = '100'
+    searchWidth.value = "100";
   }
-  isSearchEleOnTop.value = item
+  isSearchEleOnTop.value = item;
 }
 
 // 清除输入框动作回调函数
 function clearDataFromSearch(): void {
   // 重置搜索前置变量
-  clearString()
+  clearString();
   // 清空数据
-  clearData()
+  clearData();
   // 重新获取数据
-  getData()
+  getData();
 }
 
 // 清空数据
 function clearData() {
-  d.list = []
+  d.list = [];
 }
 
 // 重置搜索前置变量
 function clearString(): void {
   // 重置输入框内容
-  search.value = ''
-  clearPageInfo()
-  clearInfinite()
+  search.value = "";
+  clearPageInfo();
+  clearInfinite();
 }
 // 重置无限滚动
 function clearInfinite() {
   // 重置永久禁止循环
-  alwaysDisInfinite.value = false
+  alwaysDisInfinite.value = false;
   // 重置无限滚动
-  disInfinite.value = false
+  disInfinite.value = false;
 }
 // 重置分页信息
 function clearPageInfo(): void {
   // 重置页码
-  currentPage.value = 1
+  currentPage.value = 1;
   // 重置分页大小
-  currentPageSize.value = 10
+  currentPageSize.value = 10;
 }
 // 切换无限滚动
 function switchInfiniteScroll() {
   if (alwaysDisInfinite.value) {
-    disInfinite.value = true
-    return
+    disInfinite.value = true;
+    return;
   }
-  disInfinite.value = !disInfinite.value
+  disInfinite.value = !disInfinite.value;
 }
 
 // 复制至剪贴板
 async function copy(value: String) {
-  const { toClipboard } = useClipboard()
-  await toClipboard(value.toString())
-  tools.message(t('notice.clipboard'), proxy, 'success')
+  const { toClipboard } = useClipboard();
+  await toClipboard(value.toString());
+  tools.message(t("notice.clipboard"), proxy, "success");
 }
 
 // 搜索data，防抖
 const searching = _.debounce(
   function (e) {
-    clearData()
-    clearInfinite()
-    clearPageInfo()
-    getData()
+    clearData();
+    clearInfinite();
+    clearPageInfo();
+    getData();
   },
   500,
   { maxWait: 1500 }
-)
+);
 // 删除数据
 async function deleteData(id: number) {
   for (let i = 0; i < d.list.length; i++) {
     if (d.list[i].id === id) {
       const data = {
-        project: projectId.value
-      }
+        project: projectId.value,
+      };
       await ApiDeleteMock(id, data).then((res) => {
-        d.list.splice(i, 1)
-        tools.message(t('notice.delete'), proxy, 'success')
-      })
-      break
+        d.list.splice(i, 1);
+        tools.message(t("notice.delete"), proxy, "success");
+      });
+      break;
     }
   }
 }
 // 跳转新增数据页面
 function addData() {
-  openEditor('addMock', { project: projectId.value })
+  openEditor("addMock", { project: projectId.value });
 }
 
 function editData(item: any) {
-  openEditor('editMock', { project: projectId.value, mock: item.id })
+  openEditor("editMock", { project: projectId.value, mock: item.id });
 }
 
 function openEditor(name: string, params: any) {
   const addPage = router.resolve({
     name,
-    params
-  })
-  window.open(addPage.href, '_blank')
+    params,
+  });
+  window.open(addPage.href, "_blank");
 }
 </script>
 
@@ -427,7 +426,7 @@ function openEditor(name: string, params: any) {
 .styled-table thead tr {
   text-align: left;
   color: black;
-  border-bottom: 1px solid #E6E6E6;
+  border-bottom: 1px solid #e6e6e6;
 }
 
 .styled-table th,

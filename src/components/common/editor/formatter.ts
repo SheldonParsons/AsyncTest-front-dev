@@ -9,52 +9,19 @@ export function JSONFormat(JSONstr: any) {
   } catch (error) {
     return JSONstr;
   }
-  // // 备份原始的{{}}包裹的内容
-  // let specialContents: any = [];
-  // let bigNumberContents: any = [];
-  // console.log(preprocessJson(JSONstr));
+}
 
-  // JSONstr = JSONstr.replace(/{{.*?}}/g, (match: any) => {
-  //   specialContents.push(match);
-  //   return `647889${specialContents.length - 1}`;
-  // });
-  // JSONstr = JSONstr.replace(/\d{15,}/g, (match: any) => {
-  //   bigNumberContents.push(match);
-  //   return `111111${bigNumberContents.length - 1}`;
-  // });
-
-  // try {
-  //   // 解析JSON
-  //   const parsedJSON = JSON.parse(JSONstr);
-  //   console.log(parsedJSON);
-
-  //   // 应用自定义格式化函数
-  //   let formattedJSON = JSON.stringify(parsedJSON, null, 2);
-
-  //   // 还原{{}}包裹的特殊内容
-  //   formattedJSON = formattedJSON.replace(
-  //     /647889(\d+)/g,
-  //     (match: any, index: any) => {
-  //       return specialContents[index];
-  //     }
-  //   );
-  //   // 还原超过14位的数字
-  //   formattedJSON = formattedJSON.replace(
-  //     /111111(\d+)/g,
-  //     (match: any, index: any) => {
-  //       return bigNumberContents[index];
-  //     }
-  //   );
-  //   return formattedJSON;
-  // } catch (error) {
-  //   JSONstr = JSONstr.replace(/647889(\d+)/g, (match: any, index: any) => {
-  //     return specialContents[index];
-  //   });
-  //   JSONstr = JSONstr.replace(/111111(\d+)/g, (match: any, index: any) => {
-  //     return bigNumberContents[index];
-  //   });
-  //   return restoreSpecialContent(JSONstr);
-  // }
+export function JSONFormatError(JSONstr: any) {
+  if (JSONstr === "") {
+    return JSONstr;
+  }
+  try {
+    const { processedJson, placeholders } = processJson(JSONstr);
+    const formattedJson = JSON.stringify(JSON.parse(processedJson), null, 2);
+    return restorePlaceholders(formattedJson, placeholders);
+  } catch (error) {
+    return false;
+  }
 }
 
 function processJson(jsonString: string) {
@@ -91,6 +58,18 @@ function processJson(jsonString: string) {
         jsonString.indexOf("}}", i) !== -1
       ) {
         const endIdx = jsonString.indexOf("}}", i) + 2;
+        const placeholderContent = jsonString.substring(i, endIdx);
+        const placeholder = `"@@PLACEHOLDER_${index++}@@"`;
+        placeholders.push({ placeholder, original: placeholderContent });
+        result += placeholder;
+        i = endIdx;
+        continue;
+      }
+      if (
+        jsonString.substring(i, i + 2) === "{%" &&
+        jsonString.indexOf("%}", i) !== -1
+      ) {
+        const endIdx = jsonString.indexOf("%}", i) + 2;
         const placeholderContent = jsonString.substring(i, endIdx);
         const placeholder = `"@@PLACEHOLDER_${index++}@@"`;
         placeholders.push({ placeholder, original: placeholderContent });
@@ -180,44 +159,56 @@ export function preprocessJson(jsonString: string) {
   let result = "";
   let i = 0;
 
+  // 定义要处理的占位符类型
+  const placeholders = [
+    { start: '{{', end: '}}' },  // 处理 {{...}}
+    { start: '{%', end: '%}' }   // 新增处理 {%...%}
+  ];
+
   while (i < jsonString.length) {
     const char = jsonString[i];
 
-    // Check for escape character
-    if (char === "\\" && !escaped) {
+    // 处理转义字符（如 \"）
+    if (char === '\\' && !escaped) {
       escaped = true;
       result += char;
       i++;
       continue;
     }
 
-    // Toggle inQuotes flag when encountering unescaped quotes
+    // 处理引号边界（非转义状态下的 "）
     if (char === '"' && !escaped) {
       inQuotes = !inQuotes;
-      result += char;
-      i++;
-      continue;
     }
 
-    // Reset escaped flag
+    // 重置转义状态（每次处理完一个字符后）
     if (escaped) escaped = false;
 
-    // Check for placeholders when not inside quotes
-    if (!inQuotes && jsonString.substr(i, 2) === "{{") {
-      const endIndex = jsonString.indexOf("}}", i) + 2;
-      if (endIndex !== -1) {
-        // Compute the length of the placeholder and replace with equal number of '0's
-        const placeholderLength = endIndex - i;
-        const replacement = '"' + "0".repeat(placeholderLength - 4) + '"';
-        result += replacement;
-        i = endIndex;
-        continue;
+    // 检查是否在字符串外且匹配到占位符起始标记
+    let foundPlaceholder = false;
+    if (!inQuotes) {
+      for (const { start, end } of placeholders) {
+        if (jsonString.startsWith(start, i)) {
+          // 查找结束标记的位置
+          const endIndex = jsonString.indexOf(end, i + start.length);
+          if (endIndex !== -1) {
+            // 计算占位符总长度并替换
+            const totalLength = endIndex + end.length - i;
+            const contentLength = totalLength - start.length - end.length;
+            result += `"${'0'.repeat(contentLength)}"`;
+            i = endIndex + end.length;  // 跳过已处理部分
+            foundPlaceholder = true;
+            break;
+          }
+        }
       }
     }
 
-    // Append current character to result and move to next
-    result += char;
-    i++;
+    // 如果未处理占位符，正常追加字符
+    if (!foundPlaceholder) {
+      result += char;
+      i++;
+    }
   }
 
   return result;

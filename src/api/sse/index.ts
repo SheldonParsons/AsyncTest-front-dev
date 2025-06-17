@@ -15,18 +15,31 @@ type FetchOptionType = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, any> | null;
 };
 
+export const StreamPostApi = (
+  url: string,
+  data: any,
+  stream_callback: (event_repsonse: { [key: string]: any }) => void
+) => {
+  return ssePost(url, { body: data }, stream_callback);
+};
+
 export const webApp = (
   url: string,
   query: string,
   app_id: any,
   conversation_id: any,
-  project_id:any,
+  project_id: any,
   onData: (event_response: { [key: string]: any }) => void
 ) => {
   return ssePost(
     url,
     {
-      body: { query: query, app_id: app_id, conversation_id: conversation_id, project_id: project_id },
+      body: {
+        query: query,
+        app_id: app_id,
+        conversation_id: conversation_id,
+        project_id: project_id,
+      },
     },
     onData
   );
@@ -48,18 +61,18 @@ export const debugApp = (
 };
 
 export const streamApi = (
-    url: string,
-    data: any,
-    onData: (event_response: { [key: string]: any }) => void
-  ) => {
-    return ssePost(
-      url,
-      {
-        body: data,
-      },
-      onData
-    );
-  };
+  url: string,
+  data: any,
+  onData: (event_response: { [key: string]: any }) => void
+) => {
+  return ssePost(
+    url,
+    {
+      body: data,
+    },
+    onData
+  );
+};
 
 // 5.封装基于post的sse(流式事件响应)请求
 export const ssePost = async (
@@ -108,56 +121,99 @@ const handleStream = (
   response: Response,
   onData: (data: { [key: string]: any }) => void
 ) => {
-  // 1.检测网络请求是否正常
   if (!response.ok) throw new Error("网络请求失败");
 
-  // 2.构建reader以及deocder
   const reader = response.body?.getReader();
+  if (!reader) throw new Error("无法获取可读流");
+  
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let isClosed = false; // 跟踪流是否已关闭
 
-  // 3.构建read函数用于去读取数据
-  const read = () => {
-    let hasError = false;
-    reader?.read().then((result: any) => {
-      if (result.done) return;
+  const read = async () => {
+    try {
+      while (!isClosed) {
+        const { value, done } = await reader.read();
+        
+        if (done) {
+          isClosed = true;
+          processRemainingData();
+          return;
+        }
 
-      buffer += decoder.decode(result.value, { stream: true });
-      const lines = buffer.split("\n");
-
-      let event = "";
-      let data = "";
-
-      try {
-        lines.forEach((line) => {
-          line = line.trim();
-          if (line.startsWith("event:")) {
-            event = line.slice(6).trim();
-          } else if (line.startsWith("data:")) {
-            data = line.slice(5).trim();
-          }
-
-          // 每个事件以空行结束，只有event和data同时存在，才表示一次流式事件的数据完整获取到了
-          if (line === "") {
-            if (event !== "" && data !== "") {
-              onData({
-                event: event,
-                data: JSON.parse(data),
-              });
-              event = "";
-              data = "";
-            }
-          }
-        });
-        buffer = lines.pop() || "";
-      } catch (e) {
-        hasError = true;
+        buffer += decoder.decode(value, { stream: true });
+        processBuffer();
       }
-
-      if (!hasError) read();
-    });
+    } catch (error) {
+      console.error("流读取错误:", error);
+      cancelStream();
+    }
   };
 
-  // 4.调用read函数去执行获取对应的数据
+  const processBuffer = () => {
+    // 使用自定义分隔符分割完整事件
+    while (buffer.includes("%datatag%\n\n")) {
+      const endIndex = buffer.indexOf("%datatag%\n\n");
+      const eventChunk = buffer.substring(0, endIndex);
+      buffer = buffer.substring(endIndex + "%datatag%\n\n".length);
+      
+      parseEventChunk(eventChunk);
+    }
+  };
+
+  const parseEventChunk = (chunk: string) => {
+    const parts = chunk.split("%eventtag%\n");
+    if (parts.length !== 2) {
+      console.warn("无效的事件格式:", chunk);
+      return;
+    }
+
+    let [eventPart, dataPart] = parts;
+    eventPart = eventPart.trim();
+    dataPart = dataPart.trim();
+
+    // 提取事件名
+    if (eventPart.startsWith("event:")) {
+      eventPart = eventPart.slice(6).trim();
+    }
+
+    // 提取数据
+    if (dataPart.startsWith("data:")) {
+      dataPart = dataPart.slice(5).trim();
+    }
+
+    // 处理特殊事件
+    if (eventPart === "end") {
+      cancelStream();
+      return;
+    }
+
+    try {
+      const data = dataPart ? JSON.parse(dataPart) : {};
+      onData({ event: eventPart, data });
+    } catch (error) {
+      console.error("JSON 解析错误:", error, "原始数据:", dataPart);
+    }
+  };
+
+  const processRemainingData = () => {
+    if (buffer.trim()) {
+      console.warn("流结束时有未处理数据:", buffer);
+      // 尝试处理剩余数据
+      parseEventChunk(buffer);
+    }
+  };
+
+  const cancelStream = () => {
+    if (!isClosed) {
+      isClosed = true;
+      reader.cancel().catch(e => console.warn("流关闭错误:", e));
+    }
+  };
+
+  // 开始读取
   read();
+
+  // 返回取消函数供外部调用
+  return cancelStream;
 };

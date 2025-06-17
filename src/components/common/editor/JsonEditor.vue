@@ -12,27 +12,6 @@
           <el-col :span="18"
             ><p class="g-unselect">{{ $t("main.editor") }}</p></el-col
           >
-          <!-- <el-col :span="6" class="language-col">
-            <el-dropdown trigger="click" @command="choiceLanguage">
-              <span class="el-dropdown-link g-unselect">
-                {{ $t("component.editor.language") }}-{{
-                  languageMapping[defaultLanguage]
-                }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
-              </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="private">Json</el-dropdown-item>
-                  <el-dropdown-item command="text">Text</el-dropdown-item>
-                  <el-dropdown-item command="python" divided disabled
-                    >Python</el-dropdown-item
-                  >
-                  <el-dropdown-item command="javascript" disabled
-                    >JavaScript</el-dropdown-item
-                  >
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </el-col> -->
         </el-row>
       </div>
       <div class="ed editor" ref="dom"></div>
@@ -115,16 +94,6 @@ let instance: any;
 // 自定义语言
 const _CUSTOMER = "json_custom";
 
-// 语言文本映射
-const languageMapping: any = {
-  json_custom: "json_custom",
-  json: "json",
-  private: "json",
-  text: "TEXT",
-  python: "Python",
-  javascript: "JavaScript",
-};
-
 function stopChangeCodeAction() {
   emit("stopChangeCode");
 }
@@ -138,17 +107,6 @@ const registerList: any = [];
 // 插入数据列表
 const insertData: any = [];
 
-function choiceLanguage(command: any) {
-  dispose();
-  defaultLanguage.value = command;
-  createLanguage(monaco.value);
-  tools.message(
-    t("component.editor.changeLanguage") +
-      languageMapping[defaultLanguage.value],
-    proxy
-  );
-}
-
 onMounted(async () => {
   // 动态加载monaco
   import("monaco-editor").then(async (m) => {
@@ -156,11 +114,7 @@ onMounted(async () => {
   });
 });
 
-function dispose() {
-  for (let i = 0; i < registerList.length; i++) {
-    registerList[i].dispose();
-  }
-}
+
 
 async function createLanguage(m: any) {
   monaco.value = m;
@@ -328,88 +282,12 @@ function initEditorInstance(model: any, editor: any) {
         monaco.value.editor.setModelMarkers(model, "jsonlint", markers);
       }
     }, debounceDelay);
-    emit('update:modelValue', value)
+    emit("update:modelValue", value);
   });
   // model.onDidChangeContent(async () => {});
   registerList.push(instance);
 }
 
-// 代码检查
-function SyntaxCheck(model: any) {
-  try {
-    // 获取替换字符长度，用于等长度替换
-    const match = localRe.exec(instance.getValue());
-    let addLength: number = 0;
-    if (match !== null) {
-      match.map((item: any) => {
-        addLength += item.length;
-      });
-    }
-    // JSON.parse语法检查
-    JSON.parse(
-      instance.getValue().replaceAll(localRe, Math.pow(10, addLength - 1))
-    );
-    // 语法检查通过清空编辑器marker内容
-    monaco.value.editor.setModelMarkers(model, defaultLanguage.value, []);
-  } catch (error: any) {
-    // 匹配数字
-    const re = /\d+/g;
-    let errorIndex: any = re.exec(error.message);
-    if (errorIndex) {
-      errorIndex = parseInt(errorIndex[0]);
-      let sumLength = 0;
-      const dataRows = instance.getValue().split("\n");
-      for (let i = 0; i < dataRows.length; i++) {
-        // 区间匹配
-        if (
-          parseInt(errorIndex) >= sumLength &&
-          parseInt(errorIndex) <= sumLength + dataRows[i].length
-        ) {
-          // 创建编辑器代码提示marker
-          monaco.value.editor.setModelMarkers(model, defaultLanguage.value, [
-            {
-              startLineNumber: i + 1,
-              endLineNumber: i + 1,
-              startColumn: errorIndex - sumLength + 1,
-              endColumn: errorIndex - sumLength + 1,
-              code: error.code,
-              severity: monaco.value.MarkerSeverity.Error,
-              message: error.message,
-            },
-          ]);
-          break;
-        } else {
-          sumLength += dataRows[i].length + 1;
-        }
-      }
-    }
-  }
-}
-
-// 初始化Private类型的功能注册
-function initPrivateRegister() {
-  // 格式化
-  const formatter =
-    monaco.value.languages.registerDocumentFormattingEditProvider(
-      defaultLanguage.value,
-      {
-        provideDocumentFormattingEdits: (
-          model: any,
-          range: any,
-          options: any,
-          token: any
-        ) => {
-          return [
-            {
-              range: model.getFullModelRange(),
-              text: JSONFormat(model.getValue()),
-            },
-          ];
-        },
-      }
-    );
-  registerList.push(formatter);
-}
 // 注册通用功能
 function initRegister() {
   // 补全代码监听
@@ -549,6 +427,14 @@ function isJsonKeyPosition(model: any, position: any) {
   }
   .el-dropdown {
     height: 100%;
+  }
+}
+</style>
+
+<style lang="scss">
+.monaco-editor {
+  .view-lines {
+    font-family: "JetBrains Mono", monospace !important;
   }
 }
 </style>

@@ -4,6 +4,7 @@
       <div
         style="padding: 10px; background-color: #f9fafb; border-radius: 10px"
       >
+      <div @click.stop>
         <el-cascader
           v-model="function_content"
           @change="handleChange"
@@ -11,12 +12,14 @@
           placeholder="选择一个动态值函数"
           size="small"
           style="width: 100%"
+          @click.stop
         >
-          <template #default="{ node, data }">
+          <template #default="{ node, data }" @click.stop>
             <span v-if="!node.isLeaf">{{ data.label }}</span>
             <span v-if="node.isLeaf"> {{ data.label }}({{ data.value }}) </span>
           </template>
         </el-cascader>
+      </div>
         <div
           v-if="current_function !== null"
           v-for="(item, index) in get_content(
@@ -1248,6 +1251,8 @@ function handleChange(value: any) {
 function content_function() {
   can_insert.value = false;
   const result = process_function();
+  console.log(result);
+  
   if (result === "--ban--") {
     can_insert.value = false;
     emit("reload_height");
@@ -1264,7 +1269,9 @@ function content_function() {
 
 function process_function() {
   const _content = input_content_mapping.value[current_function.value];
+  console.log(_content);
   const _params = _content.fields.map((item: any) => item.value);
+  console.log(_params);
   let result = "--ban--";
   if (_params.length > 0) {
     result = _content.func(..._params);
@@ -1321,7 +1328,6 @@ function generation_expression() {
     .join(",");
   const merged_array = [content].concat(name_list);
   exp.value = start + merged_array.join("|") + end;
-  console.log(exp.value);
 }
 function generation_preview(input_value: any) {
   process_list.value.forEach((process: any) => {

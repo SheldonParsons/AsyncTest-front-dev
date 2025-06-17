@@ -315,7 +315,6 @@
 <script lang="ts" setup>
 import { onMounted, ref, getCurrentInstance, watch } from "vue";
 import { state } from "@/state";
-import deleteLogo from "@/assets/img/delete.png";
 import { webApp } from "@/api/sse/index";
 import useClipboard from "vue-clipboard3/dist/esm/index.js";
 import tools from "@/utils/tools";
@@ -353,11 +352,12 @@ const stop_message_scroll = ref(false);
 const current_position_index = ref(0);
 const current_conversation: any = ref(null);
 const contentDiv = ref(null);
-const scroll_div:any = ref(null);
+const scroll_div: any = ref(null);
+const disabled = ref(true);
 onMounted(() => {
   state.setMessage("changeMenu" + Math.random().toString());
   setTimeout(() => {
-    scroll_div.value = document.getElementsByClassName("chat-content")[0]
+    scroll_div.value = document.getElementsByClassName("chat-content")[0];
     scroll_div.value.addEventListener("scroll", function () {
       if (scroll_div.value.scrollTop === 0) {
         // 滚动到顶部时触发
@@ -529,6 +529,13 @@ function setClickListeners() {
   }
 }
 async function send(event: any) {
+  if (disabled.value) {
+    tools.message("功能升级中，暂时停用，敬请期待", proxy, "success");
+    if (event.key === "Enter") {
+      event.preventDefault();
+    }
+    return;
+  }
   if (event.isComposing) {
     return;
   }

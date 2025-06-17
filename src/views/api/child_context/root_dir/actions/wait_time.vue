@@ -13,6 +13,7 @@
           size="small"
         />
         <el-dropdown
+          v-if="disable === false"
           @command="handleDupDelete"
           ref="dropdownRef"
           trigger="contextmenu"
@@ -32,7 +33,11 @@
         </el-icon>
       </div>
       <div class="script-header-content">
-        <div class="script-rank" @mousedown.stop="open_script = false">
+        <div
+          class="script-rank"
+          v-if="disable === false"
+          @mousedown.stop="open_script = false"
+        >
           <div class="drag-handle">
             <el-icon color="#d0d5dd"><Rank /></el-icon>
           </div>
@@ -49,6 +54,7 @@
       <div v-show="open_script" class="script-body">
         <div class="script-content">
           <el-input
+            :disabled="props.disable"
             v-model="props.element.data.time"
             @input="waste_time = props.element.data.time"
             style="max-width: 200px"
@@ -67,11 +73,15 @@ import { ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
 const route = useRoute();
 const open_script = ref(false);
-const dropdownRef:any = ref(null)
+const dropdownRef: any = ref(null);
 const props = defineProps({
   element: {
     type: Object,
     default: {},
+  },
+  disable: {
+    type: Boolean,
+    default: false,
   },
 });
 function close_expand() {
@@ -79,24 +89,24 @@ function close_expand() {
 }
 onMounted(() => {
   waste_time.value = props.element.data.time;
-})
+});
 const waste_time: any = ref(0);
 // 暴露给父组件调用
 defineExpose({
   close_expand,
 });
-const emit = defineEmits(["dup_action","delete_action"]);
+const emit = defineEmits(["dup_action", "delete_action"]);
 
-const handleTriggerClick = (e:any) => {
-  e.stopPropagation()
-  dropdownRef.value?.handleOpen()  // 手动控制下拉状态
-}
-function handleDupDelete(type:string){
-  if (type === 'dup') {
-    emit("dup_action")
+const handleTriggerClick = (e: any) => {
+  e.stopPropagation();
+  dropdownRef.value?.handleOpen(); // 手动控制下拉状态
+};
+function handleDupDelete(type: string) {
+  if (type === "dup") {
+    emit("dup_action");
   }
-  if (type === 'delete') {
-    emit("delete_action")
+  if (type === "delete") {
+    emit("delete_action");
   }
 }
 </script>
@@ -162,7 +172,7 @@ function handleDupDelete(type:string){
   margin-bottom: 4px;
   border: 0 !important;
   box-sizing: border-box;
-  color: #344054;
+  color: var(--default-font-color);
   font-size: 14px;
   .script-body {
     background-color: #fff;
@@ -183,7 +193,7 @@ function handleDupDelete(type:string){
   .script-header {
     border-radius: 10px;
     background-color: #5657580a;
-    padding: 0px 40px 0px 12px;
+    padding: 0px 100px 0px 12px;
     cursor: pointer;
     border: 0;
     align-items: center;

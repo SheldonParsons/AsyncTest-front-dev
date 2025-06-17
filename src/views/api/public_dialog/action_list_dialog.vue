@@ -8,7 +8,7 @@
     :modal="false"
   >
     <template #header="{ close, titleId, titleClass }">
-      <el-row style="padding: 24px 24px 0px">
+      <el-row style="padding: 15px">
         <el-col :span="23"
           ><span
             style="
@@ -20,7 +20,7 @@
             >添加执行步骤</span
           ></el-col
         >
-        <el-col :span="1" style="display: flex; justify-content: end"
+        <el-col :span="1" style="display: flex; justify-content: end;align-items: center;"
           ><div class="del-process" @click="close">
             <el-icon :size="12"><CloseBold /></el-icon></div
         ></el-col>

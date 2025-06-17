@@ -13,6 +13,20 @@ $white: '#e6e8eb';
 .no-scoll::-webkit-scrollbar {
   display: none; /* 隐藏滚动条 */
 }
+.no-scoll {
+  overflow-x: scroll;       /* 保留滚动功能 */
+  scrollbar-width: none;    /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.no-scroll::-webkit-scrollbar {
+  display: none; /* 隐藏滚动条 */
+}
+.no-scroll {
+  overflow-x: scroll;       /* 保留滚动功能 */
+  scrollbar-width: none;    /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
 .g-flex {
   display: flex;
   justify-content: center;
@@ -41,6 +55,16 @@ $white: '#e6e8eb';
   --greyLight-4:#D1D5DB;
   --greyDark: #9baacf;
   --dark: black;
+  --dark-hover: rgb(43, 43, 43);
+  --hover-bg: rgba(16,24,40,.05);
+  --font-default-color: #8b8c8d;
+  --border-color: #d0d5dd;
+  --border-color-light: #e6e6e6;
+  --default-bg: #f0f2f5;
+  --dark-default-bg: #c1c0c0;
+  --default-font-color: #344054;
+  --delete-bg-color: rgba(244.2, 120.36, 111.72, .08);
+  --delete-font-color: #f47870;
 }
 .el-dialog {
   padding: 0px;

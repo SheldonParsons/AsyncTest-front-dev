@@ -17,7 +17,7 @@
           <el-row style="width: 100%">
             <el-col :span="24"
               ><span style="color: #667085; font-size: 12px; font-weight: 400"
-                >读取环境变量/全局变量/临时变量</span
+                >读取环境变量/临时变量</span
               ></el-col
             >
           </el-row>

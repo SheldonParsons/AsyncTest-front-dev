@@ -1,11 +1,11 @@
 <template>
   <div class="cm-outer">
-    <span class="cm-inner" @click="showCode = !showCode">
-        {{ text }}
-      </span>
+    <div class="cm-inner" :class="['param', type]" @click="showCode = !showCode">
+        <span>{{ text }}</span>
+      </div>
   </div>
   
-</template>
+</template> 
 
 <script setup>
 const props = defineProps({
@@ -13,6 +13,7 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  type: String
 });
 </script>
 
@@ -26,11 +27,9 @@ const props = defineProps({
     display: flex;
     align-items: center;
     height: 16px;
-    padding: 0px 0.2em;
-    color: var(--white);
-    border: 1px solid var(--primary);
-    border-radius: 2px;
-    background: var(--el-color-primary-light-3);
+    color: white;
+    border-radius: 4px;
+    background: #FF8C00;
     font-size: 12px;
   }
 }

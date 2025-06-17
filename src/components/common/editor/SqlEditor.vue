@@ -8,7 +8,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, onBeforeUnmount, defineExpose, watch } from "vue";
+import { onMounted, ref, onBeforeUnmount, watch } from "vue";
 
 const showPlaceholder = ref(true);
 
@@ -40,6 +40,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  disable: {
+    type: Boolean,
+    default: false,
+  }
 });
 
 watch(
@@ -110,6 +114,7 @@ async function createLanguage(m: any) {
     model,
     tabSize: 4,
     fontSize: "14px",
+    readOnly: props.disable,
     automaticLayout: true,
     fontFamily: '"JetBrains Mono", monospace',
     scrollBeyondLastLine: false,
@@ -125,6 +130,18 @@ async function createLanguage(m: any) {
       size: "fit", // "proportional" | "fill" | "fit"
     },
   });
+  instance.getDomNode().addEventListener('wheel', function(event:any) {
+    const currentScrollTop = instance.getScrollTop();
+    const maxScrollTop = instance.getScrollHeight() - instance.getLayoutInfo().height;
+
+    if (
+        (currentScrollTop <= 0 && event.deltaY < 0) ||
+        (currentScrollTop >= maxScrollTop && event.deltaY > 0)
+    ) {
+        event.stopPropagation();
+        window.scrollBy(0, event.deltaY);
+    }
+}, { capture: true });
 
   // 监听内容变化
   instance.onDidChangeModelContent(() => {

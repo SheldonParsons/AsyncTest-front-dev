@@ -1,12 +1,12 @@
 <template>
   <h4 class="doc-base-title">{{ label }}</h4>
-  <el-select multiple filterable v-model="localValue" placeholder="查找标签">
+  <el-select multiple v-model="localValue" placeholder="查找标签" class="regular-mul-select">
     <el-option
       class="doc-base-option-mul"
       v-for="item in optionList"
-      :key="item.value"
+      :key="item.id"
       :label="displayLabel(item)"
-      :value="item.value"
+      :value="item.id"
     >
       <div class="flex items-center">
         <span>{{ displayLabel(item) }}</span>
@@ -20,40 +20,40 @@
         size="small"
         @click="isFooterEnter = !isFooterEnter"
       >
-        Add an option
+        添加标签
       </el-button>
       <template v-else>
         <el-input
           v-model="optionFooterName"
           class="option-input"
-          placeholder="input option name"
+          placeholder="请输入标签名"
           size="small"
         />
         <el-button type="primary" size="small" @click="onConfirmFooter">
-          confirm
+          添加
         </el-button>
         <el-button size="small" @click="isFooterEnter = !isFooterEnter"
-          >cancel</el-button
+          >取消</el-button
         >
       </template>
     </template>
   </el-select>
 </template>
 <script lang="ts" setup>
-import { ref, watch, defineEmits } from "vue";
+import { ref, watch } from "vue";
 
 const isFooterEnter = ref(false);
 
 const optionFooterName = ref("");
 
 interface DataOption {
-  value: string | number;
+  id: string | number;
   [key: string]: any; // 允许其他任意字段
 }
 // 定义接收的属性
 const props = defineProps<{
   label: string | number;
-  modelValue?: string | number | Array<string>;
+  modelValue?: string | number | Array<string|number>;
   optionList: DataOption[];
   showBadge: boolean;
   displayLabel: (item: DataOption) => string;
@@ -80,6 +80,7 @@ watch(localValue, (newValue) => {
 
 function onConfirmFooter() {
   emit("footerEntry", optionFooterName.value);
+  optionFooterName.value = ""
 }
 </script>
 <style lang="scss" scoped>
@@ -106,5 +107,16 @@ function onConfirmFooter() {
 
 .doc-base-option-mul.is-hovering {
   background-color: #f4fcff;
+}
+</style>
+
+
+<style lang="scss">
+.regular-mul-select {
+  .el-select__wrapper {
+    min-height: 32px;
+    padding: 4px 12px;
+    height: auto;
+  }
 }
 </style>

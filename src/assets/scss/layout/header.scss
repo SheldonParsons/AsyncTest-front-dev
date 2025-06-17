@@ -1,8 +1,7 @@
 .header-common {
     display: flex;
     width: 100%;
-    position: absolute;
-    height: var(--header-height);
+    height: inherit;
     background-image: radial-gradient(transparent 1px,transparent 1px);
     background-size: 4px 4px;
     // backdrop-filter: saturate(50%) blur(4px);
@@ -10,7 +9,7 @@
     top: 0;
     background-color: transparent;
     z-index: 1;
-    height: 55px;
+    height: 100%;
     border-bottom: 0px;
     .icon-cursor {
         cursor: pointer;
@@ -68,7 +67,6 @@
 }
 // dark
 .headerCommonDark {
-    border-bottom: 1px solid #dcdfe6;
     background-image: radial-gradient(transparent 1px,#ffffff 1px);
     .languageDropdownDark {
         span, i, :deep(.language-icon) {

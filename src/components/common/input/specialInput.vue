@@ -7,11 +7,12 @@
         '--dynamic-radius': radius,
         '--dynamic-tran-color': isTransColor
           ? GlobalStatus.lightColor
-          : GlobalStatus.methodColor[0]
+          : GlobalStatus.methodColor[0],
       }"
       ref="animated"
       :placeholder="placeholder"
       v-model="value"
+      @keydown="blockQuestionMark"
       autocomplete="off"
       spellcheck="false"
       :maxlength="max"
@@ -46,7 +47,7 @@
     </el-date-picker>
     <el-tooltip
       effect="light"
-      :content="t('tooltip.cleanForm')"
+      :content="cleanTips"
       placement="bottom"
     >
       <el-icon
@@ -60,148 +61,167 @@
 </template>
 
 <script setup lang="ts">
-import { computed, toRefs, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import GlobalStatus from '@/global'
-import tools from '@/utils/tools'
-import ClockIcon from '@/assets/svg/common/clockIcon.vue'
-const { t } = useI18n()
+import { computed, toRefs, ref, getCurrentInstance } from "vue";
+import { useI18n } from "vue-i18n";
+import GlobalStatus from "@/global";
+import tools from "@/utils/tools";
+import ClockIcon from "@/assets/svg/common/clockIcon.vue";
+const { t } = useI18n();
+
+const { proxy }: any = getCurrentInstance();
 
 const shortcuts = [
   {
-    text: t('datePicker.lm10'),
+    text: t("datePicker.lm10"),
     value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setTime(start.getTime() - 600 * 1000)
-      return [start, end]
-    }
+      const end = new Date();
+      const start = new Date();
+      start.setTime(start.getTime() - 600 * 1000);
+      return [start, end];
+    },
   },
   {
-    text: t('datePicker.lh'),
+    text: t("datePicker.lh"),
     value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setTime(start.getTime() - 3600 * 1000)
-      return [start, end]
-    }
+      const end = new Date();
+      const start = new Date();
+      start.setTime(start.getTime() - 3600 * 1000);
+      return [start, end];
+    },
   },
   {
-    text: t('datePicker.ld'),
+    text: t("datePicker.ld"),
     value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setTime(start.getTime() - 3600 * 1000 * 24)
-      return [start, end]
-    }
-  }
-]
+      const end = new Date();
+      const start = new Date();
+      start.setTime(start.getTime() - 3600 * 1000 * 24);
+      return [start, end];
+    },
+  },
+];
 
-const datePicker = ref('')
+const datePicker = ref("");
 const defaultTime: [Date, Date] = [
   new Date(2000, 1, 1, 12, 0, 0),
-  new Date(2000, 2, 1, 8, 0, 0)
-]
+  new Date(2000, 2, 1, 8, 0, 0),
+];
 
 const props = defineProps({
   placeholder: {
     type: String,
-    default: ''
+    default: "",
   },
   modelValue: {
     type: String,
-    default: ''
+    default: "",
   },
   disabled: {
     type: Boolean,
-    default: false
+    default: false,
   },
   radius: {
     type: String,
-    default: '9999px'
+    default: "9999px",
   },
   max: {
     type: Number,
-    default: 100
+    default: 100,
   },
   isTransColor: {
     type: Boolean,
-    default: true
+    default: true,
   },
   showDatePicker: {
     type: Boolean,
-    default: false
+    default: false,
   },
   showDateTag: {
     type: Boolean,
-    default: false
+    default: false,
   },
   dateTagValue: {
     type: String,
-    default: ''
+    default: "",
   },
   height: {
     type: String,
-    default: '50px'
+    default: "50px",
+  },
+  disableParams: {
+    type: Boolean,
+    default: false,
+  },
+  cleanTips: {
+    type: String,
+    default: "重置所有筛选数据",
   }
-})
+});
 // eslint-disable-next-line vue/no-setup-props-destructure
-const animated = ref(null)
+const animated = ref(null);
 const twinkle = () => {
-  const el: HTMLElement = animated.value!
-  el.id = 'animated'
+  const el: HTMLElement = animated.value!;
+  el.id = "animated";
   if (el) {
-    el.style.animation = 'none'
+    el.style.animation = "none";
     // eslint-disable-next-line no-void
-    void el.offsetHeight
-    el.style.animation = null!
+    void el.offsetHeight;
+    el.style.animation = null!;
   }
-}
+};
 defineExpose({
-  twinkle
-})
+  twinkle,
+});
 
-const { placeholder } = toRefs(props)
+const { placeholder } = toRefs(props);
 const emit = defineEmits([
-  'update:modelValue',
-  'clearData',
-  'searchTimeString',
-  'cleanTag'
-])
+  "update:modelValue",
+  "clearData",
+  "searchTimeString",
+  "cleanTag",
+]);
 const value = computed({
   get() {
-    return props.modelValue
+    return props.modelValue;
   },
   set(v) {
-    emit('update:modelValue', v)
-  }
-})
+    emit("update:modelValue", v);
+  },
+});
 function clearData() {
-  emit('clearData')
+  emit("clearData");
 }
 
 function cleanDateTag() {
-  emit('cleanTag')
+  emit("cleanTag");
+}
+
+function blockQuestionMark(e: KeyboardEvent) {
+  if (props.disableParams) {
+    if (e.key === "?") {
+      tools.message("Params参数请在请求参数中进行设置", proxy);
+      e.preventDefault();
+    }
+  }
 }
 
 function changeDatePicker(value: any) {
   const res: string =
-    'T:[' +
+    "T:[" +
     tools.getLocaleDateTime(value[0], false) +
-    ']:[' +
+    "]:[" +
     tools.getLocaleDateTime(value[1], false) +
-    ']'
-  searchTimeString(res, value)
+    "]";
+  searchTimeString(res, value);
 }
 
 function searchTimeString(value: string, originDate: Array<any>) {
-  emit('searchTimeString', value, originDate)
+  emit("searchTimeString", value, originDate);
 }
 </script>
 
 <style lang="scss">
 .form-group {
-  z-index: 999;
+  // z-index: 999;
   .el-range-editor {
     font-size: 16px !important;
     width: 10px !important;

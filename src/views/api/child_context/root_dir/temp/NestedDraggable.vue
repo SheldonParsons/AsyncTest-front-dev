@@ -29,7 +29,7 @@
   </template>
   
   <script setup>
-  import { ref, defineProps, defineEmits } from "vue";
+  import { ref } from "vue";
   import draggable from "vuedraggable";
   
   // 获取父组件传递的 `nodes`

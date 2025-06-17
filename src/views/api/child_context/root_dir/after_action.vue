@@ -1,19 +1,21 @@
 <template>
   <div class="pre-action">
     <div class="drag-container-wrapper">
-      <!-- 第一个拖拽容器 -->
+      <el-row class="drag-item" v-if="props.hasFatherActions">
+        <el-col :offset="offset" :span="span">
+          <FatherActions :elements="fatherActions"></FatherActions> </el-col
+      ></el-row>
       <draggable
-        v-model="items"
+        v-model="action_items"
         group="shared"
         animation="300"
         item-key="id"
         handle=".drag-handle"
         class="drag-container"
-        style="margin-top: 20px"
       >
         <template #item="{ element, index }">
           <el-row class="drag-item">
-            <el-col :offset="1" :span="22">
+            <el-col :offset="offset" :span="span">
               <CustomScript
                 v-if="element.t === 1"
                 :element="element"
@@ -28,11 +30,18 @@
                 :element="element"
               ></WaitTime>
               <Extract
-              @dup_action="dup_action(element, index)"
+                @dup_action="dup_action(element, index)"
                 @delete_action="delete_action(index)"
                 v-if="element.t === 4"
                 :element="element"
               ></Extract>
+              <Assertion
+                @dup_action="dup_action(element, index)"
+                @delete_action="delete_action(index)"
+                v-if="element.t === 5"
+                :element="element"
+                :interface="interface"
+              ></Assertion>
               <DataBase
                 @add_database_param="
                   (payload) => add_database_param(element, payload)
@@ -45,115 +54,92 @@
                 @change_code="(playload) => change_code(element, playload)"
                 v-if="element.t === 3"
                 :element="element"
+                :interface="interface"
               ></DataBase>
             </el-col>
           </el-row>
         </template>
       </draggable>
       <el-row class="drag-item">
-        <el-col :offset="1" :span="22">
-          <AfterDefaultAction @add_action="add_action"></AfterDefaultAction> </el-col
+        <el-col :offset="offset" :span="span">
+          <AfterDefaultAction
+            @add_action="add_action"
+          ></AfterDefaultAction> </el-col
       ></el-row>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed } from "vue";
 import draggable from "vuedraggable";
 import AfterDefaultAction from "./actions/after_default_action.vue";
 import CustomScript from "./actions/custom_script.vue";
 import WaitTime from "./actions/wait_time.vue";
 import DataBase from "./actions/data_base.vue";
-import Extract from './actions/extract.vue'
-onMounted(() => {
-  origin_data.value = JSON.parse(JSON.stringify(items.value));
-});
-const origin_data: any = ref([]);
-const items: any = ref([{
-      name: "extract",
-      id: "NEW-" + Date.now().toString(),
-      t: 4,
-      data: {
+import Extract from "./actions/extract.vue";
+import Assertion from "./actions/assertion.vue";
+import FatherActions from "./actions/father_actions.vue";
+import tools from "@/utils/tools";
+const emit = defineEmits(["update:modelValue"]);
+const props = defineProps({
+  offset: {
+    type: Number,
+    default: 1,
+  },
+  span: {
+    type: Number,
+    default: 22,
+  },
+  modelValue: {
+    type: Array,
+    default: () => [
+      {
+        id: -1,
+        t: 0,
         status: true,
-        name: "",
-        source: "body",
-        extract_range: "all",
-        regexp: {
-            expression: "",
-            template: "" 
-        },
-        jsonpath: {
-            expression: ""
-        },
-        xpath: {
-            expression: ""
-        },
-        header_name: "",
-        cookie_name: "",
-        waste_time_unit: ""
+        name: "default",
       },
-    }]);
-function save() {
-  const { updates, newItems, order } = compareLists(
-    origin_data.value,
-    items.value
-  );
-  console.log(updates);
-  console.log(newItems);
-  console.log(order);
-
-  // TODO:将数据发往后端
-  // TODO:得到最新的列表，如果有新增数据，更新item，更新origin_data，主要修改临时ID为正式ID
-  origin_data.value = JSON.parse(JSON.stringify(items.value));
+    ],
+  },
+  fatherActions: {
+    type: Object,
+    default: () => [],
+  },
+  hasFatherActions: {
+    type: Boolean,
+    default: false,
+  },
+  interface: {
+    type: Number,
+    default: -1,
+  },
+});
+function default_action() {
+  return [
+    {
+      id: -1,
+      t: 0,
+      status: true,
+      name: "default",
+    },
+  ];
 }
 
-function compareLists(originalList: Array<any>, updatedList: Array<any>) {
-  // 创建哈希映射加速查找（O(1) 复杂度）
-  const originalMap = new Map(originalList.map((item) => [item.id, item]));
-
-  // 初始化结果集
-  const updates = [];
-  const newItems = [];
-  const order = updatedList.map((item) => item.id);
-
-  // 高性能差异检测（支持提前终止）
-  const hasChanged = (a: any, b: any) => {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-
-    // 键数量不同直接判定为变化
-    if (aKeys.length !== bKeys.length) return true;
-
-    // 同步遍历双指针检测差异
-    for (const key of new Set([...aKeys, ...bKeys])) {
-      // 使用JSON序列化保证深比较，同时避免递归性能问题
-      if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) {
-        return true;
-      }
+// 计算属性双向绑定
+const action_items = computed({
+  get() {
+    if (props.modelValue.length === 0) {
+      emit("update:modelValue", default_action());
     }
-    return false;
-  };
-
-  // 批量处理更新列表
-  for (const updatedItem of updatedList) {
-    const originalItem = originalMap.get(updatedItem.id);
-
-    if (!originalItem) {
-      // 新增项处理
-      newItems.push(updatedItem);
-      updates.push(updatedItem);
-    } else if (hasChanged(originalItem, updatedItem)) {
-      // 变更项处理
-      updates.push(updatedItem);
-    }
-  }
-
-  return {
-    updates, // 需要更新的数据（包含新增和修改）
-    newItems, // 纯新增的数据
-    order, // 顺序列表
-  };
+    return props.modelValue;
+  },
+  set(value) {
+    emit("update:modelValue", value);
+  },
+});
+function save() {
+  return action_items.value;
 }
 
 defineExpose({
@@ -164,13 +150,13 @@ function change_code(element: any, value: string) {
 }
 
 function delete_action(index: number) {
-  items.value.splice(index, 1);
+  action_items.value.splice(index, 1);
 }
 
 function dup_action(element: any, index: number) {
-  items.value.splice(index + 1, 0, {
+  action_items.value.splice(index + 1, 0, {
     ...JSON.parse(JSON.stringify(element)),
-    id: "NEW-" + Date.now().toString(),
+    id: tools.getRandomInt(1000000, 99999999),
   });
 }
 
@@ -183,21 +169,23 @@ function delete_database_param(element: any, call_back: Function = () => {}) {
 }
 
 function add_action(action_name: string) {
-  const index = items.value.findIndex((item: any) => item.name === "default");
+  const index = action_items.value.findIndex(
+    (item: any) => item.name === "default"
+  );
   if (action_name === "database") {
-    items.value.push({
+    action_items.value.push({
       name: action_name,
-      id: "NEW-" + Date.now().toString(),
+      id: tools.getRandomInt(1000000, 99999999),
       t: 3,
       data: {
         status: true,
         code: "",
         name: "",
-        database: 0,
+        database: null,
         params: [
           {
             name: "",
-            t: "temp",
+            t: "env",
             jsonpath: "",
           },
         ],
@@ -205,9 +193,9 @@ function add_action(action_name: string) {
     });
   }
   if (action_name === "script") {
-    items.value.push({
+    action_items.value.push({
       name: action_name,
-      id: "NEW-" + Date.now().toString(),
+      id: tools.getRandomInt(1000000, 99999999),
       t: 1,
       data: {
         status: true,
@@ -216,9 +204,9 @@ function add_action(action_name: string) {
     });
   }
   if (action_name === "wait") {
-    items.value.push({
+    action_items.value.push({
       name: action_name,
-      id: "NEW-" + Date.now().toString(),
+      id: tools.getRandomInt(1000000, 99999999),
       t: 2,
       data: {
         status: true,
@@ -227,28 +215,59 @@ function add_action(action_name: string) {
     });
   }
   if (action_name === "extract") {
-    items.value.push({
+    action_items.value.push({
       name: action_name,
-      id: "NEW-" + Date.now().toString(),
+      id: tools.getRandomInt(1000000, 99999999),
       t: 4,
       data: {
         status: true,
         name: "",
-        source: "body",
-        extract_range: "all",
+        source: 0,
+        extract_range: 0,
         regexp: {
-            expression: "",
-            template: "" 
+          expression: "",
+          template: "",
         },
         jsonpath: {
-            expression: ""
+          expression: "",
         },
         xpath: {
-            expression: ""
+          expression: "",
         },
         header_name: "",
         cookie_name: "",
-        waste_time_unit: ""
+        waste_time_unit: true,
+      },
+    });
+  }
+  if (action_name === "assertion") {
+    action_items.value.push({
+      name: "asssertion",
+      id: tools.getRandomInt(1000000, 99999999),
+      t: 5,
+      data: {
+        status: true,
+        name: "",
+        source: 0,
+        extract_range: 0,
+        source_name: "",
+        regexp: {
+          expression: "",
+          template: "",
+        },
+        jsonpath: {
+          expression: "",
+        },
+        xpath: {
+          expression: "",
+        },
+        header_name: "",
+        cookie_name: "",
+        waste_time_unit: true,
+        assertion: {
+          t: 0,
+          value: "",
+        },
       },
     });
   }
@@ -257,6 +276,7 @@ function add_action(action_name: string) {
 
 <style scoped>
 .pre-action {
+  margin-top: 20px;
   margin-bottom: 70px;
 }
 /* 高亮拖拽目标的样式 */

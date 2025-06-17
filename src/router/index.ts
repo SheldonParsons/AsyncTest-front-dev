@@ -3,14 +3,7 @@ import { createRouter, createWebHistory, createMemoryHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    name: 'blank',
-    component: () => import('@/views/login/loginIndexNew.vue'),
-    children: [
-      {
-        path: '',
-        redirect: '/login'
-      }
-    ]
+    redirect: '/login'
   },
   {
     path: '/login',
@@ -35,6 +28,23 @@ const routes = [
             path: '/home/main/project/interface/project/:project',
             name: 'interface',
             component: () => import('@/views/api/index.vue')
+          },
+          {
+            path: '/home/main/project/:project/settings',
+            name: 'settings',
+            component: () => import('@/views/settings/index.vue'),
+            children:[
+              {
+                path: '/home/main/project/:project/settings/source/database',
+                name: 'settings_source_database',
+                component: () => import('@/views/settings/source_management/database.vue')
+              },
+              {
+                path: '/home/main/project/:project/settings/source/files',
+                name: 'settings_source_files',
+                component: () => import('@/views/settings/source_management/files.vue')
+              }
+            ]
           },
           {
             path: '/home/main/project/ai/:project',

@@ -23,7 +23,7 @@
         </div>
       </div>
       <div class="pre-action-default-change-inner">
-        <span class="pre-action-default-change-inner-span">变量替换</span>
+        <span class="pre-action-default-change-inner-span">变量替换{{ hasFatherAction ? " & 父级操作" :"" }}</span>
       </div>
     </div>
     <Transition name="slide">
@@ -50,7 +50,7 @@
               align-items: center;
             "
           >
-            <span style="font-size: 0.875rem; color: rgba(16, 24, 40, 0.8)"
+            <span style="font-size: 0.875rem; color: var(--default-font-color)"
               >内置操作</span
             >
           </div>
@@ -86,12 +86,14 @@ import ActionListDialog from "@/views/api/public_dialog/action_list_dialog.vue"
 const open_default = ref(false);
 const isDefaultOpen = ref(false);
 const actionListDialog:any = ref(null)
+
 const props = defineProps({
-  element: {
-    type: Object,
-    default: {},
+  hasFatherAction: {
+    type: Boolean,
+    default: false,
   },
-});
+})
+
 // 阻止点击事件传播到父元素
 const onDragHandleClick = (event: MouseEvent) => {
   event.stopPropagation();
@@ -285,7 +287,6 @@ function show_action_list_dialog() {
   .pre-action-default-content-box-desc-header {
     border-radius: 10px;
     background-color: #5657580a;
-    padding: 7px 40px 7px 12px;
     cursor: pointer;
     border: 0;
     align-items: center;

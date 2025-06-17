@@ -1,36 +1,37 @@
 <template>
-    <el-row>
-      <el-col :span="15">
-        <div class="default-insert">
-          <span class="back-icon" @click="back"
-            ><el-icon color="#000000" :size="16"><ArrowLeftBold /></el-icon
-          ></span>
-          <span style="margin-left: 10px; font-weight: 500">数据生成器</span>
-        </div>
-      </el-col>
-      <el-col :span="9" style="display: flex; align-items: center">
-        <div class="close-icon">
-          <el-icon @click="close"><CloseBold /></el-icon>
-        </div>
-      </el-col>
-    </el-row>
-  </template>
-  
-  <script setup lang="ts">
-  import { ArrowLeftBold } from "@element-plus/icons-vue";
-  
-  const emit = defineEmits(["back", "close"]);
-  
-  function back() {
-    emit("back");
-  }
-  
-  function close() {
-    emit("close");
-  }
-  </script>
-  
-  <style lang="scss" scoped>
+  <div class="params-headers">
+    <div class="default-insert">
+      <span class="back-icon" @click="back"
+        ><el-icon color="#000000" :size="16"><ArrowLeftBold /></el-icon
+      ></span>
+      <span style="margin-left: 10px; font-weight: 500">数据生成器</span>
+    </div>
+    <div class="close-icon">
+      <el-icon @click="close"><CloseBold /></el-icon>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ArrowLeftBold } from "@element-plus/icons-vue";
+
+const emit = defineEmits(["back", "close"]);
+
+function back() {
+  emit("back");
+}
+
+function close() {
+  emit("close");
+}
+</script>
+
+<style lang="scss" scoped>
+.params-headers {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
   .close-icon {
     width: 100%;
     display: flex;
@@ -41,7 +42,7 @@
       cursor: pointer;
     }
   }
-  
+
   .default-insert {
     height: 40px;
     width: 100%;
@@ -63,5 +64,5 @@
   .back-icon:hover {
     box-shadow: 0 0 2px #0000000a, 0 4px 8px #00000014;
   }
-  </style>
-  
+}
+</style>

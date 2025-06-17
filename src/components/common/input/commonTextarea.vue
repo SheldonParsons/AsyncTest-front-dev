@@ -77,7 +77,7 @@ function check() {
   transition: 0.3s;
   width: 100%;
   //   height: 40px;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   font-weight: 400;
   line-height: 1.5;
   border: 2px solid transparent;
@@ -85,7 +85,7 @@ function check() {
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
   background-image: linear-gradient(to right, #ffffff, #ffffff),
-    linear-gradient(90deg, var(--color-group-light), var(--color-group));
+    linear-gradient(90deg, var(--border-color), var(--border-color));
   outline: none;
   box-sizing: border-box;
   textarea {

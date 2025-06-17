@@ -84,8 +84,7 @@
         >
           <template #empty>
             <SpecialButton @click="addEmptyData"
-              >点击添加您的数据<el-icon><Plus /></el-icon
-            ></SpecialButton>
+              >点击添加您的数据</SpecialButton>
           </template>
           <el-table-column label="键（key）" min-width="40%">
             <template #default="scope">

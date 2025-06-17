@@ -917,8 +917,8 @@ const activeName = ref('first')
 const handleClick = (tab:any, event: Event) => {
   console.log(tab, event)
 }
-const history = ref([])
-const versions = ref([])
+const history:any = ref([])
+const versions:any = ref([])
 const showVersionPlatform = ref(false)
 const showGenerationDialog = ref(false);
 const req_system_name_show = ref(false);
@@ -955,7 +955,7 @@ const options: any = [
     label: "禁用",
   },
 ];
-const generation_statue = {
+const generation_statue:any = {
   "generated": "已生成",
   "generating": "生成中",
   "un_generation": "未生成",
@@ -1036,6 +1036,7 @@ function generation_case() {
     "/llm/requirement/group/conversation/generation/",
     {
       case_id: current_case.value,
+      project: Number(route.params.project)
     },
     (event_response) => {
       const event = event_response?.event;
