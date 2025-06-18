@@ -718,6 +718,9 @@ function get_temp(tree_node: any) {
 }
 
 async function change_temp_is_fixed(row: any) {
+  if (current_temp.value !== null) {
+    return;
+  }
   const _data = {
     name: row.name,
     fixed_value: row.fixed_value,

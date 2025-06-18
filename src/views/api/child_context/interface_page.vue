@@ -540,9 +540,34 @@
               <div>{{ JSON.parse(item.data.data).body }}</div>
             </div>
           </div>
+          <div v-if="item.data.type === 'error'" style="padding: 10px">
+            <div style="font-weight: 500">
+              {{
+                tools.getFormattedTimeMs(item.data.data.time)
+              }}:接口异常
+            </div>
+            <div style="margin-top: 10px" class="temp-log-error-info">
+              <div>{{ item.data.data.data}}</div>
+            </div>
+          </div>
+          <div
+            v-if="item.data.type === 'change_temporary_variable'"
+            style="padding: 10px"
+          >
+            <div style="font-weight: 500">
+              {{ tools.getFormattedTimeMs(item.data.data.time) }}:临时变量替换
+            </div>
+            <div style="margin-top: 10px" class="temp-log-success-info">
+              <div>临时变量: {{ item.data.data.key }}</div>
+              <div>动态值变为: {{ item.data.data.value }}</div>
+              <div>来自接口: {{ item.data.data.interface }}</div>
+            </div>
+          </div>
           <div
             v-if="
-              item.data.type === 'pre_hooks' || item.data.type === 'after_hooks'
+              (item.data.type === 'pre_hooks' ||
+                item.data.type === 'after_hooks') &&
+              item.data.data.length > 0
             "
             style="padding: 10px"
           >
@@ -566,6 +591,13 @@
                 class="temp-log-success-info"
               >
                 <div>等待:</div>
+                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
+              </div>
+              <div
+                v-if="pre_hook_step.type === 'script'"
+                style="margin-top: 10px"
+                class="temp-log-success-info"
+              >
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
 
@@ -595,6 +627,33 @@
                   <div>
                     结果值：<span>{{ match.value }}</span>
                   </div>
+                </div>
+              </div>
+              <div
+                v-if="pre_hook_step.type === 'extract'"
+                style="margin-top: 10px"
+                class="temp-log-success-info"
+              >
+                <div>提取变量:</div>
+                <div>
+                  提取结果：<span>{{
+                    pre_hook_step.data.result ? "成功" : "失败"
+                  }}</span>
+                </div>
+                <div>
+                  变量名：<span>{{ pre_hook_step.data.key }}</span>
+                </div>
+                <div>
+                  变量值：<span>{{ pre_hook_step.data.value }}</span>
+                </div>
+                <div>
+                  提取来源：<span>{{ pre_hook_step.data.source }}</span>
+                </div>
+                <div>
+                  提取方式：<span>{{ pre_hook_step.data.extract_range }}</span>
+                </div>
+                <div>
+                  提取到：<span>{{ pre_hook_step.data.t }}</span>
                 </div>
               </div>
             </div>
