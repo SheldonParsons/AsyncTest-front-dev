@@ -125,7 +125,7 @@ const handleStream = (
 
   const reader = response.body?.getReader();
   if (!reader) throw new Error("无法获取可读流");
-  
+
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let isClosed = false; // 跟踪流是否已关闭
@@ -134,7 +134,7 @@ const handleStream = (
     try {
       while (!isClosed) {
         const { value, done } = await reader.read();
-        
+
         if (done) {
           isClosed = true;
           processRemainingData();
@@ -156,7 +156,7 @@ const handleStream = (
       const endIndex = buffer.indexOf("%datatag%\n\n");
       const eventChunk = buffer.substring(0, endIndex);
       buffer = buffer.substring(endIndex + "%datatag%\n\n".length);
-      
+
       parseEventChunk(eventChunk);
     }
   };
@@ -182,17 +182,16 @@ const handleStream = (
       dataPart = dataPart.slice(5).trim();
     }
 
-    // 处理特殊事件
-    if (eventPart === "end") {
-      cancelStream();
-      return;
-    }
-
     try {
       const data = dataPart ? JSON.parse(dataPart) : {};
       onData({ event: eventPart, data });
     } catch (error) {
       console.error("JSON 解析错误:", error, "原始数据:", dataPart);
+    }
+    // 处理特殊事件
+    if (eventPart === "end") {
+      cancelStream();
+      return;
     }
   };
 
@@ -207,7 +206,7 @@ const handleStream = (
   const cancelStream = () => {
     if (!isClosed) {
       isClosed = true;
-      reader.cancel().catch(e => console.warn("流关闭错误:", e));
+      reader.cancel().catch((e) => console.warn("流关闭错误:", e));
     }
   };
 

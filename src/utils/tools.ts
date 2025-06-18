@@ -31,9 +31,9 @@ tools.getFormattedTimeMs = (timestamp: any) => {
   // 格式化为 yyyy:MM:dd HH:mm:ss.ms
   const formatted =
     date.getFullYear() +
-    ":" +
+    "-" +
     String(date.getMonth() + 1).padStart(2, "0") +
-    ":" +
+    "-" +
     String(date.getDate()).padStart(2, "0") +
     " " +
     String(date.getHours()).padStart(2, "0") +
