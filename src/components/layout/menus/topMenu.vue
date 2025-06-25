@@ -161,6 +161,10 @@ function opening() {
 }
 
 function switchRouter(routerName: string) {
+  if (routerName === "case") {
+    tools.message('开发中，敬请期待', proxy, 'info');
+    return
+  }
   emit("switchRouterAction", routerName);
   const params = { project: Number(route.params.project) };
   if (router.currentRoute.value.name !== routerName) {

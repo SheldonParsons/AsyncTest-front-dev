@@ -24,6 +24,9 @@
           @switchRouterAction="switchRouter"
           @changeMenu="changeMenu"
         ></Interface>
+        <Case
+          v-if="routeName === 'case'"
+        ></Case>
         <Data
           v-if="routeName === 'data'"
           :activeLinkStyle="activeLinkStyle"
@@ -83,6 +86,7 @@ import Mock from "./child/mockMenu.vue";
 import Open from "./child/openMenu.vue";
 import Otherwise from "./child/otherwiseMenu.vue";
 import Interface from "./child/interfaceMenu.vue";
+import Case from './child/caseMenu.vue'
 import AI from "./child/ai_menu.vue";
 import AppConversation from "./child/app_conversation.vue";
 import Audit from "./child/auditMenu.vue";
