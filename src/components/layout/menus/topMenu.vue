@@ -2,11 +2,16 @@
   <div class="container">
     <div class="menu-container">
       <div
-      class="ai_logo"
+        :class="{
+          'ele-container': true,
+          'focuse-icon': currentFocuseIcon === 'ai_application_ground' || currentFocuseIcon === 'application_conversation',
+        }"
         @click="switchRouter('ai_application_ground')"
       >
-        <AiLogo style="cursor: pointer;"></AiLogo>
+        <AI class="icon-menu api"></AI>
+        <span style="font-size: 12px;display: inline-block;line-height: 1;font-weight: 500;">AI</span>
       </div>
+      <el-divider style="width: 30%;margin: 0px;"></el-divider>
       <div
         :class="{
           'ele-container': true,
@@ -15,8 +20,20 @@
         @click="switchRouter('interface')"
       >
         <API class="icon-menu api"></API>
-        <span>APIs</span>
+        <span style="font-size: 12px;display: inline-block;line-height: 1;font-weight: 500;">APIs</span>
       </div>
+      <el-divider style="width: 30%;margin: 0px;"></el-divider>
+      <div
+        :class="{
+          'ele-container': true,
+          'focuse-icon': currentFocuseIcon === 'case',
+        }"
+        @click="switchRouter('case')"
+      >
+        <Case class="icon-menu api"></Case>
+        <span style="font-size: 12px;display: inline-block;line-height: 1;font-weight: 500;">Case</span>
+      </div>
+      <el-divider style="width: 30%;margin: 0px;"></el-divider>
       <!-- <div
         :class="{
           'ele-container': true,
@@ -55,8 +72,9 @@
         @click="switchRouter('settings_source_database')"
       >
         <SETTING class="icon-menu api"></SETTING>
-        <span>Settings</span>
+        <span style="font-size: 12px;display: inline-block;line-height: 1;font-weight: 500;">Settings</span>
       </div>
+      <el-divider style="width: 30%;margin: 0px;"></el-divider>
       <div
       v-if="showMenu"
         :class="{
@@ -66,7 +84,7 @@
         @click="switchRouter('audit')"
       >
         <AUDIT class="icon-menu api"></AUDIT>
-        <span>Audit</span>
+        <span style="font-size: 12px;display: inline-block;line-height: 1;font-weight: 500;">Audit</span>
       </div>
       <!-- <div
         :class="{
@@ -88,6 +106,8 @@
 import { getCurrentInstance, onMounted, ref, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import API from "@/assets/svg/menu/api.vue";
+import Case from "@/assets/svg/menu/case.vue";
+import AI from "@/assets/svg/menu/ai.vue";
 import MOCK from "@/assets/svg/menu/mock.vue";
 import OTHER from "@/assets/svg/menu/other.vue";
 import OPEN from "@/assets/svg/menu/open.vue";

@@ -40,12 +40,12 @@ const props = defineProps({
   }
 })
 
-
+//application_conversation
 
 function showDoc() {
-  emit('changeMenu', 'ai_application_ground')
+  emit('changeMenu', 'application_conversation')
   router.push({
-    name: 'ai_application_ground',
+    name: 'application_conversation',
     params: {
       project: Number(route.params.project)
     }

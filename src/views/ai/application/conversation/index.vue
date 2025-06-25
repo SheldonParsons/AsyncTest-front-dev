@@ -792,7 +792,7 @@ function inputChange() {
   }
 }
 .model-select .el-select__wrapper {
-  height: 50px !important;
+  height: 40px !important;
 }
 .el-select__wrapper.is-focused {
   box-shadow: 0 0 0 1px black;
