@@ -30,6 +30,11 @@ const routes = [
             component: () => import('@/views/api/index.vue')
           },
           {
+            path: '/home/main/project/case/project/:project',
+            name: 'case',
+            component: () => import('@/views/case/index.vue')
+          },
+          {
             path: '/home/main/project/:project/settings',
             name: 'settings',
             component: () => import('@/views/settings/index.vue'),
