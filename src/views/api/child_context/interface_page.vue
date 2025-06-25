@@ -471,11 +471,14 @@
             v-if="item.data.type === 'global'"
             style="font-weight: 500; padding: 10px"
           >
-            {{ tools.getFormattedTimeMs(item.data.time) }}:
-            <span
-              :class="{ 'error-span': item.data.result === 'error-stop' }"
-              >{{ item.data.data }}</span
-            >
+            {{ tools.getFormattedTimeMs(item.data.time) }}
+            <div
+              style="margin-top: 10px"
+              v-if="item.data.result === 'error-stop' || item.data.result === 'error-exception'"
+              class="temp-log-error-info"
+              v-html="item.data.data.replace(/\n/g, '<br>')"
+            ></div>
+            <span v-else>：{{ item.data.data }}</span>
           </div>
           <div
             v-if="item.data.type === 'inner' || item.data.type === 'normal'"
@@ -547,7 +550,7 @@
               }}:接口异常
             </div>
             <div style="margin-top: 10px" class="temp-log-error-info">
-              <div>{{ item.data.data.data}}</div>
+              <div>{{ item.data.data.info}}</div>
             </div>
           </div>
           <div
@@ -600,6 +603,20 @@
               >
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
+              <div
+                v-if="pre_hook_step.type === 'script_error' || pre_hook_step.type === 'hooks_error'"
+                style="margin-top: 10px"
+                class="temp-log-error-info"
+              >
+                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
+              </div>
+              <div
+                v-if="pre_hook_step.type === 'hooks_warning'"
+                style="margin-top: 10px"
+                class="temp-log-warning-info"
+              >
+                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
+              </div>
 
               <div
                 v-if="pre_hook_step.type === 'database'"
@@ -607,9 +624,12 @@
                 class="temp-log-success-info"
               >
                 <div>数据库操作:</div>
+                <div>操作名称: <span style="font-weight: 500;">{{ pre_hook_step.data.name }}</span></div>
+                <div>最终SQL: <span style="font-weight: 500;">{{ pre_hook_step.data.sql }}</span></div>
                 <div>
-                  SQL结果：<span>{{ pre_hook_step.data.origin_str }}</span>
+                  SQL结果：<span style="font-weight: 500;">{{ pre_hook_step.data.origin_str }}</span>
                 </div>
+                <div v-if="pre_hook_step.data.data.length > 0">
                 参数设置：
                 <div
                   v-for="(match, index) in pre_hook_step.data.data"
@@ -627,6 +647,7 @@
                   <div>
                     结果值：<span>{{ match.value }}</span>
                   </div>
+                </div>
                 </div>
               </div>
               <div

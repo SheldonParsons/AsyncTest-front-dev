@@ -1,4 +1,5 @@
 <template>
+  <div style="height: 100%;overflow: scroll;">
   <Input
     placeholder="搜索数据 范围：用户昵称、接口名"
     title="监听接口列表"
@@ -21,6 +22,7 @@
         <td class="disappear-auto">{{ new Date(item.add_time).toLocaleString() }}</td>
     </template>
   </Input>
+  </div>
 </template>
 
 <script lang="ts" setup>
