@@ -10,7 +10,7 @@ export function ApiLogin(data:ILogin):Promise<String> {
         if (asyncTest.cookies.getCookie(GlobalStatus.cookieTag) !== false) {
           asyncTest.cookies.clearCookie(GlobalStatus.cookieTag)
         }
-        asyncTest.cookies.setCookie(GlobalStatus.cookieTag, res.data.token, 60 * 60 * 24)
+        asyncTest.cookies.setCookie(GlobalStatus.cookieTag, res.data.token, 60 * 60 * 24 * 7)
       }
       resolve(res)
     })
