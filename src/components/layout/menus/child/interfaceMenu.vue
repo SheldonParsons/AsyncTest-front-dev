@@ -28,7 +28,7 @@
           src="@/assets/logo/bird-main-no-bg-1.png"
           alt=""
         />
-        <span style="margin-left: 10px">项目概览</span>
+        <span style="margin-left: 10px">接口概览</span>
       </div>
       <el-tree
         class="api-tree no-scoll"
@@ -81,11 +81,10 @@
               v-if="data.child_type === 2"
               class="method-span"
               :class="method_color[data.method]"
-              >{{ data.method.toUpperCase() }}</span
-            >
+              >{{ data.method.toUpperCase() }}</span>
             <div class="label-span-method">
               <div class="g-ellipsis">{{ data.name }}</div>
-              <span class="count-span" v-if="data.child_type === 1"
+              <span class="count-span" v-if="data.child_type < 2"
                 >({{ data.count }})</span
               >
             </div>
