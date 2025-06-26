@@ -173,6 +173,7 @@ const emit = defineEmits(["update:modelValue", "action"]);
 .del-process:hover {
   background-color: #f3f3f3;
 }
+
 </style>
 
 <style lang="scss">
@@ -180,5 +181,12 @@ const emit = defineEmits(["update:modelValue", "action"]);
   .el-dialog__header {
     padding: 0px;
   }
+}
+.el-divider--horizontal {
+    border-top: 1px solid #f3f5f6;
+    display: block;
+    height: 1px;
+    margin: 0px;
+    width: 100%;
 }
 </style>

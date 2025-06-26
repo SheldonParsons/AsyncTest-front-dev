@@ -5,7 +5,7 @@
         <div class="function-content">
           <div class="function-message">功能说明</div>
           <div class="function-desc">
-            “根目录”主要用来对项目内的所有接口进行全局设置，如：Auth、前后置操作、唯一标识等。
+            “目录节点”主要用来对项目内的所有接口进行全局设置，如：Auth、前后置操作、唯一标识等。
           </div>
         </div>
       </div>
@@ -24,7 +24,7 @@
               margin-bottom: 0;
             "
           >
-            “可见性”主要用来设置文档是否可以对外分享或发布，根目录仅可设置为【共享】
+            “可见性”主要用来设置文档是否可以对外分享或发布，目录仅可设置为【共享】
           </div>
         </div>
       </div>

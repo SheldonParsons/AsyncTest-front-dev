@@ -18,7 +18,7 @@
           </h1>
           <div class="description bold-style g-unselect wrapper">
             <div class="typing-demo">
-              Using approachable, performant and less source for testing all of
+              Using approachable, performant and less source code for testing of
               your webs.
             </div>
           </div>

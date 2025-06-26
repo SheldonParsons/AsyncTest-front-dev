@@ -28,18 +28,6 @@ import { ref, onMounted } from "vue";
 import MockPage from "./mock_page.vue";
 import InterfacePage from "./interface_page.vue";
 const activeTab = ref<"A" | "B">("A");
-// const loadScript = (src: any) => {
-//   return new Promise((resolve, reject) => {
-//     const script = document.createElement("script");
-//     script.src = src;
-//     script.onload = resolve;
-//     script.onerror = reject;
-//     document.head.appendChild(script);
-//   });
-// };
-// onMounted(() => {
-//   loadScript("/libs/codemirror.js");
-// });
 const props = defineProps({
   node_id: {
     type: Number,

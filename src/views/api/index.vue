@@ -383,9 +383,6 @@ function change_tab_and_change_page(
   if (name !== null && is_crtrent_tab(name)) {
     return;
   }
-  console.log(123);
-  console.log(target_id);
-
   const editor_tab: EditorTab = change_tab(
     title,
     t,
@@ -442,7 +439,6 @@ function change_page(page_target: EditorTab | string, broadcast = true) {
       const id = page_target.index;
       if (broadcast) {
         console.log(page_target);
-
         current_target_id.value = page_target.target_id;
         current_node.value = id;
         GlobalState.sendMessage("change_interface_tab", { id: id });
@@ -799,7 +795,7 @@ nav.amazing-tabs {
   background-color: var(--white);
   user-select: none;
   width: 100%;
-  height: 50px;
+  height: 45px;
   display: flex;
   z-index: 999;
   // padding-top: 1rem;

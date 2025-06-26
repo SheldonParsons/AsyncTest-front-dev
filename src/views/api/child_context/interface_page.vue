@@ -730,7 +730,6 @@ import {
   ApiDeleteResponse,
   ApiUpdateResponse,
   ApiPostTag,
-  ApiRunInterface,
 } from "@/api/interface/index";
 import { StreamPostApi } from "@/api/sse/index";
 import { ApiGetProjectServerParameters } from "@/api/interface/env";

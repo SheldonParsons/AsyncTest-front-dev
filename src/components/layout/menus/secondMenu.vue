@@ -25,6 +25,7 @@
           @changeMenu="changeMenu"
         ></Interface>
         <Case
+        @changeMenu="changeMenu"
           v-if="routeName === 'case'"
         ></Case>
         <Data

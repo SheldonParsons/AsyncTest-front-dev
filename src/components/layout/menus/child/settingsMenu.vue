@@ -1,7 +1,7 @@
 <template>
-  <el-row>
+  <el-row style="margin-bottom: 10px;">
     <el-col :span="2" class="flex">
-      <img class="first-icon" src="@/assets/logo/icon/source.svg" alt="" />
+      <Source/>
     </el-col>
     <el-col :span="21" :offset="1" class="flex first-span">
       <span>资源管理</span>
@@ -33,6 +33,7 @@
 
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import Source from "@/assets/svg/icon/source.vue";
 const { t } = useI18n();
 const props = defineProps({
   activeLinkStyle: {

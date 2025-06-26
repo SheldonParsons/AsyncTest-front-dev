@@ -347,7 +347,6 @@ watch(
       GlobalState.message === "change_interface_tab"
     ) {
       console.log("in change tab");
-
       const node_id: number = GlobalState.data.id;
       highlightNodeById(node_id);
     } else if (GlobalState.message === "change_empty_tab") {
@@ -440,7 +439,7 @@ function randomStep() {
 
 async function chang_node_name(data: any) {
   if (data.child_type === 0) {
-    tools.message("根目录名称无法修改", proxy, "info");
+    tools.message("全局管理节点名称无法修改", proxy, "info");
     return;
   }
   const _data = {

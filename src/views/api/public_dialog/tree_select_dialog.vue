@@ -155,6 +155,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  type: {
+    type: Number,
+    default: 0,
+  },
 });
 
 function is_disable(id: number) {
@@ -177,6 +181,7 @@ onMounted(() => {
     project: route.params.project,
     search_range: "0,1",
     excluded_ids: "",
+    type: props.type,
   };
   console.log(data);
 

@@ -13,8 +13,8 @@
             </svg>
           </div>
           <div class="content">
-            <div class="title">Interface</div>
-            <div class="subtitle">创建接口文档</div>
+            <div class="title">{{ title }}</div>
+            <div class="subtitle">{{ desc }}</div>
           </div>
           <div class="date">点击进入</div>
         </div>
@@ -92,6 +92,17 @@ onMounted(() => {
   });
 });
 
+const props = defineProps({
+  title: {
+    type: String,
+    default: "Interface",
+  },
+  desc: {
+    type: String,
+    default: "创建接口文档",
+  },
+});
+
 function enterPage(t: String) {
   if (t === "api") {
     emit("go_page", t);
@@ -113,10 +124,9 @@ function enterPage(t: String) {
   border-radius: 24px;
   padding: 24px;
   width: 400px;
-//   margin-bottom: 300px;
+  //   margin-bottom: 300px;
   box-shadow: rgba(0, 0, 0, 0.1) 1px 1px 1px 1px,
-    rgba(0, 0, 0, 0.1) 0px 0px 0px 0px, 
-    rgba(0, 0, 0, 0.1) -6px -6px 6px 0px,
+    rgba(0, 0, 0, 0.1) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) -6px -6px 6px 0px,
     rgba(0, 0, 0, 0.1) 4px 4px 4px 4px;
   view-transition-name: container;
 

@@ -162,7 +162,7 @@ function opening() {
 
 function switchRouter(routerName: string) {
   if (window.location.hostname !== 'localhost' && routerName === "case") {
-    tools.message('开发中，敬请期待', proxy, 'info');
+    tools.message('暂未开放，敬请期待', proxy, 'info');
     return
   }
   emit("switchRouterAction", routerName);

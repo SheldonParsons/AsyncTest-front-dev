@@ -153,11 +153,12 @@
                 justify-content: center;
               "
             >
-              <el-icon
+            <Setting style="height: 16px;cursor: pointer;" @click="open_setting_drawer(scope.row)"></Setting>
+              <!-- <el-icon
                 class="setting-icon"
                 @click="open_setting_drawer(scope.row)"
                 ><Setting
-              /></el-icon>
+              /></el-icon> -->
             </div>
           </template>
         </el-table-column>
@@ -399,6 +400,7 @@
 <script lang="ts" setup>
 import { onMounted, ref, getCurrentInstance } from "vue";
 import { Search, Delete, CloseBold } from "@element-plus/icons-vue";
+import Setting from "@/assets/svg/menu/setting.vue"
 import Empty from "@/views/api/child_component/params_child/comp/empty.vue";
 import _ from "lodash";
 import { HttpClass } from "@/utils/http";

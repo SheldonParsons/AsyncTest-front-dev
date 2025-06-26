@@ -834,7 +834,7 @@ const filterMethodHandler = (value: string, row: any, column: any) => {
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 8px;
-  color: var(--font-default-color);
+  color: var(--default-font-color);
   cursor: pointer;
   svg {
     width: 15px;
@@ -842,7 +842,7 @@ const filterMethodHandler = (value: string, row: any, column: any) => {
 }
 .action-icon:hover {
   background-color: var(--default-bg);
-  color: var(--default-font-color);
+  color: black;
 }
 .has-bottom-border {
   border-bottom: 1px solid var(--border-color-light);
