@@ -3,8 +3,9 @@
     <el-col>
       <div class="new-conversation-btn">
         <el-popover
+        class="normal-tooltip"
           placement="right"
-          width="50"
+          width="auto"
           trigger="hover"
           content="开启新对话"
           effect="dark"
@@ -76,11 +77,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref, watch,getCurrentInstance } from "vue";
 import { getConversationList, editConversation,deleteConversation,createBlankConversation } from "@/api/ai/conversation";
 import { state } from "@/state";
 import Edit from "@/assets/svg/common/edit.vue";
 import { useRoute, useRouter } from "vue-router";
+import tools from '@/utils/tools'
+const { proxy }: any = getCurrentInstance();
 const route = useRoute();
 const router = useRouter();
 const pinned_list: any = ref([]);
@@ -124,6 +127,8 @@ watch(
 );
 
 function new_conversation() {
+  tools.message('功能升级中，暂时停用，敬请期待', proxy, "info")
+  return
   const data = {
     new_conversation: true,
     project_id: route.params.project
@@ -205,6 +210,7 @@ function blankConversation() {
 </script>
 
 <style lang="scss" scoped>
+
 .new-conversation-btn {
   height: 30px;
   display: flex;
@@ -236,5 +242,14 @@ function blankConversation() {
   svg:focus {
     outline: none !important;
   }
+}
+</style>
+
+
+<style lang="scss">
+.el-popover.el-popper {
+  min-width: 0px;
+  border-radius: 10px;
+  padding: 10px;
 }
 </style>

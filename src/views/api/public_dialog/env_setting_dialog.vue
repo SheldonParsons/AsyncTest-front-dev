@@ -1138,7 +1138,7 @@ async function save_server(row: any) {
       type: 0,
       child_action_type: "edit_server_mapping",
       content: {
-        id: 1,
+        id: focus_node.value,
         origin_name: origin_server_name.value,
         name: row.name,
         prefix: row.prefix,

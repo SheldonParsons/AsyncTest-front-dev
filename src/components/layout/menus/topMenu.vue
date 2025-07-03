@@ -165,6 +165,10 @@ function switchRouter(routerName: string) {
     tools.message('暂未开放，敬请期待', proxy, 'info');
     return
   }
+  if (routerName === 'ai_application_ground') {
+    tools.message('功能升级中，暂时停用，敬请期待', proxy, 'info');
+    return
+  }
   emit("switchRouterAction", routerName);
   const params = { project: Number(route.params.project) };
   if (router.currentRoute.value.name !== routerName) {

@@ -12,12 +12,23 @@
       </div>
     </div>
   </div>
-  <Settings v-if="activeTab === 'A'"></Settings>
+  <Settings
+    v-if="activeTab === 'A'"
+    :dir_id="props.dir_id"
+    :node_id="node_id"
+  ></Settings>
+  <CaseList
+    v-if="activeTab === 'B'"
+    :target_type="target_type"
+    :dir_id="props.dir_id"
+    :node_id="node_id"
+  ></CaseList>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import Settings from "@/views/case/content/dir_content/settings.vue";
+import CaseList from "@/views/case/content/dir_content/case_list.vue";
 const activeTab = ref<"A" | "B" | "C">("A");
 const props = defineProps({
   node_id: {

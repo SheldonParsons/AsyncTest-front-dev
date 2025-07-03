@@ -283,6 +283,8 @@ function choice_select_handle(file_list: Array<any>) {
 }
 
 function addFirstData() {
+  console.log(props.tableData);
+  
   const emptyNode = {
     id: getRandomInt(1000000, 10000000),
     name: "",
@@ -291,7 +293,7 @@ function addFirstData() {
     statement: "",
     content_type: "text/plain",
   };
-  props.tableData.push(emptyNode);
+  props.tableData.data.push(emptyNode);
 }
 
 function deleteNode(index: number) {

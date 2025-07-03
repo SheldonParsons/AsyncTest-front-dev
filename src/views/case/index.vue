@@ -10,8 +10,20 @@
             ><ArrowLeftBold
           /></el-icon>
         </div>
-        <div style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: hidden;">
-          <ul class="margin-cls filter-tabs ignore-scrollbar" style="margin: 0px;">
+        <div
+          style="
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: start;
+            height: 100%;
+            overflow: hidden;
+          "
+        >
+          <ul
+            class="margin-cls filter-tabs ignore-scrollbar"
+            style="margin: 0px"
+          >
             <transition-group
               name="fade"
               tag="ul"
@@ -69,7 +81,10 @@
             </transition-group>
           </ul>
         </div>
-        <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
+        <div
+          class="icon-div"
+          style="border-left: 1px solid #f5f5f5; width: 70px"
+        >
           <el-icon
             @click="scrollToRight"
             class="margin-cls scroll-btn"
@@ -90,7 +105,12 @@
   </nav>
   <div style="height: 100%; overflow: auto">
     <EmptyPage v-if="show_type === 0"></EmptyPage>
-    <CreatePage v-if="show_type === 1" @go_page="go_page" :title="'Case'" :desc="'创建测试用例'"></CreatePage>
+    <CreatePage
+      v-if="show_type === 1"
+      @go_page="go_page"
+      :title="'Case'"
+      :desc="'创建测试用例'"
+    ></CreatePage>
     <Documentation
       v-if="show_type === 2"
       :node_id="current_node"
@@ -274,7 +294,11 @@ watch(
     if (GlobalState.message === "add_env") {
       env_list.value.push(GlobalState.data.data);
     }
-    if (GlobalState.message === "update_interface_name" || GlobalState.message === "change_name_from_tree") {
+    if (
+      GlobalState.message === "update_interface_name" ||
+      GlobalState.message === "change_name_from_tree" ||
+      GlobalState.message === "change_name_from_dir"
+    ) {
       for (let i = 0; i < editableTabs.value.length; i++) {
         if (editableTabs.value[i].index === GlobalState.data.node_id) {
           editableTabs.value[i].title = GlobalState.data.name;
@@ -812,7 +836,7 @@ nav.amazing-tabs {
 .icon-div {
   display: flex;
   height: inherit;
-  width: 70px!important;
+  width: 70px !important;
   justify-content: center;
   align-items: center;
   i {

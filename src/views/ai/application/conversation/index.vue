@@ -530,7 +530,7 @@ function setClickListeners() {
 }
 async function send(event: any) {
   if (disabled.value) {
-    tools.message("功能升级中，暂时停用，敬请期待", proxy, "success");
+    tools.message("功能升级中，暂时停用，敬请期待", proxy, "info");
     if (event.key === "Enter") {
       event.preventDefault();
     }

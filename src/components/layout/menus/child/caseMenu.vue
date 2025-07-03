@@ -354,7 +354,7 @@ watch(
       highlightNodeById(node_id);
     } else if (GlobalState.message === "change_empty_tab") {
       highlightNodeById(undefined);
-    } else if (GlobalState.message === "update_interface_name") {
+    } else if (GlobalState.message === "update_interface_name" || GlobalState.message === "change_name_from_dir") {
       const node = get_tree_node_by_id(
         dataSource.value[0],
         GlobalState.data.node_id
