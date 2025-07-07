@@ -1,5 +1,5 @@
 <template>
-  <div v-html="renderedHtml"></div>
+  <div v-html="renderedHtml" class="markdown-body"></div>
 </template>
 
 <script lang="ts" setup>
@@ -37,22 +37,12 @@ const marked = new Marked(
       const language = hljs.getLanguage(lang) ? lang : "plaintext";
       return hljs.highlight(code, { language }).value;
     },
-  }),
-  {
-    hooks: {
-      preprocess(markdown) {
-        // 手动转义所有 HTML 标签
-        return markdown.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-    },
-    renderer: {
-      // 禁用 HTML 渲染能力
-      html(html) {
-        return '';
-      }
-    }
-  }
+  })
 );
+marked.setOptions({
+  gfm: true,            // 支持表格、任务列表等
+  breaks: false,        // 是否将换行视为 <br>
+});
 const renderedHtml: any = ref("");
 const update = () => {
   renderedHtml.value = marked.parse(props.data || "");
@@ -72,5 +62,70 @@ watch(() => props.data, update);
 .hljs {
   background-color: #1e293b !important;
   border-radius: 10px !important;
+}
+
+.markdown-body blockquote {
+    margin-top: 16px;
+    margin-bottom: 16px;
+    margin-left: 0px;
+    margin-right: 0px;
+    color: #344054;
+    background: #f9fafb;
+    border-left: 4px solid #d0d5dd;
+    border-radius: 4px 0 0 4px;
+    padding: 20px;
+    p {
+      margin: 0px;
+    }
+}
+
+.markdown-body table {
+    width: max-content;
+    max-width: 100%;
+    margin: 16px 0;
+    font-size: 16px;
+    word-break: normal;
+    overflow-wrap: break-word;
+    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    display: block;
+    overflow: auto;
+}
+
+.markdown-body table th:first-child {
+    border-left: 1px solid #f2f4f7;
+    border-top-left-radius: 8px;
+}
+
+.markdown-body table th {
+    color: #344054;
+    font-weight: 500;
+    text-align: left;
+    border-top: 1px solid #f2f4f7;
+    padding: 6px 13px;
+    border-right: 1px solid #f2f4f7;
+    border-bottom: 1px solid #f2f4f7;
+}
+.markdown-body table tbody tr {
+    background-color: #0000;
+}
+.markdown-body table td:first-child {
+    border-left: 1px solid #f2f4f7;
+    word-break: normal;
+}
+.markdown-body table td {
+    color: #475467;
+    font-weight: 400;
+        border-top: none;
+    border-right: 1px solid #f2f4f7;
+    border-bottom: 1px solid #f2f4f7;
+    padding: 6px 13px;
+}
+
+.markdown-body a {
+    color: var(--global-theme-light-color);
+    text-decoration: inherit;
+    background-color: #0000;
 }
 </style>
