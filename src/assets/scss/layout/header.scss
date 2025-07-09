@@ -21,15 +21,13 @@
         }
     }
     .logo{
+        width: 100%;
         margin-left: 20px;
         font-size: 30px;
         // font-family: $logo-font-family;
         font-weight: 700;
         font-style: normal;
         color: white;
-        @media screen and (max-width: 1200px) {
-            display: none;
-        }
     }
     // .el-menu-demo {
     //     width: inherit;

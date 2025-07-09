@@ -13,7 +13,7 @@
             <el-input
               v-model="search"
               style="max-width: 600px"
-              placeholder="名称、请求类型进行搜索"
+              placeholder="名称、请求路径进行搜索"
               class="input-with-select"
               @input="search_table"
             >
@@ -697,7 +697,7 @@ function search_table(value: string) {
   tableData.value = origin_table.value.filter((item: any) => {
     return (
       item.name.toLowerCase().includes(value.toLowerCase()) ||
-      item.method.toLowerCase().includes(value.toLowerCase())
+      item.path.toLowerCase().includes(value.toLowerCase())
     );
   });
 }

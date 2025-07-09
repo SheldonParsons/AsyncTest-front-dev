@@ -9,6 +9,15 @@ export function ApiGetProjects(params: any): Promise<String> {
   });
 }
 
+// 获取单个项目信息
+export function ApiGetSingleProjects(params: any, id: number): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet(`/project/single/${id}`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 // 获取收藏项目列表
 export function ApiGetFavoriteProjects(params: any): Promise<String> {
   return new Promise((resolve) => {
