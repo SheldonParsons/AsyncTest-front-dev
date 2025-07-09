@@ -73,7 +73,6 @@
         </div>
       </div>
     </div>
-    <DebugPanel v-if="showDebugPanel" @closed="switchSenderPanel"></DebugPanel>
   </div>
 </template>
 
@@ -90,7 +89,6 @@ import LanguageIcon from "@/assets/svg/languageIcon.vue";
 import LogoutIcon from "@/assets/svg/common/logoutIcon.vue";
 import TaskIcon from "@/assets/svg/common/taskIcon.vue";
 import { ClearServerCookie } from "@/api/layout/cookies";
-import DebugPanel from "@/components/layout/debugs/debugTools.vue";
 import AngleColorful from "@/components/layout/otherwise/angle-colorful.vue";
 import { ApiGetSingleProjects } from "@/api/project/index"
 
