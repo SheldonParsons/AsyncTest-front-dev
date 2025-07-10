@@ -7,7 +7,6 @@
             <ArrowLeftBold />
           </el-icon>
         </div>
-        {{ current_tab_name }}
         <div style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: hidden;">
           <ul class="margin-cls filter-tabs ignore-scrollbar" style="margin: 0px;">
             <transition-group name="fade" tag="ul" id="tabsUl" class="margin-cls filter-tabs ignore-scrollbar">
