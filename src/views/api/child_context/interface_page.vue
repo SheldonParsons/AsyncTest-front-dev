@@ -832,6 +832,9 @@ watch(
       serverOptions.value[1].options = GlobalState.data.data.server_mappings;
     } else if (GlobalState.message === "update_env_server") {
       update_env_and_interface_env();
+    } else if (GlobalState.message === "save_interface") {
+      await save()
+      GlobalState.sendMessage('save_done', true)
     }
   }
 );
@@ -1179,15 +1182,11 @@ function clearUrl() {
 }
 
 async function save() {
-  console.log(data.value);
   const content = getChangedTopLevelFields(data.value, originalData);
   const response_content = getChangedTopLevelFields(
     responseOptions.value,
     originalResponse
   );
-  console.log(content);
-  console.log(response_content);
-
   setupWatch();
   setupWatchResponse();
   enableWatch.value = true;
@@ -1205,7 +1204,6 @@ async function save() {
   console.log(result);
 
   if (result === false) return;
-  console.log(response_content);
 
   if (response_content !== null) {
     result = await updateResponse(response_content);
@@ -1215,6 +1213,7 @@ async function save() {
     node_id: props.node_id,
   });
   tools.message("已保存", proxy);
+  return true
 }
 
 async function updateInterface(content: any) {

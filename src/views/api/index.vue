@@ -3,63 +3,40 @@
     <div class="filters-container">
       <div class="filters-wrapper">
         <div class="icon-div" style="border-right: 1px solid #f5f5f5">
-          <el-icon
-            @click="scrollToLeft"
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            ><ArrowLeftBold
-          /></el-icon>
+          <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
+            <ArrowLeftBold />
+          </el-icon>
         </div>
+        {{ current_tab_name }}
         <div style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: hidden;">
           <ul class="margin-cls filter-tabs ignore-scrollbar" style="margin: 0px;">
-            <transition-group
-              name="fade"
-              tag="ul"
-              id="tabsUl"
-              class="margin-cls filter-tabs ignore-scrollbar"
-            >
-              <li
-                class="filter-li"
-                v-for="(item, index) in editableTabs"
-                :key="index"
-              >
-                <div
-                  class="filter-button"
-                  :class="{ 'filter-active': current_tab_name === item.name }"
-                  @click="
-                    change_tab_and_change_page(
-                      item.title,
-                      item.t,
-                      item.index,
-                      true,
-                      item.name
-                    )
-                  "
-                >
-                  <div
-                    class="folder-div"
-                    style="
+            <transition-group name="fade" tag="ul" id="tabsUl" class="margin-cls filter-tabs ignore-scrollbar">
+              <li class="filter-li" v-for="(item, index) in editableTabs" :key="index">
+                <div class="filter-button" :class="{ 'filter-active': current_tab_name === item.name }" @click="
+                  change_tab_and_change_page(
+                    item.title,
+                    item.t,
+                    item.index,
+                    true,
+                    item.name
+                  )
+                  ">
+                  <div class="folder-div" style="
                       display: flex;
                       justify-content: center;
                       align-items: center;
-                    "
-                  >
+                    ">
                     <Fold style="margin-right: 5px" v-if="item.t === 4"></Fold>
                   </div>
-                  <span
-                    v-if="item.t < 4"
-                    class="method-span"
-                    :class="method_color[item.t]"
-                    >{{ method_list[item.t] }}</span
-                  >
-                  <div
-                    class="filter-span g-ellipsis ignore-scrollbar"
-                    style="width: 100%; overflow: auto"
-                  >
+                  <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
+                    }}</span>
+                  <div class="filter-span g-ellipsis ignore-scrollbar" style="width: 100%; overflow: auto">
                     {{ item.title }}
                   </div>
                   <div class="close-div" @click.stop="closeTab(item, index)">
-                    <el-icon class="close-icon"><CloseBold /></el-icon>
+                    <el-icon class="close-icon">
+                      <CloseBold />
+                    </el-icon>
                   </div>
                   <div class="change-div" v-if="item.hasChange === true">
                     <el-badge is-dot class="item"></el-badge>
@@ -70,43 +47,25 @@
           </ul>
         </div>
         <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
-          <el-icon
-            @click="scrollToRight"
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            ><ArrowRightBold
-          /></el-icon>
+          <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
+            <ArrowRightBold />
+          </el-icon>
         </div>
         <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-          <el-icon
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            @click="open_create_page"
-            ><PlusBold
-          /></el-icon>
+          <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
+            <PlusBold />
+          </el-icon>
         </div>
         <div class="env-div" style="border-left: 1px solid #f5f5f5">
           <div class="env-select">
-            <el-select
-              placeholder="环境"
-              v-model="env"
-              @change="change_user_env"
-            >
-              <el-option
-                v-for="item in env_list"
-                :key="item.name"
-                :value="item.name"
-                :label="item.name"
-              ></el-option>
+            <el-select placeholder="环境" v-model="env" @change="change_user_env">
+              <el-option v-for="item in env_list" :key="item.name" :value="item.name" :label="item.name"></el-option>
             </el-select>
           </div>
           <div class="env-icon-div">
-            <el-icon
-              @click="openEnvSetting"
-              class="margin-cls scroll-btn"
-              style="z-index: 999"
-              ><SettingBtn
-            /></el-icon>
+            <el-icon @click="openEnvSetting" class="margin-cls scroll-btn" style="z-index: 999">
+              <SettingBtn />
+            </el-icon>
           </div>
         </div>
       </div>
@@ -115,22 +74,12 @@
   <div style="height: 100%; overflow: auto">
     <EmptyPage v-if="show_type === 0"></EmptyPage>
     <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
-    <Documentation
-      v-if="show_type === 2"
-      :node_id="current_node"
-      :interface_id="current_target_id"
-    ></Documentation>
-    <RootDir
-      v-if="show_type === 3"
-      :node_id="current_node"
-      :dir_id="current_target_id"
-      :target_type="current_target_type"
-    ></RootDir>
+    <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
+    <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
+      :target_type="current_target_type"></RootDir>
     <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
-    <EnvSettingDialog
-      v-model="visible_env_setting_dialog"
-      v-if="visible_env_setting_dialog"
-    ></EnvSettingDialog>
+    <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
+    <NormalDialog v-model="show_has_change_dialog" @action="has_change_action"></NormalDialog>
   </div>
 </template>
 <script lang="ts" setup>
@@ -147,6 +96,7 @@ import RootDir from "./child_context/root_dir_index.vue";
 import EnvSettingDialog from "@/views/api/public_dialog/env_setting_dialog.vue";
 import { GlobalState } from "@/state/index";
 import tools from "@/utils/tools";
+import NormalDialog from '@/views/case/components/dialog.vue'
 import {
   ApiGetEnvListAndUserSetting,
   ApiUpdateUserEnv,
@@ -172,6 +122,8 @@ const current_target_type = ref();
 const x = ref(0);
 const y = ref(0);
 const max_length = 5;
+const show_has_change_dialog = ref(false)
+const change_tab_cache_data: any = ref(null)
 const page_mapping: any = {
   empty_page: 0,
   create_page: 1,
@@ -217,10 +169,6 @@ onMounted(() => {
     tabs.forEach((tab: any) => {
       tab.classList.remove(className);
     });
-
-    if (!event.target.classList.contains(className)) {
-      event.target.classList.add(className);
-    }
   };
 
   const filterTabs: any = document.querySelector(".filter-tabs");
@@ -316,6 +264,10 @@ watch(
       env.value = env_list.value[0].name;
       change_user_env(env_list.value[0].name);
     }
+    if (GlobalState.message === 'save_done') {
+      const editor_tab: EditorTab = real_change_tab()
+      change_page(editor_tab, current_broadcast.value);
+    }
   }
 );
 
@@ -366,9 +318,10 @@ watch(
   }
 );
 
+const current_broadcast = ref(true)
+
 function open_create_page() {
-  const editor_tab: EditorTab = change_tab("新建内容", 5);
-  change_page(editor_tab);
+  change_tab("新建内容", 5);
 }
 
 function change_tab_and_change_page(
@@ -383,14 +336,14 @@ function change_tab_and_change_page(
   if (name !== null && is_crtrent_tab(name)) {
     return;
   }
-  const editor_tab: EditorTab = change_tab(
+  current_broadcast.value = broadcast
+  change_tab(
     title,
     t,
     index,
     target_id,
     child_type
   );
-  change_page(editor_tab, broadcast);
 }
 
 function is_crtrent_tab(name: string) {
@@ -408,6 +361,25 @@ function is_current_tab_by_index(index: number) {
   return false;
 }
 
+function is_current_tab_has_change() {
+  for (let i = 0; i < editableTabs.value.length; i++) {
+    if (editableTabs.value[i].name === current_tab_name.value) {
+      console.log(editableTabs.value[i]);
+      return editableTabs.value[i].hasChange
+    }
+  }
+  return false
+}
+
+function clean_has_change() {
+  for (let i = 0; i < editableTabs.value.length; i++) {
+    if (editableTabs.value[i].name === current_tab_name.value) {
+      editableTabs.value[i].hasChange = false
+      break
+    }
+  }
+}
+
 function change_tab(
   name: string,
   t: number,
@@ -415,6 +387,38 @@ function change_tab(
   target_id = null,
   child_type = null
 ) {
+  const has_change = is_current_tab_has_change()
+  change_tab_cache_data.value = {
+    name,
+    t,
+    index,
+    target_id,
+    child_type
+  }
+  if (has_change === false) {
+    const editor_tab: EditorTab = real_change_tab()
+    change_page(editor_tab, current_broadcast.value);
+  } else {
+    show_has_change_dialog.value = true
+  }
+}
+
+function has_change_action(action_name: string) {
+  if (action_name === 'pass') {
+    show_has_change_dialog.value = false
+  } else if (action_name === 'save') {
+    GlobalState.sendMessage("save_interface", action_name);
+    show_has_change_dialog.value = false
+  } else if (action_name === 'nosave') {
+    show_has_change_dialog.value = false
+    clean_has_change()
+    const editor_tab: EditorTab = real_change_tab()
+    change_page(editor_tab, current_broadcast.value);
+  }
+}
+
+function real_change_tab() {
+  const { name, t, index, target_id, child_type } = change_tab_cache_data.value
   let result: EditorTab | boolean = false;
   result = try_change_current_tab(name, index);
   if (result !== false) {
@@ -703,8 +707,10 @@ function change_user_env(item: any) {
 #tabsUl {
   overflow-x: auto;
 }
+
 .change-div {
   width: 14px;
+
   .item {
     display: flex;
     text-align: center;
@@ -712,9 +718,11 @@ function change_user_env(item: any) {
     justify-content: center;
   }
 }
+
 .close-div {
   display: none;
 }
+
 .filter-li:hover {
   .filter-button {
     transition: color 0.4s ease-in-out;
@@ -722,6 +730,7 @@ function change_user_env(item: any) {
     color: white;
     background-color: var(--el-input-focus-border-color);
     border-radius: 5px;
+
     // padding: 0 1rem 0 1rem;
     .folder-div {
       svg {
@@ -729,9 +738,11 @@ function change_user_env(item: any) {
       }
     }
   }
+
   .change-div {
     display: none;
   }
+
   .close-div {
     display: flex;
     height: 16px;
@@ -744,33 +755,45 @@ function change_user_env(item: any) {
 .scroll-btn {
   cursor: pointer;
 }
+
 .red {
   color: #ff6a6a;
 }
+
 .green {
   color: #3cb371;
 }
+
 .blue {
   color: #1e90ff;
 }
+
 .orange {
   color: #eead0e;
 }
+
 .method-span {
   margin-right: 5px;
   font-weight: 500;
   font-size: 12px;
   text-align: right;
 }
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease, width 0.3s ease;
 }
 
-.fade-enter, .fade-leave-to /* .fade-leave-active in <2.1.8 */ {
+.fade-enter,
+.fade-leave-to
+
+/* .fade-leave-active in <2.1.8 */
+  {
   opacity: 0;
-  width: 0; /* 设置宽度为0 */
+  width: 0;
+  /* 设置宽度为0 */
 }
+
 .filter-li {
   cursor: pointer;
   max-width: 200px;
@@ -804,9 +827,11 @@ nav.amazing-tabs {
 .main-tabs-container {
   padding: 0 1rem 1rem 1rem;
 }
+
 .env-div {
   width: 200px !important;
   padding: 0px 5px;
+
   .env-select {
     flex: 60;
     height: 100%;
@@ -814,6 +839,7 @@ nav.amazing-tabs {
     justify-content: center;
     align-items: center;
   }
+
   .env-icon-div {
     flex: 40;
     height: 100%;
@@ -821,56 +847,71 @@ nav.amazing-tabs {
     justify-content: center;
     align-items: center;
   }
+
   display: flex;
   height: inherit;
   justify-content: center;
   align-items: center;
+
   i {
     border: 1px;
     border-radius: 5px;
     width: 80%;
     height: 80%;
   }
+
   i:hover {
     background-color: #f5f5f5;
   }
 }
+
 .icon-div {
   display: flex;
   height: inherit;
-  width: 70px!important;
+  width: 70px !important;
   justify-content: center;
   align-items: center;
+
   i {
     border: 1px;
     border-radius: 5px;
     width: 80%;
     height: 80%;
   }
+
   i:hover {
     background-color: #f5f5f5;
   }
 }
+
 ul.filter-tabs {
   padding: 0px;
   flex: 1;
   list-style-type: none;
   display: flex;
   align-items: center;
-  white-space: nowrap; /* 防止内部元素换行 */
-  overflow-x: auto; /* 超出容器宽度时允许横向滚动 */
-  scrollbar-width: none; /* 针对 Firefox 隐藏滚动条 */
-  -ms-overflow-style: none; /* 针对 IE 和 Edge 隐藏滚动条 */
+  white-space: nowrap;
+  /* 防止内部元素换行 */
+  overflow-x: auto;
+  /* 超出容器宽度时允许横向滚动 */
+  scrollbar-width: none;
+  /* 针对 Firefox 隐藏滚动条 */
+  -ms-overflow-style: none;
+  /* 针对 IE 和 Edge 隐藏滚动条 */
   // box-shadow: 0 0 1px 0 rgba(24, 94, 224, 0.15),
   //   0 6px 12px 0 rgba(24, 94, 224, 0.15);
 }
+
 ul.filter-tabs::-webkit-scrollbar {
-  display: none; /* 针对 Chrome、Safari 和 Opera 隐藏滚动条 */
+  display: none;
+  /* 针对 Chrome、Safari 和 Opera 隐藏滚动条 */
 }
 
 .ignore-scrollbar {
-  scrollbar-width: none; /* 针对 Firefox 隐藏滚动条 */
-  -ms-overflow-style: none; /* 针对 IE 和 Edge 隐藏滚动条 */
+  scrollbar-width: none;
+  /* 针对 Firefox 隐藏滚动条 */
+  -ms-overflow-style: none;
+  /* 针对 IE 和 Edge 隐藏滚动条 */
 }
 
 .filters-container {

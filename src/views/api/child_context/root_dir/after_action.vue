@@ -18,6 +18,7 @@
             <el-col :offset="offset" :span="span">
               <CustomScript
                 v-if="element.t === 1"
+                :is_after="true"
                 :element="element"
                 @dup_action="dup_action(element, index)"
                 @delete_action="delete_action(index)"

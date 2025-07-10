@@ -23,6 +23,7 @@
               ></DefaultAction>
               <CustomScript
                 v-if="element.t === 1"
+                :is_after="false"
                 :element="element"
                 @dup_action="dup_action(element, index)"
                 @delete_action="delete_action(index)"

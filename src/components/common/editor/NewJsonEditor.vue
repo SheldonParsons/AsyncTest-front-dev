@@ -297,7 +297,7 @@ async function createLanguage() {
     label: "save" + String(Math.floor(Math.random() * 1000) + 1),
     keybindings: [
       monaco.value.KeyMod.chord(
-        monaco.value.KeyMod.CtrlCmd | monaco.value.KeyCode.KeyS
+        monaco.value.KeyMod.CtrlCmd | monaco.value.KeyCode.KeyE
       ),
     ],
     run: saveEditor, // 方法

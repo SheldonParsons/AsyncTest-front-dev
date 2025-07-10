@@ -87,7 +87,7 @@
                     <div
                       class="script-code-fast-div"
                       @click="
-                        insert_code('at.environment.get(\'variable_key\')\n')
+                        insert_code('at.env.get(\'variable_key\')\n')
                       "
                     >
                       获取环境变量
@@ -96,7 +96,7 @@
                       class="script-code-fast-div"
                       @click="
                         insert_code(
-                          'at.environment.set(\'variable_key\', \'variable_value\')\n'
+                          'at.env.set(\'variable_key\', \'variable_value\')\n'
                         )
                       "
                     >
@@ -105,7 +105,7 @@
                     <div
                       class="script-code-fast-div"
                       @click="
-                        insert_code('at.variables.get(\'variable_key\')\n')
+                        insert_code('at.temp.get(\'variable_key\')\n')
                       "
                     >
                       获取临时变量
@@ -114,11 +114,42 @@
                       class="script-code-fast-div"
                       @click="
                         insert_code(
-                          'at.variables.set(\'variable_key\', \'variable_value\')\n'
+                          'at.temp.set(\'variable_key\', \'variable_value\')\n'
                         )
                       "
                     >
                       设置临时变量
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.func.boolean(10, 20, \'true\').value\n'
+                        )
+                      "
+                    >
+                      获取生成器函数
+                    </div>
+                    <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.pipeline.sha(\'abc\', \'sha1\')\n'
+                        )
+                      "
+                    >
+                      获取处理函数
+                    </div>
+                    <div
+                    v-if="is_after"
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'await at.response()\n'
+                        )
+                      "
+                    >
+                      获取响应内容
                     </div>
                     <!-- <div
                       class="script-code-fast-div"
@@ -156,6 +187,10 @@ const props = defineProps({
     type: Boolean,
     defaule: false,
   },
+  is_after: {
+    type: Boolean,
+    defaule: false,
+  }
 });
 function close_expand() {
   open_script.value = false;

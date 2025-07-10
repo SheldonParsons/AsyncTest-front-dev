@@ -137,7 +137,7 @@ async function createLanguage(m: any) {
     label: "save",
     keybindings: [
       monaco.value.KeyMod.chord(
-        monaco.value.KeyMod.CtrlCmd | monaco.value.KeyCode.KeyS
+        monaco.value.KeyMod.CtrlCmd | monaco.value.KeyCode.KeyE
       ),
     ],
     run: saveEditor, // 方法
