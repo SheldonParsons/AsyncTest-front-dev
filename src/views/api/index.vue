@@ -406,6 +406,7 @@ function has_change_action(action_name: string) {
   if (action_name === 'pass') {
     show_has_change_dialog.value = false
   } else if (action_name === 'save') {
+    clean_has_change()
     GlobalState.sendMessage("save_interface", action_name);
     show_has_change_dialog.value = false
   } else if (action_name === 'nosave') {
