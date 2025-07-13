@@ -141,6 +141,16 @@
                       获取处理函数
                     </div>
                     <div
+                      class="script-code-fast-div"
+                      @click="
+                        insert_code(
+                          'at.env_name\n'
+                        )
+                      "
+                    >
+                      获取环境名称
+                    </div>
+                    <div
                     v-if="is_after"
                       class="script-code-fast-div"
                       @click="
