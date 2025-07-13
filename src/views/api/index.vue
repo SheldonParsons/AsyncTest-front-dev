@@ -28,7 +28,7 @@
                     <Fold style="margin-right: 5px" v-if="item.t === 4"></Fold>
                   </div>
                   <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
-                    }}</span>
+                  }}</span>
                   <div class="filter-span g-ellipsis ignore-scrollbar" style="width: 100%; overflow: auto">
                     {{ item.title }}
                   </div>
@@ -123,6 +123,7 @@ const y = ref(0);
 const max_length = 5;
 const show_has_change_dialog = ref(false)
 const change_tab_cache_data: any = ref(null)
+const success_change_menu_tab_id: any = ref(null)
 const page_mapping: any = {
   empty_page: 0,
   create_page: 1,
@@ -286,8 +287,6 @@ watch(
         return;
       }
       const t = method_list.indexOf(val.data.method.toUpperCase());
-      current_node.value = val.data.id;
-      current_target_id.value = val.data.target;
       change_tab_and_change_page(
         val.data.name,
         t,
@@ -301,8 +300,6 @@ watch(
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
-      current_node.value = val.data.id;
-      current_target_id.value = val.data.target;
       current_target_type.value = val.data.child_type;
       change_tab_and_change_page(
         val.data.name,
@@ -363,7 +360,6 @@ function is_current_tab_by_index(index: number) {
 function is_current_tab_has_change() {
   for (let i = 0; i < editableTabs.value.length; i++) {
     if (editableTabs.value[i].name === current_tab_name.value) {
-      console.log(editableTabs.value[i]);
       return editableTabs.value[i].hasChange
     }
   }
@@ -405,10 +401,11 @@ function change_tab(
 function has_change_action(action_name: string) {
   if (action_name === 'pass') {
     show_has_change_dialog.value = false
+    GlobalState.sendMessage("rollback_node_highlight", { id: success_change_menu_tab_id.value });
   } else if (action_name === 'save') {
+    show_has_change_dialog.value = false
     clean_has_change()
     GlobalState.sendMessage("save_interface", action_name);
-    show_has_change_dialog.value = false
   } else if (action_name === 'nosave') {
     show_has_change_dialog.value = false
     clean_has_change()
@@ -437,26 +434,24 @@ function change_page(page_target: EditorTab | string, broadcast = true) {
     GlobalState.sendMessage("change_empty_tab", { id: null });
     show_type.value = 0;
   } else if (typeof page_target === "object" && "t" in page_target) {
+    current_target_id.value = page_target.target_id;
+    current_node.value = page_target.index;
     change_page_status_by_t(page_target.t);
     if (is_interface(page_target.t)) {
       // 接口
       const id = page_target.index;
       if (broadcast) {
-        console.log(page_target);
-        current_target_id.value = page_target.target_id;
-        current_node.value = id;
         GlobalState.sendMessage("change_interface_tab", { id: id });
       }
     } else if (is_dir(page_target.t)) {
       // 目录
       const id = page_target.index;
       if (broadcast) {
-        current_target_id.value = page_target.target_id;
         current_target_type.value = page_target.child_type;
-        current_node.value = id;
         GlobalState.sendMessage("change_dir_tab", { id: id });
       }
     }
+    success_change_menu_tab_id.value = page_target.index
   }
 }
 
@@ -555,8 +550,6 @@ function addTab(
     target_id: target_id,
     child_type: child_type,
   });
-  console.log(editableTabs.value);
-
   current_tab_name.value = tab_name;
   // band_context();
   return editableTabs.value[editableTabs.value.length - 1];

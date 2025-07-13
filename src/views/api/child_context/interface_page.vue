@@ -1,45 +1,27 @@
 <template>
   <el-row v-if="loading === false" class="url-inputer">
-    <el-col :offset="1" :span="3"
-      ><el-dropdown trigger="click" @command="handelMethod">
+    <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
         <el-button type="primary" class="method-btn">
           {{ methodMapping[data.value.method]
           }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item
-              :command="key"
-              v-for="(value, key) in methodMapping"
-              :key="key"
-              >{{ value }}</el-dropdown-item
-            >
+            <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
+              }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
-      </el-dropdown></el-col
-    >
+      </el-dropdown></el-col>
     <el-col :span="14">
-      <SpecialInput
-        height="40px"
-        radius="0px 0px 0px 0px"
-        v-model="data.value.path"
-        placeholder="Enter Request URL"
-        @clearData="clearUrl"
-        :cleanTips="'清空请求路径'"
-        :max="600"
-        :isTransColor="false"
-        :disableParams="true"
-      ></SpecialInput
-    ></el-col>
+      <SpecialInput height="40px" radius="0px 0px 0px 0px" v-model="data.value.path" placeholder="Enter Request URL"
+        @clearData="clearUrl" :cleanTips="'清空请求路径'" :max="600" :isTransColor="false" :disableParams="true">
+      </SpecialInput>
+    </el-col>
     <el-col :span="3">
-      <el-button class="send-btn" type="primary" @click="send"
-        >发送请求</el-button
-      >
+      <el-button class="send-btn" type="primary" @click="send">发送请求</el-button>
     </el-col>
     <el-col style="margin-left: 5px" :span="2">
-      <el-button style="width: 100%; height: 100%" @click="save"
-        >保存(Ctrl + S)</el-button
-      >
+      <el-button style="width: 100%; height: 100%" @click="save">保存(Ctrl + S)</el-button>
     </el-col>
     <!-- <el-col :span="2">
       <el-button style="width: 70%; height: 100%" @click="send">删除</el-button>
@@ -50,22 +32,10 @@
       <el-skeleton animated>
         <template #template>
           <el-skeleton-item variant="h1" style="width: 10%" />
-          <el-skeleton-item
-            variant="h1"
-            style="width: 50%; margin-left: 20px"
-          />
-          <el-skeleton-item
-            variant="h1"
-            style="width: 10%; margin-left: 20px"
-          />
-          <el-skeleton-item
-            variant="h1"
-            style="width: 10%; margin-left: 20px"
-          />
-          <el-skeleton-item
-            variant="h1"
-            style="width: 10%; margin-left: 20px"
-          />
+          <el-skeleton-item variant="h1" style="width: 50%; margin-left: 20px" />
+          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
+          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
+          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
         </template>
       </el-skeleton>
     </el-col>
@@ -74,78 +44,41 @@
     <RegularInput v-model="data.value.name"></RegularInput>
     <el-row>
       <el-col :offset="1" :span="5">
-        <RegularSelect
-          label="状态"
-          :showBadge="true"
-          v-model="data.value.status"
-          :optionList="testStatus"
-          :selectedStatusLabel="selectedStatusLabel"
-          :displayLabel="statusLabel"
-        ></RegularSelect>
+        <RegularSelect label="状态" :showBadge="true" v-model="data.value.status" :optionList="testStatus"
+          :selectedStatusLabel="selectedStatusLabel" :displayLabel="statusLabel"></RegularSelect>
       </el-col>
       <el-col :offset="1" :span="5">
-        <RegularSelect
-          label="责任人"
-          :showBadge="false"
-          v-model="data.value.head"
-          :optionList="responsors"
-          :selectedStatusLabel="selectedResponsorLabel"
-          :displayLabel="responsorLabel"
-        ></RegularSelect>
+        <RegularSelect label="责任人" :showBadge="false" v-model="data.value.head" :optionList="responsors"
+          :selectedStatusLabel="selectedResponsorLabel" :displayLabel="responsorLabel"></RegularSelect>
       </el-col>
       <el-col :offset="1" :span="5">
-        <RegularSelectMul
-          label="标签"
-          :showBadge="false"
-          v-model="data.value.markers"
-          :optionList="marker_list"
-          :displayLabel="markerLabel"
-          @footerEntry="addMarker"
-        ></RegularSelectMul>
+        <RegularSelectMul label="标签" :showBadge="false" v-model="data.value.markers" :optionList="marker_list"
+          :displayLabel="markerLabel" @footerEntry="addMarker"></RegularSelectMul>
       </el-col>
       <el-col :offset="1" :span="4">
-        <RegularSelectGroup
-          label="服务"
-          :showBadge="false"
-          v-model="data.value.server"
-          :options="serverOptions"
-        ></RegularSelectGroup>
+        <RegularSelectGroup label="服务" :showBadge="false" v-model="data.value.server" :options="serverOptions">
+        </RegularSelectGroup>
       </el-col>
     </el-row>
     <el-row>
       <el-col :offset="1" :span="22">
-        <div
-          style="
+        <div style="
             display: flex;
             align-items: center;
             justify-content: space-between;
-          "
-        >
+          ">
           <div class="doc-base-title-statement" style="margin-bottom: 5px">
             说明文档
           </div>
           <div>
-            <EditButton
-              v-if="show_markdown"
-              class="special-btn"
-              @click="show_markdown = false"
-            ></EditButton>
-            <DoneButton
-              v-if="!show_markdown"
-              class="special-btn"
-              @click="done_statement"
-            ></DoneButton>
+            <EditButton v-if="show_markdown" class="special-btn" @click="show_markdown = false"></EditButton>
+            <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
           </div>
         </div>
       </el-col>
       <el-col :offset="1" :span="22">
-        <el-input
-          v-if="!show_markdown"
-          v-model="data.value.statement"
-          :autosize="{ minRows: 4 }"
-          type="textarea"
-          placeholder="接口描述信息（支持MarkDown格式）"
-        />
+        <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
+          placeholder="接口描述信息（支持MarkDown格式）" />
         <MarkDown v-else :data="data.value.statement"></MarkDown>
       </el-col>
     </el-row>
@@ -159,55 +92,29 @@
     <el-divider></el-divider>
   </div>
   <el-row style="margin-top: 20px">
-    <el-col :span="22" :offset="1"
-      ><span style="font-size: 14px; font-weight: 500">请求参数</span></el-col
-    >
+    <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">请求参数</span></el-col>
   </el-row>
   <div v-if="loading === false">
     <el-row style="margin-top: 20px">
       <el-col :span="22" :offset="1">
         <div class="tab-core g-unselect">
           <div style="display: flex; gap: 5px; font-size: 14px; width: 100%">
-            <div
-              :class="{ 'active-tab': active_res_tab === 0 }"
-              @click="active_res_tab = 0"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 0 }" @click="active_res_tab = 0" class="un-active-tab">
               <span>Params</span>
             </div>
-            <div
-              :class="{ 'active-tab': active_res_tab === 1 }"
-              @click="active_res_tab = 1"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 1 }" @click="active_res_tab = 1" class="un-active-tab">
               <span>Body</span>
             </div>
-            <div
-              :class="{ 'active-tab': active_res_tab === 2 }"
-              @click="active_res_tab = 2"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 2 }" @click="active_res_tab = 2" class="un-active-tab">
               <span>Headers</span>
             </div>
-            <div
-              :class="{ 'active-tab': active_res_tab === 5 }"
-              @click="active_res_tab = 5"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 5 }" @click="active_res_tab = 5" class="un-active-tab">
               <span>前置操作</span>
             </div>
-            <div
-              :class="{ 'active-tab': active_res_tab === 6 }"
-              @click="active_res_tab = 6"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 6 }" @click="active_res_tab = 6" class="un-active-tab">
               <span>后置操作</span>
             </div>
-            <div
-              :class="{ 'active-tab': active_res_tab === 4 }"
-              @click="active_res_tab = 4"
-              class="un-active-tab"
-            >
+            <div :class="{ 'active-tab': active_res_tab === 4 }" @click="active_res_tab = 4" class="un-active-tab">
               <span>Auth</span>
             </div>
           </div>
@@ -216,60 +123,27 @@
     </el-row>
     <el-row>
       <el-col :span="22" :offset="1">
-        <Params
-          v-if="active_res_tab === 0"
-          :tableData="data.value.query"
-          :interface_id="interface_id"
-        ></Params>
-        <Body
-          v-show="active_res_tab === 1"
-          :tableData="data.value.json_data"
-          :wwwData="data.value.x_www_form_urlencoded"
-          :formData="data.value.form_data"
-          :code="data.value.raw"
-          :bodyType="data.value.body_type"
-          @change_body_type="handleChangeBodyType"
-          @exchange_json_body_value="handleExchangeValue"
-          @change_raw_body="handle_change_raw_body"
-          :interface="interface_id"
-        ></Body>
-        <Headers
-          v-if="active_res_tab === 2"
-          :canVar="true"
-          :tableData="data.value.headers"
-          :interface="interface_id"
-        ></Headers>
+        <Params v-if="active_res_tab === 0" :tableData="data.value.query" :interface_id="interface_id"></Params>
+
+        <Body v-show="active_res_tab === 1" :tableData="data.value.json_data"
+          :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
+          :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
+          @exchange_json_body_value="handleExchangeValue" @change_raw_body="handle_change_raw_body"
+          :interface="interface_id"></Body>
+        <Headers v-if="active_res_tab === 2" :canVar="true" :tableData="data.value.headers" :interface="interface_id">
+        </Headers>
         <div class="body-tools" v-if="active_res_tab === 4">
           <div class="title">鉴权设置(暂不可用)</div>
         </div>
         <div v-if="active_res_tab === 4" class="auth-outside">
-          <Auth
-            :auth_setting="data.value.auth"
-            ref="auth_ref"
-            :offset="0"
-            :hasParent="true"
-          ></Auth>
+          <Auth :auth_setting="data.value.auth" ref="auth_ref" :offset="0" :hasParent="true"></Auth>
         </div>
-        <PreAction
-          ref="pre_action_ref"
-          v-if="active_res_tab === 5"
-          :offset="0"
-          :span="24"
-          v-model="data.value.pre_actions.elements"
-          :father-actions="data.value.pre_actions.father_actions"
-          :hasFatherActions="true"
-          :interface="interface_id"
-        ></PreAction>
-        <AfterAction
-          ref="after_action_ref"
-          v-if="active_res_tab === 6"
-          :offset="0"
-          :span="24"
-          v-model="data.value.after_actions.elements"
-          :father-actions="data.value.after_actions.father_actions"
-          :hasFatherActions="true"
-          :interface="interface_id"
-        ></AfterAction>
+        <PreAction ref="pre_action_ref" v-if="active_res_tab === 5" :offset="0" :span="24"
+          v-model="data.value.pre_actions.elements" :father-actions="data.value.pre_actions.father_actions"
+          :hasFatherActions="true" :interface="interface_id"></PreAction>
+        <AfterAction ref="after_action_ref" v-if="active_res_tab === 6" :offset="0" :span="24"
+          v-model="data.value.after_actions.elements" :father-actions="data.value.after_actions.father_actions"
+          :hasFatherActions="true" :interface="interface_id"></AfterAction>
       </el-col>
     </el-row>
   </div>
@@ -283,40 +157,26 @@
   </div>
   <div style="margin-bottom: 170px">
     <el-row style="margin-top: 20px">
-      <el-col :span="22" :offset="1"
-        ><span style="font-size: 14px; font-weight: 500"
-          >返回响应示例</span
-        ></el-col
-      >
+      <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">返回响应示例</span></el-col>
     </el-row>
     <div v-if="loading === false">
       <el-row style="margin-top: 20px">
         <el-col :span="22" :offset="1">
           <div class="tab-core">
-            <div
-              class="no-scroll"
-              style="
+            <div class="no-scroll" style="
                 display: flex;
                 align-items: end;
                 justify-content: start;
                 overflow: scroll;
-              "
-            >
-              <div
-                v-for="(item, index) in responseOptions"
-                :class="{ 'active-tab': current_response.id === item.id }"
-                @click="change_response_tab(item)"
-                class="un-active-tab"
-              >
-                <div
-                  style="
+              ">
+              <div v-for="(item, index) in responseOptions" :class="{ 'active-tab': current_response.id === item.id }"
+                @click="change_response_tab(item)" class="un-active-tab">
+                <div style="
                     display: flex;
                     align-items: center;
                     justify-content: start;
                     padding-bottom: 0px;
-                  "
-                  class="response-name-status g-unselect"
-                >
+                  " class="response-name-status g-unselect">
                   <div class="response-menu-div" style="padding-bottom: 0px">
                     {{ item.name }}
                   </div>
@@ -324,10 +184,7 @@
                 </div>
               </div>
             </div>
-            <AddButton
-              class="hover-menu-box"
-              @click="add_response_handle"
-            ></AddButton>
+            <AddButton class="hover-menu-box" @click="add_response_handle"></AddButton>
           </div>
         </el-col>
       </el-row>
@@ -339,26 +196,18 @@
                 <div class="response-base-info-text">HTTP状态码:</div>
                 <div class="response-base-info-dropdown">
                   <el-dropdown @command="handleStatusCommand" trigger="click">
-                    <SimpleInput
-                      v-model="current_response.status"
-                      :maxLength="3"
-                    ></SimpleInput>
+                    <SimpleInput v-model="current_response.status" :maxLength="3"></SimpleInput>
                     <template #dropdown>
                       <el-dropdown-menu class="response-status-dropdown">
-                        <el-dropdown-item
-                          v-for="([code, message], index) in Object.entries(
-                            GlobalStatus.regular_response_status_map()
-                          )"
-                          :command="code"
-                        >
-                          <div
-                            style="
+                        <el-dropdown-item v-for="([code, message], index) in Object.entries(
+                          GlobalStatus.regular_response_status_map()
+                        )" :command="code">
+                          <div style="
                               display: flex;
                               align-items: center;
                               justify-content: center;
                               gap: 5px;
-                            "
-                          >
+                            ">
                             <div>{{ code }}</div>
                             <div>{{ message }}</div>
                           </div>
@@ -370,43 +219,29 @@
                 <div class="response-base-info-text" style="margin-left: 10px">
                   名称:
                 </div>
-                <SimpleInput
-                  v-model="current_response.name"
-                  :inputWidth="100"
-                ></SimpleInput>
+                <SimpleInput v-model="current_response.name" :inputWidth="100"></SimpleInput>
               </div>
               <div>
-                <DeleteButton
-                  class="hover-menu-box"
-                  @click="delete_response(current_response)"
-                ></DeleteButton>
+                <DeleteButton class="hover-menu-box" @click="delete_response(current_response)"></DeleteButton>
               </div>
-            </div> </el-col
-        ></el-row>
+            </div>
+          </el-col></el-row>
         <el-row style="margin-top: 20px">
           <el-col :span="22" :offset="1">
             <div class="process-dialog-content">
-              <div
-                style="
+              <div style="
                   width: 100%;
                   border: 1px solid #f3f5f6;
                   border-radius: 10px;
-                "
-              >
+                ">
                 <div class="editor-header">
                   <div style="font-size: 14px; font-weight: 500">响应内容</div>
                   <div>
-                    <ParamsTool
-                      @insert_action="insert_params"
-                      :showVariable="false"
-                    ></ParamsTool>
+                    <ParamsTool @insert_action="insert_params" :showVariable="false"></ParamsTool>
                   </div>
                 </div>
-                <NewJsonEditor
-                  v-if="loading === false"
-                  ref="ediorText"
-                  v-model="current_response.content"
-                ></NewJsonEditor>
+                <NewJsonEditor v-if="loading === false" ref="ediorText" v-model="current_response.content">
+                </NewJsonEditor>
                 <!-- <el-skeleton v-else :rows="10" animated /> -->
               </div>
             </div>
@@ -414,10 +249,7 @@
         </el-row>
         <el-row style="margin-top: 20px">
           <el-col :span="22" :offset="1">
-            <Headers
-              :canVar="false"
-              :tableData="current_response.headers"
-            ></Headers>
+            <Headers :canVar="false" :tableData="current_response.headers"></Headers>
           </el-col>
         </el-row>
       </div>
@@ -428,78 +260,49 @@
       </el-col>
     </el-row>
   </div>
-  <el-dialog
-    v-model="show_send_response_dialog"
-    :show-close="false"
-    style="border-radius: 12px; margin-top: 20px"
-    class="process-dialog"
-  >
+  <el-dialog v-model="show_send_response_dialog" :show-close="false" style="border-radius: 12px; margin-top: 20px"
+    class="process-dialog">
     <div class="temp-log-header">
       <div>临时日志(Testing)</div>
     </div>
     <div style="padding: 20px; min-height: 500px">
       <div v-for="(item, index) in send_response" :key="index">
-        <div
-          v-if="item.event === 'start'"
-          style="font-weight: 500; padding: 10px"
-        >
+        <div v-if="item.event === 'start'" style="font-weight: 500; padding: 10px">
           {{ tools.getFormattedTimeMs(item.data.time) }}:任务ID：{{
             item.data.data
           }}
         </div>
-        <div
-          v-if="item.event === 'end'"
-          style="font-weight: 500; padding: 10px"
-        >
+        <div v-if="item.event === 'end'" style="font-weight: 500; padding: 10px">
           {{ tools.getFormattedTimeMs(item.data.time) }}:任务结束：{{
             item.data.data
           }}
         </div>
-        <div
-          v-if="item.event === 'heartbeat'"
-          style="font-weight: 500; padding: 10px"
-        >
+        <div v-if="item.event === 'heartbeat'" style="font-weight: 500; padding: 10px">
           {{ tools.getFormattedTimeMs(item.data.time) }}:Heartbeat，{{
             item.data.data
           }}
         </div>
-        <div
-          v-if="item.event === 'message'"
-          style="display: flex; flex-direction: column"
-        >
-          <div
-            v-if="item.data.type === 'global'"
-            style="font-weight: 500; padding: 10px"
-          >
+        <div v-if="item.event === 'message'" style="display: flex; flex-direction: column">
+          <div v-if="item.data.type === 'global'" style="font-weight: 500; padding: 10px">
             {{ tools.getFormattedTimeMs(item.data.time) }}
-            <div
-              style="margin-top: 10px"
+            <div style="margin-top: 10px"
               v-if="item.data.result === 'error-stop' || item.data.result === 'error-exception'"
-              class="temp-log-error-info"
-              v-html="item.data.data.replace(/\n/g, '<br>')"
-            ></div>
+              class="temp-log-error-info" v-html="item.data.data.replace(/\n/g, '<br>')"></div>
             <span v-else>：{{ item.data.data }}</span>
           </div>
-          <div
-            v-if="item.data.type === 'inner' || item.data.type === 'normal'"
-            style="padding: 10px"
-          >
+          <div v-if="item.data.type === 'inner' || item.data.type === 'normal'" style="padding: 10px">
             <div style="font-weight: 500">
               {{ tools.getFormattedTimeMs(item.data.time) }}:{{
                 item.data.position
               }}
             </div>
-            <div
-              style="margin-top: 10px"
-              :class="{
-                'temp-log-success-info':
-                  item.data.result.indexOf('success') !== -1,
-                'temp-log-warning-info':
-                  item.data.result.indexOf('warning') !== -1,
-                'temp-log-error-info': item.data.result === 'error',
-              }"
-              v-html="item.data.desc.replace(/\n/g, '<br>')"
-            ></div>
+            <div style="margin-top: 10px" :class="{
+              'temp-log-success-info':
+                item.data.result.indexOf('success') !== -1,
+              'temp-log-warning-info':
+                item.data.result.indexOf('warning') !== -1,
+              'temp-log-error-info': item.data.result === 'error',
+            }" v-html="item.data.desc.replace(/\n/g, '<br>')"></div>
           </div>
           <div v-if="item.data.type === 'request'" style="padding: 10px">
             <div style="font-weight: 500">
@@ -520,12 +323,8 @@
           </div>
           <div v-if="item.data.type === 'process'" style="padding: 10px">
             <div style="font-weight: 500">请求过程</div>
-            <div
-              style="margin-top: 10px"
-              class="temp-log-success-info"
-              v-for="(process, index) in item.data.data"
-              :key="index"
-            >
+            <div style="margin-top: 10px" class="temp-log-success-info" v-for="(process, index) in item.data.data"
+              :key="index">
               {{ process }}
             </div>
           </div>
@@ -550,13 +349,10 @@
               }}:接口异常
             </div>
             <div style="margin-top: 10px" class="temp-log-error-info">
-              <div>{{ item.data.data.info}}</div>
+              <div>{{ item.data.data.info }}</div>
             </div>
           </div>
-          <div
-            v-if="item.data.type === 'change_temporary_variable'"
-            style="padding: 10px"
-          >
+          <div v-if="item.data.type === 'change_temporary_variable'" style="padding: 10px">
             <div style="font-weight: 500">
               {{ tools.getFormattedTimeMs(item.data.data.time) }}:临时变量替换
             </div>
@@ -566,63 +362,37 @@
               <div>来自接口: {{ item.data.data.interface }}</div>
             </div>
           </div>
-          <div
-            v-if="
-              (item.data.type === 'pre_hooks' ||
-                item.data.type === 'after_hooks') &&
-              item.data.data.length > 0
-            "
-            style="padding: 10px"
-          >
+          <div v-if="
+            (item.data.type === 'pre_hooks' ||
+              item.data.type === 'after_hooks') &&
+            item.data.data.length > 0
+          " style="padding: 10px">
             <div v-for="(pre_hook_step, index) in item.data.data" :key="index">
               <div style="font-weight: 500">
                 {{ tools.getFormattedTimeMs(pre_hook_step.time) }}:{{
                   item.data.type === "after_hooks" ? "后置操作" : "前置操作"
                 }}
               </div>
-              <div
-                v-if="pre_hook_step.type === 'print'"
-                style="margin-top: 10px"
-                class="temp-log-success-info"
-              >
+              <div v-if="pre_hook_step.type === 'print'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>打印内容:</div>
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
-              <div
-                v-if="pre_hook_step.type === 'wait'"
-                style="margin-top: 10px"
-                class="temp-log-success-info"
-              >
+              <div v-if="pre_hook_step.type === 'wait'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>等待:</div>
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
-              <div
-                v-if="pre_hook_step.type === 'script'"
-                style="margin-top: 10px"
-                class="temp-log-success-info"
-              >
+              <div v-if="pre_hook_step.type === 'script'" style="margin-top: 10px" class="temp-log-success-info">
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
-              <div
-                v-if="pre_hook_step.type === 'script_error' || pre_hook_step.type === 'hooks_error'"
-                style="margin-top: 10px"
-                class="temp-log-error-info"
-              >
+              <div v-if="pre_hook_step.type === 'script_error' || pre_hook_step.type === 'hooks_error'"
+                style="margin-top: 10px" class="temp-log-error-info">
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
-              <div
-                v-if="pre_hook_step.type === 'hooks_warning'"
-                style="margin-top: 10px"
-                class="temp-log-warning-info"
-              >
+              <div v-if="pre_hook_step.type === 'hooks_warning'" style="margin-top: 10px" class="temp-log-warning-info">
                 <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
               </div>
 
-              <div
-                v-if="pre_hook_step.type === 'database'"
-                style="margin-top: 10px"
-                class="temp-log-success-info"
-              >
+              <div v-if="pre_hook_step.type === 'database'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>数据库操作:</div>
                 <div>操作名称: <span style="font-weight: 500;">{{ pre_hook_step.data.name }}</span></div>
                 <div>最终SQL: <span style="font-weight: 500;">{{ pre_hook_step.data.sql }}</span></div>
@@ -630,36 +400,28 @@
                   SQL结果：<span style="font-weight: 500;">{{ pre_hook_step.data.origin_str }}</span>
                 </div>
                 <div v-if="pre_hook_step.data.data.length > 0">
-                参数设置：
-                <div
-                  v-for="(match, index) in pre_hook_step.data.data"
-                  :key="index"
-                  style=""
-                >
-                  <div>
-                    Jsonpath：<span>{{ match.json_path }}</span>
+                  参数设置：
+                  <div v-for="(match, index) in pre_hook_step.data.data" :key="index" style="">
+                    <div>
+                      Jsonpath：<span>{{ match.json_path }}</span>
+                    </div>
+                    <div>
+                      匹配结果：<span>{{
+                        match.result === true ? "成功" : "失败"
+                        }}</span>
+                    </div>
+                    <div>
+                      结果值：<span>{{ match.value }}</span>
+                    </div>
                   </div>
-                  <div>
-                    匹配结果：<span>{{
-                      match.result === true ? "成功" : "失败"
-                    }}</span>
-                  </div>
-                  <div>
-                    结果值：<span>{{ match.value }}</span>
-                  </div>
-                </div>
                 </div>
               </div>
-              <div
-                v-if="pre_hook_step.type === 'extract'"
-                style="margin-top: 10px"
-                class="temp-log-success-info"
-              >
+              <div v-if="pre_hook_step.type === 'extract'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>提取变量:</div>
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                  }}</span>
+                    }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -814,8 +576,6 @@ watch(
       };
       cache_user_env.value = GlobalState.user_env;
       await ApiGetProjectServerParameters(data).then((res: any) => {
-        console.log(res);
-
         search_and_set_env_by_name(res, cache_user_env.value);
         cache_user_env.value = null;
       });
@@ -901,13 +661,9 @@ const setupWatchResponse = () => {
   stopWatchHandler = watch(
     () => responseOptions.value,
     () => {
-      console.log("change");
-
       if (!enableWatch.value) return;
-
       // 触发变化提示
       showChangeIndicator(); // 你的红色图标提示方法
-
       // 立即关闭监听
       enableWatch.value = false;
       stopWatchHandler(); // 停止监听
@@ -942,7 +698,6 @@ async function get_source() {
   await ApiGetSummarySource({
     project: route.params.project,
   }).then((res: any) => {
-    console.log(res);
     testStatus.value = res.markers;
     responsors.value = res.members;
     marker_list.value = res.tag;
@@ -952,7 +707,6 @@ async function get_source() {
     responseOptions.value = res;
     if (responseOptions.value.length > 0) {
       current_response.value = responseOptions.value[0];
-      console.log(current_response.value);
     }
     originalResponse = _.cloneDeep(responseOptions.value);
   });
@@ -1201,8 +955,6 @@ async function save() {
   if (content !== null) {
     result = await updateInterface(content);
   }
-  console.log(result);
-
   if (result === false) return;
 
   if (response_content !== null) {
@@ -1244,7 +996,6 @@ async function updateInterface(content: any) {
 
 async function updateResponse(content: any) {
   const _data = content;
-  console.log(_data);
   return await ApiUpdateResponse(_data).then((res: any) => {
     if (result_check(res) === false) return false;
     originalResponse = _.cloneDeep(responseOptions.value);
@@ -1300,24 +1051,28 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 .error-span {
   color: rgba(#f89898, 1);
 }
+
 .temp-log-error-info {
   padding: 10px;
   background-color: rgba(#f89898, 0.1);
   border-radius: 10px;
   border: 1px solid var(--border-color);
 }
+
 .temp-log-success-info {
   padding: 10px;
   background-color: rgba(#28c0a1, 0.1);
   border-radius: 10px;
   border: 1px solid var(--border-color);
 }
+
 .temp-log-warning-info {
   padding: 10px;
   background-color: rgba(#ffbf00, 0.1);
   border-radius: 10px;
   border: 1px solid var(--border-color);
 }
+
 .temp-log-header {
   height: 30px;
   padding: 10px 20px;
@@ -1326,10 +1081,12 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   font-weight: 500;
   border-bottom: 1px solid var(--border-color);
 }
+
 .special-btn {
   width: 1rem !important;
   height: 1rem !important;
 }
+
 .add-response {
   padding: 0px 4px;
   display: flex;
@@ -1339,43 +1096,57 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   font-size: 13px;
   min-width: 35px;
 }
+
 .add-response:hover {
   background-color: var(--hover-bg);
 }
+
 .response-menu-div {
-  max-width: 200px; /* 设置最大宽度 */
-  white-space: nowrap; /* 不换行 */
-  overflow: hidden; /* 隐藏超出部分 */
-  text-overflow: ellipsis; /* 使用省略号表示超出部分 */
+  max-width: 200px;
+  /* 设置最大宽度 */
+  white-space: nowrap;
+  /* 不换行 */
+  overflow: hidden;
+  /* 隐藏超出部分 */
+  text-overflow: ellipsis;
+  /* 使用省略号表示超出部分 */
 }
+
 .hover-menu-box {
   width: 1.4rem !important;
   height: 0.9rem !important;
+
   svg {
     width: 14px !important;
     height: 14px !important;
   }
 }
+
 .response-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
 .response-base-info {
   display: flex;
   align-items: center;
   justify-content: start;
+
   .response-base-info-text {
     font-size: 12px;
     font-weight: 500;
   }
+
   .response-base-info-dropdown {
     display: flex;
     align-items: center;
   }
 }
+
 .process-dialog-content {
   font-size: 14px;
+
   .editor-header {
     height: 2.5rem;
     border-top-left-radius: 10px;
@@ -1392,6 +1163,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
     border-bottom: 1px solid #f3f5f6;
   }
 }
+
 .body-tools {
   margin-top: 20px;
   display: flex;
@@ -1402,6 +1174,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
+
   .title {
     font-size: 14px;
     font-weight: 500;
@@ -1409,45 +1182,55 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
     align-items: center;
   }
 }
+
 .auth-outside {
   border: 1px solid var(--border-color);
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
   padding: 10px;
 }
+
 .tab-core {
   display: flex;
   justify-content: space-between;
   font-size: 14px;
   border-bottom: 1px solid var(--border-color);
+
   div {
     cursor: pointer;
+
     // padding-bottom: 5px;
     span {
       padding: 3px 10px;
     }
+
     span:hover {
       background-color: var(--hover-bg);
       border-radius: 8px;
     }
+
     .response-name-status {
       padding: 3px 10px;
     }
+
     .response-name-status:hover {
       background-color: var(--hover-bg);
       border-radius: 8px;
     }
   }
+
   .active-tab {
     font-weight: 500;
     border-bottom: 2px solid black !important;
     padding-bottom: 5px;
   }
+
   .un-active-tab {
     border-bottom: 2px solid transparent;
     padding-bottom: 5px;
   }
 }
+
 .switch-tab {
   display: flex;
   justify-content: start;
@@ -1456,10 +1239,12 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   margin-bottom: 10px;
   margin-left: 20px;
   gap: 5px;
+
   .active {
     background-color: black;
     color: white;
   }
+
   div {
     padding: 3px 10px;
     color: #667085;
@@ -1467,35 +1252,43 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
     cursor: pointer;
     border-radius: 8px;
   }
+
   .active {
     background-color: black !important;
     color: white !important;
   }
+
   div:hover {
     background-color: rgba(16, 24, 40, 0.05);
   }
 }
+
 .url-inputer {
   padding: 10px 0px;
   border-top: 1px solid var(--border-color-light);
   border-bottom: 1px solid var(--border-color-light);
 }
+
 .typing-span {
   cursor: pointer;
 }
+
 .typing-span:hover {
   color: var(--primary);
 }
+
 .el-dropdown,
 .method-btn,
 .send-btn {
   width: 100%;
   height: 100%;
 }
+
 .method-btn {
   border-top-right-radius: 0px;
   border-bottom-right-radius: 0px;
 }
+
 .send-btn {
   border-radius: 0px 5px 5px 0px;
 }
@@ -1504,15 +1297,18 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   border: none;
   aspect-ratio: 1;
 }
+
 .custom-mini {
   width: 20px;
   height: 20px;
 }
+
 .custom-mini:hover {
   background-color: white;
   border-radius: 3px;
   cursor: pointer;
 }
+
 .coll-span {
   font-size: 1.1em;
   margin-left: 1%;
@@ -1523,6 +1319,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 .response-status-dropdown {
   height: 300px;
 }
+
 .main-table {
   .cell {
     display: flex;
@@ -1530,17 +1327,20 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
     padding-left: 12px;
     padding-right: 5px;
     width: 100%;
-    > div {
+
+    >div {
       width: 100%;
     }
   }
 }
+
 .doc-base-title {
   color: gray;
   font-size: 0.9em;
   margin: 20px 0px !important;
   font-weight: 500;
 }
+
 .doc-base-title-statement {
   color: gray;
   font-size: 0.9em;
@@ -1560,10 +1360,11 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   border-color:var(--el-color-primary)!important;
   margin-bottom: 5px;
 } */
-.el-tabs--border-card > .el-tabs__header {
+.el-tabs--border-card>.el-tabs__header {
   background-color: #ffffff;
   border-radius: 5px;
 }
+
 .el-tabs__nav-wrap,
 .el-tabs--border-card {
   border-radius: 5px;
