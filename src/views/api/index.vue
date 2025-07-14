@@ -421,7 +421,7 @@ function real_change_tab() {
   if (result !== false) {
     return result;
   }
-  result = replace_last_tab(t, name, index);
+  result = replace_last_tab(t, name, index, target_id, child_type);
   if (result !== false) {
     return result;
   }
@@ -484,12 +484,16 @@ function try_change_current_tab(name: string, index: number = -1): boolean {
 function replace_last_tab(
   t: number,
   title: string,
-  index: number = -1
+  index: number = -1,
+  target_id: number,
+  child_type: number
 ): EditorTab | boolean {
   if (editableTabs.value.length > max_length - 1) {
     editableTabs.value[editableTabs.value.length - 1].t = t;
     editableTabs.value[editableTabs.value.length - 1].title = title;
     editableTabs.value[editableTabs.value.length - 1].index = index;
+    editableTabs.value[editableTabs.value.length - 1].target_id = target_id
+    editableTabs.value[editableTabs.value.length - 1].child_type = child_type
     current_tab_name.value =
       editableTabs.value[editableTabs.value.length - 1].name;
     return editableTabs.value[editableTabs.value.length - 1];
