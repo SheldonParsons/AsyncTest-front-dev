@@ -5,19 +5,20 @@
         <CButton style="width: 40px; display: inline-block"><el-icon>
             <CirclePlusFilled />
           </el-icon></CButton>
-        <el-input v-model="filterText" style="width: 200px; margin-left: 10px" placeholder="Filter keyword"
+        <el-input v-model="filterText" style="margin-left: 10px" placeholder="Filter keyword"
           :suffix-icon="Filter" />
       </div>
     </el-affix>
-    <div class="tree-div no-scoll" id="api-tree-div" ref="container" style="overflow: scroll;">
+    <div class="tree-div" id="api-tree-div" ref="container"
+      style="display: flex;flex-direction: column;overflow: hidden;">
       <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
         <img style="width: 30px; height: 30px" src="@/assets/logo/bird-main-no-bg-1.png" alt="" />
         <span style="margin-left: 10px">接口概览</span>
       </div>
-      <el-tree draggable class="api-tree no-scoll" :key="treeKey" id="api-tree" v-if="loading === false" ref="treeRef"
-        style="margin-top: 10px" :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu"
-        :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
-        icon-class="none" :filter-node-method="filterNode">
+      <el-tree class="api-tree no-scroll" :key="treeKey" id="api-tree-core" v-if="loading === false"
+        ref="treeRef" style="margin-top: 10px;overflow: scroll;" :data="dataSource" node-key="id" icon="ArrowRightBold"
+        @node-click="changeMenu" :highlight-current="true" :expand-on-click-node="false"
+        :default-expanded-keys="firstLevelKeys" icon-class="none" :filter-node-method="filterNode">
         <template #default="{ node, data }">
           <div v-if="
             data.child_type === 0 ||
@@ -188,12 +189,10 @@ onMounted(async () => {
 });
 
 function adjustContentHeight() {
-  const ch = container.value?.clientHeight || 0;
-  const hh = header.value?.offsetHeight || 0;
-  const remain = ch - hh - 200;
-  if (treeRef.value && remain > 0) {
-    treeRef.value.el$.style.height = remain + "px";
-  }
+  const treeEl = treeRef.value.$el;
+  const firstNode = treeEl.querySelector('.el-tree-node');
+  const height = firstNode?.getBoundingClientRect().height;
+  firstNode.style.height = height + 200 + 'px'
 }
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
@@ -244,14 +243,16 @@ watch(
 watch(
   () => GlobalState.count,
   async (newCount) => {
+    console.log(GlobalState.message);
+
     if (
       GlobalState.message === "change_dir_tab" ||
       GlobalState.message === "change_interface_tab"
     ) {
       const node_id: number = GlobalState.data.id;
-      highlightNodeById(node_id);
+      await highlightNodeById(node_id);
     } else if (GlobalState.message === "change_empty_tab") {
-      highlightNodeById(undefined);
+      await highlightNodeById(undefined);
     } else if (GlobalState.message === "update_interface_name") {
       const node = get_tree_node_by_id(
         dataSource.value[0],
@@ -322,14 +323,16 @@ function get_tree_node_by_id(tree: Tree, target_id: number) {
   return false;
 }
 
-function highlightNodeById(id: string | number | undefined) {
-  nextTick(() => {
+async function highlightNodeById(id: string | number | undefined) {
+  await nextTick(async () => {
     // 强制重新渲染树组件
     treeKey.value += 1
 
     // 等组件重新渲染后设置高亮
-    nextTick(() => {
+    await nextTick(async () => {
       treeRef.value?.setCurrentKey(id)
+      await nextTick(); // 确保 DOM 已全部挂载
+      adjustContentHeight();
     })
   })
 }
@@ -446,7 +449,7 @@ async function action(father: number, action_type: string, data: any) {
     tools.message("复制成功", proxy, "success");
     save_current_hightlight();
     await load_tree();
-    highlightNodeById(current_highlight_node.value);
+    await highlightNodeById(current_highlight_node.value);
   }
   if (action_type === "move_to") {
     current_action_data.value = {
@@ -576,7 +579,7 @@ function changeExpanded(node: any) {
 
 <style lang="scss" scoped>
 .api-tree {
-  overflow: auto;
+  // overflow: auto;
 }
 
 .count-span {
