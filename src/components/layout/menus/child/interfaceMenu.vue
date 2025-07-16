@@ -188,11 +188,16 @@ onMounted(async () => {
   await load_tree();
 });
 
+async function open_tree() {
+  await tools.delay();
+  adjustContentHeight()
+}
+
 function adjustContentHeight() {
   const treeEl = treeRef.value.$el;
   const firstNode = treeEl.querySelector('.el-tree-node');
   const height = firstNode?.getBoundingClientRect().height;
-  firstNode.style.height = height + 200 + 'px'
+  firstNode.style.height = height + 220 + 'px'
 }
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
@@ -574,6 +579,7 @@ function changeExpanded(node: any) {
   } else {
     node.expand();
   }
+  open_tree()
 }
 </script>
 
