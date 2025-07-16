@@ -188,16 +188,20 @@ onMounted(async () => {
   await load_tree();
 });
 
-async function open_tree() {
-  await tools.delay();
-  adjustContentHeight()
+async function open_tree(child_count:any) {
+  // await tools.delay();
+  adjustContentHeight(child_count)
 }
 
-function adjustContentHeight() {
+function adjustContentHeight(child_count=undefined) {
   const treeEl = treeRef.value.$el;
   const firstNode = treeEl.querySelector('.el-tree-node');
   const height = firstNode?.getBoundingClientRect().height;
-  firstNode.style.height = height + 220 + 'px'
+  if (child_count === undefined) {
+    firstNode.style.height = height + 220 + 'px'
+  } else {
+    firstNode.style.height = height + (child_count * 33) + 'px'
+  }
 }
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
@@ -574,12 +578,17 @@ function enter_project_summary() {
 }
 
 function changeExpanded(node: any) {
+  console.log(node);
+  let child_count = 0
+  
   if (node.expanded) {
     node.collapse();
+    child_count = -1 * node.childNodes.length
   } else {
     node.expand();
+    child_count = node.childNodes.length
   }
-  open_tree()
+  open_tree(child_count)
 }
 </script>
 
