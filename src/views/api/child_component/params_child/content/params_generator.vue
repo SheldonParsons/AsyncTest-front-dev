@@ -480,10 +480,6 @@ const generator_tree: any = ref([
     label: "其他",
     children: [
       {
-        value: "increment",
-        label: "自增ID",
-      },
-      {
         value: "guid",
         label: "GUID",
       },
@@ -1163,21 +1159,6 @@ const input_content_mapping: any = ref({
         value: "",
         type: "input",
         params_type: "string",
-      },
-    ],
-  },
-  increment: {
-    func: GeneratorFunctions.generateIncrementalNumber,
-    fields: [
-      {
-        name: "整数自增的步长",
-        placeholder: "step",
-        value: null,
-        type: "number",
-        min: 1,
-        max: 1000,
-        params_type: "number",
-        step: 1,
       },
     ],
   },

@@ -375,7 +375,7 @@
               </div>
               <div v-if="pre_hook_step.type === 'print'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>打印内容:</div>
-                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
+                <div>{{ pre_hook_step.data }}</div>
               </div>
               <div v-if="pre_hook_step.type === 'wait'" style="margin-top: 10px" class="temp-log-success-info">
                 <div>等待:</div>

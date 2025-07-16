@@ -655,21 +655,6 @@ export const input_content_mapping: any = {
       },
     ],
   },
-  increment: {
-    func: GeneratorFunctions.generateIncrementalNumber,
-    fields: [
-      {
-        name: "整数自增的步长",
-        placeholder: "step",
-        value: null,
-        type: "number",
-        min: 1,
-        max: 1000,
-        params_type: "number",
-        step: 1,
-      },
-    ],
-  },
   guid: {
     func: GeneratorFunctions.generateGUID,
     fields: [],

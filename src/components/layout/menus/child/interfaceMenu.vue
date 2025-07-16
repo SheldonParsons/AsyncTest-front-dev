@@ -9,12 +9,12 @@
           :suffix-icon="Filter" />
       </div>
     </el-affix>
-    <div class="tree-div" id="api-tree-div" ref="container">
+    <div class="tree-div no-scoll" id="api-tree-div" ref="container" style="overflow: scroll;">
       <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
         <img style="width: 30px; height: 30px" src="@/assets/logo/bird-main-no-bg-1.png" alt="" />
         <span style="margin-left: 10px">接口概览</span>
       </div>
-      <el-tree class="api-tree no-scoll" :key="treeKey" id="api-tree" v-if="loading === false" ref="treeRef"
+      <el-tree draggable class="api-tree no-scoll" :key="treeKey" id="api-tree" v-if="loading === false" ref="treeRef"
         style="margin-top: 10px" :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu"
         :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
         icon-class="none" :filter-node-method="filterNode">
@@ -185,14 +185,11 @@ const treeKey = ref(0)
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
-  await nextTick(); // 确保 DOM 已全部挂载
-  adjustContentHeight();
 });
 
 function adjustContentHeight() {
   const ch = container.value?.clientHeight || 0;
   const hh = header.value?.offsetHeight || 0;
-
   const remain = ch - hh - 200;
   if (treeRef.value && remain > 0) {
     treeRef.value.el$.style.height = remain + "px";
@@ -219,7 +216,8 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
     await tools.delay();
     loading.value = false;
   });
-  adjustContentHeight()
+  await nextTick(); // 确保 DOM 已全部挂载
+  adjustContentHeight();
 }
 
 const props = defineProps({
@@ -541,6 +539,10 @@ interface Tree {
 }
 
 function changeMenu(data: any, node: any, event: any, event_object: any) {
+  console.log(node);
+  console.log(data);
+
+
   if (data.child_type === 1) {
     send_message_to_tab("click_dir", data, node);
   } else if (data.child_type === 2) {

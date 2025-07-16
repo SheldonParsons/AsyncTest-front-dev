@@ -2234,20 +2234,6 @@ export function generateRandomStringFromRegex(regex: any) {
   }
 }
 
-let currentNumber = 0;
-
-export function generateIncrementalNumber(step: number): number | string {
-  // 判断步长是否为正整数
-  if (typeof step !== "number" || step <= 0 || !Number.isInteger(step)) {
-    return "--ban--";
-  }
-
-  // 每次调用函数时，将当前数字增加步长
-  currentNumber += step;
-
-  return currentNumber;
-}
-
 export function generateGUID(): string {
   // 返回符合 GUID 格式的字符串
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {

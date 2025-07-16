@@ -64,7 +64,7 @@
                     <div v-else></div>
                   </template>
                   <div class="more-action-div" style="width: 100%">
-                    <div class="action-header">修改信息</div>
+                    <div class="action-header" style="padding-top: 5px;">修改信息</div>
                     <el-divider></el-divider>
                     <div class="change-name">
                       <div style="width: 100%">
