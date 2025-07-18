@@ -199,22 +199,20 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
 
     if (dataSource.value[0] === undefined) {
       dataSource.value[0] = newRoot;
+      // 更新 firstLevelKeys（可选）
+      firstLevelKeys.value = [];
+      dataSource.value.forEach((rootNode) => {
+        if (rootNode.children) {
+          rootNode.children.forEach((child: any) => {
+            firstLevelKeys.value.push(child.id);
+          });
+        }
+      });
     } else {
       // 只同步 children
       existingRoot.count = newRoot.count; // 可选同步计数
       syncChildren(existingRoot.children, newRoot.children);
     }
-
-    // 更新 firstLevelKeys（可选）
-    firstLevelKeys.value = [];
-    dataSource.value.forEach((rootNode) => {
-      if (rootNode.children) {
-        rootNode.children.forEach((child: any) => {
-          firstLevelKeys.value.push(child.id);
-        });
-      }
-    });
-
     await tools.delay();
     loading.value = false;
   });
@@ -590,13 +588,17 @@ function enter_project_summary() {
 
 function changeExpanded(node: any) {
   let child_count = 0
-
   if (node.expanded) {
     node.collapse();
     child_count = -1 * node.childNodes.length
+    const index = firstLevelKeys.value.indexOf(node.data.id);
+    if (index !== -1) {
+      firstLevelKeys.value.splice(index, 1);
+    }
   } else {
     node.expand();
     child_count = node.childNodes.length
+    firstLevelKeys.value.push(node.data.id)
   }
 }
 </script>
