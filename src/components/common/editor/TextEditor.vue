@@ -42,6 +42,10 @@ const props = defineProps({
   disable: {
     type: Boolean,
     default: false,
+  },
+  always: {
+    type: Boolean,
+    default: false,
   }
 });
 
@@ -49,13 +53,20 @@ const props = defineProps({
 watch(
   () => props.code,
   (newVal: any, oldVal) => {
-    if (props.code && instance) {
-      if (!hasFirstInsert.value) {
-        console.log(newVal);
-        instance.setValue(newVal);
-        hasFirstInsert.value = true;
+    console.log(newVal);
+    console.log(instance.getValue());
+    if (props.always === true && newVal !== instance.getValue()) {
+      instance.setValue(newVal);
+    }
+    if (props.always === false) {
+      if (props.code && instance) {
+        if (!hasFirstInsert.value) {
+          instance.setValue(newVal);
+          hasFirstInsert.value = true;
+        }
       }
     }
+
   }
 );
 
@@ -179,7 +190,7 @@ async function createLanguage(m: any) {
 
   // 创建编辑器model
   model = monaco.value.editor.createModel(props.code, defaultLanguage.value);
-  
+
   // 创建编辑器实例
   instance = monaco.value.editor.create(dom.value, {
     model,
@@ -205,6 +216,24 @@ async function createLanguage(m: any) {
       size: "fit", // "proportional" | "fill" | "fit"
     },
   });
+  instance.getDomNode().addEventListener(
+    "wheel",
+    function (event: any) {
+      const currentScrollTop = instance.getScrollTop();
+      const maxScrollTop =
+        instance.getScrollHeight() -
+        instance.getLayoutInfo().height;
+
+      if (
+        (currentScrollTop <= 0 && event.deltaY < 0) ||
+        (currentScrollTop >= maxScrollTop && event.deltaY > 0)
+      ) {
+        event.stopPropagation();
+        window.scrollBy(0, event.deltaY);
+      }
+    },
+    { capture: true }
+  );
   isEditorReady.value = true;
 
   disablePreventNewline(instance, monaco.value);
@@ -225,7 +254,7 @@ async function createLanguage(m: any) {
   // 监听编辑器内容变化
   instance.onDidChangeModelContent((e: any) => {
     const newCode = instance.getValue();
-    emit("change", newCode); // 向父组件发送更新的代码
+    emit("change", newCode);
   });
 }
 
@@ -293,33 +322,38 @@ defineExpose({
 .slide-enter-to,
 .slide-leave-from {
   opacity: 1;
-  max-height: 1000px; /* 设置一个足够大的值 */
+  max-height: 1000px;
+  /* 设置一个足够大的值 */
 }
+
 .placeholder {
   position: absolute;
   top: 44px;
-  left: 365px; /* 对齐行号区域 */
+  left: 365px;
+  /* 对齐行号区域 */
   color: #bcbcbc;
   font-style: italic;
-  pointer-events: none; /* 允许穿透点击编辑器 */
+  pointer-events: none;
+  /* 允许穿透点击编辑器 */
   z-index: 2;
   font-size: 12px;
 }
+
 .ed {
   width: 100%;
   height: 100%;
   // margin-left: 5%;
 }
+
 .ed-header {
   height: 35px;
   width: calc(100% + 20px);
   border-radius: 5px 5px 0px 0px;
-  background-image: linear-gradient(
-    90deg,
-    var(--dialog-deep-color) 80%,
-    var(--dialog-color)
-  );
+  background-image: linear-gradient(90deg,
+      var(--dialog-deep-color) 80%,
+      var(--dialog-color));
   text-align: center;
+
   p {
     color: white;
     font-size: 16px;
@@ -331,15 +365,19 @@ defineExpose({
     padding-left: 20px;
   }
 }
+
 .editor {
   height: 200px;
   width: 100%;
 }
+
 .el-row {
   height: inherit;
 }
+
 .language-col {
   height: inherit;
+
   span.el-dropdown-link {
     cursor: pointer;
     margin-top: 10px;
@@ -348,6 +386,7 @@ defineExpose({
     font-weight: 500;
     display: flex;
   }
+
   .el-dropdown {
     height: 100%;
   }

@@ -378,19 +378,9 @@
             </div>
           </div>
         </div>
-        <div v-if="content_type === 'temp'" class="setting-main-content-right">
-          <div
-            style="
-              padding: 10px;
-              font-size: 14px;
-              font-weight: 500;
-              color: black;
-            "
-          >
-            临时变量列表
-          </div>
-          <el-divider></el-divider>
-          <div style="padding: 10px">
+        <div v-if="content_type === 'temp'" style="flex: 80;display: flex;flex-direction: column;" id="content-ref-core">
+          <TempTable :current_interface="current_interface"></TempTable>
+          <!-- <div style="padding: 10px">
             <div class="body-tools">
               <div class="title">
                 接口临时变量管理
@@ -587,7 +577,7 @@
                 </el-col>
               </el-row>
             </div>
-          </div>
+          </div> -->
         </div>
       </div>
     </div>
@@ -625,6 +615,7 @@ import CodeMirror from "@/views/api/child_context/code_mirror.vue";
 import Loading from "@/views/api/child_component/params_child/comp/loading.vue";
 import tools from "@/utils/tools";
 import TreeNode from "@/views/api/child_component/tree_content.vue";
+import TempTable from '@/views/api/public_dialog/motion_dev_component/core_table.vue'
 import { ApiGetProjectServerParameters, ApiPostEnv } from "@/api/interface/env";
 import {
   ApiGetTempVariable,
@@ -703,18 +694,13 @@ async function get_envs() {
   });
 }
 
-function get_temp(tree_node: any) {
+async function get_temp(tree_node: any) {
   reset_current_temp();
   focus_node.value = -1;
+  content_type.value = 'random'
+  await nextTick()
   content_type.value = "temp";
   current_interface.value = tree_node.target;
-  const _data = {
-    interface: tree_node.target,
-  };
-  send_temp_variable_list(_data).then((res: any) => {
-    if (res === false) return;
-    temp_variable_table.value = res;
-  });
 }
 
 async function change_temp_is_fixed(row: any) {

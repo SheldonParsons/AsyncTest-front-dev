@@ -106,7 +106,7 @@
                 <div v-else></div>
               </template>
               <div class="more-action-div" style="width: 100%">
-                <div class="action-header">修改信息</div>
+                <div class="action-header" style="margin-top: 5px">修改信息</div>
                 <el-divider></el-divider>
                 <div class="change-name">
                   <div style="width: 100%">
@@ -166,7 +166,7 @@
                   </div>
                 </div>
                 <el-divider></el-divider>
-                <div class="action-list" v-if="data.child_type !== 0">
+                <div class="action-list" style="padding-bottom: 5px;" v-if="data.child_type !== 0">
                   <div
                     class="action-item action-delete-item"
                     @click="action(2, 'delete_node', data)"
@@ -638,7 +638,7 @@ interface Tree {
 function changeMenu(data: any, node: any, event: any, event_object: any) {
   if (data.child_type === 1) {
     send_message_to_tab("click_dir", data, node);
-  } else if (data.child_type === 2) {
+  } else if (data.child_type === 3) {
     send_message_to_tab("click_interface", data, node);
   } else if (data.child_type === 0) {
     send_message_to_tab("click_root_dir", data, node);
@@ -856,6 +856,10 @@ function changeExpanded(node: any) {
 </style>
 
 <style lang="scss">
+.el-popover {
+    padding: 10px 10px !important;
+    border-radius: 10px !important;
+}
 .el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
   background-color: var(--greyLight-0);
 }
@@ -897,4 +901,5 @@ function changeExpanded(node: any) {
 .el-tree-node__expand-icon {
   transition: none !important;
 }
+
 </style>

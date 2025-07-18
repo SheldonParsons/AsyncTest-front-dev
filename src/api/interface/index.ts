@@ -204,6 +204,15 @@ export function ApiGetTempVariable(params: any): Promise<String> {
   });
 }
 
+// 获取项目数据库信息
+export function ApiGetTempVariableCancel(config: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.cancelHttpGet("/api/temp_variable/", config).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 // 创建临时变量
 export function ApiPostTempVariable(data: any): Promise<String> {
   return new Promise((resolve, reject) => {

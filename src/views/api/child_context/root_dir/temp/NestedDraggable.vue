@@ -16,7 +16,6 @@
             <button @click="addChild(element)">+</button>
             <button @click="removeNode(element)">×</button>
           </div>
-          
           <NestedDraggable
             v-if="element.children && element.children.length"
             :nodes="element.children"
@@ -45,7 +44,7 @@
     }
     element.children.push({
       id: Math.random().toString(36).substr(2, 9),
-      name: "新节点",
+      name: `新节点${Math.random().toString(36).substr(2, 9)}`,
       children: [],
     });
   };

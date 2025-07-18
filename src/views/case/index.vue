@@ -58,11 +58,11 @@
                   >
                     <Fold style="margin-right: 5px" v-if="item.t === 4"></Fold>
                   </div>
-                  <span
-                    v-if="item.t < 4"
-                    class="method-span"
-                    :class="method_color[item.t]"
-                    >{{ method_list[item.t] }}</span
+                  <Case
+                    v-if="item.t === 2"
+                    class="case-icon"
+                style="height: 15px"
+                    ></Case
                   >
                   <div
                     class="filter-span g-ellipsis ignore-scrollbar"
@@ -111,11 +111,12 @@
       :title="'Case'"
       :desc="'创建测试用例'"
     ></CreatePage>
-    <Documentation
+    <CaseDocumentation
       v-if="show_type === 2"
       :node_id="current_node"
-      :interface_id="current_target_id"
-    ></Documentation>
+      :case_id="current_target_id"
+      :target_type="current_target_type"
+    ></CaseDocumentation>
     <CaseDir
       v-if="show_type === 3"
       :node_id="current_node"
@@ -131,9 +132,11 @@
 <script lang="ts" setup>
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import Fold from "@/assets/svg/tree/fold.vue";
+import Case from "@/assets/svg/tree/case.vue";
 import { useRoute, useRouter } from "vue-router";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
 import Documentation from "@/views/api/child_context/doc_page.vue";
+import CaseDocumentation from "@/views/case/content/case.vue"
 import EmptyPage from "@/views/api/child_context/empty_page.vue";
 import CreatePage from "@/views/api/child_context/create_empty_page.vue";
 import CaseDir from "@/views/case/content/dir.vue";
@@ -331,12 +334,11 @@ watch(
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
-      const t = method_list.indexOf(val.data.method.toUpperCase());
       current_node.value = val.data.id;
       current_target_id.value = val.data.target;
       change_tab_and_change_page(
         val.data.name,
-        t,
+        2,
         val.data.id,
         false,
         null,
@@ -435,8 +437,6 @@ function change_page(page_target: EditorTab | string, broadcast = true) {
       // 接口
       const id = page_target.index;
       if (broadcast) {
-        console.log(page_target);
-
         current_target_id.value = page_target.target_id;
         current_node.value = id;
         GlobalState.sendMessage("change_interface_tab", { id: id });
@@ -698,6 +698,9 @@ function change_user_env(item: any) {
 }
 </script>
 <style lang="scss" scoped>
+.case-icon {
+  color: var(--global-theme-color);
+}
 #tabsUl {
   overflow-x: auto;
 }

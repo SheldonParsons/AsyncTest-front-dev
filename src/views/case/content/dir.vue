@@ -23,12 +23,17 @@
     :dir_id="props.dir_id"
     :node_id="node_id"
   ></CaseList>
+  <Auth
+  v-if="activeTab === 'C'"
+  ></Auth>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import Settings from "@/views/case/content/dir_content/settings.vue";
+import Auth from "@/views/api/child_context/root_dir/temp/auth.vue"
 import CaseList from "@/views/case/content/dir_content/case_list.vue";
+
 const activeTab = ref<"A" | "B" | "C">("A");
 const props = defineProps({
   node_id: {

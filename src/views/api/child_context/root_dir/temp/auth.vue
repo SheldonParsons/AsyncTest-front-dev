@@ -1,7 +1,9 @@
 <template>
     <div class="container">
       <!-- 左侧待选列表 -->
+       
       <div class="source-panel">
+        <!-- {{ sourceList }}
         <h3>待选元素</h3>
         <draggable
           v-model="sourceList"
@@ -16,9 +18,9 @@
               {{ element.name }}
             </div>
           </template>
-        </draggable>
+        </draggable> -->
+        <pre>{{ JSON.stringify(treeData, null, 2) }}</pre>
       </div>
-  
       <!-- 右侧嵌套区域 -->
       <div class="target-panel">
         <h3>嵌套结构</h3>
