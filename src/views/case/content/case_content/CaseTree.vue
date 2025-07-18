@@ -1,135 +1,73 @@
 <template>
-  <motion.div 
-    class="case-tree-container"
-    :initial="{ opacity: 0 }"
-    :animate="{ opacity: 1 }"
-    :transition="{ duration: 0.5 }"
-  >
+  <motion.div class="case-tree-container" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+    :transition="{ duration: 0.5 }">
     <!-- 顶部操作栏 -->
-    <motion.div 
-      class="tree-header"
-      :initial="{ y: -20, opacity: 0 }"
-      :animate="{ y: 0, opacity: 1 }"
-      :transition="{ delay: 0.2, duration: 0.3 }"
-    >
-      <motion.button 
-        class="action-btn"
-        @click="addRootNode"
-        whileHover="hover"
-        whileTap="tap"
-        :variants="{
-          hover: { scale: 1.05 },
-          tap: { scale: 0.95 }
-        }"
-      >
+    <motion.div class="tree-header" :initial="{ y: -20, opacity: 0 }" :animate="{ y: 0, opacity: 1 }"
+      :transition="{ delay: 0.2, duration: 0.3 }">
+      <motion.button class="action-btn" @click="addRootNode" whileHover="hover" whileTap="tap" :variants="{
+        hover: { scale: 1.05 },
+        tap: { scale: 0.95 }
+      }">
         <span class="btn-icon">+</span>
         添加根节点
       </motion.button>
     </motion.div>
 
     <!-- 树形结构 -->
-    <el-tree
-      ref="treeRef"
-      :data="treeData"
-      :props="defaultProps"
-      node-key="id"
-      :expand-on-click-node="false"
-      :default-expand-all="true"
-      :highlight-current="true"
-      draggable
-      :allow-drop="handleAllowDrop"
-      :allow-drag="handleAllowDrag"
-      @node-drag-start="handleDragStart"
-      @node-drag-enter="handleDragEnter"
-      @node-drag-leave="handleDragLeave"
-      @node-drag-over="handleDragOver"
-      @node-drag-end="handleDragEnd"
-      @node-drop="handleDrop"
-      class="custom-tree"
-    >
+    <el-tree ref="treeRef" :data="treeData" :props="defaultProps" node-key="id" :expand-on-click-node="false"
+      :default-expand-all="true" :highlight-current="true" draggable :allow-drop="handleAllowDrop"
+      :allow-drag="handleAllowDrag" @node-drag-start="handleDragStart" @node-drag-enter="handleDragEnter"
+      @node-drag-leave="handleDragLeave" @node-drag-over="handleDragOver" @node-drag-end="handleDragEnd"
+      @node-drop="handleDrop" class="custom-tree">
       <template #default="{ node, data }">
-        <motion.div 
-          class="custom-tree-node"
-          :initial="{ opacity: 0, x: -10 }"
-          :animate="{ opacity: 1, x: 0 }"
-          :transition="{ duration: 0.3 }"
-          @mouseenter="handleNodeHover(data, true)"
-          @mouseleave="handleNodeHover(data, false)"
-        >
-          <!-- 节点内容 -->
-          <motion.div 
-            class="node-content"
-            :animate="{ 
+        <motion.div style="display: flex;flex-direction: column;width: 100%;" class="tree-node-container">
+          <motion.div class="target-line"></motion.div>
+          <motion.div class="custom-tree-node" :initial="{ opacity: 0, x: -10 }" :animate="{ opacity: 1, x: 0 }"
+            :transition="{ duration: 0.3 }" @mouseenter="handleNodeHover(data, true)"
+            @mouseleave="handleNodeHover(data, false)">
+            <!-- 节点内容 -->
+            <motion.div class="node-content" :animate="{
               backgroundColor: hoveredNodeId === data.id ? '#f5f5f5' : '#ffffff',
               borderColor: hoveredNodeId === data.id ? '#333' : '#e0e0e0'
-            }"
-            :transition="{ duration: 0.2 }"
-          >
-            <motion.div class="node-info">
-              <CheckBox></CheckBox>
-              <motion.span 
-                class="node-label"
-                :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }"
-              >
-                {{ data.label }}
-              </motion.span>
-              <motion.span 
-                class="node-count"
-                :initial="{ opacity: 0 }"
-                :animate="{ opacity: 0.6 }"
-                :transition="{ delay: 0.1 }"
-              >
-                {{ data.children ? `(${data.children.length})` : '' }}
-              </motion.span>
-            </motion.div>
+            }" :transition="{ duration: 0.2 }">
+              <motion.div class="node-info">
+                <CheckBox></CheckBox>
+                <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
+                  {{ data.label }}
+                </motion.span>
+                <motion.span class="node-count" :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }"
+                  :transition="{ delay: 0.1 }">
+                  {{ data.children ? `(${data.children.length})` : '' }}
+                </motion.span>
+              </motion.div>
 
-            <!-- 操作按钮组 -->
-            <motion.div 
-              class="node-actions"
-              :animate="{ 
+              <!-- 操作按钮组 -->
+              <motion.div class="node-actions" :animate="{
                 opacity: hoveredNodeId === data.id ? 1 : 0,
                 pointerEvents: hoveredNodeId === data.id ? 'auto' : 'none'
-              }"
-              :transition="{ duration: 0.2 }"
-            >
-              <motion.button
-                class="node-action-btn"
-                @click.stop="addSiblingNode(node, data)"
-                whileHover="hover"
-                whileTap="tap"
-                :variants="actionBtnVariants"
-                title="添加同级节点"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-              </motion.button>
+              }" :transition="{ duration: 0.2 }">
+                <motion.button class="node-action-btn" @click.stop="addSiblingNode(node, data)" whileHover="hover"
+                  whileTap="tap" :variants="actionBtnVariants" title="添加同级节点">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                </motion.button>
 
-              <motion.button
-                class="node-action-btn"
-                @click.stop="addChildNode(node, data)"
-                whileHover="hover"
-                whileTap="tap"
-                :variants="actionBtnVariants"
-                title="添加子节点"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2v8m0 0l3-3m-3 3l-3-3m3 3v10M7 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </motion.button>
+                <motion.button class="node-action-btn" @click.stop="addChildNode(node, data)" whileHover="hover"
+                  whileTap="tap" :variants="actionBtnVariants" title="添加子节点">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2v8m0 0l3-3m-3 3l-3-3m3 3v10M7 17h10" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </motion.button>
 
-              <motion.button
-                class="node-action-btn delete"
-                @click.stop="removeNode(node, data)"
-                whileHover="hover"
-                whileTap="tap"
-                :variants="actionBtnVariants"
-                title="删除节点"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-              </motion.button>
+                <motion.button class="node-action-btn delete" @click.stop="removeNode(node, data)" whileHover="hover"
+                  whileTap="tap" :variants="actionBtnVariants" title="删除节点">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                </motion.button>
+              </motion.div>
             </motion.div>
           </motion.div>
         </motion.div>
@@ -139,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, onMounted } from 'vue'
 import { motion } from 'motion-v'
 import { ElTree, ElMessageBox } from 'element-plus'
 import CheckBox from '@/assets/motion/checkbox.vue'
@@ -172,6 +110,52 @@ const treeData = ref([
     ]
   }
 ])
+onMounted(() => {
+  const nodes = document.getElementsByClassName('tree-node-container')
+  Array.from(nodes).forEach(node => {
+    // 获取每个元素的边界信息
+    const rect = node.getBoundingClientRect();
+
+    // 获取顶部 Y 坐标
+    const top = rect.top;
+
+    // 获取底部 Y 坐标
+    const bottom = rect.bottom;
+
+    console.log(`Top: ${top}, Bottom: ${bottom}`);
+  });
+})
+
+let mouseMoveListener = null;  // 声明全局变量，确保两个方法都可以访问
+
+// 开始监听鼠标坐标
+function startListeningMouse() {
+  console.log(mouseMoveListener);
+  
+  if (mouseMoveListener) return;  // 防止重复绑定监听器
+
+  // 定义监听函数
+  mouseMoveListener = (event) => {
+    console.log('mousemove event triggered');
+    const mouseX = event.clientX; // 鼠标X坐标
+    const mouseY = event.clientY; // 鼠标Y坐标
+    console.log(`Mouse X: ${mouseX}, Mouse Y: ${mouseY}`);
+  };
+
+  // 绑定事件
+  document.addEventListener('mousemove', mouseMoveListener);
+  console.log('Mouse move listener started.');
+}
+
+// 结束监听鼠标坐标
+function stopListeningMouse() {
+  if (!mouseMoveListener) return;  // 如果没有监听器，直接返回
+
+  // 移除事件监听
+  document.removeEventListener('mousemove', mouseMoveListener);
+  mouseMoveListener = null;
+  console.log('Mouse move listener stopped.');
+}
 
 const treeRef = ref()
 const hoveredNodeId = ref(null)
@@ -208,12 +192,12 @@ const addSiblingNode = (node, data) => {
   const parent = node.parent
   const children = parent.data.children || parent.data
   const index = children.findIndex(item => item.id === data.id)
-  
+
   const newNode = {
     id: nodeIdCounter.value++,
     label: `新节点 ${nodeIdCounter.value}`
   }
-  
+
   children.splice(index + 1, 0, newNode)
 }
 
@@ -223,7 +207,7 @@ const addChildNode = (node, data) => {
     id: nodeIdCounter.value++,
     label: `新节点 ${nodeIdCounter.value}`
   }
-  
+
   if (!data.children) {
     data.children = []
   }
@@ -242,7 +226,7 @@ const removeNode = async (node, data) => {
         type: 'warning',
       }
     )
-    
+
     const parent = node.parent
     const children = parent.data.children || parent.data
     const index = children.findIndex(item => item.id === data.id)
@@ -254,31 +238,31 @@ const removeNode = async (node, data) => {
 
 // 拖拽相关处理函数
 const handleAllowDrag = (node) => {
-  console.log('允许拖拽检查:', node.data)
+  // console.log('允许拖拽检查:', node.data)
   return true // 允许拖拽
 }
 
 const handleAllowDrop = (draggingNode, dropNode, type) => {
-  console.log('允许放置检查:', { 
-    dragging: draggingNode.data.label, 
-    target: dropNode.data.label, 
-    type 
-  })
+  // console.log('允许放置检查:', {
+  //   dragging: draggingNode.data.label,
+  //   target: dropNode.data.label,
+  //   type
+  // })
   // 返回false来阻止默认的放置行为，你可以自己控制
   return false
 }
 
 const handleDragStart = (node, ev) => {
-  console.log('开始拖拽:', node.data)
-  
+  console.log('开始拖拽:', node.data);
+
   // 创建自定义拖拽图像，背景透明但保留内容
   if (ev.dataTransfer) {
     // 找到当前节点的DOM元素
-    const nodeElement = ev.target.closest('.custom-tree-node')
+    const nodeElement = ev.target.closest('.custom-tree-node');
     if (nodeElement) {
       // 克隆节点元素
-      const dragImage = nodeElement.cloneNode(true)
-      
+      const dragImage = nodeElement.cloneNode(true);
+
       // 设置透明背景样式
       dragImage.style.cssText = `
         position: absolute;
@@ -287,31 +271,42 @@ const handleDragStart = (node, ev) => {
         width: ${nodeElement.offsetWidth}px;
         pointer-events: none;
         z-index: 9999;
-      `
-      
+      `;
+
       // 修改克隆元素的背景为透明
-      const nodeContent = dragImage.querySelector('.node-content')
+      const nodeContent = dragImage.querySelector('.node-content');
       if (nodeContent) {
-        nodeContent.style.backgroundColor = 'transparent'
-        nodeContent.style.borderColor = 'transparent'
-        nodeContent.style.boxShadow = 'none'
+        nodeContent.style.backgroundColor = 'transparent';
+        nodeContent.style.borderColor = 'transparent';
+        nodeContent.style.boxShadow = 'none';
       }
-      
+
       // 添加到body
-      document.body.appendChild(dragImage)
+      document.body.appendChild(dragImage);
+
+      // 获取鼠标相对拖拽元素的偏移
+      const mouseX = ev.clientX;
+      const mouseY = ev.clientY;
       
-      // 设置为拖拽图像
-      ev.dataTransfer.setDragImage(dragImage, nodeElement.offsetWidth / 2, nodeElement.offsetHeight / 2)
-      
+      // 计算拖拽元素相对于鼠标右下方的偏移量
+      const offsetX = nodeElement.offsetWidth / 2;  // 图像的水平偏移
+      const offsetY = nodeElement.offsetHeight / 2; // 图像的垂直偏移
+
+      // 设置拖拽图像的偏移量为右下方
+      ev.dataTransfer.setDragImage(dragImage, offsetX, offsetY);
+
       // 清理临时元素
       setTimeout(() => {
         if (document.body.contains(dragImage)) {
-          document.body.removeChild(dragImage)
+          document.body.removeChild(dragImage);
         }
-      }, 0)
+      }, 0);
     }
   }
-}
+
+  // 开始监听鼠标
+  startListeningMouse();
+};
 
 const handleDragEnter = (draggingNode, dropNode, ev) => {
   console.log('拖拽进入目标:', {
@@ -328,10 +323,10 @@ const handleDragLeave = (draggingNode, dropNode, ev) => {
 }
 
 const handleDragOver = (draggingNode, dropNode, ev) => {
-  console.log('拖拽悬停在目标上:', {
-    dragging: draggingNode.data.label,
-    target: dropNode.data.label
-  })
+  // console.log('拖拽悬停在目标上:', {
+  //   dragging: draggingNode.data.label,
+  //   target: dropNode.data.label
+  // })
 }
 
 const handleDragEnd = (draggingNode, dropNode, dropType, ev) => {
@@ -340,9 +335,10 @@ const handleDragEnd = (draggingNode, dropNode, dropType, ev) => {
     target: dropNode?.data?.label,
     dropType: dropType
   })
-  
+
   // 在这里添加你的拖拽结束逻辑
   // 比如保存到数据库、更新状态等
+  stopListeningMouse()
 }
 
 const handleDrop = (draggingNode, dropNode, dropType, ev) => {
@@ -351,23 +347,18 @@ const handleDrop = (draggingNode, dropNode, dropType, ev) => {
     target: dropNode.data.label,
     dropType: dropType // 'before', 'after', 'inner'
   })
-  
+
   // 阻止默认的放置行为
   ev.preventDefault()
-  
-  // 在这里写你自己的放置逻辑
-  // 例如：
-  // if (dropType === 'before') {
-  //   // 放置在目标节点之前
-  // } else if (dropType === 'after') {
-  //   // 放置在目标节点之后
-  // } else if (dropType === 'inner') {
-  //   // 放置为目标节点的子节点
-  // }
 }
 </script>
 
 <style scoped>
+.target-line {
+  height: 10px;
+  background-color: red;
+}
+
 .case-tree-container {
   min-height: 400px;
   padding: 24px;

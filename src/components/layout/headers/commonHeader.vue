@@ -4,7 +4,7 @@
       <div class="logo" style="height: inherit" :class="{ logoDark: isLogin }">
         <div style="display: flex; justify-content: start; align-items: center;height: inherit;gap: 0px;">
           <div style="height: inherit;">
-            <img class="logo-img g-unselect" style="height: inherit" src="@/assets/img/projectStyle/bird-main-2.png"
+            <img class="logo-img g-unselect" style="height: inherit" src="@/assets/logo/final/logo.svg"
               alt="" />
           </div>
           <div>

@@ -188,14 +188,25 @@ onMounted(async () => {
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
   loading.value = true;
-  dataSource.value = [];
   const data = {
     project: route.params.project,
     search_range: search_range.join(","),
     excluded_ids: excluded_ids.join(","),
   };
-  await getTree(data).then(async (data: any) => {
-    dataSource.value.push(data[0]);
+  await getTree(data).then(async (newData: any) => {
+    const newRoot = newData[0];
+    const existingRoot: any = dataSource.value[0];
+
+    if (dataSource.value[0] === undefined) {
+      dataSource.value[0] = newRoot;
+    } else {
+      // 只同步 children
+      existingRoot.count = newRoot.count; // 可选同步计数
+      syncChildren(existingRoot.children, newRoot.children);
+    }
+
+    // 更新 firstLevelKeys（可选）
+    firstLevelKeys.value = [];
     dataSource.value.forEach((rootNode) => {
       if (rootNode.children) {
         rootNode.children.forEach((child: any) => {
@@ -203,11 +214,44 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
         });
       }
     });
+
     await tools.delay();
     loading.value = false;
   });
   await nextTick(); // 确保 DOM 已全部挂载
 }
+
+function syncChildren(targetChildren: any[], newChildren: any[]) {
+  const targetMap = new Map(targetChildren.map((node: any) => [node.id, node]));
+  const newMap = new Map(newChildren.map((node: any) => [node.id, node]));
+
+  // 删除多余的节点
+  for (let i = targetChildren.length - 1; i >= 0; i--) {
+    const node = targetChildren[i];
+    if (!newMap.has(node.id)) {
+      targetChildren.splice(i, 1);
+    }
+  }
+
+  // 插入新增的节点（保持顺序）
+  newChildren.forEach((newNode, index) => {
+    const existingNode = targetMap.get(newNode.id);
+    if (!existingNode) {
+      targetChildren.splice(index, 0, newNode);
+    } else {
+      // 同步 count 如果 child_type 是 0 或 2
+      if (newNode.child_type === 0 || newNode.child_type === 1) {
+        existingNode.count = newNode.count;
+      }
+      // 若子节点有 children，递归处理
+      if (newNode.children && Array.isArray(newNode.children)) {
+        existingNode.children = existingNode.children || [];
+        syncChildren(existingNode.children, newNode.children);
+      }
+    }
+  });
+}
+
 
 const props = defineProps({
   apiItem: {
