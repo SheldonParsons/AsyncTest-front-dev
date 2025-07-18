@@ -5,20 +5,18 @@
         <CButton style="width: 40px; display: inline-block"><el-icon>
             <CirclePlusFilled />
           </el-icon></CButton>
-        <el-input v-model="filterText" style="margin-left: 10px" placeholder="Filter keyword"
-          :suffix-icon="Filter" />
+        <el-input v-model="filterText" style="margin-left: 10px" placeholder="Filter keyword" :suffix-icon="Filter" />
       </div>
     </el-affix>
-    <div class="tree-div" id="api-tree-div" ref="container"
-      style="display: flex;flex-direction: column;overflow: hidden;">
-      <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
-        <img style="width: 30px; height: 30px" src="@/assets/logo/bird-main-no-bg-1.png" alt="" />
-        <span style="margin-left: 10px">接口概览</span>
-      </div>
-      <el-tree class="api-tree no-scroll" :key="treeKey" id="api-tree-core" v-if="loading === false"
-        ref="treeRef" style="margin-top: 10px;overflow: scroll;" :data="dataSource" node-key="id" icon="ArrowRightBold"
-        @node-click="changeMenu" :highlight-current="true" :expand-on-click-node="false"
-        :default-expanded-keys="firstLevelKeys" icon-class="none" :filter-node-method="filterNode">
+    <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
+      <img style="width: 30px; height: 30px" src="@/assets/logo/bird-main-no-bg-1.png" alt="" />
+      <span style="margin-left: 10px">接口概览</span>
+    </div>
+    <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;">
+      <el-tree style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core" ref="treeRef"
+        :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu" :highlight-current="true"
+        :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none"
+        :filter-node-method="filterNode">
         <template #default="{ node, data }">
           <div v-if="
             data.child_type === 0 ||
@@ -112,7 +110,7 @@
           </div>
         </template>
       </el-tree>
-      <el-row v-else class="url-inputer">
+      <!-- <el-row v-else class="url-inputer">
         <el-col :span="22" :offset="1">
           <el-skeleton animated>
             <template #template>
@@ -124,7 +122,7 @@
             </template>
           </el-skeleton>
         </el-col>
-      </el-row>
+      </el-row> -->
     </div>
   </div>
   <SimpleDialog v-model="show_dialog" @action="real_action" :title="dialog_title" :placeholder="dialog_placeholder"
@@ -188,22 +186,6 @@ onMounted(async () => {
   await load_tree();
 });
 
-async function open_tree(child_count:any) {
-  // await tools.delay();
-  adjustContentHeight(child_count)
-}
-
-function adjustContentHeight(child_count=undefined) {
-  const treeEl = treeRef.value.$el;
-  const firstNode = treeEl.querySelector('.el-tree-node');
-  const height = firstNode?.getBoundingClientRect().height;
-  if (child_count === undefined) {
-    firstNode.style.height = height + 220 + 'px'
-  } else {
-    firstNode.style.height = height + (child_count * 33) + 'px'
-  }
-}
-
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
   loading.value = true;
   dataSource.value = [];
@@ -225,7 +207,6 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
     loading.value = false;
   });
   await nextTick(); // 确保 DOM 已全部挂载
-  adjustContentHeight();
 }
 
 const props = defineProps({
@@ -252,8 +233,6 @@ watch(
 watch(
   () => GlobalState.count,
   async (newCount) => {
-    console.log(GlobalState.message);
-
     if (
       GlobalState.message === "change_dir_tab" ||
       GlobalState.message === "change_interface_tab"
@@ -341,7 +320,6 @@ async function highlightNodeById(id: string | number | undefined) {
     await nextTick(async () => {
       treeRef.value?.setCurrentKey(id)
       await nextTick(); // 确保 DOM 已全部挂载
-      adjustContentHeight();
     })
   })
 }
@@ -349,13 +327,6 @@ async function highlightNodeById(id: string | number | undefined) {
 function save_current_hightlight() {
   const currentNode = treeRef.value?.getCurrentNode();
   current_highlight_node.value = currentNode?.id;
-}
-
-function randomStep() {
-  const step = 10;
-  const min = 50;
-  const max = 75;
-  return Math.floor(Math.random() * ((max - min) / step + 1)) * step + min;
 }
 
 async function chang_node_name(data: any) {
@@ -551,10 +522,6 @@ interface Tree {
 }
 
 function changeMenu(data: any, node: any, event: any, event_object: any) {
-  console.log(node);
-  console.log(data);
-
-
   if (data.child_type === 1) {
     send_message_to_tab("click_dir", data, node);
   } else if (data.child_type === 2) {
@@ -578,9 +545,8 @@ function enter_project_summary() {
 }
 
 function changeExpanded(node: any) {
-  console.log(node);
   let child_count = 0
-  
+
   if (node.expanded) {
     node.collapse();
     child_count = -1 * node.childNodes.length
@@ -588,15 +554,10 @@ function changeExpanded(node: any) {
     node.expand();
     child_count = node.childNodes.length
   }
-  open_tree(child_count)
 }
 </script>
 
 <style lang="scss" scoped>
-.api-tree {
-  // overflow: auto;
-}
-
 .count-span {
   font-size: 12px;
   margin-left: 5px;
@@ -718,8 +679,7 @@ function changeExpanded(node: any) {
 }
 
 .tree-div {
-  height: 100%;
-  // overflow: scroll;
+  height: calc(100vh - 283px);
 }
 
 .red {

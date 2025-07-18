@@ -40,7 +40,7 @@
                                             <InputAnimation v-model="item.name" :placeholder="'变量名'"></InputAnimation>
                                         </motion.div>
                                         <motion.div>
-                                            <InputAnimation v-model="item.fixed_value" :maxLength="500"
+                                            <InputAnimation v-model="item.fixed_value" :maxLength="2000"
                                                 :placeholder="'固定值'">
                                             </InputAnimation>
                                         </motion.div>

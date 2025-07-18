@@ -93,7 +93,7 @@ const props = defineProps({
     user-select: none;
     will-change: transform, opacity;
     color: #ffffff;
-    max-width: 200px;
+    max-width: 400px!important;
     z-index: 9999;
     /* 确保 tooltip 在最上层 */
 }

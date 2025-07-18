@@ -380,204 +380,6 @@
         </div>
         <div v-if="content_type === 'temp'" style="flex: 80;display: flex;flex-direction: column;" id="content-ref-core">
           <TempTable :current_interface="current_interface"></TempTable>
-          <!-- <div style="padding: 10px">
-            <div class="body-tools">
-              <div class="title">
-                接口临时变量管理
-                <el-tooltip placement="right" effect="customized">
-                  <template #content>
-                    <div
-                      style="
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: start;
-                      "
-                    >
-                      <div
-                        style="
-                          padding-top: 5px;
-                          padding-bottom: 5px;
-                          width: 100%;
-                          border-bottom: 1px solid var(--border-color);
-                        "
-                      >
-                        临时变量的使用和规则
-                      </div>
-                      <div
-                        style="
-                          padding-top: 5px;
-                          padding-bottom: 5px;
-                          width: 100%;
-                        "
-                      >
-                        1.
-                        临时变量的优先级非常高，但请放心，它仅会在您运行接口时才会生效，用例中它将被隔离。
-                      </div>
-                      <div
-                        style="
-                          padding-top: 5px;
-                          padding-bottom: 5px;
-                          width: 100%;
-                        "
-                      >
-                        2.
-                        您可以通过接口的后置操作中设置全局变量、环境变量、临时变量来覆盖该变量的动态值。
-                      </div>
-                      <div
-                        style="
-                          padding-top: 5px;
-                          padding-bottom: 5px;
-                          width: 100%;
-                        "
-                      >
-                        3.
-                        使用建议：和普通变量的同名策略，通过它的强制优先级来帮助您调试接口，运行用例时通过自动隔离来调用您的普通变量。
-                      </div>
-                    </div>
-                  </template>
-                  <el-icon style="cursor: pointer"><InfoFilled /></el-icon>
-                </el-tooltip>
-              </div>
-              <div class="tools">
-                <div @click="add_temp">+新增变量</div>
-              </div>
-            </div>
-            <div class="private-table-outside">
-              <el-table
-                v-if="loading === false"
-                v-model:data="temp_variable_table"
-                style="width: 100%"
-                row-key="key"
-                default-expand-all
-                class="main-table"
-              >
-                <template #empty>
-                  <div v-if="loading">
-                    <Loading></Loading>
-                  </div>
-                  <SpecialButton v-else @click="add_temp"
-                    >点击添加您的数据</SpecialButton
-                  >
-                </template>
-                <el-table-column label="变量名" min-width="30%">
-                  <template #default="scope">
-                    <div
-                      class="g-ellipsis"
-                      v-show="scope.row.id !== current_temp?.id"
-                      style="font-size: 14px; font-weight: 500"
-                    >
-                      {{ scope.row.name }}
-                    </div>
-                    <el-input
-                      v-show="scope.row.id === current_temp?.id"
-                      v-model="scope.row.name"
-                      placeholder="变量名"
-                    ></el-input>
-                  </template>
-                </el-table-column>
-                <el-table-column label="固定值" min-width="30%">
-                  <template #default="scope">
-                    <div
-                      class="path-div g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                      v-show="scope.row.id !== current_temp?.id"
-                    >
-                      <span>{{ scope.row.fixed_value }}</span>
-                    </div>
-                    <div
-                      v-show="scope.row.id === current_temp?.id"
-                      class="core-value"
-                    >
-                      <div style="width: 100%">
-                        <CodeMirror
-                          :canVar="false"
-                          v-model="scope.row.fixed_value"
-                          :enableNewLine="false"
-                        ></CodeMirror>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="动态值(自动填充)" min-width="30%">
-                  <template #default="scope">
-                    <div
-                      class="path-div g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                      v-show="scope.row.id !== current_temp?.id"
-                    >
-                      <span>{{ scope.row.dynamic_value }}</span>
-                    </div>
-                    <div
-                      v-show="scope.row.id === current_temp?.id"
-                      class="core-value"
-                    >
-                      <div style="width: 100%">
-                        <CodeMirror
-                          :disableVar="true"
-                          :disable="true"
-                          v-model="scope.row.dynamic_value"
-                          :enableNewLine="false"
-                        ></CodeMirror>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="启用固定" min-width="15%">
-                  <template #default="scope">
-                    <div
-                      class="g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                    >
-                      <el-switch
-                        v-model="scope.row.is_fixed"
-                        @change="change_temp_is_fixed(scope.row)"
-                        inline-prompt
-                        active-text="固定值"
-                        inactive-text="动态值"
-                      />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" min-width="15%">
-                  <template #default="scope">
-                    <EditButton
-                      style="width: 1.5rem; height: 1.5rem"
-                      v-show="scope.row.id !== current_temp?.id"
-                      @click="edit_temp(scope.row, scope.$index)"
-                    ></EditButton>
-                    <div
-                      v-show="scope.row.id === current_temp?.id"
-                      style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: start;
-                        gap: 4px;
-                      "
-                    >
-                      <DoneButton @click="save_temp(scope.row)"></DoneButton>
-                      <DeleteButton
-                        @click="delete_temp(scope.row)"
-                      ></DeleteButton>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-              <el-row v-else>
-                <el-col :span="24">
-                  <el-skeleton animated>
-                    <template #template>
-                      <el-skeleton-item
-                        v-for="_ in 4"
-                        variant="h1"
-                        style="width: 100%; height: 30px; margin-top: 10px"
-                      />
-                    </template>
-                  </el-skeleton>
-                </el-col>
-              </el-row>
-            </div>
-          </div> -->
         </div>
       </div>
     </div>
@@ -659,11 +461,15 @@ onMounted(async () => {
   await nextTick();
   if (env_dialog.value) {
     const dialog: any = document.getElementsByClassName("env-dialog")[0];
-    dialog.style.height = window_height * 0.85 + "px";
+    let setting_height = window_height * 0.85
+    if (setting_height < 740) {
+      setting_height = 740
+    }
+    dialog.style.height = setting_height + "px";
     const content: any = document.getElementsByClassName(
       "setting-main-content"
     )[0];
-    content.style.height = window_height * 0.85 - 60 - 70 + "px";
+    content.style.height = setting_height - 60 - 70 + "px";
   }
   await get_envs();
 });
