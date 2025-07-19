@@ -69,7 +69,7 @@
           /></el-col>
         </el-row>
         <el-row
-          class="g-flex no-scoll"
+          class="g-flex no-scroll"
           style="text-overflow: ellipsis; height: 200px; overflow: scroll"
         >
           <el-col

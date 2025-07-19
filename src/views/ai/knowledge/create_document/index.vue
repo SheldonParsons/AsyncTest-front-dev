@@ -17,7 +17,7 @@
       >
     </el-row>
     <div
-      class="no-scoll"
+      class="no-scroll"
       style="overflow-y: scroll; max-height: calc(100vh - 350px)"
     >
       <transition-group name="fade" appear>
@@ -227,7 +227,7 @@
       </el-col>
     </el-row>
     <div
-      class="no-scoll"
+      class="no-scroll"
       style="overflow-y: scroll; max-height: calc(100vh - 500px)"
     >
       <transition-group name="fade" appear>

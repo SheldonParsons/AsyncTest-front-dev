@@ -52,7 +52,7 @@
         <template #default="scope">
           <el-dropdown
             trigger="click"
-            class="no-scoll"
+            class="no-scroll"
             @command="handleCommand"
           >
             <span

@@ -6,32 +6,43 @@ $test: 'test-regular';
 $round-bold-font-family: 'Round-Bold-Regular';
 $radius-regular: 40px;
 $white: '#e6e8eb';
+
 .g-unselect {
   -webkit-user-select: none;
   -moz-user-select: none;
 }
-.no-scoll::-webkit-scrollbar {
-  display: none; /* 隐藏滚动条 */
+
+.no-scroll::-webkit-scrollbar {
+  display: none;
+  /* 隐藏滚动条 */
 }
-.no-scoll {
-  overflow-x: scroll;       /* 保留滚动功能 */
-  scrollbar-width: none;    /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+
+.no-scroll {
+  /* 允许滚动 */
+  overflow: auto; /* 或者 overflow-x: auto; 和 overflow-y: auto; 单独设置 */
+
+  /* 隐藏滚动条 - 兼容 Webkit（Chrome、Safari、Edge） */
+  -webkit-overflow-scrolling: touch; /* 保证滚动体验 */
 }
 
 .no-scroll::-webkit-scrollbar {
-  display: none; /* 隐藏滚动条 */
+  display: none; /* 隐藏滚动条 - 兼容 Chrome、Safari、Edge */
 }
+
 .no-scroll {
-  overflow-x: scroll;       /* 保留滚动功能 */
-  scrollbar-width: none;    /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  /* 隐藏滚动条 - 兼容 Firefox */
+  scrollbar-width: none; /* 隐藏滚动条 - Firefox */
+
+  /* 隐藏滚动条 - 兼容 IE/Edge */
+  -ms-overflow-style: none; /* 隐藏滚动条 - IE/Edge */
 }
+
 .g-flex {
   display: flex;
   justify-content: center;
   align-items: center;
 }
+
 :root {
   --primary-out: ;
   --primary-error: #B2001F;
@@ -52,11 +63,11 @@ $white: '#e6e8eb';
   --greyLight-1: #e4ebf5;
   --greyLight-2: #c8d0e7;
   --greyLight-3: #bec8e4;
-  --greyLight-4:#D1D5DB;
+  --greyLight-4: #D1D5DB;
   --greyDark: #9baacf;
   --dark: black;
   --dark-hover: rgb(43, 43, 43);
-  --hover-bg: rgba(16,24,40,.05);
+  --hover-bg: rgba(16, 24, 40, .05);
   --font-default-color: #8b8c8d;
   --border-color: #d0d5dd;
   --border-color-light: #e6e6e6;
@@ -66,6 +77,7 @@ $white: '#e6e8eb';
   --delete-bg-color: rgba(244.2, 120.36, 111.72, .08);
   --delete-font-color: #f47870;
 }
+
 .el-dialog {
   padding: 0px;
 }
@@ -95,57 +107,37 @@ body {
   --global-theme-color: #009879;
   --global-theme-light-color: #28c0a1;
   --global-theme-color-rgb: rgba(0, 152, 121, 0.1);
-  --private-bg: /*bottom*/ conic-gradient(
-        from 120deg at 50% 86.5%,
-        var(--c1) 0 120deg,
-        #fff0 0 360deg
-      )
-      var(--ts),
-    conic-gradient(from 120deg at 50% 86.5%, var(--c1) 0 120deg, #fff0 0 360deg)
-      var(--ts),
+  --private-bg:
+    /*bottom*/
+    conic-gradient(from 120deg at 50% 86.5%,
+      var(--c1) 0 120deg,
+      #fff0 0 360deg) var(--ts),
+    conic-gradient(from 120deg at 50% 86.5%, var(--c1) 0 120deg, #fff0 0 360deg) var(--ts),
     /*bottom dark*/
-      conic-gradient(from 120deg at 50% 74%, var(--c0) 0 120deg, #fff0 0 360deg)
-      var(--ts),
+    conic-gradient(from 120deg at 50% 74%, var(--c0) 0 120deg, #fff0 0 360deg) var(--ts),
     /*right*/
-      conic-gradient(
-        from 60deg at 60% 50%,
-        var(--c1) 0 60deg,
-        var(--c2) 0 120deg,
-        #fff0 0 360deg
-      )
-      var(--ts),
+    conic-gradient(from 60deg at 60% 50%,
+      var(--c1) 0 60deg,
+      var(--c2) 0 120deg,
+      #fff0 0 360deg) var(--ts),
     /*left*/
-      conic-gradient(
-        from 180deg at 40% 50%,
-        var(--c3) 0 60deg,
-        var(--c1) 0 120deg,
-        #fff0 0 360deg
-      )
-      var(--ts),
+    conic-gradient(from 180deg at 40% 50%,
+      var(--c3) 0 60deg,
+      var(--c1) 0 120deg,
+      #fff0 0 360deg) var(--ts),
     /*top dark*/
-      conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
-      var(--ts),
-    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
-      var(--ts),
-    conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
-      var(--ts),
-    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg)
-      var(--ts),
+    conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg) var(--ts),
+    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg) var(--ts),
+    conic-gradient(from 0deg at 90% 35%, var(--c0) 0 90deg, #fff0 0 360deg) var(--ts),
+    conic-gradient(from -90deg at 10% 35%, var(--c0) 0 90deg, #fff0 0 360deg) var(--ts),
     /*top*/
-      conic-gradient(
-        from -60deg at 50% 13.5%,
-        var(--c1) 0 120deg,
-        #fff0 0 360deg
-      )
-      var(--ts),
-    conic-gradient(from -60deg at 50% 13.5%, var(--c1) 0 120deg, #fff0 0 360deg)
-      var(--ts),
-    conic-gradient(
-        from -60deg at 50% 41%,
-        var(--c2) 0 60deg,
-        var(--c3) 0 120deg,
-        #fff0 0 360deg
-      )
-      var(--ts),
+    conic-gradient(from -60deg at 50% 13.5%,
+      var(--c1) 0 120deg,
+      #fff0 0 360deg) var(--ts),
+    conic-gradient(from -60deg at 50% 13.5%, var(--c1) 0 120deg, #fff0 0 360deg) var(--ts),
+    conic-gradient(from -60deg at 50% 41%,
+      var(--c2) 0 60deg,
+      var(--c3) 0 120deg,
+      #fff0 0 360deg) var(--ts),
     var(--c0);
 }

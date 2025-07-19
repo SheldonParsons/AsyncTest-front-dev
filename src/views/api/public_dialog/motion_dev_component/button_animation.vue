@@ -22,6 +22,6 @@ function handleAction() {
     padding: 5px;
     color: white;
     border-radius: 8px;
-
+    cursor: pointer;
 }
 </style>

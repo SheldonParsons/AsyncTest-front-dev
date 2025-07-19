@@ -50,7 +50,7 @@
         </template>
       </el-upload>
       <div
-        class="no-scoll file-list"
+        class="no-scroll file-list"
         style="overflow-y: scroll;"
       >
         <transition-group name="fade" appear>

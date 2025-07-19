@@ -119,12 +119,12 @@ const startResize = (e: MouseEvent) => {
   padding-left: 1rem;
   padding-right: 1rem;
   flex: 1;
-  max-width: 300px;
 }
 .menu-sidebar {
   display: flex;
   height: 100%;
   border-right: 1px solid #dcdfe6;
+  max-width: 500px;
 }
 
 .content {

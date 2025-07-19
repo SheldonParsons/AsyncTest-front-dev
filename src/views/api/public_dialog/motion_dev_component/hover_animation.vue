@@ -1,9 +1,9 @@
 <template>
-    <div class="hover-container">
+    <div class="hover-container" @click="copy_data(value)">
         <Tooltip.Provider>
-            <Tooltip.Root v-model:open="open">
-                <Tooltip.Trigger class="tooltip-trigger" @mouseenter="open = true" @mouseleave="open = false">
-                    <motion.div style="width: 250px;" class="g-ellipsis" @click="copy_data(value)">
+            <Tooltip.Root v-model:open="open" >
+                <Tooltip.Trigger class="tooltip-trigger" @mouseenter="open = true" @mouseleave="open = false" style="cursor: pointer;">
+                    <motion.div style="width: 250px;" class="g-ellipsis">
                         <TypewriteAnimation :text="value.length > 0 ? value :
                             '动态值（空）'"></TypewriteAnimation>
                     </motion.div>

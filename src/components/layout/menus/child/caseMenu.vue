@@ -31,7 +31,7 @@
         <span style="margin-left: 10px">用例概览</span>
       </div>
       <el-tree
-        class="api-tree no-scoll"
+        class="api-tree no-scroll"
         id="api-tree"
         v-if="loading === false"
         ref="treeRef"

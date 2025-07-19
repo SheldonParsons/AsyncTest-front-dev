@@ -276,8 +276,15 @@ async function send_temp_variable_delete(id: number) {
 }
 
 async function switchHandle(val: any, row: any) {
-    console.log(val);
-
+    if (String(row.id).startsWith('K') === true) {
+        window.$toast?.({
+            title: '该临时变量还未创建，请先进行保存。',
+            actionText: '关闭',
+            type: 'info',
+            duration: 3000,
+        })
+        return
+    }
     if (can_action.value === false) {
         window.$toast?.({
             title: '操作太频繁，请稍等',
@@ -285,6 +292,7 @@ async function switchHandle(val: any, row: any) {
             type: 'error',
             duration: 3000,
         })
+        return
     }
     can_action.value = false
     const _data = {
@@ -302,16 +310,17 @@ async function switchHandle(val: any, row: any) {
         })
         return
     };
+    can_action.value = true
     if (res.is_fixed === true) {
         window.$toast?.({
-            title: '已启动',
+            title: '启用：固定值',
             actionText: '关闭',
             type: 'success',
             duration: 3000,
         })
     } else {
         window.$toast?.({
-            title: '已禁用',
+            title: '启用：动态值',
             actionText: '关闭',
             type: 'success',
             duration: 3000,

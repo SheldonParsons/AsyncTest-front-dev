@@ -10,7 +10,7 @@
             </svg>
             新增参数
         </motion.button>
-        <Cursor :magnetic="true" class="cursor" :variants="variants" :style="style" />
+        <!-- <Cursor :magnetic="true" class="cursor" :variants="variants" :style="style" /> -->
     </div>
 </template>
 <script setup lang="ts">
@@ -61,6 +61,7 @@ function action() {
         font-weight: 500;
         font-size: 14px;
         margin-left: 10px;
+        cursor: pointer;
     }
 
     .button>span {

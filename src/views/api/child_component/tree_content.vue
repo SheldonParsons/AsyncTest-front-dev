@@ -1,7 +1,7 @@
 <template>
   <div v-if="loading === false">
     <el-tree
-      class="api-tree no-scoll"
+      class="api-tree no-scroll"
       id="api-tree"
       ref="treeRef"
       style="margin-top: 10px"

@@ -714,7 +714,7 @@
         </div>
       </el-col>
     </el-row>
-    <el-row class="no-scoll">
+    <el-row class="no-scroll">
       <el-timeline style="margin-top: 20px; padding-left: 0px; width: 100%">
         <el-timeline-item
           v-for="(item, index) in publishedHistoryList"

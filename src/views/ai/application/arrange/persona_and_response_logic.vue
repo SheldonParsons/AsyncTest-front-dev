@@ -18,7 +18,7 @@
       </el-col>
     </el-row>
     <el-row
-      class="no-scoll"
+      class="no-scroll"
       style="padding:5px;overflow: scroll; max-height: calc(100vh - 300px); height: 100%;cursor: pointer;margin: 10px;border-radius: 10px;"
       :style="{border: edit_type === 0 ? '1px solid #e0e0e0' : '0px'}"
       @dblclick="edit_type = 1"

@@ -95,7 +95,7 @@
       <el-col :span="11">
         <el-row
           v-if="d.list.length > 0"
-          class="no-scoll"
+          class="no-scroll"
           :gutter="20"
           style="
             max-height: 550px;
@@ -130,7 +130,7 @@
                   {{ Math.round(item.score * 100) / 100 }}</el-progress
                 >
               </div>
-              <div class="no-scoll" style="padding: 10px; max-height: 100px;min-height: 100px; overflow: scroll">
+              <div class="no-scroll" style="padding: 10px; max-height: 100px;min-height: 100px; overflow: scroll">
                 <span style="font-size: 14px">{{ item.content }}</span>
               </div>
               <div>
