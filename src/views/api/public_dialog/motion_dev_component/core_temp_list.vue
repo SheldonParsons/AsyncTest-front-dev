@@ -246,9 +246,9 @@ function usePointerToSkew(axisMotionValue: any) {
 
 function add_param() {
     const _data = {
-        name: "anlkfndlksfnksldfnlksdnfklsdnfklsdnflksdnfnkldsnfklsdnflksdnflkdsnflknsdlfksdnflksnflknsdkflnsdlkfnslkfnkldsfnlskdfnklsn",
-        fixed_value: "anlkfndlksfnksldfnlksdnfklsdnfklsdnflksdnfnkldsnfklsdnflksdnflkdsnflknsdlfksdnflksnflknsdkflnsdlkfnslkfnkldsfnlskdfnklsn",
-        dynamic_value: "dsjalLjhdkashdjakhhakjshdjkashdjkhakjdhajkshdjksahdjkashjdkhsajdkhakjdhsajkdhasjkhdasjkdhajkhdjkashdjkahsdjkahsdjkashdkj",
+        name: "",
+        fixed_value: "",
+        dynamic_value: "",
         is_fixed: false,
         interface: props.current_interface,
         id: generateKString()
