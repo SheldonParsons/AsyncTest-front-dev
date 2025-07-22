@@ -23,8 +23,6 @@ const props = defineProps({
 })
 
 const toggleChecked = () => {
-    console.log(checked.value);
-    
     emit('action', checked.value)
 }
 
@@ -40,7 +38,7 @@ onMounted(() => {
                 <Tooltip.Trigger class="tooltip-trigger-switch" @mouseenter="open = true" @mouseleave="open = false">
                     <div class="switch-container">
                         
-                        <Switch.Root v-model="checked" :class="{ checked: checked }" @click="toggleChecked">
+                        <Switch.Root v-model="checked" :class="{ checked_animation: checked }" @click="toggleChecked">
                             <motion.button class="switch" :initial="false" :animate="{
                                 backgroundColor: checked ? '#38b48b' : 'var(--hue-6-transparent)'
                             }" :style="{

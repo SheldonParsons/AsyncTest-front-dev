@@ -46,7 +46,7 @@ export function useDragAndDrop() {
       const _html = node.querySelector('.el-tree-node__content .tree-node-container') as HTMLElement
       if (has_child === false) {
         if (_html.getAttribute('data-type') === 'empty') {
-          node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'blank')
+          node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'empty')
         } else {
           const split_line = Math.round(
             contentStartY + ((contentEndY - contentStartY) * 0.7)
@@ -72,16 +72,11 @@ export function useDragAndDrop() {
 
     callback_function(target)
 
-    if (!target || target.status === 'blank') {
+    if (!target || target.status === 'blank' || target.status === 'empty') {
       // 如果鼠标移到无目标区，清空上次高亮
       hideLast()
       return
     }
-    console.log(target.htmlObject);
-
-    console.log(target.htmlObject.getAttribute('data-id'));
-
-
     // 如果目标和上次一样，什么都不做
     if (
       lastHighlight &&
@@ -150,7 +145,6 @@ export function useDragAndDrop() {
       // 你的处理逻辑：获取鼠标坐标
       const mouseX = event.clientX // 鼠标X坐标
       const mouseY = event.clientY // 鼠标Y坐标
-      console.log(`Mouse X: ${mouseX}, Mouse Y: ${mouseY}`)
       updateDOM(mouseY, callback_function)
     }
 

@@ -64,13 +64,13 @@ const handleNodeHover = (isHovering: boolean) => {
 
 .drag-hover {
     border: 2px dotted #163172;
-    animation: blink 1.5s infinite;
+    animation: blink 1s infinite;
     will-change: opacity;
 }
 
 .node-content:hover {
     border: 2px dotted #163172;
-    animation: blink 1.5s infinite;
+    animation: blink 1s infinite;
     will-change: opacity;
 
     .node-label {

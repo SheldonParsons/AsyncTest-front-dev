@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref,toRaw } from 'vue'
 import { ElMessageBox } from 'element-plus'
 
 export interface TreeNode {
@@ -86,65 +86,113 @@ export function useTreeNodeOperations() {
  * targetId 的前面或后面
  */
 
+  interface TreeNode {
+    id: number | string
+    label?: string
+    lable?: string
+    type?: string
+    check?: string
+    children?: TreeNode[]
+  }
+
+  type DropType = 'before' | 'after'
+  type Id = number | string
+
+  const EMPTY_TYPE = 'empty'
+
+  const gen7 = () => Math.floor(Math.random() * 9_000_000) + 1_000_000
+
+  const createEmptyNode = (): TreeNode => ({
+    id: gen7(),
+    label: '',
+    lable: '',
+    type: EMPTY_TYPE,
+    check: 'check',
+  })
+
   const moveNode = (
-    treeData: any,
-    draggedId: number | string,
-    targetId: number | string,
-    dropType: 'before' | 'after'
+    treeData: TreeNode[],
+    draggedId: Id,
+    targetId: Id,
+    dropType: DropType,
   ) => {
-    // 递归查找节点
-    function findNode(list: any, id: number | string): any {
+    interface FindRes {
+      list: TreeNode[]
+      index: number
+      node: TreeNode
+      parent: TreeNode | null
+    }
+
+    const findNode = (
+      list: TreeNode[],
+      id: Id,
+      parent: TreeNode | null = null,
+    ): FindRes | null => {
       for (let i = 0; i < list.length; i++) {
-        const item = list[i];
-        if (item.id === id) {
-          return { list, index: i, node: item };
-        }
+        const item = list[i]
+        if (item.id === id) return { list, index: i, node: item, parent }
         if (item.children) {
-          const res = findNode(item.children, id);
-          if (res) return res;
+          console.log(item);
+          
+          const res = findNode(item.children, id, item)
+          if (res) return res
         }
       }
-      return null;
+      return null
+    }
+    console.log(draggedId);
+    console.log(treeData);
+    
+    const draggedInfo = findNode(treeData, draggedId)
+    console.log(draggedInfo);
+
+    
+    if (!draggedInfo) return
+
+    // 删除被拖拽节点
+    const [draggedNode] = draggedInfo.list.splice(draggedInfo.index, 1)
+    console.log(draggedInfo.parent);
+    
+    // 若拖出后原父节点为空，补一个 empty
+    if (draggedInfo.parent) {
+      const children = draggedInfo.parent.children ?? []
+      if (children.length === 0) {
+        draggedInfo.parent.children = [createEmptyNode()]
+      }
     }
 
-    // 1. 找到并删除被拖拽节点
-    const draggedInfo = findNode(treeData, draggedId);
-    if (!draggedInfo) {
-      console.warn(`moveNode: 没找到 draggedId=${draggedId}`);
-      return;
-    }
-    const [draggedNode] = draggedInfo.list.splice(draggedInfo.index, 1);
+    const targetInfo = findNode(treeData, targetId)
+    if (!targetInfo) return
 
-    // 2. 找到目标节点
-    const targetInfo = findNode(treeData, targetId);
-    if (!targetInfo) {
-      console.warn(`moveNode: 没找到 targetId=${targetId}`);
-      return;
-    }
-
-    // 3. 计算插入位置
-    let insertIndex = dropType === 'before'
-      ? targetInfo.index
-      : targetInfo.index + 1;
-
-    // 4. 关键修复：如果是同一父节点且向后移动，需调整索引
-    if (draggedInfo.list === targetInfo.list && draggedInfo.index < insertIndex) {
-      insertIndex--;
-    }
-
-    // 5. 插入节点
-    targetInfo.list.splice(insertIndex, 0, draggedNode);
-
-    // 6. 强制触发响应式更新
-    if (draggedInfo.list === targetInfo.list) {
-      // 同一父节点：创建新数组触发响应
-      targetInfo.list = [...targetInfo.list];
+    // 如果目标就是占位 empty，直接替换它
+    if (targetInfo.node.type === EMPTY_TYPE) {
+      targetInfo.list.splice(targetInfo.index, 1, draggedNode)
     } else {
-      // 不同父节点：分别更新两个数组
-      draggedInfo.list = [...draggedInfo.list];
-      targetInfo.list = [...targetInfo.list];
+      // 正常 before/after 插入
+      let insertIndex =
+        dropType === 'before' ? targetInfo.index : targetInfo.index + 1
+
+      // 同级向后移动时修正索引
+      if (
+        draggedInfo.list === targetInfo.list &&
+        draggedInfo.index < insertIndex
+      ) {
+        insertIndex--
+      }
+      targetInfo.list.splice(insertIndex, 0, draggedNode)
+
+      // 若该父级下还残留 empty，占位已无必要则移除
+      for (let i = targetInfo.list.length - 1; i >= 0; i--) {
+        if (targetInfo.list[i].type === EMPTY_TYPE) {
+          targetInfo.list.splice(i, 1)
+        }
+      }
     }
-  };
+
+    // ——触发响应式（根据你的使用方式任选其一）
+    // 1) 若 treeData 是 ref.value： treeDataRef.value = [...treeDataRef.value]
+    // 2) 或者强制刷新 el-tree： treeKey.value++
+  }
 
   return {
     nodeIdCounter,

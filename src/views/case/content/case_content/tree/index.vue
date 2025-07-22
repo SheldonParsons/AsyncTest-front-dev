@@ -37,6 +37,7 @@ import { defaultProps, actionBtnVariants } from './utils/constants'
 import For from '@/views/case/content/case_content/tree/node_components/for.vue'
 import Interface from '@/views/case/content/case_content/tree/node_components/interface.vue'
 import Empty from '@/views/case/content/case_content/tree/node_components/empty.vue'
+import _ from 'lodash'
 
 // 树形数据
 const treeData = ref<any[]>([
@@ -111,6 +112,7 @@ const hoveredNodeId = ref<number | null>(null)
 const current_drag_node_target: any = ref(null)
 const current_drag_node_data_id: any = ref(-1)
 const drag_target_info: any = ref(null)
+const origin_tree:any = ref(null)
 
 // 使用组合式函数
 const {
@@ -217,12 +219,17 @@ const draggingFromHandle = ref(false)
 
 // 当在句柄上按下时，打标记
 function onHandlePointerDown(value: boolean) {
+  origin_tree.value = _.cloneDeep(treeData.value)
   draggingFromHandle.value = value
 }
 
 
 // 拖拽相关处理函数
 function handleAllowDrag(node: any) {
+  console.log(node);
+  
+  console.log(treeData.value);
+  
   const allow = draggingFromHandle.value
   // 不管放行还是拦截，都清掉标记
   nextTick(() => { draggingFromHandle.value = false })
@@ -265,7 +272,10 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
   cleanAllLine()
   clearHighlightTreeNode(current_drag_node_target.value)
   if (drag_target_info.value !== null) {
-    moveNode(treeData.value, Number(current_drag_node_data_id.value), Number(drag_target_info.value.id), drag_target_info.value.position)
+    console.log(drag_target_info);
+    
+    moveNode(origin_tree.value, Number(current_drag_node_data_id.value), Number(drag_target_info.value.id), drag_target_info.value.position)
+    treeData.value = origin_tree.value
   }
 }
 
@@ -273,6 +283,8 @@ const handleDragStart = async (node: any, ev: any) => {
   console.log('开始拖拽:', node.data)
   console.log(draggingFromHandle.value);
   console.log(node.data);
+  console.log(treeData.value);
+  
 
   await getNodeHeightMapping(node.data.id)
   current_drag_node_data_id.value = node.data.id
