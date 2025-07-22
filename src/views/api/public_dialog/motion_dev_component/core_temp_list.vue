@@ -44,18 +44,18 @@
                                                 :placeholder="'固定值'">
                                             </InputAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 20;">
+                                        <motion.div style="flex: 25;">
                                             <HoverSpanAnimation :value="item.dynamic_value"></HoverSpanAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 10;">
+                                        <motion.div style="flex: 7;">
                                             <SwitchAnimation :data="item.is_fixed"
                                                 @action="(val) => switchHandle(val, item)">
                                             </SwitchAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 10;">
+                                        <motion.div style="flex: 7;">
                                             <HlodAnimation @action="deleteHandle(item, index)"></HlodAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 10;">
+                                        <motion.div style="flex: 7;">
                                             <ButtonAnimation @action="saveHandle(item, index)"></ButtonAnimation>
                                         </motion.div>
                                     </motion.div>
