@@ -1,13 +1,27 @@
 <template>
   <div class="checkbox-container">
-    <Checkbox.Root class="root" :class="{ checked: isChecked }" as-child>
+    <Checkbox.Root class="root" v-if="check === 'check' || check === 'none'" :class="{ checked: check !== 'none' }" as-child>
       <motion.button :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.95 }" @press="toggleChecked"
         data-primary-action>
         <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4">
-          <motion.path d="M4 12L10 18L20 6" :animate="{ pathLength: isChecked ? 1 : 0 }" :transition="{
+          <motion.path d="M4 12L10 18L20 6" :animate="{ pathLength: check === 'check' ? 1 : 0 }" :transition="{
             type: 'spring',
             bounce: 0,
-            duration: isChecked ? 0.3 : 0.1,
+            duration: check === 'check' ? 0.3 : 0.1,
+          }" :stroke-linecap="strokeLinecap" :style="{
+            pathLength,
+          }" />
+        </svg>
+      </motion.button>
+    </Checkbox.Root>
+    <Checkbox.Root v-if="check === 'part'" class="root" :class="{ checked: check !== 'none' }" as-child>
+      <motion.button :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.95 }" @press="toggleChecked"
+        data-primary-action>
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4">
+          <motion.path d="M5 12h14" :animate="{ pathLength: check === 'part' ? 1 : 0 }" :transition="{
+            type: 'spring',
+            bounce: 0,
+            duration: check === 'part' ? 0.3 : 0.1,
           }" :stroke-linecap="strokeLinecap" :style="{
             pathLength,
           }" />
@@ -22,6 +36,12 @@ import { ref } from 'vue'
 import { Checkbox } from 'reka-ui/namespaced'
 import { motion, useMotionValue, useTransform } from 'motion-v'
 
+const props = defineProps<{
+  check: any
+}>()
+
+const emit = defineEmits(['change'])
+
 const isChecked = ref(false)
 const pathLength = useMotionValue(isChecked.value ? 1 : 0)
 const strokeLinecap = useTransform(() =>
@@ -29,12 +49,11 @@ const strokeLinecap = useTransform(() =>
 )
 
 const toggleChecked = () => {
-  isChecked.value = !isChecked.value
-}
-const check_type = ref(false)
-
-function changeTypeHandle() {
-  check_type.value = !check_type.value
+  if (props.check === 'none' || props.check === 'part') {
+    emit('change', 'check')
+  } else if (props.check === 'check') {
+    emit('change', 'none')
+  }
 }
 </script>
 <style>
@@ -45,16 +64,16 @@ function changeTypeHandle() {
 }
 
 .checked {
-  background-color: #1d2628!important;
+  background-color: #1d2628 !important;
 }
 
 .root {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
   border: 2px solid #1d2628;
   cursor: pointer;
   padding: 0px;

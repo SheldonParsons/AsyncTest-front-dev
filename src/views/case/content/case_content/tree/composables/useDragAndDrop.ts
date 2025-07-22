@@ -1,10 +1,11 @@
 import { ref, nextTick } from 'vue'
-import { IntervalMap } from '../utils/IntervalMap'
+import { IntervalMap } from '@/views/case/content/case_content/tree/utils/IntervalMap'
 
 export function useDragAndDrop() {
   const node_search_obj: any = ref<IntervalMap | null>(null)
   let mouseMoveListener: any = null
   let isThrottled = false
+  let lastHighlight: { el: HTMLElement; status: 'before' | 'after' } | null = null
 
   // 获取节点高度映射
   async function getNodeHeightMapping(blank_id: number) {
@@ -54,25 +55,69 @@ export function useDragAndDrop() {
         node_search_obj.value.addInterval(lineStartY, lineEndY, next as HTMLElement, 'after')
       }
     })
-    console.log(node_search_obj.value.get_data())
   }
 
   // 更新 DOM 显示拖拽位置
-  function updateDOM(mouseY: number) {
-    if (!node_search_obj.value) return
+  function updateDOM(mouseY: number, callback_function: Function) {
+    const search = node_search_obj.value
+    if (!search) return
 
-    // 找到对应的元素
-    const targetValue = node_search_obj.value.query(mouseY)
-    if (!targetValue) return
+    // 找到当前目标
+    const target = search.query(mouseY)
 
-    if (targetValue.status === 'after') {
-      console.log(targetValue)
+    callback_function(target)
+
+    if (!target || target.status === 'blank') {
+      // 如果鼠标移到无目标区，清空上次高亮
+      hideLast()
+      return
     }
+    console.log(target.htmlObject);
+
+    console.log(target.htmlObject.getAttribute('data-id'));
+
+
+    // 如果目标和上次一样，什么都不做
+    if (
+      lastHighlight &&
+      lastHighlight.el === target.htmlObject &&
+      lastHighlight.status === target.status
+    ) {
+      return
+    }
+
+    // 隐藏上次
+    hideLast()
+
+    // 显示这次
+    const cls =
+      target.status === 'before'
+        ? '.target-line-top'
+        : '.target-line-button'
+
+    target.htmlObject
+      .querySelector(cls)
+      ?.classList.remove('hidden')
+
+    lastHighlight = { el: target.htmlObject, status: target.status }
+  }
+
+  function hideLast() {
+    if (!lastHighlight) return
+    const cls =
+      lastHighlight.status === 'before'
+        ? '.target-line-top'
+        : '.target-line-button'
+    lastHighlight.el
+      .querySelector(cls)
+      ?.classList.add('hidden')
+    lastHighlight = null
+  }
+
+  function cleanAllLine() {
     const tree = document.querySelector('.case-custom-tree')
     if (tree) {
       const clean_elements = tree.querySelectorAll('.target-line-top, .target-line-button')
-      console.log(clean_elements)
-
       // 遍历所有元素，更新 class
       clean_elements.forEach((_element: any) => {
         if (_element && _element.classList && !_element.classList.contains('hidden')) {
@@ -80,22 +125,10 @@ export function useDragAndDrop() {
         }
       })
     }
-
-    if (targetValue.status === 'before') {
-      const targetLine = targetValue.htmlObject.querySelector('.target-line-top')
-      if (targetLine) {
-        targetLine.classList.remove('hidden')
-      }
-    } else if (targetValue.status === 'after') {
-      const targetLine = targetValue.htmlObject.querySelector('.target-line-button')
-      if (targetLine) {
-        targetLine.classList.remove('hidden')
-      }
-    }
   }
 
   // 开始监听鼠标坐标
-  function startListeningMouse() {
+  function startListeningMouse(callback_function: Function) {
     if (mouseMoveListener) return // 防止重复绑定监听器
 
     // 定义拖拽过程中监听函数
@@ -113,7 +146,7 @@ export function useDragAndDrop() {
       const mouseX = event.clientX // 鼠标X坐标
       const mouseY = event.clientY // 鼠标Y坐标
       console.log(`Mouse X: ${mouseX}, Mouse Y: ${mouseY}`)
-      updateDOM(mouseY)
+      updateDOM(mouseY, callback_function)
     }
 
     // 绑定拖拽事件
@@ -136,6 +169,7 @@ export function useDragAndDrop() {
     getNodeHeightMapping,
     updateDOM,
     startListeningMouse,
-    stopListeningMouse
+    stopListeningMouse,
+    cleanAllLine
   }
 }

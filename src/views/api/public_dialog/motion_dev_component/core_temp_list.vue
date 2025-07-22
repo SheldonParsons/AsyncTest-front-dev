@@ -1,5 +1,5 @@
 <template>
-    <motion.div class="temp-list-container" :initial="{ opacity: 0, scale: 0.7 }" :animate="{ opacity: 1, scale: 1 }"
+    <motion.div class="temp-list-container no-scroll" :initial="{ opacity: 0, scale: 0.7 }" :animate="{ opacity: 1, scale: 1 }"
         :transition="{
             duration: 0.4,
             delay: 0.2,

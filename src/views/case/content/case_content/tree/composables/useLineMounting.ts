@@ -1,5 +1,5 @@
 import { ref, nextTick, createVNode, render } from 'vue'
-import Line from '../line.vue'
+import Line from '@/views/case/content/case_content/tree/components/line.vue'
 
 export function useLineMounting() {
   const container_node_id_list = ref<number[]>([])
@@ -10,11 +10,11 @@ export function useLineMounting() {
     await nextTick(async () => {
       // Element Plus 内部存了一个 nodesMap：key -> TreeNode 实例
       const nodesMap = treeRef.value.store.nodesMap
-
+      console.log(nodesMap);
+      
       Object.values(nodesMap).forEach((tn: any) => {
         // 只针对有子节点的节点
-        if (tn.isLeaf === false) {
-          console.log(tn)
+        if (tn.isLeaf === false && tn.parent.childNodes[tn.parent.childNodes.length - 1].id === tn.id) {
           container_node_id_list.value.push(tn.data.id)
         }
       })
@@ -29,7 +29,6 @@ export function useLineMounting() {
 
       nodes.forEach(li => {
         const key = li.getAttribute('data-key')
-        console.log(li)
 
         // 2. 判断是否在父节点 ID 列表里
         if (key && container_node_id_list.value.includes(Number(key))) {
@@ -40,6 +39,7 @@ export function useLineMounting() {
           if (!li.nextElementSibling?.classList.contains('__line_mounted__')) {
             // 4. 创建占位容器
             const placeholder = document.createElement('div')
+            placeholder.setAttribute('data-id', key)
             placeholder.classList.add('__line_mounted__')
             placeholder.style.paddingLeft = offset
             // 5. 插入到 <li> 后面

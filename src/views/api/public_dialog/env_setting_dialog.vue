@@ -34,7 +34,7 @@
       <div class="setting-main-content">
         <div class="setting-main-content-left">
           <div class="setting-main-content-left-title">环境</div>
-          <div class="setting-main-content-left-env-list">
+          <div class="setting-main-content-left-env-list no-scroll">
             <div
               v-for="(data, index) in env_list"
               class="setting-main-content-left-env-list-item"
@@ -123,7 +123,7 @@
           </div>
           <el-divider></el-divider>
           <div class="setting-main-content-left-title">接口临时变量</div>
-          <div class="setting-main-content-left-env-list">
+          <div class="setting-main-content-left-env-list no-scroll">
             <TreeNode @change_menu="get_temp"></TreeNode>
           </div>
         </div>

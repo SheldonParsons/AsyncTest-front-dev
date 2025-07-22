@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <div style="height: 100%;overflow: hidden;" class="sidebar">
+    <div style="height: 100%;overflow: hidden;max-width: 350px;" class="sidebar">
       <div
         style="
           margin-bottom: 5px;
