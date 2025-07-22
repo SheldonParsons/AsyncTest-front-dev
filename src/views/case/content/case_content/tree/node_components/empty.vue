@@ -1,5 +1,5 @@
 <template>
-    <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+    <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }" :data-id="data.id"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
         <div style="width: 14px;"></div>
@@ -8,7 +8,7 @@
         }" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                    拖入或 添加步骤
+                    拖入或点击以 添加步骤
                 </motion.span>
             </motion.div>
         </motion.div>
@@ -47,12 +47,34 @@ const handleNodeHover = (isHovering: boolean) => {
     background-color: white;
     border-radius: 6px;
     transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+.drag-hover {
+    border: 2px dotted #163172;
+    animation: blink 1.5s infinite;
+    will-change: opacity;
 }
 
 .node-content:hover {
-    border: 2px dotted black;
+    border: 2px dotted #163172;
+    animation: blink 1.5s infinite;
+    will-change: opacity;
+
     .node-label {
-        color: #163172!important;
+        color: #163172 !important;
     }
 }
 

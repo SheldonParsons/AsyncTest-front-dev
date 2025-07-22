@@ -63,6 +63,7 @@ watch(() => props.text, () => {
 .type-write-monospace {
     font-family: "Azeret Mono", monospace;
     overflow: hidden;
+    max-width: 95%;
 }
 
 .type-write-cursor {

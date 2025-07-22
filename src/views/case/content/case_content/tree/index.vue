@@ -4,10 +4,11 @@
     <!-- 树形结构 -->
     <el-tree ref="treeRef" :data="treeData" :props="defaultProps" node-key="id" :expand-on-click-node="false"
       :default-expand-all="true" :highlight-current="true" draggable :allow-drag="handleAllowDrag"
-      @node-drag-start="handleDragStart" @node-drag-end="handleDragEnd" class="case-custom-tree">
+      @node-drag-start="handleDragStart" @node-drag-end="handleDragEnd" @node-drag-enter="handleDragEnter"
+      @node-drag-leave="handleDragLeave" class="case-custom-tree">
       <template #default="{ node, data }">
         <motion.div style="display: flex;flex-direction: column;width: 100%;" class="tree-node-container"
-          :node-id="node.id" :data-id="data.id">
+          :node-id="node.id" :data-id="data.id" :data-type="data.type">
           <Line class="target-line-top hidden"></Line>
           <For v-if="data.type === 'for'" @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check"
             :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
@@ -115,7 +116,6 @@ const drag_target_info: any = ref(null)
 const {
   showBottomLine,
   moveNode,
-  moveTreeNode
 } = useTreeNodeOperations()
 
 const {
@@ -132,6 +132,24 @@ const {
 // 处理节点悬停
 const handleNodeHover = (node_id: number) => {
   hoveredNodeId.value = node_id
+}
+
+const handleDragEnter = (_: any, dropNode: any, _ev: any) => {
+  if (dropNode.data.type === 'empty') {
+    const el = document.querySelector(`.custom-tree-node[data-id="${dropNode.data.id}"] .node-content`)
+    if (el) {
+      el.classList.add('drag-hover')
+    }
+  }
+}
+
+const handleDragLeave = (_: any, dropNode: any, _ev: any) => {
+  if (dropNode.data.type === 'empty') {
+    const el = document.querySelector(`.custom-tree-node[data-id="${dropNode.data.id}"] .node-content`)
+    if (el) {
+      el.classList.remove('drag-hover')
+    }
+  }
 }
 
 function findPath(
@@ -275,8 +293,8 @@ const handleDragStart = async (node: any, ev: any) => {
 
   const dragImage = ev.target as HTMLElement
   if (dragImage) {
-    const contentEl = dragImage.querySelector('.el-tree-node__content') as HTMLElement
-    const offset = contentEl.style.paddingLeft
+    // const contentEl = dragImage.querySelector('.el-tree-node__content') as HTMLElement
+    // const offset = contentEl.style.paddingLeft
     ev.dataTransfer?.setDragImage(dragImage, 14, 0)
   }
   startListeningMouse(set_drag_target_info)

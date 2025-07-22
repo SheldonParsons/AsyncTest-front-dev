@@ -45,11 +45,16 @@ export function useDragAndDrop() {
       }
       const _html = node.querySelector('.el-tree-node__content .tree-node-container') as HTMLElement
       if (has_child === false) {
-        const split_line = Math.round(
-          contentStartY + ((contentEndY - contentStartY) * 0.7)
-        )
-        node_search_obj.value.addInterval(contentStartY, split_line, _html, 'before')
-        node_search_obj.value.addInterval(split_line + 1, contentEndY, _html, 'after')
+        if (_html.getAttribute('data-type') === 'empty') {
+          node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'blank')
+        } else {
+          const split_line = Math.round(
+            contentStartY + ((contentEndY - contentStartY) * 0.7)
+          )
+          node_search_obj.value.addInterval(contentStartY, split_line, _html, 'before')
+          node_search_obj.value.addInterval(split_line + 1, contentEndY, _html, 'after')
+        }
+
       } else {
         node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'before')
         node_search_obj.value.addInterval(lineStartY, lineEndY, next as HTMLElement, 'after')

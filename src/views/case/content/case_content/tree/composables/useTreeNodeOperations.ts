@@ -146,71 +146,10 @@ export function useTreeNodeOperations() {
     }
   };
 
-  const moveTreeNode = (
-    treeDataRef: Ref<TreeNodeData[]>,
-    draggedId: number | string,
-    targetId: number | string,
-    dropType: 'before' | 'after'
-  ) => {
-    /** 递归查找：返回所在列表 list ，下标 index ，节点本身 node ，以及它的父节点 parent */
-    function findNode(
-      list: TreeNodeData[],
-      id: number | string,
-      parent: TreeNodeData | null = null
-    ): {
-      list: TreeNodeData[]
-      index: number
-      node: TreeNodeData
-      parent: TreeNodeData | null
-    } | null {
-      for (let i = 0; i < list.length; i++) {
-        const item = list[i]
-        if (item.id === id) {
-          return { list, index: i, node: item, parent }
-        }
-        if (item.children) {
-          const res = findNode(item.children, id, item)
-          if (res) return res
-        }
-      }
-      return null
-    }
-
-    // 1. 找并删掉被拖拽节点
-    const draggedInfo = findNode(treeDataRef, draggedId)
-    if (!draggedInfo) return
-    draggedInfo.list.splice(draggedInfo.index, 1)
-
-    // 2. 找到目标节点（注意：此时树已经少了被拖拽节点）
-    const targetInfo = findNode(treeDataRef, targetId)
-    if (!targetInfo) return
-
-    // 3. 计算插入位置并插入
-    const insertIdx = dropType === 'before'
-      ? targetInfo.index
-      : targetInfo.index + 1
-    targetInfo.list.splice(insertIdx, 0, draggedInfo.node)
-
-    // 4. 重新赋值以触发深度更新
-    // ————同级换位置时，父节点的 children 数组需要新引用
-    const sameParent = draggedInfo.parent === targetInfo.parent
-    const parentNode = targetInfo.parent
-
-    if (parentNode) {
-      // 先把父节点 children 重新赋一个新数组
-      parentNode.children = parentNode.children!
-        .map(x => x)  // 或者 [...parentNode.children!]
-    } else {
-      // 如果父节点是根，就给根数组换新引用
-      treeDataRef = treeDataRef.map(x => x)
-    }
-  }
-
   return {
     nodeIdCounter,
     removeNode,
     showBottomLine,
-    moveNode,
-    moveTreeNode
+    moveNode
   }
 }

@@ -44,18 +44,18 @@
                                                 :placeholder="'固定值'">
                                             </InputAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 25;">
+                                        <motion.div style="width: 250px;">
                                             <HoverSpanAnimation :value="item.dynamic_value"></HoverSpanAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 7;">
+                                        <motion.div style="flex: 8;">
                                             <SwitchAnimation :data="item.is_fixed"
                                                 @action="(val) => switchHandle(val, item)">
                                             </SwitchAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 7;">
+                                        <motion.div style="flex: 8;">
                                             <HlodAnimation @action="deleteHandle(item, index)"></HlodAnimation>
                                         </motion.div>
-                                        <motion.div style="flex: 7;">
+                                        <motion.div style="flex: 8;">
                                             <ButtonAnimation @action="saveHandle(item, index)"></ButtonAnimation>
                                         </motion.div>
                                     </motion.div>
@@ -246,9 +246,9 @@ function usePointerToSkew(axisMotionValue: any) {
 
 function add_param() {
     const _data = {
-        name: "",
-        fixed_value: "",
-        dynamic_value: "",
+        name: "anlkfndlksfnksldfnlksdnfklsdnfklsdnflksdnfnkldsnfklsdnflksdnflkdsnflknsdlfksdnflksnflknsdkflnsdlkfnslkfnkldsfnlskdfnklsn",
+        fixed_value: "anlkfndlksfnksldfnlksdnfklsdnfklsdnflksdnfnkldsnfklsdnflksdnflkdsnflknsdlfksdnflksnflknsdkflnsdlkfnslkfnkldsfnlskdfnklsn",
+        dynamic_value: "dsjalLjhdkashdjakhhakjshdjkashdjkhakjdhajkshdjksahdjkashjdkhsajdkhakjdhsajkdhasjkhdasjkdhajkhdjkashdjkahsdjkahsdjkashdkj",
         is_fixed: false,
         interface: props.current_interface,
         id: generateKString()
