@@ -2,18 +2,13 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id" :key="data.id"></DragHandle>
-        <div v-else style="width: 14px;"></div>
+        <div style="width: 14px;"></div>
         <!-- 节点内容 -->
         <motion.div class="node-content" :animate="{
         }" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                    {{ data.label }}:{{ data.id }}
-                </motion.span>
-                <motion.span class="node-count" :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }"
-                    :transition="{ delay: 0.1 }">
-                    {{ data.children ? `(${data.children.length})` : '' }}
+                    拖入或 添加步骤
                 </motion.span>
             </motion.div>
         </motion.div>
@@ -22,28 +17,14 @@
 
 <script lang="ts" setup>
 import { motion } from 'motion-v'
-import CheckBox from '@/assets/motion/checkbox.vue'
-import DragHandle from '@/views/case/content/case_content/tree/components/draghandle.vue'
 
-const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
+const emit: any = defineEmits(['changeHover',])
 const props = defineProps<{
     data: any
     hoveredNodeId: number | null
-    check: string
 }>()
-
-const changeCheck = (type: string) => {
-    emit('changeCheck', type)
-}
-
 const handleNodeHover = (isHovering: boolean) => {
     emit('changeHover', isHovering ? props.data.id : -1)
-}
-
-const onHandlePointerDown = (_: any) => {
-    emit('canDragAction', true)
-    const wrapper = _.currentTarget as HTMLElement
-    wrapper.style.visibility = 'hidden'
 }
 </script>
 
@@ -61,17 +42,26 @@ const onHandlePointerDown = (_: any) => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 2px solid #56575814;
-    padding: 7px 16px;
-    background-color: rgba(86, 87, 88, .04);
+    border: 2px dotted #0a0a0a14;
+    padding: 10px 16px;
+    background-color: white;
     border-radius: 6px;
     transition: all 0.2s ease;
+}
+
+.node-content:hover {
+    border: 2px dotted black;
+    .node-label {
+        color: #163172!important;
+    }
 }
 
 .node-info {
     display: flex;
     align-items: center;
     gap: 8px;
+    justify-content: center;
+    width: 100%;
 }
 
 .node-label {

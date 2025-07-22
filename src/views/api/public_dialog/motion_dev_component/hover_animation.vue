@@ -3,7 +3,7 @@
         <Tooltip.Provider>
             <Tooltip.Root v-model:open="open" >
                 <Tooltip.Trigger class="tooltip-trigger" @mouseenter="open = true" @mouseleave="open = false" style="cursor: pointer;">
-                    <motion.div style="width: 250px;" class="g-ellipsis">
+                    <motion.div class="g-ellipsis">
                         <TypewriteAnimation :text="value.length > 0 ? value :
                             '动态值（空）'"></TypewriteAnimation>
                     </motion.div>
@@ -127,5 +127,6 @@ const props = defineProps({
     align-items: center;
     gap: 10px;
     padding: 10px 16px;
+    width: 100%;
 }
 </style>

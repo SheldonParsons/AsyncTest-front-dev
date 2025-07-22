@@ -12,10 +12,6 @@
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
                     {{ data.label }}:{{ data.id }}
                 </motion.span>
-                <motion.span class="node-count" :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }"
-                    :transition="{ delay: 0.1 }">
-                    {{ data.children ? `(${data.children.length})` : '' }}
-                </motion.span>
             </motion.div>
         </motion.div>
     </motion.div>

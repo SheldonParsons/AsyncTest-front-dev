@@ -3,10 +3,8 @@
     :transition="{ duration: 0.5 }">
     <!-- 树形结构 -->
     <el-tree ref="treeRef" :data="treeData" :props="defaultProps" node-key="id" :expand-on-click-node="false"
-      :default-expand-all="true" :highlight-current="true" draggable :allow-drop="handleAllowDrop"
-      :allow-drag="handleAllowDrag" @node-drag-start="handleDragStart" @node-drag-enter="handleDragEnter"
-      @node-drag-leave="handleDragLeave" @node-drag-over="handleDragOver" @node-drag-end="handleDragEnd"
-      @node-drop="handleDrop" class="case-custom-tree">
+      :default-expand-all="true" :highlight-current="true" draggable :allow-drag="handleAllowDrag"
+      @node-drag-start="handleDragStart" @node-drag-end="handleDragEnd" class="case-custom-tree">
       <template #default="{ node, data }">
         <motion.div style="display: flex;flex-direction: column;width: 100%;" class="tree-node-container"
           :node-id="node.id" :data-id="data.id">
@@ -18,6 +16,7 @@
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
             @canDragAction="onHandlePointerDown">
           </Interface>
+          <Empty v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data"></Empty>
           <Line v-if="showBottomLine(node)" class="target-line-button hidden"></Line>
         </motion.div>
       </template>
@@ -215,7 +214,7 @@ function handleAllowDrag(node: any) {
 // const handleAllowDrop = () => {
 //   // 返回false来阻止默认的放置行为，你可以自己控制
 //   console.log("handleAllowDrop");
-  
+
 //   return false
 // }
 
@@ -298,50 +297,10 @@ const set_drag_target_info = (target: any) => {
   }
 }
 
-const handleDragEnter = (draggingNode: any, dropNode: any) => {
-  console.log('拖拽进入目标:', {
-    dragging: draggingNode.data.label,
-    target: dropNode.data.label
-  })
-}
-
-const handleDragLeave = (draggingNode: any, dropNode: any) => {
-  console.log('拖拽离开目标:', {
-    dragging: draggingNode.data.label,
-    target: dropNode.data.label
-  })
-}
-
-const handleDragOver = () => {
-  // 拖拽悬停处理
-  console.log('holding');
-
-}
-
-
-
-const handleDrop = (draggingNode: any, dropNode: any, dropType: string, ev: Event) => {
-  console.log('节点放置:', {
-    dragging: draggingNode.data.label,
-    target: dropNode.data.label,
-    dropType: dropType // 'before', 'after', 'inner'
-  })
-  // 阻止默认的放置行为
-  ev.preventDefault()
-}
-
 onMounted(async () => {
   if (treeRef.value) {
     await mountLines(treeRef)
   }
-  // document.querySelectorAll('.case-custom-tree .el-tree-node').forEach((el: any) => {
-  //   const level = el.__vueParentComponent.props.node.level;
-  //   // 在 children 容器用 --depth 也可以写在父节点上，样式里取决于选择器
-  //   const childrenEl = el.querySelector('.el-tree-node__children');
-  //   if (childrenEl && childrenEl.children.length) {
-  //     childrenEl.style.setProperty('--depth', level);
-  //   }
-  // });
 })
 </script>
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="input-container">
+  <div class="input-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
     <input v-model="modelValue" :placeholder="placeholder" />
     <div>
       <motion.span ref="counterRef" :style="{
@@ -35,6 +35,10 @@ const props = defineProps({
   maxLength: {
     type: Number,
     default: 50,
+  },
+  maxWidthContainer: {
+    type: Number,
+    default: -1
   }
 })
 
@@ -66,6 +70,8 @@ input {
   font-size: 14px;
   line-height: 1;
   outline: none;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 input {
@@ -75,7 +81,6 @@ input {
   border-radius: 10px;
   padding: 10px;
   padding-right: 40px;
-  width: 200px;
 }
 
 input:focus {

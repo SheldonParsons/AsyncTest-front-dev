@@ -45,6 +45,7 @@ function action() {
     display: flex;
     align-items: center;
     justify-content: start;
+    min-width: 90px;
 
     .button {
         background: black;

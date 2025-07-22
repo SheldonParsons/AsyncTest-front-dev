@@ -8,7 +8,7 @@
         <motion.div style="height: 100%;">
             <motion.div style="display: flex;justify-content: space-between;align-items: center;gap: 10px;">
                 <Pointer @action="add_param"></Pointer>
-                <InputAnimation v-model="search_value" @change="search" :placeholder="'输入变量名进行搜索'"></InputAnimation>
+                <InputAnimation v-model="search_value" @change="search" :placeholder="'输入变量名进行搜索'" :maxWidthContainer="250"></InputAnimation>
             </motion.div>
 
             <motion.div class="b-item" v-show="accordionContent.length === 0">
@@ -35,27 +35,27 @@
                                         duration: 0.2,
                                         scale: { type: 'spring', visualDuration: 0.2, bounce: 0.2 }
                                     }" style="display: flex;justify-content: space-between;width: 100%;">
-                                    <motion.div style="display: flex;align-items: center;gap: 10px;">
-                                        <motion.div>
+                                    <motion.div style="display: flex;align-items: center;gap: 10px;width:100%">
+                                        <motion.div style="flex: 25;">
                                             <InputAnimation v-model="item.name" :placeholder="'变量名'"></InputAnimation>
                                         </motion.div>
-                                        <motion.div>
+                                        <motion.div style="flex: 25;">
                                             <InputAnimation v-model="item.fixed_value" :maxLength="2000"
                                                 :placeholder="'固定值'">
                                             </InputAnimation>
                                         </motion.div>
-                                        <motion.div>
+                                        <motion.div style="flex: 20;">
                                             <HoverSpanAnimation :value="item.dynamic_value"></HoverSpanAnimation>
                                         </motion.div>
-                                        <motion.div>
+                                        <motion.div style="flex: 10;">
                                             <SwitchAnimation :data="item.is_fixed"
                                                 @action="(val) => switchHandle(val, item)">
                                             </SwitchAnimation>
                                         </motion.div>
-                                        <motion.div>
+                                        <motion.div style="flex: 10;">
                                             <HlodAnimation @action="deleteHandle(item, index)"></HlodAnimation>
                                         </motion.div>
-                                        <motion.div>
+                                        <motion.div style="flex: 10;">
                                             <ButtonAnimation @action="saveHandle(item, index)"></ButtonAnimation>
                                         </motion.div>
                                     </motion.div>
