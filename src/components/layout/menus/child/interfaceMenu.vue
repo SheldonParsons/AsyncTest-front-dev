@@ -725,7 +725,7 @@ function changeExpanded(node: any) {
 }
 
 .tree-div {
-  height: calc(100vh - 283px);
+  height: calc(100vh - 313px);
 }
 
 .red {

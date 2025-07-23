@@ -70,7 +70,7 @@
       </div>
     </div>
   </nav>
-  <div style="height: 100%; overflow: auto">
+  <div style="height: 100%; overflow: auto" class="no-scroll">
     <EmptyPage v-if="show_type === 0"></EmptyPage>
     <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
     <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
@@ -78,7 +78,7 @@
       :target_type="current_target_type"></RootDir>
     <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
     <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-    <NormalDialog v-model="show_has_change_dialog" @action="has_change_action"></NormalDialog>
+    <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action"></NormalDialog>
   </div>
 </template>
 <script lang="ts" setup>
@@ -818,7 +818,6 @@ nav.amazing-tabs {
   height: 45px;
   display: flex;
   z-index: 999;
-  // padding-top: 1rem;
 }
 
 .main-tabs-container {

@@ -11,6 +11,8 @@ export function useDragAndDrop() {
   async function getNodeHeightMapping(blank_id: number) {
     await nextTick()
     node_search_obj.value = new IntervalMap()
+    console.log(node_search_obj.value);
+    
     const nodes = document.querySelectorAll('.case-custom-tree .el-tree-node.is-expanded.is-focusable')
     const blank_range: any = {}
     Array.from(nodes).forEach(node => {
@@ -60,6 +62,8 @@ export function useDragAndDrop() {
         node_search_obj.value.addInterval(lineStartY, lineEndY, next as HTMLElement, 'after')
       }
     })
+    console.log(node_search_obj.value.get_data());
+    
   }
 
   // 更新 DOM 显示拖拽位置

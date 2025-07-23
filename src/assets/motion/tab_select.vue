@@ -30,7 +30,7 @@ const setSelectedTab = (index: number) => {
 .tab-select-container {
     background-color: white;
     border-radius: 10px;
-    padding: 5px;
+    padding: 5px 20px;
     width: 20%;
 }
 
@@ -49,6 +49,7 @@ const setSelectedTab = (index: number) => {
     color: black;
     position: relative;
     height: 30px;
+    width: 90px!important;
 }
 
 .tab-select-container .selected-indicator {
@@ -62,6 +63,7 @@ const setSelectedTab = (index: number) => {
     border-radius: 5px;
     color: black;
     height: 100%;
+    width: 90px;
 }
 
 .tab-select-container .selected-btn {
@@ -80,5 +82,6 @@ const setSelectedTab = (index: number) => {
     border: none;
     height: 100%;
     transition: none !important;
+    width: 90px;
 }
 </style>

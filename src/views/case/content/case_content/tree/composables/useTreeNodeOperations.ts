@@ -163,6 +163,8 @@ export function useTreeNodeOperations() {
 
     const targetInfo = findNode(treeData, targetId)
     if (!targetInfo) return
+    console.log(targetInfo);
+    
 
     // 如果目标就是占位 empty，直接替换它
     if (targetInfo.node.type === EMPTY_TYPE) {
@@ -173,13 +175,19 @@ export function useTreeNodeOperations() {
         dropType === 'before' ? targetInfo.index : targetInfo.index + 1
 
       // 同级向后移动时修正索引
-      if (
-        draggedInfo.list === targetInfo.list &&
-        draggedInfo.index < insertIndex
-      ) {
-        insertIndex--
-      }
+      // if (
+      //   draggedInfo.list === targetInfo.list &&
+      //   draggedInfo.index < insertIndex
+      // ) {
+      //   insertIndex--
+      // }
+      console.log(draggedNode);
+      console.log(insertIndex);
+      
+      
       targetInfo.list.splice(insertIndex, 0, draggedNode)
+      console.log(targetInfo);
+      
 
       // 若该父级下还残留 empty，占位已无必要则移除
       for (let i = targetInfo.list.length - 1; i >= 0; i--) {

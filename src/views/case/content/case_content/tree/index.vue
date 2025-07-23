@@ -94,6 +94,8 @@ const treeData = ref<any[]>([
       }
     ]
   },
+  { id: 9, label: '节点', type: 'interface', check: 'check', },
+  { id: 10, label: '节点', type: 'interface', check: 'check', },
   {
     id: 6,
     label: '根节点 2',
@@ -103,8 +105,6 @@ const treeData = ref<any[]>([
       { id: 7, label: '子节点 2-1', type: 'interface', check: 'check' }
     ]
   },
-  { id: 9, label: '节点', type: 'interface', check: 'check', },
-  { id: 10, label: '节点', type: 'interface', check: 'check', }
 ])
 
 const treeRef = ref<InstanceType<typeof ElTree>>()
@@ -112,7 +112,7 @@ const hoveredNodeId = ref<number | null>(null)
 const current_drag_node_target: any = ref(null)
 const current_drag_node_data_id: any = ref(-1)
 const drag_target_info: any = ref(null)
-const origin_tree:any = ref(null)
+const origin_tree: any = ref(null)
 
 // 使用组合式函数
 const {
@@ -227,9 +227,9 @@ function onHandlePointerDown(value: boolean) {
 // 拖拽相关处理函数
 function handleAllowDrag(node: any) {
   console.log(node);
-  
+
   console.log(treeData.value);
-  
+
   const allow = draggingFromHandle.value
   // 不管放行还是拦截，都清掉标记
   nextTick(() => { draggingFromHandle.value = false })
@@ -272,10 +272,17 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
   cleanAllLine()
   clearHighlightTreeNode(current_drag_node_target.value)
   if (drag_target_info.value !== null) {
-    console.log(drag_target_info);
-    
+    console.log(drag_target_info.value);
+    console.log(Number(current_drag_node_data_id.value));
+
+    console.log(origin_tree.value);
+    console.log('snap', JSON.parse(JSON.stringify(origin_tree.value)))
+
     moveNode(origin_tree.value, Number(current_drag_node_data_id.value), Number(drag_target_info.value.id), drag_target_info.value.position)
     treeData.value = origin_tree.value
+    if (treeRef.value) {
+      await mountLines(treeRef)
+    }
   }
 }
 
@@ -284,7 +291,7 @@ const handleDragStart = async (node: any, ev: any) => {
   console.log(draggingFromHandle.value);
   console.log(node.data);
   console.log(treeData.value);
-  
+
 
   await getNodeHeightMapping(node.data.id)
   current_drag_node_data_id.value = node.data.id
@@ -434,6 +441,7 @@ onMounted(async () => {
 <style scoped>
 .case-tree-container {
   min-height: 400px;
+  height: inherit;
   padding: 10px;
   border-radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

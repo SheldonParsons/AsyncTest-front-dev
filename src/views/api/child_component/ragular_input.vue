@@ -1,5 +1,5 @@
 <template>
-  <el-row style="margin-top: 30px">
+  <el-row style="margin-top: 10px">
     <el-col :offset="1" :span="22">
       <form>
         <div class="group">

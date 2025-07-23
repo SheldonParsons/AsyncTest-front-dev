@@ -1,5 +1,6 @@
 <template>
-  <el-row v-if="loading === false" class="url-inputer">
+  <div style="display: flex;flex-direction: column;">
+  <el-row v-if="loading === false" class="url-inputer" style="flex:0 0 auto;position:sticky; top:46px; z-index:1;background-color: white;">
     <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
         <el-button type="primary" class="method-btn">
           {{ methodMapping[data.value.method]
@@ -23,9 +24,6 @@
     <el-col style="margin-left: 5px" :span="2">
       <el-button style="width: 100%; height: 100%" @click="save">保存(Ctrl + S)</el-button>
     </el-col>
-    <!-- <el-col :span="2">
-      <el-button style="width: 70%; height: 100%" @click="send">删除</el-button>
-    </el-col> -->
   </el-row>
   <el-row v-else class="url-inputer">
     <el-col :span="22" :offset="1">
@@ -259,6 +257,7 @@
         <el-skeleton :rows="5" animated />
       </el-col>
     </el-row>
+  </div>
   </div>
   <el-dialog v-model="show_send_response_dialog" :show-close="false" style="border-radius: 12px; margin-top: 20px"
     class="process-dialog">

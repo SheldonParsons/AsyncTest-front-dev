@@ -1,38 +1,41 @@
 <template>
   <div class="main-container">
-    <div class="content menu-sidebar">
-      <div class="main-menu">
-        <TopMenu
-          ref="new_menu"
-          class="new-content-menu"
-          style="width: 80px"
-          @switchRouterAction="changeChildMenu"
-        />
-        <div class="content-menu">
-          <Menu
-            @change_sub_menu="change_sub_menu"
-            :routeName="routername"
-            class="detail-menu"
-            :apiItem="apiItem"
-            @changeMenu="changeMenu"
-          />
-          <div class="resize-handle" @mousedown="startResize"></div>
-        </div>
-      </div>
-    </div>
-    <div
-      class="main page-content has-sidebar"
-    >
-      <router-view
-        @change_page="changePage"
-        :changeApiContent="changeApiContent"
-        :width="mainContentWidth"
-      />
-    </div>
+    <motion.div class="main-container-core">
+      <!-- 第一层：左(固定10%) + 其余(90%) -->
+      <SplitterGroup direction="horizontal">
+        <!-- 左：永远 10%，不可调 -->
+        <SplitterPanel :default-size="5" :min-size="5" :max-size="5" class="radius-container white-bg-container">
+          <TopMenu ref="new_menu" class="new-content-menu" @switchRouterAction="changeChildMenu" />
+        </SplitterPanel>
+
+        <!-- 必须放一个把手，但禁用并隐藏宽度 -->
+        <SplitterResizeHandle disabled class="FixSplitterResizeHandle" />
+
+        <!-- 右侧整体（含中+右） -->
+        <SplitterPanel :default-size="90">
+          <!-- 第二层：中(可折叠，可调) + 右(可调) -->
+          <SplitterGroup direction="horizontal">
+            <!-- 中：默认20，可折叠 -->
+            <SplitterPanel :default-size="17" :min-size="10" :max-size="30" collapsible :collapsed-size="0"
+              class="radius-container white-bg-container">
+              <Menu @change_sub_menu="change_sub_menu" :routeName="routername" class="detail-menu" :apiItem="apiItem"
+                @changeMenu="changeMenu" />
+            </SplitterPanel>
+            <SplitterResizeHandle class="SplitterResizeHandle" />
+            <!-- 右：默认70，可调 -->
+            <SplitterPanel :default-size="70" :min-size="10" class="radius-container white-bg-container">
+              <router-view @change_page="changePage" :changeApiContent="changeApiContent" :width="mainContentWidth" />
+            </SplitterPanel>
+          </SplitterGroup>
+        </SplitterPanel>
+      </SplitterGroup>
+    </motion.div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
+import { motion } from 'motion-v'
 import { ref, onMounted, watch } from "vue";
 import Menu from "@/components/layout/menus/secondMenu.vue";
 import TopMenu from "@/components/layout/menus/topMenu.vue";
@@ -74,7 +77,7 @@ function changePage(item: any) {
   apiItem.value = item;
 }
 
-function changeChildMenu(name: string, call_back: any = () => {}) {
+function changeChildMenu(name: string, call_back: any = () => { }) {
   routername.value = name;
   call_back();
 }
@@ -105,66 +108,44 @@ const startResize = (e: MouseEvent) => {
 </script>
 
 <style scoped lang="scss">
-.main-container {
-  flex: 1;
-  display: flex;
-  overflow: auto;
+.detail-menu {
+  padding: 10px;
 }
-.main-menu {
-  display: flex;
+
+.radius-container {
+  border-radius: 10px;
+}
+
+.white-bg-container {
+  background-color: white;
+}
+
+.main-container {
   height: 100%;
   width: 100%;
-}
-.content-menu {
-  padding-left: 1rem;
-  padding-right: 1rem;
-  flex: 1;
-}
-.menu-sidebar {
-  display: flex;
-  height: 100%;
-  border-right: 1px solid #dcdfe6;
-  max-width: 500px;
+  background-color: rgb(242, 244, 247);
+  position: relative;
+
+  .main-container-core {
+    position: absolute;
+    inset: 10px;
+  }
 }
 
-.content {
-  // overflow: hidden;
-  // display: inline-block;
-  flex: 25;
-  // min-width: 0;
-  // overflow: hidden;
+.FixSplitterResizeHandle[data-orientation="horizontal"] {
+  width: 0.3rem;
+  background-color: rgb(242, 244, 247);
+}
+.FixSplitterResizeHandle[data-orientation="vertical"] {
+  height: 0.3rem
 }
 
-.detail-menu {
-  background-color: #ffffff;
+.SplitterResizeHandle[data-orientation="horizontal"] {
+  width: 0.5rem;
+  background-color: rgb(242, 244, 247);
 }
 
-.resize-handle {
-  position: absolute;
-  top: 0;
-  right: -5px; /* 调整手柄的位置 */
-  width: 7px;
-  height: 100%;
-  cursor: col-resize; /* 设置鼠标样式为调整宽度 */
-  background-color: #f5f5f5;
-}
-.new-content-menu {
-  border-right: 1px solid #f5f5f5;
-}
-
-
-.page-content {
-  z-index: 999;
-  overflow-y: hidden;
-  // height: 100%;
-}
-/* 对于 Webkit 内核浏览器（如 Chrome, Safari） */
-.page-content::-webkit-scrollbar {
-  display: none;
-}
-.page-content.has-sidebar {
-  height: 100%;
-  z-index: 1;
-  flex: 75;
+.SplitterResizeHandle[data-orientation="vertical"] {
+  height: 0.5rem
 }
 </style>

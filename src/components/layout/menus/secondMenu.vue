@@ -11,7 +11,7 @@
         ">
         {{ $t("menu.news") }}
       </div>
-      <div style="width: 100%; height: 80px; margin-bottom: 25px">
+      <div style="width: 100%; height: 80px; margin-bottom: 25px;min-width: 290px;max-width: 400px;">
         <MockBox @changeMenu="changeSubMenu" :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
       <div class="sidebar-groups">
@@ -40,9 +40,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, getCurrentInstance } from "vue";
+import { ref, onMounted, getCurrentInstance } from "vue";
 import { useRouter, useRoute } from "vue-router";
-// import X2E from '@/views/otherwise/tools/X2E.vue'
 import MockBox from "@/views/otherwise/tools/MockBox.vue";
 import tools from "@/utils/tools";
 import { useI18n } from "vue-i18n";
@@ -66,7 +65,7 @@ const { t } = useI18n();
 
 const authLevel = ref(0);
 
-const sidebarRef:any = ref(null)
+const sidebarRef: any = ref(null)
 
 // 全局对象
 const { proxy }: any = getCurrentInstance();
@@ -76,16 +75,6 @@ onMounted(() => {
   checkAuth(1).then((data: any) => {
     authLevel.value = data;
   });
-  const main_menu:any = document.querySelector('.main-menu')
-  console.log(main_menu.getBoundingClientRect().width);
-  console.log(sidebarRef.value);
-  console.log(main_menu.getBoundingClientRect().width - 81 - 32);
-  
-  
-  sidebarRef.value.style.maxWidth = main_menu.getBoundingClientRect().width - 81 - 32 + 'px'
-  console.log(sidebarRef.value.getBoundingClientRect().width);
-  
-  
 });
 const props = defineProps({
   routeName: {

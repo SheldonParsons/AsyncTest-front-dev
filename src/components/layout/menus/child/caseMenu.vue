@@ -77,7 +77,7 @@
               <Fold v-if="data.child_type !== 3"></Fold>
               <Case
                 class="case-icon"
-                style="height: 15px"
+                style="height: 13px"
                 v-if="data.child_type === 3"
               ></Case>
             </div>

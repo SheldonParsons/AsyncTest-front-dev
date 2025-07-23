@@ -18,7 +18,7 @@
     <MockPage :interface_id="interface_id"></MockPage>
   </div>
   <!-- <div v-if="activeTab === 'A' || hasShown.A" v-show="activeTab === 'A'"></div> -->
-  <div v-if="activeTab === 'A'">
+  <div v-if="activeTab === 'A'" style="flex:1 1 auto;">
     <InterfacePage :node_id="node_id" :interface_id="interface_id"></InterfacePage>
   </div>
 </div>
@@ -48,6 +48,9 @@ const props = defineProps({
   padding-top: 10px;
   padding-bottom: 10px;
   margin-left: 20px;
+  flex:0 0 auto;
+  position:sticky; top:0; z-index:999;
+  background-color: white;
   gap: 5px;
   .active {
     background-color: black;

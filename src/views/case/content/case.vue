@@ -31,5 +31,6 @@ const props = defineProps({
 <style lang="scss" scoped>
 .case-content {
     border-top: 1px solid var(--border-color-light);
+    height: 100%;
 }
 </style>
