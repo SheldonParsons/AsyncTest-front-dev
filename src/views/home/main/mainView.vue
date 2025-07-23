@@ -16,14 +16,14 @@
           <!-- 第二层：中(可折叠，可调) + 右(可调) -->
           <SplitterGroup direction="horizontal">
             <!-- 中：默认20，可折叠 -->
-            <SplitterPanel :default-size="17" :min-size="10" :max-size="30" collapsible :collapsed-size="0"
+            <SplitterPanel :default-size="20" :min-size="10" :max-size="30" collapsible :collapsed-size="0"
               class="radius-container white-bg-container">
               <Menu @change_sub_menu="change_sub_menu" :routeName="routername" class="detail-menu" :apiItem="apiItem"
                 @changeMenu="changeMenu" />
             </SplitterPanel>
             <SplitterResizeHandle class="SplitterResizeHandle" />
             <!-- 右：默认70，可调 -->
-            <SplitterPanel :default-size="83" :min-size="10" class="radius-container white-bg-container">
+            <SplitterPanel :default-size="80" :min-size="10" class="radius-container white-bg-container">
               <router-view @change_page="changePage" :changeApiContent="changeApiContent" :width="mainContentWidth" />
             </SplitterPanel>
           </SplitterGroup>
