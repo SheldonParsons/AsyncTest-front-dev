@@ -12,7 +12,7 @@
         <SplitterResizeHandle disabled class="FixSplitterResizeHandle" />
 
         <!-- 右侧整体（含中+右） -->
-        <SplitterPanel :default-size="90">
+        <SplitterPanel :default-size="95">
           <!-- 第二层：中(可折叠，可调) + 右(可调) -->
           <SplitterGroup direction="horizontal">
             <!-- 中：默认20，可折叠 -->
@@ -23,7 +23,7 @@
             </SplitterPanel>
             <SplitterResizeHandle class="SplitterResizeHandle" />
             <!-- 右：默认70，可调 -->
-            <SplitterPanel :default-size="70" :min-size="10" class="radius-container white-bg-container">
+            <SplitterPanel :default-size="83" :min-size="10" class="radius-container white-bg-container">
               <router-view @change_page="changePage" :changeApiContent="changeApiContent" :width="mainContentWidth" />
             </SplitterPanel>
           </SplitterGroup>

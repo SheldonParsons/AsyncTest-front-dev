@@ -7,43 +7,33 @@
             <ArrowLeftBold />
           </el-icon>
         </div>
-        <div style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: hidden;">
-          <ul class="margin-cls filter-tabs ignore-scrollbar" style="margin: 0px;">
-            <transition-group name="fade" tag="ul" id="tabsUl" class="margin-cls filter-tabs ignore-scrollbar">
-              <li class="filter-li" v-for="(item, index) in editableTabs" :key="index">
-                <div class="filter-button" :class="{ 'filter-active': current_tab_name === item.name }" @click="
-                  change_tab_and_change_page(
-                    item.title,
-                    item.t,
-                    item.index,
-                    true,
-                    item.name
-                  )
-                  ">
-                  <div class="folder-div" style="
-                      display: flex;
-                      justify-content: center;
-                      align-items: center;
-                    ">
-                    <Fold style="margin-right: 5px" v-if="item.t === 4"></Fold>
-                  </div>
-                  <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
-                  }}</span>
-                  <div class="filter-span g-ellipsis ignore-scrollbar" style="width: 100%; overflow: auto">
-                    {{ item.title }}
-                  </div>
-                  <div class="close-div" @click.stop="closeTab(item, index)">
-                    <el-icon class="close-icon">
-                      <CloseBold />
-                    </el-icon>
-                  </div>
-                  <div class="change-div" v-if="item.hasChange === true">
-                    <el-badge is-dot class="item"></el-badge>
-                  </div>
-                </div>
-              </li>
-            </transition-group>
-          </ul>
+        <div class="no-scroll" id="tabsUl"
+          style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: scroll;gap: 5px;">
+          <motion.div v-for="(item, index) in editableTabs" :key="item.name" class="tab-item"
+            :class="{ active: current_tab_name === item.name }" :initial="{ opacity: 0, y: -4 }"
+            :animate="{ opacity: 1, y: 0 }" :whileHover="{ backgroundColor: '#ebeff5', color: '#222' }"
+            :transition="{ duration: 0.18 }" @click="change_tab_and_change_page(
+              item.title,
+              item.t,
+              item.index,
+              true,
+              item.name
+            )">
+            <motion.div v-if="item.t === 4" class="icon-box">
+              <Fold style="margin-right:5px;" :style="{color: current_tab_name === item.name ? '#eeeeee': 'black'}" />
+            </motion.div>
+            <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
+            }}</span>
+
+            <span class="title g-ellipsis">{{ item.title }}</span>
+
+            <div class="suffix-slot" @click.stop>
+              <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
+              <el-icon class="close-icon" @click.stop="closeTab(item, index)">
+                <CloseBold />
+              </el-icon>
+            </div>
+          </motion.div>
         </div>
         <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
           <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
@@ -78,7 +68,8 @@
       :target_type="current_target_type"></RootDir>
     <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
     <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-    <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action"></NormalDialog>
+    <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action">
+    </NormalDialog>
   </div>
 </template>
 <script lang="ts" setup>
@@ -96,6 +87,7 @@ import EnvSettingDialog from "@/views/api/public_dialog/env_setting_dialog.vue";
 import { GlobalState } from "@/state/index";
 import tools from "@/utils/tools";
 import NormalDialog from '@/views/case/components/dialog.vue'
+import { motion } from 'motion-v'
 import {
   ApiGetEnvListAndUserSetting,
   ApiUpdateUserEnv,
@@ -171,21 +163,6 @@ onMounted(() => {
     });
   };
 
-  const filterTabs: any = document.querySelector(".filter-tabs");
-  const filterButtons: any = document.querySelectorAll(".filter-button");
-
-  filterTabs.addEventListener("click", (event: any) => {
-    const root = document.documentElement;
-    const targetTranslateValue = event.target.dataset.translateValue;
-
-    if (event.target.classList.contains("filter-button")) {
-      root.style.setProperty(
-        "--translate-filters-slider",
-        targetTranslateValue
-      );
-      handleActiveTab(filterButtons, event, "filter-active");
-    }
-  });
   get_env_list_and_user_env();
 });
 // t的映射：0：get，1：post，2：put，3：delete，4：目录，5：新建内容
@@ -701,6 +678,99 @@ function change_user_env(item: any) {
 }
 </script>
 <style lang="scss" scoped>
+.amazing-tabs {
+  .title {
+    font-weight: 600;
+  }
+
+  .tabs-wrap {
+    display: flex;
+    gap: 4px;
+    padding: 4px 6px;
+    overflow-x: auto;
+  }
+
+  .tab-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    background-color: #f0f5f9 !important;
+    ;
+    color: #444 !important;
+    ;
+    transition: background-color .18s, color .18s;
+    position: relative;
+    font-size: 14px;
+    max-width: 200px;
+  }
+
+  .tab-item.active {
+    background: #1e2022 !important;
+    color: white !important;
+    font-weight: 600 !important;
+  }
+
+  .icon-box {
+    display: flex;
+    align-items: center;
+  }
+
+  .close-icon-wrapper {
+    display: flex;
+    align-items: center;
+    margin-left: 6px;
+  }
+
+  .suffix-slot {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
+
+  /* 小红点默认可见，hover 时隐藏 */
+  .dot-badge {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity .16s;
+    opacity: 1;
+    width: 16px;
+    height: 16px;
+    margin: auto;
+  }
+
+  .tab-item:hover .dot-badge {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 关闭按钮默认透明，hover 时出现 */
+  .close-icon {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 16px;
+    height: 16px;
+    font-size: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s;
+  }
+
+  .tab-item:hover .close-icon {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 #tabsUl {
   overflow-x: auto;
 }

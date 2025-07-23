@@ -105,6 +105,24 @@ const treeData = ref<any[]>([
       { id: 7, label: '子节点 2-1', type: 'interface', check: 'check' }
     ]
   },
+  {
+    id: 15,
+    label: '根节点 2',
+    type: 'for',
+    check: 'check',
+    children: [
+      { id: 16, label: '子节点 2-1', type: 'interface', check: 'check' }
+    ]
+  },
+  {
+    id: 17,
+    label: '根节点 2',
+    type: 'for',
+    check: 'check',
+    children: [
+      { id: 18, label: '子节点 2-1', type: 'interface', check: 'check' }
+    ]
+  }
 ])
 
 const treeRef = ref<InstanceType<typeof ElTree>>()
@@ -272,12 +290,6 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
   cleanAllLine()
   clearHighlightTreeNode(current_drag_node_target.value)
   if (drag_target_info.value !== null) {
-    console.log(drag_target_info.value);
-    console.log(Number(current_drag_node_data_id.value));
-
-    console.log(origin_tree.value);
-    console.log('snap', JSON.parse(JSON.stringify(origin_tree.value)))
-
     moveNode(origin_tree.value, Number(current_drag_node_data_id.value), Number(drag_target_info.value.id), drag_target_info.value.position)
     treeData.value = origin_tree.value
     if (treeRef.value) {
@@ -296,7 +308,6 @@ const handleDragStart = async (node: any, ev: any) => {
   await getNodeHeightMapping(node.data.id)
   current_drag_node_data_id.value = node.data.id
   current_drag_node_target.value = ev.target
-  console.log(ev);
   const content = ev.target.querySelector('.el-tree-node__content .node-content');
   if (content) {
     content.classList.add('blink-border-content');
@@ -308,13 +319,16 @@ const handleDragStart = async (node: any, ev: any) => {
       childrenEl.classList.add('blink-border-children');
     }
   }
-
-
-  const dragImage = ev.target as HTMLElement
+  let dragImage = null
+  if (node.data.type !== 'for') {
+    dragImage = ev.target.querySelector('.node-content')
+  } else {
+    dragImage = ev.target as HTMLElement
+  }
+  
+  
   if (dragImage) {
-    // const contentEl = dragImage.querySelector('.el-tree-node__content') as HTMLElement
-    // const offset = contentEl.style.paddingLeft
-    ev.dataTransfer?.setDragImage(dragImage, 14, 0)
+    ev.dataTransfer?.setDragImage(dragImage, 0, 0)
   }
   startListeningMouse(set_drag_target_info)
 }

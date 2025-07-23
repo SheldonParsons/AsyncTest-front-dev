@@ -137,6 +137,7 @@ import { convertSchemaToObject } from "./object_to_string";
 import UnEditValue from "@/views/api/child_component/un_edit_value.vue";
 import GlobalStatus from "@/global";
 import tools from "@/utils/tools";
+import PreView from "@/assets/svg/common/preview.vue";
 import { ApiGetSummarySource } from "@/api/interface/index";
 const unEditValueDialog: any = ref(null);
 const route = useRoute();

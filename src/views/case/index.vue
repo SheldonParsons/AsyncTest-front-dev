@@ -1,141 +1,91 @@
 <template>
-  <nav class="amazing-tabs">
-    <div class="filters-container">
-      <div class="filters-wrapper">
-        <div class="icon-div" style="border-right: 1px solid #f5f5f5">
-          <el-icon
-            @click="scrollToLeft"
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            ><ArrowLeftBold
-          /></el-icon>
-        </div>
-        <div
-          style="
+  <SplitterGroup direction="vertical">
+    <SplitterPanel :default-size="6" :min-size="6" :max-size="6">
+      <nav class="amazing-tabs">
+        <div class="filters-container">
+          <div class="filters-wrapper">
+            <div class="icon-div" style="border-right: 1px solid #f5f5f5">
+              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
+                <ArrowLeftBold />
+              </el-icon>
+            </div>
+            <div class="no-scroll"id="tabsUl" style="
             flex: 1;
             display: flex;
             align-items: center;
             justify-content: start;
             height: 100%;
             overflow: hidden;
-          "
-        >
-          <ul
-            class="margin-cls filter-tabs ignore-scrollbar"
-            style="margin: 0px"
-          >
-            <transition-group
-              name="fade"
-              tag="ul"
-              id="tabsUl"
-              class="margin-cls filter-tabs ignore-scrollbar"
-            >
-              <li
-                class="filter-li"
-                v-for="(item, index) in editableTabs"
-                :key="index"
-              >
-                <div
-                  class="filter-button"
-                  :class="{ 'filter-active': current_tab_name === item.name }"
-                  @click="
-                    change_tab_and_change_page(
-                      item.title,
-                      item.t,
-                      item.index,
-                      true,
-                      item.name
-                    )
-                  "
-                >
-                  <div
-                    class="folder-div"
-                    style="
-                      display: flex;
-                      justify-content: center;
-                      align-items: center;
-                    "
-                  >
-                    <Fold style="margin-right: 5px" v-if="item.t === 4"></Fold>
-                  </div>
-                  <Case
-                    v-if="item.t === 2"
-                    class="case-icon"
-                style="height: 15px"
-                    ></Case
-                  >
-                  <div
-                    class="filter-span g-ellipsis ignore-scrollbar"
-                    style="width: 100%; overflow: auto"
-                  >
-                    {{ item.title }}
-                  </div>
-                  <div class="close-div" @click.stop="closeTab(item, index)">
-                    <el-icon class="close-icon"><CloseBold /></el-icon>
-                  </div>
-                  <div class="change-div" v-if="item.hasChange === true">
-                    <el-badge is-dot class="item"></el-badge>
-                  </div>
+            gap: 5px;
+            
+          ">
+              <motion.div v-for="(item, index) in editableTabs" :key="item.name" class="tab-item"
+                :class="{ active: current_tab_name === item.name }" :initial="{ opacity: 0, y: -4 }"
+                :animate="{ opacity: 1, y: 0 }" :whileHover="{ backgroundColor: '#ebeff5', color: '#222' }"
+                :transition="{ duration: 0.18 }" @click="change_tab_and_change_page(
+                  item.title,
+                  item.t,
+                  item.index,
+                  true,
+                  item.name
+                )">
+                <motion.div v-if="item.t === 4" class="icon-box">
+                  <Fold style="margin-right:5px;" :style="{color: current_tab_name === item.name ? '#eeeeee': 'black'}" />
+                </motion.div>
+
+                <motion.div v-if="item.t === 2" class="icon-box">
+                  <CaseLight v-if="current_tab_name === item.name" class="case-icon" style="height:15px" />
+                  <Case v-else class="case-icon" style="height:15px" />
+                </motion.div>
+
+                <span class="title g-ellipsis">{{ item.title }}</span>
+
+                <div class="suffix-slot" @click.stop>
+                  <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
+                  <el-icon class="close-icon" @click.stop="closeTab(item, index)">
+                    <CloseBold />
+                  </el-icon>
                 </div>
-              </li>
-            </transition-group>
-          </ul>
+              </motion.div>
+            </div>
+            <div class="icon-div" style="border-left: 1px solid #f5f5f5; width: 70px">
+              <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
+                <ArrowRightBold />
+              </el-icon>
+            </div>
+            <div class="icon-div" style="border-left: 1px solid #f5f5f5">
+              <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
+                <PlusBold />
+              </el-icon>
+            </div>
+          </div>
         </div>
-        <div
-          class="icon-div"
-          style="border-left: 1px solid #f5f5f5; width: 70px"
-        >
-          <el-icon
-            @click="scrollToRight"
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            ><ArrowRightBold
-          /></el-icon>
-        </div>
-        <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-          <el-icon
-            class="margin-cls scroll-btn"
-            style="z-index: 999"
-            @click="open_create_page"
-            ><PlusBold
-          /></el-icon>
-        </div>
+      </nav>
+    </SplitterPanel>
+    <SplitterResizeHandle disabled />
+    <SplitterPanel :default-size="94" :min-size="94" :max-size="94">
+      <div style="height: 100%; overflow: auto" class="case-main-content no-scroll">
+        <EmptyPage v-if="show_type === 0"></EmptyPage>
+        <CreatePage v-if="show_type === 1" @go_page="go_page" :title="'Case'" :desc="'创建测试用例'"></CreatePage>
+        <CaseDocumentation v-if="show_type === 2" :node_id="current_node" :case_id="current_target_id"
+          :target_type="current_target_type"></CaseDocumentation>
+        <CaseDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
+          :target_type="current_target_type"></CaseDir>
+        <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
       </div>
-    </div>
-  </nav>
-  <div style="height: 100%; overflow: auto">
-    <EmptyPage v-if="show_type === 0"></EmptyPage>
-    <CreatePage
-      v-if="show_type === 1"
-      @go_page="go_page"
-      :title="'Case'"
-      :desc="'创建测试用例'"
-    ></CreatePage>
-    <CaseDocumentation
-      v-if="show_type === 2"
-      :node_id="current_node"
-      :case_id="current_target_id"
-      :target_type="current_target_type"
-    ></CaseDocumentation>
-    <CaseDir
-      v-if="show_type === 3"
-      :node_id="current_node"
-      :dir_id="current_target_id"
-      :target_type="current_target_type"
-    ></CaseDir>
-    <EnvSettingDialog
-      v-model="visible_env_setting_dialog"
-      v-if="visible_env_setting_dialog"
-    ></EnvSettingDialog>
-  </div>
+    </SplitterPanel>
+  </SplitterGroup>
+
+
 </template>
 <script lang="ts" setup>
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import Fold from "@/assets/svg/tree/fold.vue";
 import Case from "@/assets/svg/tree/case.vue";
+import CaseLight from "@/assets/svg/tree/case_light.vue";
 import { useRoute, useRouter } from "vue-router";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
-import Documentation from "@/views/api/child_context/doc_page.vue";
 import CaseDocumentation from "@/views/case/content/case.vue"
 import EmptyPage from "@/views/api/child_context/empty_page.vue";
 import CreatePage from "@/views/api/child_context/create_empty_page.vue";
@@ -147,6 +97,7 @@ import {
   ApiGetEnvListAndUserSetting,
   ApiUpdateUserEnv,
 } from "@/api/interface/env";
+import { motion } from "motion-v";
 
 const { proxy }: any = getCurrentInstance();
 const method_list = ["GET", "POST", "PUT", "DELETE"];
@@ -218,22 +169,6 @@ onMounted(() => {
       event.target.classList.add(className);
     }
   };
-
-  const filterTabs: any = document.querySelector(".filter-tabs");
-  const filterButtons: any = document.querySelectorAll(".filter-button");
-
-  filterTabs.addEventListener("click", (event: any) => {
-    const root = document.documentElement;
-    const targetTranslateValue = event.target.dataset.translateValue;
-
-    if (event.target.classList.contains("filter-button")) {
-      root.style.setProperty(
-        "--translate-filters-slider",
-        targetTranslateValue
-      );
-      handleActiveTab(filterButtons, event, "filter-active");
-    }
-  });
   get_env_list_and_user_env();
 });
 // t的映射：0：get，1：post，2：put，3：delete，4：目录，5：新建内容
@@ -635,8 +570,10 @@ function hideMenu() {
 }
 
 function scrollToRight() {
+  
   var container: any = document.getElementById("tabsUl");
   var scrollAmount = 600; // 设定滚动距离
+  
 
   // 计算新的滚动位置
   var newScrollPosition = container.scrollLeft + scrollAmount;
@@ -698,14 +635,113 @@ function change_user_env(item: any) {
 }
 </script>
 <style lang="scss" scoped>
+.amazing-tabs {
+  .title {
+    font-weight: 600;
+  }
+
+  .tabs-wrap {
+    display: flex;
+    gap: 4px;
+    padding: 4px 6px;
+    overflow-x: auto;
+  }
+
+  .tab-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    background-color: #f0f5f9 !important;
+    ;
+    color: #444 !important;
+    ;
+    transition: background-color .18s, color .18s;
+    position: relative;
+    font-size: 14px;
+    max-width: 200px;
+  }
+
+  .tab-item.active {
+    background: #1e2022 !important;
+    color: white !important;
+    font-weight: 600 !important;
+  }
+
+  .icon-box {
+    display: flex;
+    align-items: center;
+  }
+
+  .close-icon-wrapper {
+    display: flex;
+    align-items: center;
+    margin-left: 6px;
+  }
+
+  .close-icon {
+    font-size: 14px;
+    pointer-events: auto;
+  }
+
+  .suffix-slot {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
+
+  /* 小红点默认可见，hover 时隐藏 */
+  .dot-badge {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity .16s;
+    opacity: 1;
+  }
+
+  .tab-item:hover .dot-badge {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 关闭按钮默认透明，hover 时出现 */
+  .close-icon {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 16px;
+    height: 16px;
+    font-size: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s;
+  }
+
+  .tab-item:hover .close-icon {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+
 .case-icon {
   color: var(--global-theme-color);
 }
+
 #tabsUl {
   overflow-x: auto;
 }
+
 .change-div {
   width: 14px;
+
   .item {
     display: flex;
     text-align: center;
@@ -713,9 +749,11 @@ function change_user_env(item: any) {
     justify-content: center;
   }
 }
+
 .close-div {
   display: none;
 }
+
 .filter-li:hover {
   .filter-button {
     transition: color 0.4s ease-in-out;
@@ -723,6 +761,7 @@ function change_user_env(item: any) {
     color: white;
     background-color: var(--el-input-focus-border-color);
     border-radius: 5px;
+
     // padding: 0 1rem 0 1rem;
     .folder-div {
       svg {
@@ -730,9 +769,11 @@ function change_user_env(item: any) {
       }
     }
   }
+
   .change-div {
     display: none;
   }
+
   .close-div {
     display: flex;
     height: 16px;
@@ -745,33 +786,45 @@ function change_user_env(item: any) {
 .scroll-btn {
   cursor: pointer;
 }
+
 .red {
   color: #ff6a6a;
 }
+
 .green {
   color: #3cb371;
 }
+
 .blue {
   color: #1e90ff;
 }
+
 .orange {
   color: #eead0e;
 }
+
 .method-span {
   margin-right: 5px;
   font-weight: 500;
   font-size: 12px;
   text-align: right;
 }
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease, width 0.3s ease;
 }
 
-.fade-enter, .fade-leave-to /* .fade-leave-active in <2.1.8 */ {
+.fade-enter,
+.fade-leave-to
+
+/* .fade-leave-active in <2.1.8 */
+  {
   opacity: 0;
-  width: 0; /* 设置宽度为0 */
+  width: 0;
+  /* 设置宽度为0 */
 }
+
 .filter-li {
   cursor: pointer;
   max-width: 200px;
@@ -796,18 +849,21 @@ nav.amazing-tabs {
   background-color: var(--white);
   user-select: none;
   width: 100%;
-  height: 45px;
+  height: 100%;
   display: flex;
   z-index: 999;
+  box-sizing: border-box;
   // padding-top: 1rem;
 }
 
 .main-tabs-container {
   padding: 0 1rem 1rem 1rem;
 }
+
 .env-div {
   width: 200px !important;
   padding: 0px 5px;
+
   .env-select {
     flex: 60;
     height: 100%;
@@ -815,6 +871,7 @@ nav.amazing-tabs {
     justify-content: center;
     align-items: center;
   }
+
   .env-icon-div {
     flex: 40;
     height: 100%;
@@ -822,56 +879,71 @@ nav.amazing-tabs {
     justify-content: center;
     align-items: center;
   }
+
   display: flex;
   height: inherit;
   justify-content: center;
   align-items: center;
+
   i {
     border: 1px;
     border-radius: 5px;
     width: 80%;
     height: 80%;
   }
+
   i:hover {
     background-color: #f5f5f5;
   }
 }
+
 .icon-div {
   display: flex;
   height: inherit;
   width: 70px !important;
   justify-content: center;
   align-items: center;
+
   i {
     border: 1px;
     border-radius: 5px;
     width: 80%;
     height: 80%;
   }
+
   i:hover {
     background-color: #f5f5f5;
   }
 }
+
 ul.filter-tabs {
   padding: 0px;
   flex: 1;
   list-style-type: none;
   display: flex;
   align-items: center;
-  white-space: nowrap; /* 防止内部元素换行 */
-  overflow-x: auto; /* 超出容器宽度时允许横向滚动 */
-  scrollbar-width: none; /* 针对 Firefox 隐藏滚动条 */
-  -ms-overflow-style: none; /* 针对 IE 和 Edge 隐藏滚动条 */
+  white-space: nowrap;
+  /* 防止内部元素换行 */
+  overflow-x: auto;
+  /* 超出容器宽度时允许横向滚动 */
+  scrollbar-width: none;
+  /* 针对 Firefox 隐藏滚动条 */
+  -ms-overflow-style: none;
+  /* 针对 IE 和 Edge 隐藏滚动条 */
   // box-shadow: 0 0 1px 0 rgba(24, 94, 224, 0.15),
   //   0 6px 12px 0 rgba(24, 94, 224, 0.15);
 }
+
 ul.filter-tabs::-webkit-scrollbar {
-  display: none; /* 针对 Chrome、Safari 和 Opera 隐藏滚动条 */
+  display: none;
+  /* 针对 Chrome、Safari 和 Opera 隐藏滚动条 */
 }
 
 .ignore-scrollbar {
-  scrollbar-width: none; /* 针对 Firefox 隐藏滚动条 */
-  -ms-overflow-style: none; /* 针对 IE 和 Edge 隐藏滚动条 */
+  scrollbar-width: none;
+  /* 针对 Firefox 隐藏滚动条 */
+  -ms-overflow-style: none;
+  /* 针对 IE 和 Edge 隐藏滚动条 */
 }
 
 .filters-container {

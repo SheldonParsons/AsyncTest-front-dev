@@ -1,10 +1,13 @@
 <template>
-    <div>
-        <TabSelect></TabSelect>
+    <div class="case-container">
+        <div class="case-container-select">
+            <TabSelect></TabSelect>
+        </div>
+        <div class="case-content no-scroll">
+            <Drag1></Drag1>
+        </div>
     </div>
-    <div class="case-content">
-        <Drag1></Drag1>
-    </div>
+
 </template>
 
 
@@ -29,8 +32,25 @@ const props = defineProps({
 </script>
 
 <style lang="scss" scoped>
-.case-content {
-    border-top: 1px solid var(--border-color-light);
-    height: 100%;
+.case-container {
+    display: flex;
+    flex-direction: column;
+
+    .case-container-select {
+        flex: 0 0 auto;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background-color: white;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .case-content {
+
+        height: 100%;
+        flex: 1 1 auto;
+        overflow: auto;
+    }
+
 }
 </style>
