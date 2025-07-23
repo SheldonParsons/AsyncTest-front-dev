@@ -200,14 +200,14 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
     if (dataSource.value[0] === undefined) {
       dataSource.value[0] = newRoot;
       // 更新 firstLevelKeys（可选）
-      firstLevelKeys.value = [];
-      dataSource.value.forEach((rootNode) => {
-        if (rootNode.children) {
-          rootNode.children.forEach((child: any) => {
-            firstLevelKeys.value.push(child.id);
-          });
-        }
-      });
+      firstLevelKeys.value.push(dataSource.value[0].id)
+      // dataSource.value.forEach((rootNode) => {
+      //   if (rootNode.children) {
+      //     rootNode.children.forEach((child: any) => {
+      //       firstLevelKeys.value.push(child.id);
+      //     });
+      //   }
+      // });
     } else {
       // 只同步 children
       existingRoot.count = newRoot.count; // 可选同步计数

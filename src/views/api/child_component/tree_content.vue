@@ -107,13 +107,14 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
   };
   await getTree(data).then(async (data: any) => {
     dataSource.value.push(data[0]);
-    dataSource.value.forEach((rootNode: any) => {
-      if (rootNode.children) {
-        rootNode.children.forEach((child: any) => {
-          firstLevelKeys.value.push(child.id);
-        });
-      }
-    });
+    firstLevelKeys.value.push(data[0].id)
+    // dataSource.value.forEach((rootNode: any) => {
+    //   if (rootNode.children) {
+    //     rootNode.children.forEach((child: any) => {
+    //       firstLevelKeys.value.push(child.id);
+    //     });
+    //   }
+    // });
     await tools.delay();
     loading.value = false;
   });
