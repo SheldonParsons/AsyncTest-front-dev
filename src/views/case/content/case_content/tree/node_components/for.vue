@@ -10,7 +10,7 @@
             <motion.div class="node-info">
                 <CheckBox :check="check" @change="changeCheck"></CheckBox>
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                    {{ data.label }}:{{ data.id }}
+                    <LoopAnimationIcon :key="data.id"></LoopAnimationIcon>
                 </motion.span>
                 <motion.span class="node-count" :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }"
                     :transition="{ delay: 0.1 }">
@@ -25,6 +25,7 @@
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/tree/components/draghandle.vue'
+import LoopAnimationIcon from '@/views/case/content/case_content/tree/components/loop_animation.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
 const props = defineProps<{
@@ -63,7 +64,7 @@ const onHandlePointerDown = (_: any) => {
     align-items: center;
     justify-content: space-between;
     padding: 7px 16px;
-    background-color: rgba(86, 87, 88, .04);
+    background-color: rgba(86, 87, 88, .03);
     border-radius: 6px 6px 0 0;
     border-left: 2px solid rgba(86, 87, 88, 0.04);
     border-top: 2px solid rgba(86, 87, 88, 0.04);
@@ -82,6 +83,9 @@ const onHandlePointerDown = (_: any) => {
     font-weight: 500;
     color: #333;
     transition: color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .node-count {

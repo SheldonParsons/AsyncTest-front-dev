@@ -1,5 +1,5 @@
 <template>
-  <el-row style="margin-top: 20px">
+  <el-row style="padding-top:20px;border-top: 1px solid #f0f0f0;">
     <el-col :span="22" :offset="1"
       ><span style="font-size: 14px; font-weight: 500">Mock 请求</span></el-col
     >

@@ -10,8 +10,11 @@
             <motion.div class="node-info">
                 <CheckBox :check="check" @change="changeCheck"></CheckBox>
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                    <motion.span class="gradient-text" :class="{ [data.method]: true }">{{ data.method.toUpperCase() }}
-                    </motion.span>
+                    <IfAnimationIcon :key="data.id"></IfAnimationIcon>
+                </motion.span>
+                <motion.span class="node-count" :initial="{ opacity: 0 }" :animate="{ opacity: 0.6 }"
+                    :transition="{ delay: 0.1 }">
+                    {{ data.children ? `(${data.children.length})` : '' }}
                 </motion.span>
             </motion.div>
         </motion.div>
@@ -22,6 +25,7 @@
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/tree/components/draghandle.vue'
+import IfAnimationIcon from '@/views/case/content/case_content/tree/components/if_animation.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
 const props = defineProps<{
@@ -51,7 +55,7 @@ const onHandlePointerDown = (_: any) => {
     flex: 1;
     display: flex;
     align-items: center;
-    margin-right: 5px !important;
+    margin-right: 5px;
 }
 
 .node-content {
@@ -59,10 +63,12 @@ const onHandlePointerDown = (_: any) => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 2px solid #56575814;
     padding: 7px 16px;
     background-color: rgba(86, 87, 88, .03);
-    border-radius: 6px;
+    border-radius: 6px 6px 0 0;
+    border-left: 2px solid rgba(86, 87, 88, 0.04);
+    border-top: 2px solid rgba(86, 87, 88, 0.04);
+    border-right: 2px solid rgba(86, 87, 88, 0.04);
     transition: all 0.2s ease;
 }
 
@@ -79,42 +85,42 @@ const onHandlePointerDown = (_: any) => {
     transition: color 0.2s ease;
     display: flex;
     align-items: center;
+    gap: 5px;
 }
-
-.post {
-    background: linear-gradient(90deg, #FF7E5F, #FEB47B);
-}
-
-.get {
-    background: linear-gradient(90deg, #30863e, #4fa380);
-}
-
-.put {
-    background: linear-gradient(90deg, #373086, #5e5ab9);
-}
-
-.delete {
-    background: linear-gradient(90deg, #d84d4d, #b95a5a);
-}
-
-
-.gradient-text {
-    /* 定义背景渐变 */
-    /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
-    -webkit-background-clip: text;
-    /* 文字本身透明，这样才能显示背景 */
-    -webkit-text-fill-color: transparent;
-    /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
-    background-clip: text;
-    /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
-    color: transparent;
-    font-weight: 800;
-}
-
-
 
 .node-count {
     font-size: 12px;
     color: #999;
+}
+
+.node-actions {
+    display: flex;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.node-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 0 0 4px 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #666;
+}
+
+.node-action-btn:hover {
+    border-color: #333;
+    color: #000;
+}
+
+.node-action-btn.delete:hover {
+    border-color: #ff4444;
+    color: #ff4444;
 }
 </style>

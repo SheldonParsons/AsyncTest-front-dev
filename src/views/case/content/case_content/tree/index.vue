@@ -13,10 +13,32 @@
           <For v-if="data.type === 'for'" @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check"
             :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
             @canDragAction="onHandlePointerDown"></For>
+          <Group v-if="data.type === 'group'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></Group>
+          <If v-if="data.type === 'if'" @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check"
+            :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></If>
           <Interface v-if="data.type === 'interface'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
             @canDragAction="onHandlePointerDown">
           </Interface>
+          <Database v-if="data.type === 'database'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
+          </Database>
+          <Error v-if="data.type === 'error'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
+          </Error>
+          <Script v-if="data.type === 'script'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
+          </Script>
+          <Delay v-if="data.type === 'delay'" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
+          </Delay>
           <Empty v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data"></Empty>
           <Line v-if="showBottomLine(node)" class="target-line-button hidden"></Line>
         </motion.div>
@@ -35,8 +57,14 @@ import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useLineMounting } from './composables/useLineMounting'
 import { defaultProps, actionBtnVariants } from './utils/constants'
 import For from '@/views/case/content/case_content/tree/node_components/for.vue'
+import If from '@/views/case/content/case_content/tree/node_components/if.vue'
+import Group from '@/views/case/content/case_content/tree/node_components/group.vue'
 import Interface from '@/views/case/content/case_content/tree/node_components/interface.vue'
 import Empty from '@/views/case/content/case_content/tree/node_components/empty.vue'
+import Database from '@/views/case/content/case_content/tree/node_components/database.vue'
+import Delay from '@/views/case/content/case_content/tree/node_components/delay.vue'
+import Script from '@/views/case/content/case_content/tree/node_components/script.vue'
+import Error from '@/views/case/content/case_content/tree/node_components/error.vue'
 import _ from 'lodash'
 
 // 树形数据
@@ -62,47 +90,53 @@ const treeData = ref<any[]>([
     check: 'check',
     children: [
       {
+        id: 3721809,
+        lable: '',
+        type: 'error',
+        check: 'check',
+      },
+      {
         id: 2,
         label: '子节点 1-1',
-        type: 'for',
+        type: 'group',
         check: 'check',
         children: [
           {
-            id: 3, label: '叶子节点 1-1-1', type: 'for', check: 'check', children: [
+            id: 3, label: '叶子节点 1-1-1', type: 'if', check: 'check', children: [
               {
                 id: 8,
-                type: 'interface',
+                type: 'interface', method: 'get',
                 label: '叶子节点 1-1-1-1',
                 check: 'check',
               },
               {
                 id: 11,
-                type: 'interface',
+                type: 'interface', method: 'post',
                 label: '叶子节点 1-1-1-2',
                 check: 'check',
               }
             ]
           },
-          { id: 4, label: '叶子节点 1-1-2', type: 'interface', check: 'check', }
+          { id: 4, label: '叶子节点 1-1-2', type: 'interface', method: 'put', check: 'check', }
         ]
       },
       {
         id: 5,
-        type: 'interface',
+        type: 'interface', method: 'delete',
         label: '子节点 1-2',
         check: 'check',
       }
     ]
   },
-  { id: 9, label: '节点', type: 'interface', check: 'check', },
-  { id: 10, label: '节点', type: 'interface', check: 'check', },
+  { id: 9, label: '节点', type: 'database', check: 'check', },
+  { id: 10, label: '节点', type: 'delay', check: 'check', },
   {
     id: 6,
     label: '根节点 2',
     type: 'for',
     check: 'check',
     children: [
-      { id: 7, label: '子节点 2-1', type: 'interface', check: 'check' }
+      { id: 7, label: '子节点 2-1', type: 'script', check: 'check' }
     ]
   },
   {
@@ -111,7 +145,7 @@ const treeData = ref<any[]>([
     type: 'for',
     check: 'check',
     children: [
-      { id: 16, label: '子节点 2-1', type: 'interface', check: 'check' }
+      { id: 16, label: '子节点 2-1', type: 'interface', method: 'get', check: 'check' }
     ]
   },
   {
@@ -120,7 +154,7 @@ const treeData = ref<any[]>([
     type: 'for',
     check: 'check',
     children: [
-      { id: 18, label: '子节点 2-1', type: 'interface', check: 'check' }
+      { id: 18, label: '子节点 2-1', type: 'interface', method: 'get', check: 'check' }
     ]
   }
 ])
@@ -155,7 +189,18 @@ const handleNodeHover = (node_id: number) => {
 }
 
 const handleDragEnter = (_: any, dropNode: any, _ev: any) => {
+  function is_child(node: any, empty_node: any) {
+    if (empty_node.level === 0 || empty_node.parent === null) {
+      return false
+    }
+    if (empty_node.data.id === node.data.id) {
+      return true
+    }
+    return is_child(node, empty_node.parent)
+  }
+  if (_.data.type === 'error') return
   if (dropNode.data.type === 'empty') {
+    if (is_child(_, dropNode) === true) return
     const el = document.querySelector(`.custom-tree-node[data-id="${dropNode.data.id}"] .node-content`)
     if (el) {
       el.classList.add('drag-hover')
@@ -295,6 +340,8 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
     if (treeRef.value) {
       await mountLines(treeRef)
     }
+  } else {
+    treeData.value = origin_tree.value
   }
 }
 
@@ -303,9 +350,16 @@ const handleDragStart = async (node: any, ev: any) => {
   console.log(draggingFromHandle.value);
   console.log(node.data);
   console.log(treeData.value);
-
-
-  await getNodeHeightMapping(node.data.id)
+  console.log(node);
+  let sibling_node_ids: Array<number> = []
+  if (node.data.type === 'error') {
+    node.parent.childNodes.forEach((child_node: any) => {
+      if (child_node.data.id !== node.data.id) {
+        sibling_node_ids.push(child_node.data.id)
+      }
+    })
+  }
+  await getNodeHeightMapping(node.data.id, node.data.type, sibling_node_ids)
   current_drag_node_data_id.value = node.data.id
   current_drag_node_target.value = ev.target
   const content = ev.target.querySelector('.el-tree-node__content .node-content');
@@ -320,13 +374,17 @@ const handleDragStart = async (node: any, ev: any) => {
     }
   }
   let dragImage = null
-  if (node.data.type !== 'for') {
+  console.log(node.data.type);
+  console.log(node.data.type !== 'for' || node.data.type !== 'if');
+
+
+  if (node.data.type !== 'for' && node.data.type !== 'if' && node.data.type !== 'group') {
     dragImage = ev.target.querySelector('.node-content')
   } else {
     dragImage = ev.target as HTMLElement
   }
-  
-  
+
+
   if (dragImage) {
     ev.dataTransfer?.setDragImage(dragImage, 0, 0)
   }

@@ -8,11 +8,11 @@ export function useDragAndDrop() {
   let lastHighlight: { el: HTMLElement; status: 'before' | 'after' } | null = null
 
   // 获取节点高度映射
-  async function getNodeHeightMapping(blank_id: number) {
+  async function getNodeHeightMapping(blank_id: number, node_type: string = '', sibling_node_ids: Array<number> = []) {
     await nextTick()
     node_search_obj.value = new IntervalMap()
     console.log(node_search_obj.value);
-    
+
     const nodes = document.querySelectorAll('.case-custom-tree .el-tree-node.is-expanded.is-focusable')
     const blank_range: any = {}
     Array.from(nodes).forEach(node => {
@@ -47,23 +47,30 @@ export function useDragAndDrop() {
       }
       const _html = node.querySelector('.el-tree-node__content .tree-node-container') as HTMLElement
       if (has_child === false) {
-        if (_html.getAttribute('data-type') === 'empty') {
-          node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'empty')
+        if (node_type === 'error' && sibling_node_ids.includes(Number(_html.getAttribute('data-id'))) === false) {
+          node_search_obj.value.addInterval(contentStartY, contentEndY, null, 'blank')
         } else {
-          const split_line = Math.round(
-            contentStartY + ((contentEndY - contentStartY) * 0.7)
-          )
-          node_search_obj.value.addInterval(contentStartY, split_line, _html, 'before')
-          node_search_obj.value.addInterval(split_line + 1, contentEndY, _html, 'after')
+          if (_html.getAttribute('data-type') === 'empty') {
+            node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'empty')
+          } else {
+            const split_line = Math.round(
+              contentStartY + ((contentEndY - contentStartY) * 0.7)
+            )
+            node_search_obj.value.addInterval(contentStartY, split_line, _html, 'before')
+            node_search_obj.value.addInterval(split_line + 1, contentEndY, _html, 'after')
+          }
         }
-
       } else {
-        node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'before')
-        node_search_obj.value.addInterval(lineStartY, lineEndY, next as HTMLElement, 'after')
+        if (node_type === 'error' && sibling_node_ids.includes(Number(_html.getAttribute('data-id'))) === false) {
+          node_search_obj.value.addInterval(contentStartY, lineEndY, null, 'blank')
+        } else {
+          node_search_obj.value.addInterval(contentStartY, contentEndY, _html, 'before')
+          node_search_obj.value.addInterval(lineStartY, lineEndY, next as HTMLElement, 'after')
+        }
       }
     })
     console.log(node_search_obj.value.get_data());
-    
+
   }
 
   // 更新 DOM 显示拖拽位置

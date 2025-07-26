@@ -1,263 +1,269 @@
 <template>
-  <div style="display: flex;flex-direction: column;">
-  <el-row v-if="loading === false" class="url-inputer" style="flex:0 0 auto;position:sticky; top:46px; z-index:1;background-color: white;">
-    <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
-        <el-button type="primary" class="method-btn">
-          {{ methodMapping[data.value.method]
-          }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
-        </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
-              }}</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown></el-col>
-    <el-col :span="14">
-      <SpecialInput height="40px" radius="0px 0px 0px 0px" v-model="data.value.path" placeholder="Enter Request URL"
-        @clearData="clearUrl" :cleanTips="'清空请求路径'" :max="600" :isTransColor="false" :disableParams="true">
-      </SpecialInput>
-    </el-col>
-    <el-col :span="3">
-      <el-button class="send-btn" type="primary" @click="send">发送请求</el-button>
-    </el-col>
-    <el-col style="margin-left: 5px" :span="2">
-      <el-button style="width: 100%; height: 100%" @click="save">保存(Ctrl + S)</el-button>
-    </el-col>
-  </el-row>
-  <el-row v-else class="url-inputer">
-    <el-col :span="22" :offset="1">
-      <el-skeleton animated>
-        <template #template>
-          <el-skeleton-item variant="h1" style="width: 10%" />
-          <el-skeleton-item variant="h1" style="width: 50%; margin-left: 20px" />
-          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
-          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
-          <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
-        </template>
-      </el-skeleton>
-    </el-col>
-  </el-row>
-  <div v-if="loading === false">
-    <RegularInput v-model="data.value.name"></RegularInput>
-    <el-row>
-      <el-col :offset="1" :span="5">
-        <RegularSelect label="状态" :showBadge="true" v-model="data.value.status" :optionList="testStatus"
-          :selectedStatusLabel="selectedStatusLabel" :displayLabel="statusLabel"></RegularSelect>
-      </el-col>
-      <el-col :offset="1" :span="5">
-        <RegularSelect label="责任人" :showBadge="false" v-model="data.value.head" :optionList="responsors"
-          :selectedStatusLabel="selectedResponsorLabel" :displayLabel="responsorLabel"></RegularSelect>
-      </el-col>
-      <el-col :offset="1" :span="5">
-        <RegularSelectMul label="标签" :showBadge="false" v-model="data.value.markers" :optionList="marker_list"
-          :displayLabel="markerLabel" @footerEntry="addMarker"></RegularSelectMul>
-      </el-col>
-      <el-col :offset="1" :span="4">
-        <RegularSelectGroup label="服务" :showBadge="false" v-model="data.value.server" :options="serverOptions">
-        </RegularSelectGroup>
-      </el-col>
-    </el-row>
-    <el-row>
-      <el-col :offset="1" :span="22">
-        <div style="
+  <div style="display: flex;flex-direction: column;overflow: auto;height: 100%;min-width: 775px;">
+    <div>
+      <el-row v-if="loading === false" class="url-inputer">
+        <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
+            <el-button type="primary" class="method-btn">
+              {{ methodMapping[data.value.method]
+              }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
+                  }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown></el-col>
+        <el-col :span="14">
+          <SpecialInput height="40px" radius="0px 0px 0px 0px" v-model="data.value.path" placeholder="Enter Request URL"
+            @clearData="clearUrl" :cleanTips="'清空请求路径'" :max="600" :isTransColor="false" :disableParams="true">
+          </SpecialInput>
+        </el-col>
+        <el-col :span="3">
+          <el-button class="send-btn" type="primary" @click="send">发送请求</el-button>
+        </el-col>
+        <el-col style="margin-left: 5px" :span="2">
+          <el-button style="width: 100%; height: 100%" @click="save">{{ is_case ? '保存' : '保存(Ctrl + S)' }}</el-button>
+        </el-col>
+      </el-row>
+      <el-row v-else class="url-inputer">
+        <el-col :span="22" :offset="1">
+          <el-skeleton animated>
+            <template #template>
+              <el-skeleton-item variant="h1" style="width: 10%" />
+              <el-skeleton-item variant="h1" style="width: 50%; margin-left: 20px" />
+              <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
+              <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
+              <el-skeleton-item variant="h1" style="width: 10%; margin-left: 20px" />
+            </template>
+          </el-skeleton>
+        </el-col>
+      </el-row>
+    </div>
+    <div class="content-detail no-scroll">
+      <div v-if="loading === false">
+        <RegularInput v-model="data.value.name"></RegularInput>
+        <el-row>
+          <el-col :offset="1" :span="5">
+            <RegularSelect label="状态" :showBadge="true" v-model="data.value.status" :optionList="testStatus"
+              :selectedStatusLabel="selectedStatusLabel" :displayLabel="statusLabel"></RegularSelect>
+          </el-col>
+          <el-col :offset="1" :span="5">
+            <RegularSelect label="责任人" :showBadge="false" v-model="data.value.head" :optionList="responsors"
+              :selectedStatusLabel="selectedResponsorLabel" :displayLabel="responsorLabel"></RegularSelect>
+          </el-col>
+          <el-col :offset="1" :span="5">
+            <RegularSelectMul label="标签" :showBadge="false" v-model="data.value.markers" :optionList="marker_list"
+              :displayLabel="markerLabel" @footerEntry="addMarker"></RegularSelectMul>
+          </el-col>
+          <el-col :offset="1" :span="4">
+            <RegularSelectGroup label="服务" :showBadge="false" v-model="data.value.server" :options="serverOptions">
+            </RegularSelectGroup>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :offset="1" :span="22">
+            <div style="
             display: flex;
             align-items: center;
             justify-content: space-between;
           ">
-          <div class="doc-base-title-statement" style="margin-bottom: 5px">
-            说明文档
-          </div>
-          <div>
-            <EditButton v-if="show_markdown" class="special-btn" @click="show_markdown = false"></EditButton>
-            <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
-          </div>
-        </div>
-      </el-col>
-      <el-col :offset="1" :span="22">
-        <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
-          placeholder="接口描述信息（支持MarkDown格式）" />
-        <MarkDown v-else :data="data.value.statement"></MarkDown>
-      </el-col>
-    </el-row>
-  </div>
-  <el-row v-else style="margin-top: 20px">
-    <el-col :span="22" :offset="1">
-      <el-skeleton :rows="8" animated />
-    </el-col>
-  </el-row>
-  <div style="margin-top: 20px">
-    <el-divider></el-divider>
-  </div>
-  <el-row style="margin-top: 20px">
-    <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">请求参数</span></el-col>
-  </el-row>
-  <div v-if="loading === false">
-    <el-row style="margin-top: 20px">
-      <el-col :span="22" :offset="1">
-        <div class="tab-core g-unselect">
-          <div style="display: flex; gap: 5px; font-size: 14px; width: 100%">
-            <div :class="{ 'active-tab': active_res_tab === 0 }" @click="active_res_tab = 0" class="un-active-tab">
-              <span>Params</span>
+              <div class="doc-base-title-statement" style="margin-bottom: 5px">
+                说明文档
+              </div>
+              <div>
+                <EditButton v-if="show_markdown" class="special-btn" @click="show_markdown = false"></EditButton>
+                <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
+              </div>
             </div>
-            <div :class="{ 'active-tab': active_res_tab === 1 }" @click="active_res_tab = 1" class="un-active-tab">
-              <span>Body</span>
-            </div>
-            <div :class="{ 'active-tab': active_res_tab === 2 }" @click="active_res_tab = 2" class="un-active-tab">
-              <span>Headers</span>
-            </div>
-            <div :class="{ 'active-tab': active_res_tab === 5 }" @click="active_res_tab = 5" class="un-active-tab">
-              <span>前置操作</span>
-            </div>
-            <div :class="{ 'active-tab': active_res_tab === 6 }" @click="active_res_tab = 6" class="un-active-tab">
-              <span>后置操作</span>
-            </div>
-            <div :class="{ 'active-tab': active_res_tab === 4 }" @click="active_res_tab = 4" class="un-active-tab">
-              <span>Auth</span>
-            </div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-    <el-row>
-      <el-col :span="22" :offset="1">
-        <Params v-if="active_res_tab === 0" :tableData="data.value.query" :interface_id="interface_id"></Params>
-
-        <Body v-show="active_res_tab === 1" :tableData="data.value.json_data"
-          :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
-          :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
-          @exchange_json_body_value="handleExchangeValue" @change_raw_body="handle_change_raw_body"
-          :interface="interface_id"></Body>
-        <Headers v-if="active_res_tab === 2" :canVar="true" :tableData="data.value.headers" :interface="interface_id">
-        </Headers>
-        <div class="body-tools" v-if="active_res_tab === 4">
-          <div class="title">鉴权设置(暂不可用)</div>
-        </div>
-        <div v-if="active_res_tab === 4" class="auth-outside">
-          <Auth :auth_setting="data.value.auth" ref="auth_ref" :offset="0" :hasParent="true"></Auth>
-        </div>
-        <PreAction ref="pre_action_ref" v-if="active_res_tab === 5" :offset="0" :span="24"
-          v-model="data.value.pre_actions.elements" :father-actions="data.value.pre_actions.father_actions"
-          :hasFatherActions="true" :interface="interface_id"></PreAction>
-        <AfterAction ref="after_action_ref" v-if="active_res_tab === 6" :offset="0" :span="24"
-          v-model="data.value.after_actions.elements" :father-actions="data.value.after_actions.father_actions"
-          :hasFatherActions="true" :interface="interface_id"></AfterAction>
-      </el-col>
-    </el-row>
-  </div>
-  <el-row v-else style="margin-top: 20px">
-    <el-col :span="22" :offset="1">
-      <el-skeleton :rows="5" animated />
-    </el-col>
-  </el-row>
-  <div style="margin-top: 20px">
-    <el-divider></el-divider>
-  </div>
-  <div style="margin-bottom: 170px">
-    <el-row style="margin-top: 20px">
-      <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">返回响应示例</span></el-col>
-    </el-row>
-    <div v-if="loading === false">
-      <el-row style="margin-top: 20px">
+          </el-col>
+          <el-col :offset="1" :span="22">
+            <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
+              placeholder="接口描述信息（支持MarkDown格式）" />
+            <MarkDown v-else :data="data.value.statement"></MarkDown>
+          </el-col>
+        </el-row>
+      </div>
+      <el-row v-if="loading === true" style="margin-top: 20px">
         <el-col :span="22" :offset="1">
-          <div class="tab-core">
-            <div class="no-scroll" style="
+          <el-skeleton :rows="8" animated />
+        </el-col>
+      </el-row>
+      <div style="margin-top: 20px">
+        <el-divider></el-divider>
+      </div>
+      <el-row style="margin-top: 20px">
+        <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">请求参数</span></el-col>
+      </el-row>
+      <div v-if="loading === false">
+        <el-row style="margin-top: 20px">
+          <el-col :span="22" :offset="1">
+            <div class="tab-core g-unselect">
+              <div style="display: flex; gap: 5px; font-size: 14px; width: 100%">
+                <div :class="{ 'active-tab': active_res_tab === 0 }" @click="active_res_tab = 0" class="un-active-tab">
+                  <span>Params</span>
+                </div>
+                <div :class="{ 'active-tab': active_res_tab === 1 }" @click="active_res_tab = 1" class="un-active-tab">
+                  <span>Body</span>
+                </div>
+                <div :class="{ 'active-tab': active_res_tab === 2 }" @click="active_res_tab = 2" class="un-active-tab">
+                  <span>Headers</span>
+                </div>
+                <div :class="{ 'active-tab': active_res_tab === 5 }" @click="active_res_tab = 5" class="un-active-tab">
+                  <span>前置操作</span>
+                </div>
+                <div :class="{ 'active-tab': active_res_tab === 6 }" @click="active_res_tab = 6" class="un-active-tab">
+                  <span>后置操作</span>
+                </div>
+                <div :class="{ 'active-tab': active_res_tab === 4 }" @click="active_res_tab = 4" class="un-active-tab">
+                  <span>Auth</span>
+                </div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :span="22" :offset="1">
+            <Params v-if="active_res_tab === 0" :tableData="data.value.query" :interface_id="interface_id"></Params>
+
+            <Body v-show="active_res_tab === 1" :tableData="data.value.json_data"
+              :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
+              :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
+              @exchange_json_body_value="handleExchangeValue" @change_raw_body="handle_change_raw_body"
+              :interface="interface_id"></Body>
+            <Headers v-if="active_res_tab === 2" :canVar="true" :tableData="data.value.headers"
+              :interface="interface_id">
+            </Headers>
+            <div class="body-tools" v-if="active_res_tab === 4">
+              <div class="title">鉴权设置(暂不可用)</div>
+            </div>
+            <div v-if="active_res_tab === 4" class="auth-outside">
+              <Auth :auth_setting="data.value.auth" ref="auth_ref" :offset="0" :hasParent="true"></Auth>
+            </div>
+            <PreAction ref="pre_action_ref" v-if="active_res_tab === 5" :offset="0" :span="24"
+              v-model="data.value.pre_actions.elements" :father-actions="data.value.pre_actions.father_actions"
+              :hasFatherActions="true" :interface="interface_id"></PreAction>
+            <AfterAction ref="after_action_ref" v-if="active_res_tab === 6" :offset="0" :span="24"
+              v-model="data.value.after_actions.elements" :father-actions="data.value.after_actions.father_actions"
+              :hasFatherActions="true" :interface="interface_id"></AfterAction>
+          </el-col>
+        </el-row>
+      </div>
+      <el-row v-else style="margin-top: 20px">
+        <el-col :span="22" :offset="1">
+          <el-skeleton :rows="5" animated />
+        </el-col>
+      </el-row>
+      <div style="margin-top: 20px">
+        <el-divider></el-divider>
+      </div>
+      <div style="margin-bottom: 170px">
+        <el-row style="margin-top: 20px">
+          <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">返回响应示例</span></el-col>
+        </el-row>
+        <div v-if="loading === false">
+          <el-row style="margin-top: 20px">
+            <el-col :span="22" :offset="1">
+              <div class="tab-core">
+                <div class="no-scroll" style="
                 display: flex;
                 align-items: end;
                 justify-content: start;
                 overflow: scroll;
               ">
-              <div v-for="(item, index) in responseOptions" :class="{ 'active-tab': current_response.id === item.id }"
-                @click="change_response_tab(item)" class="un-active-tab">
-                <div style="
+                  <div v-for="(item, index) in responseOptions"
+                    :class="{ 'active-tab': current_response.id === item.id }" @click="change_response_tab(item)"
+                    class="un-active-tab">
+                    <div style="
                     display: flex;
                     align-items: center;
                     justify-content: start;
                     padding-bottom: 0px;
                   " class="response-name-status g-unselect">
-                  <div class="response-menu-div" style="padding-bottom: 0px">
-                    {{ item.name }}
+                      <div class="response-menu-div" style="padding-bottom: 0px">
+                        {{ item.name }}
+                      </div>
+                      <div style="padding-bottom: 0px">({{ item.status }})</div>
+                    </div>
                   </div>
-                  <div style="padding-bottom: 0px">({{ item.status }})</div>
                 </div>
+                <AddButton class="hover-menu-box" @click="add_response_handle"></AddButton>
               </div>
-            </div>
-            <AddButton class="hover-menu-box" @click="add_response_handle"></AddButton>
-          </div>
-        </el-col>
-      </el-row>
-      <div>
-        <el-row style="margin-top: 20px">
-          <el-col :span="22" :offset="1">
-            <div class="response-line">
-              <div class="response-base-info">
-                <div class="response-base-info-text">HTTP状态码:</div>
-                <div class="response-base-info-dropdown">
-                  <el-dropdown @command="handleStatusCommand" trigger="click">
-                    <SimpleInput v-model="current_response.status" :maxLength="3"></SimpleInput>
-                    <template #dropdown>
-                      <el-dropdown-menu class="response-status-dropdown">
-                        <el-dropdown-item v-for="([code, message], index) in Object.entries(
-                          GlobalStatus.regular_response_status_map()
-                        )" :command="code">
-                          <div style="
+            </el-col>
+          </el-row>
+          <div>
+            <el-row style="margin-top: 20px">
+              <el-col :span="22" :offset="1">
+                <div class="response-line">
+                  <div class="response-base-info">
+                    <div class="response-base-info-text">HTTP状态码:</div>
+                    <div class="response-base-info-dropdown">
+                      <el-dropdown @command="handleStatusCommand" trigger="click">
+                        <SimpleInput v-model="current_response.status" :maxLength="3"></SimpleInput>
+                        <template #dropdown>
+                          <el-dropdown-menu class="response-status-dropdown">
+                            <el-dropdown-item v-for="([code, message], index) in Object.entries(
+                              GlobalStatus.regular_response_status_map()
+                            )" :command="code">
+                              <div style="
                               display: flex;
                               align-items: center;
                               justify-content: center;
                               gap: 5px;
                             ">
-                            <div>{{ code }}</div>
-                            <div>{{ message }}</div>
-                          </div>
-                        </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
+                                <div>{{ code }}</div>
+                                <div>{{ message }}</div>
+                              </div>
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                    </div>
+                    <div class="response-base-info-text" style="margin-left: 10px">
+                      名称:
+                    </div>
+                    <SimpleInput v-model="current_response.name" :inputWidth="100"></SimpleInput>
+                  </div>
+                  <div>
+                    <DeleteButton class="hover-menu-box" @click="delete_response(current_response)"></DeleteButton>
+                  </div>
                 </div>
-                <div class="response-base-info-text" style="margin-left: 10px">
-                  名称:
-                </div>
-                <SimpleInput v-model="current_response.name" :inputWidth="100"></SimpleInput>
-              </div>
-              <div>
-                <DeleteButton class="hover-menu-box" @click="delete_response(current_response)"></DeleteButton>
-              </div>
-            </div>
-          </el-col></el-row>
-        <el-row style="margin-top: 20px">
-          <el-col :span="22" :offset="1">
-            <div class="process-dialog-content">
-              <div style="
+              </el-col></el-row>
+            <el-row style="margin-top: 20px">
+              <el-col :span="22" :offset="1">
+                <div class="process-dialog-content">
+                  <div style="
                   width: 100%;
                   border: 1px solid #f3f5f6;
                   border-radius: 10px;
                 ">
-                <div class="editor-header">
-                  <div style="font-size: 14px; font-weight: 500">响应内容</div>
-                  <div>
-                    <ParamsTool @insert_action="insert_params" :showVariable="false"></ParamsTool>
+                    <div class="editor-header">
+                      <div style="font-size: 14px; font-weight: 500">响应内容</div>
+                      <div>
+                        <ParamsTool @insert_action="insert_params" :showVariable="false"></ParamsTool>
+                      </div>
+                    </div>
+                    <NewJsonEditor v-if="loading === false" ref="ediorText" v-model="current_response.content">
+                    </NewJsonEditor>
+                    <!-- <el-skeleton v-else :rows="10" animated /> -->
                   </div>
                 </div>
-                <NewJsonEditor v-if="loading === false" ref="ediorText" v-model="current_response.content">
-                </NewJsonEditor>
-                <!-- <el-skeleton v-else :rows="10" animated /> -->
-              </div>
-            </div>
-          </el-col>
-        </el-row>
-        <el-row style="margin-top: 20px">
+              </el-col>
+            </el-row>
+            <el-row style="margin-top: 20px">
+              <el-col :span="22" :offset="1">
+                <Headers :canVar="false" :tableData="current_response.headers"></Headers>
+              </el-col>
+            </el-row>
+          </div>
+        </div>
+        <el-row v-else style="margin-top: 20px">
           <el-col :span="22" :offset="1">
-            <Headers :canVar="false" :tableData="current_response.headers"></Headers>
+            <el-skeleton :rows="5" animated />
           </el-col>
         </el-row>
       </div>
     </div>
-    <el-row v-else style="margin-top: 20px">
-      <el-col :span="22" :offset="1">
-        <el-skeleton :rows="5" animated />
-      </el-col>
-    </el-row>
-  </div>
   </div>
   <el-dialog v-model="show_send_response_dialog" :show-close="false" style="border-radius: 12px; margin-top: 20px"
     class="process-dialog">
@@ -407,7 +413,7 @@
                     <div>
                       匹配结果：<span>{{
                         match.result === true ? "成功" : "失败"
-                        }}</span>
+                      }}</span>
                     </div>
                     <div>
                       结果值：<span>{{ match.value }}</span>
@@ -420,7 +426,7 @@
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                    }}</span>
+                  }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -560,6 +566,10 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  is_case: {
+    type: Boolean,
+    default: false
+  }
 });
 
 watch(activeTab, (val) => {
@@ -1028,7 +1038,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 
   const changedFields = new Set<string>();
 
-  differences.forEach(({ path }) => {
+  differences.forEach(({ path }: any) => {
     // 提取一级字段名（path[0]）
     // 示例：path = ['profile', 'age'] → 提取 'profile'
     if (path?.length > 0) {
@@ -1047,6 +1057,10 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 };
 </script>
 <style lang="scss" scoped>
+.content-detail {
+  overflow: auto;
+}
+
 .error-span {
   color: rgba(#f89898, 1);
 }

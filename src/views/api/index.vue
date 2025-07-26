@@ -1,78 +1,86 @@
 <template>
-  <nav class="amazing-tabs">
-    <div class="filters-container">
-      <div class="filters-wrapper">
-        <div class="icon-div" style="border-right: 1px solid #f5f5f5">
-          <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
-            <ArrowLeftBold />
-          </el-icon>
-        </div>
-        <div class="no-scroll" id="tabsUl"
-          style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: scroll;gap: 5px;">
-          <motion.div v-for="(item, index) in editableTabs" :key="item.name" class="tab-item"
-            :class="{ active: current_tab_name === item.name }" :initial="{ opacity: 0, y: -4 }"
-            :animate="{ opacity: 1, y: 0 }" :whileHover="{ backgroundColor: '#ebeff5', color: '#222' }"
-            :transition="{ duration: 0.18 }" @click="change_tab_and_change_page(
-              item.title,
-              item.t,
-              item.index,
-              true,
-              item.name
-            )">
-            <motion.div v-if="item.t === 4" class="icon-box">
-              <Fold style="margin-right:5px;" :style="{color: current_tab_name === item.name ? '#eeeeee': 'black'}" />
-            </motion.div>
-            <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
-            }}</span>
-
-            <span class="title g-ellipsis">{{ item.title }}</span>
-
-            <div class="suffix-slot" @click.stop>
-              <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
-              <el-icon class="close-icon" @click.stop="closeTab(item, index)">
-                <CloseBold />
+  <SplitterGroup direction="vertical">
+    <SplitterPanel :default-size="6" :min-size="6" :max-size="6">
+      <nav class="interface-amazing-tabs">
+        <div class="filters-container">
+          <div class="filters-wrapper">
+            <div class="icon-div" style="border-right: 1px solid #f5f5f5">
+              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
+                <ArrowLeftBold />
               </el-icon>
             </div>
-          </motion.div>
-        </div>
-        <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
-          <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
-            <ArrowRightBold />
-          </el-icon>
-        </div>
-        <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-          <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
-            <PlusBold />
-          </el-icon>
-        </div>
-        <div class="env-div" style="border-left: 1px solid #f5f5f5">
-          <div class="env-select">
-            <el-select placeholder="环境" v-model="env" @change="change_user_env">
-              <el-option v-for="item in env_list" :key="item.name" :value="item.name" :label="item.name"></el-option>
-            </el-select>
+            <div class="no-scroll" id="tabsUl"
+              style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: scroll;gap: 5px;">
+              <motion.div v-for="(item, index) in editableTabs" :key="item.name" class="tab-item"
+                :class="{ active: current_tab_name === item.name }" :initial="{ opacity: 0, y: -4 }"
+                :animate="{ opacity: 1, y: 0 }" :whileHover="{ backgroundColor: '#ebeff5', color: '#222' }"
+                :transition="{ duration: 0.18 }" @click="change_tab_and_change_page(
+                  item.title,
+                  item.t,
+                  item.index,
+                  true,
+                  item.name
+                )">
+                <motion.div v-if="item.t === 4" class="icon-box">
+                  <Fold style="margin-right:5px;"
+                    :style="{ color: current_tab_name === item.name ? '#eeeeee' : 'black' }" />
+                </motion.div>
+                <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
+                  }}</span>
+
+                <span class="title g-ellipsis">{{ item.title }}</span>
+
+                <div class="suffix-slot" @click.stop>
+                  <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
+                  <el-icon class="close-icon" @click.stop="closeTab(item, index)">
+                    <CloseBold />
+                  </el-icon>
+                </div>
+              </motion.div>
+            </div>
+            <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
+              <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
+                <ArrowRightBold />
+              </el-icon>
+            </div>
+            <div class="icon-div" style="border-left: 1px solid #f5f5f5">
+              <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
+                <PlusBold />
+              </el-icon>
+            </div>
+            <div class="env-div" style="border-left: 1px solid #f5f5f5">
+              <div class="env-select">
+                <el-select placeholder="环境" v-model="env" @change="change_user_env">
+                  <el-option v-for="item in env_list" :key="item.name" :value="item.name"
+                    :label="item.name"></el-option>
+                </el-select>
+              </div>
+              <div class="env-icon-div">
+                <el-icon @click="openEnvSetting" class="margin-cls scroll-btn" style="z-index: 999">
+                  <SettingBtn />
+                </el-icon>
+              </div>
+            </div>
           </div>
-          <div class="env-icon-div">
-            <el-icon @click="openEnvSetting" class="margin-cls scroll-btn" style="z-index: 999">
-              <SettingBtn />
-            </el-icon>
-          </div>
         </div>
-      </div>
-    </div>
-  </nav>
-  <div style="height: 100%; overflow: auto" class="no-scroll">
-    <EmptyPage v-if="show_type === 0"></EmptyPage>
-    <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
-    <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
-    <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
-      :target_type="current_target_type"></RootDir>
-    <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
-    <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-    <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action">
-    </NormalDialog>
-  </div>
+      </nav>
+    </SplitterPanel>
+    <SplitterResizeHandle disabled />
+    <SplitterPanel :default-size="94" :min-size="94" :max-size="94">
+        <EmptyPage v-if="show_type === 0"></EmptyPage>
+        <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
+        <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
+        <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
+          :target_type="current_target_type"></RootDir>
+        <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
+        <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
+        <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action">
+        </NormalDialog>
+    </SplitterPanel>
+  </SplitterGroup>
 </template>
 <script lang="ts" setup>
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import Fold from "@/assets/svg/tree/fold.vue";
 import { useRoute, useRouter } from "vue-router";
@@ -678,7 +686,20 @@ function change_user_env(item: any) {
 }
 </script>
 <style lang="scss" scoped>
-.amazing-tabs {
+.interface-control {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.interface-amazing-tabs {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #f0f0f0;
   .title {
     font-weight: 600;
   }

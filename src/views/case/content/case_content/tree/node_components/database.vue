@@ -10,8 +10,7 @@
             <motion.div class="node-info">
                 <CheckBox :check="check" @change="changeCheck"></CheckBox>
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                    <motion.span class="gradient-text" :class="{ [data.method]: true }">{{ data.method.toUpperCase() }}
-                    </motion.span>
+                    <DatabaseAnimationIcon :key="data.id"></DatabaseAnimationIcon>
                 </motion.span>
             </motion.div>
         </motion.div>
@@ -22,6 +21,7 @@
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/tree/components/draghandle.vue'
+import DatabaseAnimationIcon from '@/views/case/content/case_content/tree/components/database_animation.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
 const props = defineProps<{

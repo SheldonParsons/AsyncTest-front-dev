@@ -40,7 +40,7 @@ onMounted(() => {
                         
                         <Switch.Root v-model="checked" :class="{ checked_animation: checked }" @click="toggleChecked">
                             <motion.button class="switch" :initial="false" :animate="{
-                                backgroundColor: checked ? '#38b48b' : 'var(--hue-6-transparent)'
+                                backgroundColor: checked ? 'black' : 'var(--hue-6-transparent)'
                             }" :style="{
                                 justifyContent: checked ? 'flex-end' : 'flex-start'
                             }" :while-focus="{

@@ -173,20 +173,8 @@ export function useTreeNodeOperations() {
       // 正常 before/after 插入
       let insertIndex =
         dropType === 'before' ? targetInfo.index : targetInfo.index + 1
-
-      // 同级向后移动时修正索引
-      // if (
-      //   draggedInfo.list === targetInfo.list &&
-      //   draggedInfo.index < insertIndex
-      // ) {
-      //   insertIndex--
-      // }
-      console.log(draggedNode);
-      console.log(insertIndex);
-      
       
       targetInfo.list.splice(insertIndex, 0, draggedNode)
-      console.log(targetInfo);
       
 
       // 若该父级下还残留 empty，占位已无必要则移除

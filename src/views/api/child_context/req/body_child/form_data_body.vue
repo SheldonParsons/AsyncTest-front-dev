@@ -40,7 +40,7 @@
           </el-row>
         </template>
       </el-table-column>
-      <el-table-column label="类型" min-width="20%">
+      <el-table-column label="类型" min-width="30%">
         <template #default="scope">
           <el-dropdown
             trigger="click"
@@ -169,7 +169,7 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="15%">
+      <el-table-column label="操作" min-width="20%">
         <template #default="scope">
           <el-tooltip content="添加相邻节点" placement="top" effect="light">
             <el-icon
