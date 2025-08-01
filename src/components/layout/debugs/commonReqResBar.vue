@@ -1,6 +1,6 @@
 <template>
   <div id="toolsRes">
-    <div v-loading="loading">
+    <div>
       <div v-show="result">
         <el-tabs
           class="res-tabs"

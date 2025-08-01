@@ -5,7 +5,7 @@
         <div class="filters-container">
           <div class="filters-wrapper">
             <div class="icon-div" style="border-right: 1px solid #f5f5f5">
-              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
+              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn">
                 <ArrowLeftBold />
               </el-icon>
             </div>
@@ -39,12 +39,12 @@
               </motion.div>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
-              <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
+              <el-icon @click="scrollToRight" class="margin-cls scroll-btn">
                 <ArrowRightBold />
               </el-icon>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-              <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
+              <el-icon class="margin-cls scroll-btn"@click="open_create_page">
                 <PlusBold />
               </el-icon>
             </div>
@@ -56,7 +56,7 @@
                 </el-select>
               </div>
               <div class="env-icon-div">
-                <el-icon @click="openEnvSetting" class="margin-cls scroll-btn" style="z-index: 999">
+                <el-icon @click="openEnvSetting" class="margin-cls scroll-btn">
                   <SettingBtn />
                 </el-icon>
               </div>
@@ -74,7 +74,7 @@
           :target_type="current_target_type"></RootDir>
         <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
         <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-        <NormalDialog v-if="show_has_change_dialog" v-model="show_has_change_dialog" @action="has_change_action">
+        <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
         </NormalDialog>
     </SplitterPanel>
   </SplitterGroup>
@@ -908,7 +908,6 @@ nav.amazing-tabs {
   width: 100%;
   height: 45px;
   display: flex;
-  z-index: 999;
 }
 
 .main-tabs-container {

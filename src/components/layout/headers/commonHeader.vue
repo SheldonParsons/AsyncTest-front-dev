@@ -205,7 +205,6 @@ router.beforeEach(async (to: any, from: any, next: any) => {
   getLanguage();
   getHeader(to);
   next();
-
 });
 
 function getHeader(r: any) {

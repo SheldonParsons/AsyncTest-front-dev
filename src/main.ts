@@ -10,6 +10,7 @@ import 'element-plus/theme-chalk/display.css'
 import 'element-plus/dist/index.css'
 import './assets/css/preset.scss'
 import { createSSRstore, key } from './store'
+import AstLoading from './components/common/general/loading.vue'
 
 
 
@@ -21,6 +22,7 @@ export function create_app() {
   for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
     app.component(key, component)
   }
+  app.component('AstLoading', AstLoading)
   app.provide(ZINDEX_INJECTION_KEY, {
     current: 0,
   })

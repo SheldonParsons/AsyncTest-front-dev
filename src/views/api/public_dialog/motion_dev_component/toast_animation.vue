@@ -1,3 +1,29 @@
+<template>
+    <teleport to="body">
+        <div class="toast-container">
+            <Toast.Provider v-if="isVisible">
+                <Toast.Root :duration="duration" :force-mount="true" :as-child="true">
+                    <AnimatePresence mode="wait">
+                        <motion.div class="toast-root" :initial="{ opacity: 0, x: 100 }" :animate="{ opacity: 1, x: 0 }"
+                            :exit="{ opacity: 0, scale: 0.9 }" :drag="'x'" :drag-elastic="0.1"
+                            :drag-constraints="{ left: 0 }">
+                            <Toast.Title class="toast-title">{{ title }}</Toast.Title>
+                            <Toast.Description :as-child="true">
+                                <time class="toast-description" :dateTime="currentTime">{{ currentTime }}</time>
+                            </Toast.Description>
+                            <Toast.Action :as-child="true" alt-text="Goto schedule to undo">
+                                <button class="button small toast-action" :class="type" @click="isVisible = false">{{
+                                    actionText
+                                    }}</button>
+                            </Toast.Action>
+                        </motion.div>
+                    </AnimatePresence>
+                </Toast.Root>
+                <Toast.Viewport class="toast-viewport" />
+            </Toast.Provider>
+        </div>
+    </teleport>
+</template>
 <!-- src/components/ToastView.vue -->
 <script setup lang="ts">
 import { ref } from 'vue'
@@ -8,7 +34,7 @@ import { Toast } from 'reka-ui/namespaced'
 const isVisible = ref(false)
 const title = ref('')
 const actionText = ref('')
-const type = ref<'success' | 'info' | 'error'>('info')
+const type = ref('info')
 const duration = ref(3000)
 const currentTime = ref('')
 
@@ -24,11 +50,20 @@ let timeoutId: ReturnType<typeof setTimeout> | null = null
 let showDelayId: ReturnType<typeof setTimeout> | null = null
 
 function showToast(options: {
-    title: string
-    actionText: string
-    type: 'success' | 'info' | 'error'
+    title?: string,
+    actionText?: string,
+    type?: string,
     duration?: number
 }) {
+    // 合并默认值
+    const merged = {
+        title: '',
+        actionText: '关闭',
+        type: 'success',
+        duration: 3000,
+        ...options
+    }
+
     // 清除等待显示的延迟器
     if (showDelayId) {
         clearTimeout(showDelayId)
@@ -46,10 +81,10 @@ function showToast(options: {
 
     // 等待旧动画执行完再显示新的
     showDelayId = setTimeout(() => {
-        title.value = options.title
-        actionText.value = options.actionText
-        type.value = options.type
-        duration.value = options.duration ?? 3000
+        title.value = merged.title
+        actionText.value = merged.actionText
+        type.value = merged.type
+        duration.value = merged.duration
         currentTime.value = formatDate(new Date())
         isVisible.value = true
 
@@ -57,42 +92,19 @@ function showToast(options: {
         timeoutId = setTimeout(() => {
             isVisible.value = false
             timeoutId = null
-        }, duration.value)
+        }, merged.duration)
 
         showDelayId = null // 延迟器也清理
     }, 100)
 }
+
 
 // 提供给外部调用
 defineExpose({ showToast })
 
 </script>
 
-<template>
-    <teleport to="body">
-        <div class="toast-container">
-            <Toast.Provider v-if="isVisible">
-                <Toast.Root :duration="duration" :force-mount="true" :as-child="true">
-                    <AnimatePresence mode="wait">
-                        <motion.div class="toast-root" :initial="{ opacity: 0, x: 100 }" :animate="{ opacity: 1, x: 0 }"
-                            :exit="{ opacity: 0, scale: 0.9 }" :drag="'x'" :drag-elastic="0.1"
-                            :drag-constraints="{ left: 0 }">
-                            <Toast.Title class="toast-title">{{ title }}</Toast.Title>
-                            <Toast.Description :as-child="true">
-                                <time class="toast-description" :dateTime="currentTime">{{ currentTime }}</time>
-                            </Toast.Description>
-                            <Toast.Action :as-child="true" alt-text="Goto schedule to undo">
-                                <button class="button small toast-action" :class="type" @click="isVisible = false">{{ actionText
-                                    }}</button>
-                            </Toast.Action>
-                        </motion.div>
-                    </AnimatePresence>
-                </Toast.Root>
-                <Toast.Viewport class="toast-viewport" />
-            </Toast.Provider>
-        </div>
-    </teleport>
-</template>
+
 
 <style>
 .toast-container {
@@ -127,6 +139,12 @@ defineExpose({ showToast })
     font-weight: 500;
     color: white;
     font-size: 15px;
+    word-wrap: break-word;
+    /* 允许长单词或URL地址换行到下一行 */
+    overflow-wrap: break-word;
+    /* 更现代的属性，效果类似word-wrap */
+    word-break: break-all;
+    /* 更激进的方式，允许在任意字符间断行 */
 }
 
 .toast-description {
@@ -146,17 +164,17 @@ defineExpose({ showToast })
 }
 
 .toast-action.success {
-  background-color: #38b48b;
-  color: white;
+    background-color: #38b48b;
+    color: white;
 }
 
 .toast-action.info {
-  background-color: #0d63f8;
-  color: white;
+    background-color: #0d63f8;
+    color: white;
 }
 
 .toast-action.error {
-  background-color: #f44336;
-  color: white;
+    background-color: #f44336;
+    color: white;
 }
 </style>

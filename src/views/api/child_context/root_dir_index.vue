@@ -1,4 +1,5 @@
 <template>
+   <div class="dir-container">
   <el-row style="margin-top: 30px">
     <el-col :offset="1" :span="14">
       <SwitchTag :glider="tag" @changeTag="change_tag"></SwitchTag>
@@ -11,6 +12,7 @@
       <el-button @click="save" type="primary">保存</el-button>
     </el-col>
   </el-row>
+ 
   <MenuSetting
     v-if="tag === 'menu'"
     :target_type="target_type"
@@ -55,6 +57,7 @@
       </div>
     </el-col>
   </el-row>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -154,6 +157,12 @@ async function save() {
 </script>
 
 <style scoped lang="scss">
+.dir-container {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  height: 100%;
+}
 .body-tools {
   margin-top: 20px;
   display: flex;

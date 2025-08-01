@@ -1,73 +1,28 @@
 <template>
   <Star @click="openHandle"></Star>
-  <el-dialog
-    v-model="visible"
-    :show-close="false"
-    :append-to-body="true"
-    class="params-special-k11"
-    width="25%"
-  >
-    <MainPageHeader
-      @close="visible = false"
-      v-if="params_page_status === 0"
-    ></MainPageHeader>
-    <SettingPageHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 1"
-    ></SettingPageHeader>
-    <GeneratorHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 2"
-    ></GeneratorHeader>
-    <FixedHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 3"
-    ></FixedHeader>
+  <el-dialog v-model="visible" :show-close="false" :append-to-body="true" class="params-special-k11" width="25%">
+    <MainPageHeader @close="visible = false" v-if="params_page_status === 0"></MainPageHeader>
+    <SettingPageHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 1">
+    </SettingPageHeader>
+    <GeneratorHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 2"></GeneratorHeader>
+    <FixedHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 3"></FixedHeader>
     <el-divider></el-divider>
     <div class="params-container">
       <div ref="gridContainer" class="grid-container">
-        <div
-          v-if="params_page_status === 0"
-          style="height: 1px"
-          ref="itemContaniner"
-        >
-          <Variable
-            v-if="showVariable"
-            @click="toggleItems(1)"
-            style="margin-bottom: 10px"
-          ></Variable>
+        <div v-if="params_page_status === 0" style="height: 1px" ref="itemContaniner">
+          <Variable v-if="showVariable" @click="toggleItems(1)" style="margin-bottom: 10px"></Variable>
           <Method @click="toggleItems(2)" style="margin-bottom: 10px"></Method>
           <Equal @click="toggleItems(3)"></Equal>
         </div>
         <div ref="itemContaniner" v-if="params_page_status === 1">
-          <ParamsVar
-            @reload_height="toggleItems(1)"
-            @insert_action="insert_action"
-            :interface="interface"
-          ></ParamsVar>
+          <ParamsVar @reload_height="toggleItems(1)" @insert_action="insert_action" :interface="interface" :env="env">
+          </ParamsVar>
         </div>
-        <div
-          style="height: 139px"
-          ref="itemContaniner"
-          v-if="params_page_status === 2"
-        >
-          <ParamsGenerator
-            @reload_height="toggleItems(2)"
-            @insert_action="insert_action"
-          ></ParamsGenerator>
+        <div style="height: 139px" ref="itemContaniner" v-if="params_page_status === 2">
+          <ParamsGenerator @reload_height="toggleItems(2)" @insert_action="insert_action"></ParamsGenerator>
         </div>
-        <div
-          style="height: 139px"
-          ref="itemContaniner"
-          v-if="params_page_status === 3"
-        >
-          <ParamsFixed
-            @reload_height="toggleItems(3)"
-            @insert_action="insert_action"
-          ></ParamsFixed>
+        <div style="height: 139px" ref="itemContaniner" v-if="params_page_status === 3">
+          <ParamsFixed @reload_height="toggleItems(3)" @insert_action="insert_action"></ParamsFixed>
         </div>
       </div>
     </div>
@@ -81,78 +36,30 @@
     <template #reference>
       <Star @click="openHandle"></Star>
     </template>
-    <MainPageHeader
-      @close="visible = false"
-      v-if="params_page_status === 0"
-    ></MainPageHeader>
-    <SettingPageHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 1"
-    ></SettingPageHeader>
-    <GeneratorHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 2"
-    ></GeneratorHeader>
-    <FixedHeader
-      @close="visible = false"
-      @back="toggleItems(0)"
-      v-if="params_page_status === 3"
-    ></FixedHeader>
-    <el-divider></el-divider>
-    <div class="params-container">
-      <div
-        ref="gridContainer"
-        class="grid-container"
-      >
-        <div
-          v-if="params_page_status === 0"
-          style="height: 1px; width: 350px"
-          ref="itemContaniner"
-        >
-          <Variable
-            v-if="showVariable"
-            @click="toggleItems(1)"
-            style="margin-bottom: 10px"
-          ></Variable>
-          <Method @click="toggleItems(2)" style="margin-bottom: 10px"></Method>
-          <Equal @click="toggleItems(3)"></Equal>
-        </div>
-        <div
-          style="width: 350px"
-          ref="itemContaniner"
-          v-if="params_page_status === 1"
-        >
-          <ParamsVar
-            @reload_height="toggleItems(1)"
-            @insert_action="insert_action"
-            :interface="interface"
-          ></ParamsVar>
-        </div>
-        <div
-          style="height: 139px; width: 350px"
-          ref="itemContaniner"
-          v-if="params_page_status === 2"
-        >
-          <ParamsGenerator
-            @reload_height="toggleItems(2)"
-            @insert_action="insert_action"
-          ></ParamsGenerator>
-        </div>
-        <div
-          style="height: 139px; width: 350px"
-          ref="itemContaniner"
-          v-if="params_page_status === 3"
-        >
-          <ParamsFixed
-            @reload_height="toggleItems(3)"
-            @insert_action="insert_action"
-          ></ParamsFixed>
-        </div>
-      </div>
+<MainPageHeader @close="visible = false" v-if="params_page_status === 0"></MainPageHeader>
+<SettingPageHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 1"></SettingPageHeader>
+<GeneratorHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 2"></GeneratorHeader>
+<FixedHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 3"></FixedHeader>
+<el-divider></el-divider>
+<div class="params-container">
+  <div ref="gridContainer" class="grid-container">
+    <div v-if="params_page_status === 0" style="height: 1px; width: 350px" ref="itemContaniner">
+      <Variable v-if="showVariable" @click="toggleItems(1)" style="margin-bottom: 10px"></Variable>
+      <Method @click="toggleItems(2)" style="margin-bottom: 10px"></Method>
+      <Equal @click="toggleItems(3)"></Equal>
     </div>
-  </el-popover> -->
+    <div style="width: 350px" ref="itemContaniner" v-if="params_page_status === 1">
+      <ParamsVar @reload_height="toggleItems(1)" @insert_action="insert_action" :interface="interface"></ParamsVar>
+    </div>
+    <div style="height: 139px; width: 350px" ref="itemContaniner" v-if="params_page_status === 2">
+      <ParamsGenerator @reload_height="toggleItems(2)" @insert_action="insert_action"></ParamsGenerator>
+    </div>
+    <div style="height: 139px; width: 350px" ref="itemContaniner" v-if="params_page_status === 3">
+      <ParamsFixed @reload_height="toggleItems(3)" @insert_action="insert_action"></ParamsFixed>
+    </div>
+  </div>
+</div>
+</el-popover> -->
 </template>
 
 <script setup lang="ts">
@@ -203,6 +110,10 @@ const props = defineProps({
     type: Number,
     default: -1,
   },
+  env: {
+    type: String,
+    default: '-1'
+  }
 });
 
 // 监听弹出层显示状态
@@ -256,6 +167,7 @@ function insert_action(text: string) {
   width: 30px;
   height: 30px;
 }
+
 .params-container {
   width: 100%;
   max-width: 800px;
@@ -266,10 +178,13 @@ function insert_action(text: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 5px;
-  grid-auto-rows: minmax(10px, auto); /* 确保行高可收缩 */
-  transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1); /* 更平滑的过渡曲线 */
+  grid-auto-rows: minmax(10px, auto);
+  /* 确保行高可收缩 */
+  transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 更平滑的过渡曲线 */
   overflow: hidden;
-  will-change: height; /* 优化过渡性能 */
+  will-change: height;
+  /* 优化过渡性能 */
   padding: 12px;
   overflow: auto;
 }
@@ -285,6 +200,7 @@ function insert_action(text: string) {
   margin: 0px !important;
   border-color: #f2f4f7;
 }
+
 .params-special-k11 {
   .el-dialog__header {
     display: none;

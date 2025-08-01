@@ -3,7 +3,7 @@
     <el-divider content-position="left">
       <span class="res-divider-span">Response Content</span>
     </el-divider>
-    <div v-loading="loading">
+    <div>
       <div v-show="result">
         <el-row>
           <el-col :span="23" class="res-col"

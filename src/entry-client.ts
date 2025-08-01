@@ -7,10 +7,9 @@ const { app, router, store } = create_app();
 if ((window as any).__INITIAL_STATE__) {
   store.replaceState((window as any).__INITIAL_STATE__);
 }
-
 // 统一初始化对象仓库
 router.beforeEach((to, from, next) => {
-  // asyncTest.cookies.setDocument(window.document)
+  asyncTest.cookies.setDocument(window.document)
   asyncTest.router.setRouter(router);
   asyncTest.autoDB
     .openStore({

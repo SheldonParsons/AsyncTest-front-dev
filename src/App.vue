@@ -1,15 +1,6 @@
 <template>
   <div style="height: 100%;display: flex;flex-direction: column;">
     <el-config-provider :locale="store.state.locale">
-      <!-- <el-affix
-        :offset="0"
-        :class="{ 'header-affix': upHeaderZIndex }"
-        style="position: relative; height: 55px"
-      >
-      <div>
-        <commonHeader style="height: inherit;" @up="upZIndex" />
-      </div>
-      </el-affix> -->
       <div class="header-affix">
         <commonHeader style="height: inherit;" @up="upZIndex" />
       </div>

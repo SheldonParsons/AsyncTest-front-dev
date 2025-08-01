@@ -1,37 +1,62 @@
+<template>
+    <div class="case-tab-container">
+        <nav class="tab-select-container">
+            <ul>
+                <li v-for="(name, index) in tabs" :key="index" :class="{ selected: selectedTab === index }" role="tab"
+                    :aria-selected="selectedTab === index">
+                    <motion.div v-if="selectedTab === index" layout-id="selected-indicator"
+                        class="selected-indicator" />
+                    <motion.button :animate="{ color: selectedTab === index ? '#ffffff' : '#333' }"
+                        :transition="{ color: { duration: 0 } }" @press-start="() => setSelectedTab(index)"
+                        :while-press="{ scale: 0.9 }" :while-focus="{ backgroundColor: 'var(--accent-transparent)' }">
+                        {{ name }}
+                    </motion.button>
+                </li>
+            </ul>
+        </nav>
+        <div class="other-action">
+            <slot></slot>
+        </div>
+    </div>
+</template>
+
 <script setup lang="ts">
-import { ref } from 'vue'
 import { motion } from 'motion-v'
 
 const tabs = ["测试步骤", "测试数据", "测试报告"]
-const selectedTab = ref(0)
+const emit = defineEmits(['change'])
+
+const props = defineProps({
+    selectedTab: {
+        type: Number,
+        default: 0
+    }
+})
 
 const setSelectedTab = (index: number) => {
-    selectedTab.value = index
+    emit('change', index)
 }
 </script>
 
-<template>
-    <nav class="tab-select-container">
-        <ul>
-            <li v-for="(name, index) in tabs" :key="index" :class="{ selected: selectedTab === index }" role="tab"
-                :aria-selected="selectedTab === index">
-                <motion.div v-if="selectedTab === index" layout-id="selected-indicator" class="selected-indicator" />
-                <motion.button :animate="{ color: selectedTab === index ? '#ffffff' : '#333' }"
-                    :transition="{ color: { duration: 0 } }" @press-start="() => setSelectedTab(index)"
-                    :while-press="{ scale: 0.9 }" :while-focus="{ backgroundColor: 'var(--accent-transparent)' }">
-                    {{ name }}
-                </motion.button>
-            </li>
-        </ul>
-    </nav>
-</template>
-
 <style lang="scss" scoped>
+.case-tab-container {
+    display: flex;
+    justify-content: space-between;
+
+    .other-action {
+        flex: 50;
+    }
+}
+
 .tab-select-container {
     background-color: white;
     border-radius: 10px;
-    padding: 5px 20px;
+    padding: 10px 20px;
     width: 20%;
+    flex: 50;
+    display: flex;
+    justify-content: start;
+    align-items: center;
 }
 
 .tab-select-container ul {
@@ -49,7 +74,7 @@ const setSelectedTab = (index: number) => {
     color: black;
     position: relative;
     height: 30px;
-    width: 90px!important;
+    width: 90px !important;
 }
 
 .tab-select-container .selected-indicator {

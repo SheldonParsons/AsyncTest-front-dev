@@ -5,7 +5,7 @@
         <div class="filters-container">
           <div class="filters-wrapper">
             <div class="icon-div" style="border-right: 1px solid #f5f5f5">
-              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn" style="z-index: 999">
+              <el-icon @click="scrollToLeft" class="margin-cls scroll-btn">
                 <ArrowLeftBold />
               </el-icon>
             </div>
@@ -49,12 +49,12 @@
               </motion.div>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5; width: 70px">
-              <el-icon @click="scrollToRight" class="margin-cls scroll-btn" style="z-index: 999">
+              <el-icon @click="scrollToRight" class="margin-cls scroll-btn">
                 <ArrowRightBold />
               </el-icon>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-              <el-icon class="margin-cls scroll-btn" style="z-index: 999" @click="open_create_page">
+              <el-icon class="margin-cls scroll-btn" @click="open_create_page">
                 <PlusBold />
               </el-icon>
             </div>
@@ -851,7 +851,6 @@ nav.amazing-tabs {
   width: 100%;
   height: 100%;
   display: flex;
-  z-index: 999;
   box-sizing: border-box;
   // padding-top: 1rem;
 }

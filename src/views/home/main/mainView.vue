@@ -2,7 +2,7 @@
   <div class="main-container">
     <motion.div class="main-container-core">
       <!-- 第一层：左(固定10%) + 其余(90%) -->
-      <SplitterGroup direction="horizontal" ref="groupRef" >
+      <SplitterGroup direction="horizontal" ref="groupRef">
         <!-- 左：永远 10%，不可调 -->
         <SplitterPanel :default-size="leftPct" :min-size="leftPct" :max-size="leftPct"
           class="radius-container white-bg-container">
@@ -24,7 +24,7 @@
             <SplitterResizeHandle class="SplitterResizeHandle" />
             <!-- 右：默认70，可调 -->
             <SplitterPanel :default-size="80" :min-size="10" class="radius-container white-bg-container">
-              <router-view @change_page="changePage" :changeApiContent="changeApiContent" />
+              <router-view @change_page="changePage" :changeApiContent="changeApiContent" class="panel-router" />
             </SplitterPanel>
           </SplitterGroup>
         </SplitterPanel>
@@ -106,6 +106,16 @@ function changeChildMenu(name: string, call_back: any = () => { }) {
 .white-bg-container {
   background-color: white;
 }
+
+.panel-router {
+  background-image: url('@/assets/background/white_bg-op10.png');
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: contain;
+  background-color: rgba(255,255,255,0.1);
+  background-position: -150px 200px; 
+}
+
 
 .main-container {
   height: 100%;

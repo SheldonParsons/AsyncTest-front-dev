@@ -3,7 +3,6 @@
  * code: '000003'表示'手机号不正确'；code: '000004'表示'其他异常'；code: '000005'表示'登录过期'；
  */
 
-import { ElLoading } from 'element-plus'
 import { IResultOr } from '../interface'
 import asyncTest from '../../db' // 引入数据库和对象仓库
 
@@ -11,10 +10,6 @@ const storeName = Object.keys(asyncTest.languageObjectStore)[0]
 
 // Mock接口：保存当前语言包
 export async function saveLanguageApi(lang: any) {
-  const loading = ElLoading.service({
-    lock: true,
-    background: 'rgba(0, 0, 0, 0.1)'
-  })
   const resultOr: IResultOr = await asyncTest.autoDB.getItem(storeName, 1).then(res => {
     return { code: '000000', message: '操作成功', result: res || null, success: true }
   })
@@ -26,9 +21,6 @@ export async function saveLanguageApi(lang: any) {
     obj = { name: lang }
   }
   const result: IResultOr = await asyncTest.autoDB.updateItem(storeName, obj).then(res => {
-    setTimeout(() => {
-      loading.close()
-    }, 200)
     return { code: '000000', message: '操作成功', result: null, success: true }
   })
   return result
@@ -36,14 +28,7 @@ export async function saveLanguageApi(lang: any) {
 
 // Mock接口：获取当前语言包
 export async function fetchLanguageApi() {
-  const loading = ElLoading.service({
-    lock: true,
-    background: 'rgba(0, 0, 0, 0.1)'
-  })
   const result: IResultOr = await asyncTest.autoDB.getItem(storeName, 1).then(res => {
-    setTimeout(() => {
-      loading.close()
-    }, 200)
     return { code: '000000', message: '操作成功', result: res || null, success: res !== undefined }
   })
   return result

@@ -1,43 +1,9 @@
-<script setup lang="ts">
-import { ref, onMounted } from 'vue'
-// @ts-ignore
-import { Switch, Tooltip } from 'reka-ui/namespaced';
-import { AnimatePresence, motion } from "motion-v"
-
-const open = ref(false)
-
-const emit = defineEmits(['action'])
-
-const spring: any = {
-    visualDuration: 0.3,
-    type: "spring",
-    bounce: 0.6,
-}
-
-const checked: any = ref(false)
-const props = defineProps({
-    data: {
-        type: Boolean,
-        default: false
-    }
-})
-
-const toggleChecked = () => {
-    emit('action', checked.value)
-}
-
-onMounted(() => {
-    checked.value = props.data
-})
-</script>
-
 <template>
     <div class="hover-container">
         <Tooltip.Provider>
             <Tooltip.Root v-model:open="open">
                 <Tooltip.Trigger class="tooltip-trigger-switch" @mouseenter="open = true" @mouseleave="open = false">
                     <div class="switch-container">
-                        
                         <Switch.Root v-model="checked" :class="{ checked_animation: checked }" @click="toggleChecked">
                             <motion.button class="switch" :initial="false" :animate="{
                                 backgroundColor: checked ? 'black' : 'var(--hue-6-transparent)'
@@ -72,7 +38,7 @@ onMounted(() => {
                                     opacity: { ...spring, bounce: 0 },
                                 }">
                                 <motion.div :style="{ wordBreak: 'break-all' }">
-                                    <motion.div>启用：{{checked ? '固定值' : '动态值'}}</motion.div>
+                                    <motion.div>启用：{{ checked ? '固定值' : '动态值' }}</motion.div>
                                 </motion.div>
                                 <Tooltip.Arrow class="tooltip-arrow" />
                             </motion.div>
@@ -84,6 +50,39 @@ onMounted(() => {
     </div>
 
 </template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+// @ts-ignore
+import { Switch, Tooltip } from 'reka-ui/namespaced';
+import { AnimatePresence, motion } from "motion-v"
+
+const open = ref(false)
+
+const emit = defineEmits(['action'])
+
+const spring: any = {
+    visualDuration: 0.3,
+    type: "spring",
+    bounce: 0.6,
+}
+
+const checked: any = ref(false)
+const props = defineProps({
+    data: {
+        type: Boolean,
+        default: false
+    }
+})
+
+const toggleChecked = () => {
+    emit('action', checked.value)
+}
+
+onMounted(() => {
+    checked.value = props.data
+})
+</script>
 
 <style lang="scss" scope>
 .tooltip-trigger-switch {
@@ -121,7 +120,7 @@ onMounted(() => {
 }
 
 .switch-container {
-    --hue-6-transparent: #9a9a9a44;
+    --hue-6-transparent: rgba(154, 154, 154);
     display: flex;
     align-items: center;
     background-color: white;

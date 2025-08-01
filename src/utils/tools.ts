@@ -25,6 +25,13 @@ tools.delay = async () => {
   });
 };
 
+tools.delaySec = async (time:number) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(true);
+    }, time);
+  });
+};
 tools.getFormattedTimeMs = (timestamp: any) => {
   const date = new Date(timestamp * 1000);
 

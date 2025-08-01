@@ -45,6 +45,7 @@
 
 <script setup lang="ts">
 import { AnimatePresence, motion } from 'motion-v'
+// @ts-ignore
 import { Dialog } from 'reka-ui/namespaced'
 import { ref } from 'vue'
 const open_dialog = ref(false)
@@ -80,7 +81,7 @@ const handleClose = (action_name: string) => {
     emit('action', action_name)
 }
 
-const dialogOpenState = {
+const dialogOpenState: any = {
     opacity: 1,
     filter: 'blur(0px)',
     rotateX: 0,
@@ -98,7 +99,7 @@ const dialogOpenState = {
     },
 }
 
-const dialogInitialState = {
+const dialogInitialState: any = {
     opacity: 0,
     filter: 'blur(10px)',
     z: -100,
@@ -112,12 +113,11 @@ const dialogInitialState = {
 }
 </script>
 
-<style>
+<style lang="scss" scope>
 .dialog-container {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 200px;
 }
 
 .openButton,
@@ -145,15 +145,7 @@ const dialogInitialState = {
     color: white;
 }
 
-.modal {
-    border-radius: 10px;
-    border: 1px solid #1d2628;
-    background-color: #0b1011;
-    z-index: 10000000;
-    padding: 20px;
-    min-width: 300px;
-    pointer-events: auto;
-}
+
 
 .dialog-title {
     font-weight: 400;
@@ -171,6 +163,7 @@ const dialogInitialState = {
 }
 
 .modal-container {
+    top: -50% !important;
     position: fixed;
     inset: 0;
     z-index: 9999999;
@@ -178,5 +171,15 @@ const dialogInitialState = {
     align-items: center;
     justify-content: center;
     pointer-events: none;
+
+    .modal {
+        border-radius: 10px;
+        border: 1px solid #1d2628;
+        background-color: #0b1011;
+        z-index: 10000000;
+        padding: 20px;
+        min-width: 300px;
+        pointer-events: auto;
+    }
 }
 </style>

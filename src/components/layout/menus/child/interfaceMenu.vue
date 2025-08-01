@@ -13,7 +13,7 @@
       <span style="margin-left: 10px">接口概览</span>
     </div>
     <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;">
-      <el-tree style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core" ref="treeRef"
+      <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core" ref="treeRef"
         :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu" :highlight-current="true"
         :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none"
         :filter-node-method="filterNode">
@@ -110,7 +110,7 @@
           </div>
         </template>
       </el-tree>
-      <!-- <el-row v-else class="url-inputer">
+      <el-row v-else class="url-inputer">
         <el-col :span="22" :offset="1">
           <el-skeleton animated>
             <template #template>
@@ -122,7 +122,7 @@
             </template>
           </el-skeleton>
         </el-col>
-      </el-row> -->
+      </el-row>
     </div>
   </div>
   <SimpleDialog v-model="show_dialog" @action="real_action" :title="dialog_title" :placeholder="dialog_placeholder"
@@ -185,6 +185,13 @@ onMounted(async () => {
   // 调整一次高度
   await load_tree();
 });
+
+function randomStep() {
+  const step = 10;
+  const min = 50;
+  const max = 75;
+  return Math.floor(Math.random() * ((max - min) / step + 1)) * step + min;
+}
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
   loading.value = true;
