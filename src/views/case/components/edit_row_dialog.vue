@@ -79,6 +79,9 @@ const props = defineProps({
     cols: {
         type: Array<any>,
         default: []
+    },
+    valid: {
+        type: null
     }
 })
 
@@ -117,12 +120,21 @@ const init = (data: any) => {
 defineExpose({ open, close, clean, init })
 
 // 关闭对话框
-const handleClose = (action_name: string) => {
+const handleClose = async (action_name: string) => {
     if (action_name === 'save') {
         const data: any = valid_data_and_parse(row_values.value)
         if (data === false) {
             return
         }
+        let send_data = []
+        for (let i = 0; i < data.length; i++) {
+            send_data.push({
+                name: props.cols[i].field,
+                value: data[i]
+            })
+        }
+        const remote_valid = await props.valid(send_data)
+        if (!remote_valid) return
         visible.value = false
         resolver?.({ action: action_name, data: data })
     } else {

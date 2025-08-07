@@ -107,6 +107,9 @@ const props = defineProps({
     data: {
         type: String,
         default: ''
+    },
+    valid: {
+        type: null
     }
 })
 
@@ -149,12 +152,14 @@ const init = (current_col: any, data: any) => {
 defineExpose({ open, close, clean, init })
 
 // 关闭对话框
-const handleClose = (action_name: string) => {
+const handleClose = async (action_name: string) => {
     if (action_name === 'save') {
         const data: any = valid_data_and_parse(col_name.value, col_desc.value, col_values.value)
         if (data === false) {
             return
         }
+        const remote_valid = await props.valid(data, col_name.value, col_desc.value)
+        if (!remote_valid) return
         visible.value = false
         resolver?.({ action: action_name, value_list: data, new_col_name: col_name.value, new_col_desc: col_desc.value })
     } else {

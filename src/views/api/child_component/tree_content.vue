@@ -41,7 +41,7 @@
           </div>
           <span
             v-if="data.child_type === 2"
-            class="method-span"
+            class="method-span gradient-text"
             :class="method_color[data.method]"
             >{{ data.method.toUpperCase() }}</span
           >
@@ -254,17 +254,36 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   // overflow: scroll;
 }
 .red {
-  color: #ff6a6a;
+  background: linear-gradient(80deg, black 0%, #9c4c4c 30%);
 }
+
 .green {
-  color: #3cb371;
+  background: linear-gradient(80deg, black 0%, #4fa380 50%);
 }
+
 .blue {
-  color: #1e90ff;
+  background: linear-gradient(80deg, black 0%, #504c9d 30%);
 }
+
 .orange {
-  color: #eead0e;
+  // color: #eead0e;
+  background: linear-gradient(80deg, black 0%, #976b49 30%);
 }
+
+.gradient-text {
+  /* 定义背景渐变 */
+  /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
+  -webkit-background-clip: text;
+  /* 文字本身透明，这样才能显示背景 */
+  -webkit-text-fill-color: transparent;
+  /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
+  background-clip: text;
+  /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
+  color: transparent;
+  font-weight: 800;
+}
+
+
 .purple {
   background: linear-gradient(to right, #7b42f6, #b01eff); /* 从左到右的渐变 */
   -webkit-background-clip: text; /* 背景裁剪为文字 */

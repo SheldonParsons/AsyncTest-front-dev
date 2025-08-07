@@ -51,7 +51,6 @@ const handleNodeHover = (isHovering: boolean) => {
 }
 
 @keyframes blink {
-
     0%,
     100% {
         opacity: 1;
@@ -63,18 +62,18 @@ const handleNodeHover = (isHovering: boolean) => {
 }
 
 .drag-hover {
-    border: 2px dotted #163172;
+    border: 2px dotted #7c7c7c;
     animation: blink 1s infinite;
     will-change: opacity;
 }
 
 .node-content:hover {
-    border: 2px dotted #163172;
+    border: 2px dotted #555555;
     animation: blink 1s infinite;
     will-change: opacity;
 
     .node-label {
-        color: #163172 !important;
+        color: #555555 !important;
     }
 }
 

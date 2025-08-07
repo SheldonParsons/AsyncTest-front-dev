@@ -27,6 +27,10 @@
             @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
             :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
           </Database>
+          <Case v-if="data.type === 'case'" @action="step_action" :action_group="stepActionGroup[data.type]"
+            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
+            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          </Case>
           <Error v-if="data.type === 'error'" @action="step_action" :action_group="stepActionGroup[data.type]"
             @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
             :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
@@ -65,8 +69,10 @@ import Database from '@/views/case/content/case_content/runner/tree/node_compone
 import Delay from '@/views/case/content/case_content/runner/tree/node_components/delay.vue'
 import Script from '@/views/case/content/case_content/runner/tree/node_components/script.vue'
 import Error from '@/views/case/content/case_content/runner/tree/node_components/error.vue'
+import Case from '@/views/case/content/case_content/runner/tree/node_components/case.vue'
 import _ from 'lodash'
 
+const treeDatae = ref([])
 // 树形数据
 const treeData = ref<any[]>([
   {
@@ -93,6 +99,12 @@ const treeData = ref<any[]>([
         id: 4,
         label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
         type: 'error',
+        check: 'check',
+      },
+      {
+        id: 19,
+        label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
+        type: 'case',
         check: 'check',
       },
       {
@@ -503,10 +515,10 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  border: 2px solid rgb(48, 43, 99);
+  border: 2px solid rgb(0, 0, 0);
   border-radius: inherit;
   pointer-events: none;
-  animation: blinkLine 0.8s infinite ease-in-out;
+  animation: blinkLine 1s infinite ease-in-out;
 }
 
 /* 给 .blink-border-children 添加伪元素闪烁左/右/底三边 */
@@ -522,14 +534,14 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  border-left: 2px solid rgb(48, 43, 99);
-  border-right: 2px solid rgb(48, 43, 99);
-  border-bottom: 2px solid rgb(48, 43, 99);
+  border-left: 2px solid rgb(0, 0, 0);
+  border-right: 2px solid rgb(0, 0, 0);
+  border-bottom: 2px solid rgb(0, 0, 0);
   border-top: none;
   border-radius: 0 0 6px 6px;
   /* 根据需要圆角 */
   pointer-events: none;
-  animation: blinkLine 0.8s infinite ease-in-out;
+  animation: blinkLine 1s infinite ease-in-out;
 }
 
 /* 3. 如果没有子节点，则不缩进 */
@@ -541,7 +553,7 @@ onMounted(async () => {
 /* 1. 根节点下第一层 children，缩进 20px */
 .case-custom-tree>.el-tree-node>.el-tree-node__children:not(:empty) {
   border-left: 2px solid rgba(86, 87, 88, 0.04);
-  border-right: 2px solid rgba(86, 87, 88, 0.04)cc;
+  border-right: 2px solid rgba(86, 87, 88, 0.04);
   border-bottom: 2px solid rgba(86, 87, 88, 0.04);
   border-bottom-right-radius: 6px;
   border-bottom-left-radius: 6px;

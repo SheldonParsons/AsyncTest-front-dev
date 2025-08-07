@@ -1,5 +1,6 @@
 <template>
-    <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+    <motion.div class="custom-tree-node" :style="{ '--method-min-wid': methodMinWidth[data.method.toUpperCase()] }"
+        :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
         <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id" :key="data.id"></DragHandle>
@@ -15,7 +16,20 @@
                             }}
                         </motion.span>
                     </motion.span>
-                    <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">{{ data.label }}
+                    <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">
+                        <TooltipAnimation :isOpen="showIdTooltip">
+                            <template #trigger><span style="color: rgba(0,0,0,0.5);" @click.stop="copyId(data.id)"
+                                    @mouseenter="showIdTooltip = true" @mouseleave="showIdTooltip = false"># {{ data.id
+                                    }}</span></template>
+                            <template #default>
+                                <div style="display: flex;flex-direction: column;gap: 5px;">
+                                    <div>点击复制</div>
+                                    <div style="color: rgba(255,255,255,0.5);">您可以通过步骤的ID找到它，</div>
+                                    <div style="color: rgba(255,255,255,0.5);">并获取它的执行信息。</div>
+                                </div>
+                            </template>
+                        </TooltipAnimation>
+                        <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
                 <motion.div class="action">
@@ -27,10 +41,13 @@
 </template>
 
 <script lang="ts" setup>
+import { ref } from 'vue'
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
+import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
 const props = defineProps<{
@@ -39,6 +56,20 @@ const props = defineProps<{
     check: string,
     action_group: Array<string>
 }>()
+const showIdTooltip = ref(false)
+
+const methodMinWidth: any = {
+    "DELETE": "55px",
+    "POST": "45px",
+    "PUT": '35px',
+    "GET": '35px'
+}
+
+async function copyId(step_id: number) {
+    const { toClipboard } = useClipboard()
+    await toClipboard(step_id.toString())
+    window.$toast({ title: '已复制' })
+}
 
 const changeCheck = (type: string) => {
     emit('changeCheck', type)
@@ -94,7 +125,7 @@ const action = (t: string) => {
         align-items: center;
         gap: 8px;
         /* Take 90% of .node-info width */
-        max-width: calc(100% - 65px - 8px);
+        max-width: calc(100% - var(--method-min-wid) - 28px);
         width: 100%;
         /* Prevent it from expanding beyond 90% */
     }
@@ -106,7 +137,7 @@ const action = (t: string) => {
     }
 
     .node-label {
-        min-width: 65px;
+        min-width: var(--method-min-wid);
         /* Minimum width */
         font-size: 14px;
         font-weight: 500;
@@ -124,11 +155,18 @@ const action = (t: string) => {
         overflow: hidden;
         /* Hide overflow */
         text-overflow: ellipsis;
-        max-width: calc(100% - 65px - 14px - 16px);
+        max-width: calc(100% - var(--method-min-wid) - 14px - 16px);
         min-width: 0;
         /* Show ellipsis when content overflows */
         white-space: nowrap;
         /* Prevent wrapping */
+        display: flex;
+        align-items: center;
+        gap: 5px;
+
+        .id-area {
+            color: #919191;
+        }
     }
 
     .inactive-label {
@@ -152,19 +190,19 @@ const action = (t: string) => {
 }
 
 .post {
-    background: linear-gradient(90deg, black, #976b49);
+    background: linear-gradient(90deg, rgb(83, 83, 83), #976b49);
 }
 
 .get {
-    background: linear-gradient(90deg, black, #4fa380);
+    background: linear-gradient(90deg, rgb(83, 83, 83), #4fa380);
 }
 
 .put {
-    background: linear-gradient(90deg, black, #504c9d);
+    background: linear-gradient(90deg, rgb(83, 83, 83), #504c9d);
 }
 
 .delete {
-    background: linear-gradient(90deg, black, #9c4c4c);
+    background: linear-gradient(90deg, rgb(83, 83, 83), #9c4c4c);
 }
 
 

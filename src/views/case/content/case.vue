@@ -5,8 +5,20 @@
                 <div class="tab-action">
                     <div class="dataset-group-tab-atcion" v-if="current_page === 1 && isOpen">
                         <AstButton @click="addDataSet">
-                            <div style="display: flex; gap: 4px;font-size: 14px;">
-                                <AddDatasetAvg style="width: 15px;"></AddDatasetAvg>新建数据集
+                            <div style="display: flex; gap: 4px;font-size: 0.8rem;">
+                                <AddDatasetSvg style="width: 15px;"></AddDatasetSvg>新建数据集
+                            </div>
+                        </AstButton>
+                    </div>
+                    <div class="dataset-group-tab-atcion" v-if="current_page === 1 && !isOpen">
+                        <AstButton @click="editTableName">
+                            <div style="display: flex; gap: 4px;font-size: 0.8rem;">
+                                <EditDatasetSvg style="width: 15px;"></EditDatasetSvg>修改数据集
+                            </div>
+                        </AstButton>
+                        <AstButton @click="deleteTable" bgColor="#f38181" fontColor="#eeeeee">
+                            <div style="display: flex; gap: 4px;font-size: 0.8rem;">
+                                <DeleteDatasetSvg style="width: 15px;"></DeleteDatasetSvg>删除数据集
                             </div>
                         </AstButton>
                     </div>
@@ -16,9 +28,9 @@
         <div class="case-content" v-if="current_page === 0">
             <SplitterGroup direction="horizontal" ref="groupRef" v-if="!loading">
                 <SplitterPanel :default-size="100" :min-size="40"
-                    style="display:flex; flex-direction:column; height:100%;">
-                    <CaseInfo style="padding: 10px;"></CaseInfo>
-                    <CaseSteps style="overflow-y: auto;flex: 1;"></CaseSteps>
+                    style="display:flex; flex-direction:column; height:100%;overflow: scroll;">
+                    <CaseInfo></CaseInfo>
+                    <CaseSteps style="flex: 1;"></CaseSteps>
                 </SplitterPanel>
                 <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
                     :style="{ width: isCollapsed ? '0px' : '10px' }" />
@@ -40,7 +52,7 @@
                 :animate="{ opacity: 1 }" :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }">
                 <SplitterGroup direction="horizontal" ref="groupRef">
                     <SplitterPanel :default-size="100">
-                        <DataSet ref="datasetRef" @edit="enter_date_set_detail"></DataSet>
+                        <DataSet ref="datasetRef" :case_id="case_id" @edit="go_table"></DataSet>
                     </SplitterPanel>
                 </SplitterGroup>
             </motion.div>
@@ -52,20 +64,34 @@
                 <SplitterGroup direction="horizontal" ref="groupRef">
                     <SplitterPanel :default-size="13"
                         style="display:flex; flex-direction:column;align-items: center; height:100%;border-right: 1px solid #f0f0f0;box-sizing: border-box;">
-                        <TabSelectCol :selectedTab="current_env" @change="change_env"
-                            :tabs="['默认数据', '开发环境', '测试环境', 'UAT']">
+                        <TabSelectCol :selectedTab="current_env" @change="change_env" :tabs="tabs">
                         </TabSelectCol>
+                        <el-divider></el-divider>
+                        <div :title="dataset.name" class="dataset-name g-e">{{ dataset.name }}</div>
                     </SplitterPanel>
                     <SplitterPanel :default-size="1" style="display:flex; flex-direction:column; height:100%;">
                     </SplitterPanel>
                     <SplitterPanel :default-size="84" style="display:flex; flex-direction:column; height:100%;">
-                        <DataCore></DataCore>
+                        <DataCore v-if="showTable" :dataset="dataset" :env="current_env_data" :data="table_data"
+                            @change_depend="change_depend"></DataCore>
                     </SplitterPanel>
                     <SplitterPanel :default-size="2" style="display:flex; flex-direction:column; height:100%;">
                     </SplitterPanel>
                 </SplitterGroup>
             </motion.div>
         </div>
+        <DialogAnimation ref="tableRef" title="编辑表格名称" cancel_title="取消" :confirm_title="'确认'"
+            :before_comfirm="check_table_name">
+            <div>
+                <input ref="inputRef" v-model="table_name" placeholder="表格名称">
+            </div>
+        </DialogAnimation>
+        <DialogAnimation ref="deleteTableRef" title="删除表格" cancel_title="取消" :confirm_title="'确认'"
+            :before_comfirm="check_table_delete">
+            <div>
+                <span style="color: #ec6d51;font-size: 0.9rem;">您确定要删除表格吗？删除后表格中的数据将会永久删除，无法恢复。</span>
+            </div>
+        </DialogAnimation>
     </div>
 </template>
 
@@ -80,23 +106,40 @@ import CaseInfo from '@/views/case/content/case_content/runner/case_info/index.v
 import DataCore from '@/views/case/content/case_content/data/index.vue'
 import DataSet from '@/views/case/content/case_content/data_set/index.vue'
 import AstButton from '@/components/common/general/button.vue'
-import AddDatasetAvg from '@/assets/logo/final/match_vue/add_dataset.vue'
+import AddDatasetSvg from '@/assets/logo/final/match_vue/add_dataset.vue'
+import EditDatasetSvg from '@/assets/logo/final/match_vue/edit.vue'
+import DeleteDatasetSvg from '@/assets/logo/final/match_vue/delete.vue'
+import DialogAnimation from '@/components/common/general/dialog.vue'
+import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
+import { send_action } from '@/views/case/utils'
+const table_name = ref('')
+const tableRef: any = ref(null)
+const deleteTableRef: any = ref(null)
+const route = useRoute()
 /** 拿到右侧面板实例 */
 const panelRef: any = ref(null)
 const handleRef = ref(null)
 const COLLAPSE_THRESHOLD = 20
 const dandle_id = ref(0)
-const current_page = ref(1)
-const current_env = ref(1)
+const current_page = ref(0)
+const current_env = ref(0)
 const isOpen = ref(true)
 const datasetRef: any = ref(null)
-const loading = ref(true)
+const loading = ref(false)
+const tabs: any = ref([])
+const env_list: any = ref([])
+const current_env_data: any = ref()
+const dataset:any = ref(null)
+const table_data: any = ref({ cols: [], rows: [] })
+const showTable = ref(false)
 let timer: any = null
 
 
 watch(current_page, (newVal, oldVal) => {
+    console.log(newVal);
     if (newVal === 0) {
+        loading.value = true
         // 每次都重置等待
         if (timer) clearTimeout(timer)
         timer = setTimeout(() => {
@@ -107,6 +150,10 @@ watch(current_page, (newVal, oldVal) => {
         if (timer) clearTimeout(timer)
         loading.value = true
     }
+    setTimeout(() => {
+        isOpen.value = true
+        current_env.value = 0
+    }, 0)
 })
 
 const isCollapsed = computed(() => {
@@ -117,20 +164,109 @@ const isCollapsed = computed(() => {
     }
 })
 
+async function deleteTable() {
+    const result = await deleteTableRef.value.open()
+    if (result.action === 'comfirm' && result.hook_result === true) {
+        if (result.action === 'comfirm') {
+            window.$toast({ title: '数据集删除成功' })
+        }
+    }
+}
+
+async function editTableName() {
+    table_name.value = current_env_data.value.name
+    const result = await tableRef.value.open()
+    if (result.action === 'comfirm' && result.hook_result === true) {
+        current_env_data.value.name = table_name.value
+        if (result.action === 'comfirm') {
+            window.$toast({ title: '新增数据集成功。' })
+        }
+    }
+}
+
+async function check_table_name() {
+    const _data = {
+        type: 1,
+        child_action_type: 'edit_table',
+        content: {
+            project_id: route.params.project,
+            table_id: env_list.value[current_env.value].table_id,
+            new_name: table_name.value
+        }
+    }
+    const result = send_action(_data)
+    if (!result) return false
+}
+
+async function check_table_delete() {
+    const _data = {
+        type: 1,
+        child_action_type: 'delete_table',
+        content: {
+            project_id: route.params.project,
+            table_id: env_list.value[current_env.value].table_id
+        }
+    }
+    const result = send_action(_data)
+    if (!result) return false
+}
+
 async function change_page(index: number) {
     current_page.value = index
 }
 
 async function change_env(index: number) {
     current_env.value = index
-}
-
-function enter_date_set_detail(data_set_id: number) {
-    isOpen.value = !isOpen.value
+    showTable.value = false
+    await get_table()
+    showTable.value = true
 }
 
 function addDataSet() {
     datasetRef.value.addDataset()
+}
+
+async function go_table(dataset_item: any) {
+    current_env.value = 0
+    showTable.value = false
+    const _data = {
+        type: 1,
+        child_action_type: 'get_dataset_env_list',
+        content: {
+            project: route.params.project,
+            dataset_id: dataset_item.id
+        }
+    }
+    const result = await send_action(_data)
+    env_list.value = result
+    dataset.value = dataset_item
+    tabs.value = result.map((item: any) => item.name)
+    isOpen.value = !isOpen.value
+    current_env_data.value = env_list.value[current_env.value]
+    await get_table()
+    showTable.value = true
+
+}
+
+function change_depend() {
+    current_env_data.value.depend = current_env_data.value.depend === 1 ? 0 : 1
+}
+
+async function get_table() {
+    console.log(env_list.value);
+    current_env_data.value = env_list.value[current_env.value]
+
+    const _data = {
+        type: 1,
+        child_action_type: 'get_table',
+        content: {
+            table_id: env_list.value[current_env.value].table_id
+        }
+    }
+    const result = await send_action(_data)
+    console.log(result);
+    table_data.value = result
+    window.$toast({ title: '数据已加载。' })
 }
 
 /** 切换折叠/展开 */
@@ -140,7 +276,7 @@ function togglePanel() {
     panelRef.value.resize(isCollapsedNow ? 60 : 0)
     dandle_id.value += 1
 }
-async function onPanelResize(newSize: number, oldSize: number) {
+async function onPanelResize(newSize: any, oldSize: any) {
     if (!panelRef.value) return
     // 如果拖拽下来到阈值以下，且还没折叠，就 collapse()
     if (newSize <= COLLAPSE_THRESHOLD) {
@@ -154,7 +290,7 @@ const props = defineProps({
     },
     case_id: {
         type: Number,
-        default: null,
+        default: 1,
     },
     target_type: {
         type: Number,
@@ -169,6 +305,20 @@ const props = defineProps({
     display: flex;
     flex-direction: column;
     height: 100%;
+    .dataset-name {
+        font-weight: 500;
+        margin-top: 10px;
+        font-size: 0.8rem;
+        color: #939393;
+        border: 1px solid #f0f0f0;
+        box-sizing: border-box;
+        padding: 3px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        max-width: 80%;
+        display: inline-block;
+    }
 
     .case-container-select {
         flex: 0 0 auto;
@@ -189,6 +339,7 @@ const props = defineProps({
                 align-items: center;
                 height: 100%;
                 padding-right: 20px;
+                gap: 10px;
             }
         }
     }

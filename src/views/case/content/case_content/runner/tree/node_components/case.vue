@@ -11,7 +11,7 @@
                 <motion.div class="info">
                     <CheckBox :check="check" @change="changeCheck"></CheckBox>
                     <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                        <LoopAnimationIcon :key="data.id"></LoopAnimationIcon>
+                        <CaseAnimationIcon :key="data.id"></CaseAnimationIcon>
                     </motion.span>
                     <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">
                         <TooltipAnimation :isOpen="showIdTooltip">
@@ -38,16 +38,16 @@
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue'
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
-import LoopAnimationIcon from '@/views/case/content/case_content/runner/tree/components/loop_animation.vue'
+import CaseAnimationIcon from '@/views/case/content/case_content/runner/tree/components/case_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
-import TooltipAnimation from '@/components/common/general/tooltip.vue'
+import { ref } from 'vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
 
-const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
+const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck', 'action'])
 const props = defineProps<{
     data: any
     hoveredNodeId: number | null
@@ -56,6 +56,12 @@ const props = defineProps<{
 }>()
 
 const showIdTooltip = ref(false)
+
+async function copyId(step_id: number) {
+    const { toClipboard } = useClipboard()
+    await toClipboard(step_id.toString())
+    window.$toast({ title: '已复制' })
+}
 
 const changeCheck = (type: string) => {
     emit('changeCheck', type)
@@ -70,14 +76,9 @@ const onHandlePointerDown = (_: any) => {
     const wrapper = _.currentTarget as HTMLElement
     wrapper.style.visibility = 'hidden'
 }
+
 const action = (t: string) => {
     emit('action', t, props.data)
-}
-
-async function copyId(step_id: number) {
-    const { toClipboard } = useClipboard()
-    await toClipboard(step_id.toString())
-    window.$toast({ title: '已复制' })
 }
 </script>
 
@@ -97,12 +98,10 @@ async function copyId(step_id: number) {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    border: 2px solid #56575814;
     padding: 7px 16px;
     background-color: rgba(86, 87, 88, .03);
-    border-radius: 6px 6px 0 0;
-    border-left: 2px solid rgba(86, 87, 88, 0.04);
-    border-top: 2px solid rgba(86, 87, 88, 0.04);
-    border-right: 2px solid rgba(86, 87, 88, 0.04);
+    border-radius: 6px;
     transition: all 0.2s ease;
 
     .node-info {
@@ -119,7 +118,7 @@ async function copyId(step_id: number) {
         align-items: center;
         gap: 8px;
         /* Take 90% of .node-info width */
-        max-width: calc(100% - 90px - 8px);
+        max-width: calc(100% - 65px - 8px);
         min-width: 100px;
         width: 100%;
         /* Prevent it from expanding beyond 90% */
@@ -174,7 +173,7 @@ async function copyId(step_id: number) {
     .action {
         flex: 0 0 10%;
         /* Take 10% of .node-info width */
-        min-width: 90px;
+        min-width: 65px;
         display: flex;
         align-items: center;
         justify-content: start;
@@ -184,34 +183,24 @@ async function copyId(step_id: number) {
     }
 }
 
-.node-actions {
-    display: flex;
-    gap: 4px;
-    transition: all 0.2s ease;
+
+.gradient-text {
+    /* 定义背景渐变 */
+    /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
+    -webkit-background-clip: text;
+    /* 文字本身透明，这样才能显示背景 */
+    -webkit-text-fill-color: transparent;
+    /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
+    background-clip: text;
+    /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
+    color: transparent;
+    font-weight: 800;
 }
 
-.node-action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 0 0 4px 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    color: #666;
-}
 
-.node-action-btn:hover {
-    border-color: #333;
-    color: #000;
-}
 
-.node-action-btn.delete:hover {
-    border-color: #ff4444;
-    color: #ff4444;
+.node-count {
+    font-size: 12px;
+    color: #999;
 }
 </style>

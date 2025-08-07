@@ -25,7 +25,9 @@
                   <Fold style="margin-right:5px;"
                     :style="{ color: current_tab_name === item.name ? '#eeeeee' : 'black' }" />
                 </motion.div>
-                <span v-if="item.t < 4" class="method-span" :class="method_color[item.t]">{{ method_list[item.t]
+                <span v-if="item.t < 4" class="method-span gradient-text"
+                  :class="getMethodClass(item, current_tab_name)">{{
+                    method_list[item.t]
                   }}</span>
 
                 <span class="title g-ellipsis">{{ item.title }}</span>
@@ -44,7 +46,7 @@
               </el-icon>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5">
-              <el-icon class="margin-cls scroll-btn"@click="open_create_page">
+              <el-icon class="margin-cls scroll-btn" @click="open_create_page">
                 <PlusBold />
               </el-icon>
             </div>
@@ -67,15 +69,15 @@
     </SplitterPanel>
     <SplitterResizeHandle disabled />
     <SplitterPanel :default-size="94" :min-size="94" :max-size="94">
-        <EmptyPage v-if="show_type === 0"></EmptyPage>
-        <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
-        <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
-        <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
-          :target_type="current_target_type"></RootDir>
-        <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
-        <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-        <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
-        </NormalDialog>
+      <EmptyPage v-if="show_type === 0"></EmptyPage>
+      <CreatePage v-if="show_type === 1" @go_page="go_page"></CreatePage>
+      <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
+      <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
+        :target_type="current_target_type"></RootDir>
+      <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
+      <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
+      <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
+      </NormalDialog>
     </SplitterPanel>
   </SplitterGroup>
 </template>
@@ -104,13 +106,12 @@ import {
 const { proxy }: any = getCurrentInstance();
 const method_list = ["GET", "POST", "PUT", "DELETE"];
 const method_color = ["green", "orange", "blue", "red"];
+const method_color_unactive = ["unactive-green", "unactive-orange", "unactive-blue", "unactive-red"];
 const show_type = ref(1);
 const visible_env_setting_dialog = ref(false);
 const route = useRoute();
-const router = useRouter();
 const env_list: any = ref([]);
 const env = ref("");
-const isChangeCode = ref(false);
 const current_tab_name: any = ref(null);
 const editableTabs: any = ref([]);
 const emit = defineEmits(["change_page"]);
@@ -165,14 +166,15 @@ const props = defineProps({
 
 onMounted(() => {
   loadScript("/libs/codemirror.js");
-  const handleActiveTab = (tabs: any, event: any, className: any) => {
-    tabs.forEach((tab: any) => {
-      tab.classList.remove(className);
-    });
-  };
-
   get_env_list_and_user_env();
 });
+
+const method_t_mapping: any = {
+  'get': 0,
+  'post': 1,
+  'put': 2,
+  'delete': 3
+}
 // t的映射：0：get，1：post，2：put，3：delete，4：目录，5：新建内容
 watch(
   () => GlobalState.count,
@@ -242,6 +244,17 @@ watch(
         }
       }
     }
+    console.log(GlobalState.message);
+
+    if (GlobalState.message === "update_interface_method") {
+      for (let i = 0; i < editableTabs.value.length; i++) {
+        if (editableTabs.value[i].index === GlobalState.data.node_id) {
+          editableTabs.value[i].method = GlobalState.data.method;
+          editableTabs.value[i].t = method_t_mapping[GlobalState.data.method];
+          break;
+        }
+      }
+    }
     if (GlobalState.message === "delete_env") {
       env_list.value = env_list.value.filter((item: any) => {
         return item.id !== GlobalState.data.data;
@@ -300,6 +313,16 @@ watch(
 );
 
 const current_broadcast = ref(true)
+
+function getMethodClass(item: any, current_tab_name: string) {
+  method_color[item.t]
+  if (current_tab_name === item.name) {
+    return method_color[item.t]
+  } else {
+    return method_color_unactive[item.t]
+  }
+}
+
 
 function open_create_page() {
   change_tab("新建内容", 5);
@@ -544,10 +567,6 @@ function addTab(
   return editableTabs.value[editableTabs.value.length - 1];
 }
 
-function closeChangeCode() {
-  isChangeCode.value = false;
-}
-
 function closeTab(
   item: any,
   index: Number,
@@ -700,6 +719,7 @@ function change_user_env(item: any) {
   padding-top: 5px;
   padding-bottom: 5px;
   border-bottom: 1px solid #f0f0f0;
+
   .title {
     font-weight: 600;
   }
@@ -845,19 +865,49 @@ function change_user_env(item: any) {
 }
 
 .red {
-  color: #ff6a6a;
+  background: linear-gradient(360deg, #9c4c4c, white);
 }
 
 .green {
-  color: #3cb371;
+  background: linear-gradient(360deg, #4fa380, white);
 }
 
 .blue {
-  color: #1e90ff;
+  background: linear-gradient(360deg, #504c9d, white);
 }
 
 .orange {
-  color: #eead0e;
+  // color: #eead0e;
+  background: linear-gradient(360deg, #976b49, white);
+}
+
+.unactive-red {
+  background: linear-gradient(180deg, black 0%, #9c4c4c 20%);
+}
+
+.unactive-green {
+  background: linear-gradient(180deg, black 0%, #4fa380 60%);
+}
+
+.unactive-blue {
+  background: linear-gradient(180deg, black 0%, #504c9d 30%);
+}
+
+.unactive-orange {
+  background: linear-gradient(180deg, black 0%, #976b49 30%);
+}
+
+.gradient-text {
+  /* 定义背景渐变 */
+  /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
+  -webkit-background-clip: text;
+  /* 文字本身透明，这样才能显示背景 */
+  -webkit-text-fill-color: transparent;
+  /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
+  background-clip: text;
+  /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
+  color: transparent;
+  font-weight: 800;
 }
 
 .method-span {

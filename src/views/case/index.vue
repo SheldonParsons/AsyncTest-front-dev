@@ -9,7 +9,7 @@
                 <ArrowLeftBold />
               </el-icon>
             </div>
-            <div class="no-scroll"id="tabsUl" style="
+            <div class="no-scroll" id="tabsUl" style="
             flex: 1;
             display: flex;
             align-items: center;
@@ -30,7 +30,8 @@
                   item.name
                 )">
                 <motion.div v-if="item.t === 4" class="icon-box">
-                  <Fold style="margin-right:5px;" :style="{color: current_tab_name === item.name ? '#eeeeee': 'black'}" />
+                  <Fold style="margin-right:5px;"
+                    :style="{ color: current_tab_name === item.name ? '#eeeeee' : 'black' }" />
                 </motion.div>
 
                 <motion.div v-if="item.t === 2" class="icon-box">
@@ -71,12 +72,9 @@
           :target_type="current_target_type"></CaseDocumentation>
         <CaseDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
           :target_type="current_target_type"></CaseDir>
-        <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
       </div>
     </SplitterPanel>
   </SplitterGroup>
-
-
 </template>
 <script lang="ts" setup>
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
@@ -90,7 +88,6 @@ import CaseDocumentation from "@/views/case/content/case.vue"
 import EmptyPage from "@/views/api/child_context/empty_page.vue";
 import CreatePage from "@/views/api/child_context/create_empty_page.vue";
 import CaseDir from "@/views/case/content/dir.vue";
-import EnvSettingDialog from "@/views/api/public_dialog/env_setting_dialog.vue";
 import { GlobalState } from "@/state/index";
 import tools from "@/utils/tools";
 import {
@@ -100,12 +97,8 @@ import {
 import { motion } from "motion-v";
 
 const { proxy }: any = getCurrentInstance();
-const method_list = ["GET", "POST", "PUT", "DELETE"];
-const method_color = ["green", "orange", "blue", "red"];
 const show_type = ref(1);
-const visible_env_setting_dialog = ref(false);
 const route = useRoute();
-const router = useRouter();
 const env_list: any = ref([]);
 const env = ref("");
 const isChangeCode = ref(false);
@@ -431,10 +424,6 @@ function replace_last_tab(
   return false;
 }
 
-function openEnvSetting() {
-  visible_env_setting_dialog.value = true;
-}
-
 function go_page(t: String) {
   if (t === "api") {
     if (editableTabs.value.length === 0) {
@@ -570,10 +559,10 @@ function hideMenu() {
 }
 
 function scrollToRight() {
-  
+
   var container: any = document.getElementById("tabsUl");
   var scrollAmount = 600; // 设定滚动距离
-  
+
 
   // 计算新的滚动位置
   var newScrollPosition = container.scrollLeft + scrollAmount;

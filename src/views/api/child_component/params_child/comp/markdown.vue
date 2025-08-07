@@ -41,7 +41,7 @@ const marked = new Marked(
 );
 marked.setOptions({
   gfm: true,            // 支持表格、任务列表等
-  breaks: false,        // 是否将换行视为 <br>
+  breaks: true,        // 是否将换行视为 <br>
 });
 const renderedHtml: any = ref("");
 const update = () => {

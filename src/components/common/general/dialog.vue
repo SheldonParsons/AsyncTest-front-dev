@@ -72,8 +72,8 @@ async function cancelAction() {
 async function comfirmAction() {
     emit('comfirm')
     if (props.before_comfirm) {
-        const hook_result = props.before_comfirm()
-        if (props.before_comfirm() === true) {
+        const hook_result = await props.before_comfirm()
+        if (hook_result === true) {
             resolver?.({ action: 'comfirm', hook_result: hook_result })
             checkClose()
         }
@@ -134,6 +134,7 @@ const dialogInitialState: any = {
 </script>
 
 <style lang="scss" scoped>
+
 /* 你的样式原样保留 */
 .dialog-container {
     display: flex;
@@ -178,7 +179,7 @@ const dialogInitialState: any = {
         .controls button {
             background-color: white;
             color: black;
-            font-size: 16px;
+            font-size:0.9rem;
             padding: 8px 10px;
             border-radius: 10px;
             border: none;

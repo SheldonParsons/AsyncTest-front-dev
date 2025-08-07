@@ -1,6 +1,6 @@
 <template>
-  <div class="input-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
-    <input class="normal-input" v-model="modelValue" :placeholder="placeholder" />
+  <div class="input-line-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
+    <input class="line-input" v-model="modelValue" :placeholder="placeholder" />
     <div>
       <motion.span ref="counterRef" :style="{
         color: mapRemainingToColor(charactersRemaining),
@@ -64,8 +64,7 @@ watch(charactersRemaining, (newVal) => {
 })
 </script>
 <style>
-.input-container,
-input {
+.input-line-container{
   position: relative;
   font-size: 14px;
   line-height: 1;
@@ -74,20 +73,23 @@ input {
   width: 100%;
 }
 
-.normal-input {
+.line-input {
   background-color: white;
   color: black;
-  border: 2px solid #1d2628;
-  border-radius: 10px;
+  border-bottom: 2px solid #1d2628;
+  border-top: 0px;
+  border-left: 0px;
+  border-right: 0px;
   padding: 10px;
   padding-right: 40px;
+  border-radius: 0px!important;
 }
 
-.normal-input:focus {
+/* .line-input:focus {
   border-color: var(--hue-blue);
-}
+} */
 
-.input-container div {
+.input-line-container div {
   color: #ccc;
   background: linear-gradient(to right,
       rgba(255, 255, 255, 0) 0%,
@@ -101,7 +103,7 @@ input {
   padding-left: 30px;
 }
 
-.input-container div span {
+.input-line-container div span {
   display: block;
 }
 </style>

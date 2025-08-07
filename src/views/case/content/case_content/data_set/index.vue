@@ -11,16 +11,17 @@
                 <div class="title title-action">操作</div>
             </div>
         </motion.div>
-        <div class="data">
+        <div class="data no-scroll">
             <motion.div @click.stop="action('edit', item, 0)" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                 :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }" class="data-item" v-for="(item, index) in data"
                 :key="index">
-                <div class="title title-name"><span>{{
+                <div class="title title-name g-e"><span>{{
                     item.name }}</span></div>
                 <div class="title title-id">
-                    <TooltipAnimation :isOpen="showIdTooltip">
-                        <template #trigger><span @click.stop="copyId(item.global_id)" @mouseenter="showIdTooltip = true"
-                                @mouseleave="showIdTooltip = false"># {{ item.global_id }}</span></template>
+                    <TooltipAnimation :isOpen="showIdTooltip === item.global_id">
+                        <template #trigger><span @click.stop="copyId(item.global_id)"
+                                @mouseenter="showIdTooltip = item.global_id" @mouseleave="showIdTooltip = -1"># {{
+                                    item.global_id }}</span></template>
                         <template #default>
                             <div>点击复制</div>
                         </template>
@@ -41,10 +42,21 @@
             </motion.div>
         </div>
     </div>
-    <DialogAnimation ref="updateDateSetNameDialogRef" title="编辑数据集名称" cancel_title="取消" confirm_title="更新"
+    <DialogAnimation ref="updateDateSetNameDialogRef" title="编辑数据集名称" cancel_title="取消" :confirm_title="confirm_title"
         :before_comfirm="check_dataset_name">
         <div>
             <input ref="inputRef" v-model="currentDataSetName" placeholder="数据集名称">
+        </div>
+    </DialogAnimation>
+    <DialogAnimation ref="deleteDatasetConfirmRef" title="删除数据集" cancel_title="取消" confirm_title="确认"
+        :before_comfirm="check_delete_dataset_confirm_text">
+        <div style="display: flex;flex-direction: column;gap: 10px;">
+            <div style="color: #ec6d51;font-size: 0.9rem;padding-left: 5px;">
+                请确保您知道该行为的后果，确认删除？请键入<span>“确认删除”</span>在下方输入框。
+            </div>
+            <div>
+                <input v-model="deleteConfirmText" placeholder="确认删除">
+            </div>
         </div>
     </DialogAnimation>
 </template>
@@ -57,39 +69,62 @@ import ActionGroup from '@/views/case/content/case_content/runner/tree/component
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import { ApiGetDatasetList } from '@/api/case/dataset/index'
+import { send_action } from '@/views/case/utils'
 import _ from 'lodash'
 
 const emit = defineEmits(['edit'])
 
-const showIdTooltip = ref(false)
+const confirm_title = ref('创建')
+
+const showIdTooltip = ref(-1)
 
 const currentDataSetName: any = ref('')
 
 const updateDateSetNameDialogRef: any = ref(null)
 
+const deleteDatasetConfirmRef: any = ref(null)
+
 const inputRef: any = ref(null)
 
-const data: any = ref([{
-    name: '数据集1',
-    global_id: 12312123,
-    updated_at: 1754026824000,
-    updated_by: 'Sheldon'
-}])
+const data: any = ref([])
+
+const create_dataset: any = ref()
+
+const deleteConfirmText = ref("")
 
 async function addDataset() {
+    confirm_title.value = "创建"
     const result = await updateDateSetNameDialogRef.value.open()
     if (result.action === 'comfirm' && result.hook_result === true) {
-        data.value.push({
-            name: currentDataSetName.value,
-            global_id: 12312123,
-            updated_at: 1754026824000,
-            updated_by: 'Sheldon'
-        })
+        data.value.unshift(create_dataset.value)
         if (result.action === 'comfirm') {
             window.$toast({ title: '新增数据集成功。', type: 'info' })
         }
     }
     currentDataSetName.value = ''
+}
+
+async function check_dataset_name() {
+    if (currentDataSetName.value.length === 0) {
+        window.$toast({ title: '数据集名称不能为空。', type: 'info' })
+        return false
+    } else if (currentDataSetName.value.length > 255) {
+        window.$toast({ title: '数据集名称过长(Limit 255)。', type: 'info' })
+        return false
+    }
+    const _data = {
+        type: 1,
+        child_action_type: "create_dataset",
+        content: {
+            name: currentDataSetName.value,
+            case: props.case_id
+        }
+    }
+    const resp = await send_action(_data)
+    if (!resp) return false
+    create_dataset.value = resp
+    return true
 }
 
 defineExpose({ addDataset })
@@ -100,22 +135,56 @@ const actionDesc: any = {
     batchEdit: '更新数据集信息'
 }
 
+async function check_delete_dataset_confirm_text() {
+    if (deleteConfirmText.value !== '确认删除') {
+        window.$toast({ title: '请正确输入确认文案。', type: 'error' })
+        return false
+    }
+    return true
+}
+
 async function action(t: string, item: any, index: number) {
     if (t === 'copy') {
-        let new_dataset = _.cloneDeep(item)
-        new_dataset.id = 123
-        new_dataset.name = item.name + 'Copy'
-        data.value.splice(index + 1, 0, new_dataset)
+        const _data = {
+            type: 1,
+            child_action_type: "copy_dataset",
+            content: {
+                dataset_id: item.id
+            }
+        }
+        const result = await send_action(_data)
+        data.value.unshift(result)
     } else if (t === 'delete') {
-        data.value = data.value.filter((_item: any) => _item.id != item.id)
-        window.$toast({ title: '删除数据集成功' })
+        const result = await deleteDatasetConfirmRef.value.open()
+        if (result.action === 'comfirm' && result.hook_result === true) {
+            const _data = {
+                type: 1,
+                child_action_type: "delete_dataset",
+                content: {
+                    id: item.id
+                }
+            }
+            await send_action(_data)
+            data.value = data.value.filter((_item: any) => _item.id != item.id)
+            window.$toast({ title: '删除数据集成功' })
+        }
+        deleteConfirmText.value = ""
     } else if (t === 'batchEdit') {
-        // emit('edit', global_id)
+        confirm_title.value = "更新"
         currentDataSetName.value = _.cloneDeep(item.name)
         resetCursor()
         const result = await updateDateSetNameDialogRef.value.open()
         if (result.action === 'comfirm' && result.hook_result === true) {
             if (item.name !== currentDataSetName.value) {
+                const _data = {
+                    type: 1,
+                    child_action_type: "edit_dataset",
+                    content: {
+                        dataset_id: item.id,
+                        new_name: currentDataSetName.value
+                    }
+                }
+                await send_action(_data)
                 window.$toast({ title: '更新数据集名称成功。' })
             } else {
                 window.$toast({ title: '内容无变化。', type: 'info' })
@@ -129,16 +198,7 @@ async function action(t: string, item: any, index: number) {
     }
 }
 
-function check_dataset_name() {
-    if (currentDataSetName.value.length === 0) {
-        window.$toast({ title: '数据集名称不能为空。', type: 'info' })
-        return false
-    } else if (currentDataSetName.value.length > 255) {
-        window.$toast({ title: '数据集名称过长(Limit 255)。', type: 'info' })
-        return false
-    }
-    return true
-}
+
 
 const resetCursor = () => {
     nextTick(() => {
@@ -152,7 +212,7 @@ const resetCursor = () => {
 }
 
 const props = defineProps({
-    case: {
+    case_id: {
         type: Number,
         default: - 1
     }
@@ -163,7 +223,12 @@ onMounted(async () => {
 })
 
 async function get_data_set() {
-
+    const _data = {
+        case: props.case_id
+    }
+    ApiGetDatasetList(_data).then(res => {
+        data.value = res
+    })
 }
 
 async function copyId(global_id: number) {
@@ -187,6 +252,14 @@ function timeAgo(timestamp: number) {
 </script>
 
 <style lang="scss" scope>
+input {
+    background-color: white;
+    color: black;
+    border-radius: 4px;
+    border: 0px;
+    padding: 10px;
+    padding-right: 40px;
+}
 .data-set-container {
     height: 100%;
     width: 100%;

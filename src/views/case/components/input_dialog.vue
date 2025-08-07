@@ -87,6 +87,9 @@ const props = defineProps({
     cols: {
         type: Array<any>,
         default: []
+    },
+    valid: {
+        type: null
     }
 })
 
@@ -108,7 +111,7 @@ const close = () => {
 defineExpose({ open, close, clean })
 
 // 关闭对话框
-const handleClose = (action_name: string) => {
+const handleClose = async (action_name: string) => {
     if (action_name === 'save') {
         const data: any = valid_data_and_parse(col_name.value, col_desc.value)
         if (data === false) {
@@ -123,6 +126,12 @@ const handleClose = (action_name: string) => {
                 title: `字段已存在：${duplicated.name}，添加失败。`,
                 type: 'error'
             })
+            return
+        }
+        const remote_valid = await props.valid(data)
+        console.log(remote_valid);
+        
+        if (remote_valid === false) {
             return
         }
         visible.value = false

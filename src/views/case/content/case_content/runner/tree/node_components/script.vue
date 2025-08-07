@@ -13,7 +13,20 @@
                     <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
                         <ScriptAnimationIcon :key="data.id"></ScriptAnimationIcon>
                     </motion.span>
-                    <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">{{ data.label }}
+                    <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">
+                        <TooltipAnimation :isOpen="showIdTooltip">
+                            <template #trigger><span style="color: rgba(0,0,0,0.5);" @click.stop="copyId(data.id)"
+                                    @mouseenter="showIdTooltip = true" @mouseleave="showIdTooltip = false"># {{ data.id
+                                    }}</span></template>
+                            <template #default>
+                                <div style="display: flex;flex-direction: column;gap: 5px;">
+                                    <div>点击复制</div>
+                                    <div style="color: rgba(255,255,255,0.5);">您可以通过步骤的ID找到它，</div>
+                                    <div style="color: rgba(255,255,255,0.5);">并获取它的执行信息。</div>
+                                </div>
+                            </template>
+                        </TooltipAnimation>
+                        <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
                 <motion.div class="action">
@@ -30,6 +43,9 @@ import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
 import ScriptAnimationIcon from '@/views/case/content/case_content/runner/tree/components/script_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
+import { ref } from 'vue'
+import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
 const props = defineProps<{
@@ -41,6 +57,14 @@ const props = defineProps<{
 
 const changeCheck = (type: string) => {
     emit('changeCheck', type)
+}
+
+const showIdTooltip = ref(false)
+
+async function copyId(step_id: number) {
+    const { toClipboard } = useClipboard()
+    await toClipboard(step_id.toString())
+    window.$toast({ title: '已复制' })
 }
 
 const handleNodeHover = (isHovering: boolean) => {
@@ -129,6 +153,13 @@ const action = (t: string) => {
         /* Show ellipsis when content overflows */
         white-space: nowrap;
         /* Prevent wrapping */
+        display: flex;
+        align-items: center;
+        gap: 5px;
+
+        .id-area {
+            color: #919191;
+        }
     }
 
     .inactive-label {
@@ -146,7 +177,7 @@ const action = (t: string) => {
         align-items: center;
         justify-content: start;
         flex-shrink: 0;
-                display: flex;
+        display: flex;
         justify-content: end;
     }
 }

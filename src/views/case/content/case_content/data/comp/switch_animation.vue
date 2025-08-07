@@ -6,7 +6,7 @@
                     <div class="switch-container">
                         <Switch.Root v-model="checked" :class="{ checked_animation: checked }" @click="toggleChecked">
                             <motion.button class="switch" :initial="false" :animate="{
-                                backgroundColor: checked ? 'black' : 'var(--hue-6-transparent)'
+                                backgroundColor: checked ? 'rgb(0,0,0)' : 'var(--hue-6-transparent)'
                             }" :style="{
                                 justifyContent: checked ? 'flex-end' : 'flex-start'
                             }" :while-focus="{
@@ -78,6 +78,12 @@ const props = defineProps({
 const toggleChecked = () => {
     emit('action', !checked.value)
 }
+
+const toggle = () => {
+    checked.value = !checked.value
+}
+
+defineExpose({ toggle })
 
 onMounted(() => {
     checked.value = props.data

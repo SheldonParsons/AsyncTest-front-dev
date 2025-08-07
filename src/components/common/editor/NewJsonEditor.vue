@@ -258,6 +258,7 @@ async function createLanguage() {
       automaticLayout: true,
       scrollBeyondLastLine: false,
       mouseWheelScrollSensitivity: 1,
+      fontFamily: '"JetBrains Mono", monospace',
       autoClosingBrackets: "always", // 确保开启自动闭合括号
       formatOnType: true, // 开启键入时自动格式化
       renderWhitespace: "all",

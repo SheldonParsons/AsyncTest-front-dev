@@ -13,10 +13,10 @@
       <span style="margin-left: 10px">接口概览</span>
     </div>
     <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;">
-      <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core" ref="treeRef"
-        :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu" :highlight-current="true"
-        :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none"
-        :filter-node-method="filterNode">
+      <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core"
+        ref="treeRef" :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu"
+        :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
+        icon-class="none" :filter-node-method="filterNode">
         <template #default="{ node, data }">
           <div v-if="
             data.child_type === 0 ||
@@ -34,7 +34,7 @@
               ">
               <Fold></Fold>
             </div>
-            <span v-if="data.child_type === 2" class="method-span" :class="method_color[data.method]">{{
+            <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
               data.method.toUpperCase() }}</span>
             <div class="label-span-method">
               <div class="g-ellipsis">{{ data.name }}</div>
@@ -736,19 +736,33 @@ function changeExpanded(node: any) {
 }
 
 .red {
-  color: #ff6a6a;
+  background: linear-gradient(80deg, black 0%, #9c4c4c 30%);
 }
 
 .green {
-  color: #3cb371;
+  background: linear-gradient(80deg, black 0%, #4fa380 50%);
 }
 
 .blue {
-  color: #1e90ff;
+  background: linear-gradient(80deg, black 0%, #504c9d 30%);
 }
 
 .orange {
-  color: #eead0e;
+  // color: #eead0e;
+  background: linear-gradient(80deg, black 0%, #976b49 30%);
+}
+
+.gradient-text {
+  /* 定义背景渐变 */
+  /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
+  -webkit-background-clip: text;
+  /* 文字本身透明，这样才能显示背景 */
+  -webkit-text-fill-color: transparent;
+  /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
+  background-clip: text;
+  /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
+  color: transparent;
+  font-weight: 800;
 }
 
 .purple {
