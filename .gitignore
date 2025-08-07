@@ -21,6 +21,10 @@ uploads
 .DS_Store
 *.suo
 
+yarn.lock
+CLAUDE.md
+.claude/
+
 
 *.ntvs*
 *.njsproj
