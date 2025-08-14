@@ -2,7 +2,8 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id" :key="data.id"></DragHandle>
+        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0"
+            :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
         <motion.div class="node-content" :animate="{
@@ -29,7 +30,7 @@
                         <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
-                <motion.div class="action">
+                <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
                     <ActionGroup :group="action_group" @action="action"></ActionGroup>
                 </motion.div>
             </motion.div>
@@ -52,7 +53,8 @@ const props = defineProps<{
     data: any
     hoveredNodeId: number | null
     check: string,
-    action_group: Array<string>
+    action_group: any,
+    read_only: number
 }>()
 
 const showIdTooltip = ref(false)
@@ -98,9 +100,13 @@ const action = (t: string) => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 2px solid #56575814;
+    // border: 2px solid #56575814;
     padding: 7px 16px;
-    background-color: rgba(86, 87, 88, .03);
+    // background-color: rgba(86, 87, 88, .03);
+    background: linear-gradient(80deg,
+            rgba(255, 255, 255, 0.1) 0%,
+            rgba(33, 147, 176, 0.1) 40%,
+            rgba(33, 147, 176, 0.1) 90%);
     border-radius: 6px;
     transition: all 0.2s ease;
 
@@ -180,6 +186,10 @@ const action = (t: string) => {
         flex-shrink: 0;
         display: flex;
         justify-content: end;
+    }
+
+    .action.action-hidden {
+        visibility: hidden;
     }
 }
 

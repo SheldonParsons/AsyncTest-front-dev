@@ -5,7 +5,8 @@
         :whilePress="{ scale: 0.9 }"
         :style="{
             backgroundColor: bgColor,
-            color: fontColor
+            color: fontColor,
+            borderColor: borderColor
         }"
     >
         <slot />
@@ -18,7 +19,8 @@ import { computed } from 'vue'
 
 const props = defineProps({
     bgColor: { type: String, default: 'rgb(0, 0, 0)' },
-    fontColor: { type: String, default: 'rgb(255, 255, 255)' }
+    fontColor: { type: String, default: 'rgb(255, 255, 255)' },
+    borderColor: {type:String, default: 'rgb(0, 0, 0)'}
 })
 const emit = defineEmits(['click'])
 </script>

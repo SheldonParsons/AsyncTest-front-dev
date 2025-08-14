@@ -79,10 +79,10 @@ function onHoverStart(item: any) {
     console.log("hover start")
 }
 
-const hover_item: number = ref(-1)
+const hover_item: any = ref(-1)
 
 const enterTransition: any = {
-    duration: 0.5,
+    duration: 0.2,
     ease: [0, 0.54, 0.37, 0.97],
 }
 
@@ -91,8 +91,6 @@ const exitTransition: any = {
     ease: "easeIn",
 }
 
-// const skewX = defineModel<any>("skewX") // 可用 defineModel 或 props 传入
-// const skewY = defineModel<any>("skewY")
 </script>
 
 

@@ -31,8 +31,10 @@
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                color: black;
               ">
-              <Fold></Fold>
+              <Fold v-if="!node.expanded"></Fold>
+              <FoldExpend v-else></FoldExpend>
             </div>
             <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
               data.method.toUpperCase() }}</span>
@@ -136,6 +138,7 @@
 import { ref, watch, onMounted, getCurrentInstance, nextTick } from "vue";
 import tools from "@/utils/tools";
 import Fold from "@/assets/svg/tree/fold.vue";
+import FoldExpend from "@/assets/svg/tree/fold_expend.vue";
 import MoreButton from "@/assets/svg/common/edit_more_btn.vue";
 import DoneButton from "@/assets/svg/common/done_btn.vue";
 import { ElTree } from "element-plus";
@@ -736,20 +739,20 @@ function changeExpanded(node: any) {
 }
 
 .red {
-  background: linear-gradient(80deg, black 0%, #9c4c4c 30%);
+  background: linear-gradient(180deg, black 0%, #9c4c4c 30%);
 }
 
 .green {
-  background: linear-gradient(80deg, black 0%, #4fa380 50%);
+  background: linear-gradient(180deg, black 0%, #4fa380 50%);
 }
 
 .blue {
-  background: linear-gradient(80deg, black 0%, #504c9d 30%);
+  background: linear-gradient(180deg, black 0%, #504c9d 30%);
 }
 
 .orange {
   // color: #eead0e;
-  background: linear-gradient(80deg, black 0%, #976b49 30%);
+  background: linear-gradient(180deg, black 0%, #b87e52 50%);
 }
 
 .gradient-text {
@@ -778,6 +781,7 @@ function changeExpanded(node: any) {
   font-weight: 500;
   font-size: 10px;
   text-align: right;
+  font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 .label-span {

@@ -4,7 +4,7 @@
         @mouseleave="handleNodeHover(false)">
         <div style="width: 14px;"></div>
         <!-- 节点内容 -->
-        <motion.div class="node-content" :animate="{
+        <motion.div class="node-content" :class="{ 'is-readonly': read_only }" :animate="{
         }" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
@@ -21,9 +21,11 @@ import { motion } from 'motion-v'
 const emit: any = defineEmits(['changeHover',])
 const props = defineProps<{
     data: any
-    hoveredNodeId: number | null
+    hoveredNodeId: number | null,
+    read_only: number
 }>()
 const handleNodeHover = (isHovering: boolean) => {
+    if (props.read_only) return
     emit('changeHover', isHovering ? props.data.id : -1)
 }
 </script>
@@ -67,7 +69,8 @@ const handleNodeHover = (isHovering: boolean) => {
     will-change: opacity;
 }
 
-.node-content:hover {
+/* 当节点不是只读时，应用 hover 效果 */
+.node-content:not(.is-readonly):hover {
     border: 2px dotted #555555;
     animation: blink 1s infinite;
     will-change: opacity;
@@ -76,6 +79,12 @@ const handleNodeHover = (isHovering: boolean) => {
         color: #555555 !important;
     }
 }
+
+/* 当节点是只读时，改变鼠标指针样式 */
+.node-content.is-readonly {
+    cursor: default;
+}
+
 
 .node-info {
     display: flex;

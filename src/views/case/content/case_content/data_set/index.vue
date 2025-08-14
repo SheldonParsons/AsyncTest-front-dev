@@ -259,6 +259,9 @@ input {
     border: 0px;
     padding: 10px;
     padding-right: 40px;
+    width: 100%;
+    outline: none;
+    box-sizing: border-box;
 }
 .data-set-container {
     height: 100%;

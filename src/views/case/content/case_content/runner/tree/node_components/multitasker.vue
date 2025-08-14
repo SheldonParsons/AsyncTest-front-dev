@@ -2,14 +2,14 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id" :key="data.id"></DragHandle>
+        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0" :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
         <motion.div class="node-content" :animate="{
         }" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.div class="info">
-                    <CheckBox :check="check" @change="changeCheck"></CheckBox>
+                    <CheckBox @click.stop :check="check" @change="changeCheck"></CheckBox>
                     <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
                         <LoopAnimationIcon :key="data.id"></LoopAnimationIcon>
                     </motion.span>
@@ -29,7 +29,7 @@
                         <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
-                <motion.div class="action">
+                <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
                     <ActionGroup :group="action_group" @action="action"></ActionGroup>
                 </motion.div>
             </motion.div>
@@ -47,12 +47,13 @@ import ActionGroup from '@/views/case/content/case_content/runner/tree/component
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
 
-const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck'])
+const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck', 'action'])
 const props = defineProps<{
     data: any
     hoveredNodeId: number | null
     check: string,
-    action_group: Array<string>
+    action_group: any,
+    read_only: number
 }>()
 
 const showIdTooltip = ref(false)
@@ -98,12 +99,16 @@ async function copyId(step_id: number) {
     align-items: center;
     justify-content: space-between;
     padding: 7px 16px;
-    background-color: rgba(86, 87, 88, .03);
+    background: linear-gradient(80deg,
+            rgba(255, 255, 255, 0.1) 0%,
+            rgba(37, 188, 153, 0.1) 40%,
+            rgba(34, 165, 49, 0.1) 90%);
     border-radius: 6px 6px 0 0;
     border-left: 2px solid rgba(86, 87, 88, 0.04);
     border-top: 2px solid rgba(86, 87, 88, 0.04);
     border-right: 2px solid rgba(86, 87, 88, 0.04);
     transition: all 0.2s ease;
+    background-clip: padding-box;
 
     .node-info {
         display: flex;
@@ -181,6 +186,10 @@ async function copyId(step_id: number) {
         flex-shrink: 0;
         display: flex;
         justify-content: end;
+    }
+
+    .action.action-hidden {
+        visibility: hidden;
     }
 }
 

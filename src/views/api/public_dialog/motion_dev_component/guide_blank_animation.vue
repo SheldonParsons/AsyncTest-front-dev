@@ -53,7 +53,7 @@ function onHoverStart() {
 const isHovered = ref(false)
 
 const enterTransition: any = {
-    duration: 0.5,
+    duration: 0.2,
     ease: [0, 0.54, 0.37, 0.97],
 }
 

@@ -83,6 +83,9 @@ watch(charactersRemaining, (newVal) => {
   padding: 10px;
   padding-right: 40px;
   border-radius: 0px!important;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* .line-input:focus {

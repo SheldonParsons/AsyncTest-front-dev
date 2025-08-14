@@ -2,7 +2,7 @@
     <div class="dialog-container">
         <Dialog.Root :open="visible">
             <Dialog.Portal>
-                <AnimatePresence multiple>
+                <AnimatePresence>
                     <Dialog.Overlay as-child>
                         <motion.div class="overlay" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                             :exit="{ opacity: 0 }" />

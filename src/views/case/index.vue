@@ -82,7 +82,7 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import Fold from "@/assets/svg/tree/fold.vue";
 import Case from "@/assets/svg/tree/case.vue";
 import CaseLight from "@/assets/svg/tree/case_light.vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
 import CaseDocumentation from "@/views/case/content/case.vue"
 import EmptyPage from "@/views/api/child_context/empty_page.vue";
@@ -112,6 +112,7 @@ const current_target_type = ref();
 const x = ref(0);
 const y = ref(0);
 const max_length = 5;
+const caseDocumentRef:any = ref(null)
 const page_mapping: any = {
   empty_page: 0,
   create_page: 1,

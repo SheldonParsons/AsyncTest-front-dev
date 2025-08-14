@@ -28,9 +28,9 @@
         <div class="case-content" v-if="current_page === 0">
             <SplitterGroup direction="horizontal" ref="groupRef" v-if="!loading">
                 <SplitterPanel :default-size="100" :min-size="40"
-                    style="display:flex; flex-direction:column; height:100%;overflow: scroll;">
+                    style="display:flex; flex-direction:column; height:100%;overflow: scroll;" class="caseContentRef no-scroll">
                     <CaseInfo></CaseInfo>
-                    <CaseSteps style="flex: 1;"></CaseSteps>
+                    <CaseSteps style="flex: 1;" :case_id="case_id" @scroll="scroll"></CaseSteps>
                 </SplitterPanel>
                 <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
                     :style="{ width: isCollapsed ? '0px' : '10px' }" />
@@ -101,7 +101,7 @@ import TabSelectCol from '@/assets/motion/tab_select_col.vue'
 import CaseSteps from '@/views/case/content/case_content/runner/tree/index.vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import InterfacePage from "@/views/api/child_context/interface_page.vue";
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import CaseInfo from '@/views/case/content/case_content/runner/case_info/index.vue'
 import DataCore from '@/views/case/content/case_content/data/index.vue'
 import DataSet from '@/views/case/content/case_content/data_set/index.vue'
@@ -130,11 +130,11 @@ const loading = ref(false)
 const tabs: any = ref([])
 const env_list: any = ref([])
 const current_env_data: any = ref()
-const dataset:any = ref(null)
+const dataset: any = ref(null)
 const table_data: any = ref({ cols: [], rows: [] })
 const showTable = ref(false)
 let timer: any = null
-
+const caseContentRef: any = ref(null)
 
 watch(current_page, (newVal, oldVal) => {
     console.log(newVal);
@@ -156,6 +156,17 @@ watch(current_page, (newVal, oldVal) => {
     }, 0)
 })
 
+function scroll() {
+    console.log("in.,.,,dsm,d,amd,a");
+    console.log(document.querySelector('.caseContentRef'));
+    setTimeout(() => {
+        const container:any = document.querySelector('.caseContentRef') // 你的滚动容器
+        container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+        })
+    }, 500)
+}
 const isCollapsed = computed(() => {
     try {
         return panelRef.value?.getSize() === 0
@@ -305,6 +316,7 @@ const props = defineProps({
     display: flex;
     flex-direction: column;
     height: 100%;
+
     .dataset-name {
         font-weight: 500;
         margin-top: 10px;

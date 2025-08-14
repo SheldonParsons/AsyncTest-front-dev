@@ -2,7 +2,7 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id" :key="data.id"></DragHandle>
+        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0" :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
         <motion.div class="node-content" :animate="{
@@ -29,7 +29,7 @@
                         <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
-                <motion.div class="action">
+                <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
                     <ActionGroup :group="action_group" @action="action"></ActionGroup>
                 </motion.div>
             </motion.div>
@@ -52,7 +52,8 @@ const props = defineProps<{
     data: any
     hoveredNodeId: number | null
     check: string,
-    action_group: Array<string>
+    action_group: any,
+    read_only: number
 }>()
 
 const showIdTooltip = ref(false)
@@ -180,6 +181,9 @@ const action = (t: string) => {
         flex-shrink: 0;
         display: flex;
         justify-content: end;
+    }
+    .action.action-hidden {
+        visibility: hidden;
     }
 }
 

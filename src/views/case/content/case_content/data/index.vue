@@ -162,6 +162,8 @@ onMounted(() => {
             })
         }
     }
+    console.log(columnDefs.value);
+    
     columnDefs.value.push(
         {
             field: '$ast_action',
@@ -181,16 +183,6 @@ onMounted(() => {
         })
     rowData.value = _.cloneDeep(props.data.rows)
 })
-
-function generateRandomString() {
-    const length = Math.floor(Math.random() * 81) + 20;
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
 
 // 默认列配置：可过滤、可编辑、不允许调整宽度、自适应宽度
 const defaultColDef: ColDef = {

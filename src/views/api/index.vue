@@ -30,8 +30,10 @@
                     method_list[item.t]
                   }}</span>
 
-                <span class="title g-ellipsis">{{ item.title }}</span>
-
+                <span class="method-span gradient-text g-e"
+                  :class="current_tab_name !== item.name ? 'title' : 'title-light'">{{
+                    item.title
+                  }}</span>
                 <div class="suffix-slot" @click.stop>
                   <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
                   <el-icon class="close-icon" @click.stop="closeTab(item, index)">
@@ -315,6 +317,13 @@ watch(
 const current_broadcast = ref(true)
 
 function getMethodClass(item: any, current_tab_name: string) {
+  if (item === 'title') {
+    if (current_tab_name === item.name) {
+      return 'title-light'
+    } else {
+      return 'title'
+    }
+  }
   method_color[item.t]
   if (current_tab_name === item.name) {
     return method_color[item.t]
@@ -720,10 +729,6 @@ function change_user_env(item: any) {
   padding-bottom: 5px;
   border-bottom: 1px solid #f0f0f0;
 
-  .title {
-    font-weight: 600;
-  }
-
   .tabs-wrap {
     display: flex;
     gap: 4px;
@@ -864,6 +869,17 @@ function change_user_env(item: any) {
   cursor: pointer;
 }
 
+.title {
+  font-size: 14px!important;
+  background: linear-gradient(360deg, #000000, rgb(0, 0, 0));
+}
+
+.title-light {
+  font-size: 14px!important;
+  background: linear-gradient(360deg, #ffffff, rgb(255, 255, 255));
+}
+
+
 .red {
   background: linear-gradient(360deg, #9c4c4c, white);
 }
@@ -914,7 +930,8 @@ function change_user_env(item: any) {
   margin-right: 5px;
   font-weight: 500;
   font-size: 12px;
-  text-align: right;
+  line-height: 1;
+  font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 .fade-enter-active,

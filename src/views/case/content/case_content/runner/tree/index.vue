@@ -1,66 +1,91 @@
 <template>
-  <motion.div class="case-tree-container" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
-    :transition="{ duration: 0.5 }">
+  <motion.div class="case-tree-container" :class="{ 'no-scroll': read_only > 0 }" :initial="{ opacity: 0 }"
+    :animate="{ opacity: 1 }" :transition="{ duration: 0.5 }">
     <!-- 树形结构 -->
-    <el-tree ref="treeRef" :data="treeData" :props="defaultProps" node-key="id" :expand-on-click-node="false"
-      :default-expand-all="true" :highlight-current="true" draggable :allow-drag="handleAllowDrag"
-      @node-drag-start="handleDragStart" @node-drag-end="handleDragEnd" @node-drag-enter="handleDragEnter"
-      @node-drag-leave="handleDragLeave" class="case-custom-tree">
+    <FirstStep v-if="treeData.length === 0 && read_only === 0 && loading === false" @scroll="emit('scroll')"
+      @action="addFirstStep">
+    </FirstStep>
+    <div v-if="treeData.length === 0 && read_only > 0 && loading === false"
+      style="width: 100%;height: 100%;display: flex;justify-content: center;align-items: center;font-size: 0.9rem;">暂无数据
+    </div>
+    <div v-if="treeData.length > 0 && loading === false" class="global-action">
+      <CheckBox :check="getGlobalCheckStatus()" @change="changeCheck"></CheckBox>
+      <div>已选 {{ checked_count }} 个步骤</div>
+    </div>
+    <AstLoading v-if="loading"></AstLoading>
+    <el-tree v-if="treeData.length > 0 && loading === false" ref="treeRef" :data="treeData" :props="defaultProps"
+      node-key="id" :expand-on-click-node="false" :default-expand-all="true" :highlight-current="true" draggable
+      :allow-drag="handleAllowDrag" @node-click="show_step_detail" @node-drag-start="handleDragStart"
+      @node-drag-end="handleDragEnd" @node-drag-enter="handleDragEnter" @node-drag-leave="handleDragLeave"
+      class="case-custom-tree">
       <template #default="{ node, data }">
         <motion.div style="display: flex;flex-direction: column;width: 100%;" class="tree-node-container"
           :node-id="node.id" :data-id="data.id" :data-type="data.type">
           <Line class="target-line-top hidden"></Line>
-          <For v-if="data.type === 'for'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown"></For>
-          <Group v-if="data.type === 'group'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown"></Group>
-          <If v-if="data.type === 'if'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown"></If>
-          <Interface v-if="data.type === 'interface'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Multitasker :read_only="read_only" v-if="data.type === 'multitasker'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></Multitasker>
+          <Group :read_only="read_only" v-if="data.type === 'group'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></Group>
+          <If :read_only="read_only" v-if="data.type === 'if'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></If>
+          <Interface :read_only="read_only" v-if="data.type === 'interface'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Interface>
-          <Database v-if="data.type === 'database'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Database :read_only="read_only" v-if="data.type === 'database'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Database>
-          <Case v-if="data.type === 'case'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Case :read_only="read_only" v-if="data.type === 'case'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Case>
-          <Error v-if="data.type === 'error'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Error :read_only="read_only" v-if="data.type === 'error'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Error>
-          <Script v-if="data.type === 'script'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Script :read_only="read_only" v-if="data.type === 'script'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Script>
-          <Delay v-if="data.type === 'delay'" @action="step_action" :action_group="stepActionGroup[data.type]"
-            @changeCheck="(val: any) => changeCheckHandle(val, data)" :check="data.check" :data="data"
-            :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover" @canDragAction="onHandlePointerDown">
+          <Delay :read_only="read_only" v-if="data.type === 'delay'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown">
           </Delay>
-          <Empty v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data"></Empty>
+          <Empty :read_only="read_only" v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data">
+          </Empty>
           <Line v-if="showBottomLine(node)" class="target-line-button hidden"></Line>
         </motion.div>
       </template>
     </el-tree>
   </motion.div>
+  <StepChoice ref="stepChoiceRef"></StepChoice>
+  <InterfaceChoice ref="interfaceChoiceRef"></InterfaceChoice>
+  <CaseStepChoice :excluded_ids="[case_id]" ref="caseStepChoiceRef"></CaseStepChoice>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { motion } from 'motion-v'
 import { ElTree } from 'element-plus'
 import Line from '@/views/case/content/case_content/runner/tree/components/line.vue'
-import { useTreeNodeOperations, type TreeNode } from './composables/useTreeNodeOperations'
+import { useTreeNodeOperations } from './composables/useTreeNodeOperations'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useLineMounting } from './composables/useLineMounting'
-import { defaultProps, stepActionGroup } from './utils/constants'
-import For from '@/views/case/content/case_content/runner/tree/node_components/for.vue'
+import { defaultProps, stepActionGroup, removeNodeById, insertNode, analyzeTree, updateAllCheckStatus } from './utils/constants'
+import Multitasker from '@/views/case/content/case_content/runner/tree/node_components/multitasker.vue'
 import If from '@/views/case/content/case_content/runner/tree/node_components/if.vue'
 import Group from '@/views/case/content/case_content/runner/tree/node_components/group.vue'
 import Interface from '@/views/case/content/case_content/runner/tree/node_components/interface.vue'
@@ -70,113 +95,114 @@ import Delay from '@/views/case/content/case_content/runner/tree/node_components
 import Script from '@/views/case/content/case_content/runner/tree/node_components/script.vue'
 import Error from '@/views/case/content/case_content/runner/tree/node_components/error.vue'
 import Case from '@/views/case/content/case_content/runner/tree/node_components/case.vue'
+import StepChoice from '@/views/case/content/case_content/runner/tree/components/step_dialog.vue';
+import InterfaceChoice from '@/views/case/content/case_content/runner/tree/components/interface_selecter.vue'
+import CaseStepChoice from '@/views/case/content/case_content/runner/tree/components/step_selecter.vue'
+import { ApiCaseMixin, ApiGetCaseSingle } from '@/api/case/case/index'
+import FirstStep from '@/views/case/content/case_content/runner/tree/components/first_step.vue'
+import CheckBox from '@/assets/motion/checkbox.vue'
 import _ from 'lodash'
 
-const treeDatae = ref([])
 // 树形数据
-const treeData = ref<any[]>([
-  {
-    id: 1,
-    type: 'for',
-    label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
-    check: 'check',
-    children: [
-      {
-        id: 2,
-        label: '',
-        type: 'empty',
-        check: 'check',
-      }
-    ]
-  },
-  {
-    id: 3,
-    type: 'for',
-    label: '根节点 1',
-    check: 'check',
-    children: [
-      {
-        id: 4,
-        label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
-        type: 'error',
-        check: 'check',
-      },
-      {
-        id: 19,
-        label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
-        type: 'case',
-        check: 'check',
-      },
-      {
-        id: 5,
-        label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
-        type: 'group',
-        check: 'check',
-        children: [
-          {
-            id: 6, label: '叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点叶子节点', type: 'if', check: 'check', children: [
-              {
-                id: 7,
-                type: 'interface', method: 'get',
-                label: '叶子节点 1-1-1-1',
-                check: 'check',
-              },
-              {
-                id: 8,
-                type: 'interface', method: 'post',
-                label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja',
-                check: 'check',
-              }
-            ]
-          },
-          { id: 9, label: '叶子节点 1-1-2', type: 'interface', method: 'put', check: 'check', }
-        ]
-      },
-      {
-        id: 10,
-        type: 'interface', method: 'delete',
-        label: '子节点 1-2',
-        check: 'check',
-      }
-    ]
-  },
-  { id: 11, label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja', type: 'database', check: 'check', },
-  { id: 12, label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja', type: 'delay', check: 'check', },
-  {
-    id: 13,
-    label: '根节点 2',
-    type: 'for',
-    check: 'check',
-    children: [
-      { id: 14, label: '叶子节点 1-1-1-2shdkljahsdjaslkdjaklsjdklasjkdlajsdlsajdkljaskldjkasjdklsajdlkja', type: 'script', check: 'check' }
-    ]
-  },
-  {
-    id: 15,
-    label: '根节点 2',
-    type: 'for',
-    check: 'check',
-    children: [
-      { id: 16, label: '子节点 2-1', type: 'interface', method: 'get', check: 'check' }
-    ]
-  },
-  {
-    id: 17,
-    label: '根节点 2',
-    type: 'for',
-    check: 'check',
-    children: [
-      { id: 18, label: '子节点 2-1', type: 'interface', method: 'get', check: 'check' }
-    ]
-  }
-])
+const treeData = ref<any[]>([])
 
-const treeRef = ref<InstanceType<typeof ElTree>>()
+const treeRef: any = ref<InstanceType<typeof ElTree>>()
 const hoveredNodeId = ref<number | null>(null)
 const current_drag_node_target: any = ref(null)
 const current_drag_node_data_id: any = ref(-1)
 const drag_target_info: any = ref(null)
 const origin_tree: any = ref(null)
+const current_choice_step: any = ref(null)
+const stepChoiceRef: any = ref(null)
+const interfaceChoiceRef: any = ref(null)
+const caseStepChoiceRef: any = ref(null)
+const step_count: any = ref(0)
+const checked_count: any = ref(0)
+const loading: any = ref(false)
+
+const props = defineProps({
+  case_id: {
+    default: -1,
+    type: Number
+  },
+  read_only: {
+    default: 0,
+    type: Number
+  }
+})
+
+watch(() => props.case_id, async (n, o) => {
+  loading.value = true
+  await ApiGetCaseSingle(props.case_id).then((res: any) => {
+    treeData.value = res.steps
+  })
+  if (treeRef.value) {
+    await mountLines(treeRef)
+  }
+  setTimeout(() => {
+    loading.value = false
+  }, 200)
+})
+
+onMounted(async () => {
+  loading.value = true
+  await ApiGetCaseSingle(props.case_id).then((res: any) => {
+    treeData.value = res.steps
+  })
+  if (treeRef.value) {
+    await mountLines(treeRef)
+  }
+  setGlobalCheck()
+  setTimeout(() => {
+    loading.value = false
+  }, 200)
+})
+
+function setGlobalCheck() {
+  const { totalNodes, checkedNodes } = analyzeTree(treeData.value)
+  step_count.value = totalNodes
+  checked_count.value = checkedNodes
+}
+
+function getGlobalCheckStatus() {
+  if (checked_count.value === step_count.value) {
+    return 'check'
+  }
+  if (checked_count.value === 0) {
+    return 'none'
+  }
+  if (checked_count.value < step_count.value) {
+    return 'part'
+  }
+}
+
+const changeCheck = async (type: any) => {
+  let _data
+  if (type === 'check') {
+    _data = {
+      type: 0,
+      child_action_type: 'check_change',
+      content: {
+        case_id: props.case_id,
+        t: 'all_checked'
+      }
+    }
+  } else if (type === 'none') {
+    _data = {
+      type: 0,
+      child_action_type: 'check_change',
+      content: {
+        case_id: props.case_id,
+        t: 'all_unchecked'
+      }
+    }
+  }
+  updateAllCheckStatus(treeData.value, type)
+  setGlobalCheck()
+  await send_action(_data)
+}
+
+const emit = defineEmits(['scroll'])
 
 // 使用组合式函数
 const {
@@ -194,6 +220,122 @@ const {
 const {
   mountLines
 } = useLineMounting()
+
+
+const add_step_mapping: any = {
+  'empty': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
+  'multitasker-child': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
+  'next': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy'],
+  'child': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy']
+}
+
+const addFirstStep = async (step_type: any) => {
+  await add_step(step_type, treeData.value, 'first', 'top', null)
+  console.log(treeData.value);
+}
+
+const choice_step = async (range_type: string, data: any, position: any) => {
+  const range = add_step_mapping[range_type]
+  const { step_type } = await stepChoiceRef.value.open(range)
+  await add_step(step_type, data, range_type, position, data.id)
+}
+
+const add_step = async (step_type: any, data: any, range_type: any, position: any, target_id: any) => {
+  let res = null
+  if (step_type === 'interface') {
+    const { interface_list } = await interfaceChoiceRef.value.open()
+    const _data = {
+      type: 0,
+      child_action_type: 'insert_default_step',
+      content: {
+        case_id: props.case_id,
+        step_type: step_type,
+        interface_list: interface_list,
+        position: position,
+        target_id: target_id
+      }
+    }
+    res = await send_action(_data)
+  } else if (step_type === 'case') {
+  } else if (step_type === 'copy') {
+    await caseStepChoiceRef.value.open()
+  } else {
+    const _data = {
+      type: 0,
+      child_action_type: 'insert_default_step',
+      content: {
+        case_id: props.case_id,
+        step_type: step_type,
+        position: position,
+        target_id: target_id
+      }
+    }
+    res = await send_action(_data)
+    res = [res]
+  }
+  synchronizeData(range_type, data, res)
+}
+
+const synchronizeData = (range_type: any, data: any, input_data: any) => {
+  if (range_type === 'multitasker-child' || range_type === 'child' || range_type === 'empty') {
+    insertNode(treeData.value, input_data, data.id, 'child')
+  } else if (range_type === 'first') {
+    treeData.value = input_data
+  } else if (range_type === 'next') {
+    insertNode(treeData.value, input_data, data.id, 'next')
+  }
+}
+
+async function send_action(_data: any) {
+  return await ApiCaseMixin(_data).then(res => {
+    window.$toast({title: '更新成功'})
+    return res
+  })
+}
+
+function findParentNode(tree: any, targetId: any, parent = null) {
+  for (const node of tree) {
+    if (node.id === targetId) {
+      return parent; // 找到目标，返回父节点
+    }
+    if (node.children) {
+      const found: any = findParentNode(node.children, targetId, node);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null; // 没找到
+}
+
+const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
+  if (props.read_only) return
+  if (data.type === 'empty') {
+    const father_node = findParentNode(treeData.value, data.id)
+    choice_step('empty', father_node, 'child')
+    return
+  }
+  current_choice_step.value = data
+  // 直接查找并移除，不用forEach
+  const oldStep = document.querySelector('.choice-step');
+  if (oldStep) oldStep.classList.remove('choice-step');
+
+  const oldChildren = document.querySelector('.choice-step-children');
+  if (oldChildren) oldChildren.classList.remove('choice-step-children');
+  const el: any = document.querySelector(`.case-custom-tree .el-tree-node.is-expanded.is-focusable[data-key="${data.id}"]`)
+
+  const content = el.querySelector('.node-content');
+  if (content) {
+    content.classList.add('choice-step');
+  }
+
+  if (data.children) {
+    const childrenEl = el.querySelector('.el-tree-node__children');
+    if (childrenEl) {
+      childrenEl.classList.add('choice-step-children');
+    }
+  }
+}
 
 const getMaxId = (nodes: any) => {
   let maxId = 0;
@@ -258,9 +400,45 @@ const handleNodeHover = (node_id: number) => {
   hoveredNodeId.value = node_id
 }
 
-const step_action = (t: string, data: any) => {
+
+const step_action = async (t: string, data: any) => {
   if (t === 'copy') {
-    duplicateNode(data.id)
+    const _data = {
+      type: 0,
+      child_action_type: 'copy_node',
+      content: {
+        case_id: props.case_id,
+        origin_node: data
+      }
+    }
+    const res = await send_action(_data)
+    insertNode(treeData.value, res, data.id, 'next')
+    return
+  }
+  if (t === 'delete') {
+    const _data = {
+      type: 0,
+      child_action_type: 'delete_step',
+      content: {
+        case_id: props.case_id,
+        step_id: data.id
+      }
+    }
+    await send_action(_data)
+    removeNodeById(treeData.value, data.id)
+    return
+  }
+  // 添加相邻步骤
+  if (t === 'addSiblingStep') {
+    choice_step('next', data, 'next')
+  }
+  // 添加子步骤
+  if (t === 'addChildStep') {
+    if (data.type === 'multitasker') {
+      choice_step('multitasker-child', data, 'child')
+    } else {
+      choice_step('child', data, 'child')
+    }
   }
 }
 
@@ -327,7 +505,7 @@ function updateDescendants(node: any, newCheck: 'none' | 'check' | 'part') {
  * @param type    要设的新状态，只会是 'check' 或 'none'
  * @param nodeData 当前操作的节点对象
  */
-function changeCheckHandle(
+async function changeCheckHandle(
   type: 'none' | 'check' | 'part',
   nodeData: any
 ) {
@@ -352,12 +530,24 @@ function changeCheckHandle(
     }
     parent.check = parentState;
   }
+  setGlobalCheck()
+  const _data = {
+    type: 0,
+    child_action_type: 'check_change',
+    content: {
+      case_id: props.case_id,
+      t: type,
+      target_id: nodeData.id
+    }
+  }
+  await send_action(_data)
 }
 
 const draggingFromHandle = ref(false)
 
 // 当在句柄上按下时，打标记
 function onHandlePointerDown(value: boolean) {
+  if (props.read_only) return
   origin_tree.value = _.cloneDeep(treeData.value)
   draggingFromHandle.value = value
 }
@@ -402,6 +592,9 @@ function clearHighlightTreeNode(rootEl: any) {
 }
 
 const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string) => {
+  console.log(draggingNode);
+  console.log(dropNode);
+  console.log(dropType);
   console.log('拖拽结束:', {
     dragging: draggingNode.data.label,
     target: dropNode?.data?.label,
@@ -410,6 +603,8 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
   stopListeningMouse()
   cleanAllLine()
   clearHighlightTreeNode(current_drag_node_target.value)
+  console.log(current_drag_node_data_id.value);
+  console.log(drag_target_info.value);
   if (drag_target_info.value !== null) {
     moveNode(origin_tree.value, Number(current_drag_node_data_id.value), Number(drag_target_info.value.id), drag_target_info.value.position)
     treeData.value = origin_tree.value
@@ -419,6 +614,9 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
   } else {
     treeData.value = origin_tree.value
   }
+  if (current_choice_step.value !== null && current_choice_step.value.id === draggingNode.data.id) {
+    show_step_detail(current_choice_step.value, null, null, null)
+  }
 }
 
 const handleDragStart = async (node: any, ev: any) => {
@@ -427,6 +625,8 @@ const handleDragStart = async (node: any, ev: any) => {
   console.log(node.data);
   console.log(treeData.value);
   console.log(node);
+  console.log(ev);
+
   let sibling_node_ids: Array<number> = []
   if (node.data.type === 'error') {
     node.parent.childNodes.forEach((child_node: any) => {
@@ -450,11 +650,8 @@ const handleDragStart = async (node: any, ev: any) => {
     }
   }
   let dragImage = null
-  console.log(node.data.type);
-  console.log(node.data.type !== 'for' || node.data.type !== 'if');
 
-
-  if (node.data.type !== 'for' && node.data.type !== 'if' && node.data.type !== 'group') {
+  if (node.data.type !== 'multitasker' && node.data.type !== 'if' && node.data.type !== 'group') {
     dragImage = ev.target.querySelector('.node-content')
   } else {
     dragImage = ev.target as HTMLElement
@@ -482,11 +679,7 @@ const set_drag_target_info = (target: any) => {
   }
 }
 
-onMounted(async () => {
-  if (treeRef.value) {
-    await mountLines(treeRef)
-  }
-})
+
 </script>
 
 <style lang="scss">
@@ -503,6 +696,43 @@ onMounted(async () => {
 }
 
 /* 给 .blink-border-content 添加伪元素闪烁四边框 */
+.choice-step {
+  position: relative;
+  opacity: 1;
+}
+
+.choice-step::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.choice-step-children {
+  position: relative;
+  opacity: 1;
+}
+
+.choice-step-children::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-left: 2px solid rgba(0, 0, 0, 0.3);
+  border-right: 2px solid rgba(0, 0, 0, 0.3);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.3);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  pointer-events: none;
+}
+
 .blink-border-content {
   position: relative;
   opacity: 0.7;
@@ -586,13 +816,23 @@ onMounted(async () => {
 }
 </style>
 
-<style scoped>
+<style scoped lang="scss">
 .case-tree-container {
-  min-height: 400px;
   height: inherit;
   padding: 10px;
   border-radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  .global-action {
+    display: flex;
+    justify-content: start;
+    align-items: center;
+    padding: 7px 16px;
+    gap: 5px;
+    box-sizing: border-box;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
 }
 
 .tree-header {

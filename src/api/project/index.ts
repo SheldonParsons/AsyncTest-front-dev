@@ -27,6 +27,15 @@ export function ApiGetFavoriteProjects(params: any): Promise<String> {
   });
 }
 
+// 获取个人加入项目列表
+export function ApiGetJoinProjects(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet("/project/owner", params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 // 移出收藏项目
 export function ApiDeleteFavoriteProjects(
   pk: string,

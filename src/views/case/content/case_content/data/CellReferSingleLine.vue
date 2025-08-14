@@ -30,5 +30,10 @@ const handleClick = (e: any) => {
 }
 
 // AG Grid 会自动在编辑完成时用 val.value 的值覆盖 rowData 对应字段
-defineExpose({ getValue: () => ({ ...props.params.value.data, data: val.value }) })
+defineExpose({
+  getValue: () => ({
+    ...props.params.value,  // 保留原有 id、其它字段
+    data: val.value         // 覆盖 data 字段
+  })
+})
 </script>

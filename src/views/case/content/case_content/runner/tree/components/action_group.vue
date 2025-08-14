@@ -4,7 +4,8 @@
             <div v-for="(item, index) in group" :key="index" @mouseenter="show(item)" @mouseleave="hide">
                 <Tooltip.Root :open="openItem === item">
                     <Tooltip.Trigger class="tooltip-trigger-switch" as-child>
-                        <div class="item" @click.stop="action(item)">
+                        <div class="item" @click.stop="action(item)"
+                            :style="{ backgroundColor: itemBackgroundColor, color: itemColor }">
                             <component :is="icons[item]" />
                         </div>
                     </Tooltip.Trigger>
@@ -54,7 +55,7 @@ const props = defineProps({
         default: ['copy', 'disable', 'delete', 'addSiblingStep', 'addChildStep']
     },
     actionDesc: {
-        tye: null,
+        type: null,
         default: {
             copy: '复制',
             disable: '禁用/启用',
@@ -62,12 +63,20 @@ const props = defineProps({
             addSiblingStep: '添加相邻步骤',
             addChildStep: '添加子步骤'
         }
+    },
+    // 新增：背景颜色 prop
+    itemBackgroundColor: {
+        type: String,
+        default: 'rgb(227, 227, 227)'
+    },
+    // 新增：文字和图标颜色 prop
+    itemColor: {
+        type: String,
+        default: 'rgb(148, 148, 148)'
     }
 })
 
-const emit = defineEmits<{
-    (e: 'action', t: string): void
-}>()
+const emit = defineEmits(['action'])
 
 // 图标组件映射
 const icons: Record<string, any> = {
@@ -121,13 +130,11 @@ function action(t: string) {
         display: flex;
         align-items: center;
         padding: 5px;
-        color: rgb(148, 148, 148);
-        background-color: rgb(227, 227, 227);
     }
 
     .item:hover {
-        background-color: rgba(132, 132, 132, 0.3);
-        color: black;
+        background-color: rgba(132, 132, 132, 0.3)!important;
+        color: black!important;
     }
 
     svg {
