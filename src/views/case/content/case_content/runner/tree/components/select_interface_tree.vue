@@ -7,26 +7,45 @@
         <div v-if="
           data.child_type === 0 ||
           data.child_type === 1 ||
-          data.child_type === 2
+          data.child_type === (is_case ? 3 : 2)
         " class="tree-node g-unselect">
-          <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+          <el-icon v-if="data.child_type !== (is_case ? 3 : 2)" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
             " @click.stop="changeExpanded(node)">
             <ArrowRightBold />
           </el-icon>
           <div v-else style="padding: 5px;">
             <div style="width: 8px;height: 8px;"></div>
           </div>
-          <CheckBox :check="get_check(node)" @change="changeCheck(node, data)"></CheckBox>
-          <div v-if="data.child_type !== 2"
+          <CheckBox :check="get_check(node)" @change="changeCheck(node, data)" :read_only="get_read_only_status(data)">
+          </CheckBox>
+          <div v-if="data.child_type !== (is_case ? 3 : 2)"
             style="display: flex; justify-content: center; align-items: center;color: black;">
             <FoldExpend v-if="node.expanded"></FoldExpend>
             <Fold v-else></Fold>
           </div>
           <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
             data.method.toUpperCase() }}</span>
-          <div class="label-span-method">
+          <Case style="height: 13px" v-if="data.child_type === 3"></Case>
+          <TooltipAnimation :isOpen="get_show_tooltip(data)" v-if="data.child_type === 3">
+            <template #trigger>
+              <div @mouseenter="showIdTooltip = data.id" @mouseleave="showIdTooltip = -1" class="label-span-method"
+                :class="{ 'inactive-label': get_read_only_status(data) > 0 }">
+                <div class="g-ellipsis">{{ data.name }}</div>
+              </div>
+            </template>
+            <template #default>
+              <div style="display: flex;flex-direction: column;gap: 5px;">
+                <div>无法引用</div>
+                <div v-if="get_read_only_status(data) === 1" style="color: rgba(255,255,255,0.5);line-height: 1.3rem;">
+                  该测试用例为当前用例，无法引用自身。</div>
+                <div v-if="get_read_only_status(data) === 2" style="color: rgba(255,255,255,0.5);line-height: 1.3rem;">
+                  该测试用例直接或者间接引用了当前用例，所以无法引用它。</div>
+              </div>
+            </template>
+          </TooltipAnimation>
+          <div class="label-span-method" v-if="data.child_type !== 3">
             <div class="g-ellipsis">{{ data.name }}</div>
-            <span class="count-span" v-if="data.child_type === 1">({{ data.count }})</span>
+            <span class="count-span" v-if="data.child_type === 1 || data.child_type === 0">({{ data.count }})</span>
           </div>
         </div>
       </template>
@@ -48,20 +67,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, getCurrentInstance } from "vue";
-import { useRoute } from "vue-router";
+import { ref, watch, onMounted } from "vue";
 import tools from "@/utils/tools";
 import { getTree } from "@/api/program/tree";
 import Fold from "@/assets/svg/tree/fold.vue";
 import FoldExpend from '@/assets/svg/tree/fold_expend.vue'
 import CheckBox from '@/assets/motion/checkbox.vue'
+import Case from "@/assets/svg/tree/case.vue";
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
 const emit = defineEmits(["change_menu"]);
-const { proxy }: any = getCurrentInstance();
-const route = useRoute();
 const dataSource: any = ref([]);
 const treeRef: any = ref(null)
 const loading = ref(true);
 const firstLevelKeys: any = ref([]);
+const showIdTooltip = ref(-1)
 const method_color: any = {
   get: "green",
   post: "orange",
@@ -71,6 +90,14 @@ const method_color: any = {
 
 const props = defineProps({
   project: {
+    type: Number,
+    default: -1
+  },
+  is_case: {
+    type: Boolean,
+    default: false
+  },
+  case_id: {
     type: Number,
     default: -1
   }
@@ -92,6 +119,15 @@ function getCheckedNodes() {
   return treeRef.value!.getCheckedNodes(false, false)
 }
 
+function get_read_only_status(data: any) {
+  if (data.child_type === 3) {
+    if (data.target === props.case_id) return 1
+    if (data.is_reference) return 2
+  }
+
+  return 0
+}
+
 defineExpose({ getCheckedNodes })
 
 function get_check(node: any) {
@@ -111,15 +147,53 @@ function changeCheck(node: any, data: any) {
   treeRef.value!.setChecked(data, wantChecked, true)
 }
 
-async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
+function traverseTree(nodes: any, processNode: any) {
+  // 遍历当前层级的每一个节点
+  for (const node of nodes) {
+    // 1. 对当前节点执行您自定义的操作
+    processNode(node);
+
+    // 2. 如果当前节点有子节点，则递归地遍历子节点
+    if (node.children && Array.isArray(node.children)) {
+      traverseTree(node.children, processNode);
+    }
+  }
+}
+
+
+function check_is_reference(currentNode: any) {
+  if (currentNode.target === props.case_id) {
+    currentNode.disabled = true
+  }
+}
+
+function get_show_tooltip(data: any) {
+  if (showIdTooltip.value !== data.id) {
+    return false
+  }
+  if (data.target === props.case_id) {
+    return true
+  }
+  if (data.is_reference) return true
+}
+
+
+async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
   loading.value = true;
   dataSource.value = [];
-  const data = {
+  let data: any = {
     project: props.project,
-    search_range: search_range.join(","),
+    search_range: props.is_case ? [0, 1, 3].join(",") : [0, 1, 2].join(","),
     excluded_ids: excluded_ids.join(","),
+    type: props.is_case ? 1 : 0
   };
+  console.log(props.is_case);
+  
+  if (props.is_case === true) {
+    data['current_case'] = props.case_id
+  }
   await getTree(data).then(async (data: any) => {
+    traverseTree(data, check_is_reference)
     dataSource.value.push(data[0]);
     firstLevelKeys.value.push(data[0].id)
     await tools.delay();
@@ -336,11 +410,10 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 
 .label-span-method {
   display: flex;
-
   align-items: center;
   font-size: 14px;
   font-weight: 400;
-  width: 100%;
+  // width: 100%;
   padding-left: 5px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -351,6 +424,13 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   font-family: -apple-system, "BlinkMacSystemFont", "Segoe UI", roboto,
     "Helvetica Neue", arial, "Noto Sans", sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji";
+}
+
+.inactive-label {
+  color: #d3d3d3;
+  /* 淡灰色 */
+  text-decoration: line-through;
+  /* 横线穿过文字 */
 }
 
 .custom-tree-node {
@@ -368,7 +448,7 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 
 .tree-node {
   display: flex;
-  justify-content: center;
+  justify-content: start;
   align-items: center;
   gap: 5px;
   width: 100%;

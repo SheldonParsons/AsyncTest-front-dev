@@ -144,7 +144,7 @@
             </el-col>
           </el-row>
         </div>
-        <div v-if="after" class="read-dynamic-value w-med" @click="addAction('assertion')">
+        <div v-if="false" class="read-dynamic-value w-med" @click="addAction('assertion')">
           <el-row style="width: 100%">
             <el-col :span="9"><h1>Assertion</h1></el-col>
             <el-col

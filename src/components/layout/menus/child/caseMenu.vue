@@ -285,14 +285,9 @@ function adjustContentHeight() {
   const hh = header.value?.offsetHeight || 0;
 
   const remain = ch - hh - 200;
-  console.log(treeRef.value);
-
   if (treeRef.value && remain > 0) {
-    console.log(treeRef.value.el$);
-
     treeRef.value.el$.style.height = remain + "px";
   }
-  console.log(treeRef.value.el$.style.height);
 }
 
 async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
@@ -335,12 +330,12 @@ const props = defineProps({
 watch(filterText, (val: any) => {
   treeRef.value!.filter(val);
 });
-watch(
-  () => props.apiItem,
-  (val) => {
-    console.log(val);
-  }
-);
+// watch(
+//   () => props.apiItem,
+//   (val) => {
+//     console.log(val);
+//   }
+// );
 watch(
   () => GlobalState.count,
   async (newCount) => {
@@ -348,8 +343,6 @@ watch(
       GlobalState.message === "change_dir_tab" ||
       GlobalState.message === "change_interface_tab"
     ) {
-      console.log("in change tab");
-
       const node_id: number = GlobalState.data.id;
       highlightNodeById(node_id);
     } else if (GlobalState.message === "change_empty_tab") {
@@ -612,7 +605,6 @@ async function real_action(name: string) {
   show_dialog.value = false;
   await load_tree();
   highlightNodeById(data.id);
-  console.log(data);
   const _data = {
     id: data.id,
     name: data.name,

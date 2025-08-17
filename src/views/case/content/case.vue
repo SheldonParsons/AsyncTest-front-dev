@@ -28,9 +28,10 @@
         <div class="case-content" v-if="current_page === 0">
             <SplitterGroup direction="horizontal" ref="groupRef" v-if="!loading">
                 <SplitterPanel :default-size="100" :min-size="40"
-                    style="display:flex; flex-direction:column; height:100%;overflow: scroll;" class="caseContentRef no-scroll">
+                    style="display:flex; flex-direction:column; height:100%;overflow: scroll;"
+                    class="caseContentRef no-scroll">
                     <CaseInfo></CaseInfo>
-                    <CaseSteps style="flex: 1;" :case_id="case_id" @scroll="scroll"></CaseSteps>
+                    <CaseSteps :case_id="case_id" @scroll="scroll" @choice="choice_step"></CaseSteps>
                 </SplitterPanel>
                 <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
                     :style="{ width: isCollapsed ? '0px' : '10px' }" />
@@ -38,7 +39,7 @@
             display:flex; flex-direction:column; height:100%;
           " ref="panelRef" :default-size="0" :min-size="0" :max-size="60" :collapsed-size="0">
                     <div style="overflow-y: auto;flex: 1;" class="no-scroll">
-                        <InterfacePage :node_id="146" :interface_id="101" :is_case="true"></InterfacePage>
+                        <StepDetail :data="step_data" v-if="show_step_detail"></StepDetail>
                     </div>
                 </SplitterPanel>
             </SplitterGroup>
@@ -100,7 +101,6 @@ import TabSelect from '@/assets/motion/tab_select.vue'
 import TabSelectCol from '@/assets/motion/tab_select_col.vue'
 import CaseSteps from '@/views/case/content/case_content/runner/tree/index.vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import InterfacePage from "@/views/api/child_context/interface_page.vue";
 import { ref, computed, watch, nextTick } from 'vue'
 import CaseInfo from '@/views/case/content/case_content/runner/case_info/index.vue'
 import DataCore from '@/views/case/content/case_content/data/index.vue'
@@ -113,6 +113,7 @@ import DialogAnimation from '@/components/common/general/dialog.vue'
 import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
 import { send_action } from '@/views/case/utils'
+import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
 const table_name = ref('')
 const tableRef: any = ref(null)
 const deleteTableRef: any = ref(null)
@@ -134,7 +135,8 @@ const dataset: any = ref(null)
 const table_data: any = ref({ cols: [], rows: [] })
 const showTable = ref(false)
 let timer: any = null
-const caseContentRef: any = ref(null)
+const step_data: any = ref(null)
+const show_step_detail = ref(false)
 
 watch(current_page, (newVal, oldVal) => {
     console.log(newVal);
@@ -160,7 +162,7 @@ function scroll() {
     console.log("in.,.,,dsm,d,amd,a");
     console.log(document.querySelector('.caseContentRef'));
     setTimeout(() => {
-        const container:any = document.querySelector('.caseContentRef') // 你的滚动容器
+        const container: any = document.querySelector('.caseContentRef') // 你的滚动容器
         container.scrollTo({
             top: container.scrollHeight,
             behavior: 'smooth'
@@ -174,6 +176,12 @@ const isCollapsed = computed(() => {
         return false
     }
 })
+
+async function choice_step(data: any, node: any, tree_node: any, event: any) {
+    step_data.value = data
+    show_step_detail.value = true
+    openPanel()
+}
 
 async function deleteTable() {
     const result = await deleteTableRef.value.open()
@@ -285,6 +293,12 @@ function togglePanel() {
     if (!panelRef.value) return
     const isCollapsedNow = panelRef.value.getSize() === 0
     panelRef.value.resize(isCollapsedNow ? 60 : 0)
+    dandle_id.value += 1
+}
+
+function openPanel() {
+    if (!panelRef.value) return
+    panelRef.value.resize(60)
     dandle_id.value += 1
 }
 async function onPanelResize(newSize: any, oldSize: any) {

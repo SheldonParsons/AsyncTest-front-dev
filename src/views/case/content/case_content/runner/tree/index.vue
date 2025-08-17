@@ -1,6 +1,6 @@
 <template>
   <motion.div class="case-tree-container" :class="{ 'no-scroll': read_only > 0 }" :initial="{ opacity: 0 }"
-    :animate="{ opacity: 1 }" :transition="{ duration: 0.5 }">
+    :animate="{ opacity: 1 }" :transition="{ duration: 0.5 }" style="flex: 1;">
     <!-- 树形结构 -->
     <FirstStep v-if="treeData.length === 0 && read_only === 0 && loading === false" @scroll="emit('scroll')"
       @action="addFirstStep">
@@ -10,7 +10,9 @@
     </div>
     <div v-if="treeData.length > 0 && loading === false" class="global-action">
       <CheckBox :check="getGlobalCheckStatus()" @change="changeCheck"></CheckBox>
-      <div>已选 {{ checked_count }} 个步骤</div>
+      <div style="width: 100px;">已选 {{ checked_count }} 个步骤</div>
+      <!-- <AstButton @click="deleteChoiceNode" :padding="'0px 8px'" :borderRadius="'4px'" :disabled="checked_count === 0"><span
+          style="font-size: 0.8rem;">删除</span></AstButton> -->
     </div>
     <AstLoading v-if="loading"></AstLoading>
     <el-tree v-if="treeData.length > 0 && loading === false" ref="treeRef" :data="treeData" :props="defaultProps"
@@ -21,6 +23,7 @@
       <template #default="{ node, data }">
         <motion.div style="display: flex;flex-direction: column;width: 100%;" class="tree-node-container"
           :node-id="node.id" :data-id="data.id" :data-type="data.type">
+          <!-- {{ data.id }} -->
           <Line class="target-line-top hidden"></Line>
           <Multitasker :read_only="read_only" v-if="data.type === 'multitasker'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
@@ -70,9 +73,11 @@
         </motion.div>
       </template>
     </el-tree>
+    <div v-if="treeData.length > 0 && loading === false" style="height: 100px;width: 100%;"></div>
   </motion.div>
   <StepChoice ref="stepChoiceRef"></StepChoice>
   <InterfaceChoice ref="interfaceChoiceRef"></InterfaceChoice>
+  <CaseChoice ref="caseChoiceRef"></CaseChoice>
   <CaseStepChoice :excluded_ids="[case_id]" ref="caseStepChoiceRef"></CaseStepChoice>
 </template>
 
@@ -84,7 +89,7 @@ import Line from '@/views/case/content/case_content/runner/tree/components/line.
 import { useTreeNodeOperations } from './composables/useTreeNodeOperations'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useLineMounting } from './composables/useLineMounting'
-import { defaultProps, stepActionGroup, removeNodeById, insertNode, analyzeTree, updateAllCheckStatus } from './utils/constants'
+import { defaultProps, stepActionGroup, removeNodeById, insertNode, analyzeTree, updateAllCheckStatus, filterNoneNodes, refreshCheckStatusJs } from './utils/constants'
 import Multitasker from '@/views/case/content/case_content/runner/tree/node_components/multitasker.vue'
 import If from '@/views/case/content/case_content/runner/tree/node_components/if.vue'
 import Group from '@/views/case/content/case_content/runner/tree/node_components/group.vue'
@@ -97,10 +102,12 @@ import Error from '@/views/case/content/case_content/runner/tree/node_components
 import Case from '@/views/case/content/case_content/runner/tree/node_components/case.vue'
 import StepChoice from '@/views/case/content/case_content/runner/tree/components/step_dialog.vue';
 import InterfaceChoice from '@/views/case/content/case_content/runner/tree/components/interface_selecter.vue'
+import CaseChoice from '@/views/case/content/case_content/runner/tree/components/case_selecter.vue'
 import CaseStepChoice from '@/views/case/content/case_content/runner/tree/components/step_selecter.vue'
 import { ApiCaseMixin, ApiGetCaseSingle } from '@/api/case/case/index'
 import FirstStep from '@/views/case/content/case_content/runner/tree/components/first_step.vue'
 import CheckBox from '@/assets/motion/checkbox.vue'
+import tools from '@/utils/tools'
 import _ from 'lodash'
 
 // 树形数据
@@ -115,6 +122,7 @@ const origin_tree: any = ref(null)
 const current_choice_step: any = ref(null)
 const stepChoiceRef: any = ref(null)
 const interfaceChoiceRef: any = ref(null)
+const caseChoiceRef: any = ref(null)
 const caseStepChoiceRef: any = ref(null)
 const step_count: any = ref(0)
 const checked_count: any = ref(0)
@@ -128,35 +136,55 @@ const props = defineProps({
   read_only: {
     default: 0,
     type: Number
+  },
+  exclude_case: {
+    default: false,
+    type: Boolean
   }
 })
 
 watch(() => props.case_id, async (n, o) => {
   loading.value = true
-  await ApiGetCaseSingle(props.case_id).then((res: any) => {
+  let params: any = {}
+  if (props.exclude_case === true) {
+    params.exclude_case = props.exclude_case
+  }
+  await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
     treeData.value = res.steps
   })
+  await tools.delaySec(200)
+  loading.value = false
+  await nextTick()
   if (treeRef.value) {
     await mountLines(treeRef)
   }
-  setTimeout(() => {
-    loading.value = false
-  }, 200)
 })
 
 onMounted(async () => {
   loading.value = true
-  await ApiGetCaseSingle(props.case_id).then((res: any) => {
+  let params: any = {}
+  if (props.exclude_case === true) {
+    params.exclude_case = props.exclude_case
+  }
+  await ApiGetCaseSingle(props.case_id,params).then((res: any) => {
     treeData.value = res.steps
   })
+  setGlobalCheck()
+  await tools.delaySec(200)
+  loading.value = false
+  await nextTick()
   if (treeRef.value) {
     await mountLines(treeRef)
   }
-  setGlobalCheck()
-  setTimeout(() => {
-    loading.value = false
-  }, 200)
 })
+
+function get_select() {
+  let filter_node = filterNoneNodes(treeData.value)
+  updateAllCheckStatus(filter_node, 'check')
+  return filter_node
+}
+
+defineExpose({ get_select })
 
 function setGlobalCheck() {
   const { totalNodes, checkedNodes } = analyzeTree(treeData.value)
@@ -176,7 +204,19 @@ function getGlobalCheckStatus() {
   }
 }
 
+const deleteChoiceNode = async () => {
+  const _data = {
+    type: 0,
+    child_action_type: 'delete_choice_node',
+    content: {
+      case_id: props.case_id,
+      t: 'all_checked'
+    }
+  }
+}
+
 const changeCheck = async (type: any) => {
+  if (props.read_only === 2) return
   let _data
   if (type === 'check') {
     _data = {
@@ -198,11 +238,15 @@ const changeCheck = async (type: any) => {
     }
   }
   updateAllCheckStatus(treeData.value, type)
+
+  if (props.read_only === 0) {
+    await send_action(_data)
+    refreshCheckStatusJs(treeData.value)
+  }
   setGlobalCheck()
-  await send_action(_data)
 }
 
-const emit = defineEmits(['scroll'])
+const emit = defineEmits(['scroll', 'choice'])
 
 // 使用组合式函数
 const {
@@ -257,8 +301,35 @@ const add_step = async (step_type: any, data: any, range_type: any, position: an
     }
     res = await send_action(_data)
   } else if (step_type === 'case') {
+    const { case_list } = await caseChoiceRef.value.open(props.case_id)
+    console.log(case_list);
+
+    const _data = {
+      type: 0,
+      child_action_type: 'insert_default_step',
+      content: {
+        case_id: props.case_id,
+        step_type: step_type,
+        case_list: case_list,
+        position: position,
+        target_id: target_id
+      }
+    }
+    res = await send_action(_data)
   } else if (step_type === 'copy') {
-    await caseStepChoiceRef.value.open()
+    const { filter_step } = await caseStepChoiceRef.value.open()
+    console.log(filter_step);
+    const _data = {
+      type: 0,
+      child_action_type: 'copy_node_from_other_case',
+      content: {
+        case_id: props.case_id,
+        origin_nodes: filter_step,
+        position: position,
+        target_id: target_id
+      }
+    }
+    res = await send_action(_data)
   } else {
     const _data = {
       type: 0,
@@ -274,6 +345,8 @@ const add_step = async (step_type: any, data: any, range_type: any, position: an
     res = [res]
   }
   synchronizeData(range_type, data, res)
+  setGlobalCheck()
+  refreshCheckStatusJs(treeData.value)
 }
 
 const synchronizeData = (range_type: any, data: any, input_data: any) => {
@@ -288,7 +361,7 @@ const synchronizeData = (range_type: any, data: any, input_data: any) => {
 
 async function send_action(_data: any) {
   return await ApiCaseMixin(_data).then(res => {
-    window.$toast({title: '更新成功'})
+    window.$toast({ title: '更新成功' })
     return res
   })
 }
@@ -309,7 +382,7 @@ function findParentNode(tree: any, targetId: any, parent = null) {
 }
 
 const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
-  if (props.read_only) return
+  if (props.read_only > 0) return
   if (data.type === 'empty') {
     const father_node = findParentNode(treeData.value, data.id)
     choice_step('empty', father_node, 'child')
@@ -335,6 +408,7 @@ const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
       childrenEl.classList.add('choice-step-children');
     }
   }
+  emit('choice', data, node, tree_node, event)
 }
 
 const getMaxId = (nodes: any) => {
@@ -413,6 +487,8 @@ const step_action = async (t: string, data: any) => {
     }
     const res = await send_action(_data)
     insertNode(treeData.value, res, data.id, 'next')
+    setGlobalCheck()
+    refreshCheckStatusJs(treeData.value)
     return
   }
   if (t === 'delete') {
@@ -424,8 +500,10 @@ const step_action = async (t: string, data: any) => {
         step_id: data.id
       }
     }
-    await send_action(_data)
-    removeNodeById(treeData.value, data.id)
+    const empty_node = await send_action(_data)
+    removeNodeById(treeData.value, data.id, empty_node)
+    setGlobalCheck()
+    refreshCheckStatusJs(treeData.value)
     return
   }
   // 添加相邻步骤
@@ -509,6 +587,7 @@ async function changeCheckHandle(
   type: 'none' | 'check' | 'part',
   nodeData: any
 ) {
+  if (props.read_only === 2) return
   // 1. 拿到从根到当前节点的路径
   const path = findPath(treeData.value, nodeData.id);
   if (!path) return;
@@ -530,7 +609,6 @@ async function changeCheckHandle(
     }
     parent.check = parentState;
   }
-  setGlobalCheck()
   const _data = {
     type: 0,
     child_action_type: 'check_change',
@@ -540,7 +618,11 @@ async function changeCheckHandle(
       target_id: nodeData.id
     }
   }
-  await send_action(_data)
+  if (props.read_only === 0) {
+    await send_action(_data)
+    refreshCheckStatusJs(treeData.value)
+  }
+  setGlobalCheck()
 }
 
 const draggingFromHandle = ref(false)
@@ -555,10 +637,6 @@ function onHandlePointerDown(value: boolean) {
 
 // 拖拽相关处理函数
 function handleAllowDrag(node: any) {
-  console.log(node);
-
-  console.log(treeData.value);
-
   const allow = draggingFromHandle.value
   // 不管放行还是拦截，都清掉标记
   nextTick(() => { draggingFromHandle.value = false })
@@ -611,12 +689,25 @@ const handleDragEnd = async (draggingNode: any, dropNode: any, dropType: string)
     if (treeRef.value) {
       await mountLines(treeRef)
     }
+    const _data = {
+      type: 0,
+      child_action_type: 'move_node',
+      content: {
+        case_id: props.case_id,
+        change_id: current_drag_node_data_id.value,
+        target_id: drag_target_info.value.id,
+        position: drag_target_info.value.position
+      }
+    }
+    await send_action(_data)
   } else {
     treeData.value = origin_tree.value
   }
   if (current_choice_step.value !== null && current_choice_step.value.id === draggingNode.data.id) {
     show_step_detail(current_choice_step.value, null, null, null)
   }
+
+  refreshCheckStatusJs(treeData.value)
 }
 
 const handleDragStart = async (node: any, ev: any) => {
@@ -666,12 +757,8 @@ const handleDragStart = async (node: any, ev: any) => {
 
 const set_drag_target_info = (target: any) => {
   if (target && target.status !== 'blank') {
-    console.log(target);
-    console.log(target.htmlObject.getAttribute('data-id'));
-    console.log(current_drag_node_data_id.value);
-    console.log(target.status);
     drag_target_info.value = {
-      id: target.htmlObject.getAttribute('data-id'),
+      id: Number(target.htmlObject.getAttribute('data-id')),
       position: target.status
     }
   } else {

@@ -21,16 +21,6 @@ export const stepActionGroup: any = {
   delay: ['copy', 'delete', 'addSiblingStep'],
   case: ['copy', 'delete', 'addSiblingStep']
 }
-
-function generateEmptyNode() {
-  return {
-    id: Math.floor(10000000 + Math.random() * 90000000), // 生成一个8位随机整数
-    label: '',
-    type: 'empty',
-    check: 'check',
-  };
-}
-
 /**
  * 递归地从数据结构中删除具有指定 ID 的节点。
  * 这个函数会直接修改传入的 data 数组。
@@ -39,7 +29,7 @@ function generateEmptyNode() {
  * @param {Array<object>} data - 包含节点对象的数组。
  * @param {*} idToRemove - 要删除的节点的 ID。
  */
-export const removeNodeById = (data: any, idToRemove: any) => {
+export const removeNodeById = (data: any, idToRemove: any, empty_node: any) => {
   // 使用倒序循环，这样在删除元素时不会影响后续元素的索引
   for (let i = data.length - 1; i >= 0; i--) {
     const node = data[i];
@@ -50,12 +40,12 @@ export const removeNodeById = (data: any, idToRemove: any) => {
       data.splice(i, 1);
     } else if (node.children && Array.isArray(node.children)) {
       // 2. 如果不匹配，但节点有子节点，则递归地对子节点列表进行操作
-      removeNodeById(node.children, idToRemove);
+      removeNodeById(node.children, idToRemove, empty_node);
 
       // 3. 递归调用返回后，检查子列表是否变空
       if (node.children.length === 0) {
         // 如果为空，插入一个 empty 节点
-        node.children.push(generateEmptyNode());
+        node.children.push(empty_node);
       }
     }
   }
@@ -199,4 +189,65 @@ export const updateAllCheckStatus = (data: any, type: any) => {
 
   // 从顶层数据开始执行
   traverse(data);
+}
+
+
+/**
+ * 递归地过滤一个树形数据结构，移除所有 'check' 属性为 'none' 的节点。
+ * 此函数不会修改原始数据，而是返回一个全新的、经过过滤的数据结构副本。
+ *
+ * @param {Array<object>} data - 要过滤的树形数据，一个节点对象数组。
+ * @returns {Array<object>} 一个不包含 'check' 值为 'none' 节点的新数组。
+ */
+export const filterNoneNodes = (data: any) => {
+  // 使用 Array.prototype.reduce 来构建新数组，这是一种常见的函数式编程模式
+  return data.reduce((accumulator: any, node: any) => {
+    // 1. 如果节点的 'check' 值为 'none'，则直接跳过此节点
+    if (node.check === 'none') {
+      return accumulator; // 返回当前的累加器，不添加任何东西
+    }
+
+    // 2. 如果节点需要保留，创建一个副本以确保不修改原始数据
+    const newNode = { ...node };
+
+    // 3. 如果节点有子节点，则递归地对子节点列表进行过滤
+    if (newNode.children && Array.isArray(newNode.children)) {
+      newNode.children = filterNoneNodes(newNode.children);
+    }
+
+    // 4. 将处理好的新节点添加到结果数组中
+    accumulator.push(newNode);
+
+    return accumulator;
+  }, []); // 初始值是一个空数组
+}
+
+
+/**
+ * 通过后序遍历（从下至上）递归地刷新每个父节点的 'check' 状态。
+ * 此函数直接修改传入的 data 数组。
+ *
+ * @param {Array<object>} data - 树形数据结构，一个节点对象数组。
+ */
+export const refreshCheckStatusJs = (data: any) => {
+  for (const node of data) {
+    // 首先，递归处理子节点
+
+    if (node.children && Array.isArray(node.children)) {
+      refreshCheckStatusJs(node.children);
+
+      const allChecked = node.children.every((child: any) => child.check === 'check');
+      const allNone = node.children.every((child: any) => child.check === 'none');
+      console.log(allChecked);
+
+      // 根据子节点状态更新父节点
+      if (allChecked) {
+        node.check = 'check';
+      } else if (allNone) {
+        node.check = 'none';
+      } else {
+        node.check = 'part';
+      }
+    }
+  }
 }

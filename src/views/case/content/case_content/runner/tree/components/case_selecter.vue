@@ -11,45 +11,35 @@
                         <motion.div class="interface-modal-container" @click="onOverlayClick"
                             :initial="dialogInitialState" :animate="dialogOpenState" :exit="dialogInitialState"
                             :style="{ transformPerspective: 200 }">
-                            <motion.div class="modal" @click.stop :animate="modalAnimateState" layout
-                                :transition="{ type: 'spring', stiffness: 300, damping: 30 }">
+                            <div class="modal" @click.stop>
                                 <Dialog.Description>
-                                    <div style="width: 100%;display: flex;flex-direction: column;gap: 5px;">
+                                    <div
+                                        style="width: 100%;display: flex;flex-direction: column;gap: 5px;min-width: 500px;">
                                         <div>
-                                            <div style="font-size: 0.9rem;font-weight: 500;"
-                                                v-if="current_page === 'case'">选择用例</div>
-                                            <div class="back" v-if="current_page === 'step'">
-                                                <motion.div @click="backToCasePage" :whileHover="{ scale: 1.2 }"
-                                                    class="back-icon-btn">
-                                                    <BackSvg></BackSvg>
-                                                </motion.div>
-                                                <div>返回</div>
-                                            </div>
+                                            <Select v-if="show_selecter" :value="current_project" :items="project_list"
+                                                :current="Number(route.params.project)"
+                                                @change="changeProject"></Select>
                                         </div>
                                         <el-divider></el-divider>
                                         <div style="height: 500px;overflow-y: auto;">
-                                            <TreeNode v-if="current_page === 'case'" :excluded_ids="excluded_ids"
-                                                :project="current_project.id" @action="choiceCase"
-                                                ref="interfaceTreeNodeRef">
+                                            <TreeNode :project="current_project.id" :is_case="true" :case_id="case_id"
+                                                ref="caseTreeNodeRef">
                                             </TreeNode>
-                                            <CaseStep ref="caseStepRef" v-if="current_page === 'step'"
-                                                :case_id="case_id" :read_only="1" :exclude_case="true">
-                                            </CaseStep>
                                         </div>
-                                        <el-divider v-if="current_page === 'step'"></el-divider>
-                                        <div v-if="current_page === 'step'"
+                                        <el-divider></el-divider>
+                                        <div
                                             style="display: flex;justify-content: end;align-items: center;gap: 10px;padding-top: 10px;box-sizing: border-box;">
                                             <AstButton bgColor="white" fontColor="black" @click="visible = false"
                                                 borderColor="#f0f0f0">
                                                 <span style="font-size: 0.8rem;">取消</span>
                                             </AstButton>
                                             <AstButton>
-                                                <span style="font-size: 0.8rem;" @click="action">添加步骤</span>
+                                                <span style="font-size: 0.8rem;" @click="action">新增用例</span>
                                             </AstButton>
                                         </div>
                                     </div>
                                 </Dialog.Description>
-                            </motion.div>
+                            </div>
                         </motion.div>
                     </Dialog.Content>
                 </AnimatePresence>
@@ -61,39 +51,21 @@
 <script setup lang="ts">
 // @ts-ignore
 import { Dialog } from 'reka-ui/namespaced'
-import TreeNode from "@/views/case/content/case_content/runner/tree/components/select_case_tree.vue";
+import Select from '@/components/common/general/select.vue'
+import TreeNode from "@/views/case/content/case_content/runner/tree/components/select_interface_tree.vue";
 import AstButton from '@/components/common/general/button.vue'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from "vue-router";
 import { ApiGetJoinProjects } from '@/api/project/index'
 import { AnimatePresence, motion } from "motion-v"
-import { usePointerPosition } from "motion-plus-vue"
-import CaseStep from '@/views/case/content/case_content/runner/tree/index.vue'
-import BackSvg from '@/assets/svg/common/new_icon/back.vue'
-
-const current_page = ref('case')
-const case_id = ref(-1)
-const caseStepRef: any = ref(null)
 
 const current_project: any = ref({
     id: -1,
     name: '请输入项目'
 })
-
-const props = defineProps({
-    excluded_ids: {
-        type: Array<Number>,
-        default: []
-    }
-})
-// 修改点 3: 添加 computed 属性来动态控制宽度
-const modalAnimateState = computed(() => ({
-    width: current_page.value === 'case' ? '30%' : '50%'
-}))
-
 const show_selecter: any = ref(false)
 const project_list: any = ref([])
-const interfaceTreeNodeRef: any = ref([])
+const caseTreeNodeRef: any = ref([])
 onMounted(async () => {
     show_selecter.value = true
     ApiGetJoinProjects({}).then((res: any) => {
@@ -104,58 +76,49 @@ onMounted(async () => {
 
 const route = useRoute();
 
+const case_id = ref(-1)
+
 const visible = ref(false)
 
 
 function onOverlayClick() {
     visible.value = false
 }
-const position = usePointerPosition()
 
 let resolver: any
 function action() {
-    const filter_step = caseStepRef.value.get_select()
-    if (filter_step.length == 0) {
-        window.$toast({ title: '请至少选择一个步骤', type: 'info' })
-        return
-    }
-    resolver?.({ action: 'comfirm', filter_step: filter_step })
+    const choice_nodes = caseTreeNodeRef.value.getCheckedNodes()
+    const case_list = filter_choice_case(choice_nodes)
+    if (case_list === false) return
     visible.value = false
+    resolver?.({ action: 'comfirm', case_list: case_list })
 }
 
-function choiceCase(case_item: any) {
-    case_id.value = case_item.target
-    current_page.value = 'step'
-}
-
-function backToCasePage() {
-    case_id.value = -1
-    current_page.value = 'case'
-}
-
-function filter_choice_interface(data: any) {
-    let interface_list = []
+function filter_choice_case(data: any) {
+    let case_list = []
     for (let i = 0; i < data.length; i++) {
-        if (data[i].child_type === 2) {
-            interface_list.push({
+        if (data[i].child_type === 3) {
+            case_list.push({
                 id: data[i].target,
-                name: data[i].name,
-                method: data[i].method
+                name: data[i].name
             })
         }
     }
-    if (interface_list.length === 0) {
-        window.$toast({ title: '请至少选择一个接口', type: 'info' })
+    if (case_list.length === 0) {
+        window.$toast({ title: '请至少选择一个用例', type: 'info' })
         return false
     }
-    return interface_list
+    return case_list
+}
+
+function changeProject(project_item: any) {
+    current_project.value = project_item
 }
 
 // 暴露方法（open/close，可选）
-const open = () => {
-
+const open = (caseId: number) => {
+    case_id.value = caseId
     visible.value = true
-    backToCasePage()
     show_selecter.value = true
     ApiGetJoinProjects({}).then((res: any) => {
         project_list.value = res.results
@@ -195,31 +158,6 @@ const dialogInitialState: any = {
 </script>
 
 <style lang="scss" scoped>
-.back {
-    width: 100%;
-    display: flex;
-    justify-content: start;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    padding-bottom: 10px;
-
-    .back-icon-btn {
-        border-radius: 50%;
-        box-shadow: 0 2px 4px #0000000d, 0 4px 8px -2px #00000005;
-        background-color: white;
-        padding: 4px;
-        border: 0.5 solid #1018280a;
-        color: #f07b3f;
-        width: 1.2rem;
-        height: 1.2rem;
-        cursor: pointer;
-
-    }
-}
-
-
 /* 你的样式原样保留 */
 .dialog-container {
     display: flex;
@@ -246,14 +184,12 @@ const dialogInitialState: any = {
 
     .modal {
         border-radius: 10px;
-        // border: 1px solid #1d2628;
+        border: 1px solid #1d2628;
         background-color: #ffffff;
         z-index: 100 !important;
         padding-left: 20px;
         padding-right: 20px;
         pointer-events: auto;
-        max-height: 80vh;
-        min-width: 30%;
     }
 }
 </style>

@@ -2,7 +2,7 @@
   <transition name="slide" appear>
     <div>
       <div class="ed editor" ref="dom"></div>
-      <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{ '\{\{username\}\}' }}</span></div>
+      <!-- <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{ '\{\{username\}\}' }}</span></div> -->
     </div>
   </transition>
 </template>

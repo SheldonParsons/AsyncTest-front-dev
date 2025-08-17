@@ -16,9 +16,9 @@ export function ApiCaseMixin(data: any): Promise<String> {
 
 
 // 获取用例
-export function ApiGetCaseSingle(id: any): Promise<String> {
+export function ApiGetCaseSingle(id: any, params: any = {}): Promise<String> {
     return new Promise((resolve) => {
-        http.httpGet(`/api/case/${id}/`, {}).then((res: any) => {
+        http.httpGet(`/api/case/${id}/`, params=params).then((res: any) => {
             resolve(res);
         });
     });

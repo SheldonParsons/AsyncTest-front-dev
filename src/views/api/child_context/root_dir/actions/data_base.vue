@@ -53,22 +53,23 @@
     <Transition name="slide">
       <div v-show="open_script" class="script-body">
         <el-row style="padding-top: 20px">
-          <el-col :span="17">
+          <el-col :span="23">
             <div
-              style="display: flex; justify-content: end; align-items: center"
+              style="display: flex; justify-content: end; align-items: center;width: 100%;"
             >
-              <div style="display: flex">
-                操作名称<span
+              <div style="display: inline-block;padding-left: 20px;white-space: nowrap;">
+                <span style="display: inline-block">操作名称</span><span
                   style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block
                   "
                   >*</span
                 >
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%;">
                 <el-input
                   :disabled="props.disable"
                   v-model="props.element.data.name"
@@ -78,28 +79,28 @@
           </el-col>
         </el-row>
         <el-row style="margin-top: 20px">
-          <el-col :span="17">
+          <el-col :span="23">
             <div
               style="display: flex; justify-content: end; align-items: center"
             >
-              <div style="display: flex">
-                数据库连接<span
+              <div style="display: inline-block;padding-left: 20px;box-sizing: border-box;white-space: nowrap;">
+                <span style="display: inline-block">数据库连接</span><span
                   style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block
                   "
                   >*</span
                 >
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-select
                   :disabled="props.disable"
                   ref="databaseSelect"
                   v-model="props.element.data.database"
                   placeholder="选择数据库信息"
-                  style="width: 600px"
                   :empty-values="[null, undefined]"
                   :value-on-clear="null"
                 >
@@ -125,24 +126,26 @@
           </el-col>
         </el-row>
         <el-row style="margin-top: 20px">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: top">
-              <div style="display: flex">
-                SQL 命令<span
+          <el-col :span="24">
+            <div style="display: flex; justify-content: center; align-items: top;flex-direction: column;gap: 10px;">
+              <div style="display: inline-block;padding-left: 20px;box-sizing: border-box;white-space: nowrap;">
+                <span style="display: inline-block;">SQL 命令</span><span
                   style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block;
                   "
                   >*</span
                 >
               </div>
               <div
                 style="
-                  width: 600px;
+                  width: 95%;
                   border: 1px solid #f3f5f6;
                   border-radius: 10px;
+                  margin-left: 20px;
                 "
               >
                 <div class="editor-header">
@@ -163,20 +166,20 @@
           </el-col>
         </el-row>
         <el-row style="margin-top: 20px">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: top">
+          <el-col :span="24">
+            <div style="display: flex; justify-content: start; align-items: top;width: 100%;flex-direction: column;gap: 10px;">
               <div
                 style="
-                  display: flex;
-                  justify-content: center;
-                  align-items: top;
-                  margin-right: 5px;
+                  display: inline-block;
+                  padding-left: 20px;
+                  box-sizing: border-box;
+                  white-space: nowrap;
                 "
               >
-                提取结果到变量<el-tooltip placement="top" effect="light">
+                <span>提取结果到变量</span><el-tooltip placement="top" effect="light">
                   <template #content>
                     <div
-                      style="width: 200px; font-size: 14px; font-weight: 400"
+                      style="font-size: 14px; font-weight: 400;display: inline-block;"
                     >
                       将 SQL
                       运行结果赋值给指定名称的变量，该变量可用来给未来的变量所引用。
@@ -190,11 +193,13 @@
                   display: flex;
                   justify-content: center;
                   align-items: center;
+                  width: 95%;
+                  margin-left: 20px;
                 "
               >
                 <el-table
                   v-model:data="props.element.data.params"
-                  style="width: 600px; margin-bottom: 20px"
+                  style="width: 100%; margin-bottom: 20px"
                   row-key="id"
                   border
                   default-expand-all
@@ -552,6 +557,7 @@ function insert_params(text: string) {
   font-weight: 600;
 }
 .private-input {
+  border-radius: 0px;
   margin: 0;
   padding: 0;
   border: none;

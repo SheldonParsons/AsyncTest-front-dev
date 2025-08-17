@@ -36,13 +36,13 @@
                 v-if="element.t === 4"
                 :element="element"
               ></Extract>
-              <Assertion
+              <!-- <Assertion
                 @dup_action="dup_action(element, index)"
                 @delete_action="delete_action(index)"
                 v-if="element.t === 5"
                 :element="element"
                 :interface="interface"
-              ></Assertion>
+              ></Assertion> -->
               <DataBase
                 @add_database_param="
                   (payload) => add_database_param(element, payload)
@@ -79,7 +79,7 @@ import CustomScript from "./actions/custom_script.vue";
 import WaitTime from "./actions/wait_time.vue";
 import DataBase from "./actions/data_base.vue";
 import Extract from "./actions/extract.vue";
-import Assertion from "./actions/assertion.vue";
+// import Assertion from "./actions/assertion.vue";
 import FatherActions from "./actions/father_actions.vue";
 import tools from "@/utils/tools";
 const emit = defineEmits(["update:modelValue"]);

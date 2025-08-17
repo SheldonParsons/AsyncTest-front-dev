@@ -2,7 +2,8 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0" :key="data.id"></DragHandle>
+        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0"
+            :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
         <motion.div class="node-content" :animate="{
@@ -101,9 +102,9 @@ const action = (t: string) => {
     // border: 2px solid #56575814;
     padding: 7px 16px;
     background: linear-gradient(80deg,
-            rgba(255, 255, 255, 0.1) 0%,
+            rgba(117, 165, 34, 0.1) 0%,
             rgba(92, 188, 37, 0.1) 40%,
-            rgba(117, 165, 34, 0.1) 90%);
+            rgba(255, 255, 255, 0.1) 90%);
     border-radius: 6px;
     transition: all 0.2s ease;
 

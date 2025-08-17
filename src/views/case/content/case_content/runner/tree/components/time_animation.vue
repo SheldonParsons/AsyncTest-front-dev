@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
 // 从 motion-v 导入 Variants 类型
-import type { Variants } from 'motion-v'
 
-const draw: Variants = {
+const draw: any = {
     hidden: { pathLength: 0, opacity: 0 },
-    visible: (custom) => {
+    visible: (custom: any) => {
         const i = typeof custom === 'number' ? custom : Number(custom) || 0
         const delay = i * 0.1
         return {
@@ -28,10 +27,10 @@ const shape = {
 
 <template>
     <motion.svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" :variants="draw"
-    initial="hidden" animate="visible" class="case-drag-handle">
-        <motion.path :variants="draw" :custom="0" :style="shape"  stroke="black" fill="black" d="M12 6v6H8" />
-        <motion.circle :variants="draw" :custom="0" :style="shape"  stroke="black" fill="black" cx="12" cy="12" r="10" />
+        stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" :variants="draw"
+        initial="hidden" animate="visible" class="case-drag-handle">
+        <motion.path :variants="draw" :custom="0" :style="shape" stroke="black" fill="black" d="M12 6v6H8" />
+        <motion.circle :variants="draw" :custom="0" :style="shape" stroke="black" fill="black" cx="12" cy="12" r="10" />
     </motion.svg>
 </template>
 
@@ -42,7 +41,8 @@ const shape = {
     cursor: grab;
     outline: none;
 
-    path {
+    path,
+    circle {
         outline: none;
     }
 }

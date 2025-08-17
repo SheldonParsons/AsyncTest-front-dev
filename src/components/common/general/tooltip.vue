@@ -6,7 +6,7 @@
                 <slot name="trigger"/>
             </Tooltip.Trigger>
             <Tooltip.Portal>
-                <Tooltip.Content force-mount v-if="isOpen" :side-offset="sideOffset" :side="side">
+                <Tooltip.Content force-mount v-if="isOpen" :side-offset="sideOffset" :side="side" style="z-index: 999;">
                     <motion.div class="tooltip-content" :initial="{ opacity: 0, y: 10, scale: 0.96 }"
                         :animate="{ opacity: 1, y: 0, scale: 1 }" :exit="{ opacity: 0, y: 10, scale: 0.96 }"
                         :transition="{ type: 'spring', bounce: 0.3, visualDuration: 0.22 }">

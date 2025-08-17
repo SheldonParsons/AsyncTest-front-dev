@@ -104,8 +104,7 @@ export function useTreeNodeOperations() {
 
   const createEmptyNode = (): TreeNode => ({
     id: gen7(),
-    label: '',
-    lable: '',
+    lable: 'empty',
     type: EMPTY_TYPE,
     check: 'check',
   })
@@ -140,12 +139,7 @@ export function useTreeNodeOperations() {
       }
       return null
     }
-    console.log(draggedId);
-    console.log(treeData);
-    
     const draggedInfo = findNode(treeData, draggedId)
-    console.log(draggedInfo);
-
     
     if (!draggedInfo) return
 
@@ -163,9 +157,6 @@ export function useTreeNodeOperations() {
 
     const targetInfo = findNode(treeData, targetId)
     if (!targetInfo) return
-    console.log(targetInfo);
-    
-
     // 如果目标就是占位 empty，直接替换它
     if (targetInfo.node.type === EMPTY_TYPE) {
       targetInfo.list.splice(targetInfo.index, 1, draggedNode)

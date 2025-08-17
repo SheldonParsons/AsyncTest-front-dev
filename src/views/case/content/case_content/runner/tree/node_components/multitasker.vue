@@ -100,9 +100,9 @@ async function copyId(step_id: number) {
     justify-content: space-between;
     padding: 7px 16px;
     background: linear-gradient(80deg,
-            rgba(255, 255, 255, 0.1) 0%,
+            rgba(34, 165, 49, 0.1) 0%,
             rgba(37, 188, 153, 0.1) 40%,
-            rgba(34, 165, 49, 0.1) 90%);
+            rgba(255, 255, 255, 0.1) 90%);
     border-radius: 6px 6px 0 0;
     border-left: 2px solid rgba(86, 87, 88, 0.04);
     border-top: 2px solid rgba(86, 87, 88, 0.04);

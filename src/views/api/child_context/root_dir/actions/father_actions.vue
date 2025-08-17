@@ -46,11 +46,11 @@
             v-if="element.t === 4"
             :element="element"
           ></Extract>
-          <Assertion
+          <!-- <Assertion
             :disable="true"
             v-if="element.t === 5"
             :element="element"
-          ></Assertion>
+          ></Assertion> -->
         </div>
         <div
           v-show="elements.elements.length === 0"
@@ -70,7 +70,7 @@ import CustomScript from "./custom_script.vue";
 import WaitTime from "./wait_time.vue";
 import DataBase from "./data_base.vue";
 import Extract from "./extract.vue";
-import Assertion from "./assertion.vue";
+// import Assertion from "./assertion.vue";
 import Empty from "@/views/api/child_component/params_child/comp/empty.vue";
 const databaseSelect: any = ref(null);
 const open_script = ref(false);

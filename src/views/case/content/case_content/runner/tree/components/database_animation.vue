@@ -44,7 +44,7 @@ const shape = {
     cursor: grab;
     outline: none;
 
-    path {
+    path,ellipse {
         outline: none;
     }
 }

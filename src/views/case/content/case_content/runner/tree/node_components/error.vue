@@ -101,9 +101,9 @@ const action = (t: string) => {
     justify-content: space-between;
     padding: 7px 16px;
     background: linear-gradient(80deg,
-            rgba(255, 255, 255, 0.1) 0%,
+            rgba(165, 34, 34, 0.1) 0%,
             rgba(188, 37, 37, 0.1) 40%,
-            rgba(165, 34, 34, 0.1) 90%);
+            rgba(255, 255, 255, 0.1) 90%);
     border-radius: 6px;
     transition: all 0.2s ease;
 

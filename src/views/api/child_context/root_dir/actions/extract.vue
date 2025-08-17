@@ -35,7 +35,7 @@
           <div>
             <span style="margin-right: 20px">{{
               t_mapping[props.element.data.t]
-              }}</span>{{ range_mapping[props.element.data.source] }} <span
+            }}</span>{{ range_mapping[props.element.data.source] }} <span
               style="font-size: 0.8rem;color: black;opacity: 1;font-weight: 500;">{{ props.element.data.name
               }}</span>
           </div>
@@ -45,27 +45,28 @@
     <Transition name="slide">
       <div v-show="open_script" class="script-body">
         <el-row style="padding-top: 20px">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                变量名称<span style="
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">变量名称</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-input :disabled="props.disable" v-model="props.element.data.name"></el-input>
               </div>
             </div>
           </el-col>
         </el-row>
         <el-row style="margin-top: 20px">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                变量类型<el-popover class="box-item" title="关于变量类型的解释" placement="top" :width="350" trigger="click">
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">变量类型</span><el-popover class="box-item" title="关于变量类型的解释"
+                  placement="top" :width="350" trigger="click">
                   <el-divider></el-divider>
                   <div>
                     <span style="font-weight: 500">临时变量</span>：它仅作用于当前被执行的接口，当接口生命周期结束，该变量也随之销毁。
@@ -90,9 +91,9 @@
                     margin-right: 3px;
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-select :disabled="props.disable" v-model="props.element.data.t" placeholder="变量类型"
-                  style="width: 600px">
+                  style="width: 100%">
                   <el-option v-for="item in [
                     { value: 0, label: '临时变量' },
                     { value: 1, label: '环境变量' },
@@ -104,19 +105,20 @@
           </el-col>
         </el-row>
         <el-row style="margin-top: 20px">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                提取来源<span style="
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">提取来源</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block;
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-select :disabled="props.disable" v-model="props.element.data.source" placeholder="提取来源"
-                  style="width: 600px">
+                  style="width: 100%">
                   <el-option v-for="item in [
                     { value: 0, label: 'Response Body' },
                     { value: 1, label: 'Response Headers' },
@@ -130,9 +132,9 @@
         </el-row>
         <el-row style="margin-top: 20px" v-if="props.element.data.source === 0">
           <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                提取范围<span style="
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">提取范围</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
@@ -154,17 +156,18 @@
           props.element.data.extract_range === 1 &&
           props.element.data.source === 0
         ">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                JsonPath 表达式<span style="
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">JsonPath 表达式</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block;
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-input :disabled="props.disable" v-model="props.element.data.jsonpath.expression"
                   placeholder="如：$class.score[0].range"></el-input>
               </div>
@@ -175,17 +178,18 @@
           props.element.data.extract_range === 2 &&
           props.element.data.source === 0
         ">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                提取表达式<span style="
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">提取表达式</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-input :disabled="props.disable" v-model="props.element.data.regexp.expression"
                   placeholder="如：/^1[3-9]\d{9}$/"></el-input>
               </div>
@@ -196,17 +200,18 @@
           props.element.data.extract_range === 2 &&
           props.element.data.source === 0
         ">
-          <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                Template<span style="
+          <el-col :span="23">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">Template</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-input :disabled="props.disable" v-model="props.element.data.regexp.template"
                   placeholder="$i，i 表示正则匹配到的第 i 个捕获，从 1 起始"></el-input>
               </div>
@@ -218,16 +223,17 @@
           props.element.data.source === 0
         ">
           <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
-              <div style="display: flex">
-                XPath 表达式<span style="
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
+                <span style="display: inline-block;">XPath 表达式</span><span style="
                     font-size: 20px;
                     color: red;
                     margin-left: 3px;
                     margin-right: 3px;
+                    display: inline-block
                   ">*</span>
               </div>
-              <div style="width: 600px">
+              <div style="width: 100%">
                 <el-input :disabled="props.disable" v-model="props.element.data.xpath.expression"
                   placeholder="如：/store/book[1]/title"></el-input>
               </div>
