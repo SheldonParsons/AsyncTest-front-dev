@@ -2,12 +2,16 @@
     <div class="hover-container">
         <Tooltip.Provider>
             <Tooltip.Root v-model:open="open">
-                <Tooltip.Trigger class="tooltip-trigger-switch" @mouseenter="open = true" @mouseleave="open = false">
-                    <div class="switch-container">
-                        <Switch.Root v-model="checked" :class="{ checked_animation: checked }" @click="toggleChecked">
+                <Tooltip.Trigger class="tooltip-trigger-switch" :style="{ background: 'transparent' }" @mouseenter="open = true"
+                    @mouseleave="open = false">
+                    <div class="switch-container-private" :style="{
+                                backgroundColor: 'transparent'
+                            }">
+                        <Switch.Root v-model="checked" :style="{backgroundColor: 'transparent'}" :class="{ checked_animation: checked }" @click="toggleChecked">
                             <motion.button class="switch" :initial="false" :animate="{
-                                backgroundColor: checked ? 'rgb(0,0,0)' : 'var(--hue-6-transparent)'
+                                backgroundColor: checked ? 'black' : 'var(--hue-6-transparent)'
                             }" :style="{
+                                backgroundColor: 'transparent',
                                 justifyContent: checked ? 'flex-end' : 'flex-start'
                             }" :while-focus="{
                                 boxShadow: '0 0 0 5px #0f1115, 0 0 0 10px var(--hue-6-transparent)',
@@ -38,7 +42,7 @@
                                     opacity: { ...spring, bounce: 0 },
                                 }">
                                 <div :style="{ wordBreak: 'break-all' }">
-                                    <div>{{ checked ? '启用：独立数据源' : '禁用：跟随默认数据' }}</div>
+                                    <div :style="{lineHeight: '1.3rem'}">{{ content }}</div>
                                 </div>
                                 <Tooltip.Arrow class="tooltip-arrow" />
                             </motion.div>
@@ -72,18 +76,20 @@ const props = defineProps({
     data: {
         type: Boolean,
         default: false
+    },
+    content: {
+        type: String,
+        default: ''
+    },
+    bgcolor: {
+        type: String,
+        default: 'white'
     }
 })
 
 const toggleChecked = () => {
-    emit('action', !checked.value)
+    emit('action', checked.value)
 }
-
-const toggle = () => {
-    checked.value = !checked.value
-}
-
-defineExpose({ toggle })
 
 onMounted(() => {
     checked.value = props.data
@@ -93,7 +99,6 @@ onMounted(() => {
 <style lang="scss" scope>
 .tooltip-trigger-switch {
     border: none;
-    background-color: white;
     padding: 0px;
 }
 
@@ -125,15 +130,13 @@ onMounted(() => {
     z-index: 9999 !important;
 }
 
-.switch-container {
+.switch-container-private {
     --hue-6-transparent: rgba(154, 154, 154);
     display: flex;
     align-items: center;
-    background-color: white;
 
     button {
         border: none;
-        background-color: white;
         outline: none;
         padding: 0px;
     }

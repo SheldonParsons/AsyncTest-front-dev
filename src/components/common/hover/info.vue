@@ -32,7 +32,7 @@
                         <motion.div :style="{ wordBreak: 'break-all' }"
                             style="display: flex;flex-direction: column;gap: 5px;">
                             <div>字段描述：</div>
-                            <div>{{ desc }}</div>
+                            <div style="line-height: 1.5rem;">{{ desc }}</div>
                         </motion.div>
                         <Tooltip.Arrow class="tooltip-arrow" />
                     </motion.div>

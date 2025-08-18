@@ -39,7 +39,7 @@
             display:flex; flex-direction:column; height:100%;
           " ref="panelRef" :default-size="0" :min-size="0" :max-size="60" :collapsed-size="0">
                     <div style="overflow-y: auto;flex: 1;" class="no-scroll">
-                        <StepDetail :data="step_data" v-if="show_step_detail"></StepDetail>
+                        <StepDetail :case_id="case_id" :data="step_data" v-if="show_step_detail"></StepDetail>
                     </div>
                 </SplitterPanel>
             </SplitterGroup>
@@ -114,6 +114,7 @@ import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
 import { send_action } from '@/views/case/utils'
 import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
+import tools from '@/utils/tools'
 const table_name = ref('')
 const tableRef: any = ref(null)
 const deleteTableRef: any = ref(null)
@@ -179,7 +180,10 @@ const isCollapsed = computed(() => {
 
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
     step_data.value = data
+    show_step_detail.value = false
+    await nextTick()
     show_step_detail.value = true
+    
     openPanel()
 }
 

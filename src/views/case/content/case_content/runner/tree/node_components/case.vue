@@ -2,11 +2,11 @@
     <motion.div class="custom-tree-node" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
         :transition="{ duration: 1, delay: 0.1, ease: [0, 0.71, 0.2, 1.01] }" @mouseenter="handleNodeHover(true)"
         @mouseleave="handleNodeHover(false)">
-        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0" :key="data.id"></DragHandle>
+        <DragHandle @pointerdown="onHandlePointerDown" v-if="hoveredNodeId === data.id && read_only === 0"
+            :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
-        <motion.div class="node-content" :animate="{
-        }" :transition="{ duration: 0.2 }">
+        <motion.div class="node-content" :class="{ 'no-exist': data.is_exist === false }" :animate="{}" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.div class="info">
                     <CheckBox :check="check" @change="changeCheck"></CheckBox>
@@ -91,6 +91,37 @@ const action = (t: string) => {
     align-items: center;
     margin-right: 5px !important;
 }
+
+.no-exist {
+    position: relative;
+    opacity: 1;
+}
+
+.no-exist::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 2px dotted rgba(255, 0, 0, 0.8);
+    border-radius: inherit;
+    pointer-events: none;
+    animation: blinkLine 1s infinite ease-in-out;
+}
+
+@keyframes blinkLine {
+
+    0%,
+    100% {
+        opacity: 0;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
 
 .node-content {
     flex: 1;
@@ -184,6 +215,7 @@ const action = (t: string) => {
         display: flex;
         justify-content: end;
     }
+
     .action.action-hidden {
         visibility: hidden;
     }

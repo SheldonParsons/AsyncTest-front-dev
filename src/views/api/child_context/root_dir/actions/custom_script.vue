@@ -161,14 +161,6 @@
                     >
                       获取响应内容
                     </div>
-                    <!-- <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code('requests.get(\'http://localhost:6001\')\n')
-                      "
-                    >
-                      发送接口请求
-                    </div> -->
                   </div>
                 </el-col>
               </Transition>
@@ -270,7 +262,7 @@ async function code_change(value: string) {
   transition: max-height 0.3s ease;
 }
 .editor-header {
-  height: 2.5rem;
+  padding: 8px 12px;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   padding-left: 0.75rem;

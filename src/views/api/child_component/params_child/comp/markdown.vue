@@ -63,6 +63,9 @@ watch(() => props.data, update);
   background-color: #1e293b !important;
   border-radius: 10px !important;
 }
+.markdown-body {
+  overflow: scroll;
+}
 
 .markdown-body blockquote {
     margin-top: 16px;

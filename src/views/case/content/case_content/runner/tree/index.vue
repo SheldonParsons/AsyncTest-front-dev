@@ -166,7 +166,7 @@ onMounted(async () => {
   if (props.exclude_case === true) {
     params.exclude_case = props.exclude_case
   }
-  await ApiGetCaseSingle(props.case_id,params).then((res: any) => {
+  await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
     treeData.value = res.steps
   })
   setGlobalCheck()
@@ -386,6 +386,14 @@ const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
   if (data.type === 'empty') {
     const father_node = findParentNode(treeData.value, data.id)
     choice_step('empty', father_node, 'child')
+    return
+  }
+  if (data.type === 'interface' && data.is_exist === false) {
+    window.$toast({ title: '该接口已经不存在，请删除后重新引用。', type: 'error' })
+    return
+  }
+  if (data.type === 'case' && data.is_exist === false) {
+    window.$toast({ title: '该用例已经不存在，请删除后重新引用。', type: 'error' })
     return
   }
   current_choice_step.value = data

@@ -284,7 +284,7 @@ function initRegister() {
 }
 .placeholder {
   position: absolute;
-  top: 41px;
+  top: 33px;
   left: 70px; /* 对齐行号区域 */
   color: #999;
   font-style: italic;

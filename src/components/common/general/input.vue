@@ -1,7 +1,7 @@
 <template>
-  <div class="input-line-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
-    <input class="line-input" :style="{background: 'transparent'}" v-model="modelValue" :placeholder="placeholder" />
-    <div :style="{background: `linear-gradient(to right,rgba(255, 255, 255, 0) 0%,${bgcolor} 20%);`}">
+  <div class="input-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
+    <input class="normal-input" v-model="modelValue" :placeholder="placeholder" />
+    <div>
       <motion.span ref="counterRef" :style="{
         color: mapRemainingToColor(charactersRemaining),
         willChange: 'transform',
@@ -17,7 +17,7 @@ import { ref, watch, computed } from 'vue'
 import { motion, transform, useAnimate } from 'motion-v'
 
 // 定义 v-model 支持
-const modelValue = defineModel<string>()
+const modelValue = defineModel<string>({ default: '' })
 
 const emit = defineEmits<{
   (e: 'change', value: string): void
@@ -39,10 +39,6 @@ const props = defineProps({
   maxWidthContainer: {
     type: Number,
     default: -1
-  },
-  bgcolor: {
-    type: String,
-    default: 'white'
   }
 })
 
@@ -68,7 +64,8 @@ watch(charactersRemaining, (newVal) => {
 })
 </script>
 <style>
-.input-line-container{
+.input-container,
+input {
   position: relative;
   font-size: 14px;
   line-height: 1;
@@ -77,27 +74,24 @@ watch(charactersRemaining, (newVal) => {
   width: 100%;
 }
 
-.line-input {
+.normal-input {
+  background-color: white;
   color: black;
-  border-bottom: 2px solid #1d2628;
-  border-top: 0px;
-  border-left: 0px;
-  border-right: 0px;
+  border: 2px solid #1d2628;
+  border-radius: 10px;
   padding: 10px;
   padding-right: 40px;
-  border-radius: 0px!important;
-  outline: none;
-  width: 100%;
-  box-sizing: border-box;
-  font-weight: 500;
 }
 
-/* .line-input:focus {
+.normal-input:focus {
   border-color: var(--hue-blue);
-} */
+}
 
-.input-line-container div {
+.input-container div {
   color: #ccc;
+  background: linear-gradient(to right,
+      rgba(255, 255, 255, 0) 0%,
+      #ffffff 20%);
   position: absolute;
   top: 50%;
   right: 12px;
@@ -107,7 +101,7 @@ watch(charactersRemaining, (newVal) => {
   padding-left: 30px;
 }
 
-.input-line-container div span {
+.input-container div span {
   display: block;
 }
 </style>
