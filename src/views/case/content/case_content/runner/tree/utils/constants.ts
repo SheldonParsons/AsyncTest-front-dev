@@ -19,7 +19,8 @@ export const stepActionGroup: any = {
   error: ['copy', 'delete', 'addSiblingStep'],
   script: ['copy', 'delete', 'addSiblingStep'],
   delay: ['copy', 'delete', 'addSiblingStep'],
-  case: ['copy', 'delete', 'addSiblingStep']
+  case: ['copy', 'delete', 'addSiblingStep'],
+  assertion: ['copy', 'delete', 'addSiblingStep']
 }
 /**
  * 递归地从数据结构中删除具有指定 ID 的节点。

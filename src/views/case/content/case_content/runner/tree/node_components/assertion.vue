@@ -10,9 +10,9 @@
         }" :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.div class="info">
-                    <CheckBox :check="check" @change="changeCheck" :read_only="read_only"></CheckBox>
+                    <CheckBox :check="check" @change="changeCheck"></CheckBox>
                     <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                        <ErrorAnimationIcon :key="data.id"></ErrorAnimationIcon>
+                        <AssertionAnimationIcon :key="data.id"></AssertionAnimationIcon>
                     </motion.span>
                     <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">
                         <TooltipAnimation :isOpen="showIdTooltip">
@@ -27,7 +27,7 @@
                                 </div>
                             </template>
                         </TooltipAnimation>
-                        <div class="g-e">{{ data.label }}</div>
+                        <div class="g-e" style="font-weight: 500;">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
                 <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
@@ -42,7 +42,7 @@
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
-import ErrorAnimationIcon from '@/views/case/content/case_content/runner/tree/components/error_animation.vue'
+import AssertionAnimationIcon from '@/views/case/content/case_content/runner/tree/components/assertion_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import { ref } from 'vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
@@ -56,7 +56,6 @@ const props = defineProps<{
     action_group: any,
     read_only: number
 }>()
-
 const showIdTooltip = ref(false)
 
 async function copyId(step_id: number) {
@@ -100,10 +99,7 @@ const action = (t: string) => {
     align-items: center;
     justify-content: space-between;
     padding: 7px 16px;
-    background: linear-gradient(80deg,
-            rgba(0, 0, 0, 0.1) 0%,
-            rgba(0, 0, 0, 0.1) 40%,
-            rgba(255, 255, 255, 0.1) 90%);
+    background: linear-gradient(80deg, #f03f3f5b 0%, #f88c8c47 40%, #ffffff 90%);
     border-radius: 6px;
     transition: all 0.2s ease;
 
@@ -143,6 +139,7 @@ const action = (t: string) => {
         display: flex;
         align-items: center;
         flex-shrink: 0;
+        outline: none;
         /* Prevent shrinking */
     }
 
@@ -189,6 +186,7 @@ const action = (t: string) => {
         visibility: hidden;
     }
 }
+
 
 .gradient-text {
     /* 定义背景渐变 */

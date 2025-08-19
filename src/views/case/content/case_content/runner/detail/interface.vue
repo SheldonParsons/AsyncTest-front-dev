@@ -68,8 +68,15 @@ function addAltE(event: any) {
     }
 }
 
+const emit = defineEmits(['save'])
+
 async function save() {
-    window.$toast({title: '保存步骤设置成功。'})
+    if (check() === false) return
+    emit("save")
+}
+
+function check() {
+    return true
 }
 
 // 创建一个可读写的计算属性

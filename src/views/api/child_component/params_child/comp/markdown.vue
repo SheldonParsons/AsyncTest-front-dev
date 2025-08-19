@@ -25,7 +25,7 @@ hljs.addPlugin(
     callback: async (text: any, el: any) => {
       const { toClipboard } = useClipboard();
       await toClipboard(text);
-      tools.message("已复制", proxy, "success");
+      window.$toast({title: '已复制'})
     },
   })
 );

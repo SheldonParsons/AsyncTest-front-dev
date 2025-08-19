@@ -31,7 +31,8 @@
                     style="display:flex; flex-direction:column; height:100%;overflow: scroll;"
                     class="caseContentRef no-scroll">
                     <CaseInfo></CaseInfo>
-                    <CaseSteps :case_id="case_id" @scroll="scroll" @choice="choice_step"></CaseSteps>
+                    <CaseSteps :case_id="case_id" @scroll="scroll" @choice="choice_step" @delete="delete_step">
+                    </CaseSteps>
                 </SplitterPanel>
                 <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
                     :style="{ width: isCollapsed ? '0px' : '10px' }" />
@@ -39,7 +40,8 @@
             display:flex; flex-direction:column; height:100%;
           " ref="panelRef" :default-size="0" :min-size="0" :max-size="60" :collapsed-size="0">
                     <div style="overflow-y: auto;flex: 1;" class="no-scroll">
-                        <StepDetail :case_id="case_id" :data="step_data" v-if="show_step_detail"></StepDetail>
+                        <StepDetail :case_id="case_id" :data="step_data" v-if="show_step_detail" @save="saveStep">
+                        </StepDetail>
                     </div>
                 </SplitterPanel>
             </SplitterGroup>
@@ -112,9 +114,9 @@ import DeleteDatasetSvg from '@/assets/logo/final/match_vue/delete.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
-import { send_action } from '@/views/case/utils'
+import { send_action, send_case_action } from '@/views/case/utils'
 import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
-import tools from '@/utils/tools'
+import _ from 'lodash'
 const table_name = ref('')
 const tableRef: any = ref(null)
 const deleteTableRef: any = ref(null)
@@ -138,6 +140,7 @@ const showTable = ref(false)
 let timer: any = null
 const step_data: any = ref(null)
 const show_step_detail = ref(false)
+const current_step_origin_detail: any = ref(null)
 
 watch(current_page, (newVal, oldVal) => {
     console.log(newVal);
@@ -178,13 +181,48 @@ const isCollapsed = computed(() => {
     }
 })
 
+async function delete_step(data_id: any) {
+    if (current_step_origin_detail.value && data_id === current_step_origin_detail.value.id) {
+        closePanel()
+    }
+}
+
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
-    step_data.value = data
+    current_step_origin_detail.value = data
+    step_data.value = _.cloneDeep(data)
     show_step_detail.value = false
     await nextTick()
     show_step_detail.value = true
-    
     openPanel()
+}
+
+async function saveStep() {
+    console.log(step_data.value);
+    let has_change = false
+    for (let variable in step_data.value) {
+        if (variable !== 'id' && variable !== 'children') {
+            if (JSON.stringify(current_step_origin_detail.value[variable]) !== JSON.stringify(step_data.value[variable])) {
+                current_step_origin_detail.value[variable] = step_data.value[variable]
+                has_change = true
+            }
+        }
+    }
+    if (has_change === true) {
+        const _data = {
+            type: 0,
+            child_action_type: 'update_node',
+            content: {
+                case_id: props.case_id,
+                node_content: step_data.value
+            }
+        }
+        await send_case_action(_data)
+        step_data.value = _.cloneDeep(current_step_origin_detail.value)
+        window.$toast({ title: '步骤修改已保存' })
+    } else {
+        window.$toast({ title: '步骤无变化', type: 'info' })
+    }
+
 }
 
 async function deleteTable() {
@@ -217,7 +255,7 @@ async function check_table_name() {
             new_name: table_name.value
         }
     }
-    const result = send_action(_data)
+    const result = await send_action(_data)
     if (!result) return false
 }
 
@@ -230,7 +268,7 @@ async function check_table_delete() {
             table_id: env_list.value[current_env.value].table_id
         }
     }
-    const result = send_action(_data)
+    const result = await send_action(_data)
     if (!result) return false
 }
 
@@ -276,7 +314,6 @@ function change_depend() {
 }
 
 async function get_table() {
-    console.log(env_list.value);
     current_env_data.value = env_list.value[current_env.value]
 
     const _data = {
@@ -287,7 +324,6 @@ async function get_table() {
         }
     }
     const result = await send_action(_data)
-    console.log(result);
     table_data.value = result
     window.$toast({ title: '数据已加载。' })
 }
@@ -305,6 +341,13 @@ function openPanel() {
     panelRef.value.resize(60)
     dandle_id.value += 1
 }
+
+function closePanel() {
+    if (!panelRef.value) return
+    panelRef.value.resize(0)
+    dandle_id.value += 1
+}
+
 async function onPanelResize(newSize: any, oldSize: any) {
     if (!panelRef.value) return
     // 如果拖拽下来到阈值以下，且还没折叠，就 collapse()

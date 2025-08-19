@@ -67,6 +67,10 @@
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
             @canDragAction="onHandlePointerDown">
           </Delay>
+          <Assertion :read_only="read_only" v-if="data.type === 'assertion'" @action="step_action"
+            :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
+            :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
+            @canDragAction="onHandlePointerDown"></Assertion>
           <Empty :read_only="read_only" v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data">
           </Empty>
           <Line v-if="showBottomLine(node)" class="target-line-button hidden"></Line>
@@ -100,6 +104,7 @@ import Delay from '@/views/case/content/case_content/runner/tree/node_components
 import Script from '@/views/case/content/case_content/runner/tree/node_components/script.vue'
 import Error from '@/views/case/content/case_content/runner/tree/node_components/error.vue'
 import Case from '@/views/case/content/case_content/runner/tree/node_components/case.vue'
+import Assertion from '@/views/case/content/case_content/runner/tree/node_components/assertion.vue'
 import StepChoice from '@/views/case/content/case_content/runner/tree/components/step_dialog.vue';
 import InterfaceChoice from '@/views/case/content/case_content/runner/tree/components/interface_selecter.vue'
 import CaseChoice from '@/views/case/content/case_content/runner/tree/components/case_selecter.vue'
@@ -246,7 +251,7 @@ const changeCheck = async (type: any) => {
   setGlobalCheck()
 }
 
-const emit = defineEmits(['scroll', 'choice'])
+const emit = defineEmits(['scroll', 'choice', 'delete'])
 
 // 使用组合式函数
 const {
@@ -267,10 +272,10 @@ const {
 
 
 const add_step_mapping: any = {
-  'empty': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
-  'multitasker-child': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
-  'next': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy'],
-  'child': ['interface', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy']
+  'empty': ['interface', 'assertion', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
+  'multitasker-child': ['interface', 'assertion', 'database', 'script', 'multitasker', 'group', 'if', 'error', 'delay', 'case', 'copy'],
+  'next': ['interface', 'assertion', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy'],
+  'child': ['interface', 'assertion', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy']
 }
 
 const addFirstStep = async (step_type: any) => {
@@ -500,18 +505,20 @@ const step_action = async (t: string, data: any) => {
     return
   }
   if (t === 'delete') {
+    const delete_step_id = data.id
     const _data = {
       type: 0,
       child_action_type: 'delete_step',
       content: {
         case_id: props.case_id,
-        step_id: data.id
+        step_id: delete_step_id
       }
     }
     const empty_node = await send_action(_data)
-    removeNodeById(treeData.value, data.id, empty_node)
+    removeNodeById(treeData.value, delete_step_id, empty_node)
     setGlobalCheck()
     refreshCheckStatusJs(treeData.value)
+    emit("delete", delete_step_id)
     return
   }
   // 添加相邻步骤

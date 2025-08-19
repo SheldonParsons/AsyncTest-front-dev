@@ -431,7 +431,7 @@ export function generateRandomTimeOnly(format: string): string | "--ban--" {
   return formattedTime;
 }
 
-export function generateTimestamp(precision: string): number | "--ban--" {
+export function generateTimestamp(precision: string, offset: string): number | "--ban--" {
   // 校验精度参数是否合法
   if (precision !== "s" && precision !== "ms") {
     return "--ban--"; // 如果精度不是 's' 或 'ms'，返回 "--ban--"
@@ -440,13 +440,55 @@ export function generateTimestamp(precision: string): number | "--ban--" {
   // 获取当前时间
   const timestamp = Date.now();
 
+  let offset_timestamp = 0
+
+  if (offset) {
+    const regex = /^([+-]?\d+)\s*(year|month|week|day|hour|minute|msecond|second)$/;
+    const match = offset.match(regex);
+    if (match) {
+      const amount = parseInt(match[1]);
+      const unit = match[2];
+
+      switch (unit) {
+        case "year":
+          offset_timestamp = timestamp + (12 * 30 * 24 * 60 * 60 * 1000 * amount)
+          break;
+        case "month":
+          offset_timestamp = timestamp + (30 * 24 * 60 * 60 * 1000 * amount)
+          break;
+        case "week":
+          offset_timestamp = timestamp + (7 * 24 * 60 * 60 * 1000 * amount)
+          break;
+        case "day":
+          offset_timestamp = timestamp + (24 * 60 * 60 * 1000 * amount)
+          break;
+        case "hour":
+          offset_timestamp = timestamp + (60 * 60 * 1000 * amount)
+          break;
+        case "minute":
+          offset_timestamp = timestamp + (60 * 1000 * amount)
+          break;
+        case "second":
+          offset_timestamp = timestamp + (1000 * amount)
+          break;
+        case "msecond":
+          offset_timestamp = timestamp + (amount)
+          break;
+        default:
+          return "--ban--"; // 如果偏移量无效，返回 "--ban--"
+      }
+    } else {
+      return "--ban--"; // 如果偏移格式不匹配，返回 "--ban--"
+    }
+  }
+
   // 如果精度是秒级，则将毫秒时间戳转换为秒级
   if (precision === "s") {
-    return Math.floor(timestamp / 1000); // 转换为秒
+    return Math.floor(offset_timestamp / 1000); // 转换为秒
   }
 
   // 如果精度是毫秒级，直接返回当前毫秒时间戳
-  return timestamp;
+  return offset_timestamp;
 }
 
 export function generateRandomID(): string {
@@ -1993,9 +2035,8 @@ export function generateDataImage(
   // 构建 SVG 字符串
   const svgString = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" baseProfile="full" width="${width}" height="${height}">
                       <rect width="100%" height="100%" fill="${color}" />
-                      <text x="${width / 2}" y="${
-    height / 2
-  }" font-size="20" alignment-baseline="middle" text-anchor="middle" fill="white">${text}</text>
+                      <text x="${width / 2}" y="${height / 2
+    }" font-size="20" alignment-baseline="middle" text-anchor="middle" fill="white">${text}</text>
                     </svg>`;
 
   // 将 SVG 字符串编码为 URI 格式

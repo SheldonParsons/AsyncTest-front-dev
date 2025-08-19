@@ -1,7 +1,8 @@
 <template>
-    <Case v-if="data.type === 'case'" :data="data"></Case>
-    <Interface v-if="data.type === 'interface'" :data="data"></Interface>
-    <Multitasker v-if="data.type === 'multitasker'" :data="data" :case_id="case_id"></Multitasker>
+    <Case v-if="data.type === 'case'" :data="data" @save="save"></Case>
+    <Interface v-if="data.type === 'interface'" :data="data" @save="save"></Interface>
+    <Multitasker v-if="data.type === 'multitasker'" :data="data" :case_id="case_id" @save="save"></Multitasker>
+    <Assertion v-if="data.type === 'assertion'" :data="data" @save="save"></Assertion>
 </template>
 
 <script lang="ts" setup>
@@ -9,6 +10,7 @@
 import Case from '@/views/case/content/case_content/runner/detail/case.vue'
 import Interface from '@/views/case/content/case_content/runner/detail/interface.vue'
 import Multitasker from '@/views/case/content/case_content/runner/detail/multitasker.vue'
+import Assertion from '@/views/case/content/case_content/runner/detail/assertion.vue'
 const props = defineProps({
     data: {
         type: null,
@@ -20,6 +22,12 @@ const props = defineProps({
     }
 })
 
+const emit = defineEmits(['save'])
+
+function save() {
+    emit("save")
+}
+
 </script>
 
 <style lang="scss" scope>
@@ -28,8 +36,6 @@ const props = defineProps({
     padding: 10px;
     box-sizing: border-box;
     min-width: 500px;
-    
-
 
     .step-container {
         display: flex;

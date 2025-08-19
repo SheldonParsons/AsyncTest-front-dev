@@ -35,7 +35,7 @@
                 v-if="element.t === 2"
                 :element="element"
               ></WaitTime>
-              <DataBase
+              <!-- <DataBase
                 @add_database_param="
                   (payload) => add_database_param(element, payload)
                 "
@@ -48,7 +48,7 @@
                 v-if="element.t === 3"
                 :element="element"
                 :interface="interface"
-              ></DataBase>
+              ></DataBase> -->
             </el-col>
           </el-row>
         </template>
@@ -63,7 +63,7 @@ import draggable from "vuedraggable";
 import DefaultAction from "./actions/default_action.vue";
 import CustomScript from "./actions/custom_script.vue";
 import WaitTime from "./actions/wait_time.vue";
-import DataBase from "./actions/data_base.vue";
+// import DataBase from "./actions/data_base.vue";
 import FatherActions from "./actions/father_actions.vue";
 import tools from "@/utils/tools";
 

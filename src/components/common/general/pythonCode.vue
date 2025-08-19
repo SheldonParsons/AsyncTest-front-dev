@@ -65,14 +65,12 @@ const props = defineProps({
     type: Array as () => { label: string; code: string }[],
     default: () => [
       { label: "获取全局变量", code: "at.gv.get('variable_key')\n" },
-      { label: "设置全局变量", code: "at.gv.set('variable_key', 'variable_value')\n" },
       { label: "获取环境变量", code: "at.env.get('variable_key')\n" },
-      { label: "设置环境变量", code: "at.env.set('variable_key', 'variable_value')\n" },
       { label: "获取临时变量", code: "at.temp.get('variable_key')\n" },
-      { label: "设置临时变量", code: "at.temp.set('variable_key', 'variable_value')\n" },
       { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
       { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
       { label: "获取环境名称", code: "at.env_name\n" },
+      { label: "创建自定义数据集", code: "at.DataSet()\n"}
     ],
   },
 });

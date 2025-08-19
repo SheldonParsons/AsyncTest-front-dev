@@ -28,7 +28,7 @@
     </template>
     <div style="padding: 10px">
       <div class="grid-item">
-        <div class="read-dynamic-value w-med" @click="addAction('database')">
+        <div v-if="false" class="read-dynamic-value w-med" @click="addAction('database')">
           <el-row style="width: 100%">
             <el-col :span="9"><h1>Database</h1></el-col>
             <el-col

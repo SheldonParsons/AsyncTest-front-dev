@@ -762,6 +762,13 @@ const input_content_mapping: any = ref({
         params_type: "string",
         options: ["s", "ms"],
       },
+      {
+        name: "时间偏移",
+        placeholder: "如：-2 day",
+        value: "",
+        type: "input",
+        params_type: "string",
+      },
     ],
   },
   id: {

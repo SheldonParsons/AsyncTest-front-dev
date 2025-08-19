@@ -27,7 +27,8 @@
                             <div style="display: flex;flex-direction: column;gap: 5px;">
                                 <div>执行方式</div>
                                 <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">顺序执行将以同步的方式运行您的任务。</div>
-                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">并发执行可以更快的执行您的任务，并获取结果。但请确保您的服务可以正确的接受它。</div>
+                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">
+                                    并发执行可以更快的执行您的任务，并获取结果。但请确保您的服务可以正确的接受它。</div>
                             </div>
                         </template>
                     </TooltipAnimation>
@@ -46,8 +47,8 @@
                 </div>
                 <div style="width: 20px;height: 100%;">
                     <TooltipAnimation :isOpen="showIdTooltip">
-                        <template #trigger><span style="color: rgba(0,0,0);"
-                                @mouseenter="showIdTooltip = true" @mouseleave="showIdTooltip = false">
+                        <template #trigger><span style="color: rgba(0,0,0);" @mouseenter="showIdTooltip = true"
+                                @mouseleave="showIdTooltip = false">
                                 <InfoSvg />
                             </span></template>
                         <template #default>
@@ -86,11 +87,10 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import SwitchAnimation from '@/components/common/general/switch.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import AstButton from '@/components/common/general/button.vue'
-import { errorMultitaskerStrategy, multitaskerDriveStrategy, multitaskerLoopStrategy,createDatasetScript } from '@/views/case/utils/constants'
+import { errorMultitaskerStrategy, multitaskerDriveStrategy, multitaskerLoopStrategy, createDatasetScript } from '@/views/case/utils/constants'
 import Select from '@/components/common/general/select_public.vue'
 import Radio from '@/components/common/general/radio.vue'
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
@@ -125,7 +125,7 @@ onBeforeUnmount(() => {
     window.removeEventListener("keydown", addAltE);
 });
 
-function changeLoopCode(value:any) {
+function changeLoopCode(value: any) {
     props.data.load_loop_script = value
 }
 
@@ -168,8 +168,15 @@ function addAltE(event: any) {
     }
 }
 
+const emit = defineEmits(['save'])
+
 async function save() {
-    window.$toast({ title: '保存步骤设置成功。' })
+    if (check() === false) return
+    emit("save")
+}
+
+function check() {
+    return true
 }
 
 // 创建一个可读写的计算属性
@@ -188,8 +195,5 @@ const raiseCodeAsString = computed({
     }
 });
 
-function changeShouldRise(status: boolean) {
-    props.data.should_raise = !status
-}
 
 </script>

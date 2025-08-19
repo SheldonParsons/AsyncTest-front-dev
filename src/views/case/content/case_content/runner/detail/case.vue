@@ -44,7 +44,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { onMounted, onBeforeUnmount } from 'vue'
 import CaseStep from '@/views/case/content/case_content/runner/tree/index.vue'
 import AstButton from '@/components/common/general/button.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
@@ -90,8 +90,15 @@ function addAltE(event: any) {
     }
 }
 
+const emit = defineEmits(['save'])
+
 async function save() {
-    window.$toast({ title: '保存步骤设置成功。' })
+    if (check() === false) return
+    emit("save")
+}
+
+function check() {
+    return true
 }
 
 </script>
@@ -99,7 +106,7 @@ async function save() {
 <style lang="scss" scope>
 .step-tips {
     padding: 10px;
-    
+
 
     div {
         box-sizing: border-box;

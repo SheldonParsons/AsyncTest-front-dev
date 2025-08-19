@@ -22,6 +22,9 @@ const props = defineProps({
     },
     current: {
         default: -1
+    },
+    padding: {
+        default: '4px 8px'
     }
 })
 
@@ -40,7 +43,7 @@ function get_current_name() {
     <div class="ast-select-container">
         <DropdownMenu.Root v-model:open="open">
             <DropdownMenu.Trigger as-child>
-                <motion.button class="ast-select-trigger" :while-press="{ scale: 0.95 }">
+                <motion.button class="ast-select-trigger" :style="{padding: padding}" :while-press="{ scale: 0.95 }">
                     {{ get_current_name() }} ▾
                 </motion.button>
             </DropdownMenu.Trigger>
@@ -74,7 +77,6 @@ function get_current_name() {
 }
 
 .ast-select-trigger {
-    padding: 4px 8px;
     border-radius: 6px;
     background-color: #0b1011;
     color: #f5f5f5;
@@ -82,6 +84,7 @@ function get_current_name() {
     cursor: pointer;
     font-weight: 500;
     line-height: 1.2;
+    width: 100%;
 }
 
 .ast-select-content {

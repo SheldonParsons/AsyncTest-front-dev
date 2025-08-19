@@ -117,10 +117,49 @@ export const createDatasetScript: string = `\`\`\`python
 # 示例代码
 row_definitions = ["name", "age", "gender", "nickname"]
 row_matrix_data = [["Sheldon", 18, "male", "sheldon"], ["Cindy", 16, "female", "cindy"]]
-dataset = at.Dataset()
+dataset = at.DataSet()
 dataset.set_columns(row_definitions)
 for row in row_matrix_data:
     dataset.add_row(row)
-
+# 关键：请返回一个正整数、可迭代对象、DataSet实例
 return dataset
 \`\`\``
+
+export const assertionScriptDemo:string = `\`\`\`python
+# 示例代码
+if at.temp.get('name') == at.temp.get('current_name'):
+    # 关键代码：请在适时候返回一个布尔值来锁定该断言的结果
+    return True
+# 关键代码：请在适时候返回一个布尔值来锁定该断言的结果
+return False
+\`\`\``
+
+
+export const patternMode: any = [
+    { key: "eq", value: "等于" },
+    { key: "neq", value: "不等于" },
+    { key: "exist", value: "存在" },
+    { key: "noexist", value: "不存在" },
+    { key: "gt", value: "大于" },
+    { key: "gte", value: "大于或等于" },
+    { key: "lt", value: "小于" },
+    { key: "lte", value: "小于或等于" },
+    { key: "contains", value: "包含" },
+    { key: "notContains", value: "不包含" },
+    { key: "regex", value: "正则匹配" },
+    { key: "exists", value: "存在" },
+    { key: "notExists", value: "不存在" },
+    { key: "inset", value: "属于集合" },
+    { key: "uninset", value: "不属于集合" }
+];
+
+export const assertMode: any = [
+    {
+        key: "fast",
+        value: "快速断言"
+    },
+    {
+        key: "script",
+        value: "自定义脚本"
+    }
+]

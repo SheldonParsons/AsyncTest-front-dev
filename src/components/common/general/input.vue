@@ -81,6 +81,7 @@ input {
   border-radius: 10px;
   padding: 10px;
   padding-right: 40px;
+  width: 100%;
 }
 
 .normal-input:focus {

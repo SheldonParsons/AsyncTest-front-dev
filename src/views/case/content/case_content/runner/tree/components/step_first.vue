@@ -67,6 +67,23 @@
                                                 </div>
                                             </div>
                                         </div>
+                                        <div class="top-title" v-show="item === 'assertion'">
+                                            <div
+                                                style="display: flex;flex-direction: column;justify-content: center;align-items: center;gap: 10px;">
+                                                <div class="icon-item-special">
+                                                    <Case class="case-icon" style="height:2rem;width: 2rem;" />
+                                                </div>
+                                                <div class="gradient-text orange"
+                                                    style="font-weight: 500;font-size: 1rem;">
+                                                    ASSERTION</div>
+                                            </div>
+                                            <div class="text-title">
+                                                <div class="title">断言</div>
+                                                <div class="detail">
+                                                    您可以通过变量的内置比较快速断言，或者自行书写一个自定义脚本，通过返回一个布尔值来进行更复杂的断言。
+                                                </div>
+                                            </div>
+                                        </div>
                                         <div class="top-title" v-show="item === 'script'">
                                             <div
                                                 style="display: flex;flex-direction: column;justify-content: center;align-items: center;gap: 10px;">
@@ -238,7 +255,7 @@ import { usePointerPosition } from "motion-plus-vue"
 import CaseLight from "@/assets/svg/tree/case_light.vue";
 import Case from "@/assets/svg/tree/case.vue";
 import Redo from '@/assets/logo/final/match_vue/redo.vue'
-const steps = ref(['interface', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy'])
+const steps = ref(['interface', 'assertion', 'database', 'script', 'multitasker', 'group', 'if', 'delay', 'case', 'copy'])
 const position = usePointerPosition()
 const skewX = usePointerToSkew(position.x)
 const skewY = usePointerToSkew(position.y)
