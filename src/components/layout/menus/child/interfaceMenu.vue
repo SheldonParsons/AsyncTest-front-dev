@@ -171,7 +171,7 @@ const filterText = ref("");
 const current_node = ref(-1);
 const show_popover = ref(true);
 const awalys_show_popover = ref(-1);
-const loading = ref(true);
+const loading = ref(false);
 const show_dialog = ref(false);
 const show_tree_dialog = ref(false);
 const dialog_title = ref("");
@@ -184,6 +184,7 @@ const current_highlight_node = ref(-1);
 const container: any = ref(null);
 const header: any = ref(null);
 const treeKey = ref(0)
+const isFristenter = ref(true)
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
@@ -197,7 +198,9 @@ function randomStep() {
 }
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
-  loading.value = true;
+  if (isFristenter.value === true){
+    loading.value = true;
+  }
   const data = {
     project: route.params.project,
     search_range: search_range.join(","),
@@ -224,7 +227,10 @@ async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
       syncChildren(existingRoot.children, newRoot.children);
     }
     await tools.delay();
-    loading.value = false;
+    if (isFristenter.value = true) {
+      loading.value = false;
+      isFristenter.value = false
+    }
   });
   await nextTick(); // 确保 DOM 已全部挂载
 }

@@ -1,10 +1,8 @@
 <template>
-  <transition name="slide" appear>
-    <div>
-      <div class="ed editor" ref="dom"></div>
-      <div v-if="showPlaceholder" class="placeholder">请输入代码...</div>
-    </div>
-  </transition>
+  <div>
+    <div class="ed editor" ref="dom"></div>
+    <div v-if="showPlaceholder" class="placeholder">请输入代码...</div>
+  </div>
 </template>
 
 <script lang="ts" setup>
@@ -130,18 +128,18 @@ async function createLanguage(m: any) {
       size: "fit", // "proportional" | "fill" | "fit"
     },
   });
-  instance.getDomNode().addEventListener('wheel', function(event:any) {
+  instance.getDomNode().addEventListener('wheel', function (event: any) {
     const currentScrollTop = instance.getScrollTop();
     const maxScrollTop = instance.getScrollHeight() - instance.getLayoutInfo().height;
 
     if (
-        (currentScrollTop <= 0 && event.deltaY < 0) ||
-        (currentScrollTop >= maxScrollTop && event.deltaY > 0)
+      (currentScrollTop <= 0 && event.deltaY < 0) ||
+      (currentScrollTop >= maxScrollTop && event.deltaY > 0)
     ) {
-        event.stopPropagation();
-        window.scrollBy(0, event.deltaY);
+      event.stopPropagation();
+      window.scrollBy(0, event.deltaY);
     }
-}, { capture: true });
+  }, { capture: true });
 
   // 监听内容变化
   instance.onDidChangeModelContent(() => {
@@ -280,32 +278,37 @@ function initRegister() {
 .slide-enter-to,
 .slide-leave-from {
   opacity: 1;
-  max-height: 1000px; /* 设置一个足够大的值 */
+  max-height: 1000px;
+  /* 设置一个足够大的值 */
 }
+
 .placeholder {
   position: absolute;
-  top: 33px;
-  left: 70px; /* 对齐行号区域 */
+  top: 41px;
+  left: 71px;
+  /* 对齐行号区域 */
   color: #999;
   font-style: italic;
-  pointer-events: none; /* 允许穿透点击编辑器 */
+  pointer-events: none;
+  /* 允许穿透点击编辑器 */
   z-index: 2;
 }
+
 .ed {
   width: 100%;
   height: 100%;
   // margin-left: 5%;
 }
+
 .ed-header {
   height: 35px;
   width: calc(100% + 20px);
   border-radius: 5px 5px 0px 0px;
-  background-image: linear-gradient(
-    90deg,
-    var(--dialog-deep-color) 80%,
-    var(--dialog-color)
-  );
+  background-image: linear-gradient(90deg,
+      var(--dialog-deep-color) 80%,
+      var(--dialog-color));
   text-align: center;
+
   p {
     color: white;
     font-size: 16px;
@@ -317,15 +320,19 @@ function initRegister() {
     padding-left: 20px;
   }
 }
+
 .editor {
   height: 400px;
   width: 100%;
 }
+
 .el-row {
   height: inherit;
 }
+
 .language-col {
   height: inherit;
+
   span.el-dropdown-link {
     cursor: pointer;
     margin-top: 10px;
@@ -334,6 +341,7 @@ function initRegister() {
     font-weight: 500;
     display: flex;
   }
+
   .el-dropdown {
     height: 100%;
   }

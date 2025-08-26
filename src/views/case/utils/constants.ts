@@ -68,6 +68,29 @@ export const errorCaseStrategy: any = [
     }
 ]
 
+export const errorCaseRealStrategy: any = [
+    {
+        key: 'current_step',
+        value: '跳过当前步骤'
+    },
+    {
+        key: 'current_case',
+        value: '结束当前用例'
+    },
+    {
+        key: 'case',
+        value: '结束用例'
+    },
+    {
+        key: 'raise',
+        value: '交由上级处理'
+    },
+    {
+        key: 'task',
+        value: '结束任务'
+    }
+]
+
 export const errorParamsCoverStrategy: any = [
     {
         key: 'no',
@@ -125,13 +148,31 @@ for row in row_matrix_data:
 return dataset
 \`\`\``
 
-export const assertionScriptDemo:string = `\`\`\`python
+export const assertionScriptDemo: string = `\`\`\`python
 # 示例代码
 if at.temp.get('name') == at.temp.get('current_name'):
     # 关键代码：请在适时候返回一个布尔值来锁定该断言的结果
     return True
 # 关键代码：请在适时候返回一个布尔值来锁定该断言的结果
 return False
+\`\`\``
+
+export const ifScriptDemo: string = `\`\`\`python
+# 示例代码
+if at.temp.get('name') == at.temp.get('current_name'):
+    # 关键代码：请在适时候返回一个布尔值来锁定该条件判断的结果
+    return True
+# 关键代码：请在适时候返回一个布尔值来锁定该条件判断的结果
+return False
+\`\`\``
+
+export const errorScriptDemo: string = `\`\`\`python
+# 示例代码
+if at.temp.get('name') == at.temp.get('current_name'):
+    # 关键代码：抛出异常，该代码将会通过raise关键字抛出异常从而让上级发现
+    at.raise('name_error')
+# 关键代码：抛出异常，该代码将会通过raise关键字抛出异常从而让上级发现
+at.raise('normal_error')
 \`\`\``
 
 
@@ -161,5 +202,80 @@ export const assertMode: any = [
     {
         key: "script",
         value: "自定义脚本"
+    }
+]
+
+export const assertionMode:any = [
+    {
+        key: 'interface',
+        value: "上一个接口"
+    },
+    {
+        key: "fast",
+        value: "快速断言"
+    },
+    {
+        key: "script",
+        value: "自定义脚本"
+    }
+]
+
+export const interfaceRange: any = [
+    {
+        key: "body",
+        value: "Body"
+    },
+    {
+        key: "header",
+        value: "Header"
+    },
+    {
+        key: "code",
+        value: "Code"
+    }
+]
+
+export const interfaceBodyRange: any = [
+    {
+        key: "all",
+        value: "所有内容"
+    },
+    {
+        key: "pattern",
+        value: "Jsonpath匹配"
+    }
+]
+
+export const extractDatabaseParamMode = [
+    {
+        key: 'kv',
+        value: '快速提取'
+    },
+    {
+        key: 'script',
+        value: "自定义代码"
+    }
+]
+
+export const databseReaultScriptDemo: string = `\`\`\`python
+# 示例代码
+result = at.database.get_result()
+name = result[0]["name"]
+at.temp.set('name', name)
+\`\`\``
+
+
+export const paramsRange = [
+    {
+        key: "temp",
+        value: "临时变量"
+    },
+    {
+        key: "env",
+        value: "环境变量"
+    },
+    {
+        key: "global",
+        value: "全局变量"
     }
 ]

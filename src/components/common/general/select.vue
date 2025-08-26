@@ -36,7 +36,7 @@ defineProps({
     <div class="ast-select-container">
         <DropdownMenu.Root v-model:open="open">
             <DropdownMenu.Trigger as-child>
-                <motion.button class="ast-select-trigger" :while-press="{ scale: 0.95 }">
+                <motion.button class="ast-project-select-trigger" :while-press="{ scale: 0.95 }">
                     {{ value.name }} ▾
                 </motion.button>
             </DropdownMenu.Trigger>
@@ -69,7 +69,7 @@ defineProps({
     justify-content: start;
 }
 
-.ast-select-trigger {
+.ast-project-select-trigger {
     padding: 8px 16px;
     border-radius: 6px;
     background-color: #0b1011;

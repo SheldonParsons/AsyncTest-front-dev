@@ -22,6 +22,16 @@
                             </div>
                         </AstButton>
                     </div>
+                    <div class="case-group-tab-atcion" v-if="current_page === 0">
+                        <motion.div class="run-btn" :whilePress="{ scale: 0.9 }" :whileHover="{ scale: 1.05 }">
+                            <RunCaseSvg />
+                            <div>运行</div>
+                        </motion.div>
+                        <motion.div @click="setting_case" class="case-setting-btn" :whilePress="{ scale: 0.9 }"
+                            :whileHover="{ scale: 1.05 }">
+                            <CaseSettingSvg></CaseSettingSvg>
+                        </motion.div>
+                    </div>
                 </div>
             </TabSelect>
         </div>
@@ -30,8 +40,9 @@
                 <SplitterPanel :default-size="100" :min-size="40"
                     style="display:flex; flex-direction:column; height:100%;overflow: scroll;"
                     class="caseContentRef no-scroll">
-                    <CaseInfo></CaseInfo>
-                    <CaseSteps :case_id="case_id" @scroll="scroll" @choice="choice_step" @delete="delete_step">
+                    <CaseInfo v-if="case_info" :data="case_info" :node_id="node_id"></CaseInfo>
+                    <CaseSteps ref="caseStepRef" :case_id="case_id" @scroll="scroll" @choice="choice_step"
+                        @delete="delete_step" @done="case_done">
                     </CaseSteps>
                 </SplitterPanel>
                 <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
@@ -42,6 +53,7 @@
                     <div style="overflow-y: auto;flex: 1;" class="no-scroll">
                         <StepDetail :case_id="case_id" :data="step_data" v-if="show_step_detail" @save="saveStep">
                         </StepDetail>
+                        <CaseSetting v-if="show_case_detail" :data="case_info" @save="saveCase"></CaseSetting>
                     </div>
                 </SplitterPanel>
             </SplitterGroup>
@@ -111,7 +123,10 @@ import AstButton from '@/components/common/general/button.vue'
 import AddDatasetSvg from '@/assets/logo/final/match_vue/add_dataset.vue'
 import EditDatasetSvg from '@/assets/logo/final/match_vue/edit.vue'
 import DeleteDatasetSvg from '@/assets/logo/final/match_vue/delete.vue'
+import CaseSettingSvg from '@/assets/logo/final/match_vue/setting.vue'
+import RunCaseSvg from '@/assets/logo/final/match_vue/play.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
+import CaseSetting from '@/views/case/content/case_content/runner/case_info/detail.vue'
 import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
 import { send_action, send_case_action } from '@/views/case/utils'
@@ -140,7 +155,10 @@ const showTable = ref(false)
 let timer: any = null
 const step_data: any = ref(null)
 const show_step_detail = ref(false)
+const show_case_detail = ref(false)
 const current_step_origin_detail: any = ref(null)
+const caseStepRef: any = ref(null)
+const case_info: any = ref(null)
 
 watch(current_page, (newVal, oldVal) => {
     console.log(newVal);
@@ -187,13 +205,58 @@ async function delete_step(data_id: any) {
     }
 }
 
+function case_done() {
+    case_info.value = caseStepRef.value.get_case()
+}
+
+async function setting_case() {
+    if (show_step_detail.value === true) {
+        show_step_detail.value = false
+    }
+    if (show_case_detail.value === true) {
+        show_case_detail.value = false
+        closePanel()
+    } else {
+        case_info.value = caseStepRef.value.get_case()
+        caseStepRef.value.clean_choice()
+        show_case_detail.value = true
+        openPanel()
+    }
+}
+
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
+    if (show_case_detail.value === true) {
+        show_case_detail.value = false
+    }
     current_step_origin_detail.value = data
     step_data.value = _.cloneDeep(data)
     show_step_detail.value = false
     await nextTick()
     show_step_detail.value = true
     openPanel()
+}
+
+async function saveCase() {
+    console.log(case_info.value);
+    const _data = {
+        type: 0,
+        child_action_type: 'update_case',
+        content: {
+            case_id: props.case_id,
+            env: case_info.value.env,
+            error_strategy: case_info.value.error_strategy,
+            runtime_parameters_strategy: case_info.value.runtime_parameters_strategy,
+            loop_strategy: case_info.value.loop_strategy,
+            drive_strategy: case_info.value.drive_strategy,
+            data_set: case_info.value.data_set,
+            before_script: case_info.value.before_script,
+            loop_times: case_info.value.loop_times
+        }
+    }
+    const result = await send_case_action(_data)
+    if (result !== false) {
+        window.$toast({ title: '用例更新成功' })
+    }
 }
 
 async function saveStep() {
@@ -334,6 +397,9 @@ function togglePanel() {
     const isCollapsedNow = panelRef.value.getSize() === 0
     panelRef.value.resize(isCollapsedNow ? 60 : 0)
     dandle_id.value += 1
+    if (!(show_case_detail.value || show_step_detail.value)) {
+        show_case_detail.value = true
+    }
 }
 
 function openPanel() {
@@ -407,12 +473,49 @@ const props = defineProps({
             align-items: center;
             height: 100%;
 
-            .dataset-group-tab-atcion {
+            .dataset-group-tab-atcion,
+            .case-group-tab-atcion {
                 display: flex;
                 align-items: center;
                 height: 100%;
                 padding-right: 20px;
                 gap: 10px;
+
+                .run-btn {
+                    width: 80px;
+                    height: 25px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 5px;
+                    color: white;
+                    font-size: 14px;
+                    font-weight: 500;
+                    border: 2px solid #137f2e;
+                    background: linear-gradient(80deg, #000000 0%, #137f2e 40%, #030600 90%);
+                    background-size: 300% 300%;
+                    animation: gradient-move 3s ease infinite;
+                    padding: 4px 4px;
+                    border-radius: 4px;
+                    box-sizing: border-box;
+                    cursor: pointer;
+
+                    svg {
+                        width: 14px;
+                    }
+                }
+
+                .case-setting-btn {
+                    width: 25px;
+                    height: 25px;
+                    background-color: black;
+                    color: white;
+                    padding: 2px;
+                    box-sizing: border-box;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+
             }
         }
     }
@@ -422,6 +525,20 @@ const props = defineProps({
         height: 100%;
         flex: 1 1 auto;
         overflow: hidden;
+    }
+}
+
+@keyframes gradient-move {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
     }
 }
 

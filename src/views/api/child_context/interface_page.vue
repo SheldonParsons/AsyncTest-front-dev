@@ -720,6 +720,10 @@ async function get_source() {
     originalResponse = _.cloneDeep(responseOptions.value);
   });
   await ApiGetSingleInterface(props.interface_id, {}).then(async (res: any) => {
+    if (res.hasOwnProperty("result") && res.result === 0) {
+        window.$toast({ title: res.data, type: 'error' })
+        return false;
+    }
     data.value = res;
     originalData = _.cloneDeep(data.value);
     search_and_set_env_by_name(cache_all_env.value, GlobalState.user_env);
@@ -755,7 +759,7 @@ function set_server_options(server_mappings: any) {
 
 function done_statement() {
   if (data.value.statement === "") {
-    tools.message("说明文档不能为空", proxy, "info");
+    window.$toast({title: "说明文档不能为空", type: 'info'})
   } else {
     show_markdown.value = true;
   }
@@ -816,7 +820,7 @@ function delete_response(_current_response: any) {
     setTimeout(() => {
       enableWatch.value = true;
     }, 0);
-    tools.message("删除成功", proxy, "success");
+    window.$toast({title: "删除成功"})
   });
 }
 
@@ -927,7 +931,7 @@ async function addMarker(value: any) {
         id: res.id,
         name: value,
       });
-      tools.message("添加成功", proxy, "success");
+      window.$toast({title: "添加成功"})
     });
   }
 }
@@ -944,6 +948,8 @@ function clearUrl() {
   data.value.path = "";
 }
 
+const emit = defineEmits(['change_method'])
+
 async function save() {
   const content = getChangedTopLevelFields(data.value, originalData);
   const response_content = getChangedTopLevelFields(
@@ -953,11 +959,12 @@ async function save() {
   setupWatch();
   setupWatchResponse();
   enableWatch.value = true;
+  emit("change_method", data.value.method)
   if (content === null && response_content === null) {
     GlobalState.sendMessage("clean_interface_change", {
       node_id: props.node_id,
     });
-    tools.message("已保存", proxy);
+    window.$toast({title: "接口内容已保存"})
     return;
   }
   let result = true;
@@ -973,7 +980,7 @@ async function save() {
   GlobalState.sendMessage("clean_interface_change", {
     node_id: props.node_id,
   });
-  tools.message("已保存", proxy);
+  window.$toast({title: "接口内容已保存"})
   return true
 }
 
@@ -1014,7 +1021,7 @@ async function updateResponse(content: any) {
 
 function result_check(data: any) {
   if (data.hasOwnProperty("result") && data.result === 0) {
-    tools.message(data.data, proxy, "error");
+    window.$toast({title: data.data, type: 'error'})
     return false;
   }
   return true;

@@ -174,9 +174,9 @@ export const updateAllCheckStatus = (data: any, type: any) => {
   function traverse(nodes: any) {
     for (const node of nodes) {
       // 排除 'empty' 类型的节点
-      if (node.type === 'empty') {
-        continue;
-      }
+      // if (node.type === 'empty') {
+      //   continue;
+      // }
 
       // 设置 'check' 属性
       node.check = type;

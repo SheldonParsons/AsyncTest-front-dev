@@ -1,8 +1,8 @@
 <template>
   <transition name="slide" appear>
-    <div>
+    <div style="position: relative;">
       <div class="ed editor" ref="dom"></div>
-      <!-- <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{ '\{\{username\}\}' }}</span></div> -->
+      <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{ '\{\{username\}\}' }}</span></div>
     </div>
   </transition>
 </template>
@@ -255,8 +255,8 @@ function initRegister() {
 }
 .placeholder {
   position: absolute;
-  top: 44px;
-  left: 365px; /* 对齐行号区域 */
+  top: 2px;
+  left: 70px; /* 对齐行号区域 */
   color: #bcbcbc;
   font-style: italic;
   pointer-events: none; /* 允许穿透点击编辑器 */
@@ -290,7 +290,7 @@ function initRegister() {
   }
 }
 .editor {
-  height: 200px;
+  height: 100px;
   width: 100%;
 }
 .el-row {

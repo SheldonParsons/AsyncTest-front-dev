@@ -23,7 +23,7 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
 
-const tabs = ["测试步骤", "测试数据", "测试报告"]
+const tabs = ["测试步骤", "测试数据", "执行记录"]
 const emit = defineEmits(['change'])
 
 const props = defineProps({

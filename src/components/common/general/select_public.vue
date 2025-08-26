@@ -51,7 +51,7 @@ function get_current_name() {
             <DropdownMenu.Portal>
                 <AnimatePresence>
                     <DropdownMenu.Content style="z-index: 999;" :side-offset="10">
-                        <motion.div class="ast-select-content" :initial="{ opacity: 0, scale: 0.85 }"
+                        <motion.div class="ast-select-content no-scroll" :initial="{ opacity: 0, scale: 0.85 }"
                             :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.85 }"
                             :transition="{ duration: 0.2 }" :style="{ willChange: 'transform, opacity' }">
                             <DropdownMenu.Item as-child v-for="(item, index) in items" :key="index"
@@ -95,6 +95,8 @@ function get_current_name() {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    max-height: 200px;
+    overflow: scroll;
 }
 
 .ast-select-item {

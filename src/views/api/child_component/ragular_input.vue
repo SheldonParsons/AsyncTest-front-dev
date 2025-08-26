@@ -1,18 +1,11 @@
 <template>
   <el-row style="margin-top: 10px">
     <el-col :offset="1" :span="22">
-      <form>
-        <div class="group">
-          <input
-            type="text"
-            required
-            placeholder="未命名接口"
-            v-model="input_value"
-          />
-          <span class="highlight"></span>
-          <span class="bar"></span>
-        </div>
-      </form>
+      <div class="group">
+        <input class="interface-name" type="text" required placeholder="未命名接口" v-model="input_value" />
+        <span class="highlight"></span>
+        <span class="bar"></span>
+      </div>
     </el-col>
   </el-row>
 </template>
@@ -38,15 +31,17 @@ const input_value = computed({
 <style lang="scss" scoped>
 .group {
   position: relative;
+
+  .interface-name {
+    font-size: 16px;
+    font-weight: 500;
+    padding: 10px 0px 10px 0px;
+    display: block;
+    width: 100%;
+    border: none;
+  }
 }
-input {
-  font-size: 18px;
-  padding: 10px 0px 10px 0px;
-  display: block;
-  width: 100%;
-  border: none;
-  //   border-bottom: 1px solid #757575;
-}
+
 input:focus {
   outline: none;
 }
@@ -66,8 +61,8 @@ label {
 }
 
 /* active state */
-input:focus ~ label,
-input:valid ~ label {
+input:focus~label,
+input:valid~label {
   top: -20px;
   font-size: 14px;
   color: #000000;
@@ -80,6 +75,7 @@ input:valid ~ label {
   width: 100%;
   background: #000000;
 }
+
 .bar:before,
 .bar:after {
   content: "";
@@ -92,18 +88,20 @@ input:valid ~ label {
   -moz-transition: 0.2s ease all;
   -webkit-transition: 0.2s ease all;
 }
+
 .bar:before {
   width: 50%;
   left: 50%;
 }
+
 .bar:after {
   right: 50%;
   width: 50%;
 }
 
 /* active state */
-input:focus ~ .bar:before,
-input:focus ~ .bar:after {
+input:focus~.bar:before,
+input:focus~.bar:after {
   width: 50%;
 }
 
@@ -119,7 +117,7 @@ input:focus ~ .bar:after {
 // }
 
 /* active state */
-input:focus ~ .highlight {
+input:focus~.highlight {
   -webkit-animation: inputHighlighter 0.3s ease;
   -moz-animation: inputHighlighter 0.3s ease;
   animation: inputHighlighter 0.3s ease;
@@ -130,24 +128,29 @@ input:focus ~ .highlight {
   from {
     background: #33ac93;
   }
+
   to {
     width: 0;
     background: transparent;
   }
 }
+
 @-moz-keyframes inputHighlighter {
   from {
     background: #33ac93;
   }
+
   to {
     width: 0;
     background: transparent;
   }
 }
+
 @keyframes inputHighlighter {
   from {
     background: #33ac93;
   }
+
   to {
     width: 0;
     background: transparent;

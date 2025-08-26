@@ -1,108 +1,51 @@
 <template>
   <div class="custom-tree-container" style="height: 100%">
     <el-affix :offset="60">
-      <div
-        class="tree-search"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <CButton style="width: 40px; display: inline-block"
-          ><el-icon><CirclePlusFilled /></el-icon
-        ></CButton>
-        <el-input
-          v-model="filterText"
-          style="width: 200px; margin-left: 10px"
-          placeholder="Filter keyword"
-          :suffix-icon="Filter"
-        />
+      <div class="tree-search" style="display: flex; align-items: center; margin-bottom: 10px">
+        <CButton style="width: 40px; display: inline-block"><el-icon>
+            <CirclePlusFilled />
+          </el-icon></CButton>
+        <el-input v-model="filterText" style="width: 200px; margin-left: 10px" placeholder="Filter keyword"
+          :suffix-icon="Filter" />
       </div>
     </el-affix>
     <div class="tree-div" id="api-tree-div" ref="container">
-      <div
-        ref="header"
-        class="project-summary g-unselect"
-        @click="enter_project_summary"
-        id="api-project-summery"
-      >
-        <img
-          style="width: 30px; height: 30px"
-          src="@/assets/logo/bird-main-no-bg-1.png"
-          alt=""
-        />
+      <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
+        <img style="width: 30px; height: 30px" src="@/assets/logo/bird-main-no-bg-1.png" alt="" />
         <span style="margin-left: 10px">用例概览</span>
       </div>
-      <el-tree
-        class="api-tree no-scroll"
-        id="api-tree"
-        v-if="loading === false"
-        ref="treeRef"
-        style="margin-top: 10px"
-        :data="dataSource"
-        node-key="id"
-        icon="ArrowRightBold"
-        @node-click="changeMenu"
-        :highlight-current="true"
-        :expand-on-click-node="false"
-        :default-expanded-keys="firstLevelKeys"
-        icon-class="none"
-        :filter-node-method="filterNode"
-      >
+      <el-tree class="api-tree no-scroll" id="api-tree" v-if="loading === false" ref="treeRef" style="margin-top: 10px"
+        :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu" :highlight-current="true"
+        :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none"
+        :filter-node-method="filterNode">
         <template #default="{ node, data }">
-          <div
-            v-if="
-              data.child_type === 0 ||
-              data.child_type === 1 ||
-              data.child_type === 3
-            "
-            class="tree-node g-unselect"
-            @mouseenter="current_node = data.id"
-            @mouseleave="current_node = -1"
-          >
-            <el-icon
-              v-if="data.child_type !== 3"
-              :size="8"
-              color="#606266"
-              :class="
-                node.expanded ? 'private-icon icon-expanded' : 'private-icon'
-              "
-              @click.stop="changeExpanded(node)"
-              ><ArrowRightBold
-            /></el-icon>
-            <div
-              style="
+          <div v-if="
+            data.child_type === 0 ||
+            data.child_type === 1 ||
+            data.child_type === 3
+          " class="tree-node g-unselect" @mouseenter="current_node = data.id" @mouseleave="current_node = -1">
+            <el-icon v-if="data.child_type !== 3" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+              " @click.stop="changeExpanded(node)">
+              <ArrowRightBold />
+            </el-icon>
+            <div style="
                 display: flex;
                 justify-content: center;
                 align-items: center;
-              "
-            >
+              ">
               <Fold v-if="data.child_type !== 3"></Fold>
-              <Case
-                class="case-icon"
-                style="height: 13px"
-                v-if="data.child_type === 3"
-              ></Case>
+              <Case class="case-icon" style="height: 13px" v-if="data.child_type === 3"></Case>
             </div>
             <div class="label-span-method">
               <div class="g-ellipsis">{{ data.name }}</div>
-              <span class="count-span" v-if="data.child_type < 2"
-                >({{ data.count }})</span
-              >
+              <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
             </div>
-            <el-popover
-              placement="right"
-              v-if="show_popover"
-              @show="set_awalys_show_popover(data.id)"
-              @before-leave="set_leave_popover"
-              :width="320"
-              trigger="click"
-            >
+            <el-popover placement="right" v-if="show_popover" @show="set_awalys_show_popover(data.id)"
+              @before-leave="set_leave_popover" :width="320" trigger="click">
               <template #reference>
-                <MoreButton
-                  v-if="
-                    current_node === data.id || awalys_show_popover === data.id
-                  "
-                  class="hover-menu-box"
-                  @click.stop
-                ></MoreButton>
+                <MoreButton v-if="
+                  current_node === data.id || awalys_show_popover === data.id
+                " class="hover-menu-box" @click.stop></MoreButton>
                 <div v-else></div>
               </template>
               <div class="more-action-div" style="width: 100%">
@@ -110,16 +53,10 @@
                 <el-divider></el-divider>
                 <div class="change-name">
                   <div style="width: 100%">
-                    <el-input
-                      :disabled="data.child_type === 0"
-                      v-model="data.name"
-                    ></el-input>
+                    <el-input :disabled="data.child_type === 0" v-model="data.name"></el-input>
                   </div>
                   <div>
-                    <DoneButton
-                      style="width: 1rem; height: 1rem"
-                      @click="chang_node_name(data)"
-                    ></DoneButton>
+                    <DoneButton style="width: 1rem; height: 1rem" @click="chang_node_name(data)"></DoneButton>
                   </div>
                 </div>
                 <el-divider></el-divider>
@@ -128,49 +65,35 @@
                 </div>
                 <el-divider></el-divider>
                 <div class="action-list" style="padding-bottom: 5px">
-                  <div
-                    v-if="data.child_type !== 3"
-                    class="action-item"
-                    @click="action(3, 'create_case_under_dir', data)"
-                  >
+                  <div v-if="data.child_type !== 3" class="action-item"
+                    @click="action(3, 'create_case_under_dir', data)">
                     <div class="action-icon">
                       <InterfaceIcon></InterfaceIcon>
                     </div>
                     <div>添加用例</div>
                   </div>
-                  <div
-                    v-if="data.child_type !== 3"
-                    class="action-item"
-                    @click="action(4, 'create_child_dir', data)"
-                  >
+                  <div v-if="data.child_type !== 3" class="action-item" @click="action(4, 'create_child_dir', data)">
                     <div class="action-icon">
                       <FolderPlusIcon></FolderPlusIcon>
                     </div>
                     <div>添加子目录</div>
                   </div>
-                  <div
-                    class="action-item"
-                    @click="action(2, 'copy_node', data)"
-                    v-if="data.child_type !== 0"
-                  >
-                    <div class="action-icon"><CopyIcon></CopyIcon></div>
+                  <div class="action-item" @click="action(2, 'copy_node', data)" v-if="data.child_type !== 0">
+                    <div class="action-icon">
+                      <CopyIcon></CopyIcon>
+                    </div>
                     <div>复制</div>
                   </div>
-                  <div
-                    class="action-item"
-                    @click="action(2, 'move_to', data)"
-                    v-if="data.child_type !== 0"
-                  >
-                    <div class="action-icon"><MoveIcon></MoveIcon></div>
+                  <div class="action-item" @click="action(2, 'move_to', data)" v-if="data.child_type !== 0">
+                    <div class="action-icon">
+                      <MoveIcon></MoveIcon>
+                    </div>
                     <div>移动到</div>
                   </div>
                 </div>
                 <el-divider></el-divider>
                 <div class="action-list" style="padding-bottom: 5px;" v-if="data.child_type !== 0">
-                  <div
-                    class="action-item action-delete-item"
-                    @click="action(2, 'delete_node', data)"
-                  >
+                  <div class="action-item action-delete-item" @click="action(2, 'delete_node', data)">
                     <div class="delete-front-item">
                       <div class="action-icon">
                         <DeleteIcon></DeleteIcon>
@@ -194,11 +117,7 @@
               <el-skeleton-item variant="h1" style="width: 100%" />
               <div v-for="item in 15" style="margin-top: 10px">
                 <el-skeleton-item variant="h1" :style="{ width: 10 + '%' }" />
-                <el-skeleton-item
-                  variant="h1"
-                  :style="{ width: randomStep() + '%' }"
-                  style="margin-left: 5%"
-                />
+                <el-skeleton-item variant="h1" :style="{ width: randomStep() + '%' }" style="margin-left: 5%" />
               </div>
             </template>
           </el-skeleton>
@@ -206,21 +125,10 @@
       </el-row>
     </div>
   </div>
-  <SimpleDialog
-    v-model="show_dialog"
-    @action="real_action"
-    :title="dialog_title"
-    :placeholder="dialog_placeholder"
-    :action_title="'新建'"
-  ></SimpleDialog>
-  <TreeDialog
-    v-model="show_tree_dialog"
-    v-if="show_tree_dialog"
-    :excluded_id="excluded_id"
-    :move_name="move_name"
-    @action="move_node"
-    :type="1"
-  >
+  <SimpleDialog v-model="show_dialog" @action="real_action" :title="dialog_title" :placeholder="dialog_placeholder"
+    :action_title="'新建'"></SimpleDialog>
+  <TreeDialog v-model="show_tree_dialog" v-if="show_tree_dialog" :excluded_id="excluded_id" :move_name="move_name"
+    @action="move_node" :type="1">
   </TreeDialog>
 </template>
 
@@ -347,7 +255,7 @@ watch(
       highlightNodeById(node_id);
     } else if (GlobalState.message === "change_empty_tab") {
       highlightNodeById(undefined);
-    } else if (GlobalState.message === "update_interface_name" || GlobalState.message === "change_name_from_dir") {
+    } else if (GlobalState.message === "update_case_name" || GlobalState.message === "change_name_from_dir") {
       const node = get_tree_node_by_id(
         dataSource.value[0],
         GlobalState.data.node_id
@@ -448,11 +356,14 @@ async function chang_node_name(data: any) {
   };
   await send_action(_data);
   tools.message("更新成功", proxy, "success");
+  console.log(data);
+  
   GlobalState.sendMessage(
     "change_name_from_tree",
     (data = {
       node_id: data.id,
       name: data.name,
+      target_id: data.target
     })
   );
 }
@@ -663,6 +574,7 @@ function changeExpanded(node: any) {
 .case-icon {
   color: var(--global-theme-color);
 }
+
 .el-divider--horizontal {
   margin: 0px !important;
   border-color: #f2f4f7;
@@ -670,41 +582,50 @@ function changeExpanded(node: any) {
   height: 1px;
   width: 100%;
 }
+
 .api-tree {
   overflow: auto;
 }
+
 .count-span {
   font-size: 12px;
   margin-left: 5px;
   color: var(--default-font-color);
 }
+
 .action-list {
   padding-top: 5px;
   display: flex;
   flex-direction: column;
   gap: 3px;
+
   .action-item:hover {
     background-color: var(--default-bg);
   }
+
   .action-delete-item:hover {
     background-color: var(--delete-bg-color) !important;
     color: var(--delete-font-color);
   }
+
   .action-delete-item {
     cursor: pointer;
     display: flex;
     justify-content: space-between !important;
     align-items: center;
+
     .delete-icon {
       padding-right: 10px;
     }
   }
+
   .delete-front-item {
     display: flex;
     align-items: center;
     justify-content: start;
     gap: 5px;
   }
+
   .action-item {
     cursor: pointer;
     padding-left: 10px;
@@ -716,9 +637,11 @@ function changeExpanded(node: any) {
     justify-content: start;
     align-items: center;
     gap: 5px;
+
     .action-icon {
       width: 1.3rem;
       height: 1.3rem;
+
       svg {
         width: 1.3rem;
         height: 1.3rem;
@@ -730,10 +653,12 @@ function changeExpanded(node: any) {
 .action-icon {
   width: 1.2em;
   height: 1.2em;
+
   path {
     fill: white;
   }
 }
+
 .action-header {
   height: 30px;
   padding-left: 10px;
@@ -743,22 +668,27 @@ function changeExpanded(node: any) {
   justify-content: start;
   align-items: center;
 }
+
 .change-name {
   padding: 5px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .more-action-div {
   width: 300px;
 }
+
 .menu-btn {
   width: 1em !important;
   height: 1em !important;
 }
+
 .hover-menu-box {
   width: 1.4rem !important;
   height: 0.9rem !important;
+
   svg {
     width: 14px !important;
     height: 14px !important;
@@ -776,33 +706,43 @@ function changeExpanded(node: any) {
   background-color: #f9f9f9;
   cursor: pointer;
 }
+
 .tree-div {
   height: 100%;
   // overflow: scroll;
 }
+
 .red {
   color: #ff6a6a;
 }
+
 .green {
   color: #3cb371;
 }
+
 .blue {
   color: #1e90ff;
 }
+
 .orange {
   color: #eead0e;
 }
+
 .purple {
-  background: linear-gradient(to right, #7b42f6, #b01eff); /* 从左到右的渐变 */
-  -webkit-background-clip: text; /* 背景裁剪为文字 */
+  background: linear-gradient(to right, #7b42f6, #b01eff);
+  /* 从左到右的渐变 */
+  -webkit-background-clip: text;
+  /* 背景裁剪为文字 */
   color: transparent;
   font-size: 12px !important;
 }
+
 .method-span {
   font-weight: 500;
   font-size: 10px;
   text-align: right;
 }
+
 .label-span {
   display: flex;
   align-items: center;
@@ -811,6 +751,7 @@ function changeExpanded(node: any) {
   width: 80%;
   padding-left: 5px;
 }
+
 .label-span-method {
   display: flex;
   align-items: center;
@@ -827,6 +768,7 @@ function changeExpanded(node: any) {
     "Helvetica Neue", arial, "Noto Sans", sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji";
 }
+
 .custom-tree-node {
   flex: 1;
   display: flex;
@@ -835,9 +777,11 @@ function changeExpanded(node: any) {
   font-size: 14px;
   padding-right: 8px;
 }
+
 .el-tree-node__expand-icon {
   color: var(--global-theme-color);
 }
+
 .tree-node {
   display: flex;
   justify-content: center;
@@ -849,21 +793,26 @@ function changeExpanded(node: any) {
 
 <style lang="scss">
 .el-popover {
-    padding: 10px 10px !important;
-    border-radius: 10px !important;
+  padding: 10px 10px !important;
+  border-radius: 10px !important;
 }
-.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
+
+.el-tree--highlight-current .el-tree-node.is-current>.el-tree-node__content {
   background-color: var(--greyLight-0);
 }
+
 .el-tree-node__content {
   border-radius: 5px;
 }
+
 .el-tree-node__label {
   width: 100%;
+
   .tree-node {
     width: 100%;
   }
 }
+
 .el-tree-node__expand-icon {
   display: none;
 }
@@ -876,11 +825,13 @@ function changeExpanded(node: any) {
   transition: transform 0.2s ease-in-out;
   padding: 5px;
 }
+
 .private-right-icon {
   transition: transform 0.2s ease-in-out;
   margin-left: 5px;
   margin-top: 3px;
 }
+
 .case-node {
   margin-left: 10px;
 }
@@ -893,5 +844,4 @@ function changeExpanded(node: any) {
 .el-tree-node__expand-icon {
   transition: none !important;
 }
-
 </style>

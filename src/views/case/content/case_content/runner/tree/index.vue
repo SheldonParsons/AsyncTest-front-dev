@@ -132,6 +132,7 @@ const caseStepChoiceRef: any = ref(null)
 const step_count: any = ref(0)
 const checked_count: any = ref(0)
 const loading: any = ref(false)
+const case_info: any = ref(null)
 
 const props = defineProps({
   case_id: {
@@ -165,6 +166,10 @@ watch(() => props.case_id, async (n, o) => {
   }
 })
 
+function get_case() {
+  return case_info.value
+}
+
 onMounted(async () => {
   loading.value = true
   let params: any = {}
@@ -172,9 +177,11 @@ onMounted(async () => {
     params.exclude_case = props.exclude_case
   }
   await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
-    treeData.value = res.steps
+    case_info.value = res
+    treeData.value = case_info.value.steps
   })
   setGlobalCheck()
+  emit("done")
   await tools.delaySec(200)
   loading.value = false
   await nextTick()
@@ -189,7 +196,15 @@ function get_select() {
   return filter_node
 }
 
-defineExpose({ get_select })
+function clean_choice() {
+  const oldStep = document.querySelector('.choice-step');
+  if (oldStep) oldStep.classList.remove('choice-step');
+
+  const oldChildren = document.querySelector('.choice-step-children');
+  if (oldChildren) oldChildren.classList.remove('choice-step-children');
+}
+
+defineExpose({ get_select, get_case, clean_choice })
 
 function setGlobalCheck() {
   const { totalNodes, checkedNodes } = analyzeTree(treeData.value)
@@ -251,7 +266,7 @@ const changeCheck = async (type: any) => {
   setGlobalCheck()
 }
 
-const emit = defineEmits(['scroll', 'choice', 'delete'])
+const emit = defineEmits(['scroll', 'choice', 'delete', 'done'])
 
 // 使用组合式函数
 const {

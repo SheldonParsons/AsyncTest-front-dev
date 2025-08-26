@@ -1,7 +1,7 @@
 <template>
     <Tooltip.Provider>
         <motion.div class="step-action-group-container">
-            <div v-for="(item, index) in group" :key="index" @mouseenter="show(item)" @mouseleave="hide">
+            <div v-for="(item, index) in group" :key="index" @mouseenter="onEnter(item)" @mouseleave="onLeave">
                 <Tooltip.Root :open="openItem === item">
                     <Tooltip.Trigger class="tooltip-trigger-switch" as-child>
                         <div class="item" @click.stop="action(item)"
@@ -98,11 +98,23 @@ const spring = {
 
 // 当前打开的 Tooltip key
 const openItem = ref<string | null>(null)
-function show(item: string) {
+let hideTimer: number | null = null
+
+function onEnter(item: string) {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
     openItem.value = item
 }
-function hide() {
-    openItem.value = null
+
+function onLeave(e: MouseEvent) {
+    const { currentTarget, relatedTarget } = e
+    // 如果还在同一个包裹容器内，就不算真正离开
+    if (currentTarget instanceof Node &&
+        relatedTarget instanceof Node &&
+        currentTarget.contains(relatedTarget)) {
+        return
+    }
+    // 轻微延迟再隐藏，避免边缘抖动
+    hideTimer = window.setTimeout(() => openItem.value = null, 80)
 }
 
 // 触发外部事件
@@ -133,8 +145,8 @@ function action(t: string) {
     }
 
     .item:hover {
-        background-color: rgba(132, 132, 132, 0.3)!important;
-        color: black!important;
+        background-color: rgba(132, 132, 132, 0.3) !important;
+        color: black !important;
     }
 
     svg {

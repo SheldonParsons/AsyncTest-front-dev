@@ -340,7 +340,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import SqlEditor from "@/components/common/editor/SqlEditor.vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import Params from "@/views/api/child_component/params.vue";
 import SpecialButton from "@/components/common/button/special_button.vue";
 import { ApiGetDatabaseInfo } from "@/api/project/index";

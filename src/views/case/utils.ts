@@ -31,6 +31,6 @@ export async function send_case_action(data: any) {
         });
     } catch (err) {
         window.$toast({ title: `请求异常：${err}`, type: 'error' })
-        return;
+        return false;
     }
 }

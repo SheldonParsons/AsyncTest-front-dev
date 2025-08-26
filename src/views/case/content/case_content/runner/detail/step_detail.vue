@@ -3,6 +3,12 @@
     <Interface v-if="data.type === 'interface'" :data="data" @save="save"></Interface>
     <Multitasker v-if="data.type === 'multitasker'" :data="data" :case_id="case_id" @save="save"></Multitasker>
     <Assertion v-if="data.type === 'assertion'" :data="data" @save="save"></Assertion>
+    <Database v-if="data.type === 'database'" :data="data" @save="save"></Database>
+    <Delay v-if="data.type === 'delay'" :data="data" @save="save"></Delay>
+    <Error v-if="data.type === 'error'" :data="data" @save="save"></Error>
+    <Group v-if="data.type === 'group'" :data="data" @save="save"></Group>
+    <Script v-if="data.type === 'script'" :data="data" @save="save"></Script>
+    <If v-if="data.type === 'if'" :data="data" @save="save"></If>
 </template>
 
 <script lang="ts" setup>
@@ -11,6 +17,12 @@ import Case from '@/views/case/content/case_content/runner/detail/case.vue'
 import Interface from '@/views/case/content/case_content/runner/detail/interface.vue'
 import Multitasker from '@/views/case/content/case_content/runner/detail/multitasker.vue'
 import Assertion from '@/views/case/content/case_content/runner/detail/assertion.vue'
+import Database from '@/views/case/content/case_content/runner/detail/database.vue'
+import Delay from '@/views/case/content/case_content/runner/detail/delay.vue'
+import Error from '@/views/case/content/case_content/runner/detail/error.vue'
+import Group from '@/views/case/content/case_content/runner/detail/group.vue'
+import Script from '@/views/case/content/case_content/runner/detail/script.vue'
+import If from '@/views/case/content/case_content/runner/detail/if.vue'
 const props = defineProps({
     data: {
         type: null,

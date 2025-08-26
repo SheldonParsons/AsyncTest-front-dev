@@ -1,7 +1,8 @@
 <template>
-  <div class="input-line-container" :style="{maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px'}">
-    <input class="line-input" :style="{background: 'transparent'}" v-model="modelValue" :placeholder="placeholder" />
-    <div :style="{background: `linear-gradient(to right,rgba(255, 255, 255, 0) 0%,${bgcolor} 20%);`}">
+  <div class="input-line-container" :style="{ maxWidth: maxWidthContainer === -1 ? '' : maxWidthContainer + 'px' }">
+    <input class="line-input" :style="{ background: 'transparent' }" v-model="modelValue" :placeholder="placeholder"
+      @keyup.enter="enter" />
+    <div :style="{ background: `linear-gradient(to right,rgba(255, 255, 255, 0) 0%,${bgcolor} 20%)` }">
       <motion.span ref="counterRef" :style="{
         color: mapRemainingToColor(charactersRemaining),
         willChange: 'transform',
@@ -19,13 +20,15 @@ import { motion, transform, useAnimate } from 'motion-v'
 // 定义 v-model 支持
 const modelValue = defineModel<string>()
 
-const emit = defineEmits<{
-  (e: 'change', value: string): void
-}>()
+const emit = defineEmits(['change', 'enter'])
 
 watch(modelValue, (newVal: any) => {
   emit('change', newVal)
 })
+
+function enter() {
+  emit("enter", modelValue.value)
+}
 
 const props = defineProps({
   placeholder: {
@@ -68,7 +71,7 @@ watch(charactersRemaining, (newVal) => {
 })
 </script>
 <style>
-.input-line-container{
+.input-line-container {
   position: relative;
   font-size: 14px;
   line-height: 1;
@@ -85,7 +88,7 @@ watch(charactersRemaining, (newVal) => {
   border-right: 0px;
   padding: 10px;
   padding-right: 40px;
-  border-radius: 0px!important;
+  border-radius: 0px !important;
   outline: none;
   width: 100%;
   box-sizing: border-box;

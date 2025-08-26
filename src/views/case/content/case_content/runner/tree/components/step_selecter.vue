@@ -96,10 +96,10 @@ const project_list: any = ref([])
 const interfaceTreeNodeRef: any = ref([])
 onMounted(async () => {
     show_selecter.value = true
-    ApiGetJoinProjects({}).then((res: any) => {
-        project_list.value = res.results
-        current_project.value = project_list.value.find((item: any) => item.id === Number(route.params.project))
-    })
+    // ApiGetJoinProjects({}).then((res: any) => {
+    //     project_list.value = res.results
+    //     current_project.value = project_list.value.find((item: any) => item.id === Number(route.params.project))
+    // })
 })
 
 const route = useRoute();
@@ -153,7 +153,6 @@ function filter_choice_interface(data: any) {
 
 // 暴露方法（open/close，可选）
 const open = () => {
-
     visible.value = true
     backToCasePage()
     show_selecter.value = true

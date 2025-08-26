@@ -4,27 +4,25 @@
       <el-row style="width: 100%">
         <el-col :span="showShortcuts ? 20 : 24">
           <div class="editor-header">
-            <div style="font-size: 14px; font-weight: 400">
+            <div>
               {{ pythonVersion }}
             </div>
           </div>
           <PythonEditor ref="editorRef" :code="real_code" :disable="disabled" @change="code_change"></PythonEditor>
         </el-col>
-        <Transition name="slide">
-          <el-col v-if="showShortcuts" :span="4" class="tran-base">
-            <div class="script-code-shortcuts">
-              <div class="shortcuts-title">快捷代码</div>
-              <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
-                @click="insertCode(shortcut.code)">
-                {{ shortcut.label }}
-              </div>
-              <!-- Conditionally render the response shortcut -->
-              <div v-if="isPostScript" class="shortcut-item" @click="insertCode('await at.response()\\n')">
-                获取响应内容
-              </div>
+        <el-col v-if="showShortcuts" :span="4" class="tran-base">
+          <div class="script-code-shortcuts">
+            <div class="shortcuts-title">快捷代码</div>
+            <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
+              @click="insertCode(shortcut.code)">
+              {{ shortcut.label }}
             </div>
-          </el-col>
-        </Transition>
+            <!-- Conditionally render the response shortcut -->
+            <div v-if="isPostScript" class="shortcut-item" @click="insertCode('await at.response()\\n')">
+              获取响应内容
+            </div>
+          </div>
+        </el-col>
       </el-row>
     </div>
   </div>
@@ -32,7 +30,7 @@
 
 <script lang="ts" setup>
 import { ref, onMounted } from "vue";
-import PythonEditor from "@/components/common/editor/PythonEditor.vue"; // 请确保路径正确
+import PythonEditor from "@/components/common/editor/PythonEditor.vue";
 
 const emit = defineEmits(["change"])
 
@@ -40,7 +38,7 @@ const emit = defineEmits(["change"])
 const props = defineProps({
   pythonVersion: {
     type: String,
-    default: "Python-12.0",
+    default: "Python 3.12.6",
   },
   disabled: {
     type: Boolean,
@@ -70,7 +68,7 @@ const props = defineProps({
       { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
       { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
       { label: "获取环境名称", code: "at.env_name\n" },
-      { label: "创建自定义数据集", code: "at.DataSet()\n"}
+      { label: "创建自定义数据集", code: "at.DataSet()\n" }
     ],
   },
 });
@@ -84,7 +82,7 @@ function insertCode(text: string) {
   editorRef.value?.insertText(text);
 }
 
-onMounted(() => {
+onMounted(async () => {
   real_code.value = props.code
 })
 
@@ -102,9 +100,10 @@ async function code_change(value: string) {
 
 .script-content {
   .editor-header {
+    height: 40px;
     background-color: #f7f7f7;
-    padding: 8px 12px;
     border-bottom: 1px solid #e0e0e0;
+    box-sizing: border-box;
   }
 }
 

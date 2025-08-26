@@ -8,7 +8,71 @@
             <div class="step-item">
                 <div>断言模式</div>
                 <div>
-                    <Radio v-model="data.assert_mode" :items="assertMode"></Radio>
+                    <Radio v-model="data.assert_mode" :items="assertionMode"></Radio>
+                </div>
+            </div>
+            <div class="step-item" v-if="data.assert_mode === 'interface'">
+                <div style="display: inline-block;white-space: nowrap;">断言区域</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_range"
+                        :items="interfaceRange" @change="(val: any) => data.interface_range = val.key"></Select>
+                </div>
+            </div>
+            <div class="step-item" v-if="data.assert_mode === 'interface' && data.interface_range === 'body'">
+                <div style="display: inline-block;white-space: nowrap;">提取方式</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <Radio v-model="data.interface_body_range" :items="interfaceBodyRange"></Radio>
+                </div>
+            </div>
+            <div class="step-item"
+                v-if="data.assert_mode === 'interface' && data.interface_range === 'body' && data.interface_body_range === 'pattern'">
+                <div style="display: inline-block;white-space: nowrap;">Jsonpath 表达式</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <InputAnimation style="flex: 40" v-model="data.interface_body_jsonpath" placeholder="$.data[0].name"
+                        :maxLength="50">
+                    </InputAnimation>
+                </div>
+            </div>
+            <div class="step-item"
+                v-if="data.assert_mode === 'interface' && data.interface_range === 'body'">
+                <div style="display: inline-block;white-space: nowrap;">断言方式</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_body_pattern"
+                        :items="patternMode" @change="(val:any) => data.interface_body_pattern = val.key"></Select>
+                    <InputAnimation style="flex: 40" v-model="data.interface_body_value" placeholder="{{ name }}"
+                        :maxLength="50">
+                    </InputAnimation>
+                </div>
+            </div>
+            <div class="step-item"
+                v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
+                <div style="display: inline-block;white-space: nowrap;">Header Key</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <InputAnimation style="flex: 40" v-model="data.interface_header_key" placeholder="{{ name }}"
+                        :maxLength="50">
+                    </InputAnimation>
+                </div>
+            </div>
+            <div class="step-item"
+                v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
+                <div style="display: inline-block;white-space: nowrap;">断言方式</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_header_pattern"
+                        :items="patternMode" @change="(val:any) => data.interface_header_pattern = val.key"></Select>
+                    <InputAnimation style="flex: 40" v-model="data.interface_header_value" placeholder="{{ name }}"
+                        :maxLength="50">
+                    </InputAnimation>
+                </div>
+            </div>
+            <div class="step-item"
+                v-if="data.assert_mode === 'interface' && data.interface_range === 'code'">
+                <div style="display: inline-block;white-space: nowrap;">断言方式</div>
+                <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
+                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_code_pattern"
+                        :items="patternMode" @change="(val:any) => data.interface_code_pattern = val.key"></Select>
+                    <InputAnimation style="flex: 40" v-model="data.interface_code_value" placeholder="{{ name }}"
+                        :maxLength="50">
+                    </InputAnimation>
                 </div>
             </div>
             <div class="step-item" v-if="data.assert_mode === 'fast'">
@@ -26,7 +90,7 @@
                 <MarkDown :data="assertionScriptDemo"></MarkDown>
             </div>
             <div class="step-item" style="width: 100%;" v-if="data.assert_mode === 'script'">
-                <PythonCode @change="changeLoopCode" :code="data.script"></PythonCode>
+                <PythonCode :shortcuts="script_demo" @change="changeLoopCode" :code="data.script"></PythonCode>
             </div>
             <div class="step-footer">
                 <div>
@@ -44,7 +108,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import AstButton from '@/components/common/general/button.vue'
-import { assertMode, patternMode, assertionScriptDemo } from '@/views/case/utils/constants'
+import { interfaceBodyRange, interfaceRange, assertionMode, patternMode, assertionScriptDemo } from '@/views/case/utils/constants'
 import Select from '@/components/common/general/select_public.vue'
 import Radio from '@/components/common/general/radio.vue'
 import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
@@ -59,6 +123,15 @@ const props = defineProps({
         default: -1
     }
 })
+
+const script_demo = [
+    { label: "获取全局变量", code: "at.gv.get('variable_key')\n" },
+    { label: "获取环境变量", code: "at.env.get('variable_key')\n" },
+    { label: "获取临时变量", code: "at.temp.get('variable_key')\n" },
+    { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
+    { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
+    { label: "获取环境名称", code: "at.env_name\n" },
+]
 
 onMounted(async () => {
     // 添加全局事件监听

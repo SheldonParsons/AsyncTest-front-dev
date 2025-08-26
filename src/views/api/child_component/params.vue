@@ -27,39 +27,6 @@
       </div>
     </div>
   </el-dialog>
-  <!-- <el-popover
-    :visible="visible"
-    placement="right"
-    class="params-popover"
-    :width="props.width"
-  >
-    <template #reference>
-      <Star @click="openHandle"></Star>
-    </template>
-<MainPageHeader @close="visible = false" v-if="params_page_status === 0"></MainPageHeader>
-<SettingPageHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 1"></SettingPageHeader>
-<GeneratorHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 2"></GeneratorHeader>
-<FixedHeader @close="visible = false" @back="toggleItems(0)" v-if="params_page_status === 3"></FixedHeader>
-<el-divider></el-divider>
-<div class="params-container">
-  <div ref="gridContainer" class="grid-container">
-    <div v-if="params_page_status === 0" style="height: 1px; width: 350px" ref="itemContaniner">
-      <Variable v-if="showVariable" @click="toggleItems(1)" style="margin-bottom: 10px"></Variable>
-      <Method @click="toggleItems(2)" style="margin-bottom: 10px"></Method>
-      <Equal @click="toggleItems(3)"></Equal>
-    </div>
-    <div style="width: 350px" ref="itemContaniner" v-if="params_page_status === 1">
-      <ParamsVar @reload_height="toggleItems(1)" @insert_action="insert_action" :interface="interface"></ParamsVar>
-    </div>
-    <div style="height: 139px; width: 350px" ref="itemContaniner" v-if="params_page_status === 2">
-      <ParamsGenerator @reload_height="toggleItems(2)" @insert_action="insert_action"></ParamsGenerator>
-    </div>
-    <div style="height: 139px; width: 350px" ref="itemContaniner" v-if="params_page_status === 3">
-      <ParamsFixed @reload_height="toggleItems(3)" @insert_action="insert_action"></ParamsFixed>
-    </div>
-  </div>
-</div>
-</el-popover> -->
 </template>
 
 <script setup lang="ts">

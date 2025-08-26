@@ -57,7 +57,6 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from "vue-router";
 import { ApiGetJoinProjects } from '@/api/project/index'
 import { AnimatePresence, motion } from "motion-v"
-import { usePointerPosition } from "motion-plus-vue"
 
 const current_project: any = ref({
     id: -1,
@@ -68,10 +67,10 @@ const project_list: any = ref([])
 const interfaceTreeNodeRef: any = ref([])
 onMounted(async () => {
     show_selecter.value = true
-    ApiGetJoinProjects({}).then((res: any) => {
-        project_list.value = res.results
-        current_project.value = project_list.value.find((item: any) => item.id === Number(route.params.project))
-    })
+    // ApiGetJoinProjects({}).then((res: any) => {
+    //     project_list.value = res.results
+    //     current_project.value = project_list.value.find((item: any) => item.id === Number(route.params.project))
+    // })
 })
 
 const route = useRoute();

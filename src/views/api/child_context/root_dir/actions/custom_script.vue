@@ -54,7 +54,7 @@
               <el-col :span="20">
                 <div class="editor-header">
                   <div style="font-size: 14px; font-weight: 400">
-                    Python-12.0
+                    Python 3.12.6
                   </div>
                 </div>
                 <PythonEditor
@@ -262,7 +262,7 @@ async function code_change(value: string) {
   transition: max-height 0.3s ease;
 }
 .editor-header {
-  padding: 8px 12px;
+  height: 40px;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   padding-left: 0.75rem;
