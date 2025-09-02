@@ -64,7 +64,6 @@ const props = defineProps({
     default: () => [
       { label: "获取全局变量", code: "at.gv.get('variable_key')\n" },
       { label: "获取环境变量", code: "at.env.get('variable_key')\n" },
-      { label: "获取临时变量", code: "at.temp.get('variable_key')\n" },
       { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
       { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
       { label: "获取环境名称", code: "at.env_name\n" },

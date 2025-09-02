@@ -5,7 +5,7 @@ export const envStrategy: any = [
     },
     {
         key: 'self_case',
-        value: '使用用例当前环境设置'
+        value: '使用该用例环境'
     }
 ]
 
@@ -138,10 +138,10 @@ export const multitaskerLoopStrategy: any = [
 
 export const createDatasetScript: string = `\`\`\`python
 # 示例代码
-row_definitions = ["name", "age", "gender", "nickname"]
+col_definitions = ["name", "age", "gender", "nickname"]
 row_matrix_data = [["Sheldon", 18, "male", "sheldon"], ["Cindy", 16, "female", "cindy"]]
 dataset = at.DataSet()
-dataset.set_columns(row_definitions)
+dataset.set_columns(col_definitions)
 for row in row_matrix_data:
     dataset.add_row(row)
 # 关键：请返回一个正整数、可迭代对象、DataSet实例

@@ -91,7 +91,7 @@ function action() {
     const case_list = filter_choice_case(choice_nodes)
     if (case_list === false) return
     visible.value = false
-    resolver?.({ action: 'comfirm', case_list: case_list })
+    resolver?.({ action: 'comfirm', case_list: case_list, project: current_project.value })
 }
 
 function filter_choice_case(data: any) {

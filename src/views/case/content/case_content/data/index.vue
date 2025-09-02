@@ -281,7 +281,7 @@ async function action_add_last_blank_row() {
     }
     const result = await send_action(_data)
     if (!result) return
-    action_add_row(0, result)
+    action_add_row(rowData.value.length, result)
 }
 
 async function action_add_row(index: number, data: any) {

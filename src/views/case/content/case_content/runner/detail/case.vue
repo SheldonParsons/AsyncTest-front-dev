@@ -1,7 +1,10 @@
 <template>
+    <div style="padding: 10px 10px 0px 10px;display: flex;justify-content: start;" class="project-label-container" ref="containerRef">
+        <span style="font-size: 0.9rem;font-weight: 500;">所属项目：</span><motion.span style="font-size: 16px;" class="project-label">{{ data.project_name }}</motion.span>
+    </div>
     <div class="step-tips">
         <div>
-            引用的测试用例将无法使用数据驱动，默认仅会被执行一次。获取环境变量时可以正常使用引用用例本身的环境变量，对应的服务也将使用用例本身的服务信息。而旗下的步骤在您设置【临时变量/环境变量/全局变量】时将会穿透到当前用例的对应变量，可以被其他步骤所使用。
+            引用的测试用例将根据它自己的执行方式、驱动方式对旗下的步骤进行执行。获取环境变量时可以正常使用引用用例本身项目的环境变量，对应的服务也将使用用例本身的服务信息。
         </div>
     </div>
     <div class="step-info">
@@ -44,12 +47,15 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, onBeforeUnmount } from 'vue'
+import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { motion, animate, stagger } from "motion-v"
+import { splitText } from "motion-plus"
 import CaseStep from '@/views/case/content/case_content/runner/tree/index.vue'
 import AstButton from '@/components/common/general/button.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import Select from '@/components/common/general/select_public.vue'
 import { envStrategy, errorCaseStrategy, errorParamsCoverStrategy } from '@/views/case/utils/constants'
+const containerRef = ref<HTMLDivElement | null>(null)
 const props = defineProps({
     data: {
         type: null,
@@ -72,7 +78,33 @@ function changeParamStraegy(item: any) {
 onMounted(async () => {
     // 添加全局事件监听
     window.addEventListener("keydown", addAltE);
+    show_project_name()
 });
+
+function show_project_name() {
+    document.fonts.ready.then(() => {
+        if (!containerRef.value) return
+
+        // Hide the container until the fonts are loaded
+        containerRef.value.style.visibility = "visible"
+
+        const { words } = splitText(
+            containerRef.value.querySelector("span")!
+        )
+
+        // Animate the words in the h1
+        animate(
+            words,
+            { opacity: [0, 1], y: [10, 0] },
+            {
+                type: "spring",
+                duration: 2,
+                bounce: 0,
+                delay: stagger(0.05),
+            }
+        )
+    })
+}
 
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", addAltE);
@@ -107,7 +139,6 @@ function check() {
 .step-tips {
     padding: 10px;
 
-
     div {
         box-sizing: border-box;
         border-radius: 8px;
@@ -115,8 +146,24 @@ function check() {
         font-weight: 500;
         font-size: 0.9rem;
         padding: 10px;
-        color: rgba($color: #000000, $alpha: 0.5);
+        color: rgba($color: #000000, $alpha: 0.8);
         background: linear-gradient(80deg, #ffd460 0%, #f8b98c 40%, #f07b3f 90%)
     }
+}
+
+.project-label-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: left;
+    visibility: hidden;
+}
+
+.project-label {
+    background-color: black;
+    color: white !important;
+    padding: 3px 5px;
+    border-radius: 5px;
+    font-size: 12px !important;
 }
 </style>

@@ -321,8 +321,7 @@ const add_step = async (step_type: any, data: any, range_type: any, position: an
     }
     res = await send_action(_data)
   } else if (step_type === 'case') {
-    const { case_list } = await caseChoiceRef.value.open(props.case_id)
-    console.log(case_list);
+    const { case_list, project } = await caseChoiceRef.value.open(props.case_id)
 
     const _data = {
       type: 0,
@@ -332,7 +331,9 @@ const add_step = async (step_type: any, data: any, range_type: any, position: an
         step_type: step_type,
         case_list: case_list,
         position: position,
-        target_id: target_id
+        target_id: target_id,
+        project_id: project.id,
+        project_name: project.name
       }
     }
     res = await send_action(_data)

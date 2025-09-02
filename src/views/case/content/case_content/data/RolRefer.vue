@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import FilterBtn from '@/components/common/mini_btn/filter.vue'
 import Info from '@/components/common/hover/info.vue'
 import More from '@/views/case/content/case_content/data/comp/col_select.vue'

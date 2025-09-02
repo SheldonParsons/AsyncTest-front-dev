@@ -8,7 +8,7 @@
             <div class="step-item">
                 <div>选择数据库</div>
                 <div>
-                    <Select :current="data.env_strategy" :items="databse_list" @change="changeDatabase"></Select>
+                    <Select :current="data.database_id" :items="databse_list" @change="changeDatabase"></Select>
                 </div>
             </div>
             <div class="step-item" style="align-items: start;">

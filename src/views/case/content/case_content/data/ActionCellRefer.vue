@@ -7,7 +7,6 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps } from 'vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 
 // AG Grid 会传过来这几个 props
