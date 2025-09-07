@@ -1,6 +1,8 @@
 <template>
-    <div style="padding: 10px 10px 0px 10px;display: flex;justify-content: start;" class="project-label-container" ref="containerRef">
-        <span style="font-size: 0.9rem;font-weight: 500;">所属项目：</span><motion.span style="font-size: 16px;" class="project-label">{{ data.project_name }}</motion.span>
+    <div style="padding: 10px 10px 0px 10px;display: flex;justify-content: start;" class="project-label-container"
+        ref="containerRef">
+        <span style="font-size: 0.9rem;font-weight: 500;">所属项目：</span>
+        <motion.span style="font-size: 16px;" class="project-label">{{ data.project_name }}</motion.span>
     </div>
     <div class="step-tips">
         <div>
