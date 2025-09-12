@@ -242,7 +242,8 @@
         </el-row>
         <el-row style="padding-top: 20px" v-if="props.element.data.source === 1">
           <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
               <div style="display: flex">
                 Header 名<span style="
                     font-size: 20px;
@@ -250,6 +251,7 @@
                     margin-left: 3px;
                     margin-right: 3px;
                   ">*</span>
+              </div>
               </div>
               <div style="width: 600px">
                 <el-input :disabled="props.disable" v-model="props.element.data.header_name"></el-input>
@@ -259,7 +261,8 @@
         </el-row>
         <el-row style="padding-top: 20px" v-if="props.element.data.source === 2">
           <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
               <div style="display: flex">
                 Cookie 名<span style="
                     font-size: 20px;
@@ -267,6 +270,7 @@
                     margin-left: 3px;
                     margin-right: 3px;
                   ">*</span>
+              </div>
               </div>
               <div style="width: 600px">
                 <el-input :disabled="props.disable" v-model="props.element.data.cookie_name"></el-input>
@@ -276,7 +280,8 @@
         </el-row>
         <el-row style="padding-top: 20px" v-if="props.element.data.source === 3">
           <el-col :span="17">
-            <div style="display: flex; justify-content: end; align-items: center">
+            <div style="display: flex; justify-content: start; align-items: center">
+              <div style="display: inline-block; white-space: nowrap;padding-left: 20px;box-sizing: border-box;">
               <div style="display: flex">
                 耗时单位<span style="
                     font-size: 20px;
@@ -284,6 +289,7 @@
                     margin-left: 3px;
                     margin-right: 3px;
                   ">*</span>
+              </div>
               </div>
               <div style="width: 600px">
                 <el-switch :disabled="props.disable" v-model="props.element.data.waste_time_unit" active-text="秒"

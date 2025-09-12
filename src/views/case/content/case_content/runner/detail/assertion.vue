@@ -33,19 +33,18 @@
                     </InputAnimation>
                 </div>
             </div>
-            <div class="step-item"
-                v-if="data.assert_mode === 'interface' && data.interface_range === 'body'">
+            <div class="step-item" v-if="data.assert_mode === 'interface' && data.interface_range === 'body'">
                 <div style="display: inline-block;white-space: nowrap;">断言方式</div>
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
                     <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_body_pattern"
-                        :items="patternMode" @change="(val:any) => data.interface_body_pattern = val.key"></Select>
-                    <InputAnimation style="flex: 40" v-model="data.interface_body_value" placeholder="{{ name }}"
-                        :maxLength="50">
+                        :items="patternMode" @change="(val: any) => data.interface_body_pattern = val.key"></Select>
+                    <InputAnimation
+                        v-if="data.interface_body_pattern !== 'exist' && data.interface_body_pattern !== 'noexist'"
+                        style="flex: 40" v-model="data.interface_body_value" placeholder="{{ name }}" :maxLength="50">
                     </InputAnimation>
                 </div>
             </div>
-            <div class="step-item"
-                v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
+            <div class="step-item" v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
                 <div style="display: inline-block;white-space: nowrap;">Header Key</div>
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
                     <InputAnimation style="flex: 40" v-model="data.interface_header_key" placeholder="{{ name }}"
@@ -53,23 +52,22 @@
                     </InputAnimation>
                 </div>
             </div>
-            <div class="step-item"
-                v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
+            <div class="step-item" v-if="data.assert_mode === 'interface' && data.interface_range === 'header'">
                 <div style="display: inline-block;white-space: nowrap;">断言方式</div>
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
                     <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_header_pattern"
-                        :items="patternMode" @change="(val:any) => data.interface_header_pattern = val.key"></Select>
-                    <InputAnimation style="flex: 40" v-model="data.interface_header_value" placeholder="{{ name }}"
-                        :maxLength="50">
+                        :items="patternMode" @change="(val: any) => data.interface_header_pattern = val.key"></Select>
+                    <InputAnimation
+                        v-if="data.interface_header_pattern !== 'exist' && data.interface_header_pattern !== 'noexist'"
+                        style="flex: 40" v-model="data.interface_header_value" placeholder="{{ name }}" :maxLength="50">
                     </InputAnimation>
                 </div>
             </div>
-            <div class="step-item"
-                v-if="data.assert_mode === 'interface' && data.interface_range === 'code'">
+            <div class="step-item" v-if="data.assert_mode === 'interface' && data.interface_range === 'code'">
                 <div style="display: inline-block;white-space: nowrap;">断言方式</div>
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
                     <Select :padding="'8px 8px'" style="flex: 20" :current="data.interface_code_pattern"
-                        :items="patternMode" @change="(val:any) => data.interface_code_pattern = val.key"></Select>
+                        :items="patternCodeMode" @change="(val: any) => data.interface_code_pattern = val.key"></Select>
                     <InputAnimation style="flex: 40" v-model="data.interface_code_value" placeholder="{{ name }}"
                         :maxLength="50">
                     </InputAnimation>
@@ -80,7 +78,7 @@
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
                     <InputAnimation style="flex: 40" v-model="data.key" placeholder="{{ name }}" :maxLength="50">
                     </InputAnimation>
-                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.pattern" :items="patternMode"
+                    <Select :padding="'8px 8px'" style="flex: 20" :current="data.pattern" :items="patternFastMode"
                         @change="changePattern"></Select>
                     <InputAnimation style="flex: 40" v-model="data.value" placeholder="{{ variable }}" :maxLength="50">
                     </InputAnimation>
@@ -108,7 +106,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import AstButton from '@/components/common/general/button.vue'
-import { interfaceBodyRange, interfaceRange, assertionMode, patternMode, assertionScriptDemo } from '@/views/case/utils/constants'
+import { interfaceBodyRange, interfaceRange, assertionMode, patternMode, patternFastMode, patternCodeMode, assertionScriptDemo } from '@/views/case/utils/constants'
 import Select from '@/components/common/general/select_public.vue'
 import Radio from '@/components/common/general/radio.vue'
 import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";

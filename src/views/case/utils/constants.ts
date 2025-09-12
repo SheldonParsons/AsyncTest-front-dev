@@ -16,7 +16,7 @@ export const errorMultitaskerStrategy: any = [
     },
     {
         key: 'current_multitasker',
-        value: '结束当前执行器'
+        value: '结束子执行器'
     },
     {
         key: 'multitasker',
@@ -24,7 +24,7 @@ export const errorMultitaskerStrategy: any = [
     },
     {
         key: 'current_case',
-        value: '结束当前用例'
+        value: '结束子用例'
     },
     {
         key: 'case',
@@ -47,12 +47,16 @@ export const errorCaseStrategy: any = [
         value: '跳过当前步骤'
     },
     {
+        key: 'ref_child_case',
+        value: '结束引用子用例'
+    },
+    {
         key: 'ref_case',
         value: '结束引用用例'
     },
     {
         key: 'current_case',
-        value: '结束当前用例'
+        value: '结束子用例'
     },
     {
         key: 'case',
@@ -188,10 +192,29 @@ export const patternMode: any = [
     { key: "contains", value: "包含" },
     { key: "notContains", value: "不包含" },
     { key: "regex", value: "正则匹配" },
-    { key: "exists", value: "存在" },
-    { key: "notExists", value: "不存在" },
-    { key: "inset", value: "属于集合" },
-    { key: "uninset", value: "不属于集合" }
+];
+
+export const patternFastMode: any = [
+    { key: "eq", value: "等于" },
+    { key: "neq", value: "不等于" },
+    { key: "gt", value: "大于" },
+    { key: "gte", value: "大于或等于" },
+    { key: "lt", value: "小于" },
+    { key: "lte", value: "小于或等于" },
+    { key: "contains", value: "包含" },
+    { key: "notContains", value: "不包含" },
+    { key: "regex", value: "正则匹配" },
+];
+
+export const patternCodeMode: any = [
+    { key: "eq", value: "等于" },
+    { key: "neq", value: "不等于" },
+    { key: "gt", value: "大于" },
+    { key: "gte", value: "大于或等于" },
+    { key: "lt", value: "小于" },
+    { key: "lte", value: "小于或等于" },
+    { key: "contains", value: "包含" },
+    { key: "notContains", value: "不包含" }
 ];
 
 export const assertMode: any = [
@@ -205,7 +228,7 @@ export const assertMode: any = [
     }
 ]
 
-export const assertionMode:any = [
+export const assertionMode: any = [
     {
         key: 'interface',
         value: "上一个接口"
