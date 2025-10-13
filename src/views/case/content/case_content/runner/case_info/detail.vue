@@ -28,7 +28,8 @@
                 </div>
                 <div style="width: 20px;height: 100%;display: flex;align-items: center;">
                     <TooltipAnimation :isOpen="showRunTooltip">
-                        <template #trigger><span style="color: rgba(0,0,0);width: 20px;height: 20px;"
+                        <template #trigger><span
+                                style="color: rgba(0,0,0);width: 1rem;height: 20px;display: flex;align-items: center;cursor: pointer;"
                                 @mouseenter="showRunTooltip = true" @mouseleave="showRunTooltip = false">
                                 <InfoSvg />
                             </span></template>
@@ -56,8 +57,8 @@
                 </div>
                 <div style="width: 20px;height: 100%;">
                     <TooltipAnimation :isOpen="showIdTooltip">
-                        <template #trigger><span style="color: rgba(0,0,0);" @mouseenter="showIdTooltip = true"
-                                @mouseleave="showIdTooltip = false">
+                        <template #trigger><span style="color: rgba(0,0,0);width: 0.7rem;"
+                                @mouseenter="showIdTooltip = true" @mouseleave="showIdTooltip = false">
                                 <InfoSvg />
                             </span></template>
                         <template #default>

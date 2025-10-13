@@ -54,7 +54,7 @@ import RunningImage from '@/views/api/public_dialog/motion_dev_component/image/r
 const position = usePointerPosition()
 
 const items = [
-    { label: 'Login', number: 1, image: LoginImage },
+    { label: 'Vsiti', number: 1, image: LoginImage },
     { label: 'Setting', number: 2, image: SettingImage },
     { label: 'Running', number: 3, image: RunningImage }
 ]

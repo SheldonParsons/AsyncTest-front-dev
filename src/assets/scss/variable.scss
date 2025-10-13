@@ -14,27 +14,24 @@ $white: '#e6e8eb';
 
 .no-scroll::-webkit-scrollbar {
   display: none;
-  /* 隐藏滚动条 */
-}
-
-.no-scroll {
-  /* 允许滚动 */
-  overflow: auto; /* 或者 overflow-x: auto; 和 overflow-y: auto; 单独设置 */
-
-  /* 隐藏滚动条 - 兼容 Webkit（Chrome、Safari、Edge） */
-  -webkit-overflow-scrolling: touch; /* 保证滚动体验 */
-}
-
-.no-scroll::-webkit-scrollbar {
-  display: none; /* 隐藏滚动条 - 兼容 Chrome、Safari、Edge */
+  /* 隐藏滚动条 - 兼容 Chrome、Safari、Edge */
 }
 
 .no-scroll {
   /* 隐藏滚动条 - 兼容 Firefox */
-  scrollbar-width: none; /* 隐藏滚动条 - Firefox */
+  scrollbar-width: none;
+  /* 隐藏滚动条 - Firefox */
 
   /* 隐藏滚动条 - 兼容 IE/Edge */
-  -ms-overflow-style: none; /* 隐藏滚动条 - IE/Edge */
+  -ms-overflow-style: none;
+  /* 隐藏滚动条 - IE/Edge */
+  /* 允许滚动 */
+  overflow: auto;
+  /* 或者 overflow-x: auto; 和 overflow-y: auto; 单独设置 */
+
+  /* 隐藏滚动条 - 兼容 Webkit（Chrome、Safari、Edge） */
+  -webkit-overflow-scrolling: touch;
+  /* 保证滚动体验 */
 }
 
 .g-flex {

@@ -4,7 +4,7 @@
             <ul>
                 <li v-for="(name, index) in tabs" :key="index" :class="{ selected: selectedTab === index }" role="tab"
                     :aria-selected="selectedTab === index">
-                    <motion.div v-if="selectedTab === index" layout-id="selected-indicator"
+                    <motion.div v-if="selectedTab === index" :layout-id="uniqueLayoutId"
                         class="selected-indicator" />
                     <motion.button :animate="{ color: selectedTab === index ? '#ffffff' : '#333' }"
                         :transition="{ color: { duration: 0 } }" @press-start="() => setSelectedTab(index)"
@@ -22,14 +22,20 @@
 
 <script setup lang="ts">
 import { motion } from 'motion-v'
+import { getCurrentInstance } from 'vue'
+const instance = getCurrentInstance()
+const uniqueLayoutId = `selected-indicator-${instance?.uid}`
 
-const tabs = ["测试步骤", "测试数据", "执行记录"]
 const emit = defineEmits(['change'])
 
 const props = defineProps({
     selectedTab: {
         type: Number,
         default: 0
+    },
+    tabs: {
+        type: null,
+        default: ["测试步骤", "测试数据", "执行记录"]
     }
 })
 

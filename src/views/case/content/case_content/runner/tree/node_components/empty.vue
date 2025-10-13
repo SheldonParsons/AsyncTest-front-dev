@@ -22,7 +22,8 @@ const emit: any = defineEmits(['changeHover',])
 const props = defineProps<{
     data: any
     hoveredNodeId: number | null,
-    read_only: number
+    read_only: number,
+status_mapping: any
 }>()
 const handleNodeHover = (isHovering: boolean) => {
     if (props.read_only) return

@@ -29,8 +29,11 @@
                         <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
-                <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
+                <motion.div class="action" v-if="read_only !== 3" :class="{ 'action-hidden': read_only > 0 }">
                     <ActionGroup :group="action_group" @action="action"></ActionGroup>
+                </motion.div>
+                <motion.div class="action" v-else>
+                    <StepStatua :data="data" :status_mapping="status_mapping"></StepStatua>
                 </motion.div>
             </motion.div>
         </motion.div>
@@ -46,6 +49,7 @@ import ActionGroup from '@/views/case/content/case_content/runner/tree/component
 import { ref } from 'vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
+import StepStatua from '@/views/case/record/comp/step_info/step_status.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck', 'action'])
 const props = defineProps<{
@@ -53,7 +57,8 @@ const props = defineProps<{
     hoveredNodeId: number | null
     check: string,
     action_group: any,
-    read_only: number
+    read_only: number,
+status_mapping: any
 }>()
 const showIdTooltip = ref(false)
 

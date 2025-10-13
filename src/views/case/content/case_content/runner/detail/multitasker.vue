@@ -49,7 +49,7 @@
                     <TooltipAnimation :isOpen="showIdTooltip">
                         <template #trigger><span style="color: rgba(0,0,0);" @mouseenter="showIdTooltip = true"
                                 @mouseleave="showIdTooltip = false">
-                                <InfoSvg />
+                                <InfoSvg style="width: 0.9rem;" />
                             </span></template>
                         <template #default>
                             <div style="display: flex;flex-direction: column;gap: 5px;">

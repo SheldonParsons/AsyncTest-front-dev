@@ -245,8 +245,8 @@ async function done_statement() {
     }
 
     .special-btn {
-        width: 1rem !important;
-        height: 1rem !important;
+        width: 1.5rem !important;
+        height: 1.5rem !important;
     }
 
     .title {

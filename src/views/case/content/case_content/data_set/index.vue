@@ -52,7 +52,7 @@
         :before_comfirm="check_delete_dataset_confirm_text">
         <div style="display: flex;flex-direction: column;gap: 10px;">
             <div style="color: #ec6d51;font-size: 0.9rem;padding-left: 5px;">
-                请确保您知道该行为的后果，确认删除？请键入<span>“确认删除”</span>在下方输入框。
+                该数据集以及旗下的所有环境数据都将被删除，您确认删除吗？请键入<span>“确认删除”</span>在下方输入框。
             </div>
             <div>
                 <input v-model="deleteConfirmText" placeholder="确认删除">

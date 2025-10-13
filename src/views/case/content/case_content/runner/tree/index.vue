@@ -28,50 +28,51 @@
           <Multitasker :read_only="read_only" v-if="data.type === 'multitasker'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown"></Multitasker>
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping"></Multitasker>
           <Group :read_only="read_only" v-if="data.type === 'group'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown"></Group>
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping"></Group>
           <If :read_only="read_only" v-if="data.type === 'if'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown"></If>
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping"></If>
           <Interface :read_only="read_only" v-if="data.type === 'interface'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Interface>
           <Database :read_only="read_only" v-if="data.type === 'database'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Database>
           <Case :read_only="read_only" v-if="data.type === 'case'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Case>
           <Error :read_only="read_only" v-if="data.type === 'error'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Error>
           <Script :read_only="read_only" v-if="data.type === 'script'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Script>
           <Delay :read_only="read_only" v-if="data.type === 'delay'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping">
           </Delay>
           <Assertion :read_only="read_only" v-if="data.type === 'assertion'" @action="step_action"
             :action_group="stepActionGroup[data.type]" @changeCheck="(val: any) => changeCheckHandle(val, data)"
             :check="data.check" :data="data" :hoveredNodeId="hoveredNodeId" @changeHover="handleNodeHover"
-            @canDragAction="onHandlePointerDown"></Assertion>
-          <Empty :read_only="read_only" v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data">
+            @canDragAction="onHandlePointerDown" :status_mapping="status_mapping"></Assertion>
+          <Empty :read_only="read_only" v-if="data.type === 'empty'" :hoveredNodeId="hoveredNodeId" :data="data"
+            :status_mapping="status_mapping">
           </Empty>
           <Line v-if="showBottomLine(node)" class="target-line-button hidden"></Line>
         </motion.div>
@@ -146,6 +147,10 @@ const props = defineProps({
   exclude_case: {
     default: false,
     type: Boolean
+  },
+  status_mapping: {
+    default: null,
+    type: null
   }
 })
 
@@ -236,7 +241,7 @@ const deleteChoiceNode = async () => {
 }
 
 const changeCheck = async (type: any) => {
-  if (props.read_only === 2) return
+  if (props.read_only === 2 || props.read_only === 3) return
   let _data
   if (type === 'check') {
     _data = {
@@ -403,6 +408,11 @@ function findParentNode(tree: any, targetId: any, parent = null) {
 }
 
 const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
+  if (props.read_only === 3) {
+    choice_ui_change(data)
+    emit('choice', data, node, tree_node, event)
+    return
+  }
   if (props.read_only > 0) return
   if (data.type === 'empty') {
     const father_node = findParentNode(treeData.value, data.id)
@@ -418,6 +428,11 @@ const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
     return
   }
   current_choice_step.value = data
+  choice_ui_change(data)
+  emit('choice', data, node, tree_node, event)
+}
+
+function choice_ui_change(data: any) {
   // 直接查找并移除，不用forEach
   const oldStep = document.querySelector('.choice-step');
   if (oldStep) oldStep.classList.remove('choice-step');
@@ -437,7 +452,6 @@ const show_step_detail = (data: any, node: any, tree_node: any, event: any) => {
       childrenEl.classList.add('choice-step-children');
     }
   }
-  emit('choice', data, node, tree_node, event)
 }
 
 const getMaxId = (nodes: any) => {
@@ -618,7 +632,7 @@ async function changeCheckHandle(
   type: 'none' | 'check' | 'part',
   nodeData: any
 ) {
-  if (props.read_only === 2) return
+  if (props.read_only === 2 || props.read_only === 3) return
   // 1. 拿到从根到当前节点的路径
   const path = findPath(treeData.value, nodeData.id);
   if (!path) return;

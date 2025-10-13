@@ -25,7 +25,7 @@ tools.delay = async () => {
   });
 };
 
-tools.delaySec = async (time:number) => {
+tools.delaySec = async (time: number) => {
   return new Promise((resolve) => {
     setTimeout(() => {
       resolve(true);
@@ -43,6 +43,69 @@ tools.getFormattedTimeMs = (timestamp: any) => {
     "-" +
     String(date.getDate()).padStart(2, "0") +
     " " +
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0") +
+    ":" +
+    String(date.getSeconds()).padStart(2, "0") +
+    "." +
+    String(date.getMilliseconds()).padStart(3, "0");
+  return formatted;
+};
+
+tools.getFormattedTimeOriginMsHasYear = (timestamp: any) => {
+  const date = new Date(timestamp);
+
+  // 格式化为 yyyy:MM:dd HH:mm:ss.ms
+  const formatted =
+    date.getFullYear() +
+    "-" +
+    String(date.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(date.getDate()).padStart(2, "0") +
+    " " +
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0") +
+    ":" +
+    String(date.getSeconds()).padStart(2, "0") +
+    "." +
+    String(date.getMilliseconds()).padStart(3, "0");
+  return formatted;
+};
+
+tools.getFormattedTimeOriginMs = (timestamp: any) => {
+  const date = new Date(timestamp);
+
+  // 格式化为 yyyy:MM:dd HH:mm:ss.ms
+  const formatted =
+    // date.getFullYear() +
+    // "-" +
+    String(date.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(date.getDate()).padStart(2, "0") +
+    " " +
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0") +
+    ":" +
+    String(date.getSeconds()).padStart(2, "0") +
+    "." +
+    String(date.getMilliseconds()).padStart(3, "0");
+  return formatted;
+};
+
+tools.getFormattedTimeNoYMD = (timestamp: any) => {
+  const date = new Date(timestamp);
+
+  // 格式化为 yyyy:MM:dd HH:mm:ss.ms
+  const formatted =
+    // date.getFullYear() +
+    // "-" +
+    // String(date.getMonth() + 1).padStart(2, "0") +
+    // "-" +
+    // String(date.getDate()).padStart(2, "0") +
+    // " " +
     String(date.getHours()).padStart(2, "0") +
     ":" +
     String(date.getMinutes()).padStart(2, "0") +
@@ -146,5 +209,34 @@ tools.getStartAndEndDateTime = (privateFormatString: string) => {
     return false;
   }
 };
+
+function result_check(data: any): boolean {
+  if (data.hasOwnProperty("result") && data.result === 0) {
+    window.$toast({ title: data.data, type: 'error' })
+    return false;
+  }
+  return true;
+}
+
+
+/**
+ * 通用的异步操作函数，处理调用、成功检查和异常捕获
+ * @param callback - 需要执行的异步函数 (例如一个 API 请求)
+ * @param args - 传递给 callback 函数的参数列表
+ * @returns 成功时返回 callback 的结果，失败或异常时返回 false 或 undefined
+ */
+tools.send = async (callback: (...args: any[]) => Promise<any>, ...args: any[]) => {
+  try {
+    // 使用展开语法(...)将所有参数传递给 callback
+    const resp = await callback(...args);
+
+    if (!result_check(resp)) return false;
+
+    return resp;
+  } catch (err) {
+    window.$toast({ title: `请求异常：${err}`, type: 'error' });
+    return; // 在 catch 块中，隐式返回 Promise<undefined>
+  }
+}
 
 export default tools;

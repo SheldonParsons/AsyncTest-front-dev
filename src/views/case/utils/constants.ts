@@ -47,6 +47,10 @@ export const errorCaseStrategy: any = [
         value: '跳过当前步骤'
     },
     {
+        key: 'ref_case_inner',
+        value:'由引用用例内部抉择'
+    },
+    {
         key: 'ref_child_case',
         value: '结束引用子用例'
     },
@@ -88,6 +92,25 @@ export const errorCaseRealStrategy: any = [
     {
         key: 'raise',
         value: '交由上级处理'
+    },
+    {
+        key: 'task',
+        value: '结束任务'
+    }
+]
+
+export const errorTaskRealStrategy:any = [
+    {
+        key: 'current_step',
+        value: '跳过当前步骤'
+    },
+    {
+        key: 'current_case',
+        value: '结束当前用例'
+    },
+    {
+        key: 'case',
+        value: '结束用例'
     },
     {
         key: 'task',

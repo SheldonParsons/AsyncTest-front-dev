@@ -1,7 +1,7 @@
 <template>
   <div v-if="loading === false">
     <el-tree class="api-tree no-scroll" id="api-tree" ref="treeRef" style="margin-top: 10px" :data="dataSource"
-      node-key="id" icon="ArrowRightBold" @node-click="change_menu" :highlight-current="true"
+      node-key="target" icon="ArrowRightBold" @node-click="change_menu" :highlight-current="true"
       :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none">
       <template #default="{ node, data }">
         <div v-if="
@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
+import { ref, watch, onMounted, nextTick } from "vue";
 import tools from "@/utils/tools";
 import { getTree } from "@/api/program/tree";
 import Fold from "@/assets/svg/tree/fold.vue";
@@ -75,7 +75,7 @@ import FoldExpend from '@/assets/svg/tree/fold_expend.vue'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import Case from "@/assets/svg/tree/case.vue";
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
-const emit = defineEmits(["change_menu"]);
+const emit = defineEmits(["change_menu", "change_check", "ready"]);
 const dataSource: any = ref([]);
 const treeRef: any = ref(null)
 const loading = ref(true);
@@ -106,6 +106,7 @@ const props = defineProps({
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
+  emit('ready')
 });
 
 watch(
@@ -128,7 +129,16 @@ function get_read_only_status(data: any) {
   return 0
 }
 
-defineExpose({ getCheckedNodes })
+function check(ids: number[], checked: Boolean) {
+  if (!treeRef.value) {
+    return;
+  }
+  ids.forEach(id => {
+    treeRef.value!.setChecked(id, checked, true);
+  });
+}
+
+defineExpose({ getCheckedNodes, check })
 
 function get_check(node: any) {
   if (node.checked === true) {
@@ -145,6 +155,7 @@ function changeCheck(node: any, data: any) {
   const wantChecked = !node.checked      // 想切换就取反
   // 第三个参数 deep：是否级联影响子孙。通常用 false。
   treeRef.value!.setChecked(data, wantChecked, true)
+  emit('change_check', { data, wantChecked })
 }
 
 function traverseTree(nodes: any, processNode: any) {
@@ -179,6 +190,7 @@ function get_show_tooltip(data: any) {
 
 
 async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
+  if (props.project === -1) return
   loading.value = true;
   dataSource.value = [];
   let data: any = {
@@ -188,15 +200,16 @@ async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
     type: props.is_case ? 1 : 0
   };
   console.log(props.is_case);
-  
+
   if (props.is_case === true) {
     data['current_case'] = props.case_id
   }
   await getTree(data).then(async (data: any) => {
     traverseTree(data, check_is_reference)
     dataSource.value.push(data[0]);
-    firstLevelKeys.value.push(data[0].id)
+    firstLevelKeys.value.push(data[0].target)
     await tools.delay();
+
     loading.value = false;
   });
 }

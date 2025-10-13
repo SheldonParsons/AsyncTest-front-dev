@@ -43,6 +43,7 @@ defineProps({
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.16);
     user-select: none;
     pointer-events: auto;
+    max-width: 500px;
 }
 
 .tooltip-arrow {

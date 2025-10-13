@@ -10,9 +10,10 @@
                     <Dialog.Content as-child>
                         <motion.div class="input-modal-container" :initial="dialogInitialState"
                             :animate="dialogOpenState" :exit="dialogInitialState" style="top: -50%;"
-                            :style="{ transformPerspective: 200 }">
-                            <div class="modal">
-                                <Dialog.Title class="dialog-title">
+                            :style="{ transformPerspective: 200, top: topMove }">
+                            <div class="modal" :style="{ backgroundColor: bgtype === 'black' ? '#0b1011' : 'white' }">
+                                <Dialog.Title class="dialog-title"
+                                    :style="{ color: bgtype === 'black' ? 'white' : 'black' }">
                                     {{ title }}
                                 </Dialog.Title>
                                 <Dialog.Description>
@@ -21,14 +22,16 @@
                                 <div class="controls">
                                     <!-- 优先使用自定义 controls 插槽 -->
                                     <slot name="controls">
-                                        <Dialog.Close as-child>
-                                            <motion.button @click="cancelAction" :whilePress="{ scale: 0.9 }"
-                                                class="cancel">
+                                        <Dialog.Close as-child v-if="showCancel">
+                                            <motion.button @click="cancelAction" :whilePress="{ scale: 0.95 }" :whileHover="{ scale: 1.1 }"
+                                                class="cancel"
+                                                :style="{ color: bgtype === 'black' ? 'white' : 'black', backgroundColor: bgtype === 'black' ? 'black' : 'white' }">
                                                 {{ cancel_title }}
                                             </motion.button>
                                         </Dialog.Close>
                                         <Dialog.Close as-child>
-                                            <motion.button @click="comfirmAction" :whilePress="{ scale: 0.9 }">
+                                            <motion.button @click="comfirmAction" :whilePress="{ scale: 0.95 }" :whileHover="{ scale: 1.1 }"
+                                                :style="{ color: bgtype === 'black' ? 'black' : 'white', backgroundColor: bgtype === 'black' ? 'white' : 'black' }">
                                                 {{ confirm_title }}
                                             </motion.button>
                                         </Dialog.Close>
@@ -47,7 +50,7 @@
 import { AnimatePresence, motion } from 'motion-v'
 // @ts-ignore
 import { Dialog } from 'reka-ui/namespaced'
-import { ref, nextTick, watch } from 'vue'
+import { ref } from 'vue'
 
 const emit = defineEmits(['cancel', 'comfirm'])
 let resolver: any
@@ -56,7 +59,10 @@ const props = defineProps({
     cancel_title: { type: String, default: "取消" },
     confirm_title: { type: String, default: "确定" },
     close_after_action: { type: Boolean, default: true },
-    before_comfirm: { type: null, default: null }
+    before_comfirm: { type: null, default: null },
+    bgtype: { type: String, default: 'black' },
+    topMove: { type: String, default: '-20% !important' },
+    showCancel: { type: Boolean, default: true },
 })
 
 const visible = ref(false)
@@ -134,7 +140,6 @@ const dialogInitialState: any = {
 </script>
 
 <style lang="scss" scoped>
-
 /* 你的样式原样保留 */
 .dialog-container {
     display: flex;
@@ -151,7 +156,6 @@ const dialogInitialState: any = {
 }
 
 .input-modal-container {
-    top: -20% !important;
     position: fixed;
     inset: 0;
     z-index: 100 !important;
@@ -170,7 +174,7 @@ const dialogInitialState: any = {
         pointer-events: auto;
 
         .dialog-title {
-            font-weight: 400;
+            font-weight: 500;
             font-size: 16px;
             margin: 0 0 20px;
             color: rgb(255, 255, 255);
@@ -179,7 +183,7 @@ const dialogInitialState: any = {
         .controls button {
             background-color: white;
             color: black;
-            font-size:0.9rem;
+            font-size: 0.9rem;
             padding: 8px 10px;
             border-radius: 10px;
             border: none;
@@ -190,6 +194,8 @@ const dialogInitialState: any = {
             display: flex;
             justify-content: flex-end;
             gap: 10px;
+            border: none!important;
+            padding-top: 10px;
         }
 
         .controls button.cancel {

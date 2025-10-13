@@ -11,6 +11,8 @@ import useClipboard from "vue-clipboard3/dist/esm/index.js";
 import "highlightjs-copy/dist/highlightjs-copy.min.css";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.min.css";
+import json from 'highlight.js/lib/languages/json';
+hljs.registerLanguage('json', json);
 
 const props = defineProps({
   data: {
@@ -43,7 +45,45 @@ marked.setOptions({
 });
 const renderedHtml: any = ref("");
 const update = () => {
-  renderedHtml.value = marked.parse(props.data || "");
+  const inputData = props.data;
+  let markdownToRender = "";
+
+  // 1. 首先检查传入的数据是否是 JS 对象 (并且不是 null)
+  if (typeof inputData === 'object' && inputData !== null) {
+    try {
+      // 将 JS 对象格式化为带 2 个空格缩进的 JSON 字符串
+      const prettyJson = JSON.stringify(inputData, null, 2);
+      // 将其包装在 Markdown 的 json 代码块中
+      markdownToRender = `\`\`\`json\n${prettyJson}\n\`\`\``;
+    } catch (e) {
+      markdownToRender = "Error: Invalid object provided.";
+    }
+  }
+  // 2. 如果是字符串，则尝试判断它是否为 JSON 字符串
+  else if (typeof inputData === 'string') {
+    const trimmedData = inputData.trim();
+    // 检查字符串是否以 '{' 或 '[' 开头，这是 JSON 的一个强烈信号
+    if ((trimmedData.startsWith('{') && trimmedData.endsWith('}')) || (trimmedData.startsWith('[') && trimmedData.endsWith(']'))) {
+      try {
+        // 尝试解析，如果成功，说明是有效的 JSON
+        const parsedJson = JSON.parse(trimmedData);
+        // 重新字符串化以获得统一的、美观的格式
+        const prettyJson = JSON.stringify(parsedJson, null, 2);
+        markdownToRender = `\`\`\`json\n${prettyJson}\n\`\`\``;
+      } catch (e) {
+        // 解析失败，说明它只是一个看起来像 JSON 的普通字符串，按原样渲染
+        markdownToRender = inputData;
+      }
+    } else {
+      // 3. 如果不是 JSON 格式的字符串，则作为普通 Markdown 渲染
+      markdownToRender = inputData;
+    }
+  }
+  // 4. 处理其他原始类型（如 null, undefined），转换为空字符串
+  else {
+    markdownToRender = inputData || "";
+  }
+  renderedHtml.value = marked.parse(markdownToRender);
   // 渲染到 DOM 后，执行高亮和按钮挂载
   // nextTick 也可用，但 onMounted + watch 足够
   requestAnimationFrame(() => {

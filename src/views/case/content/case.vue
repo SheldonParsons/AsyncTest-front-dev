@@ -23,7 +23,7 @@
                         </AstButton>
                     </div>
                     <div class="case-group-tab-atcion" v-if="current_page === 0">
-                        <motion.div class="run-btn" :whilePress="{ scale: 0.9 }" :whileHover="{ scale: 1.05 }">
+                        <motion.div @click="run_case_task" class="run-btn" :whilePress="{ scale: 0.9 }" :whileHover="{ scale: 1.05 }">
                             <RunCaseSvg />
                             <div>运行</div>
                         </motion.div>
@@ -95,6 +95,9 @@
                 </SplitterGroup>
             </motion.div>
         </div>
+        <div class="record-content" v-if="current_page === 2">
+            <Record :case_id="props.case_id" ref="recordRef"></Record>
+        </div>
         <DialogAnimation ref="tableRef" title="编辑表格名称" cancel_title="取消" :confirm_title="'确认'"
             :before_comfirm="check_table_name">
             <div>
@@ -116,6 +119,7 @@ import TabSelectCol from '@/assets/motion/tab_select_col.vue'
 import CaseSteps from '@/views/case/content/case_content/runner/tree/index.vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { ref, computed, watch, nextTick } from 'vue'
+import Record from '@/views/case/record/index.vue'
 import CaseInfo from '@/views/case/content/case_content/runner/case_info/index.vue'
 import DataCore from '@/views/case/content/case_content/data/index.vue'
 import DataSet from '@/views/case/content/case_content/data_set/index.vue'
@@ -130,11 +134,13 @@ import CaseSetting from '@/views/case/content/case_content/runner/case_info/deta
 import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
 import { send_action, send_case_action } from '@/views/case/utils'
+import { ApiRunCase } from '@/api/case/case/index'
 import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
 import _ from 'lodash'
 const table_name = ref('')
 const tableRef: any = ref(null)
 const deleteTableRef: any = ref(null)
+const recordRef:any = ref(null)
 const route = useRoute()
 /** 拿到右侧面板实例 */
 const panelRef: any = ref(null)
@@ -180,9 +186,15 @@ watch(current_page, (newVal, oldVal) => {
     }, 0)
 })
 
+async function runCase() {
+    current_page.value = 2
+    await nextTick();
+    if (recordRef.value) {
+        recordRef.value.openCaseRecord();
+    }
+}
+
 function scroll() {
-    console.log("in.,.,,dsm,d,amd,a");
-    console.log(document.querySelector('.caseContentRef'));
     setTimeout(() => {
         const container: any = document.querySelector('.caseContentRef') // 你的滚动容器
         container.scrollTo({
@@ -207,6 +219,30 @@ async function delete_step(data_id: any) {
 
 function case_done() {
     case_info.value = caseStepRef.value.get_case()
+}
+
+async function run_case_task() {
+    const data = {
+        type: 1,
+        child_action_type: "run_case_task",
+        content: {
+            case_id: props.case_id
+        }
+    }
+    await ApiRunCase(data).then(async (res: any) => {
+        console.log(res);
+        if (res.hasOwnProperty("result")) {
+            if (res.result === 50001) {
+                window.$toast({ title: res.data, type: 'error' })
+                return false;
+            } else if (res.result === 0) {
+                window.$toast({ title: res.data, type: 'error' })
+            }
+        } else {
+            window.$toast({ title: '用例开始执行', type: 'success' })
+            await runCase()
+        }
+    })
 }
 
 async function setting_case() {
@@ -521,10 +557,13 @@ const props = defineProps({
     }
 
     .case-content,
-    .data-content {
+    .data-content,
+    .record-content {
         height: 100%;
         flex: 1 1 auto;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
     }
 }
 

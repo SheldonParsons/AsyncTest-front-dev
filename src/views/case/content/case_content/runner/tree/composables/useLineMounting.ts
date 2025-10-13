@@ -25,7 +25,6 @@ export function useLineMounting() {
 
     // 2. 重新收集需要挂线的父节点 id
     const nodesMap = treeRef.value.store.nodesMap
-    console.log(nodesMap);
     
     Object.values(nodesMap).forEach((tn: any) => {
       if (!tn.isLeaf && tn.parent.childNodes[tn.parent.childNodes.length - 1].id === tn.id) {

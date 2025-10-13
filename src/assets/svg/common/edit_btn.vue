@@ -42,8 +42,8 @@
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 16px;
+  height: 16px;
 
   /* 悬停效果 */
   &:hover {

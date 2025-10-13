@@ -6,12 +6,13 @@
             :key="data.id"></DragHandle>
         <div v-else style="width: 14px;"></div>
         <!-- 节点内容 -->
-        <motion.div class="node-content" :class="{ 'no-exist': data.is_exist === false }" :animate="{}" :transition="{ duration: 0.2 }">
+        <motion.div class="node-content" :class="{ 'no-exist': data.is_exist === false }" :animate="{}"
+            :transition="{ duration: 0.2 }">
             <motion.div class="node-info">
                 <motion.div class="info">
                     <CheckBox :check="check" @change="changeCheck"></CheckBox>
                     <motion.span class="node-label" :animate="{ color: hoveredNodeId === data.id ? '#000' : '#333' }">
-                        <CaseAnimationIcon :key="data.id"></CaseAnimationIcon>
+                        <Case style="height: 1rem;"></Case>
                     </motion.span>
                     <motion.div :class="{ 'inactive-label': data.check === 'none' }" class="label">
                         <TooltipAnimation :isOpen="showIdTooltip">
@@ -29,8 +30,11 @@
                         <div class="g-e">{{ data.label }}</div>
                     </motion.div>
                 </motion.div>
-                <motion.div class="action" :class="{ 'action-hidden': read_only > 0 }">
+                <motion.div class="action" v-if="read_only !== 3" :class="{ 'action-hidden': read_only > 0 }">
                     <ActionGroup :group="action_group" @action="action"></ActionGroup>
+                </motion.div>
+                <motion.div class="action" v-else>
+                    <StepStatua :data="data" :status_mapping="status_mapping"></StepStatua>
                 </motion.div>
             </motion.div>
         </motion.div>
@@ -41,11 +45,12 @@
 import { motion } from 'motion-v'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
-import CaseAnimationIcon from '@/views/case/content/case_content/runner/tree/components/case_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import { ref } from 'vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import Case from "@/assets/svg/tree/case.vue";
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
+import StepStatua from '@/views/case/record/comp/step_info/step_status.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck', 'action'])
 const props = defineProps<{
@@ -53,7 +58,8 @@ const props = defineProps<{
     hoveredNodeId: number | null
     check: string,
     action_group: any,
-    read_only: number
+    read_only: number,
+    status_mapping: any
 }>()
 
 const showIdTooltip = ref(false)
