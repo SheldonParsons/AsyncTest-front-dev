@@ -161,10 +161,10 @@ function opening() {
 }
 
 function switchRouter(routerName: string) {
-  if (window.location.hostname !== 'localhost' && routerName === "case") {
-    tools.message('暂未开放，敬请期待', proxy, 'info');
-    return
-  }
+  // if (window.location.hostname !== 'localhost' && routerName === "case") {
+  //   tools.message('暂未开放，敬请期待', proxy, 'info');
+  //   return
+  // }
   if (routerName === 'ai_application_ground') {
     tools.message('功能升级中，暂时停用，敬请期待', proxy, 'info');
     return
