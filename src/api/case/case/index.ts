@@ -40,10 +40,38 @@ export function ApiRunCase(data: any): Promise<String> {
     });
 }
 
+// 编译、运行任务
+export function ApiRunTask(data: any): Promise<String> {
+    return new Promise((resolve, reject) => {
+        http
+            .httpPost("/api/task/", data)
+            .then((res: any) => {
+                resolve(res);
+            })
+            .catch((err: any) => {
+                reject(err);
+            });
+    });
+}
+
+// 编译、运行任务
+export function ApiCreateTask(data: any, params: any = {}): Promise<String> {
+    return new Promise((resolve, reject) => {
+        http
+            .httpPost("/api/task/", data, params = params)
+            .then((res: any) => {
+                resolve(res);
+            })
+            .catch((err: any) => {
+                reject(err);
+            });
+    });
+}
+
 // 任务列表
-export function ApiGetTaskList(params: any = {}): Promise<String> {
+export function ApiGetTaskList(config: any): Promise<String> {
     return new Promise((resolve) => {
-        http.httpGet(`/api/task/`, params = params).then((res: any) => {
+        http.cancelHttpGet(`/api/task/`, config).then((res: any) => {
             resolve(res);
         });
     });

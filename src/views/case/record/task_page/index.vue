@@ -12,9 +12,10 @@
                         <div class="title title-update-person">运行人</div>
                         <div class="title title-status">任务状态</div>
                         <div class="title title-action">操作</div>
+                        <div class="title title-action">Running</div>
                     </div>
                 </motion.div>
-                <div class="data no-scroll">
+                <div class="data no-scroll" v-if="data.length !== 0">
                     <motion.div @click.stop="action('to_record', item, 0)" :initial="{ opacity: 0 }"
                         :animate="{ opacity: 1 }" :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }"
                         class="data-item" v-for="(item, index) in data" :key="index">
@@ -22,13 +23,14 @@
                             item.name }}</span></div>
                         <div class="title title-name g-e"><span>{{
                             item.run_times }}</span></div>
-                        <div class="title title-update" @click.stop style="cursor: text;"><span @click.stop>{{
+                        <div class="title title-update" style="cursor: pointer;"><span>{{
                             timeAgo(item.last_started_at)
                                 }}</span>
                         </div>
-                        <div class="title title-update-person" @click.stop style="cursor: text;">{{ item.updated_user }}
+                        <div class="title title-update-person" style="cursor: pointer;">{{ item.updated_user ||
+                            '未运行' }}
                         </div>
-                        <div class="title title-update-person" @click.stop style="cursor: text;" :class="item.status">{{
+                        <div class="title title-update-person" style="cursor: pointer;" :class="item.status">{{
                             item.status.toUpperCase() }}
                         </div>
                         <div class="title title-action" @click.stop>
@@ -38,13 +40,20 @@
                                 </ActionGroup>
                             </div>
                         </div>
+                        <div class="title title-action" @click.stop>
+                            <motion.div @click="run_task(item)" class="run-btn" :whilePress="{ scale: 0.9 }"
+                                :whileHover="{ scale: 1.05 }">
+                                <RunCaseSvg />
+                                <div>运行</div>
+                            </motion.div>
+                        </div>
                     </motion.div>
                 </div>
             </div>
         </SplitterPanel>
         <SplitterPanel :default-size="20" :min-size="20" :max-size="20">
             <div class="task-pagination">
-                <Pagination :total="total_count" :size="page_size"></Pagination>
+                <Pagination :total="total_count" :size="page_size" @changePage="changePageReal"></Pagination>
             </div>
         </SplitterPanel>
     </SplitterGroup>
@@ -59,7 +68,7 @@
             </div>
         </div>
     </DialogAnimation>
-    <DialogAnimation ref="taskDetailRef" title="编辑任务详情" cancel_title="取消" confirm_title="确认" :bgtype="'white'"
+    <DialogAnimation ref="taskDetailRef" title="编辑任务详情" cancel_title="取消" confirm_title="修改" :bgtype="'white'"
         :before_comfirm="check_task_detail" :topMove="'0% !important'">
         <TaskDetail ref="taskDetailCheckRef" :can_edit="range_type === 'project'" :task_info="task_info"></TaskDetail>
     </DialogAnimation>
@@ -76,8 +85,13 @@ import { ApiGetTaskList, ApiDeleteTask, ApiEditTask } from '@/api/case/case/inde
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import { send_action } from '@/views/case/record/utils/Sender'
 import tools from '@/utils/tools'
+import { useRoute } from 'vue-router'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import TaskDetail from '@/views/case/record/task_page/detail.vue'
+import RunCaseSvg from '@/assets/logo/final/match_vue/play.vue'
+import { HttpClass } from "@/utils/http";
+
+const route = useRoute()
 
 const data: any = ref([])
 
@@ -94,7 +108,13 @@ const task_info: any = ref(null)
 
 const poller: any = ref(null)
 
-const emit = defineEmits(['action'])
+let cancelTokenSource: any;
+
+const emit = defineEmits(['action', 'run'])
+
+function run_task(task: any) {
+    emit('run', task)
+}
 
 const actionDesc: any = {
     copy: '复制',
@@ -118,6 +138,8 @@ async function deleteTask(id: any) {
     })
 }
 
+
+
 async function action(t: string, item: any, index: number) {
     if (t === 'to_record') {
         emit('action', item.id)
@@ -139,15 +161,13 @@ async function action(t: string, item: any, index: number) {
         if (result.action === 'cancel') return
 
         const data = taskDetailCheckRef.value.get_task_info()
-        console.log(data);
         const update_date = {
+            name: data.name,
             env: data.env,
             loop_strategy: data.loop_strategy,
             error_strategy: data.error_strategy,
             case_list: data.case_list.map((item: any) => item.id)
         }
-        console.log(update_date);
-
         await tools.send(ApiEditTask, data.id, update_date)
     }
 }
@@ -165,6 +185,9 @@ async function check_task_detail() {
 }
 
 function timeAgo(timestamp: number) {
+    if (timestamp === 0) {
+        return '未运行'
+    }
     const now = Date.now()
     const diff = Math.floor((now - timestamp) / 1000) // 秒差
     if (diff < 10) return "刚刚"
@@ -177,7 +200,8 @@ function timeAgo(timestamp: number) {
 }
 
 onMounted(async () => {
-    await get_task()
+    cancelTokenSource = getAbortController()
+    await get_task(cancelTokenSource)
 })
 
 async function refresh_data() {
@@ -185,9 +209,11 @@ async function refresh_data() {
         case: props.case_id,
         range_type: props.range_type,
         size: page_size.value,
+        project: Number(route.params.project),
         page: page_number.value
     }
-    await ApiGetTaskList(_data).then((res: any) => {
+    cancelTokenSource = getAbortController()
+    await ApiGetTaskList({ params: _data, cancelToken: cancelTokenSource.token }).then((res: any) => {
         if (res.data.length === 0) {
             poller.value.stop()
             return
@@ -261,6 +287,14 @@ async function startPolling(callback: any) {
     poller.value.start()
 }
 
+function refreshList() {
+    if (poller.value) {
+        poller.value.stop()
+    }
+    cancelTokenSource = getAbortController()
+    get_task(cancelTokenSource)
+}
+
 onUnmounted(() => {
     if (poller.value) {
         poller.value.stop()
@@ -279,17 +313,33 @@ async function getFirstTask() {
     return data.value[0]
 }
 
-defineExpose({ getFirstTask })
+defineExpose({ getFirstTask, refreshList })
 
+function getAbortController() {
+    if (cancelTokenSource) {
+        cancelTokenSource.cancel("取消重复请求");
+    }
+    return HttpClass.createCancelToken();
+}
 
-async function get_task() {
+async function changePageReal(page: number) {
+    if (poller.value) {
+        poller.value.stop()
+    }
+    cancelTokenSource = getAbortController()
+    page_number.value = page
+    await get_task(cancelTokenSource);
+}
+
+async function get_task(cancelTokenSource: any) {
     const _data = {
         case: props.case_id,
         range_type: props.range_type,
+        project: Number(route.params.project),
         size: page_size.value,
         page: page_number.value
     }
-    ApiGetTaskList(_data).then((res: any) => {
+    ApiGetTaskList({ params: _data, cancelToken: cancelTokenSource.token }).then((res: any) => {
         data.value = res.data
         total_count.value = res.total
         if (data.value.length > 0) {
@@ -311,7 +361,7 @@ async function get_task() {
             }
             startPolling(refresh_data)
         } else {
-            if (!poller.value) {
+            if (poller.value) {
                 poller.value.stop()
             }
         }
@@ -320,8 +370,70 @@ async function get_task() {
 </script>
 
 <style lang="scss" scoped>
+.run-btn {
+    width: 80px;
+    height: 25px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    /* 核心修改 */
+    border: none;
+    /* 移除边框，让渐变和阴影成为主体 */
+    background: linear-gradient(90deg, #3a7bd5, #00d2ff, #3a7bd5);
+    /* 柔和的蓝-青渐变 */
+    background-size: 200% 200%;
+    animation: gradient-move 4s ease-in-out infinite;
+    /* 动画更平滑，时间更长 */
+    padding: 4px;
+    border-radius: 6px;
+    /* 更圆润的边角 */
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    /* 为悬停效果添加过渡 */
+    box-shadow: 0 4px 15px 0 rgba(0, 118, 255, 0.3);
+    /* 添加与渐变色匹配的发光效果 */
+}
+
+/* 增强交互反馈 */
+.run-btn:hover {
+    box-shadow: 0 6px 20px 0 rgba(0, 118, 255, 0.4);
+    transform: translateY(-2px);
+    /* 悬停时轻微上浮 */
+}
+
+.run-btn:active {
+    transform: translateY(0);
+    /* 点击时恢复原位 */
+    box-shadow: 0 2px 10px 0 rgba(0, 118, 255, 0.2);
+}
+
+.run-btn svg {
+    width: 14px;
+}
+
+/* 2. 替换您的 @keyframes (与原来相同，但配合新样式效果不同) */
+@keyframes gradient-move {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
 .task-pagination {
     width: 100%;
+    height: 100%;
     box-sizing: border-box;
     padding: 10px;
     display: flex;

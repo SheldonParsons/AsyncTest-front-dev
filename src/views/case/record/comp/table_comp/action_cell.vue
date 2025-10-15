@@ -23,11 +23,11 @@ const props = defineProps({
 })
 
 function open_child_case_record() {
-    props.params.show_case_table_record(props.params.data.index)
+    props.params.show_case_table_record(props.params.data.index_in_global_list)
 }
 
 function to_step_page() {
-    props.params.to_step_page(props.params.data.index,props.params.data.case_id)
+    props.params.to_step_page(props.params.data.index_in_global_list,props.params.data.case_id)
 }
 
 </script>

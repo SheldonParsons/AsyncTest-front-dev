@@ -1,7 +1,7 @@
 <template>
     <div class="private-pagination">
         <PaginationRoot :total="props.total" :sibling-count="1" show-edges :default-page="1"
-            :items-per-page="props.size">
+            :items-per-page="props.size" @update:page="update_page">
             <PaginationList v-slot="{ items }" class="PaginationList">
                 <PaginationFirst class="Button">
                     <PageLefts style="width: 15px;color: black;"></PageLefts>
@@ -47,6 +47,14 @@ const props: any = defineProps({
     }
 })
 
+const emit = defineEmits(["changePage"])
+
+
+function update_page(page: number) {
+    console.log(page);
+    emit('changePage', page)
+
+}
 
 </script>
 

@@ -23,7 +23,8 @@
                         </AstButton>
                     </div>
                     <div class="case-group-tab-atcion" v-if="current_page === 0">
-                        <motion.div @click="run_case_task" class="run-btn" :whilePress="{ scale: 0.9 }" :whileHover="{ scale: 1.05 }">
+                        <motion.div @click="run_case_task" class="run-btn" :whilePress="{ scale: 0.9 }"
+                            :whileHover="{ scale: 1.05 }">
                             <RunCaseSvg />
                             <div>运行</div>
                         </motion.div>
@@ -140,7 +141,7 @@ import _ from 'lodash'
 const table_name = ref('')
 const tableRef: any = ref(null)
 const deleteTableRef: any = ref(null)
-const recordRef:any = ref(null)
+const recordRef: any = ref(null)
 const route = useRoute()
 /** 拿到右侧面板实例 */
 const panelRef: any = ref(null)
@@ -517,6 +518,7 @@ const props = defineProps({
                 padding-right: 20px;
                 gap: 10px;
 
+                /* 1. 替换您的 .run-btn 样式 */
                 .run-btn {
                     width: 80px;
                     height: 25px;
@@ -527,17 +529,54 @@ const props = defineProps({
                     color: white;
                     font-size: 14px;
                     font-weight: 500;
-                    border: 2px solid #137f2e;
-                    background: linear-gradient(80deg, #000000 0%, #137f2e 40%, #030600 90%);
-                    background-size: 300% 300%;
-                    animation: gradient-move 3s ease infinite;
-                    padding: 4px 4px;
-                    border-radius: 4px;
+                    /* 核心修改 */
+                    border: none;
+                    /* 移除边框，让渐变和阴影成为主体 */
+                    background: linear-gradient(90deg, #3a7bd5, #00d2ff, #3a7bd5);
+                    /* 柔和的蓝-青渐变 */
+                    background-size: 200% 200%;
+                    animation: gradient-move 4s ease-in-out infinite;
+                    /* 动画更平滑，时间更长 */
+                    padding: 4px;
+                    border-radius: 6px;
+                    /* 更圆润的边角 */
                     box-sizing: border-box;
                     cursor: pointer;
+                    transition: all 0.3s ease;
+                    /* 为悬停效果添加过渡 */
+                    box-shadow: 0 4px 15px 0 rgba(0, 118, 255, 0.3);
+                    /* 添加与渐变色匹配的发光效果 */
+                }
 
-                    svg {
-                        width: 14px;
+                /* 增强交互反馈 */
+                .run-btn:hover {
+                    box-shadow: 0 6px 20px 0 rgba(0, 118, 255, 0.4);
+                    transform: translateY(-2px);
+                    /* 悬停时轻微上浮 */
+                }
+
+                .run-btn:active {
+                    transform: translateY(0);
+                    /* 点击时恢复原位 */
+                    box-shadow: 0 2px 10px 0 rgba(0, 118, 255, 0.2);
+                }
+
+                .run-btn svg {
+                    width: 14px;
+                }
+
+                /* 2. 替换您的 @keyframes (与原来相同，但配合新样式效果不同) */
+                @keyframes gradient-move {
+                    0% {
+                        background-position: 0% 50%;
+                    }
+
+                    50% {
+                        background-position: 100% 50%;
+                    }
+
+                    100% {
+                        background-position: 0% 50%;
                     }
                 }
 
@@ -564,20 +603,6 @@ const props = defineProps({
         overflow: hidden;
         display: flex;
         flex-direction: column;
-    }
-}
-
-@keyframes gradient-move {
-    0% {
-        background-position: 0% 50%;
-    }
-
-    50% {
-        background-position: 100% 50%;
-    }
-
-    100% {
-        background-position: 0% 50%;
     }
 }
 

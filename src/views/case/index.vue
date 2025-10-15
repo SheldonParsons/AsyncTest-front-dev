@@ -65,7 +65,7 @@
     </SplitterPanel>
     <SplitterResizeHandle disabled />
     <SplitterPanel :default-size="94" :min-size="94" :max-size="94">
-      <div style="height: 100%; overflow: hidden" class="case-main-content">
+      <div style="height: 100%; overflow: hidden;display: flex;flex-direction: column;" class="case-main-content">
         <EmptyPage v-if="show_type === 0"></EmptyPage>
         <CreatePage v-if="show_type === 1" @go_page="go_page" :title="'Case'" :desc="'创建测试用例'"></CreatePage>
         <CaseDocumentation v-if="show_type === 2" :node_id="current_node" :case_id="current_target_id"

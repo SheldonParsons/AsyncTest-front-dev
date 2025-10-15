@@ -4,11 +4,8 @@
       <div :class="{ active: activeTab === 'A' }" @click="activeTab = 'A'">
         <span>目录设置</span>
       </div>
-      <div :class="{ active: activeTab === 'B' }" @click="activeTab = 'B'">
-        <span>用例列表</span>
-      </div>
-      <div :class="{ active: activeTab === 'C' }" @click="activeTab = 'C'">
-        <span>测试报告</span>
+      <div v-if="target_type === 0" :class="{ active: activeTab === 'B' }" @click="activeTab = 'B'">
+        <span>用例任务</span>
       </div>
     </div>
   </div>
@@ -17,22 +14,18 @@
     :dir_id="props.dir_id"
     :node_id="node_id"
   ></Settings>
-  <CaseList
+  <ProjectTask
     v-if="activeTab === 'B'"
     :target_type="target_type"
     :dir_id="props.dir_id"
     :node_id="node_id"
-  ></CaseList>
-  <Auth
-  v-if="activeTab === 'C'"
-  ></Auth>
+  ></ProjectTask>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
 import Settings from "@/views/case/content/dir_content/settings.vue";
-import Auth from "@/views/api/child_context/root_dir/temp/auth.vue"
-import CaseList from "@/views/case/content/dir_content/case_list.vue";
+import ProjectTask from "@/views/case/content/dir_content/project_task.vue";
 
 const activeTab = ref<"A" | "B" | "C">("A");
 const props = defineProps({

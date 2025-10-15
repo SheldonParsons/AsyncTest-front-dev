@@ -1,7 +1,7 @@
 <template>
   <div v-if="loading === false">
     <el-tree class="api-tree no-scroll" id="api-tree" ref="treeRef" style="margin-top: 10px" :data="dataSource"
-      node-key="target" icon="ArrowRightBold" @node-click="change_menu" :highlight-current="true"
+      node-key="id" icon="ArrowRightBold" @node-click="change_menu" :highlight-current="true"
       :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none">
       <template #default="{ node, data }">
         <div v-if="
@@ -129,13 +129,80 @@ function get_read_only_status(data: any) {
   return 0
 }
 
-function check(ids: number[], checked: Boolean) {
-  if (!treeRef.value) {
+/**
+ * [辅助函数] 递归构建一个从 target 属性到 id 数组的映射
+ * @param nodes - 当前要遍历的节点数组
+ * @param map - 用于存储映射的 Map 对象
+ */
+function buildTargetToIdMap(nodes: any[], map: Map<any, number[]>) {
+  for (const node of nodes) {
+    if (node.target !== undefined && node.id !== undefined) {
+      if (!map.has(node.target)) {
+        map.set(node.target, []);
+      }
+      if (node.child_type === 3) {
+        map.get(node.target)!.push(node.id);
+      }
+    }
+    if (node.children && node.children.length > 0) {
+      buildTargetToIdMap(node.children, map);
+    }
+  }
+}
+
+/**
+ * [推荐] 根据 target 属性批量设置节点的勾选状态
+ * @param targets - 要设置勾选的 target 值数组
+ * @param checked - 目标状态 (true 为勾选, false 为取消勾选)
+ */
+function checkNodesByTarget(targets: any[], checked: boolean) {
+  if (!treeRef.value || !dataSource.value) {
     return;
   }
-  ids.forEach(id => {
-    treeRef.value!.setChecked(id, checked, true);
-  });
+  console.log(dataSource.value);
+  
+
+  // 1. 构建 target -> [id, id...] 的映射
+  const targetToIdMap = new Map<any, number[]>();
+  buildTargetToIdMap(dataSource.value, targetToIdMap);
+
+  // 2. 将输入的 targets 数组转换为对应的 id 数组
+  const idsToChange: number[] = [];
+  for (const target of targets) {
+    if (targetToIdMap.has(target)) {
+      idsToChange.push(...targetToIdMap.get(target)!);
+    }
+  }
+  console.log(targetToIdMap);
+  
+
+  // 3. 使用 setCheckedKeys 进行高效的批量操作
+  if (checked) {
+    console.log("in check");
+    
+    // 勾选：合并当前已选中的和新增的
+    const currentCheckedIds = treeRef.value.getCheckedKeys();
+    const finalIds = [...new Set([...currentCheckedIds, ...idsToChange])];
+    treeRef.value.setCheckedKeys(finalIds);
+  } else {
+    console.log("in un check");
+    
+    // 取消勾选：从当前已选中的移除
+    const currentCheckedIds = treeRef.value.getCheckedKeys();
+    const idsToRemoveSet = new Set(idsToChange);
+    console.log(currentCheckedIds);
+    
+    console.log(idsToRemoveSet);
+    
+    const finalIds = currentCheckedIds.filter((id: any) => !idsToRemoveSet.has(id as number));
+    console.log(finalIds);
+    
+    treeRef.value.setCheckedKeys(finalIds);
+  }
+}
+
+function check(ids: number[], checked: boolean) {
+  checkNodesByTarget(ids, checked)
 }
 
 defineExpose({ getCheckedNodes, check })
@@ -207,7 +274,7 @@ async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
   await getTree(data).then(async (data: any) => {
     traverseTree(data, check_is_reference)
     dataSource.value.push(data[0]);
-    firstLevelKeys.value.push(data[0].target)
+    firstLevelKeys.value.push(data[0].id)
     await tools.delay();
 
     loading.value = false;

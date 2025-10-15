@@ -41,7 +41,7 @@ const taskDetailRef: any = ref(null)
 const current_child_case_index = ref(-1)
 const col_defination = [
     {
-        field: 'index',
+        field: 'index_in_global_list',
         name: '次序'
     },
     {
@@ -99,7 +99,7 @@ const gridOptions = {
     suppressMovableColumns: true,
     suppressHeaderKeyboardEvent: true,
     getRowId: (params: any) => {
-        return params.data.index;
+        return params.data.index_in_global_list;
     }
 }
 
@@ -161,7 +161,7 @@ async function interface_detail_record(type: String, index: String) {
 
 function getFilterConfig(field: string): string {
     // 检查字段是否是用于数字比较的
-    if (field === 'index' || field.includes('count') || field === 'end') {
+    if (field === 'index_in_global_list' || field.includes('count') || field === 'end') {
         // 如果是，返回数字过滤器
         return 'agNumberColumnFilter';
     } else if (field === 'action') {
@@ -188,7 +188,7 @@ function getWidthFlexConfig(field: string): { width?: number; flex?: number; min
     switch (true) {
         case field.includes('count'):
             return { width: 100 }
-        case field === 'index':
+        case field === 'index_in_global_list':
             // 对于 'index' 列，我们给一个固定的窄宽度
             return { width: 80 };
         case field === 'status':
@@ -279,7 +279,7 @@ function stopRecordChecking() {
         // forEachNode 会遍历网格中的每一个 RowNode
         gridApi.value.forEachNode((node: any) => {
             // node.data 包含了你最初提供给这一行的数据对象
-            if (node.data.index === current_child_case_index.value && node.data.status.includes('end_')) {
+            if (node.data.index_in_global_list === current_child_case_index.value && node.data.status.includes('end_')) {
                 is_stop = true
             }
         });

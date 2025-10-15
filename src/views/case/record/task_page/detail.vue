@@ -63,13 +63,13 @@
 
                 </div>
             </div>
-            <div style="min-width: 500px;">
+            <div style="min-width: 500px;display: flex;flex-direction: column;overflow: hidden;">
                 <div style="padding: 5px 0px;">
                     <ProjectSelect :value="current_project" :items="project_list"
                         :current="Number(route.params.project)" @change="changeProject"></ProjectSelect>
                 </div>
                 <el-divider></el-divider>
-                <div style="height: 400px;overflow-y: auto;" v-if="current_project.id !== -1">
+                <div style="overflow-y: auto;flex-grow: 1; min-height: 0;" class="no-scroll" v-if="current_project.id !== -1">
                     <TreeNode style="width: 100%;" :project="current_project.id" :is_case="true" ref="caseTreeNodeRef"
                         @change_check="change_check" @ready="ready"></TreeNode>
                 </div>
@@ -160,11 +160,25 @@ const props = defineProps({
     task_info: {
         default: null,
         type: null
+    },
+    is_edit: {
+        default: true,
+        type: Boolean
     }
 })
 
 onMounted(async () => {
-    await getTaskDetail()
+    if (props.is_edit === true) {
+        await getTaskDetail()
+    } else {
+        data.value = {
+            name: '',
+            env: '#bcenvlovelychoice',
+            error_strategy: 'case',
+            loop_strategy: 'sequential'
+        }
+        data.value.case_list = []
+    }
     await get_env_list_and_user_env()
     await getProjectList()
     for (let i = 0; i < data.value.case_list.length; i++) {
@@ -244,6 +258,8 @@ function delete_case(e: any) {
         return element.id !== e.id
     })
     case_set.value.delete(e.id)
+    console.log(e);
+    
     caseTreeNodeRef.value.check([e.id], false)
 }
 
@@ -279,6 +295,14 @@ function get_task_info() {
 
 
 function check_task() {
+    if (case_list.value.length === 0) {
+        window.$toast({ title: '请至少选择一个测试用例', type: 'info' })
+        return false
+    }
+    if (data.value.name.length === 0) {
+        window.$toast({ title: '任务名称不能为空', type: 'info' })
+        return false
+    }
     if (props.can_edit === false) {
         window.$toast({ title: '用例任务内容不允许编辑', type: 'info' })
         return false

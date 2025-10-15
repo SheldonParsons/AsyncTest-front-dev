@@ -74,7 +74,6 @@ const props = defineProps({
 
 onMounted(() => {
   ApiGetCaseDir(props.dir_id, {}).then((res) => {
-    console.log(res);
     dir.value = res;
   });
 });
