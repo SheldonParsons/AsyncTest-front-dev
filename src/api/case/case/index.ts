@@ -128,4 +128,12 @@ export function ApiEditTask(id: any, data: any): Promise<String> {
     });
 }
 
+// 任务工具
+export function ApiTaskTools(params: any = {}): Promise<String> {
+    return new Promise((resolve) => {
+        http.httpGet(`/api/task/tools/`, params = params).then((res: any) => {
+            resolve(res);
+        });
+    });
+}
 

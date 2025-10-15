@@ -6,6 +6,7 @@
                 <motion.div v-if="data.length !== 0" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                     :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }" class="header">
                     <div class="inner">
+                        <div class="title title-id">ID</div>
                         <div class="title title-name">任务名称</div>
                         <div class="title title-id">运行次数</div>
                         <div class="title title-update">最近运行时间</div>
@@ -19,9 +20,11 @@
                     <motion.div @click.stop="action('to_record', item, 0)" :initial="{ opacity: 0 }"
                         :animate="{ opacity: 1 }" :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }"
                         class="data-item" v-for="(item, index) in data" :key="index">
+                        <div class="title title-id g-e" @click.stop="get_task_info(item)"><span># {{
+                            item.id }}</span></div>
                         <div class="title title-name g-e"><span>{{
                             item.name }}</span></div>
-                        <div class="title title-name g-e"><span>{{
+                        <div class="title title-id g-e"><span>{{
                             item.run_times }}</span></div>
                         <div class="title title-update" style="cursor: pointer;"><span>{{
                             timeAgo(item.last_started_at)
@@ -81,7 +84,7 @@ import Pagination from '@/components/common/general/pagination.vue'
 import BlankAmination from '@/components/common/blank/blank_animation.vue'
 import { SplitterGroup, SplitterPanel } from 'reka-ui'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
-import { ApiGetTaskList, ApiDeleteTask, ApiEditTask } from '@/api/case/case/index'
+import { ApiGetTaskList, ApiDeleteTask, ApiEditTask, ApiTaskTools } from '@/api/case/case/index'
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import { send_action } from '@/views/case/record/utils/Sender'
 import tools from '@/utils/tools'
@@ -89,6 +92,7 @@ import { useRoute } from 'vue-router'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import TaskDetail from '@/views/case/record/task_page/detail.vue'
 import RunCaseSvg from '@/assets/logo/final/match_vue/play.vue'
+import useClipboard from "vue-clipboard3/dist/esm/index.js";
 import { HttpClass } from "@/utils/http";
 
 const route = useRoute()
@@ -322,6 +326,21 @@ function getAbortController() {
     return HttpClass.createCancelToken();
 }
 
+async function get_task_info(task: any) {
+    const _data = {
+        type: 'outer_task_string',
+        task: task.id
+    }
+    const result = await tools.send(ApiTaskTools, _data)
+    if (result) {
+        const { toClipboard } = useClipboard();
+        await toClipboard(result);
+        window.$toast({ title: '已复制任务接口信息至粘贴板' })
+
+    }
+
+}
+
 async function changePageReal(page: number) {
     if (poller.value) {
         poller.value.stop()
@@ -542,6 +561,10 @@ async function get_task(cancelTokenSource: any) {
                 flex: 22;
             }
 
+            .title-id {
+                flex: 12;
+            }
+
             .title-action {
                 flex: 12;
             }
@@ -583,11 +606,14 @@ async function get_task(cancelTokenSource: any) {
         }
 
         .title-name,
-        .title-id,
         .title-update,
         .title-update-person,
         .title-status {
             flex: 22;
+        }
+
+        .title-id {
+            flex: 12;
         }
 
         .title-action {
