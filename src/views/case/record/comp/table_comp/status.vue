@@ -60,10 +60,21 @@ onMounted(async () => {
     animation: blink 3s infinite;
 }
 
+.end_error_child,
 .end_error {
     font-weight: 800;
     font-size: 0.9rem;
-    background-image: linear-gradient(to right, rgb(244, 104, 104), rgb(255, 0, 0), rgb(255, 42, 0));
+    background-image: linear-gradient(to right, rgb(255, 123, 0), rgb(255, 80, 40), rgb(220, 20, 60));
+    font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+.end_skipped,
+.end_skipped_child {
+    font-weight: 800;
+    font-size: 0.9rem;
+    background-image: linear-gradient(to right, rgb(255, 215, 0), rgb(255, 178, 51), rgb(252, 144, 0));
     font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
     -webkit-background-clip: text;
     color: transparent;

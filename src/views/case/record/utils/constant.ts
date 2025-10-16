@@ -16,7 +16,10 @@ export const StatusMapping: any = {
     end_normal: '正常结束',
     pending: '正在等待',
     mid_running: '正在运行',
-    end_error: '错误结束'
+    end_error: '错误结束',
+    end_error_child: '子步骤错误',
+    end_skipped: '已被跳过',
+    end_skipped_child: '子步骤跳过'
 } as const;
 
 /**

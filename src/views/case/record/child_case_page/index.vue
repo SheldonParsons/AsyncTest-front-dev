@@ -1,6 +1,6 @@
 <template>
     <div class="case-table-contaniner">
-        <ag-grid-vue style="width:100%; height:100%;" :columnDefs="columnDefs" :defaultColDef="defaultColDef"
+        <ag-grid-vue v-show="show_table" style="width:100%; height:100%;" :columnDefs="columnDefs" :defaultColDef="defaultColDef"
             :gridOptions="gridOptions" @grid-ready="onGridReady" class="ag-theme-quartz" />
     </div>
 
@@ -39,6 +39,7 @@ const columnDefs: any = ref([])
 const gridApi = ref<any>(null)
 const taskDetailRef: any = ref(null)
 const current_child_case_index = ref(-1)
+const show_table = ref(false)
 const col_defination = [
     {
         field: 'index_in_global_list',
@@ -270,6 +271,7 @@ async function get_record() {
             poller.value.stop()
         }
     }
+    show_table.value = true
 }
 
 function stopRecordChecking() {

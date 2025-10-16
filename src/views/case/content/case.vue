@@ -222,7 +222,15 @@ function case_done() {
     case_info.value = caseStepRef.value.get_case()
 }
 
+let current_run_task_list:Array<number> = []
+
 async function run_case_task() {
+    if (current_run_task_list.includes(props.case_id)) {
+        window.$toast({ title: '任务正在运行中，请稍后再试' })
+        return
+    } else {
+        current_run_task_list.push(props.case_id)
+    }
     const data = {
         type: 1,
         child_action_type: "run_case_task",
@@ -231,7 +239,8 @@ async function run_case_task() {
         }
     }
     await ApiRunCase(data).then(async (res: any) => {
-        console.log(res);
+        const index = current_run_task_list.indexOf(props.case_id)
+        if (index !== -1) current_run_task_list.splice(index, 1);
         if (res.hasOwnProperty("result")) {
             if (res.result === 50001) {
                 window.$toast({ title: res.data, type: 'error' })

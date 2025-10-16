@@ -56,6 +56,7 @@ const record_id: any = ref(null)
 const TaskPageRef: any = ref(null)
 const taskDetailCheckRef: any = ref(null)
 const taskDetailRef: any = ref(null)
+let current_run_task_list: Array<number> = []
 
 
 const props = defineProps({
@@ -80,6 +81,12 @@ function run_task(task: any) {
 }
 
 async function run_case_task(task: any) {
+    if (current_run_task_list.includes(task.id)) {
+        window.$toast({ title: '任务正在运行中，请稍后再试' })
+        return
+    } else {
+        current_run_task_list.push(task.id)
+    }
     const data = {
         type: 1,
         child_action_type: "run_case_task",
@@ -90,6 +97,8 @@ async function run_case_task(task: any) {
         }
     }
     await ApiRunTask(data).then(async (res: any) => {
+        const index = current_run_task_list.indexOf(task.id)
+        if (index !== -1) current_run_task_list.splice(index, 1);
         if (res.hasOwnProperty("result")) {
             if (res.result === 50001) {
                 window.$toast({ title: res.data, type: 'error' })

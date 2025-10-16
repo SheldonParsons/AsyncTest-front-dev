@@ -1,6 +1,6 @@
 <template>
     <SplitterGroup direction="vertical">
-        <SplitterPanel :default-size="80" :min-size="80" :max-size="80">
+        <SplitterPanel :default-size="85" :min-size="85" :max-size="85">
             <div class="data-set-container">
                 <BlankAmination v-if="data.length === 0"></BlankAmination>
                 <motion.div v-if="data.length !== 0" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
@@ -54,7 +54,7 @@
                 </div>
             </div>
         </SplitterPanel>
-        <SplitterPanel :default-size="20" :min-size="20" :max-size="20">
+        <SplitterPanel :default-size="15" :min-size="15" :max-size="15">
             <div class="task-pagination">
                 <Pagination :total="total_count" :size="page_size" @changePage="changePageReal"></Pagination>
             </div>
