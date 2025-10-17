@@ -184,7 +184,7 @@ const dialogInitialState: any = {
             background-color: white;
             color: black;
             font-size: 0.9rem;
-            padding: 8px 10px;
+            padding: 6px 10px;
             border-radius: 10px;
             border: none;
             cursor: pointer;

@@ -8,7 +8,7 @@
         :showCancel="false">
         <div style="height: 500px;width: 900px;">
             <ProcessRecord :callback="child_case_process_record" :interface_callback="interface_detail_record"
-                :check_ending="stopRecordChecking">
+                :check_ending="stopRecordChecking" :wating="true">
             </ProcessRecord>
         </div>
     </DialogAnimation>
@@ -192,6 +192,9 @@ function getWidthFlexConfig(field: string): { width?: number; flex?: number; min
         case field === 'index_in_global_list':
             // 对于 'index' 列，我们给一个固定的窄宽度
             return { width: 80 };
+        case field === 'desc':
+            // 对于 'index' 列，我们给一个固定的窄宽度
+            return { width: 180 };
         case field === 'status':
             // 假设 'status' 列也需要一个固定的稍宽的宽度
             return { width: 120 };
@@ -281,6 +284,9 @@ function stopRecordChecking() {
         // forEachNode 会遍历网格中的每一个 RowNode
         gridApi.value.forEachNode((node: any) => {
             // node.data 包含了你最初提供给这一行的数据对象
+            console.log(node.data.index_in_global_list);
+            console.log(current_child_case_index.value);
+            console.log(node.data.status);
             if (node.data.index_in_global_list === current_child_case_index.value && node.data.status.includes('end_')) {
                 is_stop = true
             }
@@ -349,6 +355,7 @@ async function refresh_data() {
     --ag-header-background-color: rgb(0, 0, 0);
     --ag-odd-row-background-color: rgba(255, 255, 255, 0.03);
     --ag-header-column-resize-handle-color: rgb(255, 255, 255);
+    --ag-font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
 }
 
 .ag-theme-quartz .ag-row-hover .ag-cell {

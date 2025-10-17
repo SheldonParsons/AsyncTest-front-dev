@@ -1,5 +1,7 @@
 <template>
+    <div class="outer">
     <div class="base-status-css" :class="statusKey">{{ statusDescription }}</div>
+    </div>
 </template>
 
 
@@ -12,9 +14,9 @@ const desc_mapping: any = {
     mid_unknown: '未知',
     end_success: '完成',
     end_error_self: '错误',
-    end_error_child: '子错误',
+    end_error_child: '子步骤错误',
     end_skipped_self: '跳过',
-    end_skipped_child: '子跳过'
+    end_skipped_child: '子步骤跳过'
 }
 
 const props = defineProps({
@@ -50,10 +52,16 @@ const statusDescription = computed(() => {
 </script>
 
 <style lang="scss" scoped>
+.outer {
+    border: 2px solid #f07b3f;
+    background-image: linear-gradient(80deg, #ffffff 0%, #ffffff 40%, #ffffff 90%);
+    border-radius: 5px;
+    padding: 0px 4px;
+}
 .base-status-css {
+    
     font-size: 0.9rem;
     font-weight: 800;
-    font-size: 0.9rem;
     font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
     -webkit-background-clip: text;
     color: transparent;

@@ -39,7 +39,7 @@
                     </ActionGroup>
                 </motion.div>
                 <motion.div class="action" v-else>
-                    <StepStatua :data="data" :status_mapping="status_mapping"></StepStatua>
+                    <StepStatuaInterface :data="data" :status_mapping="status_mapping"></StepStatuaInterface>
                 </motion.div>
             </motion.div>
         </motion.div>
@@ -54,7 +54,7 @@ import DragHandle from '@/views/case/content/case_content/runner/tree/components
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
-import StepStatua from '@/views/case/record/comp/step_info/step_status.vue'
+import StepStatuaInterface from '@/views/case/record/comp/step_info/step_status_interface.vue'
 
 const emit: any = defineEmits(['changeHover', 'canDragAction', 'changeCheck', 'action'])
 const props = defineProps<{

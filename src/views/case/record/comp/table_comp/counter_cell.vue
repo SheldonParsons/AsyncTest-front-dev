@@ -1,13 +1,14 @@
 <template>
     <div class="counter-container">
-        <AnimateNumber :style="number" :value="displayValue" />
+        <!-- <AnimateNumber :style="number" :value="displayValue" /> -->
+        {{ displayValue }}
         <span class="unit">个</span>
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-import { AnimateNumber } from 'motion-plus-vue';
+// import { AnimateNumber } from 'motion-plus-vue';
 const props = defineProps<{
     params: any
 }>()
@@ -42,8 +43,9 @@ onMounted(async () => {
 .counter-container {
     display: flex;
     align-items: center;
-    font-size: 2rem;
+    font-size: 0.9rem;
     font-family: "Monoton-Regular", 'Courier New', Courier, monospace;
+    font-variant-numeric: tabular-nums;
 }
 
 .unit {
