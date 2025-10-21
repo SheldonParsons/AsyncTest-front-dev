@@ -67,7 +67,7 @@ const script_demo = [
     { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
     { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
     { label: "获取环境名称", code: "at.env_name\n" },
-    { label: "抛出异常", code: "at.raise('name_error')\n" }
+    { label: "抛出异常", code: "at.raise_error('name_error')\n" }
 ]
 
 onMounted(async () => {

@@ -12,7 +12,7 @@
     <div class="step-info">
         <div class="step-container">
             <div class="step-title">
-                <InputUnderLine v-model="data.label" :maxLength="225" :placeholder="'步骤名称'" :bgcolor="'#f0f0f0'">
+                <InputUnderLine v-model="data.label" :maxLength="225" :placeholder="'步骤名称'">
                 </InputUnderLine>
             </div>
             <div class="step-item">
@@ -35,6 +35,70 @@
                         @change="changeParamStraegy"></Select>
                 </div>
             </div>
+            <div class="step-item">
+                <div style="display: inline-block;white-space: nowrap;">执行方式</div>
+                <div>
+                    <Radio v-model="data.loop_strategy" :items="caseMultitaskerLoopStrategy"></Radio>
+                </div>
+                <div style="width: 20px;height: 100%;display: flex;align-items: center;">
+                    <TooltipAnimation :isOpen="showRunTooltip">
+                        <template #trigger><span
+                                style="color: rgba(0,0,0);width: 1rem;height: 20px;display: flex;align-items: center;cursor: pointer;"
+                                @mouseenter="showRunTooltip = true" @mouseleave="showRunTooltip = false">
+                                <InfoSvg />
+                            </span></template>
+                        <template #default>
+                            <div style="display: flex;flex-direction: column;gap: 5px;">
+                                <div>执行方式</div>
+                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">【顺序执行】将以同步的方式运行您的任务。
+                                </div>
+                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">
+                                    【并发执行】可以更快的执行您的任务，并获取结果。但请确保您的服务可以正确的接受它。</div>
+                            </div>
+                        </template>
+                    </TooltipAnimation>
+                </div>
+            </div>
+            <div class="step-item">
+                <div style="display: inline-block;white-space: nowrap;">驱动方式</div>
+                <div style="width: 100%;">
+                    <Radio v-model="data.drive_strategy" :items="caseMultitaskerDriveStrategy"></Radio>
+                </div>
+            </div>
+            <div class="step-item" v-if="data.drive_strategy === 'times'">
+                <div style="display: inline-block;white-space: nowrap;">循环次数</div>
+                <div>
+                    <InputAnimation v-model="data.loop_times" :placeholder="'循环次数'" :maxLength="50"></InputAnimation>
+                </div>
+                <div style="width: 20px;height: 100%;">
+                    <TooltipAnimation :isOpen="showIdTooltip">
+                        <template #trigger><span style="color: rgba(0,0,0);width: 0.7rem;"
+                                @mouseenter="showIdTooltip = true" @mouseleave="showIdTooltip = false">
+                                <InfoSvg />
+                            </span></template>
+                        <template #default>
+                            <div style="display: flex;flex-direction: column;gap: 5px;">
+                                <div>循环次数</div>
+                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">您可以填入一个变量值来动态的设置它。</div>
+                                <div style="color: rgba(255,255,255,0.5);line-height: 1.2rem;">
+                                    如果该变量是一个整数时，将会循环该整数的次数。当它为一个数组时，将取该数组的长度作为循环次数。</div>
+                            </div>
+                        </template>
+                    </TooltipAnimation>
+                </div>
+            </div>
+            <div class="step-item" v-if="data.drive_strategy === 'dataset'">
+                <div style="display: inline-block;white-space: nowrap;">选择数据集</div>
+                <div>
+                    <Select :current="data.data_set" :items="dataset_list" @change="changeDataset"></Select>
+                </div>
+            </div>
+            <div class="step-item" style="width: 100%;" v-if="data.drive_strategy === 'script'">
+                <MarkDown :data="createDatasetScript"></MarkDown>
+            </div>
+            <div class="step-item" style="width: 100%;" v-if="data.drive_strategy === 'script'">
+                <PythonCode @change="changeLoopCode" :code="data.before_script"></PythonCode>
+            </div>
             <div class="step-footer">
                 <div>
                     <AstButton @click="save">
@@ -56,8 +120,18 @@ import CaseStep from '@/views/case/content/case_content/runner/tree/index.vue'
 import AstButton from '@/components/common/general/button.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import Select from '@/components/common/general/select_public.vue'
-import { envStrategy, errorCaseStrategy, errorParamsCoverStrategy } from '@/views/case/utils/constants'
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
+import { ApiGetDatasetList } from '@/api/case/dataset/index'
+import Radio from '@/components/common/general/radio.vue'
+import InfoSvg from '@/assets/svg/common/new_icon/info.vue'
+import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
+import PythonCode from '@/components/common/general/pythonCode.vue'
+import InputAnimation from '@/components/common/general/input.vue'
+import { createDatasetScript, envStrategy, errorCaseStrategy, errorParamsCoverStrategy, caseMultitaskerLoopStrategy, caseMultitaskerDriveStrategy } from '@/views/case/utils/constants'
 const containerRef = ref<HTMLDivElement | null>(null)
+const showRunTooltip = ref(false)
+const showIdTooltip = ref(false)
+const dataset_list: any = ref([])
 const props = defineProps({
     data: {
         type: null,
@@ -81,7 +155,35 @@ onMounted(async () => {
     // 添加全局事件监听
     window.addEventListener("keydown", addAltE);
     show_project_name()
+    get_data_set()
 });
+
+async function get_data_set() {
+    const _data = {
+        case: props.data.case_id
+    }
+    dataset_list.value = []
+    ApiGetDatasetList(_data).then((res: any) => {
+        res.forEach((element: any) => {
+            dataset_list.value.push({
+                key: element.id,
+                value: element.name
+            })
+        });
+    })
+    dataset_list.value.push({
+        key: -1,
+        value: '请选择'
+    })
+}
+
+function changeDataset(item: any) {
+    props.data.data_set = item.key
+}
+
+function changeLoopCode(value: any) {
+    props.data.before_script = value
+}
 
 function show_project_name() {
     document.fonts.ready.then(() => {

@@ -235,7 +235,8 @@ const info_type_mapping: any = {
     multitasker_drive: '多执行器',
     if_success: '条件分支',
     action_sleep: '强制等待',
-    action_warning: '步骤警告'
+    action_warning: '步骤警告',
+    error_failed: '抛出错误'
 }
 
 function get_desc(item: any) {
@@ -467,6 +468,7 @@ function reset_filter() {
             .assertion_exception,
             .system_exception,
             .variable_warning,
+            .error_failed,
             .assertion_failed {
                 background-color: #f56565;
                 color: #ffffff !important;
@@ -495,7 +497,7 @@ function reset_filter() {
                 color: #ffffff !important;
                 border: 2px solid #ffc551;
             }
-
+            
             .action_warning {
                 background: linear-gradient(to right, rgb(255, 123, 0), rgb(255, 80, 40), rgb(220, 20, 60));
                 border: 1px solid rgb(255, 80, 40);

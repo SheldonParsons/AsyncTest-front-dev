@@ -152,6 +152,25 @@ export const multitaskerDriveStrategy: any = [
     }
 ]
 
+export const caseMultitaskerDriveStrategy: any = [
+    {
+        key: 'drive_case',
+        value: '用例自行决定'
+    },
+    {
+        key: 'times',
+        value: '固定次数'
+    },
+    {
+        key: 'dataset',
+        value: '数据集驱动'
+    },
+    {
+        key: 'script',
+        value: '自定义脚本'
+    }
+]
+
 export const multitaskerLoopStrategy: any = [
     {
         key: 'sequential',
@@ -162,6 +181,23 @@ export const multitaskerLoopStrategy: any = [
         value: '并发执行'
     }
 ]
+
+export const caseMultitaskerLoopStrategy: any = [
+    {
+        key: 'loop_case',
+        value: '用例自行决定'
+    },
+    {
+        key: 'sequential',
+        value: '顺序执行'
+    },
+    {
+        key: 'concurrent',
+        value: '并发执行'
+    }
+]
+
+
 
 export const createDatasetScript: string = `\`\`\`python
 # 示例代码
@@ -197,9 +233,9 @@ export const errorScriptDemo: string = `\`\`\`python
 # 示例代码
 if at.temp.get('name') == at.temp.get('current_name'):
     # 关键代码：抛出异常，该代码将会通过raise关键字抛出异常从而让上级发现
-    at.raise('name_error')
+    at.raise_error('name_error')
 # 关键代码：抛出异常，该代码将会通过raise关键字抛出异常从而让上级发现
-at.raise('normal_error')
+at.raise_error('normal_error')
 \`\`\``
 
 
