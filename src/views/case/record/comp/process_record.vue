@@ -236,7 +236,9 @@ const info_type_mapping: any = {
     if_success: '条件分支',
     action_sleep: '强制等待',
     action_warning: '步骤警告',
-    error_failed: '抛出错误'
+    error_failed: '抛出错误',
+    delay_success: '休眠步骤',
+    delay_warning: '休眠警告'
 }
 
 function get_desc(item: any) {
@@ -498,9 +500,10 @@ function reset_filter() {
                 border: 2px solid #ffc551;
             }
             
+            .delay_warning,
             .action_warning {
-                background: linear-gradient(to right, rgb(255, 123, 0), rgb(255, 80, 40), rgb(220, 20, 60));
-                border: 1px solid rgb(255, 80, 40);
+                background: linear-gradient(to right, rgb(255, 123, 0), rgb(228, 160, 23), rgb(220, 133, 20));
+                border: 1px solid rgb(255, 162, 40);
             }
 
             .step_running {
