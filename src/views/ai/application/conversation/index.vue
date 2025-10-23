@@ -321,7 +321,7 @@ import tools from "@/utils/tools";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
-import "highlight.js/styles/atom-one-light.css";
+// import "highlight.js/styles/atom-one-light.css";
 import { useRoute, useRouter } from "vue-router";
 import { getConversationSingle } from "@/api/ai/conversation";
 import { getAppList } from "@/api/ai/index";

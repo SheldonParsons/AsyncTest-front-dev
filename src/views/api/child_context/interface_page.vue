@@ -10,7 +10,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
-                  }}</el-dropdown-item>
+                }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown></el-col>
@@ -413,7 +413,7 @@
                     <div>
                       匹配结果：<span>{{
                         match.result === true ? "成功" : "失败"
-                      }}</span>
+                        }}</span>
                     </div>
                     <div>
                       结果值：<span>{{ match.value }}</span>
@@ -426,7 +426,7 @@
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                  }}</span>
+                    }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -704,14 +704,7 @@ async function get_source() {
   const res_data = {
     interface: props.interface_id,
   };
-  await ApiGetSummarySource({
-    project: route.params.project,
-  }).then((res: any) => {
-    testStatus.value = res.markers;
-    responsors.value = res.members;
-    marker_list.value = res.tag;
-    cache_all_env.value = res.params;
-  });
+
   await ApiGetResponse(res_data).then((res: any) => {
     responseOptions.value = res;
     if (responseOptions.value.length > 0) {
@@ -720,9 +713,17 @@ async function get_source() {
     originalResponse = _.cloneDeep(responseOptions.value);
   });
   await ApiGetSingleInterface(props.interface_id, {}).then(async (res: any) => {
+    await ApiGetSummarySource({
+      project: res.project,
+    }).then((res: any) => {
+      testStatus.value = res.markers;
+      responsors.value = res.members;
+      marker_list.value = res.tag;
+      cache_all_env.value = res.params;
+    });
     if (res.hasOwnProperty("result") && res.result === 0) {
-        window.$toast({ title: res.data, type: 'error' })
-        return false;
+      window.$toast({ title: res.data, type: 'error' })
+      return false;
     }
     data.value = res;
     originalData = _.cloneDeep(data.value);
@@ -759,7 +760,7 @@ function set_server_options(server_mappings: any) {
 
 function done_statement() {
   if (data.value.statement === "") {
-    window.$toast({title: "说明文档不能为空", type: 'info'})
+    window.$toast({ title: "说明文档不能为空", type: 'info' })
   } else {
     show_markdown.value = true;
   }
@@ -820,7 +821,7 @@ function delete_response(_current_response: any) {
     setTimeout(() => {
       enableWatch.value = true;
     }, 0);
-    window.$toast({title: "删除成功"})
+    window.$toast({ title: "删除成功" })
   });
 }
 
@@ -931,7 +932,7 @@ async function addMarker(value: any) {
         id: res.id,
         name: value,
       });
-      window.$toast({title: "添加成功"})
+      window.$toast({ title: "添加成功" })
     });
   }
 }
@@ -964,7 +965,7 @@ async function save() {
     GlobalState.sendMessage("clean_interface_change", {
       node_id: props.node_id,
     });
-    window.$toast({title: "接口内容已保存"})
+    window.$toast({ title: "接口内容已保存" })
     return;
   }
   let result = true;
@@ -980,7 +981,7 @@ async function save() {
   GlobalState.sendMessage("clean_interface_change", {
     node_id: props.node_id,
   });
-  window.$toast({title: "接口内容已保存"})
+  window.$toast({ title: "接口内容已保存" })
   return true
 }
 
@@ -1021,7 +1022,7 @@ async function updateResponse(content: any) {
 
 function result_check(data: any) {
   if (data.hasOwnProperty("result") && data.result === 0) {
-    window.$toast({title: data.data, type: 'error'})
+    window.$toast({ title: data.data, type: 'error' })
     return false;
   }
   return true;

@@ -55,7 +55,7 @@ import { Marked } from "marked";
 import { streamApi } from "@/api/sse/index";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
-import "highlight.js/styles/atom-one-light.css";
+// import "highlight.js/styles/atom-one-light.css";
 import tools from "@/utils/tools";
 const { proxy }: any = getCurrentInstance();
 const md: any = ref(null);

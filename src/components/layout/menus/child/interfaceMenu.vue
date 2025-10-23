@@ -2,10 +2,7 @@
   <div class="custom-tree-container" style="height: 100%">
     <el-affix :offset="60">
       <div class="tree-search" style="display: flex; align-items: center; margin-bottom: 10px">
-        <CButton style="width: 40px; display: inline-block"><el-icon>
-            <CirclePlusFilled />
-          </el-icon></CButton>
-        <el-input v-model="filterText" style="margin-left: 10px" placeholder="Filter keyword" :suffix-icon="Filter" />
+        <el-input v-model="filterText" placeholder="搜索" :suffix-icon="Filter" />
       </div>
     </el-affix>
     <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
@@ -14,10 +11,13 @@
     </div>
     <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;">
       <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core"
-        ref="treeRef" :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu"
+        ref="treeRef" draggable :data="dataSource" node-key="id" icon="ArrowRightBold" :allow-drag="allowDrag" :allow-drop="allowDrop"
+        @node-drag-start="handleDragStart" @node-drag-over="handleNodeDragOver" @node-drag-leave="handleNodeDragLeave"
+        @node-drag-end="handleNodeDrop" @node-click="changeMenu"
         :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
         icon-class="none" :filter-node-method="filterNode">
         <template #default="{ node, data }">
+          <ContextMemu :data="data" @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)">
           <div v-if="
             data.child_type === 0 ||
             data.child_type === 1 ||
@@ -42,74 +42,24 @@
               <div class="g-ellipsis">{{ data.name }}</div>
               <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
             </div>
-            <el-popover placement="right" v-if="show_popover" @show="set_awalys_show_popover(data.id)"
-              @before-leave="set_leave_popover" :width="320" trigger="click">
-              <template #reference>
-                <MoreButton v-if="
-                  current_node === data.id || awalys_show_popover === data.id
-                " class="hover-menu-box" @click.stop></MoreButton>
-                <div v-else></div>
-              </template>
-              <div class="more-action-div" style="width: 100%">
-                <div class="action-header">修改信息</div>
-                <el-divider></el-divider>
-                <div class="change-name">
-                  <div style="width: 100%">
-                    <el-input :disabled="data.child_type === 0" v-model="data.name"></el-input>
-                  </div>
-                  <div>
-                    <DoneButton style="width: 1rem; height: 1rem" @click="chang_node_name(data)"></DoneButton>
-                  </div>
-                </div>
-                <el-divider></el-divider>
-                <div class="action-header" style="margin-top: 5px">
-                  更多操作
-                </div>
-                <el-divider></el-divider>
-                <div class="action-list" style="padding-bottom: 5px">
-                  <div v-if="data.child_type !== 2" class="action-item"
-                    @click="action(1, 'create_interface_under_dir', data)">
-                    <div class="action-icon">
-                      <InterfaceIcon></InterfaceIcon>
-                    </div>
-                    <div>添加接口</div>
-                  </div>
-                  <div v-if="data.child_type !== 2" class="action-item" @click="action(0, 'create_child_dir', data)">
-                    <div class="action-icon">
-                      <FolderPlusIcon></FolderPlusIcon>
-                    </div>
-                    <div>添加子目录</div>
-                  </div>
-                  <div class="action-item" @click="action(2, 'copy_node', data)" v-if="data.child_type !== 0">
-                    <div class="action-icon">
-                      <CopyIcon></CopyIcon>
-                    </div>
-                    <div>复制</div>
-                  </div>
-                  <div class="action-item" @click="action(2, 'move_to', data)" v-if="data.child_type !== 0">
-                    <div class="action-icon">
-                      <MoveIcon></MoveIcon>
-                    </div>
-                    <div>移动到</div>
-                  </div>
-                </div>
-                <el-divider></el-divider>
-                <div class="action-list" v-if="data.child_type !== 0">
-                  <div class="action-item action-delete-item" @click="action(2, 'delete_node', data)">
-                    <div class="delete-front-item">
-                      <div class="action-icon">
-                        <DeleteIcon></DeleteIcon>
-                      </div>
-                      <div>删除</div>
-                    </div>
-                    <div class="action-icon delete-icon">
-                      <DeleteBackIcon></DeleteBackIcon>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </el-popover>
+            <SelectMenu :data="data"
+                @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)"
+                @close="async () => {
+                  // 只有当 current_node 仍然是当前组件的 id 时，才执行关闭重置
+                  if (current_node === data.id) {
+                    current_node = -1;
+                  }
+                  if (awalys_show_popover === data.id) {
+                    awalys_show_popover = -1;
+                  }
+                  await nextTick();
+                }">
+                <ExperBtn @contextmenu.prevent v-if="current_node === data.id || awalys_show_popover === data.id"
+                  class="hover-menu-box" @click="() => { current_node = data.id; awalys_show_popover = data.id }">
+                </ExperBtn>
+              </SelectMenu>
           </div>
+          </ContextMemu>
         </template>
       </el-tree>
       <el-row v-else class="url-inputer">
@@ -139,22 +89,17 @@ import { ref, watch, onMounted, getCurrentInstance, nextTick } from "vue";
 import tools from "@/utils/tools";
 import Fold from "@/assets/svg/tree/fold.vue";
 import FoldExpend from "@/assets/svg/tree/fold_expend.vue";
-import MoreButton from "@/assets/svg/common/edit_more_btn.vue";
-import DoneButton from "@/assets/svg/common/done_btn.vue";
 import { ElTree } from "element-plus";
-import CButton from "@/components/common/button/CButton.vue";
 import { Filter } from "@element-plus/icons-vue";
 import { getTree, ApiActionApiTree } from "@/api/program/tree";
 import { useRoute, useRouter } from "vue-router";
-import CopyIcon from "@/assets/svg/common/copy.vue";
-import MoveIcon from "@/assets/svg/common/move.vue";
-import FolderPlusIcon from "@/assets/svg/common/fold_plus.vue";
-import InterfaceIcon from "@/assets/svg/common/interface.vue";
-import DeleteIcon from "@/assets/svg/common/delete.vue";
-import DeleteBackIcon from "@/assets/svg/common/delete_back.vue";
 import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
+import ContextMemu from '@/components/layout/menus/comps_interface/context_menu.vue'
+import SelectMenu from '@/components/layout/menus/comps_interface/select_menu.vue'
+import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
+import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
 const router = useRouter();
@@ -185,10 +130,314 @@ const container: any = ref(null);
 const header: any = ref(null);
 const treeKey = ref(0)
 const isFristenter = ref(true)
+const dropIndicatorState = ref<any>({});
+const origin_tree: any = ref(null)
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
 });
+
+
+// ⭐ 新增：拖拽逻辑处理函数
+// ===============================================
+
+/**
+ * 规则1：判断节点是否允许被拖拽
+ * @param {object} draggingNode - 被拖拽的节点
+ */
+const allowDrag = (draggingNode: any) => {
+  // 根节点（level 为 1）不允许拖拽
+  if (draggingNode.level === 1) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * 规则2 & 3：判断节点是否允许被放置
+ * @param {object} draggingNode - 被拖拽的节点
+ * @param {object} dropNode - 目标节点
+ * @param {string} type - 放置类型 ('prev', 'inner', 'next')
+ */
+const allowDrop = (draggingNode: any, dropNode: any, type: string) => {
+  // 不允许拖拽到根节点之外
+  if (dropNode.level === 1 && type !== 'inner') {
+    return false;
+  }
+  // 不允许拖拽到 "用例" (child_type === 3) 节点的内部
+  if (dropNode.data.child_type === 3 && type === 'inner') {
+    return false;
+  }
+  // 不允许将自己拖拽到自己内部
+  if (draggingNode.key === dropNode.key && type === 'inner') {
+    return false;
+  }
+  return true;
+};
+
+const handleDragStart = async (node: any, ev: any) => {
+  let dragImage = null
+  origin_tree.value = _.cloneDeep(dataSource.value)
+
+  dragImage = ev.target as HTMLElement
+  if (dragImage) {
+    ev.dataTransfer?.setDragImage(dragImage, 0, 0)
+  }
+}
+
+/**
+ * 拖拽经过其他节点时触发，用于显示视觉反馈
+ */
+// ⭐ 修改：用于追踪样式的变量
+let lastStyledElement: any = { el: null, styleType: '' };
+
+/**
+ * ⭐ 修改：重构样式重置函数
+ * 清除上一个被添加了拖拽样式的节点
+ */
+const resetLastNodeStyle = () => {
+  if (lastStyledElement.el) {
+    const el = lastStyledElement.el;
+    // 移除所有可能添加的内联样式
+    el.style.borderTop = '';
+    el.style.borderBottom = '';
+    el.style.borderRadius = '';
+    // 移除闪烁的 class
+    el.classList.remove('flashing-node-drag');
+  }
+  lastStyledElement = { el: null, styleType: '' };
+};
+/**
+ * ⭐ 核心修改：拖拽经过其他节点时触发
+ */
+let customDropType: any = ref('');
+const handleNodeDragOver = (draggingNode: any, dropNode: any, event: DragEvent) => {
+  const targetNodeContent: any = (event.target as HTMLElement).closest('.el-tree-node__content');
+  customDropType.value = '';
+
+  if (!targetNodeContent || !dropNode || !dropNode.key) {
+    resetLastNodeStyle();
+    return;
+  }
+
+  // 先清除上一次的样式，准备应用新样式
+  resetLastNodeStyle();
+
+  const rect = targetNodeContent.getBoundingClientRect();
+  const mouseY = event.clientY;
+
+  // --- 规则1：根节点不允许上方放置 ---
+  const isTopHalf = mouseY < rect.top + rect.height / 2;
+  if (dropNode.level === 1 && (mouseY < rect.top + rect.height)) {
+    // 如果是根节点，并且鼠标在其上半部分，则不做任何操作
+    return;
+  }
+
+  // --- 规则2：统一边框显示逻辑 ---
+  let dropType = '';
+  const height = rect.bottom - rect.top
+
+  // 目录节点（可以有子节点）
+  if (dropNode.data.child_type !== 3) {
+    const topZoneEndY = rect.top + (height * 0.2);
+    const bottomZoneStartY = rect.top + (height * 0.8);
+
+    if (mouseY < topZoneEndY) {
+      dropType = 'before';
+    } else if (mouseY > bottomZoneStartY) {
+      dropType = 'after';
+    } else {
+      dropType = 'inner';
+    }
+  }
+  // 用例节点（不能有子节点）
+  else {
+    if (isTopHalf) {
+      dropType = 'before';
+    } else {
+      dropType = 'after';
+    }
+  }
+
+  customDropType.value = dropType;
+
+  // --- 应用样式 ---
+  if (dropType === 'inner') {
+    targetNodeContent.classList.add('flashing-node-drag');
+    lastStyledElement = { el: targetNodeContent, styleType: 'flashing' };
+  } else if (dropType === 'before') {
+    targetNodeContent.style.borderTop = '2px solid black';
+    targetNodeContent.style.borderRadius = '0 0 4px 4px';
+    lastStyledElement = { el: targetNodeContent, styleType: 'border-top' };
+  } else if (dropType === 'after') {
+    // 寻找下一个兄弟节点来应用 top-border，以实现平滑过渡
+    const parentNodeEl = targetNodeContent.parentElement;
+    const nextSiblingNodeEl = parentNodeEl?.nextElementSibling;
+
+    if (nextSiblingNodeEl && nextSiblingNodeEl.classList.contains('el-tree-node')) {
+      const nextNodeContent = nextSiblingNodeEl.querySelector('.el-tree-node__content') as HTMLElement | null;
+      if (nextNodeContent) {
+        nextNodeContent.style.borderTop = '2px solid black';
+        nextNodeContent.style.borderRadius = '0 0 4px 4px';
+        lastStyledElement = { el: nextNodeContent, styleType: 'border-top' };
+      }
+    } else {
+      if (dropNode.data.child_type !== 3 && dropNode.expanded && parentNodeEl) {
+        // 是展开的目录：将样式应用到父容器(.el-tree-node)上
+        parentNodeEl.style.borderBottom = '2px solid var(--global-theme-color)';
+        // 对父容器应用圆角可能不会直接显示，但这在逻辑上是正确的
+        parentNodeEl.style.borderRadius = '0 0 4px 4px';
+        lastStyledElement = { el: parentNodeEl, styleType: 'border-bottom' };
+      } else {
+        // 不是展开的目录（是用例或折叠的目录）：按原样样式化节点本身
+        targetNodeContent.style.borderBottom = '2px solid black';
+        targetNodeContent.style.borderRadius = '4px 4px 0 0';
+        lastStyledElement = { el: targetNodeContent, styleType: 'border-bottom' };
+      }
+    }
+  }
+};
+
+/**
+ * 拖拽离开一个节点时触发，用于清除视觉反馈
+ */
+const handleNodeDragLeave = (draggingNode: any, leaveNode: any) => {
+  // 清空指示器状态
+  dropIndicatorState.value = {};
+};
+
+/**
+ * 拖拽结束时触发（无论成功与否），用于最终清理
+ */
+const handleNodeDragEnd = () => {
+  // 确保所有指示器都被清除
+  resetLastNodeStyle();
+};
+
+function findNodeAndParent(tree: Tree[], nodeId: number, parent: any = null): { node: Tree; parent: any; index: number } | null {
+  for (let i = 0; i < tree.length; i++) {
+    const node = tree[i];
+    if (node.id === nodeId) {
+      // 在顶层找到了
+      return { node, parent: { children: tree, obj: parent }, index: i };
+    }
+    if (node.children) {
+      const found = findNodeAndParent(node.children, nodeId, node);
+      if (found) {
+        // 在子节点中找到了
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 规则8：拖拽成功松开鼠标时触发，执行异步回调
+ * @param {object} draggingNode - 被拖拽的节点
+ * @param {object} dropNode - 目标节点
+ * @param {string} dropType - 放置类型 ('prev', 'inner', 'next')
+ */
+const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string) => {
+  // 1. 立即清理UI样式
+  resetLastNodeStyle();
+
+  const finalDropType = customDropType.value;
+  if (!finalDropType) {
+    return false;
+  }
+
+  // ⭐ 核心修改：先读取所有信息，再做判断和修改
+  // =================================================================
+
+  // 1. 在对树进行任何修改之前，先获取源节点和目标节点的所有信息
+  const sourceInfo = findNodeAndParent(origin_tree.value, draggingNode.data.id);
+  const targetInfo: any = findNodeAndParent(origin_tree.value, dropNode.data.id);
+
+  const origin_parent = sourceInfo?.parent.obj
+
+  // 确保两个节点都找到了
+  if (!sourceInfo || !targetInfo) {
+    return false;
+  }
+
+  // 2. 现在，在原始的、未被修改的树上进行位置比较
+  let hasPositionChanged = true;
+  if (sourceInfo.node.id === targetInfo.node.id) {
+    // 场景一：拖拽到自身
+    hasPositionChanged = false;
+  } else if (sourceInfo.parent.obj.id === targetInfo.parent.obj.id) { // 现在这个比较是可靠的
+    if (finalDropType === 'before' && sourceInfo.index === targetInfo.index - 1) {
+      // 场景二：本来就在目标节点的前一个位置
+      hasPositionChanged = false;
+    } else if (finalDropType === 'after' && sourceInfo.index === targetInfo.index + 1) {
+      // 场景三：本来就在目标节点的后一个位置
+      hasPositionChanged = false;
+    }
+  }
+
+  // 3. 如果位置没有变化，则直接中止，不执行任何修改
+  if (!hasPositionChanged) {
+    dataSource.value = origin_tree.value;
+    return false;
+  }
+
+  // 4. 只有在确认位置有变化后，才开始修改数据
+  // a. 从原始位置移除源节点
+  sourceInfo.parent.children.splice(sourceInfo.index, 1);
+  const sourceNodeData:any = sourceInfo.node;
+
+  // b. 将节点插入到新位置
+  if (finalDropType === 'inner') {
+    if (!targetInfo.node.children) {
+      targetInfo.node.children = [];
+    }
+    targetInfo.node.children.push(sourceNodeData);
+    targetInfo.node.count += 1;
+  } else {
+    // 注意：因为我们已经 splice 了一次，目标节点的父级 children 数组可能已变化
+    // 所以需要重新找到 targetIndex
+    const targetParentChildren = targetInfo.parent.children;
+    const currentTargetIndex = targetParentChildren.findIndex((node: any) => node.id === targetInfo.node.id);
+    if (finalDropType === 'before') {
+      targetParentChildren.splice(currentTargetIndex, 0, sourceNodeData);
+    } else if (finalDropType === 'after') {
+      targetParentChildren.splice(currentTargetIndex + 1, 0, sourceNodeData);
+    }
+    const current_source_info = targetParentChildren.filter((node:any) => node.id === sourceNodeData.id)
+    
+    if (origin_parent.id !== current_source_info[0].id) {
+      origin_parent.count -= 1
+    }
+  }
+  dataSource.value = origin_tree.value;
+
+  // 5. 调用API
+  try {
+    await update_tree_position(finalDropType, draggingNode.data.id, dropNode.data.id);
+    window.$toast({ title: "节点移动成功", type: 'success' });
+  } catch (error) {
+    window.$toast({ title: "节点移动失败", type: 'error' });
+    await load_tree();
+  }
+
+  // 6. 返回 false
+  return false;
+};
+
+
+async function update_tree_position(drop_type: string, node_id: number, target_node_id: number) {
+  const _data = {
+    type: 2,
+    child_action_type: 'change_position',
+    content: {
+      position_type: drop_type,
+      node_id: node_id,
+      target_node_id: target_node_id
+    },
+  };
+  const result = send_action(_data)
+}
 
 function randomStep() {
   const step = 10;
@@ -719,13 +968,9 @@ function changeExpanded(node: any) {
 }
 
 .hover-menu-box {
-  width: 1.4rem !important;
-  height: 0.9rem !important;
-
-  svg {
-    width: 14px !important;
-    height: 14px !important;
-  }
+  width: 2rem;
+  height: 1.5rem;
+  margin-right: 5px;
 }
 
 .project-summary {

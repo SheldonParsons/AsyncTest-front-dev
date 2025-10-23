@@ -920,7 +920,7 @@ const modelList = ref([
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
-import "highlight.js/styles/atom-one-light.css";
+// import "highlight.js/styles/atom-one-light.css";
 const md: any = ref(null);
 const timbre_options = [
   {
