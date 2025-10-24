@@ -8,15 +8,15 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 const desc_mapping: any = {
-    no_found: '暂无记录',
-    mid_running: '运行中',
-    mid_pending: '等待',
-    mid_unknown: '未知',
-    end_success: '完成',
-    end_error_self: '错误',
-    end_error_child: '子步骤错误',
-    end_skipped_self: '跳过',
-    end_skipped_child: '子步骤跳过'
+    no_found: 'No Record',
+    mid_running: 'Running',
+    mid_pending: 'Waiting',
+    mid_unknown: 'Unknow',
+    end_success: 'Success',
+    end_error_self: 'Error',
+    end_error_child: 'Error Child',
+    end_skipped_self: 'Skipped',
+    end_skipped_child: 'Skipped Child'
 }
 
 const props = defineProps({
@@ -53,10 +53,10 @@ const statusDescription = computed(() => {
 
 <style lang="scss" scoped>
 .outer {
-    border: 2px solid #f07b3f;
-    background-image: linear-gradient(80deg, #ffffff 0%, #ffffff 40%, #ffffff 90%);
-    border-radius: 5px;
-    padding: 0px 4px;
+    // border: 2px solid #f07b3f;
+    // background-image: linear-gradient(80deg, #ffffff 0%, #ffffff 40%, #ffffff 90%);
+    // border-radius: 5px;
+    // padding: 0px 4px;
 }
 .base-status-css {
     
@@ -72,17 +72,17 @@ const statusDescription = computed(() => {
 }
 
 .end_success {
-    background-image: linear-gradient(to right, rgb(62, 78, 255), rgb(122, 122, 255), rgb(86, 100, 255));
+    background-image: linear-gradient(to right, #b7ff90, #78ffd6, #b7ff90);
 }
 
 .end_error_child,
 .end_error_self {
-    background-image: linear-gradient(to right, rgb(254, 93, 136), rgb(254, 93, 136), rgb(254, 93, 136));
+    background-image: linear-gradient(to right, rgb(255, 237, 237), rgb(255, 245, 248), rgb(255, 255, 255));
 }
 
 .end_skipped_self,
 .end_skipped_child {
-    background-image: linear-gradient(to right, #ffc551, #cac531, #ffc551);
+    background-image: linear-gradient(to right, #fffca7, #fffcab, #fffca7);
 }
 
 .mid_pending {

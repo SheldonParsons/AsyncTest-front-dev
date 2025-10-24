@@ -1,4 +1,9 @@
 <template>
+    <div style="padding: 10px 10px 0px 10px;display: flex;justify-content: start;" class="project-label-container"
+        ref="containerRef">
+        <span style="font-size: 0.9rem;font-weight: 500;">所属项目：</span>
+        <motion.span style="font-size: 16px;" class="project-label">{{ data.project_name }}</motion.span>
+    </div>
     <div class="step-info">
         <div class="step-container">
             <div class="step-title">
@@ -40,22 +45,51 @@ import SwitchAnimation from '@/components/common/general/switch.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import AstButton from '@/components/common/general/button.vue'
+import { motion, animate, stagger } from "motion-v"
+import { splitText } from "motion-plus"
+import { ref } from 'vue'
 const props = defineProps({
     data: {
         type: null,
         default: null
     }
 })
+const containerRef = ref<HTMLDivElement | null>(null)
 
 onMounted(async () => {
     // 添加全局事件监听
     window.addEventListener("keydown", addAltE);
+    show_project_name()
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", addAltE);
 });
 
+function show_project_name() {
+    document.fonts.ready.then(() => {
+        if (!containerRef.value) return
+
+        // Hide the container until the fonts are loaded
+        containerRef.value.style.visibility = "visible"
+
+        const { words } = splitText(
+            containerRef.value.querySelector("span")!
+        )
+
+        // Animate the words in the h1
+        animate(
+            words,
+            { opacity: [0, 1], y: [10, 0] },
+            {
+                type: "spring",
+                duration: 2,
+                bounce: 0,
+                delay: stagger(0.05),
+            }
+        )
+    })
+}
 
 function addAltE(event: any) {
     if (
@@ -105,3 +139,22 @@ function changeShouldRise(status: boolean) {
 }
 
 </script>
+
+
+<style>
+.project-label-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: left;
+    visibility: hidden;
+}
+
+.project-label {
+    background-color: black;
+    color: white !important;
+    padding: 3px 5px;
+    border-radius: 5px;
+    font-size: 12px !important;
+}
+</style>

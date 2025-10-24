@@ -151,6 +151,10 @@ const props = defineProps({
   status_mapping: {
     default: null,
     type: null
+  },
+  ready_data: {
+    default: null,
+    type: null
   }
 })
 
@@ -160,9 +164,14 @@ watch(() => props.case_id, async (n, o) => {
   if (props.exclude_case === true) {
     params.exclude_case = props.exclude_case
   }
-  await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
-    treeData.value = res.steps
-  })
+  if (props.ready_data === null) {
+    await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
+      treeData.value = res.steps
+    })
+  } else {
+    treeData.value = props.ready_data
+  }
+
   await tools.delaySec(200)
   loading.value = false
   await nextTick()
@@ -181,10 +190,15 @@ onMounted(async () => {
   if (props.exclude_case === true) {
     params.exclude_case = props.exclude_case
   }
-  await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
-    case_info.value = res
-    treeData.value = case_info.value.steps
-  })
+  if (props.ready_data === null) {
+    await ApiGetCaseSingle(props.case_id, params).then((res: any) => {
+      case_info.value = res
+      treeData.value = case_info.value.steps
+    })
+  } else {
+    treeData.value = props.ready_data
+  }
+
   setGlobalCheck()
   emit("done")
   await tools.delaySec(200)

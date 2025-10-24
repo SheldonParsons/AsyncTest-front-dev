@@ -53,7 +53,7 @@
                 <MarkDown :data="`\`\`\`json\n${JSON.stringify(response.headers, null, 2)}\n\`\`\``"></MarkDown>
             </div>
             <div>
-                <MarkDown :data="response.body"></MarkDown>
+                <MarkDown :data="get_request_body(response.body)"></MarkDown>
             </div>
         </div>
         <div class="content no-scroll" v-if="timing && current_page === 2">
@@ -149,13 +149,28 @@ function back() {
     emit("back");
 }
 
-function get_request_body(body:any) {
-    if (body === null) {
-        return `\`\`\`json\n\n\`\`\``;
+function get_request_body(body: any) {
+    // 检查条件：
+    // 1. typeof inputValue === 'object' -> 必须是对象类型
+    // 2. inputValue !== null             -> 排除 null
+    // 3. !Array.isArray(inputValue)    -> 排除数组 (如果你想把数组也当成对象，可以去掉这个条件)
+    let isObject = typeof body === 'object' && body !== null && !Array.isArray(body);
+
+    if (isObject) {
+        // 如果是对象，直接返回，不进行任何处理
+        console.log("输入的是一个对象，不进行包装。");
+        return body;
     } else {
+        // 如果不是对象（是字符串、数字、null、undefined、数组等），进行格式化
+        console.log(`输入的值类型是 ${typeof body}，进行包装。`);
         try {
-            JSON.stringify(body)
-            return body
+            const result = JSON.parse(body)
+            isObject = typeof result === 'object' && result !== null && !Array.isArray(result);
+            if (isObject) {
+                return result
+            } else {
+                return `\`\`\`json\n${result}\n\`\`\``;
+            }
         } catch (error) {
             return `\`\`\`json\n${body}\n\`\`\``;
         }

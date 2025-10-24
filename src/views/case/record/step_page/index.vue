@@ -4,7 +4,7 @@
             <SplitterPanel :default-size="100" :min-size="40"
                 style="display:flex; flex-direction:column; height:100%;overflow: scroll;background-color: white;"
                 class="caseContentRef no-scroll">
-                <CaseSteps ref="caseStepRef" :read_only="3" :case_id="case_id" @choice="choice_step" :status_mapping>
+                <CaseSteps ref="caseStepRef" :read_only="3" :case_id="case_id" @choice="choice_step" :status_mapping="status_mapping" :ready_data="data">
                 </CaseSteps>
             </SplitterPanel>
             <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
@@ -137,6 +137,10 @@ async function onPanelResize(newSize: any, oldSize: any) {
 }
 
 function togglePanel() {
+    if (current_step_id.value === -1 && show_step_process.value === false) {
+        window.$toast({title: '请选择步骤进行查看'})
+        return
+    }
     if (!panelRef.value) return
     const isCollapsedNow = panelRef.value.getSize() === 0
     panelRef.value.resize(isCollapsedNow ? 60 : 0)
