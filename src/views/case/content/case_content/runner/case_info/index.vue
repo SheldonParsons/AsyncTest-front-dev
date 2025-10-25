@@ -29,7 +29,7 @@
                 <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
             </div>
         </div>
-        <motion.div ref="statementRef" :style="{ 'height': collapseStatement ? '150px' : '100%' }" class="statement">
+        <motion.div :style="{ 'height': collapseStatement ? '150px' : '100%' }" class="statement">
             <el-input v-if="!show_markdown" v-model="data.statement" :autosize="{ minRows: 4 }" type="textarea"
                 placeholder="用例描述信息（支持MarkDown格式）" />
             <MarkDown v-else :data="data.statement"></MarkDown>
@@ -66,7 +66,6 @@ const route = useRoute()
 const modelValue: any = ref([])
 const modelIdValue: any = ref([])
 const show_markdown = ref(true)
-const statementRef = ref(null)
 const collapseStatement = ref(true)
 const caseInfoRef: any = ref(null)
 const tag_mapping: any = ref([])
@@ -212,6 +211,7 @@ async function done_statement() {
     gap: 10px;
     padding: 20px;
     box-sizing: border-box;
+    color: #e3e3e3;
 
     .statement {
         overflow: hidden;

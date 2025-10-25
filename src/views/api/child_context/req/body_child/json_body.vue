@@ -1,144 +1,91 @@
 <template>
   <div class="body-tools">
-    <div class="title">数据结构</div>
+    <div class="title">Json数据结构</div>
     <div class="tools">
-      <div @click="open_review_dialog"><PreView />预览</div>
-      <div @click="open_json_exchange_dialog"><ExChange />JSON转数据结构</div>
+      <div @click="open_review_dialog">
+        <PreView />预览
+      </div>
+      <div @click="open_json_exchange_dialog">
+        <ExChange />JSON转数据结构
+      </div>
     </div>
   </div>
   <div class="private-table-outside">
-    <el-table
-      v-model:data="tableData"
-      style="width: 100%"
-      row-key="id"
-      default-expand-all
-      class="main-table"
-      :show-header="false"
-    >
+    <el-table v-model:data="tableData" style="width: 100%" row-key="id" default-expand-all class="main-table"
+      :show-header="false">
       <template #empty>
         <div v-if="loading">
           <Loading></Loading>
         </div>
-        <SpecialButton v-else @click="addFirstData"
-          >点击添加您的数据</SpecialButton
-        >
+        <SpecialButton v-else @click="addFirstData">点击添加您的数据</SpecialButton>
       </template>
       <el-table-column label="字段名" min-width="40%">
         <template #default="scope">
           <el-row style="width: 100%">
             <el-col :span="21">
-              <div
-                class="root-icon"
-                v-if="props.tableData[0].id === scope.row.id"
-              >
+              <div class="root-icon" v-if="props.tableData[0].id === scope.row.id">
                 <span>根目录</span>
               </div>
-              <input
-                v-else
-                placeholder="字段名"
-                v-model="scope.row.name"
-                class="private-input"
-              />
+              <input v-else placeholder="字段名" v-model="scope.row.name" class="private-input" />
             </el-col>
           </el-row>
         </template>
       </el-table-column>
       <el-table-column label="类型" min-width="30%">
         <template #default="scope">
-          <el-dropdown
-            trigger="click"
-            class="no-scroll"
-            @command="handleCommand"
-          >
-            <span
-              :style="{
-                color: typingAttrMapping[scope.row.t]['color'],
-              }"
-              class="typing-span"
-              >{{ scope.row.t }}</span
-            >
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  :command="[scope.row, item]"
-                  v-for="(item, index) in props.tableData[0].id === scope.row.id
-                    ? root_options
-                    : options"
-                  >{{ item.label }}</el-dropdown-item
-                >
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <MotionDropdown :scope="scope" :data="props.tableData[0].id === scope.row.id
+            ? root_options
+            : options" @command="handleCommand"></MotionDropdown>
         </template>
       </el-table-column>
       <el-table-column label="请求值">
         <template #default="scope">
-          <div
-            class="private-deafult g-unselect"
-            v-if="['object', 'array', 'null'].includes(scope.row.t)"
-          >
+          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null'].includes(scope.row.t)">
             {{ scope.row.default }}
           </div>
           <div v-else class="core-value">
             <div style="width: 100%">
-              <CodeMirror
-                v-model="scope.row.default"
-                :enableNewLine="enableNewLine"
-                :interface_id="interface"
-              ></CodeMirror>
+              <CodeMirror v-model="scope.row.default" :enableNewLine="enableNewLine" :interface_id="interface">
+              </CodeMirror>
             </div>
           </div>
         </template>
       </el-table-column>
       <el-table-column label="说明" min-width="50%">
         <template #default="scope">
-          <input
-            placeholder="说明"
-            v-model="scope.row.statement"
-            class="private-input"
-          />
+          <input placeholder="说明" v-model="scope.row.statement" class="private-input" />
         </template>
       </el-table-column>
       <el-table-column label="操作" min-width="20%">
         <template #default="scope">
-          <div>
-            <el-tooltip
-              content="添加相邻节点"
-              placement="top"
-              effect="light"
-              v-if="props.tableData[0].id !== scope.row.id"
-            >
-              <el-icon
-                @click="addNearNode(scope.row, scope.$index)"
-                class="action-icon action-icon-plus"
-                color="black"
-                ><CirclePlus
-              /></el-icon>
-            </el-tooltip>
-            <el-tooltip content="删除节点" placement="top" effect="light">
-              <el-icon
-                :class="{ 'top-icon': props.tableData[0].id === scope.row.id }"
-                class="action-icon action-icon-close"
-                @click="deleteNode(scope.row)"
-                color="#FA8072"
-                ><CircleClose
-              /></el-icon>
-            </el-tooltip>
+          <div style="display: flex;align-items: center;gap:3px" class="other-action">
+            <motion.div v-if="props.tableData[0].id !== scope.row.id" :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }"
+              style="display: flex;align-items: center;justify-content: center;">
+              <el-icon @click="addNearNode(scope.row, scope.$index)"
+                size="16" class="action-icon action-icon-plus" color="#139659">
+                <CirclePlus />
+              </el-icon>
+            </motion.div>
+            <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }"
+              style="display: flex;align-items: center;justify-content: center;">
+              <el-icon :class="{ 'top-icon': props.tableData[0].id === scope.row.id }"
+                class="action-icon action-icon-close" @click="deleteNode(scope.row)" color="gray" size="16">
+                <CircleCloseFilled />
+              </el-icon>
+            </motion.div>
           </div>
         </template>
       </el-table-column>
     </el-table>
   </div>
   <UnEditValue ref="unEditValueDialog"></UnEditValue>
-  <JsonExchange
-    v-model="json_exchange_model"
-    ref="jsonExchangeValueDialog"
-    @exchange_value="exchange_json_to_obj"
-  ></JsonExchange>
+  <JsonExchange v-model="json_exchange_model" ref="jsonExchangeValueDialog" @exchange_value="exchange_json_to_obj">
+  </JsonExchange>
 </template>
 
 <script setup lang="ts">
 import { ref, toRefs, nextTick } from "vue";
+import { motion } from 'motion-v'
 import { useRoute } from "vue-router";
 import Loading from "@/views/api/child_component/params_child/comp/loading.vue";
 import CodeMirror from "../../code_mirror.vue";
@@ -150,6 +97,7 @@ import ExChange from "@/assets/svg/common/exchange.vue";
 import GlobalStatus from "@/global";
 import { convertSchemaToObject } from "../object_to_string";
 import { ApiGetSummarySource } from "@/api/interface/index";
+import MotionDropdown from '@/views/api/child_context/req/body_child/comp/dropdown.vue'
 const route = useRoute();
 // 定义组件属性
 const props = defineProps<{
@@ -216,7 +164,7 @@ function open_review_dialog() {
   };
   ApiGetSummarySource(_data).then((res: any) => {
     console.log(props.tableData[0]);
-    
+
     unEditValueDialog.value.set_code(
       convertSchemaToObject(props.tableData[0], res)
     );
@@ -458,6 +406,7 @@ function getRandomInt(min: any, max: any) {
 .top-icon {
   margin-left: 0px !important;
 }
+
 .body-tools {
   display: flex;
   justify-content: space-between;
@@ -467,17 +416,20 @@ function getRandomInt(min: any, max: any) {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
+
   .title {
     font-size: 14px;
     font-weight: 500;
     display: flex;
     align-items: center;
   }
+
   .tools {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 5px;
+
     div {
       font-size: 12px;
       display: flex;
@@ -488,13 +440,16 @@ function getRandomInt(min: any, max: any) {
       gap: 4px;
       border-radius: 8px;
     }
+
     div:hover {
       background-color: var(--hover-bg);
     }
   }
 }
+
 .root-icon {
   display: flex;
+
   span {
     cursor: pointer;
     padding: 0px 3px;
@@ -507,12 +462,14 @@ function getRandomInt(min: any, max: any) {
     align-items: center;
   }
 }
+
 .core-value {
   display: flex;
   justify-content: start;
   align-items: center;
   gap: 4px;
 }
+
 .private-input {
   margin: 0;
   padding: 5px;
@@ -523,20 +480,24 @@ function getRandomInt(min: any, max: any) {
   font-size: 14px;
   width: 100%;
   border-radius: 8px;
+  font-weight: 500;
   transition: border-color 0.3s ease, color 0.3s ease;
 }
+
 .private-input:hover,
 .private-input:focus {
   color: var(--primary);
   border: 1px solid var(--border-color) !important;
   background-color: white;
 }
+
 .private-deafult {
   cursor: not-allowed;
   font-size: 15px;
   font-weight: 600;
   color: var(--primary);
 }
+
 .typing-span {
   cursor: pointer;
   display: flex;
@@ -545,18 +506,22 @@ function getRandomInt(min: any, max: any) {
   height: 20px;
   font-weight: 600;
 }
+
 .custom-mini {
   width: 20px;
   height: 20px;
 }
+
 .custom-mini:hover {
   background-color: white;
   border-radius: 3px;
   cursor: pointer;
 }
+
 .action-icon {
   cursor: pointer;
 }
+
 .action-icon-close {
   margin-left: 3px;
 }

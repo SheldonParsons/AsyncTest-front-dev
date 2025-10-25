@@ -104,6 +104,7 @@ watch(() => props.data, update);
 
 .markdown-body {
   overflow: scroll;
+  color: black;
 }
 
 .markdown-body blockquote {

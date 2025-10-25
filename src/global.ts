@@ -30,7 +30,7 @@ const GlobalStatus = {
         color: "#FFC125",
       },
       object: {
-        color: "#64A1F9",
+        color: "#009fff",
       },
       null: {
         color: "#8B795E",

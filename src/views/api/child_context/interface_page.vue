@@ -1,5 +1,5 @@
 <template>
-  <div style="display: flex;flex-direction: column;overflow: auto;height: 100%;min-width: 775px;">
+  <div style="display: flex;flex-direction: column;height: 100%;min-width: 775px;">
     <div>
       <el-row v-if="loading === false" class="url-inputer">
         <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
@@ -10,7 +10,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
-                }}</el-dropdown-item>
+                  }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown></el-col>
@@ -23,7 +23,12 @@
           <el-button class="send-btn" type="primary" @click="send">发送请求</el-button>
         </el-col>
         <el-col style="margin-left: 5px" :span="2">
-          <el-button style="width: 100%; height: 100%" @click="save">{{ is_case ? '保存' : '保存(Ctrl + S)' }}</el-button>
+          <MotionButton @click="save">
+            <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
+              <div style="font-size: 14px;">保存</div>
+              <div v-if="!is_case" style="font-size: 0.7rem;background-color: black;color: white;padding: 1px 2px;border-radius: 4px;">{{ get_system_save() }}</div>
+            </div>
+          </MotionButton>
         </el-col>
       </el-row>
       <el-row v-else class="url-inputer">
@@ -40,7 +45,7 @@
         </el-col>
       </el-row>
     </div>
-    <div class="content-detail no-scroll">
+    <div class="content-detail no-scroll" ref="interfaceInfoRef">
       <div v-if="loading === false">
         <RegularInput v-model="data.value.name"></RegularInput>
         <el-row>
@@ -72,15 +77,32 @@
                 说明文档
               </div>
               <div>
-                <EditButton v-if="show_markdown" class="special-btn" @click="show_markdown = false"></EditButton>
+                <EditButton v-if="show_markdown" class="special-btn"
+                  @click="show_markdown = false; collapseStatement = false;">
+                </EditButton>
                 <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
               </div>
             </div>
           </el-col>
+        </el-row>
+        <el-row>
           <el-col :offset="1" :span="22">
-            <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
-              placeholder="接口描述信息（支持MarkDown格式）" />
-            <MarkDown v-else :data="data.value.statement"></MarkDown>
+            <motion.div ref="statementRef" :style="{ 'height': collapseStatement ? '150px' : '100%' }"
+              class="statement">
+              <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
+                placeholder="用例描述信息（支持MarkDown格式）" />
+              <MarkDown v-else :data="data.value.statement"></MarkDown>
+              <div ref="collapseRef" v-if="data.value.statement.split('\n').length > 4" class="collapse"
+                :style="{ 'height': collapseStatement ? '100px' : '28px', 'position': collapseStatement ? 'absolute' : 'unset' }"
+                @click="toggleCollapse" style="display: flex;justify-content: center;">
+                <div style="display: flex;justify-content: center;align-items: center;min-width: 200px;">
+                  <div class="content">
+                    <ArrowDownIcon v-if="collapseStatement" style="width: 20px;"></ArrowDownIcon>
+                    <ArrowUpIcon v-else style="width: 20px;"></ArrowUpIcon>展开说明
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </el-col>
         </el-row>
       </div>
@@ -413,7 +435,7 @@
                     <div>
                       匹配结果：<span>{{
                         match.result === true ? "成功" : "失败"
-                        }}</span>
+                      }}</span>
                     </div>
                     <div>
                       结果值：<span>{{ match.value }}</span>
@@ -426,7 +448,7 @@
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                    }}</span>
+                  }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -462,7 +484,9 @@ import {
   watch,
   reactive,
   toRaw,
+  nextTick
 } from "vue";
+import { motion } from "motion-v"
 import SpecialInput from "@/components/common/input/specialInput.vue";
 import ParamsTool from "@/views/api/child_component/params.vue";
 import RegularInput from "../child_component/ragular_input.vue";
@@ -482,8 +506,11 @@ import Body from "./req/body.vue";
 import Params from "./req/params.vue";
 import Headers from "./req/headers.vue";
 import GlobalStatus from "@/global";
+import MotionButton from '@/assets/motion/button.vue'
 import SimpleInput from "@/components/common/input/simpleInput.vue";
 import tools from "@/utils/tools";
+import ArrowDownIcon from '@/assets/logo/final/match_vue/arrow_down.vue'
+import ArrowUpIcon from '@/assets/logo/final/match_vue/arrow_up.vue'
 import _ from "lodash";
 //debounce
 
@@ -524,6 +551,8 @@ const responsors: any = ref([]);
 const marker_list: any = ref([]);
 const serverOptions: any = ref([]);
 const responseOptions: any = ref([]);
+const collapseStatement = ref(true)
+const interfaceInfoRef: any = ref(null)
 const current_response: any = ref({
   content: "",
   headers: [],
@@ -549,12 +578,17 @@ import deepDiff from "deep-diff";
 onMounted(async () => {
   // 添加全局事件监听
   window.addEventListener("keydown", addAltS);
+
   await get_source();
   GlobalState.sendMessage("clean_interface_change", {
     node_id: props.node_id,
   });
   setupWatch();
   setupWatchResponse();
+  if (data.value.statement.length === 0) {
+    show_markdown.value = false
+    collapseStatement.value = false
+  }
 });
 
 const props = defineProps({
@@ -607,6 +641,27 @@ watch(
     }
   }
 );
+
+function get_system_save() {
+  if (navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
+    return '⌘+S'
+  }
+  return 'Ctrl+S'
+}
+
+
+function toggleCollapse() {
+  collapseStatement.value = !collapseStatement.value
+  const element = interfaceInfoRef.value;
+  if (element) {
+    // 使用 scrollTo 滚动元素内部的内容
+    element.scrollTo({
+      top: 0, // 滚动到内容的总高度，即最底部
+      behavior: 'smooth'
+    });
+  }
+  show_markdown.value = true
+}
 
 function send() {
   const _data = {
@@ -1065,6 +1120,37 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 };
 </script>
 <style lang="scss" scoped>
+.doc-base-title-statement {
+  color: gray;
+  font-size: 0.9em;
+  font-weight: 500;
+  margin-top: 20px;
+  margin-bottom: 5px;
+}
+
+.statement {
+  overflow: hidden;
+  position: relative;
+
+  .collapse {
+    padding-top: 10px;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: linear-gradient(180deg, #fff0 0%, #fff 66.07%);
+
+    .content {
+      animation: blink 5s infinite;
+      display: flex;
+      width: 100%;
+      justify-content: center;
+      align-items: center;
+    }
+  }
+}
+
 .content-detail {
   overflow: auto;
 }
@@ -1104,8 +1190,8 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 }
 
 .special-btn {
-  width: 1rem !important;
-  height: 1rem !important;
+  width: 24px !important;
+  height: 24px !important;
 }
 
 .add-response {
@@ -1360,14 +1446,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   font-size: 0.9em;
   margin: 20px 0px !important;
   font-weight: 500;
-}
-
-.doc-base-title-statement {
-  color: gray;
-  font-size: 0.9em;
-  font-weight: 500;
-  margin-top: 20px;
-  margin-bottom: 5px;
 }
 
 .el-collapse-item__wrap,

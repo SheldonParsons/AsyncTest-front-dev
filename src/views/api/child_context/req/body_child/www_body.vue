@@ -37,28 +37,7 @@
       </el-table-column>
       <el-table-column label="类型" min-width="30%">
         <template #default="scope">
-          <el-dropdown
-            trigger="click"
-            class="no-scroll"
-            @command="handleCommand"
-          >
-            <span
-              :style="{
-                color: typingAttrMapping[scope.row.t]['color'],
-              }"
-              class="typing-span"
-              >{{ scope.row.t }}</span
-            >
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  :command="[scope.row, item]"
-                  v-for="(item, index) in options"
-                  >{{ item.label }}</el-dropdown-item
-                >
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <MotionDropdown :scope="scope" :data="options" @command="handleCommand"></MotionDropdown>
         </template>
       </el-table-column>
       <el-table-column label="请求值">
@@ -125,22 +104,21 @@
       </el-table-column>
       <el-table-column label="操作" min-width="20%">
         <template #default="scope">
-          <el-tooltip content="添加相邻节点" placement="top" effect="light">
-            <el-icon
-              @click="addNearNode(scope.$index)"
-              class="action-icon action-icon-plus"
-              color="black"
-              ><CirclePlus
-            /></el-icon>
-          </el-tooltip>
-          <el-tooltip content="删除节点" placement="top" effect="light">
-            <el-icon
-              class="action-icon action-icon-close"
-              @click="deleteNode(scope.$index)"
-              color="#FA8072"
-              ><CircleClose
-            /></el-icon>
-          </el-tooltip>
+          <div style="display: flex;align-items: center;gap:3px" class="other-action">
+            <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }"
+              style="display: flex;align-items: center;justify-content: center;">
+              <el-icon @click="addNearNode(scope.$index)" size="16" class="action-icon action-icon-plus"
+                color="#139659">
+                <CirclePlus />
+              </el-icon>
+            </motion.div>
+            <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }"
+              style="display: flex;align-items: center;justify-content: center;">
+              <el-icon class="action-icon action-icon-close" @click="deleteNode(scope.$index)" color="gray" size="16">
+                <CircleCloseFilled />
+              </el-icon>
+            </motion.div>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -150,6 +128,7 @@
 
 <script setup lang="ts">
 import { ref, toRefs, getCurrentInstance } from "vue";
+import { motion } from "motion-v"
 import { useRoute } from "vue-router";
 import Loading from "@/views/api/child_component/params_child/comp/loading.vue";
 import CodeMirror from "../../code_mirror.vue";
@@ -160,6 +139,7 @@ import { convertSchemaToUrlencoded } from "../object_to_string";
 import GlobalStatus from "@/global";
 import tools from "@/utils/tools";
 import { ApiGetSummarySource } from "@/api/interface/index";
+import MotionDropdown from '@/views/api/child_context/req/body_child/comp/dropdown.vue'
 const route = useRoute();
 // 定义组件属性
 const props = defineProps<{
@@ -368,6 +348,7 @@ function getRandomInt(min: any, max: any) {
   font-size: 14px;
   width: 100%;
   border-radius: 8px;
+  font-weight: 500;
   transition: border-color 0.3s ease, color 0.3s ease;
 }
 .private-input:hover,
