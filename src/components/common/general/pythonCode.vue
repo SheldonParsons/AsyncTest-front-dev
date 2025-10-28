@@ -1,36 +1,47 @@
 <template>
-  <div class="script-editor-container">
+  <div class="script-editor-container" :class="[{ maximized: isMaximized }]">
     <div class="script-content">
-      <el-row style="width: 100%">
-        <el-col :span="showShortcuts ? 20 : 24">
-          <div class="editor-header">
-            <div>
-              {{ pythonVersion }}
-            </div>
+      <div style="height: 40px;">
+        <div class="editor-header">
+          <div>
+            {{ pythonVersion }}
           </div>
-          <PythonEditor ref="editorRef" :code="real_code" :disable="disabled" @change="code_change"></PythonEditor>
-        </el-col>
-        <el-col v-if="showShortcuts" :span="4" class="tran-base">
-          <div class="script-code-shortcuts">
-            <div class="shortcuts-title">快捷代码</div>
-            <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
-              @click="insertCode(shortcut.code)">
-              {{ shortcut.label }}
-            </div>
-            <!-- Conditionally render the response shortcut -->
-            <div v-if="isPostScript" class="shortcut-item" @click="insertCode('await at.response()\\n')">
-              获取响应内容
-            </div>
+          <div class="max">
+            <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }" @click="toggleMaximize">
+              <MaxBtn></MaxBtn>
+            </motion.div>
           </div>
-        </el-col>
-      </el-row>
+        </div>
+      </div>
+      <div style="display: flex;height: calc(100% - 40px);overflow: hidden;">
+        <PythonEditor ref="editorRef" :code="real_code" :disable="disabled" @change="code_change" style="flex: 80;">
+        </PythonEditor>
+        <div class="script-code-shortcuts" style="flex: 20;">
+          <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
+            @click="insertCode(shortcut.code)">
+            {{ shortcut.label }}
+          </div>
+          <div v-if="isPostScript" class="shortcut-item" @click="insertCode('await at.response()\\n')">
+            获取响应内容
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+
 </template>
 
 <script lang="ts" setup>
 import { ref, onMounted } from "vue";
+import { motion } from 'motion-v'
 import PythonEditor from "@/components/common/editor/PythonEditor.vue";
+import MaxBtn from '@/components/common/mini_btn/max.vue'
+// 最大化状态
+function toggleMaximize() {
+  isMaximized.value = !isMaximized.value
+}
+
+const isMaximized = ref(false)
 
 const emit = defineEmits(["change"])
 
@@ -91,18 +102,43 @@ async function code_change(value: string) {
 </script>
 
 <style lang="scss" scoped>
+.maximized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100% !important;
+  z-index: 99;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  box-sizing: border-box !important;
+}
+
 .script-editor-container {
-  border: 1px solid #e0e0e0;
+  // border: 1px solid #e0e0e0;
   border-radius: 8px;
   overflow: hidden;
+  height: 400px;
+  width: 100%;
 }
 
 .script-content {
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+
   .editor-header {
     height: 40px;
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #e0e0e0;
+    background-color: #252526;
+    color: #cccccc;
+    border-bottom: 1px solid #cccccc;
     box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 }
 
@@ -110,24 +146,32 @@ async function code_change(value: string) {
   height: 100%;
   box-sizing: border-box;
   border-left: 1px solid #e0e0e0;
-  background-color: #fafafa;
+  /* 保持原有边框色 */
+  /* 1. 使用一个更干净的、几乎是白色的背景 */
+  background-color: #f8f9fa;
   padding: 8px;
   font-size: 13px;
 
   .shortcuts-title {
     font-weight: 500;
     margin-bottom: 10px;
-    color: #333;
+    /* 2. 使用一个柔和的深灰色作为文字颜色 */
+    color: #495057;
   }
 
   .shortcut-item {
     padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    /* 添加颜色过渡 */
+    color: #495057;
 
     &:hover {
-      background-color: #e9e9e9;
+      /* 3. 悬停时使用淡蓝色背景和主题色文字 */
+      background-color: #cccccc;
+      color: #000000;
+      /* 一个示例蓝色，您可以换成您的主题色 */
     }
   }
 }

@@ -4,7 +4,8 @@
             <SplitterPanel :default-size="100" :min-size="40"
                 style="display:flex; flex-direction:column; height:100%;overflow: scroll;background-color: white;"
                 class="caseContentRef no-scroll">
-                <CaseSteps ref="caseStepRef" :read_only="3" :case_id="case_id" @choice="choice_step" :status_mapping="status_mapping" :ready_data="data">
+                <CaseSteps ref="caseStepRef" :read_only="3" :case_id="case_id" @choice="choice_step"
+                    :status_mapping="status_mapping" :ready_data="data">
                 </CaseSteps>
             </SplitterPanel>
             <SplitterResizeHandle ref="handleRef" class="SplitterResizeHandle"
@@ -12,9 +13,19 @@
             <SplitterPanel class="animated-panel" @resize="onPanelResize" style="
             display:flex; flex-direction:column; height:100%; background-color: white;
           " ref="panelRef" :default-size="0" :min-size="0" :max-size="60" :collapsed-size="0">
-                <ProcessRecord v-if="show_step_process" :callback="child_case_process_record" :padding_height="100"
-                    :interface_callback="interface_detail_record" :force_check_ending="stopRecordChecking">
+                <ProcessRecord v-if="show_step_process" :is_step_detail="true" :callback="child_case_process_record"
+                    :padding_height="100" :interface_callback="interface_detail_record"
+                    :force_check_ending="stopRecordChecking" @showStepDetail=showStepDetailAction>
                 </ProcessRecord>
+                <div class="step-tips" v-if="show_step_detail && current_step_data && current_step_data.type === 'interface'">
+                    <div>
+                        需要提醒您，您现在看到的接口信息是最新的，而不是您运行任务时的接口信息。
+                    </div>
+                </div>
+                <div style="overflow-y: auto;flex: 1;" class="no-scroll" v-if="show_step_detail">
+                    <StepDetail :case_id="case_id" :data="current_step_data" @save="saveStep">
+                    </StepDetail>
+                </div>
             </SplitterPanel>
         </SplitterGroup>
         <AstLoading v-else></AstLoading>
@@ -32,6 +43,7 @@ import { ApiGetRecordList } from '@/api/case/case/index'
 import { onMounted, ref, computed, onUnmounted, nextTick } from 'vue'
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import ProcessRecord from '@/views/case/record/comp/process_record.vue'
+import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
 
 
 const data = ref(null)
@@ -42,6 +54,8 @@ const COLLAPSE_THRESHOLD = 20
 const current_step_id = ref(-1)
 const show_step_process = ref(false)
 const current_step_info = ref()
+const show_step_detail = ref(false)
+const current_step_data = ref()
 const isCollapsed = computed(() => {
     try {
         return panelRef.value?.getSize() === 0
@@ -72,9 +86,19 @@ function closePanel() {
     panelRef.value.resize(0)
 }
 
+function showStepDetailAction() {
+    show_step_process.value = false
+    show_step_detail.value = true
+}
+
+function saveStep() {
+    window.$toast({ title: '您无法在日志处修改步骤信息', type: 'info' })
+}
+
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
+    current_step_data.value = data
     if (data.type === 'empty') {
-        window.$toast({title: '该步骤无法查看详情'})
+        window.$toast({ title: '该步骤无法查看详情' })
         return
     }
     if (show_step_process.value === true) {
@@ -138,7 +162,7 @@ async function onPanelResize(newSize: any, oldSize: any) {
 
 function togglePanel() {
     if (current_step_id.value === -1 && show_step_process.value === false) {
-        window.$toast({title: '请选择步骤进行查看'})
+        window.$toast({ title: '请选择步骤进行查看' })
         return
     }
     if (!panelRef.value) return
@@ -233,6 +257,20 @@ const props = defineProps({
 </script>
 
 <style lang="scss" scoped>
+.step-tips {
+    padding: 10px;
+
+    div {
+        box-sizing: border-box;
+        border-radius: 8px;
+        border: 2px solid #f0f0f0;
+        font-weight: 500;
+        font-size: 0.9rem;
+        padding: 10px;
+        color: rgba($color: #000000, $alpha: 0.8);
+        background: linear-gradient(80deg, #ffd460 0%, #f8b98c 40%, #f07b3f 90%)
+    }
+}
 .case-content {
     flex-grow: 1;
     min-height: 0;

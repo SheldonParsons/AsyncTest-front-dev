@@ -194,7 +194,7 @@ async function get_data_set() {
 function addAltE(event: any) {
     if (
         (event.metaKey || event.ctrlKey) &&
-        (event.key === "e" || event.code === "KeyE")
+        (event.key === "e" || event.code === "KeyE" || event.key === "s" || event.code === "KeyS")
     ) {
         event.preventDefault(); // 阻止浏览器默认行为
         save();

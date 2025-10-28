@@ -1147,8 +1147,23 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
       width: 100%;
       justify-content: center;
       align-items: center;
+      color: black;
     }
   }
+}
+
+@keyframes blink {
+
+    0%,
+    50%,
+    100% {
+        opacity: 1;
+    }
+
+    25%,
+    75% {
+        opacity: 0;
+    }
 }
 
 .content-detail {

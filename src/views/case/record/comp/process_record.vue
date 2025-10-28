@@ -19,10 +19,17 @@
                     :maxLength="50">
                 </InputAnimation>
             </div>
-            <div>
-                <motion.div :whilePress="{ scale: 0.95 }" :whileHover="{ scale: 1.05 }" @click="reset_filter"
-                    style="cursor: pointer;" class="info-type">
-                    重置筛选</motion.div>
+            <div style="display: flex;align-items: center;justify-content: end;gap: 5px;">
+                <MotionButton @click="reset_filter" style="width: 80px;height: 30px;">
+                    <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
+                        <div style="font-size: 14px;">重置筛选</div>
+                    </div>
+                </MotionButton>
+                <MotionButton @click="emit('showStepDetail')" style="width: 80px;height: 30px;" v-if="is_step_detail">
+                    <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
+                        <div style="font-size: 14px;">步骤详情</div>
+                    </div>
+                </MotionButton>
             </div>
         </div>
         <div v-if="show_type === 1 && loading === false" ref="caseInfoRef" class="process-record-contrainer"
@@ -83,10 +90,11 @@
         </div>
         <div v-if="show_type === 1 && loading === true">
             <el-skeleton animated>
-            <template #template>
-              <el-skeleton-item v-for="_ in 10" variant="h1" style="width: 100%;height: 30px; margin-bottom: 10px;" />
-            </template>
-          </el-skeleton>
+                <template #template>
+                    <el-skeleton-item v-for="_ in 10" variant="h1"
+                        style="width: 100%;height: 30px; margin-bottom: 10px;" />
+                </template>
+            </el-skeleton>
         </div>
     </div>
 </template>
@@ -103,6 +111,9 @@ import GetParamDetail from '@/views/case/record/comp/get_param_detail.vue'
 import InfoSvg from '@/assets/svg/common/new_icon/info.vue'
 import tools from '@/utils/tools'
 import _ from 'lodash'
+import MotionButton from '@/assets/motion/button.vue'
+
+const emit = defineEmits(['showStepDetail'])
 
 const props = defineProps({
     callback: {
@@ -136,6 +147,10 @@ const props = defineProps({
         default: 40
     },
     wating: {
+        type: Boolean,
+        default: false
+    },
+    is_step_detail: {
         type: Boolean,
         default: false
     }
@@ -205,7 +220,7 @@ function show_set_variable_detail(record_line: any) {
     current_set_variable_detail.value = JSON.parse(record_line.desc)
 }
 
-function show_get_param_detail(record_line:any) {
+function show_get_param_detail(record_line: any) {
     show_type.value = 5
     current_get_variable_detail.value = record_line.desc
 }
@@ -499,7 +514,7 @@ function reset_filter() {
                 color: #ffffff !important;
                 border: 2px solid #ffc551;
             }
-            
+
             .delay_warning,
             .action_warning {
                 background: linear-gradient(to right, rgb(255, 123, 0), rgb(228, 160, 23), rgb(220, 133, 20));

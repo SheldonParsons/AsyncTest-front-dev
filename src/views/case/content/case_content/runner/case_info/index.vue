@@ -33,11 +33,11 @@
             <el-input v-if="!show_markdown" v-model="data.statement" :autosize="{ minRows: 4 }" type="textarea"
                 placeholder="用例描述信息（支持MarkDown格式）" />
             <MarkDown v-else :data="data.statement"></MarkDown>
-            <div ref="collapseRef" v-if="data.statement.split('\n').length > 4" class="collapse"
+            <div ref="collapseRef" v-if="data.statement.split('\n').length > 4" class="collapse-comp"
                 :style="{ 'height': collapseStatement ? '100px' : '28px', 'position': collapseStatement ? 'absolute' : 'unset' }"
                 @click="toggleCollapse" style="display: flex;justify-content: center;">
                 <div style="display: flex;justify-content: center;align-items: center;min-width: 200px;">
-                    <div class="content">
+                    <div class="content-comp">
                         <ArrowDownIcon v-if="collapseStatement" style="width: 20px;"></ArrowDownIcon>
                         <ArrowUpIcon v-else style="width: 20px;"></ArrowUpIcon>展开说明
                     </div>
@@ -217,7 +217,7 @@ async function done_statement() {
         overflow: hidden;
         position: relative;
 
-        .collapse {
+        .collapse-comp {
             padding-top: 10px;
             bottom: 0;
             left: 0;
@@ -226,12 +226,13 @@ async function done_statement() {
             cursor: pointer;
             background: linear-gradient(180deg, #fff0 0%, #fff 66.07%);
 
-            .content {
+            .content-comp {
                 animation: blink 5s infinite;
                 display: flex;
                 width: 100%;
                 justify-content: center;
                 align-items: center;
+                color: black;
             }
         }
     }

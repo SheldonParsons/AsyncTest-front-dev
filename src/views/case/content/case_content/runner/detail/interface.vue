@@ -25,12 +25,15 @@
                     <InputAnimation v-model="raiseCodeAsString" :placeholder="'异常响应码'" :maxLength="3"></InputAnimation>
                 </div>
             </div>
-            <div class="step-footer">
-                <div>
-                    <AstButton @click="save">
-                        <div style="font-size: 0.8rem;">保存(Ctrl+E)</div>
-                    </AstButton>
-                </div>
+            <div class="step-footer" style="display: flex;justify-content: end;align-items: center;">
+                <MotionButton @click="save" style="width: 90px;">
+                    <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
+                        <div style="font-size: 14px;">保存</div>
+                        <div
+                            style="font-size: 0.7rem;background-color: black;color: white;padding: 1px 2px;border-radius: 4px;">
+                            {{ get_system_save() }}</div>
+                    </div>
+                </MotionButton>
             </div>
         </div>
     </div>
@@ -44,10 +47,18 @@ import InterfacePage from "@/views/api/child_context/interface_page.vue";
 import SwitchAnimation from '@/components/common/general/switch.vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
-import AstButton from '@/components/common/general/button.vue'
 import { motion, animate, stagger } from "motion-v"
 import { splitText } from "motion-plus"
 import { ref } from 'vue'
+import MotionButton from '@/assets/motion/button.vue'
+
+function get_system_save() {
+    if (navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
+        return '⌘+E'
+    }
+    return 'Ctrl+E'
+}
+
 const props = defineProps({
     data: {
         type: null,
@@ -65,6 +76,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", addAltE);
 });
+
+
 
 function show_project_name() {
     document.fonts.ready.then(() => {
@@ -94,7 +107,7 @@ function show_project_name() {
 function addAltE(event: any) {
     if (
         (event.metaKey || event.ctrlKey) &&
-        (event.key === "e" || event.code === "KeyE")
+        (event.key === "e" || event.code === "KeyE" || event.key === "s" || event.code === "KeyS")
     ) {
         event.preventDefault(); // 阻止浏览器默认行为
         save();

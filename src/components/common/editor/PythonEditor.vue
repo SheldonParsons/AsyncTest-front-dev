@@ -1,14 +1,12 @@
 <template>
-  <div>
+  <div style="height: 100%;overflow: hidden;min-height: 0;flex-grow: 1;border-radius: 0px;">
     <div class="ed editor" ref="dom"></div>
-    <div v-if="showPlaceholder" class="placeholder">请输入代码...</div>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { onMounted, ref, onBeforeUnmount, watch } from "vue";
-
-const showPlaceholder = ref(true);
+import { createPythonCompletionProvider } from "@/components/common/editor/completionProvider";
 
 const emit = defineEmits(["change"]);
 
@@ -31,6 +29,8 @@ const pythonLanguage: any = ref(null);
 
 let instance: any;
 
+let model: any;
+
 let codeCompleteProvider: any;
 
 const props = defineProps({
@@ -46,32 +46,38 @@ const props = defineProps({
 
 watch(
   () => props.code,
-  (newVal: any, oldVal) => {
-    if (props.code && instance) {
+  (newVal: any) => {
+    // 确保 instance 存在，并且外部传入的值与编辑器当前值不同
+    if (instance && newVal !== instance.getValue()) {
       instance.setValue(newVal);
     }
   }
 );
 
 onMounted(async () => {
-  // 动态加载monaco
-  import("monaco-editor").then(async (m) => {
-    import("monaco-editor/esm/vs/basic-languages/python/python").then(
-      async (p) => {
-        pythonLanguage.value = p.language;
-        await createLanguage(m);
-      }
-    );
-  });
+  // 使用 Promise.all 并行加载
+  const [m, p] = await Promise.all([
+    import("monaco-editor"),
+    import("monaco-editor/esm/vs/basic-languages/python/python"),
+  ]);
+
+  pythonLanguage.value = p.language;
+  await createLanguage(m);
 });
 
 onBeforeUnmount(() => {
-  // 在组件销毁时清理注册的补全项
-  if (codeCompleteProvider) {
-    codeCompleteProvider.dispose();
+  // 销毁所有注册的事件
+  registerList.forEach((item: any) => item.dispose());
+
+  // 销毁编辑器实例
+  if (instance) {
+    instance.dispose();
+  }
+  // 销毁模型
+  if (model) {
+    model.dispose();
   }
 });
-
 async function createLanguage(m: any) {
   monaco.value = m;
   monaco.value.languages.register({ id: defaultLanguage.value });
@@ -82,6 +88,7 @@ async function createLanguage(m: any) {
     rules: [
       { token: "custom-brackets", foreground: "FFA500", fontStyle: "italic" }, // 橙色
       { token: "number", foreground: "0000FF" }, // 数字显示为蓝色
+      { token: "keyword", foreground: "0000FF" },
       { token: "number-in-string", foreground: "CD5555" }, // 字符串内的数字显示为绿色
       { token: "string", foreground: "CD5555" }, // 深绿色，斜体
       { token: "string.quote", foreground: "CD5555" }, // 红色
@@ -103,7 +110,7 @@ async function createLanguage(m: any) {
   monaco.value.editor.setTheme("fizz");
 
   // 创建编辑器model
-  const model = monaco.value.editor.createModel(
+  model = monaco.value.editor.createModel(
     props.code,
     defaultLanguage.value
   );
@@ -112,6 +119,7 @@ async function createLanguage(m: any) {
     model,
     tabSize: 4,
     fontSize: "14px",
+    fixedOverflowWidgets: true,
     readOnly: props.disable,
     automaticLayout: true,
     fontFamily: '"JetBrains Mono", monospace',
@@ -127,6 +135,14 @@ async function createLanguage(m: any) {
       side: "right", // "right" | "left"
       size: "fit", // "proportional" | "fill" | "fit"
     },
+    scrollbar: {
+      // 垂直滚动条的宽度
+      verticalScrollbarSize: 6, // 默认是 10px，我们把它改小
+      // 水平滚动条的高度
+      horizontalScrollbarSize: 6,
+      // (可选) 滚动条箭头的尺寸
+      arrowSize: 10,
+    }
   });
   instance.getDomNode().addEventListener('wheel', function (event: any) {
     const currentScrollTop = instance.getScrollTop();
@@ -143,17 +159,8 @@ async function createLanguage(m: any) {
 
   // 监听内容变化
   instance.onDidChangeModelContent(() => {
-    const content = instance.getValue();
-    showPlaceholder.value = content.trim() === "";
-  });
-
-  // 初始检查
-  showPlaceholder.value = instance.getValue().trim() === "";
-
-  // 监听编辑器内容变化
-  instance.onDidChangeModelContent((e: any) => {
     const newCode = instance.getValue();
-    emit("change", newCode); // 向父组件发送更新的代码
+    emit("change", newCode);
   });
 
   initRegister();
@@ -202,61 +209,11 @@ defineExpose({
 
 // 注册通用功能
 function initRegister() {
+  const customProvider = createPythonCompletionProvider(monaco.value, pythonLanguage.value);
   // 补全代码监听
   codeCompleteProvider = monaco.value.languages.registerCompletionItemProvider(
     defaultLanguage.value,
-    {
-      triggerCharacters: ["."],
-      provideCompletionItems: function (
-        model: any,
-        position: any,
-        context: any,
-        token: any
-      ) {
-        const lineContent = model.getLineContent(position.lineNumber);
-        const textUntilPosition = lineContent.substring(0, position.column - 1);
-
-        // 检测是否以 "at." 结尾
-        const match = textUntilPosition.match(/at\.$/);
-
-        // 自定义补全项
-        const customSuggestions = [
-          {
-            label: "variables",
-            kind: monaco.value.languages.CompletionItemKind.Property,
-            insertText: "variables",
-          },
-          {
-            label: "environment",
-            kind: monaco.value.languages.CompletionItemKind.Property,
-            insertText: "environment",
-          },
-          {
-            label: "global",
-            kind: monaco.value.languages.CompletionItemKind.Property,
-            insertText: "global",
-          },
-        ];
-
-        // 如果匹配到 at. 则返回自定义建议
-        if (match) {
-          return { suggestions: customSuggestions };
-        }
-        let suggestions: any = [];
-        // 这个keywords就是python.js文件中有的
-        pythonLanguage.value.keywords.forEach((item: any) => {
-          suggestions.push({
-            label: item,
-            kind: monaco.value.languages.CompletionItemKind.Keyword,
-            insertText: item,
-          });
-        });
-        return {
-          // 最后要返回一个数组
-          suggestions: suggestions,
-        };
-      },
-    }
+    customProvider
   );
   registerList.push(codeCompleteProvider);
 }
@@ -322,8 +279,9 @@ function initRegister() {
 }
 
 .editor {
-  height: 400px;
+  height: 100%;
   width: 100%;
+  overflow: hidden;
 }
 
 .el-row {
@@ -353,5 +311,31 @@ function initRegister() {
   .view-lines {
     font-family: "JetBrains Mono", monospace !important;
   }
+}
+
+/* 针对 Monaco 内部的滚动条容器 */
+.monaco-scrollable-element .scrollbar {
+  background: transparent;
+}
+
+/* 针对滚动条的滑块 (thumb) */
+.monaco-scrollable-element .slider {
+  background: rgba(100, 100, 100, 0.4);
+
+  /* 【核心】在这里添加圆角 */
+  /* 一个 3px 到 5px 的值通常看起来效果最好 */
+  border-radius: 3px;
+
+  transition: background 0.2s ease-in-out;
+}
+
+/* 当鼠标悬停在整个滚动条区域上时，让滑块变得更不透明 */
+.monaco-scrollable-element .scrollbar:hover .slider {
+  background: rgba(100, 100, 100, 0.7);
+}
+
+/* 当鼠标直接悬停在滑块上时，让它变得最不透明 */
+.monaco-scrollable-element .slider:hover {
+  background: rgba(100, 100, 100, 0.9);
 }
 </style>
