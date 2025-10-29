@@ -14,15 +14,12 @@
         </div>
       </div>
       <div style="display: flex;height: calc(100% - 40px);overflow: hidden;">
-        <PythonEditor ref="editorRef" :code="real_code" :disable="disabled" @change="code_change" style="flex: 80;">
+        <PythonEditor ref="editorRef" :code="code" :disable="disabled" @change="code_change" style="flex: 80;">
         </PythonEditor>
         <div class="script-code-shortcuts" style="flex: 20;">
           <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
             @click="insertCode(shortcut.code)">
             {{ shortcut.label }}
-          </div>
-          <div v-if="isPostScript" class="shortcut-item" @click="insertCode('await at.response()\\n')">
-            获取响应内容
           </div>
         </div>
       </div>
@@ -81,6 +78,10 @@ const props = defineProps({
       { label: "创建自定义数据集", code: "at.DataSet()\n" }
     ],
   },
+  can_insert: {
+    type: Boolean,
+    default: true
+  }
 });
 
 const real_code = ref("")
@@ -89,12 +90,16 @@ const real_code = ref("")
 const editorRef = ref<{ insertText: (text: string) => void } | null>(null);
 
 function insertCode(text: string) {
+  if (props.can_insert === false) {
+    window.$toast({ title: '当前您无法修改脚本' })
+    return
+  }
   editorRef.value?.insertText(text);
 }
 
-onMounted(async () => {
-  real_code.value = props.code
-})
+// onMounted(async () => {
+//   real_code.value = props.code
+// })
 
 async function code_change(value: string) {
   emit('change', value)
@@ -139,6 +144,10 @@ async function code_change(value: string) {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
   }
 }
 

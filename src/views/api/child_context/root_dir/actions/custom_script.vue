@@ -48,125 +48,7 @@
     </div>
     <Transition name="slide">
       <div v-show="open_script" class="script-body">
-        <div class="script-content">
-          <div class="script-content-item">
-            <el-row style="width: 100%">
-              <el-col :span="20">
-                <div class="editor-header">
-                  <div style="font-size: 14px; font-weight: 400">
-                    Python 3.12.6
-                  </div>
-                </div>
-                <PythonEditor
-                  ref="ediorPython"
-                  :code="code"
-                  :disable="props.disable"
-                  @change="code_change"
-                ></PythonEditor>
-              </el-col>
-              <Transition name="slide">
-                <el-col :span="4" class="tran-base">
-                  <div class="script-code-fast">
-                    <div class="script-code-fast-title">快捷代码</div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="insert_code('at.gv.get(\'variable_key\')\n')"
-                    >
-                      获取全局变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.gv.set(\'variable_key\', \'variable_value\')\n'
-                        )
-                      "
-                    >
-                      设置全局变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code('at.env.get(\'variable_key\')\n')
-                      "
-                    >
-                      获取环境变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.env.set(\'variable_key\', \'variable_value\')\n'
-                        )
-                      "
-                    >
-                      设置环境变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code('at.temp.get(\'variable_key\')\n')
-                      "
-                    >
-                      获取临时变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.temp.set(\'variable_key\', \'variable_value\')\n'
-                        )
-                      "
-                    >
-                      设置临时变量
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.func.boolean(10, 20, \'true\').value\n'
-                        )
-                      "
-                    >
-                      获取生成器函数
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.pipeline.sha(\'abc\', \'sha1\')\n'
-                        )
-                      "
-                    >
-                      获取处理函数
-                    </div>
-                    <div
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'at.env_name\n'
-                        )
-                      "
-                    >
-                      获取环境名称
-                    </div>
-                    <div
-                    v-if="is_after"
-                      class="script-code-fast-div"
-                      @click="
-                        insert_code(
-                          'await at.response()\n'
-                        )
-                      "
-                    >
-                      获取响应内容
-                    </div>
-                  </div>
-                </el-col>
-              </Transition>
-            </el-row>
-          </div>
-        </div>
+        <PythonCode :shortcuts="script_demo" @change="code_change" :code="code" :disabled="disable" :can_insert="!disable"></PythonCode>
       </div>
     </Transition>
   </div>
@@ -174,7 +56,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import PythonEditor from "@/components/common/editor/PythonEditor.vue";
+import PythonCode from '@/components/common/general/pythonCode.vue'
 import { useRoute } from "vue-router";
 const route = useRoute();
 const code: any = ref("");
@@ -197,6 +79,18 @@ const props = defineProps({
 function close_expand() {
   open_script.value = false;
 }
+
+const script_demo = [
+    { label: "获取全局变量", code: "at.gv.get('variable_key')\n" },
+    { label: "设置全局变量", code: "at.gv.set('variable_key', 'variable_value')\n" },
+    { label: "获取环境变量", code: "at.env.get('variable_key')\n" },
+    { label: "设置环境变量", code: "at.env.set('variable_key', 'variable_value')\n" },
+    { label: "获取临时变量", code: "at.temp.get('variable_key')\n" },
+    { label: "设置临时变量", code: "at.temp.set('variable_key', 'variable_value')\n" },
+    { label: "获取生成器函数", code: "at.func.boolean(10, 20, 'true').value\n" },
+    { label: "获取处理函数", code: "at.pipeline.sha('abc', 'sha1')\n" },
+    { label: "获取环境名称", code: "at.env_name\n" },
+]
 // 暴露给父组件调用
 defineExpose({
   close_expand,
@@ -205,6 +99,8 @@ defineExpose({
 onMounted(async () => {
   script_desc.value = props.element.data.code;
   code.value = props.element.data.code;
+  console.log(code.value);
+  
 });
 
 const emit = defineEmits(["dup_action", "delete_action", "change_code"]);
@@ -261,20 +157,6 @@ async function code_change(value: string) {
 .tran-base {
   transition: max-height 0.3s ease;
 }
-.editor-header {
-  height: 40px;
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-  flex-flow: wrap;
-  min-width: 0;
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  flex-wrap: nowrap;
-  border-bottom: 1px solid #f3f5f6;
-}
 .script-code-fast {
   display: flex;
   flex-direction: column;
@@ -312,6 +194,7 @@ async function code_change(value: string) {
     border-width: 0 1.5px 1.5px;
     color: #344054;
     transition: max-height 0.3s ease;
+    padding: 10px;
     .script-content {
       padding-top: 4px;
       justify-content: center;

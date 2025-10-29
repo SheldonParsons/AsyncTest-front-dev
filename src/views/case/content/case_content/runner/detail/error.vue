@@ -103,7 +103,7 @@ function changePattern(item: any) {
 function addAltE(event: any) {
     if (
         (event.metaKey || event.ctrlKey) &&
-        (event.key === "e" || event.code === "KeyE" || event.key === "s" || event.code === "KeyS")
+        (event.key === "e" || event.code === "KeyE")
     ) {
         event.preventDefault(); // 阻止浏览器默认行为
         save();

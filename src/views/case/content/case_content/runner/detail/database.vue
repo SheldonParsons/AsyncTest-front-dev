@@ -20,7 +20,7 @@
                   border-radius: 10px;
                   margin-left: 20px;
                 ">
-                        <div class="editor-header">
+                        <div class="database-editor-header">
                             <Params @insert_action="insert_params">
                             </Params>
                         </div>
@@ -209,7 +209,7 @@ function check() {
 </script>
 
 <style lang="scss" scope>
-.editor-header {
+.database-editor-header {
     height: 2.5rem;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;

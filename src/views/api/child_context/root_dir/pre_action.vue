@@ -35,20 +35,6 @@
                 v-if="element.t === 2"
                 :element="element"
               ></WaitTime>
-              <!-- <DataBase
-                @add_database_param="
-                  (payload) => add_database_param(element, payload)
-                "
-                @delete_database_param="
-                  (payload) => delete_database_param(element, payload)
-                "
-                @dup_action="dup_action(element, index)"
-                @delete_action="delete_action(index)"
-                @change_code="(playload) => change_code(element, playload)"
-                v-if="element.t === 3"
-                :element="element"
-                :interface="interface"
-              ></DataBase> -->
             </el-col>
           </el-row>
         </template>
