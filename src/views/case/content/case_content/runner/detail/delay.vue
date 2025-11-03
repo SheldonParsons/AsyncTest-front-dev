@@ -11,7 +11,7 @@
                     <InputAnimation v-model="raiseCodeAsString" :placeholder="'延迟时间（毫秒）'" :maxLength="5"></InputAnimation>
                 </div>
             </div>
-            <div class="step-footer" style="display: flex;justify-content: end;align-items: center;">
+            <div class="step-footer" style="display: flex;justify-content: end;align-items: center;" v-if="show_save">
                 <MotionButton @click="save" style="width: 90px;">
                     <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
                         <div style="font-size: 14px;">保存</div>
@@ -41,6 +41,10 @@ const props = defineProps({
     data: {
         type: null,
         default: null
+    },
+    show_save: {
+        type: Boolean,
+        default: true
     }
 })
 

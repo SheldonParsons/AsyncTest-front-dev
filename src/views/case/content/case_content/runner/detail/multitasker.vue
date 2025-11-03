@@ -75,7 +75,7 @@
                 <PythonCode :shortcuts="script_demo" @change="changeLoopCode" :code="data.load_loop_script">
                 </PythonCode>
             </div>
-            <div class="step-footer" style="display: flex;justify-content: end;align-items: center;">
+            <div class="step-footer" style="display: flex;justify-content: end;align-items: center;" v-if="show_save">
                 <MotionButton @click="save" style="width: 90px;">
                     <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
                         <div style="font-size: 14px;">保存</div>
@@ -118,6 +118,10 @@ const props = defineProps({
     case_id: {
         type: Number,
         default: -1
+    },
+    show_save: {
+        type: Boolean,
+        default: true
     }
 })
 

@@ -23,7 +23,7 @@
                     </div>
                 </div>
                 <div style="overflow-y: auto;flex: 1;" class="no-scroll" v-if="show_step_detail">
-                    <StepDetail :case_id="case_id" :data="current_step_data" @save="saveStep">
+                    <StepDetail :case_id="case_id" :data="current_step_data" :show_save="false" @save="saveStep">
                     </StepDetail>
                 </div>
             </SplitterPanel>
@@ -97,6 +97,7 @@ function saveStep() {
 
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
     current_step_data.value = data
+    show_step_detail.value = false
     if (data.type === 'empty') {
         window.$toast({ title: '该步骤无法查看详情' })
         return

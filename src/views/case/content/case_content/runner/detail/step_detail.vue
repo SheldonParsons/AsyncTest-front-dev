@@ -1,14 +1,14 @@
 <template>
-    <Case v-if="data.type === 'case'" :data="data" @save="save"></Case>
-    <Interface v-if="data.type === 'interface'" :data="data" @save="save"></Interface>
-    <Multitasker v-if="data.type === 'multitasker'" :data="data" :case_id="case_id" @save="save"></Multitasker>
-    <Assertion v-if="data.type === 'assertion'" :data="data" @save="save"></Assertion>
-    <Database v-if="data.type === 'database'" :data="data" @save="save"></Database>
-    <Delay v-if="data.type === 'delay'" :data="data" @save="save"></Delay>
-    <Error v-if="data.type === 'error'" :data="data" @save="save"></Error>
-    <Group v-if="data.type === 'group'" :data="data" @save="save"></Group>
-    <Script v-if="data.type === 'script'" :data="data" @save="save"></Script>
-    <If v-if="data.type === 'if'" :data="data" @save="save"></If>
+    <Case v-if="data.type === 'case'" :data="data" :show_save="show_save" @save="save"></Case>
+    <Interface v-if="data.type === 'interface'" :data="data" :show_save="show_save" @save="save"></Interface>
+    <Multitasker v-if="data.type === 'multitasker'" :data="data" :case_id="case_id" :show_save="show_save" @save="save"></Multitasker>
+    <Assertion v-if="data.type === 'assertion'" :data="data" :show_save="show_save" @save="save"></Assertion>
+    <Database v-if="data.type === 'database'" :data="data" :show_save="show_save" @save="save"></Database>
+    <Delay v-if="data.type === 'delay'" :data="data" :show_save="show_save" @save="save"></Delay>
+    <Error v-if="data.type === 'error'" :data="data" :show_save="show_save" @save="save"></Error>
+    <Group v-if="data.type === 'group'" :data="data" :show_save="show_save" @save="save"></Group>
+    <Script v-if="data.type === 'script'" :data="data" :show_save="show_save" @save="save"></Script>
+    <If v-if="data.type === 'if'" :data="data" :show_save="show_save" @save="save"></If>
 </template>
 
 <script lang="ts" setup>
@@ -31,6 +31,10 @@ const props = defineProps({
     case_id: {
         type: Number,
         default: -1
+    },
+    show_save: {
+        type: Boolean,
+        default: true
     }
 })
 
