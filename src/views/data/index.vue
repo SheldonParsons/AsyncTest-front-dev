@@ -100,7 +100,7 @@
     </el-col>
   </el-row>
   <el-empty description="暂无数据" v-else :image-size="200">
-    <SpecialButton @click="addData">点击添加您的数据</SpecialButton>
+    <SpecialButton @click="addData">添加数据</SpecialButton>
   </el-empty>
 </template>
 

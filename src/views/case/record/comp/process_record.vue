@@ -42,6 +42,15 @@
                     <div class="desc">{{ get_desc(item) }}
                     </div>
 
+                    <div class="print-times" v-if="item.type === 'action_script_print'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            class="lucide lucide-x-icon lucide-x">
+                            <path d="M18 6 6 18" />
+                            <path d="m6 6 12 12" />
+                        </svg>{{ (item.times || 0) + 1 }}
+                    </div>
+
                     <div :whilePress="{ scale: 0.95 }" :whileHover="{ scale: 1.05 }"
                         v-if="item.type === 'interface_success_finished' || item.type === 'interface_error_finished'"
                         class="info-type" @click="check_interface_detail(item)">接口详情</div>
@@ -431,6 +440,24 @@ function reset_filter() {
     border-radius: 5px;
     font-size: 0.9rem;
     cursor: pointer;
+}
+
+.print-times {
+    background-color: black;
+    color: white;
+    padding: 0px 4px;
+    border-radius: 4px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    text-align: center;
+    justify-content: center;
+    box-sizing: border-box;
+
+    svg {
+        width: 14px;
+        height: 14px;
+    }
 }
 
 .process-record-contrainer {

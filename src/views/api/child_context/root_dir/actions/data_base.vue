@@ -207,7 +207,7 @@
                 >
                   <template #empty>
                     <SpecialButton @click="addNode"
-                      >点击添加您的数据</SpecialButton
+                      >添加数据</SpecialButton
                     >
                   </template>
                   <el-table-column label="变量名">

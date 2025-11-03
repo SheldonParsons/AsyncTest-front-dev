@@ -14,7 +14,7 @@
         <div v-if="loading">
           <Loading></Loading>
         </div>
-        <SpecialButton v-else @click="addFirstData">点击添加您的数据</SpecialButton>
+        <SpecialButton v-else @click="addFirstData">添加数据</SpecialButton>
       </template>
       <el-table-column label="字段名" min-width="40%">
         <template #default="scope">

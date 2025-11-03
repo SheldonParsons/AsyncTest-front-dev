@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+// @ts-ignore
 import { Toolbar } from 'reka-ui/namespaced'
 import { motion, AnimatePresence } from 'motion-v'
 

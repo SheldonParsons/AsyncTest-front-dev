@@ -1,161 +1,150 @@
 <template>
-  <div class="bubbly-container">
-  <button class="bubbly-button">
-    <slot class="c-icon"></slot>
-  </button>
-</div>
+  <motion.button ref="buttonRef" class="md-button" @pointerdown="onPointerDown" @pointerup="removeLastRipple"
+    @pointercancel="removeLastRipple" @pointerleave="removeLastRipple" @blur="removeLastRipple" @keydown="onKeyDown"
+    @keyup="onKeyUp" :while-hover="{
+      borderColor: '#8df0cc',
+      backgroundColor: 'rgb(48, 48, 48)'
+    }" :initial="{
+      borderColor: '#8df0ccaa',
+      backgroundColor: 'black'
+    }" :transition="{
+      duration: 0.2,
+      ease: 'linear'
+    }">
+    <div style="display: flex;align-items: center;justify-content: center;gap: 5px;">
+      <BtnLight style="height: 1rem;"></BtnLight>
+      <slot class="c-icon"></slot>
+    </div>
+    <span class="ripple-container" aria-hidden>
+      <AnimatePresence>
+        <motion.span v-for="ripple in ripples" :key="ripple.id" class="ripple" :style="{
+          width: ripple.size + 'px',
+          height: ripple.size + 'px',
+          left: ripple.x - ripple.size / 2 + 'px',
+          top: ripple.y - ripple.size / 2 + 'px'
+        }" :initial="{ opacity: 0, transform: 'scale(0)' }" :animate="{
+          opacity: 0.4,
+          transform: 'scale(1)',
+          transition: { duration: 0.3 }
+        }" :exit="{ opacity: 0 }" :transition="{
+              duration: 0.55,
+              ease: 'easeOut'
+            }" />
+      </AnimatePresence>
+    </span>
+  </motion.button>
 </template>
-
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { ref } from "vue"
+import { motion, AnimatePresence, useDomRef } from "motion-v"
+import BtnLight from "@/assets/svg/tree/btn_light.vue";
 
-onMounted(() => {
-  var animateButton = function (e: any) {
-    e.preventDefault;
-    e.target.classList.remove("animate");
-    e.target.classList.add("animate");
-    setTimeout(function () {
-      e.target.classList.remove("animate");
-    }, 700);
-  };
+/**
+ * Ripple type definition
+ */
+type Ripple = {
+  id: number
+  x: number
+  y: number
+  size: number
+}
 
-  var bubblyButtons = document.getElementsByClassName("bubbly-button");
+const ripples = ref<Ripple[]>([])
+let idv = 0
+const buttonRef = useDomRef()
 
-  for (var i = 0; i < bubblyButtons.length; i++) {
-    bubblyButtons[i].addEventListener("click", animateButton, false);
+/**
+ * Create a new ripple at the given origin
+ */
+function createRipple(originX: number, originY: number) {
+  const button = buttonRef.value
+  if (!button) return
+
+  const rect = button.getBoundingClientRect()
+  const localX = originX - rect.left
+  const localY = originY - rect.top
+  const dx = Math.max(localX, rect.width - localX)
+  const dy = Math.max(localY, rect.height - localY)
+  const radius = Math.sqrt(dx * dx + dy * dy)
+  const size = radius * 2
+
+  const id = ++idv
+  ripples.value.push({ id, x: localX, y: localY, size })
+  return id
+}
+
+/**
+ * Remove the last ripple
+ */
+function removeLastRipple() {
+  if (ripples.value.length) ripples.value.pop()
+}
+
+/**
+ * Handle pointer down event
+ */
+function onPointerDown(event: PointerEvent) {
+  if (event.isPrimary !== false) {
+    createRipple(event.clientX, event.clientY)
   }
-});
+}
+
+/**
+ * Handle keydown event for keyboard-triggered ripples
+ */
+function onKeyDown(event: KeyboardEvent) {
+  if (event.repeat) return
+  if (event.key === " " || event.key === "Enter") {
+    const button = buttonRef.value
+    if (!button) return
+    const rect = button.getBoundingClientRect()
+    createRipple(rect.left + rect.width / 2, rect.top + rect.height / 2)
+  }
+}
+
+/**
+ * Remove ripple on keyup
+ */
+function onKeyUp(event: KeyboardEvent) {
+  if (event.key === " " || event.key === "Enter") {
+    removeLastRipple()
+  }
+}
 </script>
 
-<style lang="scss" scoped>
-.bubbly-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-$fuschia: black;
-$button-bg: $fuschia;
-$button-text-color: #fff;
-$baby-blue: #f8faff;
 
-body {
-  font-size: 16px;
-  text-align: center;
-  background-color: $baby-blue;
-}
-.bubbly-button {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 0.8em;
-  padding: 0.5em 0.5em;
-  -webkit-appearance: none;
-  appearance: none;
-  background-color: $button-bg;
-  color: $button-text-color;
-  border-radius: 4px;
-  border: none;
-  cursor: pointer;
+
+<style scoped>
+.md-button {
   position: relative;
-  transition: transform ease-in 0.1s, box-shadow ease-in 0.25s;
-  //   box-shadow: 0 2px 25px rgba(0, 255, 130, 0.5);
-
-  &:focus {
-    outline: 0;
-  }
-
-  &:before,
-  &:after {
-    position: absolute;
-    content: "";
-    display: block;
-    width: 140%;
-    height: 100%;
-    left: -20%;
-    z-index: -1000;
-    transition: all ease-in-out 0.5s;
-    background-repeat: no-repeat;
-  }
-
-  &:before {
-    display: none;
-    top: -75%;
-    background-image: radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, transparent 20%, $button-bg 20%, transparent 30%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, transparent 10%, $button-bg 15%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%);
-    background-size: 10% 10%, 20% 20%, 15% 15%, 20% 20%, 18% 18%, 10% 10%,
-      15% 15%, 10% 10%, 18% 18%;
-    //background-position: 0% 80%, -5% 20%, 10% 40%, 20% 0%, 30% 30%, 22% 50%, 50% 50%, 65% 20%, 85% 30%;
-  }
-
-  &:after {
-    display: none;
-    bottom: -75%;
-    background-image: radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, transparent 10%, $button-bg 15%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%),
-      radial-gradient(circle, $button-bg 20%, transparent 20%);
-    background-size: 15% 15%, 20% 20%, 18% 18%, 20% 20%, 15% 15%, 10% 10%,
-      20% 20%;
-    //background-position: 5% 90%, 10% 90%, 10% 90%, 15% 90%, 25% 90%, 25% 90%, 40% 90%, 55% 90%, 70% 90%;
-  }
-
-  &:active {
-    transform: scale(0.9);
-    background-color: darken($button-bg, 5%);
-    box-shadow: 0 2px 25px rgba(0, 255, 130, 0.2);
-  }
-
-  &.animate {
-    &:before {
-      display: block;
-      animation: topBubbles ease-in-out 0.75s forwards;
-    }
-    &:after {
-      display: block;
-      animation: bottomBubbles ease-in-out 0.75s forwards;
-    }
-  }
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 15px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  background-color: black;
+  color: white;
+  border: 1px solid var(--accent);
+  user-select: none;
+  cursor: pointer;
+  overflow: hidden;
+  letter-spacing: 0.2px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-@keyframes topBubbles {
-  0% {
-    background-position: 5% 90%, 10% 90%, 10% 90%, 15% 90%, 25% 90%, 25% 90%,
-      40% 90%, 55% 90%, 70% 90%;
-  }
-  50% {
-    background-position: 0% 80%, 0% 20%, 10% 40%, 20% 0%, 30% 30%, 22% 50%,
-      50% 50%, 65% 20%, 90% 30%;
-  }
-  100% {
-    background-position: 0% 70%, 0% 10%, 10% 30%, 20% -10%, 30% 20%, 22% 40%,
-      50% 40%, 65% 10%, 90% 20%;
-    background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
-  }
+.ripple-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
-@keyframes bottomBubbles {
-  0% {
-    background-position: 10% -10%, 30% 10%, 55% -10%, 70% -10%, 85% -10%,
-      70% -10%, 70% 0%;
-  }
-  50% {
-    background-position: 0% 80%, 20% 80%, 45% 60%, 60% 100%, 75% 70%, 95% 60%,
-      105% 0%;
-  }
-  100% {
-    background-position: 0% 90%, 20% 90%, 45% 70%, 60% 110%, 75% 80%, 95% 70%,
-      110% 10%;
-    background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%;
-  }
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background-color: currentColor;
+  will-change: opacity, transform;
 }
 </style>

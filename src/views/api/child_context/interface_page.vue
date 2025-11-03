@@ -1205,8 +1205,8 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 }
 
 .special-btn {
-  width: 24px !important;
-  height: 24px !important;
+  width: 15px !important;
+  height: 15px !important;
 }
 
 .add-response {

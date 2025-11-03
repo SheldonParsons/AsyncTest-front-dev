@@ -106,7 +106,7 @@
         >
           <template #empty>
             <SpecialButton @click="addEmptyData"
-              >点击添加您的数据</SpecialButton>
+              >添加数据</SpecialButton>
           </template>
           <el-table-column label="名称" min-width="20%">
             <template #default="scope">

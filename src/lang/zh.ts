@@ -131,7 +131,7 @@ export default {
   tooltip: {
     cleanForm: '重置所有筛选数据',
     dateFilter: '通过时间区间筛选',
-    center: '工作中心',
+    center: '项目中心',
     logout: '退出登录',
     debugPanel: '调试看板',
     saveInter: '保存接口信息',

@@ -32,7 +32,7 @@
               <Loading></Loading>
             </div>
             <SpecialButton v-else @click="open_review_dialog"
-              >点击添加您的数据</SpecialButton
+              >添加数据</SpecialButton
             >
           </template>
           <el-table-column label="响应来源" min-width="20%">
@@ -192,7 +192,7 @@
             "
           >
             <SpecialButton @click="open_expct_drawer(false)"
-              >点击添加您的数据</SpecialButton
+              >添加数据</SpecialButton
             >
           </div>
           <draggable
@@ -433,7 +433,7 @@
                   font-size: 0.8rem;
                 "
               >
-                <SpecialButton @click="add_empty_rule">点击添加您的数据</SpecialButton>
+                <SpecialButton @click="add_empty_rule">添加数据</SpecialButton>
               </div>
               <draggable
                 :list="expect_data.conditions"

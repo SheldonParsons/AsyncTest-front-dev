@@ -138,8 +138,8 @@ const action = (t: string) => {
     justify-content: space-between;
     padding: 7px 16px;
     background: linear-gradient(80deg,
-            rgba(73, 34, 165, 0.1) 0%,
-            rgba(102, 37, 188, 0.1) 40%,
+            rgba(11, 166, 223, 0.5) 0%,
+            rgba(11, 166, 223, 0.4) 40%,
             rgba(255, 255, 255, 0.1) 90%);
     border-radius: 6px;
     transition: all 0.2s ease;

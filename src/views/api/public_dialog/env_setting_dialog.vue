@@ -163,7 +163,7 @@
                     <Loading></Loading>
                   </div>
                   <SpecialButton v-else @click="add_server"
-                    >点击添加您的数据</SpecialButton
+                    >添加数据</SpecialButton
                   >
                 </template>
                 <el-table-column label="服务名" min-width="30%">
@@ -272,7 +272,7 @@
               >
                 <template #empty>
                   <SpecialButton @click="open_add_env_variable_dialog"
-                    >点击添加您的数据</SpecialButton
+                    >添加数据</SpecialButton
                   >
                 </template>
                 <el-table-column label="变量名" min-width="30%">
