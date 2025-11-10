@@ -62,14 +62,14 @@ function get_system() {
                     <motion.div class="context-menu-content" :initial="{ opacity: 0, scale: 0.9 }"
                         :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.9 }">
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
-                            @select="menu_action(3, 'create_interface_under_dir')">
-                            添加用例
+                            @select="menu_action(1, 'create_interface_under_dir')">
+                            添加接口
                             <div class="context-menu-shortcut">
                                 <InterfaceIcon></InterfaceIcon>
                             </div>
                         </DropdownMenuItem>
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
-                            @select="menu_action(4, 'create_child_dir')">
+                            @select="menu_action(0, 'create_child_dir')">
                             添加子目录
                             <div class="context-menu-shortcut">
                                 <FolderPlusIcon></FolderPlusIcon>

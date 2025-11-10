@@ -48,6 +48,11 @@ const routes = [
                 path: '/home/main/project/:project/settings/source/files',
                 name: 'settings_source_files',
                 component: () => import('@/views/settings/source_management/files.vue')
+              },
+              {
+                path: '/home/main/project/:project/settings/source/asyncexecutor',
+                name: 'settings_asyncexecutor',
+                component: () => import('@/views/settings/source_management/async_executor.vue')
               }
             ]
           },

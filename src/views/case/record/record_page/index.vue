@@ -41,8 +41,7 @@
                         <div class="title title-user g-e"><span>{{
                             item.exec_user }}</span></div>
                         <div class="title title-action" @click.stop>
-                            <div
-                                @click="open_summary_record(item)" class="run-btn">Record</div>
+                            <div @click="open_summary_record(item)" class="run-btn">Record</div>
                         </div>
                     </motion.div>
                 </div>
@@ -57,7 +56,8 @@
     <DialogAnimation ref="taskDetailRef" title="任务整体日志" confirm_title="关闭" :bgtype="'white'" :topMove="'0% !important'"
         :showCancel="false">
         <div style="height: 500px;width: 900px;">
-            <ProcessRecord :callback="summary_process_record" :interface_callback="interface_detail_record" :wating="true">
+            <ProcessRecord :callback="summary_process_record" :interface_callback="interface_detail_record"
+                :wating="true">
             </ProcessRecord>
         </div>
     </DialogAnimation>
@@ -66,15 +66,12 @@
 <script lang="ts" setup>
 import { onUnmounted, onMounted, ref } from 'vue'
 import { motion } from 'motion-v'
-import Pagination from '@/components/common/general/pagination.vue'
 import BlankAmination from '@/components/common/blank/blank_animation.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import { SplitterGroup, SplitterPanel } from 'reka-ui'
-import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import { ApiGetRecordList } from '@/api/case/case/index'
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import ProcessRecord from '@/views/case/record/comp/process_record.vue'
-import { send_action } from '@/views/case/record/utils/Sender'
 import tools from '@/utils/tools'
 import AnimationNumber from '@/views/case/record/record_page/animation_number.vue'
 
@@ -84,23 +81,12 @@ const page_size = ref(10)
 const page_number = ref(1)
 const total_count = ref(0)
 
-const deleteConfirmText = ref("")
 const taskDetailRef: any = ref(null)
 const current_record_backup_index = ref()
-const taskDetailCheckRef: any = ref(null)
-const deleteDatasetConfirmRef: any = ref(null)
-
-const task_info: any = ref(null)
 
 const poller: any = ref(null)
 
 const emit = defineEmits(['action'])
-
-const actionDesc: any = {
-    copy: '复制',
-    delete: '删除',
-    batchEdit: '编辑任务'
-}
 
 const props = defineProps({
     case_id: {
@@ -127,6 +113,8 @@ async function summary_process_record(current_index: Number) {
 }
 
 async function interface_detail_record(type: String, index: String) {
+    console.log(current_record_backup_index.value);
+
     const _data = {
         type: type,
         record_backup_index: current_record_backup_index.value,
@@ -137,13 +125,13 @@ async function interface_detail_record(type: String, index: String) {
 
 async function open_summary_record(item: any) {
     console.log(item);
-    current_record_backup_index.value = item.record_backup_index
+    current_record_backup_index.value = `${item.record_backup_index}&&${item.executor}`
     await taskDetailRef.value.open()
 }
 
 async function action(t: string, item: any, index: number) {
     if (t === 'to_record') {
-        emit('action', item.record_backup_index)
+        emit('action', `${item.record_backup_index}&&${item.executor}`)
     }
 }
 
@@ -313,6 +301,7 @@ async function get_record() {
 .run-btn svg {
     width: 14px;
 }
+
 @keyframes gradient-move {
     0% {
         background-position: 0% 50%;
@@ -326,6 +315,7 @@ async function get_record() {
         background-position: 0% 50%;
     }
 }
+
 .task-pagination {
     width: 100%;
     box-sizing: border-box;

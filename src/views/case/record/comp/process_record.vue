@@ -363,8 +363,6 @@ async function circle_get_data() {
         if (props.force_check_ending !== null && props.force_check_ending() === true) {
             running_get_circle_data.value += 2
         }
-        console.log(running_get_circle_data.value);
-
         if (running_get_circle_data.value > 1) break
     }
 }
@@ -385,8 +383,6 @@ function get_position_label(position: any) {
 
 
 async function filter_middleware(new_data: any) {
-    console.log(_.cloneDeep(new_data));
-
     _.cloneDeep(new_data).forEach((element: any) => {
         data.value.push(element)
         show_data.value.push(element)

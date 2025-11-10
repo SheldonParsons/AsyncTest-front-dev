@@ -221,11 +221,11 @@ const process_function_list = ref([
   },
   {
     name: "base64",
-    desc: "base64加密",
+    desc: "base64编码",
   },
   {
     name: "unbase64",
-    desc: "base64解密",
+    desc: "base64解码",
   },
   {
     name: "encodeUriComponent",

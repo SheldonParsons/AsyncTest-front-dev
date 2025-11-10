@@ -186,3 +186,58 @@ export function ApiPostDatabaseConnectionValid(
       });
   });
 }
+
+
+// AsyncExecutorClient列表
+export function ApiGetAsyncExecutorClientList(config: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.cancelHttpGet(`/project/async_executor`, config).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+// 创建AsyncExecutorClient
+export function ApiPostAsyncExecutorClient(
+  data: any,
+  params: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http
+      .httpPost(
+        "/project/async_executor",
+        data,
+        (params = params)
+      )
+      .then((res: any) => {
+        resolve(res);
+      });
+  });
+}
+
+// 修改 AsyncExecutorClient
+export function ApiAsyncExecutorClient(
+  id: number,
+  params: any,
+  data: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http
+      .httpPut(`/project/async_executor/${id}`, data, params)
+      .then((res: any) => {
+        resolve(res);
+      });
+  });
+}
+
+// 删除 AsyncExecutorClient
+export function ApiDeleteAsyncExecutorClient(
+  pk: string,
+  data: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpDelete(`/project/async_executor/${pk}`, data).then((res: any) => {
+      resolve(res);
+    });
+  });
+}

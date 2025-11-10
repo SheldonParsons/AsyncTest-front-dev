@@ -169,6 +169,8 @@ function action(t: string) {
     background: black;
     padding: 8px;
     border-radius: 8px;
+    color: white;
+    font-size: 0.8rem;
 }
 
 .tooltip-arrow {
