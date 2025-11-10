@@ -11,38 +11,39 @@
     </div>
     <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;">
       <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core"
-        ref="treeRef" draggable :data="dataSource" node-key="id" icon="ArrowRightBold" :allow-drag="allowDrag" :allow-drop="allowDrop"
-        @node-drag-start="handleDragStart" @node-drag-over="handleNodeDragOver" @node-drag-leave="handleNodeDragLeave"
-        @node-drag-end="handleNodeDrop" @node-click="changeMenu"
+        ref="treeRef" draggable :data="dataSource" node-key="id" icon="ArrowRightBold" :allow-drag="allowDrag"
+        :allow-drop="allowDrop" @node-drag-start="handleDragStart" @node-drag-over="handleNodeDragOver"
+        @node-drag-leave="handleNodeDragLeave" @node-drag-end="handleNodeDrop" @node-click="changeMenu"
         :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
         icon-class="none" :filter-node-method="filterNode">
         <template #default="{ node, data }">
-          <ContextMemu :data="data" @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)">
-          <div v-if="
-            data.child_type === 0 ||
-            data.child_type === 1 ||
-            data.child_type === 2
-          " class="tree-node g-unselect" @mouseenter="current_node = data.id" @mouseleave="current_node = -1">
-            <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
-              " @click.stop="changeExpanded(node)">
-              <ArrowRightBold />
-            </el-icon>
-            <div v-if="data.child_type !== 2" style="
+          <ContextMemu :data="data"
+            @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)">
+            <div v-if="
+              data.child_type === 0 ||
+              data.child_type === 1 ||
+              data.child_type === 2
+            " class="tree-node g-unselect" @mouseenter="current_node = data.id" @mouseleave="current_node = -1">
+              <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+                " @click.stop="changeExpanded(node)">
+                <ArrowRightBold />
+              </el-icon>
+              <div v-if="data.child_type !== 2" style="
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 color: black;
               ">
-              <Fold v-if="!node.expanded"></Fold>
-              <FoldExpend v-else></FoldExpend>
-            </div>
-            <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
-              data.method.toUpperCase() }}</span>
-            <div class="label-span-method">
-              <div class="g-ellipsis">{{ data.name }}</div>
-              <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
-            </div>
-            <SelectMenu :data="data"
+                <Fold v-if="!node.expanded"></Fold>
+                <FoldExpend v-else></FoldExpend>
+              </div>
+              <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
+                data.method.toUpperCase() }}</span>
+              <div class="label-span-method">
+                <div class="g-ellipsis">{{ data.name }}</div>
+                <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
+              </div>
+              <SelectMenu :data="data"
                 @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)"
                 @close="async () => {
                   // 只有当 current_node 仍然是当前组件的 id 时，才执行关闭重置
@@ -58,7 +59,7 @@
                   class="hover-menu-box" @click="() => { current_node = data.id; awalys_show_popover = data.id }">
                 </ExperBtn>
               </SelectMenu>
-          </div>
+            </div>
           </ContextMemu>
         </template>
       </el-tree>
@@ -132,6 +133,7 @@ const treeKey = ref(0)
 const isFristenter = ref(true)
 const dropIndicatorState = ref<any>({});
 const origin_tree: any = ref(null)
+const current_paste_object: any = ref(null)
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
@@ -385,7 +387,7 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
   // 4. 只有在确认位置有变化后，才开始修改数据
   // a. 从原始位置移除源节点
   sourceInfo.parent.children.splice(sourceInfo.index, 1);
-  const sourceNodeData:any = sourceInfo.node;
+  const sourceNodeData: any = sourceInfo.node;
 
   // b. 将节点插入到新位置
   if (finalDropType === 'inner') {
@@ -404,8 +406,8 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
     } else if (finalDropType === 'after') {
       targetParentChildren.splice(currentTargetIndex + 1, 0, sourceNodeData);
     }
-    const current_source_info = targetParentChildren.filter((node:any) => node.id === sourceNodeData.id)
-    
+    const current_source_info = targetParentChildren.filter((node: any) => node.id === sourceNodeData.id)
+
     if (origin_parent.id !== current_source_info[0].id) {
       origin_parent.count -= 1
     }
@@ -447,7 +449,7 @@ function randomStep() {
 }
 
 async function load_tree(search_range = [0, 1, 2], excluded_ids = []) {
-  if (isFristenter.value === true){
+  if (isFristenter.value === true) {
     loading.value = true;
   }
   const data = {
@@ -575,7 +577,7 @@ watch(
         },
       };
       const data: any = await send_action(current_action_data.value);
-      tools.message("创建成功", proxy, "success");
+      window.$toast({ title: '创建成功', type: 'success' })
       await load_tree();
       highlightNodeById(data.id);
       const _data = {
@@ -689,16 +691,89 @@ function result_check(data: any) {
   return true;
 }
 
-function set_awalys_show_popover(id: number) {
-  awalys_show_popover.value = id;
-}
+function parseChromeFetch(fetchString: string) {
+  try {
+    let s = fetchString.trim();
 
-function set_leave_popover() {
-  awalys_show_popover.value = -1;
+    // 1. 基础验证
+    if (!s.startsWith('fetch(') || !s.endsWith(');')) {
+      window.$toast({ title: "无效的 'Copy as fetch' 格式。字符串必须以 'fetch(' 开头并以 ');' 结尾。", type: 'error' })
+      return false
+    }
+
+    // 2. 提取两个参数所在的中间部分
+    // s.substring(6)           -> 移除 'fetch('
+    // .slice(0, -2)            -> 移除 ');'
+    const content = s.substring(6, s.length - 2);
+
+    // 3. 将参数列表伪装成一个 JSON 数组
+    const jsonString = `[${content}]`;
+
+    let url: string;
+    let options: any;
+
+    // 4. 解析这个“数组”
+    // 此时，jsonString 类似于：
+    // ["http://localhost:3333/api...", { "headers": {...}, "body": null, "method": "GET" }]
+    try {
+      [url, options] = JSON.parse(jsonString);
+    } catch (error) {
+      window.$toast({ title: '解析失败，请检查您粘贴板的字符串', type: 'error' })
+      return false
+    }
+
+
+    // 5. 提取并构造最终结果
+    const result = {
+      url: url,
+      method: options.method || 'GET', // 如果没有 method，默认为 GET
+      headers: options.headers || {},
+      body: options.body || null // body 可能是 null，也可能是一个字符串
+    };
+
+    // 6. [重要] 处理 Body
+    // 如果 body 本身是一个 JSON 字符串，你可能需要再次解析它才能进行格式化
+    // "Copy as fetch" 会把 JSON body 变成一个字符串，例如: "{\"key\":\"value\"}"
+    if (typeof result.body === 'string') {
+      try {
+        // 尝试将其解析为 JSON 对象
+        result.body = JSON.parse(result.body);
+      } catch (e) {
+        // 如果解析失败，说明它不是一个 JSON 字符串（比如
+        // 'multipart/form-data' 或普通文本），
+        // 保持原样即可
+      }
+    }
+
+    return result;
+
+  } catch (error) {
+    console.error("解析 fetch 字符串失败:", error);
+    if (error instanceof SyntaxError) {
+      throw new Error("解析剪贴板内容失败。请确保内容是合法的 'Copy as fetch' 字符串。");
+    }
+    throw error; // 抛出其他错误 (例如我们的自定义错误)
+  }
 }
 
 async function action(father: number, action_type: string, data: any) {
   clean_popover()
+  if (action_type === 'create_interface_under_dir_by_paste') {
+    const textFromClipboard = await navigator.clipboard.readText();
+    const paste_value = parseChromeFetch(textFromClipboard)
+    if (paste_value === false) return
+    current_paste_object.value = paste_value
+    show_dialog.value = true;
+    dialog_title.value = "新建接口";
+    dialog_placeholder.value = "请输入接口名称";
+    current_action_data.value = {
+      type: father,
+      child_action_type: 'create_interface_under_dir',
+      content: {
+        parent_node: data.id,
+      },
+    };
+  }
   if (action_type === "create_child_dir") {
     show_dialog.value = true;
     dialog_title.value = "新建子目录";
@@ -802,7 +877,7 @@ async function move_node(data: any) {
 async function real_action(name: string) {
   current_action_data.value.content.name = name;
   const data: any = await send_action(current_action_data.value);
-  tools.message("创建成功", proxy, "success");
+  window.$toast({ title: '创建成功', type: 'success' })
   show_dialog.value = false;
   await load_tree();
   highlightNodeById(data.id);
@@ -812,6 +887,7 @@ async function real_action(name: string) {
     method: data.target.method,
     target: data.target.id,
     child_type: data.child_type,
+    current_paste_object: current_paste_object
   };
   changeMenu(_data, null, null, null);
 }

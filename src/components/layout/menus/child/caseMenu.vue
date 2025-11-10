@@ -547,7 +547,7 @@ watch(
         },
       };
       const data: any = await send_action(current_action_data.value);
-      tools.message("创建成功", proxy, "success");
+      window.$toast({title:'创建成功', type:'success'})
       await load_tree();
       highlightNodeById(data.id);
       const _data = {
@@ -743,7 +743,7 @@ async function move_node(data: any) {
 async function real_action(name: string) {
   current_action_data.value.content.name = name;
   const data: any = await send_action(current_action_data.value);
-  tools.message("创建成功", proxy, "success");
+  window.$toast({title:'创建成功', type:'success'})
   show_dialog.value = false;
   await load_tree();
   highlightNodeById(data.id);

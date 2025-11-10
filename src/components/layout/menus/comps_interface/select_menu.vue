@@ -5,6 +5,7 @@ import CopyIcon from "@/assets/svg/common/copy.vue";
 import MoveIcon from "@/assets/svg/common/move.vue";
 import FolderPlusIcon from "@/assets/svg/common/fold_plus.vue";
 import DeleteIcon from "@/assets/svg/common/delete.vue";
+import PasteIcon from '@/assets/svg/common/paste.vue'
 import {
     DropdownMenuArrow,
     DropdownMenuCheckboxItem,
@@ -25,12 +26,8 @@ import {
 import { ref } from 'vue'
 
 const toggleState = ref(false)
-const checkboxOne = ref(false)
-const checkboxTwo = ref(false)
-const person = ref('pedro')
 
 const bookmarksChecked = ref(true)
-const urlsChecked = ref(false)
 
 const props = defineProps({
     data: {
@@ -58,7 +55,7 @@ function get_system() {
 
         <DropdownMenuPortal>
             <AnimatePresence>
-                <DropdownMenuContent @closeAutoFocus="emit('close')">
+                <DropdownMenuContent @closeAutoFocus="emit('close')" asChild>
                     <motion.div class="context-menu-content" :initial="{ opacity: 0, scale: 0.9 }"
                         :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.9 }">
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
@@ -68,6 +65,14 @@ function get_system() {
                                 <InterfaceIcon></InterfaceIcon>
                             </div>
                         </DropdownMenuItem>
+                        <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
+                            @select="menu_action(1, 'create_interface_under_dir_by_paste')">
+                            粘贴板创建（Fetch）
+                            <div class="context-menu-shortcut">
+                                <PasteIcon></PasteIcon>
+                            </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator class="context-menu-separator" />
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
                             @select="menu_action(0, 'create_child_dir')">
                             添加子目录
@@ -102,7 +107,7 @@ function get_system() {
                             </DropdownMenuSubTrigger>
                             <DropdownMenuPortal>
                                 <AnimatePresence>
-                                    <DropdownMenuSubContent>
+                                    <DropdownMenuSubContent asChild>
                                         <motion.div class="context-menu-content" :initial="{ opacity: 0, x: -10 }"
                                             :animate="{ opacity: 1, x: 0 }" :exit="{ opacity: 0, x: -10 }" :transition="{
                                                 type: 'spring',
@@ -193,6 +198,7 @@ function get_system() {
     padding: 4px;
     margin-top: 5px;
     transform-origin: var(--radix-context-menu-content-transform-origin);
+    z-index: 2012!important;
 }
 
 .context-menu-item:hover {
@@ -217,6 +223,7 @@ function get_system() {
     align-items: center;
     justify-content: space-between;
     box-sizing: border-box;
+    z-index: 2012;
 }
 
 .context-menu-item[data-disabled] {

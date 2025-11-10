@@ -127,6 +127,7 @@ const max_length = 5;
 const show_has_change_dialog = ref(false)
 const change_tab_cache_data: any = ref(null)
 const success_change_menu_tab_id: any = ref(null)
+const current_paste_object: any = ref(null)
 const page_mapping: any = {
   empty_page: 0,
   create_page: 1,
@@ -287,6 +288,7 @@ watch(
         return;
       }
       const t = method_list.indexOf(val.data.method.toUpperCase());
+      current_paste_object.value = val.data.current_paste_object
       change_tab_and_change_page(
         val.data.name,
         t,
@@ -476,6 +478,9 @@ function change_page_status_by_t(t: number) {
   show_type.value = -2;
   setTimeout(() => {
     show_type.value = page_mapping[tab_type_to_show_page_mapping[t]];
+    setTimeout(() => {
+      GlobalState.sendMessage("paste_interface_info", { data: current_paste_object.value });
+    }, 0)
   }, 0);
 }
 
@@ -870,12 +875,12 @@ function change_user_env(item: any) {
 }
 
 .title {
-  font-size: 14px!important;
+  font-size: 14px !important;
   background: linear-gradient(360deg, #000000, rgb(0, 0, 0));
 }
 
 .title-light {
-  font-size: 14px!important;
+  font-size: 14px !important;
   background: linear-gradient(360deg, #ffffff, rgb(255, 255, 255));
 }
 

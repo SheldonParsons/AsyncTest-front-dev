@@ -1057,7 +1057,7 @@ async function save_expect(close: any) {
     if (res === false) return;
     expect_data.value.id = res.id;
     expects.value.unshift(res);
-    tools.message("创建成功", proxy, "success");
+    window.$toast({title:'创建成功', type:'success'})
   } else {
     const differences_content = tools.getChangedTopLevelFields(
       expect_data.value,

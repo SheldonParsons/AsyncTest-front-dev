@@ -115,7 +115,7 @@ function create_provider() {
       tools.message(t(res.name[0]), proxy);
     } else {
       showAddProviderPen.value = false;
-      tools.message(t("创建成功"), proxy);
+      window.$toast({title:'创建成功', type:'success'})
       emit('reload')
     }
   });

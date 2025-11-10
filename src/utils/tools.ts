@@ -10,11 +10,7 @@ tools.message = (
   level: String = "success",
   delay: Number = 3000
 ) => {
-  proxy.$message({
-    message: text,
-    duration: delay,
-    type: level,
-  });
+  window.$toast({ title: text, type: level })
 };
 
 tools.delay = async () => {

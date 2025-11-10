@@ -18,7 +18,6 @@ const emit = defineEmits(["click"])
 
 <style>
 .special-btn {
-    padding: 5px;
     height: 100%;
     width: 100%;
     box-sizing: border-box;

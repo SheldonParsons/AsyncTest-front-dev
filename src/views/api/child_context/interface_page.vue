@@ -10,7 +10,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
-                  }}</el-dropdown-item>
+                }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown></el-col>
@@ -26,7 +26,9 @@
           <MotionButton @click="save">
             <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
               <div style="font-size: 14px;">保存</div>
-              <div v-if="!is_case" style="font-size: 0.7rem;background-color: black;color: white;padding: 1px 2px;border-radius: 4px;">{{ get_system_save() }}</div>
+              <div v-if="!is_case"
+                style="font-size: 0.7rem;background-color: black;color: white;padding: 1px 2px;border-radius: 4px;">{{
+                  get_system_save() }}</div>
             </div>
           </MotionButton>
         </el-col>
@@ -209,7 +211,7 @@
                     </div>
                   </div>
                 </div>
-                <AddButton class="hover-menu-box" @click="add_response_handle"></AddButton>
+                <AddButton @click="add_response_handle"></AddButton>
               </div>
             </el-col>
           </el-row>
@@ -247,7 +249,7 @@
                     <SimpleInput v-model="current_response.name" :inputWidth="100"></SimpleInput>
                   </div>
                   <div>
-                    <DeleteButton class="hover-menu-box" @click="delete_response(current_response)"></DeleteButton>
+                    <DeleteButton @click="delete_response(current_response)"></DeleteButton>
                   </div>
                 </div>
               </el-col></el-row>
@@ -435,7 +437,7 @@
                     <div>
                       匹配结果：<span>{{
                         match.result === true ? "成功" : "失败"
-                      }}</span>
+                        }}</span>
                     </div>
                     <div>
                       结果值：<span>{{ match.value }}</span>
@@ -448,7 +450,7 @@
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                  }}</span>
+                    }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -570,6 +572,7 @@ const enableWatch = ref(true); // 控制监听开关
 const show_json_editor = ref(true);
 const show_send_response_dialog = ref(false);
 const send_response: any = ref([]);
+const paste_interface_info_data: any = ref([])
 let stopWatchHandler: () => void;
 let originalData: any = null;
 let originalResponse: any = null;
@@ -589,7 +592,88 @@ onMounted(async () => {
     show_markdown.value = false
     collapseStatement.value = false
   }
+  try_paste_interface_info()
 });
+
+async function try_paste_interface_info() {
+  if (paste_interface_info_data.value && paste_interface_info_data.value.url) {
+    cover_headers(paste_interface_info_data.value.headers)
+    const url_object = parseUrl(paste_interface_info_data.value.url)
+    cover_path(url_object.path)
+    cover_query_params(url_object.query_params)
+    cover_method(paste_interface_info_data.value.method)
+    await cover_body(paste_interface_info_data.value.body)
+  }
+  paste_interface_info_data.value = null
+}
+
+
+
+async function cover_body(value: any) {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    await handleExchangeValue(JSON.stringify(value), convertRoot)
+    data.value.body_type = 'json'
+  } else if (typeof value === 'string') {
+    data.value.raw = value
+    data.value.body_type = 'raw'
+  }
+}
+
+function cover_method(method: string) {
+  data.value.method = method.toLowerCase()
+}
+
+function cover_path(path: string) {
+  data.value.path = path
+}
+
+function cover_query_params(obj: any) {
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      console.log(key, obj[key]);
+      data.value.query.push({
+        t: 'string',
+        id: getRandomInt(1000000, 10000000),
+        name: key,
+        default: obj[key],
+        statement: ''
+      })
+    }
+  }
+}
+
+function cover_headers(obj: any) {
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      console.log(key, obj[key]);
+      data.value.headers.push({
+        t: 'string',
+        id: getRandomInt(1000000, 10000000),
+        name: key,
+        default: obj[key],
+        statement: ''
+      })
+    }
+  }
+}
+
+function parseUrl(urlString: string) {
+  const url = new URL(urlString);
+
+  // 1. domain（协议 + 主机 + 端口）
+  const domain = `${url.protocol}//${url.host}`;
+
+  // 2. path（不含 query）
+  const path = url.pathname;
+
+  // 3. query_params（转为普通对象）
+  const query_params: any = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    query_params[key] = value ?? '';
+  }
+
+  return { domain, path, query_params };
+}
 
 const props = defineProps({
   node_id: {
@@ -638,6 +722,8 @@ watch(
     } else if (GlobalState.message === "save_interface") {
       await save()
       GlobalState.sendMessage('save_done', true)
+    } else if (GlobalState.message === 'paste_interface_info') {
+      paste_interface_info_data.value = GlobalState.data.data
     }
   }
 );
@@ -863,7 +949,11 @@ function insert_params(text: string) {
 }
 
 function delete_response(_current_response: any) {
+  console.log(_current_response);
+
   ApiDeleteResponse(_current_response.id).then((res: any) => {
+    console.log(res);
+
     if (result_check(res) === false) return;
     enableWatch.value = false;
     responseOptions.value = responseOptions.value.filter(
@@ -927,6 +1017,95 @@ async function handleExchangeValue(
     await optimizedUpdate([newData]);
     // data.value.json_data = [newData]
   }, 50);
+}
+
+function convertRoot(jsonString: string) {
+  try {
+    const data = JSON.parse(jsonString);
+    const root = createRootNode(data);
+    return root;
+  } catch (error) {
+    throw new Error("Invalid JSON input");
+  }
+
+  function createRootNode(value: any) {
+    const rootNode: any = {
+      id: getRandomInt(1000000, 10000000),
+      name: "",
+      statement: "",
+      default: "",
+    };
+
+    if (value === null) {
+      rootNode.t = "null";
+      rootNode.default = "null";
+    } else if (Array.isArray(value)) {
+      rootNode.t = "array";
+      rootNode.default = "[]";
+      rootNode.children = convertArrayElements(value);
+    } else if (typeof value === "object") {
+      rootNode.t = "object";
+      rootNode.default = "{}";
+      rootNode.children = convertObjectProperties(value);
+    } else {
+      handlePrimitiveType(value, rootNode);
+    }
+
+    return rootNode;
+  }
+
+  function convertObjectProperties(obj: any) {
+    return Object.entries(obj).map(([key, value]) => convertNode(value, key));
+  }
+
+  function convertArrayElements(arr: any) {
+    return arr.map((item: any) => convertNode(item, ""));
+  }
+
+  function convertNode(value: any, name: any) {
+    const node: any = {
+      id: getRandomInt(1000000, 10000000),
+      name,
+      statement: "",
+    };
+
+    if (value === null) {
+      node.t = "null";
+      node.default = "null";
+    } else if (Array.isArray(value)) {
+      node.t = "array";
+      node.default = "[]";
+      node.children = convertArrayElements(value);
+    } else if (typeof value === "object") {
+      node.t = "object";
+      node.default = "{}";
+      node.children = convertObjectProperties(value);
+    } else {
+      handlePrimitiveType(value, node);
+    }
+
+    return node;
+  }
+
+  function handlePrimitiveType(value: any, node: any) {
+    switch (typeof value) {
+      case "string":
+        node.t = "string";
+        node.default = value;
+        break;
+      case "number":
+        node.t = Number.isInteger(value) ? "integer" : "number";
+        node.default = String(value);
+        break;
+      case "boolean":
+        node.t = "boolean";
+        node.default = String(value);
+        break;
+      default:
+        node.t = "unknown";
+        node.default = "";
+    }
+  }
 }
 
 onBeforeUnmount(() => {
@@ -1154,16 +1333,16 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 
 @keyframes blink {
 
-    0%,
-    50%,
-    100% {
-        opacity: 1;
-    }
+  0%,
+  50%,
+  100% {
+    opacity: 1;
+  }
 
-    25%,
-    75% {
-        opacity: 0;
-    }
+  25%,
+  75% {
+    opacity: 0;
+  }
 }
 
 .content-detail {
@@ -1202,11 +1381,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   align-items: center;
   font-weight: 500;
   border-bottom: 1px solid var(--border-color);
-}
-
-.special-btn {
-  width: 15px !important;
-  height: 15px !important;
 }
 
 .add-response {

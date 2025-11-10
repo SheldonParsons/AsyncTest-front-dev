@@ -2,8 +2,6 @@
   <div class="icon-button-div g-unselect">
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -18,20 +16,22 @@
   </div>
 </template>
 
-<script setup></script>
 <style lang="scss" scoped>
 .icon-button-div {
-  display: inline-flex;
-  padding: 4px;
-  margin: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2px!important;
+  margin: 0px!important;
   background-color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 1);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  width: 1rem;
-  height: 1rem;
+  box-sizing: border-box!important;
+  width: 25px!important;
+  height: 25px!important;
 
   /* 悬停效果 */
   &:hover {
@@ -58,8 +58,8 @@
   }
 
   > svg {
-    width: 100%;
-    height: 100%;
+    width: 14px;
+    height: 14px;
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2)); // 图标微投影
   }
 }

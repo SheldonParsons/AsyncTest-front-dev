@@ -1,23 +1,10 @@
 <template>
   <div class="container">
     <el-row class="search">
-      <el-affix
-        position="top"
-        :offset="2"
-        :style="{ width: searchWidth + '%' }"
-        @change="onSearchChange"
-      >
-        <el-col
-          :offset="searchOffsetIndex"
-          :span="searchInputWidth"
-          class="search-col"
-        >
-          <SpecialInput
-            v-model="search"
-            @input="searching"
-            :placeholder="$t('project.search.placeholder')"
-            @clearData="clearDataFromSearch"
-          ></SpecialInput>
+      <el-affix position="top" :offset="2" :style="{ width: searchWidth + '%' }" @change="onSearchChange">
+        <el-col :offset="searchOffsetIndex" :span="searchInputWidth" class="search-col">
+          <SpecialInput v-model="search" @input="searching" :placeholder="$t('project.search.placeholder')"
+            @clearData="clearDataFromSearch"></SpecialInput>
         </el-col>
       </el-affix>
     </el-row>
@@ -26,122 +13,61 @@
         <el-divider content-position="left">{{
           t("project.favorite")
         }}</el-divider>
-        <el-row
-          :gutter="20"
-          style="padding-top: 4px; padding-bottom: 50px; min-height: 200px"
-        >
-          <el-col
-            class="favorite-card-col"
-            :md="6"
-            :lg="12"
-            v-for="(item, index) in favoriteProjects.list"
-            :key="index"
-            style="height: 60px"
-          >
+        <el-row :gutter="20" style="padding-top: 4px; padding-bottom: 50px; min-height: 200px">
+          <el-col class="favorite-card-col" :md="6" :lg="12" v-for="(item, index) in favoriteProjects.list" :key="index"
+            style="height: 60px">
             <transition name="fade" mode="out-in" appear>
-              <el-card
-                :body-style="{
-                  padding: '0px',
-                }"
-                :style="{ '--el-card-border-radius': '5px' }"
-                shadow="hover"
-                :class="{
-                  'favorite-card-main': true,
-                }"
-              >
-                <div
-                  :class="{ 'favorite-card': true, default: item.is_default }"
-                  style="height: 60px; text-align: center"
-                  @click="enterProject(item)"
-                >
-                  <span class="card-favorite-span-name card-span-line"
-                    >{{ item.name
-                    }}<el-tag
-                      style="
+              <el-card :body-style="{
+                padding: '0px',
+              }" :style="{ '--el-card-border-radius': '5px' }" shadow="hover" :class="{
+                'favorite-card-main': true,
+              }">
+                <div :class="{ 'favorite-card': true, default: item.is_default }"
+                  style="height: 60px; text-align: center" @click="enterProject(item)">
+                  <span class="card-favorite-span-name card-span-line">{{ item.name
+                    }}<el-tag style="
                         margin-left: 5px;
                         border-color: white;
                         border: 1px solid;
-                      "
-                      v-if="item.is_default"
-                      class="mx-1"
-                      effect="dark"
-                      round
-                    >
+                      " v-if="item.is_default" class="mx-1" effect="dark" round>
                       {{ t("project.defaultProject") }}
-                    </el-tag></span
-                  >
+                    </el-tag></span>
                   <span class="Label Label--secondary v-align-middle ml-1">{{
                     t("project.public")
                   }}</span>
                 </div>
               </el-card>
-            </transition></el-col
-          >
-          <el-col
-            class="favorite-card-col"
-            :md="6"
-            :lg="12"
-            style="height: 60px"
-          >
+            </transition>
+          </el-col>
+          <el-col class="favorite-card-col" :md="6" :lg="12" style="height: 60px">
             <transition name="fade" mode="out-in" appear>
-              <el-card
-                :body-style="{
-                  padding: '0px',
-                }"
-                :style="{ '--el-card-border-radius': '5px' }"
-                shadow="hover"
-                :class="{
-                  'favorite-card-main': true,
-                }"
-              >
-                <div
-                  :class="{ 'favorite-card': true }"
-                  style="height: 60px; text-align: center"
-                  @click="showCreateProject()"
-                >
-                  <span class="card-favorite-span-name card-span-line"
-                    >创建新项目+</span
-                  >
+              <el-card :body-style="{
+                padding: '0px',
+              }" :style="{ '--el-card-border-radius': '5px' }" shadow="hover" :class="{
+                'favorite-card-main': true,
+              }">
+                <div :class="{ 'favorite-card': true }" style="height: 60px; text-align: center"
+                  @click="showCreateProject()">
+                  <span class="card-favorite-span-name card-span-line">创建新项目+</span>
                   <span class="Label Label--secondary v-align-middle ml-1">{{
                     t("project.public")
                   }}</span>
                 </div>
               </el-card>
-            </transition></el-col
-          >
+            </transition>
+          </el-col>
         </el-row>
         <!-- <el-empty v-else :image-size="80" :description="t('global.empty')" /> -->
         <el-divider content-position="left">{{ t("project.all") }}</el-divider>
-        <el-row
-          v-if="projects.list.length > 0"
-          :gutter="30"
-          v-infinite-scroll="load"
-          style="padding-top: 70px; padding-bottom: 50px; margin-bottom: 50px"
-          :infinite-scroll-disabled="disInfinite"
-        >
-          <el-col
-            :span="10"
-            :md="8"
-            :lg="8"
-            :xl="8"
-            v-for="(item, index) in projects.list"
-            :key="index"
-            style="height: 250px; padding-left: 30px; padding-right: 30px"
-          >
+        <el-row v-if="projects.list.length > 0" :gutter="30" v-infinite-scroll="load"
+          style="padding-top: 70px; padding-bottom: 50px; margin-bottom: 50px" :infinite-scroll-disabled="disInfinite">
+          <el-col :span="10" :md="8" :lg="8" :xl="8" v-for="(item, index) in projects.list" :key="index"
+            style="height: 250px; padding-left: 30px; padding-right: 30px">
             <transition name="fade" mode="out-in" appear>
-              <PanelViewNewCard
-                :project="item"
-                :name="item.name"
-                :creator="item.create_by"
-                :create-time="tools.getLocaleDateTime(item.add_time)"
-                :isDefault="item.is_default"
-                :isFavorite="item.is_favorite"
-                :decsString="item.desc"
-                :fire="item.user_count"
-                @enterProject="enterProject"
-                @setDefault="setDefault"
-                @setFavorite="setFavorite"
-              ></PanelViewNewCard>
+              <PanelViewNewCard :project="item" :name="item.name" :creator="item.create_by"
+                :create-time="tools.getLocaleDateTime(item.add_time)" :isDefault="item.is_default"
+                :isFavorite="item.is_favorite" :decsString="item.desc" :fire="item.user_count"
+                @enterProject="enterProject" @setDefault="setDefault" @setFavorite="setFavorite"></PanelViewNewCard>
             </transition>
           </el-col>
         </el-row>
@@ -149,60 +75,33 @@
       </el-col>
     </el-row>
   </div>
-  <CommonDialog
-    :dialog="showApproveProjectDialog"
-    :dWidth="45"
-    :dTop="10"
-    :hasFooter="true"
-    :footerConfirmDesc="t('project.approve.confirmDesc')"
-    :footerCancelDesc="t('project.approve.cancelDesc')"
-    :headerText="t('project.approve.requestDesc')"
-    :cancelDoubleCheck="false"
-    @closed="closedApproveProjectDialog"
-    @cancel="closedApproveProjectDialog"
-    @confirm="confirmApproveProject"
-  >
-    <CommonTextarea
-      v-model="approveDesc"
-      class="create-child"
-      :placeholder="$t('project.approve.requestDescPlaceHolder')"
-      :maxlength="500"
-    ></CommonTextarea>
+  <CommonDialog :dialog="showApproveProjectDialog" :dWidth="45" :dTop="10" :hasFooter="true"
+    :footerConfirmDesc="t('project.approve.confirmDesc')" :footerCancelDesc="t('project.approve.cancelDesc')"
+    :headerText="t('project.approve.requestDesc')" :cancelDoubleCheck="false" @closed="closedApproveProjectDialog"
+    @cancel="closedApproveProjectDialog" @confirm="confirmApproveProject">
+    <CommonTextarea v-model="approveDesc" class="create-child"
+      :placeholder="$t('project.approve.requestDescPlaceHolder')" :maxlength="500"></CommonTextarea>
   </CommonDialog>
-  <CommonDialog
-    :dialog="show_create_project"
-    :dWidth="45"
-    :dTop="10"
-    :hasFooter="true"
-    footerConfirmDesc="创建"
-    footerCancelDesc="取消"
-    headerText="创建个人项目"
-    :cancelDoubleCheck="false"
-    @closed="closedCreateProjectDialog"
-    @cancel="closedCreateProjectDialog"
-    @confirm="create_project"
-  >
+  <CommonDialog :dialog="show_create_project" :dWidth="45" :dTop="10" :hasFooter="true" footerConfirmDesc="创建"
+    footerCancelDesc="取消" headerText="创建个人项目" :cancelDoubleCheck="false" @closed="closedCreateProjectDialog"
+    @cancel="closedCreateProjectDialog" @confirm="create_project">
     <el-row>
-      <el-col :span="3"
-        ><span style="font-size: 14px; font-weight: 600">项目名称</span></el-col
-      >
-      <el-col :span="21"
-        ><el-input v-model="project_name" placeholder="项目名"></el-input
-      ></el-col>
+      <el-col :span="3"><span style="font-size: 14px; font-weight: 600">项目名称</span></el-col>
+      <el-col :span="21"><el-input v-model="project_name" placeholder="项目名"></el-input></el-col>
     </el-row>
     <el-row style="margin-top: 20px">
-      <el-col :span="3"
-        ><span style="font-size: 14px; font-weight: 600">项目描述</span></el-col
-      >
-      <el-col :span="21"
-        ><el-input
-          v-model="project_desc"
-          :autosize="{ minRows: 2, maxRows: 4 }"
-          type="textarea"
-          placeholder="项目描述信息"
-      /></el-col>
+      <el-col :span="3"><span style="font-size: 14px; font-weight: 600">项目描述</span></el-col>
+      <el-col :span="21"><el-input v-model="project_desc" :autosize="{ minRows: 2, maxRows: 4 }" type="textarea"
+          placeholder="项目描述信息" /></el-col>
     </el-row>
   </CommonDialog>
+  <DialogAnimation ref="createProjectRef" title="创建项目" cancel_title="取消" :confirm_title="'创建'"
+    :before_comfirm="checkCreateProject">
+    <div style="display: flex;flex-direction: column;gap: 20px;min-width: 400px;">
+      <input class="dialog-input" v-model="project_name" placeholder="项目名称">
+      <input class="dialog-input" v-model="project_desc" placeholder="项目描述">
+    </div>
+  </DialogAnimation>
 </template>
 
 <script lang="ts" setup>
@@ -212,6 +111,7 @@ import SpecialInput from "@/components/common/input/specialInput.vue";
 import CommonDialog from "@/components/layout/dialogs/commonDialog.vue";
 import CommonTextarea from "@/components/common/input/commonTextarea.vue";
 import { ApiCreateTouchPixel } from "@/api/pixel/project";
+import DialogAnimation from '@/components/common/general/dialog.vue'
 import { createProjects } from "@/api/project/index";
 import {
   ApiGetProjects,
@@ -227,6 +127,8 @@ import PanelViewNewCard from "./panelViewNewCard.vue";
 import _ from "lodash";
 const router = useRouter();
 const { t } = useI18n();
+// 创建项目ref
+const createProjectRef: any = ref(null)
 // 打开创建项目
 const show_create_project = ref(false);
 // 项目名称
@@ -276,8 +178,25 @@ function closedCreateProjectDialog() {
   project_desc.value = "";
 }
 
-function showCreateProject() {
-  show_create_project.value = true;
+function checkCreateProject() {
+  if (project_name.value.length === 0) {
+    window.$toast({ title: '请填写项目名称' })
+    return false
+  }
+  if (project_desc.value.length === 0) {
+    window.$toast({ title: '请填写项目描述' })
+    return false
+  }
+  return true
+}
+
+async function showCreateProject() {
+  const result = await createProjectRef.value.open()
+  if (result.action !== 'cancel') {
+    create_project()
+  }
+  project_desc.value = ''
+  project_name.value = ''
 }
 
 function create_project() {
@@ -601,15 +520,29 @@ function clickAllowMessage() {
 </script>
 
 <style lang="scss" scoped>
+.dialog-input {
+  background-color: white;
+  color: black;
+  border-radius: 4px;
+  border: 0px;
+  padding: 10px;
+  padding-right: 40px;
+  width: 100%;
+  outline: none;
+  box-sizing: border-box;
+}
+
 .container {
-overflow: scroll;
+  overflow: scroll;
   width: inherit;
   display: flex;
   flex-direction: column;
 }
+
 .favorite-card-col {
   margin-top: 20px;
 }
+
 .favorite-card {
   display: flex;
   justify-content: center;
@@ -627,6 +560,7 @@ overflow: scroll;
     linear-gradient(90deg, hsl(240 30% 96%), hsl(240 30% 96%));
   outline: none;
   box-sizing: border-box;
+
   .card-favorite-span-name {
     font-size: 14px;
     font-weight: 700;
@@ -638,6 +572,7 @@ overflow: scroll;
     margin-left: 10px;
   }
 }
+
 .card-span-line {
   font-size: 16px;
   color: black;
@@ -647,6 +582,7 @@ overflow: scroll;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
 .card-favorite-span-name {
   line-height: 40px;
   cursor: pointer;
@@ -657,31 +593,39 @@ overflow: scroll;
   opacity: 1;
   transition: all 1s ease-out;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
+
 .favorite-card-main {
   border: 0px;
 }
+
 .favorite-card:hover {
+
   // background: var(--private-bg);
   .card-favorite-span-name {
     color: white;
   }
+
   .Label {
     border: 1px solid white;
     color: white;
   }
+
   border: 2px solid black;
   background: rgba(66, 184, 131, 0.9);
   box-shadow: 3px 3px 1px #888888;
 }
+
 .Label--secondary {
   border-color: #d0d7de;
   color: #656d76;
   margin-right: 10px;
 }
+
 .search {
   padding-top: 90px;
 }
@@ -698,9 +642,11 @@ overflow: scroll;
   padding: 0 7px;
   white-space: nowrap;
 }
+
 .ml-1 {
   margin-left: var(0.25rem, 4px) !important;
 }
+
 .v-align-middle {
   vertical-align: middle !important;
 }

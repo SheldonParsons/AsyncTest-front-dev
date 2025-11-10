@@ -1,38 +1,30 @@
 <template>
   <div class="icon-button-div g-unselect">
-    <svg
-      t="1744794389725"
-      class="icon"
-      viewBox="0 0 1024 1024"
-      version="1.1"
-      xmlns="http://www.w3.org/2000/svg"
-      p-id="5742"
-      width="256"
-      height="256"
-    >
+    <svg t="1744794389725" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"
+      p-id="5742" width="256" height="256">
       <path
         d="M934.4 136.3456A38.4 38.4 0 0 1 995.84 182.1952l-2.3552 3.1488-571.5456 689.5104a38.4 38.4 0 0 1-53.8624 5.248l-2.9184-2.6368L28.1344 539.1104a38.4 38.4 0 0 1 51.4816-56.832l2.9184 2.6112L389.76 793.344 934.4 136.3456z"
-        fill="#000000"
-        p-id="5743"
-      ></path>
+        fill="#000000" p-id="5743"></path>
     </svg>
   </div>
 </template>
 
-<script setup></script>
 <style lang="scss" scoped>
 .icon-button-div {
-  display: inline-flex;
-  padding: 4px;
-  margin: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2px !important;
+  margin: 0px !important;
   background-color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 1);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  width: 1.5rem;
-  height: 1.5rem;
+  box-sizing: border-box !important;
+  width: 25px !important;
+  height: 25px !important;
 
   /* 悬停效果 */
   &:hover {
@@ -58,9 +50,9 @@
     box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255, 255, 255, 0.3);
   }
 
-  > svg {
-    width: 100%;
-    height: 100%;
+  >svg {
+    width: 14px;
+    height: 14px;
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2)); // 图标微投影
   }
 }

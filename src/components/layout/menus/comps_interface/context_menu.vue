@@ -16,6 +16,13 @@
                                     <InterfaceIcon></InterfaceIcon>
                                 </div>
                             </ContextMenu.Item>
+                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(1, 'create_interface_under_dir_by_paste')">
+                                粘贴板创建（Fetch）
+                                <div class="context-menu-shortcut">
+                                    <PasteIcon></PasteIcon>
+                                </div>
+                            </ContextMenu.Item>
+                            <ContextMenu.Separator class="context-menu-separator" />
                             <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(0, 'create_child_dir')">
                                 添加子目录
                                 <div class="context-menu-shortcut">
@@ -115,6 +122,7 @@ import { ref } from 'vue'
 import { ContextMenu } from 'reka-ui/namespaced'
 import { AnimatePresence, motion } from 'motion-v'
 import InterfaceIcon from "@/assets/svg/common/interface.vue";
+import PasteIcon from '@/assets/svg/common/paste.vue'
 import CopyIcon from "@/assets/svg/common/copy.vue";
 import MoveIcon from "@/assets/svg/common/move.vue";
 import FolderPlusIcon from "@/assets/svg/common/fold_plus.vue";

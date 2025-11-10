@@ -1,32 +1,21 @@
 <template>
-  <el-dialog
-    v-model="dialogVisible"
-    :show-close="false"
-    width="80%"
-    style="border-radius: 12px; margin-top: 40px"
-    class="env-dialog"
-    ref="env_dialog"
-    :append-to-body="true"
-  >
+  <el-dialog v-model="dialogVisible" :show-close="false" width="80%" style="border-radius: 12px; margin-top: 40px"
+    class="env-dialog" ref="env_dialog" :append-to-body="true">
     <template #header="{ close, titleId, titleClass }">
       <el-row style="padding: 24px 24px 14px">
-        <el-col :span="23"
-          ><span
-            style="
+        <el-col :span="23"><span style="
               color: rgba(16, 24, 40, 0.8);
               font-weight: 500;
               font-size: 16px;
               margin: 0px;
-            "
-            >环境设置</span
-          ></el-col
-        >
-        <el-col
-          :span="1"
-          style="display: flex; justify-content: end; align-items: center"
-          ><div class="del-process" @click="close">
-            <el-icon :size="12"><CloseBold /></el-icon></div
-        ></el-col>
+            ">环境设置</span></el-col>
+        <el-col :span="1" style="display: flex; justify-content: end; align-items: center">
+          <div class="del-process" @click="close">
+            <el-icon :size="12">
+              <CloseBold />
+            </el-icon>
+          </div>
+        </el-col>
       </el-row>
       <el-divider></el-divider>
     </template>
@@ -35,90 +24,38 @@
         <div class="setting-main-content-left">
           <div class="setting-main-content-left-title">环境</div>
           <div class="setting-main-content-left-env-list no-scroll">
-            <div
-              v-for="(data, index) in env_list"
-              class="setting-main-content-left-env-list-item"
-              :class="{ 'focus-item': focus_node === data.id }"
-              @mouseenter="current_node = data.id"
-              @mouseleave="current_node = -1"
-              @click="get_env(data)"
-            >
-              <div class="env-name"><EnvBtn />{{ data.name }}</div>
+            <div v-for="(data, index) in env_list" class="setting-main-content-left-env-list-item"
+              :class="{ 'focus-item': focus_node === data.id }" @mouseenter="current_node = data.id"
+              @mouseleave="current_node = -1" @click="get_env(data)">
+              <div class="env-name">
+                <EnvBtn />{{ data.name }}
+              </div>
               <div>
-                <el-popover
-                  placement="right"
-                  v-if="show_popover"
-                  @show="set_awalys_show_popover(data.id)"
-                  @before-leave="awalys_show_popover = -1"
-                  :width="320"
-                  trigger="click"
-                >
-                  <template #reference>
-                    <MoreButton
-                      v-if="
-                        current_node === data.id ||
-                        awalys_show_popover === data.id
-                      "
-                      class="hover-menu-box"
-                    ></MoreButton>
-                    <div v-else></div>
-                  </template>
-                  <div class="more-action-div" style="width: 100%">
-                    <div class="action-header" style="padding-top: 5px;">修改信息</div>
-                    <el-divider></el-divider>
-                    <div class="change-name">
-                      <div style="width: 100%">
-                        <el-input v-model="data.name"></el-input>
-                      </div>
-                      <div>
-                        <DoneButton
-                          style="width: 1rem; height: 1rem"
-                          @click="chang_node_name(data)"
-                        ></DoneButton>
-                      </div>
-                    </div>
-                    <el-divider></el-divider>
-                    <div class="action-header" style="margin-top: 5px">
-                      更多操作
-                    </div>
-                    <!-- <el-divider></el-divider>
-                    <div class="action-list" style="padding-bottom: 5px">
-                      <div
-                        class="action-item"
-                        @click="action('copy_foler', data)"
-                      >
-                        <div class="action-icon"><CopyIcon></CopyIcon></div>
-                        <div>复制</div>
-                      </div>
-                    </div> -->
-                    <el-divider></el-divider>
-                    <div class="action-list" @click="delete_env(data)">
-                      <div class="action-item action-delete-item">
-                        <div class="delete-front-item">
-                          <div class="action-icon">
-                            <DeleteIcon></DeleteIcon>
-                          </div>
-                          <div>删除</div>
-                        </div>
-                        <div class="action-icon delete-icon">
-                          <DeleteBackIcon></DeleteBackIcon>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </el-popover>
+                <SelectMenu :data="data" @action="(action_name, action_data) => action(action_name, action_data)"
+                  @close="async () => {
+                    // 只有当 current_node 仍然是当前组件的 id 时，才执行关闭重置
+                    if (current_node === data.id) {
+                      current_node = -1;
+                    }
+                    if (awalys_show_popover === data.id) {
+                      awalys_show_popover = -1;
+                    }
+                    await nextTick();
+                  }">
+                  <ExperBtn @contextmenu.prevent v-if="current_node === data.id || awalys_show_popover === data.id"
+                    class="hover-menu-box" @click="() => { current_node = data.id; awalys_show_popover = data.id }">
+                  </ExperBtn>
+                </SelectMenu>
               </div>
             </div>
           </div>
           <el-divider></el-divider>
 
           <div class="setting-main-content-left-env-list-new">
-            <div
-              @click="visit_add_env_dialog"
-              class="setting-main-content-left-env-list-item"
-              style="margin-top: 10px"
-            >
-              <div class="env-name"><Plus />新建环境</div>
+            <div @click="visit_add_env_dialog" class="setting-main-content-left-env-list-item" style="margin-top: 10px">
+              <div class="env-name">
+                <Plus />新建环境
+              </div>
             </div>
           </div>
           <el-divider></el-divider>
@@ -127,18 +64,13 @@
             <TreeNode @change_menu="get_temp"></TreeNode>
           </div>
         </div>
-        <div
-          v-if="content_type === 'server'"
-          class="setting-main-content-right"
-        >
-          <div
-            style="
+        <div v-if="content_type === 'server'" class="setting-main-content-right">
+          <div style="
               padding: 10px;
               font-size: 14px;
               font-weight: 500;
               color: black;
-            "
-          >
+            ">
             服务列表
           </div>
           <el-divider></el-divider>
@@ -150,80 +82,49 @@
               </div>
             </div>
             <div class="private-table-outside">
-              <el-table
-                v-if="loading === false"
-                v-model:data="server_table"
-                style="width: 100%"
-                row-key="key"
-                default-expand-all
-                class="main-table"
-              >
+              <el-table v-if="loading === false" v-model:data="server_table" style="width: 100%" row-key="key"
+                default-expand-all class="main-table">
                 <template #empty>
                   <div v-if="loading">
                     <Loading></Loading>
                   </div>
-                  <SpecialButton v-else @click="add_server"
-                    >添加数据</SpecialButton
-                  >
+                  <SpecialButton v-else @click="add_server">添加数据</SpecialButton>
                 </template>
                 <el-table-column label="服务名" min-width="30%">
                   <template #default="scope">
-                    <div
-                      class="g-ellipsis"
-                      v-show="scope.row.key !== current_server?.key"
-                      style="font-size: 14px; font-weight: 500;display: flex;align-items: center;gap: 5px;"
-                    >
-                      <div class="g-ellipsis">{{ scope.row.name }}</div> <span v-if="scope.row.is_default" class="default-server-div">默认服务</span>
+                    <div class="g-ellipsis" v-show="scope.row.key !== current_server?.key"
+                      style="font-size: 14px; font-weight: 500;display: flex;align-items: center;gap: 5px;">
+                      <div class="g-ellipsis">{{ scope.row.name }}</div> <span v-if="scope.row.is_default"
+                        class="default-server-div">默认服务</span>
                     </div>
-                    <el-input
-                      v-show="scope.row.key === current_server?.key"
-                      v-model="scope.row.name"
-                    ></el-input>
+                    <el-input v-show="scope.row.key === current_server?.key" v-model="scope.row.name"></el-input>
                   </template>
                 </el-table-column>
                 <el-table-column label="URL前缀">
                   <template #default="scope">
-                    <div
-                      class="path-div g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                      v-show="scope.row.key !== current_server?.key"
-                    >
+                    <div class="path-div g-ellipsis" style="font-size: 14px; font-weight: 500"
+                      v-show="scope.row.key !== current_server?.key">
                       <span>{{ scope.row.prefix }}</span>
                     </div>
-                    <div
-                      v-show="scope.row.key === current_server?.key"
-                      class="core-value"
-                    >
+                    <div v-show="scope.row.key === current_server?.key" class="core-value">
                       <div style="width: 100%">
-                        <CodeMirror
-                          :canVar="false"
-                          v-model="scope.row.prefix"
-                          :enableNewLine="false"
-                        ></CodeMirror>
+                        <CodeMirror :canVar="false" v-model="scope.row.prefix" :enableNewLine="false"></CodeMirror>
                       </div>
                     </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" min-width="15%">
                   <template #default="scope">
-                    <EditButton
-                      style="width: 1.5rem; height: 1.5rem"
-                      v-show="scope.row.key !== current_server?.key"
-                      @click="edit_server(scope.row, scope.$index)"
-                    ></EditButton>
-                    <div
-                      v-show="scope.row.key === current_server?.key"
-                      style="
+                    <EditButton style="width: 1.5rem; height: 1.5rem" v-show="scope.row.key !== current_server?.key"
+                      @click="edit_server(scope.row, scope.$index)"></EditButton>
+                    <div v-show="scope.row.key === current_server?.key" style="
                         display: flex;
                         align-items: center;
                         justify-content: start;
                         gap: 4px;
-                      "
-                    >
+                      ">
                       <DoneButton @click="save_server(scope.row)"></DoneButton>
-                      <DeleteButton
-                        @click="delete_server(scope.row)"
-                      ></DeleteButton>
+                      <DeleteButton @click="delete_server(scope.row)"></DeleteButton>
                     </div>
                   </template>
                 </el-table-column>
@@ -232,25 +133,20 @@
                 <el-col :span="24">
                   <el-skeleton animated>
                     <template #template>
-                      <el-skeleton-item
-                        v-for="_ in 4"
-                        variant="h1"
-                        style="width: 100%; height: 30px; margin-top: 10px"
-                      />
+                      <el-skeleton-item v-for="_ in 4" variant="h1"
+                        style="width: 100%; height: 30px; margin-top: 10px" />
                     </template>
                   </el-skeleton>
                 </el-col>
               </el-row>
             </div>
           </div>
-          <div
-            style="
+          <div style="
               padding: 10px;
               font-size: 14px;
               font-weight: 500;
               color: black;
-            "
-          >
+            ">
             环境变量列表
           </div>
           <el-divider></el-divider>
@@ -262,102 +158,59 @@
               </div>
             </div>
             <div class="private-table-outside">
-              <el-table
-                v-if="loading === false"
-                v-model:data="env_variable_table"
-                style="width: 100%"
-                row-key="id"
-                default-expand-all
-                class="main-table"
-              >
+              <el-table v-if="loading === false" v-model:data="env_variable_table" style="width: 100%" row-key="id"
+                default-expand-all class="main-table">
                 <template #empty>
-                  <SpecialButton @click="open_add_env_variable_dialog"
-                    >添加数据</SpecialButton
-                  >
+                  <SpecialButton @click="open_add_env_variable_dialog">添加数据</SpecialButton>
                 </template>
                 <el-table-column label="变量名" min-width="30%">
                   <template #default="scope">
-                    <div
-                      class="g-ellipsis"
-                      v-show="scope.row.key !== current_variable?.key"
-                      style="font-size: 14px; font-weight: 500"
-                    >
+                    <div class="g-ellipsis" v-show="scope.row.key !== current_variable?.key"
+                      style="font-size: 14px; font-weight: 500">
                       {{ scope.row.name }}
                     </div>
-                    <el-input
-                      v-show="scope.row.key === current_variable?.key"
-                      v-model="scope.row.name"
-                    ></el-input>
+                    <el-input v-show="scope.row.key === current_variable?.key" v-model="scope.row.name"></el-input>
                   </template>
                 </el-table-column>
                 <el-table-column label="变量值">
                   <template #default="scope">
-                    <div
-                      class="path-div g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                      v-show="scope.row.key !== current_variable?.key"
-                    >
+                    <div class="path-div g-ellipsis" style="font-size: 14px; font-weight: 500"
+                      v-show="scope.row.key !== current_variable?.key">
                       <span>{{ scope.row.value }}</span>
                     </div>
-                    <div
-                      v-show="scope.row.key === current_variable?.key"
-                      class="core-value"
-                    >
+                    <div v-show="scope.row.key === current_variable?.key" class="core-value">
                       <div style="width: 100%">
-                        <CodeMirror
-                          :canVar="false"
-                          v-model="scope.row.value"
-                          :enableNewLine="false"
-                        ></CodeMirror>
+                        <CodeMirror :canVar="false" v-model="scope.row.value" :enableNewLine="false"></CodeMirror>
                       </div>
                     </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="描述">
                   <template #default="scope">
-                    <div
-                      class="path-div g-ellipsis"
-                      style="font-size: 14px; font-weight: 500"
-                      v-show="scope.row.key !== current_variable?.key"
-                    >
+                    <div class="path-div g-ellipsis" style="font-size: 14px; font-weight: 500"
+                      v-show="scope.row.key !== current_variable?.key">
                       <span>{{ scope.row.statement }}</span>
                     </div>
-                    <div
-                      v-show="scope.row.key === current_variable?.key"
-                      class="core-value"
-                    >
+                    <div v-show="scope.row.key === current_variable?.key" class="core-value">
                       <div style="width: 100%">
-                        <CodeMirror
-                          :disableVar="true"
-                          v-model="scope.row.statement"
-                          :enableNewLine="false"
-                        ></CodeMirror>
+                        <CodeMirror :disableVar="true" v-model="scope.row.statement" :enableNewLine="false">
+                        </CodeMirror>
                       </div>
                     </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" min-width="20%">
                   <template #default="scope">
-                    <EditButton
-                      style="width: 1.5rem; height: 1.5rem"
-                      v-show="scope.row.key !== current_variable?.key"
-                      @click="edit_env_variable(scope.row, scope.$index)"
-                    ></EditButton>
-                    <div
-                      v-show="scope.row.key === current_variable?.key"
-                      style="
+                    <EditButton style="width: 1.5rem; height: 1.5rem" v-show="scope.row.key !== current_variable?.key"
+                      @click="edit_env_variable(scope.row, scope.$index)"></EditButton>
+                    <div v-show="scope.row.key === current_variable?.key" style="
                         display: flex;
                         align-items: center;
                         justify-content: start;
                         gap: 4px;
-                      "
-                    >
-                      <DoneButton
-                        @click="save_env_variable(scope.row)"
-                      ></DoneButton>
-                      <DeleteButton
-                        @click="delete_env_variable(scope.row)"
-                      ></DeleteButton>
+                      ">
+                      <DoneButton @click="save_env_variable(scope.row)"></DoneButton>
+                      <DeleteButton @click="delete_env_variable(scope.row)"></DeleteButton>
                     </div>
                   </template>
                 </el-table-column>
@@ -366,11 +219,8 @@
                 <el-col :span="24">
                   <el-skeleton animated>
                     <template #template>
-                      <el-skeleton-item
-                        v-for="_ in 4"
-                        variant="h1"
-                        style="width: 100%; height: 30px; margin-top: 10px"
-                      />
+                      <el-skeleton-item v-for="_ in 4" variant="h1"
+                        style="width: 100%; height: 30px; margin-top: 10px" />
                     </template>
                   </el-skeleton>
                 </el-col>
@@ -378,7 +228,8 @@
             </div>
           </div>
         </div>
-        <div v-if="content_type === 'temp'" style="flex: 80;display: flex;flex-direction: column;" id="content-ref-core">
+        <div v-if="content_type === 'temp'" style="flex: 80;display: flex;flex-direction: column;"
+          id="content-ref-core">
           <TempTable :current_interface="current_interface"></TempTable>
         </div>
       </div>
@@ -391,13 +242,10 @@
       </div>
     </template>
   </el-dialog>
-  <SimpleDialog
-    v-model="show_add_env_dialog"
-    @action="add_env"
-    :title="'新建环境'"
-    :placeholder="'请输出环境名'"
-    :action_title="'新建'"
-  ></SimpleDialog>
+  <SimpleDialog v-model="show_add_env_dialog" @action="add_env" :title="'新建环境'" :placeholder="'请填写环境名'"
+    :action_title="'新建'"></SimpleDialog>
+  <SimpleDialog v-model="show_eidt_env_name_dialog" @action="edit_env" :data="current_env_env ? current_env_env.name : ''" :title="'修改环境名'"
+    :placeholder="'请填写环境名'" :action_title="'修改'"></SimpleDialog>
 </template>
 
 <script setup lang="ts">
@@ -405,9 +253,6 @@ import { ref, getCurrentInstance, computed, onMounted, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import EnvBtn from "@/assets/svg/common/env_btn.vue";
 import Plus from "@/assets/svg/common/plus.vue";
-import MoreButton from "@/assets/svg/common/edit_more_btn.vue";
-import DeleteIcon from "@/assets/svg/common/delete.vue";
-import DeleteBackIcon from "@/assets/svg/common/delete_back.vue";
 import DoneButton from "@/assets/svg/common/done_btn.vue";
 import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import EditButton from "@/assets/svg/common/edit_btn.vue";
@@ -416,6 +261,8 @@ import SpecialButton from "@/components/common/button/special_button.vue";
 import CodeMirror from "@/views/api/child_context/code_mirror.vue";
 import Loading from "@/views/api/child_component/params_child/comp/loading.vue";
 import tools from "@/utils/tools";
+import SelectMenu from '@/views/api/public_dialog/env_select_menu.vue'
+import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
 import TreeNode from "@/views/api/child_component/tree_content.vue";
 import TempTable from '@/views/api/public_dialog/motion_dev_component/core_table.vue'
 import { ApiGetProjectServerParameters, ApiPostEnv } from "@/api/interface/env";
@@ -454,6 +301,8 @@ const env_variable_table: any = ref([]);
 const env_dialog: any = ref(null);
 const current_interface: any = ref(-1);
 const temp_variable_table: any = ref([]);
+const show_eidt_env_name_dialog = ref(false)
+const current_env_env: any = ref(null)
 
 onMounted(async () => {
   const window_height = window.innerHeight;
@@ -481,6 +330,15 @@ onMounted(async () => {
 //     tools.message("加载完成", proxy, "success");
 //   }
 // });
+
+async function action(action_type: string, data: any) {
+  if (action_type === 'delete') {
+    delete_env(data)
+  } else if (action_type === 'edit_name') {
+    current_env_env.value = data
+    show_eidt_env_name_dialog.value = true
+  }
+}
 
 async function get_envs() {
   loading.value = true;
@@ -697,6 +555,13 @@ const emit = defineEmits(["update:modelValue"]);
 
 function set_awalys_show_popover(id: number) {
   awalys_show_popover.value = id;
+}
+
+async function edit_env(name: string) {
+  current_env_env.value.name = name
+  await chang_node_name(current_env_env.value)
+  current_env_env.value = null
+  show_eidt_env_name_dialog.value = false
 }
 
 async function chang_node_name(data: any) {
@@ -997,6 +862,7 @@ async function delete_server(row: any) {
   padding: 0px 5px;
   color: var(--global-theme-color);
 }
+
 .body-tools {
   display: flex;
   justify-content: space-between;
@@ -1006,17 +872,20 @@ async function delete_server(row: any) {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
+
   .title {
     font-size: 14px;
     font-weight: 500;
     display: flex;
     align-items: center;
   }
+
   .tools {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 5px;
+
     div {
       font-size: 12px;
       display: flex;
@@ -1027,26 +896,32 @@ async function delete_server(row: any) {
       gap: 4px;
       border-radius: 8px;
     }
+
     div:hover {
       background-color: var(--hover-bg);
     }
   }
 }
+
 .setting-outside {
   display: flex;
   justify-content: start;
   align-items: center;
   // padding: 0px 20px 0px 0px;
   border-bottom: 1px solid var(--border-color-light);
+
   .setting-main-content {
     width: 100%; // 改成 100%
     // max-width: calc(100% - 20px);
     display: flex;
+
     .setting-main-content-left {
       border-right: 1px solid var(--border-color-light);
       flex: 20;
+      max-width: 25%;
       display: flex;
       flex-direction: column;
+
       .setting-main-content-left-title {
         font-size: 12px;
         color: var(--font-default-color);
@@ -1055,15 +930,19 @@ async function delete_server(row: any) {
         display: flex;
         align-items: center;
       }
+
       .setting-main-content-left-env-list-new {
         padding: 0px 10px;
+
         .focus-item,
         .setting-main-content-left-env-list-item:hover {
           background-color: black;
+
           .env-name {
             color: white !important;
           }
         }
+
         .setting-main-content-left-env-list-item {
           cursor: pointer;
           margin: 4px 0px;
@@ -1074,6 +953,7 @@ async function delete_server(row: any) {
           gap: 5px;
           border-radius: 8px;
           justify-content: space-between;
+
           .box {
             font-size: 12px;
             width: 20px;
@@ -1084,6 +964,7 @@ async function delete_server(row: any) {
             border-radius: 4px;
             background-color: var(--dark-default-bg);
           }
+
           .env-name {
             font-size: 14px;
             font-weight: 500;
@@ -1094,17 +975,21 @@ async function delete_server(row: any) {
           }
         }
       }
+
       .setting-main-content-left-env-list {
         flex: 1;
         padding: 0px 10px;
         overflow: scroll;
+
         .focus-item,
         .setting-main-content-left-env-list-item:hover {
           background-color: black;
+
           .env-name {
             color: white !important;
           }
         }
+
         .setting-main-content-left-env-list-item {
           cursor: pointer;
           margin: 4px 0px;
@@ -1115,6 +1000,7 @@ async function delete_server(row: any) {
           gap: 5px;
           border-radius: 8px;
           justify-content: space-between;
+
           .box {
             font-size: 12px;
             width: 20px;
@@ -1125,6 +1011,7 @@ async function delete_server(row: any) {
             border-radius: 4px;
             background-color: var(--dark-default-bg);
           }
+
           .env-name {
             font-size: 14px;
             font-weight: 500;
@@ -1136,17 +1023,20 @@ async function delete_server(row: any) {
         }
       }
     }
+
     .setting-main-content-right {
       flex: 80;
       overflow: scroll;
     }
   }
 }
+
 .process-dialog-footer {
   padding-top: 0px;
   padding-right: 24px;
   padding-left: 24px;
   padding-bottom: 24px;
+
   .process-dialog-btn {
     -webkit-appearance: button;
     outline: 0;
@@ -1160,24 +1050,29 @@ async function delete_server(row: any) {
     font-size: 14px;
     border-radius: 8px;
   }
+
   .cancel-btn:hover {
     background-color: #fff;
     border-color: #d0d5dd;
     color: #344054;
   }
+
   .cancel-btn {
     color: #344054;
     background-color: #fff;
     border-color: #eaecf0;
   }
+
   .add-btn {
     color: #fff;
     background-color: black;
     border-color: #eaecf0;
   }
+
   .add-btn:hover {
     background-color: rgb(46, 46, 46);
   }
+
   .disabled-btn {
     color: rgba(16, 24, 40, 0.24);
     background-color: #f9fafb;
@@ -1189,6 +1084,7 @@ async function delete_server(row: any) {
 .process-dialog-content {
   padding: 24px;
   font-size: 14px;
+
   .editor-header {
     height: 2.5rem;
     border-top-left-radius: 10px;
@@ -1204,6 +1100,7 @@ async function delete_server(row: any) {
     border-bottom: 1px solid #f3f5f6;
   }
 }
+
 .del-process {
   padding: 3px;
   color: black;
@@ -1215,6 +1112,7 @@ async function delete_server(row: any) {
   border-radius: 3px;
   cursor: pointer;
 }
+
 .del-process:hover {
   background-color: #f3f3f3;
 }
@@ -1224,28 +1122,34 @@ async function delete_server(row: any) {
   display: flex;
   flex-direction: column;
   gap: 3px;
+
   .action-item:hover {
     background-color: var(--default-bg);
   }
+
   .action-delete-item:hover {
     background-color: var(--delete-bg-color) !important;
     color: var(--delete-font-color);
   }
+
   .action-delete-item {
     cursor: pointer;
     display: flex;
     justify-content: space-between !important;
     align-items: center;
+
     .delete-icon {
       padding-right: 10px;
     }
   }
+
   .delete-front-item {
     display: flex;
     align-items: center;
     justify-content: start;
     gap: 5px;
   }
+
   .action-item {
     cursor: pointer;
     padding-left: 10px;
@@ -1257,9 +1161,11 @@ async function delete_server(row: any) {
     justify-content: start;
     align-items: center;
     gap: 5px;
+
     .action-icon {
       width: 1.3rem;
       height: 1.3rem;
+
       svg {
         width: 1.3rem;
         height: 1.3rem;
@@ -1271,10 +1177,12 @@ async function delete_server(row: any) {
 .action-icon {
   width: 1.2em;
   height: 1.2em;
+
   path {
     fill: white;
   }
 }
+
 .action-header {
   height: 30px;
   padding-left: 10px;
@@ -1284,41 +1192,44 @@ async function delete_server(row: any) {
   justify-content: start;
   align-items: center;
 }
+
 .change-name {
   padding: 5px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .more-action-div {
   width: 300px;
 }
+
 .menu-btn {
   width: 1em !important;
   height: 1em !important;
 }
+
 .hover-menu-box {
-  width: 1.1rem !important;
-  height: 0.9rem !important;
-  svg {
-    width: 14px !important;
-    height: 14px !important;
-  }
+  width: 1.5rem;
+  height: 1.5rem;
 }
 </style>
 
 <style lang="scss">
 .env-dialog {
   height: 90%;
+
   .el-dialog__header {
     padding: 0px;
   }
 }
+
 .el-popper.is-customized {
   /* Set padding to ensure the height is 32px */
   padding: 6px 12px;
   background: linear-gradient(90deg, rgb(234, 243, 208), rgb(225, 225, 225));
 }
+
 .el-popper.is-customized .el-popper__arrow::before {
   background: linear-gradient(45deg, #ffffff, #bce689);
   right: 0;

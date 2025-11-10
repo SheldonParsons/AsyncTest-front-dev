@@ -245,11 +245,6 @@ async function done_statement() {
         margin-bottom: 5px;
     }
 
-    .special-btn {
-        width: 1.5rem !important;
-        height: 1.5rem !important;
-    }
-
     .title {
         display: flex;
         justify-content: center;

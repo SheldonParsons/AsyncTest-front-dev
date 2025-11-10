@@ -340,7 +340,7 @@ function createSegmentAction() {
     createDialog.value = false;
     clearDataFromSearch();
     createing.value = false;
-    tools.message("创建成功", proxy);
+    window.$toast({title:'创建成功', type:'success'})
   });
 }
 // 搜索框固定触顶状态改变回调函数

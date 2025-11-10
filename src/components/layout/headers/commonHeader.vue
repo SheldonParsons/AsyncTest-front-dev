@@ -30,7 +30,7 @@
             </div>
           </el-tooltip>
         </div>
-        <div>
+        <!-- <div>
           <el-tooltip class="box-item" effect="light" placement="bottom">
             <template #content>
               <span @click="toView('task')" style="cursor: pointer">{{
@@ -41,7 +41,7 @@
               <TaskIcon></TaskIcon>
             </div>
           </el-tooltip>
-        </div>
+        </div> -->
         <div>
           <el-divider direction="vertical" border-style="dashed" />
         </div>
