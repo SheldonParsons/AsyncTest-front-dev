@@ -12,22 +12,20 @@
       <div class="function-visible">
         <div class="function-content">
           <div class="function-message">可见性</div>
-          <div
-            style="
+          <div style="
               color: #667085;
               font-weight: 400;
               font-size: 12px;
               margin-bottom: 0;
-            "
-          >
+            ">
             “可见性”主要用来设置文档是否可以对外分享或发布，目录仅可设置为【共享】
           </div>
         </div>
         <el-select class="function-content-select" disabled v-model="visibel">
           <template #label="{ label, value }">
-            <span
-              ><el-icon><Share /></el-icon
-            ></span>
+            <span><el-icon>
+                <Share />
+              </el-icon></span>
             <span style="font-weight: bold; margin-left: 5px">共享</span>
           </template>
           <el-option :key="0" />
@@ -42,10 +40,7 @@
           <el-input :disabled="dir.type === 0" v-model="dir.name"></el-input>
         </div>
         <div>
-          <DoneButton
-            style="width: 1rem; height: 1rem"
-            @click="chang_node_name()"
-          ></DoneButton>
+          <DoneButton style="width: 1rem; height: 1rem" @click="chang_node_name()"></DoneButton>
         </div>
       </div>
     </div>
@@ -97,9 +92,9 @@ async function chang_node_name() {
   });
   tools.message("更新成功", proxy, "success");
   GlobalState.sendMessage("change_name_from_dir", {
-      node_id: props.node_id,
-      name: dir.value.name,
-    });
+    node_id: props.node_id,
+    name: dir.value.name,
+  });
 }
 
 function result_check(data: any) {
@@ -116,11 +111,14 @@ function result_check(data: any) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
+
 .main-content {
   width: 70%;
   margin-left: 50px;
 }
+
 .function-url {
   border: 1px solid #eaecf0;
   border-radius: 14px;
@@ -134,6 +132,7 @@ function result_check(data: any) {
   align-items: center;
   background-color: #f2f4f7;
 }
+
 .function-container {
   background-image: url(https://asynctest.oss-cn-shenzhen.aliyuncs.com/static/bg_01.svg);
   background-repeat: no-repeat;
@@ -144,6 +143,7 @@ function result_check(data: any) {
   padding: 16px 20px 20px;
   border-radius: 8px;
 }
+
 .function-visible {
   display: flex;
   justify-content: start;
@@ -151,19 +151,23 @@ function result_check(data: any) {
   margin-top: 10px;
   padding: 16px 0px 20px 20px;
 }
+
 .function-content-select {
   flex: 1.5;
 }
+
 .function-content {
   flex: 8.5;
   min-width: 0;
   border: 0 solid;
   color: #344054;
+
   .function-message {
     color: #344054;
     font-weight: 500;
     font-size: 14px;
   }
+
   .function-desc {
     font-size: 14px;
     line-height: calc(14px + 8px);

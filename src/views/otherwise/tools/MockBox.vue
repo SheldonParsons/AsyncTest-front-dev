@@ -1,23 +1,23 @@
 <template>
-  <div
-    @click="showDoc"
-    class="tool g-unselect"
-    :style="{
-      '--dyToolsWidth': dyWidth + 'px',
-      '--dyToolsHeight': dyHeight + 'px',
-      '--spanWidth': spanWidth
-    }"
-  >
-    <p class="tools-p">{{ $t('global.news') }}</p>
-    <!-- <div class="fake-btn">
-      <span>LLM AI Agent</span>
-    </div> -->
+  <div @click="showDoc" class="tool g-unselect" :style="{
+    '--dyToolsWidth': dyWidth + 'px',
+    '--dyToolsHeight': dyHeight + 'px',
+    '--spanWidth': spanWidth
+  }">
+    <div class="content">
+      <div class="logo">
+        <CaseLight class="case-icon" style="height:2rem;width: 2rem;" />
+      </div>
+      <div class="text">Run Case In <div class="accent">AsyncTest</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import CaseLight from "@/assets/svg/tree/case_light.vue";
 const router = useRouter()
 const route = useRoute()
 const dyWidth = ref(200)
@@ -40,12 +40,10 @@ const props = defineProps({
   }
 })
 
-//application_conversation
-
 function showDoc() {
-  emit('changeMenu', 'application_conversation')
+  emit('changeMenu', 'case')
   router.push({
-    name: 'application_conversation',
+    name: 'case',
     params: {
       project: Number(route.params.project)
     }
@@ -55,44 +53,102 @@ function showDoc() {
 
 <style lang="scss" scoped>
 .tool {
-  cursor: pointer;
-  background-image: url('@/assets/img/projectStyle/tag-4.webp');
+
+  .content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px;
+    box-sizing: border-box;
+    cursor: pointer;
+
+    .logo {
+      width: 2rem;
+    }
+
+    .text {
+      display: flex;
+      gap: 5px;
+      color: white;
+      font-size: 1.2rem;
+      font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+    }
+
+    .accent {
+      background: -webkit-linear-gradient(315deg, #cbc4d5 25%, #00FFFF);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+  }
+
+
   height: 80px;
   width: 100%;
-  //   margin-left: 20px;
   border-radius: 10px;
-  background-size: cover;
-  border: 2px solid #fff;
-  text-align: center;
-  .tools-p {
-    margin: 0;
-    font-weight: 700;
-    font-size: 14px;
-    text-align: center;
-    padding-top: 12%;
-    color: white;
-    background: -webkit-linear-gradient(315deg, white 45%, white);
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .fake-btn {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
-    width: var(--spanWidth);
-    height: 30%;
-    margin: auto;
-    background: -webkit-linear-gradient(315deg, #00cd66 40%, #008b45);
-    border-radius: 5px;
-    margin-top: 5px;
-    margin-bottom: 5px;
-    font-size: 14px;
-    color: #fff;
-  }
+  background-size: 100% 100%;
+  /* 1. 将背景色改为黑色 */
+  background-color: #000;
+  /* 2. 替换为在黑色上更和谐的颜色 */
+  background-image: radial-gradient(closest-side,
+    rgba(0, 119, 255, 1),
+    rgba(0, 119, 255, 0)),
+  radial-gradient(closest-side, rgba(0, 255, 255, 1), rgba(0, 255, 255, 0)),
+  radial-gradient(closest-side,
+    rgba(138, 43, 226, 1),
+    rgba(138, 43, 226, 0)),
+  radial-gradient(closest-side, rgba(0, 119, 255, 1), rgba(0, 119, 255, 0)),
+  radial-gradient(closest-side,
+    rgba(0, 255, 255, 1),
+    rgba(0, 255, 255, 0));
+  background-size: 130vmax 130vmax,
+  80vmax 80vmax,
+  90vmax 90vmax,
+  110vmax 110vmax,
+  90vmax 90vmax;
+  background-position: -80vmax -80vmax,
+  60vmax -30vmax,
+  10vmax 10vmax,
+  -30vmax -10vmax,
+  50vmax 50vmax;
+  background-repeat: no-repeat;
+  /* 动画保持不变 */
+  animation: 4s movement linear infinite;
 }
-.tool:hover {
-  border: 2px solid #008b00;
+
+@keyframes movement {
+
+  0%,
+  100% {
+    background-size: 130vmax 130vmax, 80vmax 80vmax, 90vmax 90vmax,
+      110vmax 110vmax, 90vmax 90vmax;
+    background-position: -80vmax -80vmax, 60vmax -30vmax, 10vmax 10vmax,
+      -30vmax -10vmax, 50vmax 50vmax;
+  }
+
+  25% {
+    background-size: 100vmax 100vmax, 90vmax 90vmax, 100vmax 100vmax,
+      90vmax 90vmax, 60vmax 60vmax;
+    background-position: -60vmax -90vmax, 50vmax -40vmax, 0vmax -20vmax,
+      -40vmax -20vmax, 40vmax 60vmax;
+  }
+
+  50% {
+    background-size: 80vmax 80vmax, 110vmax 110vmax, 80vmax 80vmax,
+      60vmax 60vmax, 80vmax 80vmax;
+    background-position: -50vmax -70vmax, 40vmax -30vmax, 10vmax 0vmax,
+      20vmax 10vmax, 30vmax 70vmax;
+  }
+
+  75% {
+    background-size: 90vmax 90vmax, 90vmax 90vmax, 100vmax 100vmax,
+      90vmax 90vmax, 70vmax 70vmax;
+    background-position: -50vmax -40vmax, 50vmax -30vmax, 20vmax 0vmax,
+      -10vmax 10vmax, 40vmax 60vmax;
+  }
 }
 </style>
