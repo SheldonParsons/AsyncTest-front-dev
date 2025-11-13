@@ -1,55 +1,27 @@
 <template>
   <div v-if="loading === false">
-    <el-tree
-      class="api-tree no-scroll"
-      id="api-tree"
-      ref="treeRef"
-      style="margin-top: 10px"
-      :data="dataSource"
-      node-key="id"
-      icon="ArrowRightBold"
-      @node-click="change_menu"
-      :highlight-current="true"
-      :expand-on-click-node="false"
-      :default-expanded-keys="firstLevelKeys"
-      icon-class="none"
-    >
+    <el-tree class="api-tree no-scroll" id="api-tree" ref="treeRef" style="margin-top: 10px" :data="dataSource"
+      node-key="id" icon="ArrowRightBold" @node-click="change_menu" :highlight-current="true"
+      :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys" icon-class="none">
       <template #default="{ node, data }">
-        <div
-          v-if="
-            data.child_type === 0 ||
-            data.child_type === 1 ||
-            data.child_type === 2
-          "
-          class="tree-node g-unselect"
-        >
-          <el-icon
-            v-if="data.child_type !== 2"
-            :size="8"
-            color="#606266"
-            :class="
-              node.expanded ? 'private-icon icon-expanded' : 'private-icon'
-            "
-            @click.stop="changeExpanded(node)"
-            ><ArrowRightBold
-          /></el-icon>
-          <div
-            v-if="data.child_type !== 2"
-            style="display: flex; justify-content: center; align-items: center;color: black;"
-          >
+        <div v-if="
+          data.child_type === 0 ||
+          data.child_type === 1 ||
+          data.child_type === 2
+        " class="tree-node g-unselect">
+          <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+            " @click.stop="changeExpanded(node)">
+            <ArrowRightBold />
+          </el-icon>
+          <div v-if="data.child_type !== 2"
+            style="display: flex; justify-content: center; align-items: center;color: black;">
             <Fold></Fold>
           </div>
-          <span
-            v-if="data.child_type === 2"
-            class="method-span gradient-text"
-            :class="method_color[data.method]"
-            >{{ data.method.toUpperCase() }}</span
-          >
+          <span v-if="data.child_type === 2" class="method-span gradient-text" :class="method_color[data.method]">{{
+            data.method.toUpperCase() }}</span>
           <div class="label-span-method">
             <div class="g-ellipsis">{{ data.name }}</div>
-            <span class="count-span" v-if="data.child_type === 1"
-              >({{ data.count }})</span
-            >
+            <span class="count-span" v-if="data.child_type === 1">({{ data.count }})</span>
           </div>
         </div>
       </template>
@@ -62,11 +34,7 @@
           <el-skeleton-item variant="h1" style="width: 100%" />
           <div v-for="item in 15" style="margin-top: 10px">
             <el-skeleton-item variant="h1" :style="{ width: 10 + '%' }" />
-            <el-skeleton-item
-              variant="h1"
-              :style="{ width: randomStep() + '%' }"
-              style="margin-left: 5%"
-            />
+            <el-skeleton-item variant="h1" :style="{ width: randomStep() + '%' }" style="margin-left: 5%" />
           </div>
         </template>
       </el-skeleton>
@@ -122,8 +90,60 @@ function changeExpanded(node: any) {
   if (node.expanded) {
     node.collapse();
   } else {
+    if (node.data.children.length === 0) {
+      get_tree_node_data(node.data, node)
+    }
     node.expand();
   }
+}
+
+async function get_tree_node_data(data: any, node: any) {
+  const params = {
+    project: route.params.project,
+    search_range: '0,1,2',
+    excluded_ids: '',
+    node_id: node.data.id
+  }
+  const search_data = await get_tree_data(params)
+  replaceChildrenData(search_data[0].children, node.data.id)
+  const index = firstLevelKeys.value.indexOf(data.id)
+  if (index === -1) {
+    firstLevelKeys.value.push(data.id)
+  }
+}
+
+async function get_tree_data(_data: any) {
+  return await getTree(_data).then((newData: any) => {
+    return newData
+  })
+}
+
+function replaceChildrenData(children: Array<any>, target_id: number) {
+  if (children.length === 0) {
+    return
+  }
+  const replace_item = searchNode(dataSource.value, target_id)
+  replace_item.children = children
+}
+
+function searchNode(nodes: any, targetId: any) {
+  if (!nodes || nodes.length === 0) {
+    return null;
+  }
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return node;
+    }
+    if (node.children && node.children.length > 0) {
+      const foundInChild: any = searchNode(node.children, targetId);
+      if (foundInChild) {
+        return foundInChild;
+      }
+    }
+  }
+
+  // 6. 遍历完所有节点及其子节点后仍未找到
+  return null;
 }
 
 function change_menu(data: any, node: any, event: any, event_object: any) {
@@ -139,38 +159,46 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 .api-tree {
   overflow: auto;
 }
+
 .count-span {
   font-size: 12px;
   margin-left: 5px;
   color: var(--default-font-color);
 }
+
 .action-list {
   padding-top: 5px;
   display: flex;
   flex-direction: column;
   gap: 3px;
+
   .action-item:hover {
     background-color: var(--default-bg);
   }
+
   .action-delete-item:hover {
     background-color: var(--delete-bg-color) !important;
     color: var(--delete-font-color);
   }
+
   .action-delete-item {
     cursor: pointer;
     display: flex;
     justify-content: space-between !important;
     align-items: center;
+
     .delete-icon {
       padding-right: 10px;
     }
   }
+
   .delete-front-item {
     display: flex;
     align-items: center;
     justify-content: start;
     gap: 5px;
   }
+
   .action-item {
     cursor: pointer;
     padding-left: 10px;
@@ -182,9 +210,11 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
     justify-content: start;
     align-items: center;
     gap: 5px;
+
     .action-icon {
       width: 1.3rem;
       height: 1.3rem;
+
       svg {
         width: 1.3rem;
         height: 1.3rem;
@@ -196,10 +226,12 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 .action-icon {
   width: 1.2em;
   height: 1.2em;
+
   path {
     fill: white;
   }
 }
+
 .action-header {
   height: 30px;
   padding-left: 10px;
@@ -209,22 +241,27 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   justify-content: start;
   align-items: center;
 }
+
 .change-name {
   padding: 5px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+
 .more-action-div {
   width: 300px;
 }
+
 .menu-btn {
   width: 1em !important;
   height: 1em !important;
 }
+
 .hover-menu-box {
   width: 1.4rem !important;
   height: 0.9rem !important;
+
   svg {
     width: 14px !important;
     height: 14px !important;
@@ -242,10 +279,12 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   background-color: #f9f9f9;
   cursor: pointer;
 }
+
 .tree-div {
   height: 100%;
   // overflow: scroll;
 }
+
 .red {
   background: linear-gradient(80deg, black 0%, #9c4c4c 30%);
 }
@@ -278,16 +317,20 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 
 
 .purple {
-  background: linear-gradient(to right, #7b42f6, #b01eff); /* 从左到右的渐变 */
-  -webkit-background-clip: text; /* 背景裁剪为文字 */
+  background: linear-gradient(to right, #7b42f6, #b01eff);
+  /* 从左到右的渐变 */
+  -webkit-background-clip: text;
+  /* 背景裁剪为文字 */
   color: transparent;
   font-size: 12px !important;
 }
+
 .method-span {
   font-weight: 500;
   font-size: 10px;
   text-align: right;
 }
+
 .label-span {
   display: flex;
   align-items: center;
@@ -296,6 +339,7 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   width: 80%;
   padding-left: 5px;
 }
+
 .label-span-method {
   display: flex;
 
@@ -314,6 +358,7 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
     "Helvetica Neue", arial, "Noto Sans", sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji";
 }
+
 .custom-tree-node {
   flex: 1;
   display: flex;
@@ -322,9 +367,11 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   font-size: 14px;
   padding-right: 8px;
 }
+
 .el-tree-node__expand-icon {
   color: var(--global-theme-color);
 }
+
 .tree-node {
   display: flex;
   justify-content: center;
@@ -335,18 +382,22 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
 </style>
 
 <style lang="scss">
-.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
+.el-tree--highlight-current .el-tree-node.is-current>.el-tree-node__content {
   background-color: var(--greyLight-0);
 }
+
 .el-tree-node__content {
   border-radius: 5px;
 }
+
 .el-tree-node__label {
   width: 100%;
+
   .tree-node {
     width: 100%;
   }
 }
+
 .el-tree-node__expand-icon {
   display: none;
 }
@@ -359,11 +410,13 @@ function change_menu(data: any, node: any, event: any, event_object: any) {
   transition: transform 0.2s ease-in-out;
   padding: 5px;
 }
+
 .private-right-icon {
   transition: transform 0.2s ease-in-out;
   margin-left: 5px;
   margin-top: 3px;
 }
+
 .case-node {
   margin-left: 10px;
 }

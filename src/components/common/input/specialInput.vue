@@ -286,6 +286,7 @@ function searchTimeString(value: string, originDate: Array<any>) {
     linear-gradient(90deg, #000, #000);
   outline: none;
   box-sizing: border-box;
+  border-color: black;
 }
 
 .special-input::-webkit-input-placeholder {

@@ -24,7 +24,7 @@
           <Case class="case-icon" style="height: 13px" v-if="data.child_type === 3"></Case>
           <div class="label-span-method">
             <div class="g-ellipsis">{{ data.name }}</div>
-            <span class="count-span" v-if="data.child_type === 1">({{ data.count }})</span>
+            <span class="count-span" v-if="data.child_type === 1 || data.child_type === 0">({{ data.count }})</span>
           </div>
         </div>
       </template>
@@ -122,8 +122,61 @@ function changeExpanded(node: any) {
   if (node.expanded) {
     node.collapse();
   } else {
+    if (node.data.children.length === 0) {
+      get_tree_node_data(node.data, node)
+    }
     node.expand();
   }
+}
+
+async function get_tree_node_data(data: any, node: any) {
+  const params = {
+    project: route.params.project,
+    search_range: '0,1,3',
+    excluded_ids: props.excluded_ids.join(","),
+    node_id: node.data.id,
+    type: 1
+  }
+  const search_data = await get_tree_data(params)
+  replaceChildrenData(search_data[0].children, node.data.id)
+  const index = firstLevelKeys.value.indexOf(data.id)
+  if (index === -1) {
+    firstLevelKeys.value.push(data.id)
+  }
+}
+
+async function get_tree_data(_data: any) {
+  return await getTree(_data).then((newData: any) => {
+    return newData
+  })
+}
+
+function replaceChildrenData(children: Array<any>, target_id: number) {
+  if (children.length === 0) {
+    return
+  }
+  const replace_item = searchNode(dataSource.value, target_id)
+  replace_item.children = children
+}
+
+function searchNode(nodes: any, targetId: any) {
+  if (!nodes || nodes.length === 0) {
+    return null;
+  }
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return node;
+    }
+    if (node.children && node.children.length > 0) {
+      const foundInChild: any = searchNode(node.children, targetId);
+      if (foundInChild) {
+        return foundInChild;
+      }
+    }
+  }
+
+  // 6. 遍历完所有节点及其子节点后仍未找到
+  return null;
 }
 
 function change_menu(data: any, node: any, event: any, event_object: any) {

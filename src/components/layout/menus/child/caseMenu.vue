@@ -13,17 +13,19 @@
       <el-tree class="api-tree" id="api-tree" v-if="loading === false" ref="treeRef" style="margin-top: 10px" draggable
         :data="dataSource" node-key="id" icon="ArrowRightBold" :allow-drag="allowDrag" :allow-drop="allowDrop"
         @node-drag-start="handleDragStart" @node-drag-over="handleNodeDragOver" @node-drag-leave="handleNodeDragLeave"
-        @node-drag-end="handleNodeDrop" @node-click="changeMenu" :highlight-current="true" :expand-on-click-node="false"
-        :default-expanded-keys="firstLevelKeys" icon-class="none" :filter-node-method="filterNode">
+        @node-drag-end="handleNodeDrop" @node-click="changeMenu" :highlight-current="true"
+        :default-expanded-keys="firstLevelKeys" :expand-on-click-node="false" :filter-node-method="filterNode">
         <template #default="{ node, data }">
           <div style="display: flex;flex-direction: column;align-items: start;justify-content: center;width: 100%;">
             <ContextMemu :data="data"
-              @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)">
+              @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data, node)">
               <div v-if="
                 data.child_type === 0 ||
                 data.child_type === 1 ||
                 data.child_type === 3
               " class="tree-node g-unselect" @mouseenter="current_node = data.id" @mouseleave="current_node = -1">
+                <NodeWatcher :node="node" :data="data" @node-expanded="onExpand" @node-collapsed="onCollapse">
+                </NodeWatcher>
                 <el-icon v-if="data.child_type !== 3" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
                   " @click.stop="changeExpanded(node)">
                   <ArrowRightBold />
@@ -41,7 +43,7 @@
                   <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
                 </div>
                 <SelectMenu :data="data"
-                  @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data)"
+                  @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data, node)"
                   @close="async () => {
                     // 只有当 current_node 仍然是当前组件的 id 时，才执行关闭重置
                     if (current_node === data.id) {
@@ -98,11 +100,12 @@ import { GlobalState } from "@/state/index";
 import ContextMemu from '@/components/layout/menus/comps/context_menu.vue'
 import SelectMenu from '@/components/layout/menus/comps/select_menu.vue'
 import ExperBtn from '@/components/layout/menus/comps/exper_btn.vue'
+import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
-const dataSource = ref<Tree[]>([]);
+const dataSource: any = ref<Tree[]>([]);
 const treeRef: any = ref<InstanceType<typeof ElTree>>();
 const filterText = ref("");
 const current_node = ref(-1);
@@ -127,6 +130,34 @@ onMounted(async () => {
   // 调整一次高度
   await load_tree();
 });
+
+async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
+  if (isFristenter.value === true) {
+    loading.value = true;
+  }
+  const data = {
+    project: route.params.project,
+    search_range: search_range.join(","),
+    excluded_ids: excluded_ids.join(","),
+    type: 1,
+  };
+  const newRoot = await get_tree_data(data)
+
+  dataSource.value = newRoot;
+  firstLevelKeys.value.push(dataSource.value[0].id)
+  await tools.delay();
+  if (isFristenter.value = true) {
+    loading.value = false;
+    isFristenter.value = false
+  }
+  await nextTick(); // 确保 DOM 已全部挂载
+}
+
+async function get_tree_data(_data: any) {
+  return await getTree(_data).then((newData: any) => {
+    return newData
+  })
+}
 
 // ⭐ 新增：拖拽逻辑处理函数
 // ===============================================
@@ -296,14 +327,6 @@ const handleNodeDragLeave = (draggingNode: any, leaveNode: any) => {
   dropIndicatorState.value = {};
 };
 
-/**
- * 拖拽结束时触发（无论成功与否），用于最终清理
- */
-const handleNodeDragEnd = () => {
-  // 确保所有指示器都被清除
-  resetLastNodeStyle();
-};
-
 function findNodeAndParent(tree: Tree[], nodeId: number, parent: any = null): { node: Tree; parent: any; index: number } | null {
   for (let i = 0; i < tree.length; i++) {
     const node = tree[i];
@@ -322,12 +345,6 @@ function findNodeAndParent(tree: Tree[], nodeId: number, parent: any = null): { 
   return null;
 }
 
-/**
- * 规则8：拖拽成功松开鼠标时触发，执行异步回调
- * @param {object} draggingNode - 被拖拽的节点
- * @param {object} dropNode - 目标节点
- * @param {string} dropType - 放置类型 ('prev', 'inner', 'next')
- */
 const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string) => {
   // 1. 立即清理UI样式
   resetLastNodeStyle();
@@ -337,14 +354,8 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
     return false;
   }
 
-  // ⭐ 核心修改：先读取所有信息，再做判断和修改
-  // =================================================================
-
-  // 1. 在对树进行任何修改之前，先获取源节点和目标节点的所有信息
-  const sourceInfo = findNodeAndParent(origin_tree.value, draggingNode.data.id);
+  const sourceInfo: any = findNodeAndParent(origin_tree.value, draggingNode.data.id);
   const targetInfo: any = findNodeAndParent(origin_tree.value, dropNode.data.id);
-
-  const origin_parent = sourceInfo?.parent.obj
 
   // 确保两个节点都找到了
   if (!sourceInfo || !targetInfo) {
@@ -356,7 +367,7 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
   if (sourceInfo.node.id === targetInfo.node.id) {
     // 场景一：拖拽到自身
     hasPositionChanged = false;
-  } else if (sourceInfo.parent.obj.id === targetInfo.parent.obj.id) { // 现在这个比较是可靠的
+  } else if (sourceInfo.parent.obj.id === targetInfo.parent.obj.id) {
     if (finalDropType === 'before' && sourceInfo.index === targetInfo.index - 1) {
       // 场景二：本来就在目标节点的前一个位置
       hasPositionChanged = false;
@@ -371,9 +382,25 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
     dataSource.value = origin_tree.value;
     return false;
   }
+  function _miner_callback(_node: any) {
+    if (sourceInfo.node.child_type === 1) {
+      _node.count -= sourceInfo.node.count;
+    } else {
+      _node.count -= 1;
+    }
+  }
+  // 5. 调用API
+  try {
+    await update_tree_position(finalDropType, draggingNode.data.id, dropNode.data.id);
+    window.$toast({ title: "节点移动成功", type: 'success' });
+  } catch (error) {
+    window.$toast({ title: "节点移动失败", type: 'error' });
+    await load_tree();
+  }
 
   // 4. 只有在确认位置有变化后，才开始修改数据
   // a. 从原始位置移除源节点
+  applyCallbackToParents(origin_tree.value, sourceInfo.node.id, _miner_callback)
   sourceInfo.parent.children.splice(sourceInfo.index, 1);
   const sourceNodeData: any = sourceInfo.node;
 
@@ -383,7 +410,15 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
       targetInfo.node.children = [];
     }
     targetInfo.node.children.push(sourceNodeData);
-    targetInfo.node.count += 1;
+    function _add_callback(_node: any) {
+      if (sourceNodeData.child_type === 1) {
+        _node.count += sourceNodeData.count;
+      } else {
+        _node.count += 1;
+      }
+    }
+
+    applyCallbackToParents(origin_tree.value, sourceNodeData.id, _add_callback)
   } else {
     // 注意：因为我们已经 splice 了一次，目标节点的父级 children 数组可能已变化
     // 所以需要重新找到 targetIndex
@@ -394,24 +429,16 @@ const handleNodeDrop = async (draggingNode: any, dropNode: any, dropType: string
     } else if (finalDropType === 'after') {
       targetParentChildren.splice(currentTargetIndex + 1, 0, sourceNodeData);
     }
-    const current_source_info = targetParentChildren.filter((node: any) => node.id === sourceNodeData.id)
-
-    if (origin_parent.id !== current_source_info[0].id) {
-      origin_parent.count -= 1
+    function _add_callback2(_node: any) {
+      if (sourceNodeData.child_type === 1) {
+        _node.count += sourceNodeData.count;
+      } else {
+        _node.count += 1;
+      }
     }
+    applyCallbackToParents(origin_tree.value, sourceNodeData.id, _add_callback2)
   }
   dataSource.value = origin_tree.value;
-
-  // 5. 调用API
-  try {
-    await update_tree_position(finalDropType, draggingNode.data.id, dropNode.data.id);
-    window.$toast({ title: "节点移动成功", type: 'success' });
-  } catch (error) {
-    window.$toast({ title: "节点移动失败", type: 'error' });
-    await load_tree();
-  }
-
-  // 6. 返回 false
   return false;
 };
 
@@ -426,70 +453,7 @@ async function update_tree_position(drop_type: string, node_id: number, target_n
       target_node_id: target_node_id
     },
   };
-  const result = send_action(_data)
-}
-
-async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
-  if (isFristenter.value === true) {
-    loading.value = true;
-  }
-  const data = {
-    project: route.params.project,
-    search_range: search_range.join(","),
-    excluded_ids: excluded_ids.join(","),
-    type: 1,
-  };
-  await getTree(data).then(async (newData: any) => {
-    const newRoot = newData[0];
-    const existingRoot: any = dataSource.value[0];
-
-    if (dataSource.value[0] === undefined) {
-      dataSource.value[0] = newRoot;
-      firstLevelKeys.value.push(dataSource.value[0].id)
-    } else {
-      // 只同步 children
-      existingRoot.count = newRoot.count; // 可选同步计数
-      syncChildren(existingRoot.children, newRoot.children);
-    }
-    await tools.delay();
-    if (isFristenter.value = true) {
-      loading.value = false;
-      isFristenter.value = false
-    }
-  });
-  await nextTick(); // 确保 DOM 已全部挂载
-  // adjustContentHeight();
-}
-
-function syncChildren(targetChildren: any[], newChildren: any[]) {
-  const targetMap = new Map(targetChildren.map((node: any) => [node.id, node]));
-  const newMap = new Map(newChildren.map((node: any) => [node.id, node]));
-
-  // 删除多余的节点
-  for (let i = targetChildren.length - 1; i >= 0; i--) {
-    const node = targetChildren[i];
-    if (!newMap.has(node.id)) {
-      targetChildren.splice(i, 1);
-    }
-  }
-
-  // 插入新增的节点（保持顺序）
-  newChildren.forEach((newNode, index) => {
-    const existingNode = targetMap.get(newNode.id);
-    if (!existingNode) {
-      targetChildren.splice(index, 0, newNode);
-    } else {
-      // 同步 count 如果 child_type 是 0 或 2
-      if (newNode.child_type === 0 || newNode.child_type === 1) {
-        existingNode.count = newNode.count;
-      }
-      // 若子节点有 children，递归处理
-      if (newNode.children && Array.isArray(newNode.children)) {
-        existingNode.children = existingNode.children || [];
-        syncChildren(existingNode.children, newNode.children);
-      }
-    }
-  });
+  const result = await send_action(_data)
 }
 
 const props = defineProps({
@@ -547,8 +511,12 @@ watch(
         },
       };
       const data: any = await send_action(current_action_data.value);
-      window.$toast({title:'创建成功', type:'success'})
-      await load_tree();
+      window.$toast({ title: '创建成功', type: 'success' })
+      dataSource.value[0].children?.push(make_new_node(data))
+      function _add_callback(_node: any) {
+        _node.count += 1;
+      }
+      applyCallbackToParents(dataSource.value, data.id, _add_callback)
       highlightNodeById(data.id);
       const _data = {
         id: data.id,
@@ -565,6 +533,20 @@ watch(
     }
   }
 );
+
+function make_new_node(data: any) {
+  return {
+    id: data.id,
+    name: data.name,
+    type: data.type,
+    child_type: data.child_type,
+    method: data.method,
+    count: data.count,
+    children: [],
+    target: data.content_id,
+    is_reference: false
+  }
+}
 
 function find_root() {
   return treeRef.value?.root.data[0];
@@ -635,8 +617,9 @@ function result_check(data: any) {
   return true;
 }
 
+const current_tree_node: any = ref()
 
-async function action(father: number, action_type: string, data: any) {
+async function action(father: number, action_type: string, data: any, node = null) {
   clean_popover();
   if (action_type === "create_child_dir") {
     show_dialog.value = true;
@@ -650,6 +633,7 @@ async function action(father: number, action_type: string, data: any) {
       },
     };
     save_current_hightlight();
+    current_tree_node.value = node
   }
   if (action_type === "create_case_under_dir") {
     show_dialog.value = true;
@@ -662,6 +646,7 @@ async function action(father: number, action_type: string, data: any) {
         parent_node: data.id,
       },
     };
+    current_tree_node.value = node
   }
   if (action_type === "copy_node") {
     current_action_data.value = {
@@ -673,9 +658,18 @@ async function action(father: number, action_type: string, data: any) {
     };
     const result = await send_action(current_action_data.value);
     if (result !== false) {
+      const search_node = searchNode(dataSource.value, result.parent_node)
+      search_node.children.push(make_new_node(result))
+      function _add_callback(_node: any) {
+        if (result.child_type === 1) {
+          _node.count += result.count
+        } else {
+          _node.count += 1
+        }
+      }
+      applyCallbackToParents(dataSource.value, result.id, _add_callback)
       tools.message("复制成功", proxy, "success");
       save_current_hightlight();
-      await load_tree();
       highlightNodeById(current_highlight_node.value);
     }
   }
@@ -701,10 +695,17 @@ async function action(father: number, action_type: string, data: any) {
       },
     };
     const delete_all_nodes = collectAllIds(data);
-
     await send_action(current_action_data.value);
     tools.message("删除成功", proxy, "success");
-    await load_tree();
+    function _miner_callback(_node: any) {
+      if (data.child_type === 2 || data.child_type === 3) {
+        _node.count -= 1
+      } else {
+        _node.count -= data.count
+      }
+    }
+    applyCallbackToParents(dataSource.value, data.id, _miner_callback)
+    deleteNode(dataSource.value, data.id)
     // 如果为用例节点，更新全局缓存用例节点
     if (data.child_type === 2) {
       GlobalState.deleteCacheInterface(delete_all_nodes);
@@ -743,9 +744,17 @@ async function move_node(data: any) {
 async function real_action(name: string) {
   current_action_data.value.content.name = name;
   const data: any = await send_action(current_action_data.value);
-  window.$toast({title:'创建成功', type:'success'})
+  window.$toast({ title: '创建成功', type: 'success' })
   show_dialog.value = false;
-  await load_tree();
+  const parent_dir = searchNode(dataSource.value, current_action_data.value.content.parent_node)
+  const new_data = make_new_node(data)
+  parent_dir.children.push(new_data)
+  function _add_callback(_node: any) {
+    if (data.child_type !== 1) {
+      _node.count += 1
+    }
+  }
+  applyCallbackToParents(dataSource.value, data.id, _add_callback)
   highlightNodeById(data.id);
   const _data = {
     id: data.id,
@@ -792,14 +801,170 @@ function enter_project_summary() {
   tools.message("暂未开放，敬请期待", proxy, "info");
 }
 
-function changeExpanded(node: any) {
+async function onExpand(data: any, node: any) {
+  const params = {
+    project: route.params.project,
+    search_range: '0,1,3',
+    excluded_ids: '',
+    node_id: node.data.id,
+    type: 1
+  }
+  const search_data = await get_tree_data(params)
+  replaceChildrenData(search_data[0].children, node.data.id)
+  const index = firstLevelKeys.value.indexOf(data.id)
+  if (index === -1) {
+    firstLevelKeys.value.push(data.id)
+  }
+}
+
+// 4. 实现 onCollapse (负责所有收起逻辑)
+function onCollapse(data: any, node: any) {
+  const index = firstLevelKeys.value.indexOf(data.id)
+  if (index !== -1) {
+    firstLevelKeys.value.splice(index, 1)
+  }
+}
+
+async function changeExpanded(node: any) {
   if (node.expanded) {
     node.collapse();
-    firstLevelKeys.value = firstLevelKeys.value.filter((item: any) => node.data.id !== item)
+    const index = firstLevelKeys.value.indexOf(node.data.id);
+    if (index !== -1) {
+      firstLevelKeys.value.splice(index, 1);
+    }
   } else {
-    firstLevelKeys.value.push(node.data.id)
     node.expand();
+    firstLevelKeys.value.push(node.data.id)
   }
+}
+function replaceChildrenData(children: Array<any>, target_id: number) {
+  if (children.length === 0) {
+    return
+  }
+  const replace_item = searchNode(dataSource.value, target_id)
+  replace_item.children = children
+}
+
+function searchNode(nodes: any, targetId: any) {
+  if (!nodes || nodes.length === 0) {
+    return null;
+  }
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return node;
+    }
+    if (node.children && node.children.length > 0) {
+      const foundInChild: any = searchNode(node.children, targetId);
+      if (foundInChild) {
+        return foundInChild;
+      }
+    }
+  }
+
+  // 6. 遍历完所有节点及其子节点后仍未找到
+  return null;
+}
+
+function deleteNode(nodes: any, targetId: any) {
+  // 1. 检查数组是否有效
+  if (!nodes || nodes.length === 0) {
+    return false;
+  }
+
+  // 2. 查找 targetId 是否在当前层级的数组中
+  const index = nodes.findIndex((node: any) => node.id === targetId);
+
+  // 3. 如果在当前层级找到了...
+  if (index !== -1) {
+    // 4. ...就从这个数组中删除它
+    nodes.splice(index, 1);
+    return true; // 成功！
+  }
+
+  // 5. 如果当前层级没找到，就去 children 里找
+  for (const node of nodes) {
+    if (node.children && node.children.length > 0) {
+      // 6. 递归调用，尝试在子数组中删除
+      const deletedInChildren = deleteNode(node.children, targetId);
+
+      // 7. 如果在子节点中删除了，就立刻停止并返回 true
+      if (deletedInChildren) {
+        return true;
+      }
+    }
+  }
+
+  // 8. 遍历完所有节点及其子节点后仍未找到
+  return false;
+}
+
+function findParentNode(nodes: any, targetId: any, parent = null) {
+  if (!nodes || nodes.length === 0) {
+    return undefined; // 'undefined' 表示未找到
+  }
+
+  // 1. 遍历当前层级的节点
+  for (const node of nodes) {
+
+    // 2. 检查当前节点是否是目标
+    if (node.id === targetId) {
+      return parent; // 找到了！返回它的父节点
+    }
+
+    // 3. 如果不是目标，则深入其子节点
+    if (node.children && node.children.length > 0) {
+      // 4. 'node' 现在是下一层的 'parent'
+      const foundParent: any = findParentNode(node.children, targetId, node);
+
+      // 5. 如果在子节点中找到了（即 foundParent 不是 undefined），
+      //    就立刻将结果层层传递回去
+      if (foundParent !== undefined) {
+        return foundParent;
+      }
+    }
+  }
+
+  // 6. 遍历完所有分支仍未找到
+  return undefined;
+}
+
+
+function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
+  // 1. 检查数组是否有效
+  if (!nodes || nodes.length === 0) {
+    return false;
+  }
+
+  // 2. 遍历当前层级的节点
+  for (const node of nodes) {
+
+    // 3. 检查：当前节点就是目标
+    if (node.id === targetId) {
+      // 找到了！返回true，但不在此处调用回调
+      return true;
+    }
+
+    // 4. 检查：如果当前节点有子节点，则递归深入
+    if (node.children && node.children.length > 0) {
+
+      // 5. 向下搜索。如果 'found' 为 true，说明 targetId 在这个 'node' 的子孙中
+      const found = applyCallbackToParents(node.children, targetId, callback);
+
+      // 6. 【核心】
+      //    如果 'found' 是 true...
+      if (found) {
+        // ...说明这个 'node' 是目标节点的父节点（或祖先节点）
+        // 我们就在这里应用回调函数
+        callback(node);
+
+        // 7. 将 'true' 信号继续向上传递
+        return true;
+      }
+    }
+  }
+
+  // 8. 遍历完所有节点，在当前分支中未找到
+  return false;
 }
 </script>
 

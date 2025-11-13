@@ -87,13 +87,13 @@ function get_system() {
                                 <CopyIcon></CopyIcon>
                             </div>
                         </DropdownMenuItem>
-                        <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 0"
+                        <!-- <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 0"
                             @select="menu_action(2, 'move_to')">
                             移动
                             <div class="context-menu-shortcut">
                                 <MoveIcon></MoveIcon>
                             </div>
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> -->
 
                         <DropdownMenuSub>
                             <DropdownMenuSubTrigger class="context-menu-item">

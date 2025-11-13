@@ -1,5 +1,5 @@
 <template>
-  <div class="container">
+  <div class="container no-scroll">
     <el-row class="search">
       <el-affix position="top" :offset="2" :style="{ width: searchWidth + '%' }" @change="onSearchChange">
         <el-col :offset="searchOffsetIndex" :span="searchInputWidth" class="search-col">

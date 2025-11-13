@@ -190,14 +190,9 @@ function checkNodesByTarget(targets: any[], checked: boolean) {
     // 取消勾选：从当前已选中的移除
     const currentCheckedIds = treeRef.value.getCheckedKeys();
     const idsToRemoveSet = new Set(idsToChange);
-    console.log(currentCheckedIds);
-    
-    console.log(idsToRemoveSet);
-    
-    const finalIds = currentCheckedIds.filter((id: any) => !idsToRemoveSet.has(id as number));
-    console.log(finalIds);
-    
-    treeRef.value.setCheckedKeys(finalIds);
+    for (let item of idsToRemoveSet) {
+      treeRef.value!.setChecked(item, false, true)
+    }
   }
 }
 
@@ -264,7 +259,8 @@ async function load_tree(search_range = [0, 1, 3], excluded_ids = []) {
     project: props.project,
     search_range: props.is_case ? [0, 1, 3].join(",") : [0, 1, 2].join(","),
     excluded_ids: excluded_ids.join(","),
-    type: props.is_case ? 1 : 0
+    type: props.is_case ? 1 : 0,
+    search_all: true
   };
   console.log(props.is_case);
 

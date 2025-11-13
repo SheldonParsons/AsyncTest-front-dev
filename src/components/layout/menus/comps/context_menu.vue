@@ -28,12 +28,12 @@
                                     <CopyIcon></CopyIcon>
                                 </div>
                             </ContextMenu.Item>
-                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 0" @select="menu_action(2, 'move_to')">
+                            <!-- <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 0" @select="menu_action(2, 'move_to')">
                                 移动
                                 <div class="context-menu-shortcut">
                                     <MoveIcon></MoveIcon>
                                 </div>
-                            </ContextMenu.Item>
+                            </ContextMenu.Item> -->
 
                             <ContextMenu.Sub>
                                 <ContextMenu.SubTrigger class="context-menu-item">
