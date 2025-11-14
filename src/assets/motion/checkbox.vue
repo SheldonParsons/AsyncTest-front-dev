@@ -50,7 +50,6 @@ const props = defineProps({
     type: Number
   }
 })
-
 const emit = defineEmits(['change'])
 
 const isChecked = ref(false)

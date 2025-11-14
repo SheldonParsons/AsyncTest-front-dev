@@ -1,70 +1,43 @@
 <template>
-   <div class="dir-container">
-  <el-row style="margin-top: 30px">
-    <el-col :offset="1" :span="14">
-      <SwitchTag :glider="tag" @changeTag="change_tag"></SwitchTag>
-    </el-col>
-    <el-col
-      :span="7"
-      style="display: flex; justify-content: end; align-items: center"
-      v-if="tag === 'pre_action' || tag === 'after_action' || tag === 'auth'"
-    >
-      <el-button @click="save" type="primary">保存</el-button>
-    </el-col>
-  </el-row>
- 
-  <MenuSetting
-    v-if="tag === 'menu'"
-    :target_type="target_type"
-    :dir="dir"
-  ></MenuSetting>
-  <InterfaceTable
-    v-if="tag === 'interface'"
-    :target_type="target_type"
-    :dir="dir"
-    :node_id="node_id"
-  ></InterfaceTable>
-  <PreAction
-    ref="pre_action_ref"
-    v-if="tag === 'pre_action'"
-    :offset="1"
-    :span="22"
-    v-model="dir.pre_actions.elements"
-    :father-actions="dir.pre_actions.father_actions"
-    :hasFatherActions="target_type === 0 ? false : true"
-  ></PreAction>
-  <AfterAction
-    ref="after_action_ref"
-    v-if="tag === 'after_action'"
-    :offset="1"
-    :span="22"
-    v-model="dir.after_actions.elements"
-    :father-actions="dir.after_actions.father_actions"
-    :hasFatherActions="target_type === 0 ? false : true"
-  ></AfterAction>
-  <el-row>
-    <el-col :offset="1" :span="22">
-      <div class="body-tools" v-if="tag === 'auth'">
-        <div class="title">鉴权设置(暂不可用)</div>
+  <div class="dir-container">
+    <div style="display: flex;align-items: center;justify-content: space-between;border-bottom: 1px solid #f0f0f0;">
+      <div>
+        <SwitchTag :glider="tag" @changeTag="change_tag"></SwitchTag>
       </div>
-      <div v-if="tag === 'auth'" class="auth-outside">
-        <Auth
-          :auth_setting="dir.auth"
-          ref="auth_ref"
-          :offset="0"
-          :hasParent="target_type === 0 ? false : true"
-        ></Auth>
+      <div v-if="tag === 'pre_action' || tag === 'after_action' || tag === 'auth'" style="padding-right: 40px;">
+        <el-button @click="save" type="primary">保存</el-button>
       </div>
-    </el-col>
-  </el-row>
+    </div>
+    <div style="overflow-y: hidden;height: 100%;">
+      <MenuSetting v-if="tag === 'menu'" :target_type="target_type" :dir="dir"></MenuSetting>
+      <InterfaceTable v-if="tag === 'interface'" :target_type="target_type" :dir="dir" :node_id="node_id">
+      </InterfaceTable>
+      <PreAction ref="pre_action_ref" v-if="tag === 'pre_action'" :offset="1" :span="22"
+        v-model="dir.pre_actions.elements" :father-actions="dir.pre_actions.father_actions"
+        :hasFatherActions="target_type === 0 ? false : true"></PreAction>
+      <AfterAction ref="after_action_ref" v-if="tag === 'after_action'" :offset="1" :span="22"
+        v-model="dir.after_actions.elements" :father-actions="dir.after_actions.father_actions"
+        :hasFatherActions="target_type === 0 ? false : true"></AfterAction>
+      <el-row>
+        <el-col :offset="1" :span="22">
+          <div class="body-tools" v-if="tag === 'auth'">
+            <div class="title">鉴权设置(暂不可用)</div>
+          </div>
+          <div v-if="tag === 'auth'" class="auth-outside">
+            <Auth :auth_setting="dir.auth" ref="auth_ref" :offset="0" :hasParent="target_type === 0 ? false : true">
+            </Auth>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, getCurrentInstance, onMounted } from "vue";
-import SwitchTag from "../child_component/switch_tag.vue";
+import SwitchTag from "@/views/api/child_component/switch_tag.vue";
 import MenuSetting from "./root_dir/menu_setting.vue";
-import InterfaceTable from "./root_dir/interface_table.vue";
+import InterfaceTable from "@/views/api/child_context/root_dir/interface_table.vue";
 import PreAction from "./root_dir/pre_action.vue";
 import AfterAction from "./root_dir/after_action.vue";
 import Auth from "./root_dir/auth.vue";
@@ -163,6 +136,7 @@ async function save() {
   overflow: auto;
   height: 100%;
 }
+
 .body-tools {
   margin-top: 20px;
   display: flex;
@@ -173,6 +147,7 @@ async function save() {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
+
   .title {
     font-size: 14px;
     font-weight: 500;
@@ -180,6 +155,7 @@ async function save() {
     align-items: center;
   }
 }
+
 .auth-outside {
   border: 1px solid var(--border-color);
   border-bottom-left-radius: 8px;

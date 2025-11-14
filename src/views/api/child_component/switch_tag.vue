@@ -1,34 +1,34 @@
 <template>
   <div class="container">
-    <div class="tabs">
-      <input type="radio" :checked="props.glider === 'menu'"  id="radio-1" name="tabs" />
-      <label class="tab" for="radio-1" @click="change_tag('menu')"
-        >目录设置</label
-      >
-      <input type="radio" :checked="props.glider === 'interface'" id="radio-2" name="tabs" />
-      <label class="tab" for="radio-2" @click="change_tag('interface')"
-        >全部接口</label
-      >
-      <input type="radio" :checked="props.glider === 'pre_action'" id="radio-3" name="tabs" />
-      <label class="tab" for="radio-3" @click="change_tag('pre_action')"
-        >前置操作</label
-      >
-      <input type="radio" :checked="props.glider === 'after_action'" id="radio-4" name="tabs" />
-      <label class="tab" for="radio-4" @click="change_tag('after_action')"
-        >后置操作</label
-      >
-      <input type="radio" :checked="props.glider === 'auth'" id="radio-5" name="tabs" />
-      <label class="tab" for="radio-5" @click="change_tag('auth')">Auth</label>
-      <span
-        class="glider"
-        :style="{ transform: `translateX(${get_position(props.glider)}%)` }"
-      ></span>
+    <div class="switch-tab">
+      <div :class="{ active: activeTab === 'menu' }" @click="change_tag('menu')">
+        <span>目录设置</span>
+      </div>
+      <div :class="{ active: activeTab === 'interface' }" @click="change_tag('interface')">
+        <span>全部接口</span>
+      </div>
+      <div :class="{ active: activeTab === 'pre_action' }" @click="change_tag('pre_action')">
+        <span>前置操作</span>
+      </div>
+      <div :class="{ active: activeTab === 'after_action' }" @click="change_tag('after_action')">
+        <span>后置操作</span>
+      </div>
+      <div :class="{ active: activeTab === 'auth' }" @click="change_tag('auth')">
+        <span>Auth</span>
+      </div>
     </div>
   </div>
 </template>
 <script lang="ts" setup>
 const emit = defineEmits(["changeTag"]);
+import {ref} from 'vue'
+const activeTab:any = ref<"menu" | "interface" | "pre_action" | "after_action" | "auth">("menu");
 function change_tag(t: String) {
+  if (t === 'auth') {
+    window.$toast({title: '该功能暂不可用，请后续关注'})
+    return
+  }
+  activeTab.value = t
   emit("changeTag", t);
 }
 const props = defineProps({
@@ -175,6 +175,41 @@ input[id="radio-5"] {
 @media (max-width: 700px) {
   .tabs {
     transform: scale(0.6);
+  }
+}
+
+.switch-tab {
+  display: flex;
+  justify-content: start;
+  align-items: center;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 20px;
+  margin-left: 0px !important;
+  z-index: 999;
+  background-color: white;
+  gap: 5px;
+
+  .active {
+    background-color: black;
+    color: white;
+  }
+
+  div {
+    padding: 3px 10px;
+    color: #667085;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 8px;
+  }
+
+  .active {
+    background-color: black !important;
+    color: white !important;
+  }
+
+  div:hover {
+    background-color: rgba(16, 24, 40, 0.05);
   }
 }
 </style>

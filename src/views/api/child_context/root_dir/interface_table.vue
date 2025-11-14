@@ -1,280 +1,150 @@
 <template>
-  <el-row
-    style="margin-top: 20px"
-    v-if="multipleSelection.length === 0 && !loading"
-  >
-    <el-col :offset="1" :span="22">
-      <div class="header">
-        <h3 style="font-weight: 600; margin: 0px; font-size: 14px">
-          {{ dir.name }}（{{ tableData.length }} 个接口）
-        </h3>
-        <div class="table-header-right">
-          <div class="mt-4">
-            <el-input
-              v-model="search"
-              style="max-width: 600px"
-              placeholder="名称、请求路径进行搜索"
-              class="input-with-select"
-              @input="search_table"
-            >
-              <template #append>
-                <el-button :icon="Search" />
-              </template>
-            </el-input>
-          </div>
-        </div>
+  <div class="dir-table-container">
+    <div class="header normal-type" v-if="multipleSelection.size === 0 && !loading">
+      <div class="text" style="display: flex;align-items: center;gap: 5px;">
+        {{ dir.name }}（<AnimationButton v-model="tableData.length"></AnimationButton>个接口）
       </div>
-    </el-col>
-  </el-row>
-  <el-row style="margin-top: 20px" v-if="multipleSelection.length > 0">
-    <el-col :offset="1" :span="22">
-      <div class="header-2">
-        <div class="table-header-left-2">
-          <div style="color: #667085; font-size: 14px">
-            已选
-            <span style="font-weight: 600; color: #344054">{{
-              multipleSelection.length
-            }}</span
-            >/{{ tableData.length }} 项
-          </div>
-          <span
-            style="
-              color: #039e74;
-              margin-left: 0.5rem;
-              cursor: pointer;
-              font-size: 14px;
-            "
-            @click="clean_select"
-            >取消选择</span
-          >
-        </div>
-        <div class="table-header-right-2">
-          <div class="right-2-inner-div">
-            <div class="right-2-inner-div-div">
-              <div
-                class="action-icon"
-                @click="show_delete_comfirm_dialog = true"
-              >
-                <DeleteIcon></DeleteIcon>
-                <div>删除</div>
-              </div>
-              <div
-                class="action-icon"
-                @click="show_update_status_dialog = true"
-              >
-                <EditPen></EditPen>
-                <div>修改状态</div>
-              </div>
-              <div class="action-icon" @click="action_tag('add')">
-                <Tag></Tag>
-                <div>新增标签</div>
-              </div>
-              <div class="action-icon" @click="action_tag('delete')">
-                <TagDelete></TagDelete>
-                <div>删除标签</div>
-              </div>
-              <div class="action-icon" @click="show_update_head_dialog = true">
-                <EditUser></EditUser>
-                <div>修改责任人</div>
-              </div>
-              <div class="action-icon" @click="show_tree_dialog = true">
-                <Move></Move>
-                <div>移动</div>
-              </div>
-            </div>
-            <el-divider direction="vertical" />
-            <el-button
-              :icon="CloseBold"
-              @click="clean_select"
-              type=""
-              text
-            ></el-button>
-          </div>
-        </div>
+      <div class="search-input">
+        <el-input v-model="search" style="max-width: 600px" placeholder="名称、请求路径进行搜索" class="input-with-select"
+          @input="search_table">
+          <template #append>
+            <el-button :icon="Search" />
+          </template>
+        </el-input>
       </div>
-    </el-col>
-  </el-row>
-  <el-row style="margin-bottom: 100px">
-    <el-col :offset="1" :span="22">
-      <el-table
-        border
-        ref="multipleTableRef"
-        :class="{ 'has-bottom-border': tableData.length === 0 }"
-        :data="tableData"
-        style="width: 100%"
-        row-key="id"
-        @selection-change="handleSelectionChange"
-        :header-cell-style="{ color: 'black', 'font-size': '14px' }"
-      >
-        <template #empty>
-          <el-skeleton
-            v-if="loading"
-            animated
-            style="
-              width: 100%;
-              display: flex;
-              justify-content: start;
-              align-items: center;
-              flex-direction: column;
-              margin-bottom: 20px;
-            "
-          >
-            <template #template>
-              <div
-                v-for="item in 5"
-                style="
-                  width: 100%;
-                  display: flex;
-                  justify-content: start;
-                  align-items: center;
-                  margin-top: 20px;
-                "
-              >
-                <el-skeleton-item
-                  variant="h1"
-                  style="width: 2%; margin-left: 1%"
-                />
-                <el-skeleton-item
-                  variant="h1"
-                  style="width: 15%; margin-left: 5%"
-                />
-                <el-skeleton-item
-                  variant="h1"
-                  style="width: 15%; margin-left: 5%"
-                />
-                <el-skeleton-item
-                  variant="h1"
-                  style="width: 45%; margin-left: 5%"
-                />
-              </div>
-            </template>
-          </el-skeleton>
-          <div v-else>
-            <Empty></Empty>
+    </div>
+    <div class="header select-type" v-if="multipleSelection.size > 0 && !loading">
+      <div class="text" style="display: flex;align-items: center;gap: 5px;">
+        已选<AnimationButton v-model="multipleSelection.size"></AnimationButton>/
+        <AnimationButton v-model="tableData.length"></AnimationButton>项
+        <div class="cancel-btn" @click="clean_select">取消选择</div>
+      </div>
+      <div class="more-action">
+        <div class="actions">
+          <div class="action-icon" @click="show_delete_comfirm_dialog = true">
+            <DeleteIcon></DeleteIcon>
+            <div>删除</div>
           </div>
-        </template>
-        <el-table-column type="selection" width="55" />
-        <el-table-column label="接口名称">
-          <template #default="scope">{{ scope.row.name }}</template>
-        </el-table-column>
-        <el-table-column v-if="!loading" width="120" label="请求类型">
-          <template #header="{ column, index }">
-            <FilterHeader
-              :data="[
-                { text: 'GET', value: 'get' },
-                { text: 'POST', value: 'post' },
-                { text: 'PUT', value: 'put' },
-                { text: 'DELETE', value: 'delete' },
-              ]"
-              :column="column"
-              @reset="reset_field"
-              @action="(target:any) => filter_field(target,'method')"
-            ></FilterHeader>
-          </template>
-          <template #default="scope"
-            ><span
-              :style="{
-                color: typingAttrMapping[scope.row.method]['color'],
-              }"
-              class="typing-span"
-              style="cursor: default"
-              >{{ scope.row.method.toUpperCase() }}</span
-            ></template
-          >
-        </el-table-column>
-        <el-table-column label="接口路径">
-          <template #default="scope"
-            ><div>
-              <div class="g-ellipsis">{{ scope.row.path }}</div>
-            </div></template
-          >
-        </el-table-column>
-        <el-table-column label="接口分组" width="200">
-          <template #header="{ column, index }">
-            <FilterHeader
-              :data="get_groups_filter_list()"
-              :column="column"
-              @reset="reset_field"
-              @action="(target:any) => filter_field(target,'groups')"
-            ></FilterHeader>
-          </template>
-          <template #default="scope">
-            <div class="g-ellipsis">
-              <span>{{ scope.row.groups }}</span>
+          <div class="action-icon" @click="show_update_status_dialog = true">
+            <EditPen></EditPen>
+            <div>修改状态</div>
+          </div>
+          <div class="action-icon" @click="action_tag('add')">
+            <Tag></Tag>
+            <div>新增标签</div>
+          </div>
+          <div class="action-icon" @click="action_tag('delete')">
+            <TagDelete></TagDelete>
+            <div>删除标签</div>
+          </div>
+          <div class="action-icon" @click="show_update_head_dialog = true">
+            <EditUser></EditUser>
+            <div>修改责任人</div>
+          </div>
+          <div class="action-icon" @click="show_tree_dialog = true">
+            <Move></Move>
+            <div>移动</div>
+          </div>
+        </div>
+        <el-divider direction="vertical" />
+        <el-button :icon="CloseBold" @click="clean_select" type="" text></el-button>
+      </div>
+    </div>
+    <div class="table-header" v-if="!loading">
+      <div class="header-item header-check">
+        <CheckBox :check="galobalCheck" @change="globalCheckChange"></CheckBox>
+      </div>
+      <div class="header-item header-name">
+        <div>接口名称</div>
+      </div>
+      <div class="header-item header-method">
+        <FilterHeader :data="[
+          { text: 'GET', value: 'get' },
+          { text: 'POST', value: 'post' },
+          { text: 'PUT', value: 'put' },
+          { text: 'DELETE', value: 'delete' },
+        ]" :label="'请求类型'" @reset="reset_field" @action="(target: any) => filter_field(target, 'method')">
+        </FilterHeader>
+      </div>
+      <div class="header-item header-path">
+        <div>接口路径</div>
+      </div>
+      <div class="header-item header-groups">
+        <FilterHeader :data="get_groups_filter_list()" :label="'接口分组'" @reset="reset_field"
+          @action="(target: any) => filter_field(target, 'groups')"></FilterHeader>
+      </div>
+      <div class="header-item header-status">
+        <FilterHeader :data="get_status_filter_list()" :label="'接口状态'" @reset="reset_field"
+          @action="(target: any) => filter_field(target, 'status')"></FilterHeader>
+      </div>
+      <div class="header-item header-tag">
+        <FilterHeader :data="get_tags_filter_list()" :label="'接口标签'" @reset="reset_field" @action="filter_tag">
+        </FilterHeader>
+      </div>
+      <div class="header-item header-head">
+        <FilterHeader :data="get_head_filter_list()" :label="'负责人'" @reset="reset_field" @action="filter_head">
+        </FilterHeader>
+      </div>
+    </div>
+    <div class="table-content no-scroll">
+      <div class="table-row" v-if="tableData.length === 0" style="height: 100%;">
+        <Empty></Empty>
+      </div>
+      <div class="table-row" v-for="(item, row_index) in tableData" :key="item.id">
+        <div class="row-item header-check" style="justify-content: center;">
+          <CheckBox :check="get_row_item_check(item)" @change="(_type: any) => change_singel_check(_type, item)">
+          </CheckBox>
+        </div>
+        <div class="row-item header-name">
+          <ScrollText :text="item.name"></ScrollText>
+        </div>
+        <div class="row-item header-method method" :style="{
+          color: typingAttrMapping[item.method]['color'],
+        }">{{ item.method.toUpperCase() }}</div>
+        <div class="row-item header-path">
+          <ScrollText :text="item.path"></ScrollText>
+        </div>
+        <div class="row-item header-groups">
+          <ScrollText :text="item.groups"></ScrollText>
+        </div>
+        <div class="row-item header-status">
+          <div v-for="(status_item, status_index) in get_status(item.status)" :key="status_index"
+            style="display: flex;gap: 10px;align-items: center;">
+            <Ripple :color="status_item.color"></Ripple>
+            <div style="font-size: 0.85rem;">{{ status_item.name }}</div>
+          </div>
+        </div>
+        <div class="row-item header-tag" style="display: flex;flex-direction: column;gap: 3px;">
+          <template v-for="tagList in [get_tags(item.markers)]" :key="item.id">
+            <div v-if="tagList?.length === 1">
+              <div class="default-server-div">{{ tagList[0] }}</div>
+            </div>
+            <div v-if="tagList.length > 1" style="display: flex; gap: 3px;align-items: center;">
+              <div class="default-server-div">{{ tagList[0] }}</div>
+              <TooltipAnimation :isOpen="tagDetailNumber === item.id">
+                <template #trigger>
+                  <div class="default-server-div" @mouseenter="tagDetailNumber = item.id"
+                    @mouseleave="tagDetailNumber = -1" style="cursor: pointer;">{{ tagList.length - 1 }}+</div>
+                </template>
+                <template #default>
+                  <div style="display: flex;max-width: 200px;gap: 5px;flex-wrap: wrap;">
+                    <div v-for="(tag, tag_index) in tagList" :key="tag_index">
+                      <div class="default-server-div-tooltips">{{ tag }}</div>
+                    </div>
+                  </div>
+                </template>
+              </TooltipAnimation>
+
             </div>
           </template>
-        </el-table-column>
-        <el-table-column v-if="!loading" label="接口状态" width="120">
-          <template #header="{ column, index }">
-            <FilterHeader
-              :data="get_status_filter_list()"
-              :column="column"
-              @reset="reset_field"
-              @action="(target:any) => filter_field(target,'status')"
-            ></FilterHeader>
-          </template>
-          <template #default="scope">
-            <div>
-              <div
-                style="
-                  display: flex;
-                  justify-content: start;
-                  align-items: center;
-                  gap: 5px;
-                "
-                v-for="(item, index) in get_status(scope.row.status)"
-                :key="index"
-              >
-                <el-badge
-                  is-dot
-                  class="item"
-                  style="display: flex; align-items: center"
-                  :color="item.color"
-                ></el-badge>
-                <div>{{ item.name }}</div>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="标签">
-          <template #header="{ column, index }">
-            <FilterHeader
-              :data="get_tags_filter_list()"
-              :column="column"
-              @reset="reset_field"
-              @action="filter_tag"
-            ></FilterHeader>
-          </template>
-          <template #default="scope">
-            <div>
-              <div class="table-tag">
-                <div
-                  v-for="(item, marker_index) in get_tags(scope.row.markers)"
-                  :key="marker_index"
-                >
-                  <div class="default-server-div">{{ item }}</div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="责任人" width="150">
-          <template #default="scope"
-            ><div class="g-ellipsis">
-              {{ get_head(scope.row.head) }}
-            </div></template
-          >
-        </el-table-column>
-      </el-table>
-    </el-col>
-  </el-row>
-  <el-dialog
-    v-model="show_delete_comfirm_dialog"
-    title="确定要删除这些接口吗？"
-    width="500"
-    class="delete-dialog"
-    style="padding: 20px"
-  >
+        </div>
+        <div class="row-item header-head">{{ get_head(item.head) }}</div>
+      </div>
+    </div>
+  </div>
+  <!--dialog-->
+  <el-dialog v-model="show_delete_comfirm_dialog" title="确定要删除这些接口吗？" width="500" class="delete-dialog"
+    style="padding: 20px">
     <span>删除接口后您将无法维护它们，接口所绑定的Mock也将失效。</span>
     <template #footer>
       <div class="dialog-footer">
@@ -283,29 +153,13 @@
       </div>
     </template>
   </el-dialog>
-  <el-dialog
-    v-model="show_update_status_dialog"
-    title="更新接口状态"
-    width="500"
-    class="delete-dialog"
-    style="padding: 20px"
-  >
-    <el-select
-      class="doc-base-select"
-      :empty-values="[null, undefined]"
-      :value-on-clear="null"
-      v-model="change_status"
-      placeholder="请选择更新为的状态"
-    >
-      <el-option
-        class="doc-base-option"
-        v-for="item in interface_status_list"
-        :key="item.id"
-        :label="item.name"
-        :value="item.id"
-      >
+  <el-dialog v-model="show_update_status_dialog" title="更新接口状态" width="500" class="delete-dialog" style="padding: 20px">
+    <el-select class="doc-base-select" :empty-values="[null, undefined]" :value-on-clear="null" v-model="change_status"
+      placeholder="请选择更新为的状态">
+      <el-option class="doc-base-option" v-for="item in interface_status_list" :key="item.id" :label="item.name"
+        :value="item.id">
         <div class="flex items-center">
-          <el-badge is-dot class="item" :color="item.color"></el-badge>
+          <Ripple :color="item.color"></Ripple>
           <span>{{ item.name }}</span>
         </div>
       </el-option>
@@ -323,53 +177,25 @@
       </div>
     </template>
   </el-dialog>
-  <el-dialog
-    v-model="add_tag_dialog"
-    :title="batch_tag_title"
-    width="500"
-    class="delete-dialog"
-    style="padding: 20px"
-  >
-    <el-select
-      multiple
-      v-model="add_tag_list"
-      placeholder="查找标签"
-      class="regular-mul-select"
-    >
-      <el-option
-        class="doc-base-option-mul"
-        v-for="item in interface_tag_list"
-        :key="item.id"
-        :label="item.name"
-        :value="item.id"
-      >
+  <el-dialog v-model="add_tag_dialog" :title="batch_tag_title" width="500" class="delete-dialog" style="padding: 20px">
+    <el-select multiple v-model="add_tag_list" placeholder="查找标签" class="regular-mul-select">
+      <el-option class="doc-base-option-mul" v-for="item in interface_tag_list" :key="item.id" :label="item.name"
+        :value="item.id">
         <div class="flex items-center">
           <span>{{ item.name }}</span>
         </div>
       </el-option>
       <template #header>
-        <el-button
-          v-if="!isFooterEnter"
-          text
-          bg
-          size="small"
-          @click="isFooterEnter = !isFooterEnter"
-        >
+        <el-button v-if="!isFooterEnter" text bg size="small" @click="isFooterEnter = !isFooterEnter">
           添加标签
         </el-button>
         <template v-else>
-          <el-input
-            v-model="optionFooterName"
-            class="option-input"
-            placeholder="请输入标签名"
-            size="small"
-          />
+          <el-input v-model="optionFooterName" class="option-input" placeholder="请输入标签名" size="small"
+            style="padding-bottom: 10px;" />
           <el-button type="primary" size="small" @click="add_tag">
             添加
           </el-button>
-          <el-button size="small" @click="isFooterEnter = !isFooterEnter"
-            >取消</el-button
-          >
+          <el-button size="small" @click="isFooterEnter = !isFooterEnter">取消</el-button>
         </template>
       </template>
     </el-select>
@@ -380,27 +206,11 @@
       </div>
     </template>
   </el-dialog>
-  <el-dialog
-    v-model="show_update_head_dialog"
-    title="更新接口负责人"
-    width="500"
-    class="delete-dialog"
-    style="padding: 20px"
-  >
-    <el-select
-      class="doc-base-select"
-      :empty-values="[null, undefined]"
-      :value-on-clear="null"
-      v-model="change_head"
-      placeholder="请选择更新为的负责人"
-    >
-      <el-option
-        class="doc-base-option"
-        v-for="item in interface_head_list"
-        :key="item.id"
-        :label="item.username + '(' + item.nick_name + ')'"
-        :value="item.id"
-      >
+  <el-dialog v-model="show_update_head_dialog" title="更新接口负责人" width="500" class="delete-dialog" style="padding: 20px">
+    <el-select class="doc-base-select" :empty-values="[null, undefined]" :value-on-clear="null" v-model="change_head"
+      placeholder="请选择更新为的负责人">
+      <el-option class="doc-base-option" v-for="item in interface_head_list" :key="item.id"
+        :label="item.username + '(' + item.nick_name + ')'" :value="item.id">
         <div class="flex items-center">
           <span>{{ item.username + "(" + item.nick_name + ")" }}</span>
         </div>
@@ -418,19 +228,17 @@
       </div>
     </template>
   </el-dialog>
-  <TreeDialog
-    v-model="show_tree_dialog"
-    v-if="show_tree_dialog"
-    :move_name="'批量移动'"
-    @action="batch_move_interface"
-  >
+  <TreeDialog v-model="show_tree_dialog" v-if="show_tree_dialog" :move_name="'批量移动'" @action="batch_move_interface">
   </TreeDialog>
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, getCurrentInstance } from "vue";
+import { ref, onMounted, getCurrentInstance, computed } from "vue";
+import TooltipAnimation from '@/components/common/general/tooltip.vue'
+import CheckBox from '@/assets/motion/checkbox.vue'
 import { useRoute } from "vue-router";
 import { GlobalState } from "@/state/index";
+import AnimationButton from '@/components/layout/special/animation_btn.vue'
 import DeleteIcon from "@/assets/svg/common/delete.vue";
 import EditPen from "@/assets/svg/common/new_icon/edit_pen.vue";
 import Tag from "@/assets/svg/common/new_icon/tag.vue";
@@ -440,6 +248,8 @@ import Move from "@/assets/svg/common/new_icon/move.vue";
 import FilterHeader from "@/views/api/child_component/filter_table_header.vue";
 import Empty from "@/views/api/child_component/params_child/comp/empty.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
+import ScrollText from '@/components/layout/special/scroll_text.vue'
+import Ripple from '@/components/layout/special/ripple.vue'
 import {
   ApiGetSummarySource,
   ApiUpdateDir,
@@ -468,7 +278,7 @@ const tableData: any = ref([]);
 const route = useRoute();
 const { proxy }: any = getCurrentInstance();
 const typingAttrMapping: any = GlobalStatus.regular_reqeust_method_info_map();
-const interface_status_list: any = ref();
+const interface_status_list: any = ref({});
 const interface_head_list: any = ref();
 const interface_tag_list: any = ref([]);
 const loading = ref(true);
@@ -485,9 +295,49 @@ const isFooterEnter = ref(false);
 const optionFooterName = ref("");
 const current_action_tag_type = ref("add");
 const batch_tag_title = ref("");
+const multipleSelection: any = ref(new Set());
+const search = ref("");
+const tagDetailNumber = ref(-1)
 onMounted(async () => {
   await load_data();
 });
+
+
+const galobalCheck = computed(() => {
+  if (multipleSelection.value.size === tableData.value.length) {
+    return 'check'
+  } else if (multipleSelection.value.size === 0) {
+    return 'none'
+  } else {
+    return 'part'
+  }
+})
+
+function get_row_item_check(item: any) {
+  if (multipleSelection.value.has(item.id)) {
+    return 'check'
+  } else {
+    return 'none'
+  }
+}
+
+const globalCheckChange = (type: string) => {
+  if (type === 'check') {
+    for (let item of tableData.value) {
+      multipleSelection.value.add(item.id)
+    }
+  } else if (type === 'none') {
+    clean_select()
+  }
+}
+
+const change_singel_check = (type: string, item: any) => {
+  if (type === 'check') {
+    multipleSelection.value.add(item.id)
+  } else if (type === 'none') {
+    multipleSelection.value.delete(item.id)
+  }
+}
 
 async function load_data() {
   loading.value = true;
@@ -530,7 +380,7 @@ async function action_tag(type: any) {
 
 async function batch_add_tag() {
   let cache_interface_list = [];
-  for (let i = 0; i < multipleSelection.value.length; i++) {
+  for (let i = 0; i < multipleSelection.value.size; i++) {
     cache_interface_list.push(multipleSelection.value[i].id);
   }
   if (current_action_tag_type.value === "add") {
@@ -574,7 +424,7 @@ async function batch_add_tag() {
 
 async function update_interface_head() {
   let cache_interface_list = [];
-  for (let i = 0; i < multipleSelection.value.length; i++) {
+  for (let i = 0; i < multipleSelection.value.size; i++) {
     cache_interface_list.push(multipleSelection.value[i].id);
   }
   const _data = {
@@ -597,7 +447,7 @@ async function update_interface_head() {
 
 async function update_interface_status() {
   let cache_interface_list = [];
-  for (let i = 0; i < multipleSelection.value.length; i++) {
+  for (let i = 0; i < multipleSelection.value.size; i++) {
     cache_interface_list.push(multipleSelection.value[i].id);
   }
   const _data = {
@@ -620,7 +470,7 @@ async function update_interface_status() {
 
 async function batch_move_interface(node: any) {
   let cache_interface_list = [];
-  for (let i = 0; i < multipleSelection.value.length; i++) {
+  for (let i = 0; i < multipleSelection.value.size; i++) {
     cache_interface_list.push(multipleSelection.value[i].id);
   }
   const _data = {
@@ -644,7 +494,7 @@ async function batch_move_interface(node: any) {
 
 async function delete_interface() {
   let cache_interface_list = [];
-  for (let i = 0; i < multipleSelection.value.length; i++) {
+  for (let i = 0; i < multipleSelection.value.size; i++) {
     cache_interface_list.push(multipleSelection.value[i].id);
   }
   const _data = {
@@ -665,31 +515,44 @@ async function delete_interface() {
   });
 }
 
-function reset_field(target: Array<String>) {
+function reset_field(target: any) {
   tableData.value = _.cloneDeep(origin_table.value);
 }
-function filter_field(target: Array<String>, field: string) {
+function filter_field(target: any, field: string) {
   if (target.length === 0) {
     tableData.value = _.cloneDeep(origin_table.value);
     return;
   }
   tableData.value = origin_table.value.filter((item: any) => {
-    if (target.includes(item[field])) {
+    if (target.has(item[field])) {
       return item;
     }
   });
 }
 
-function filter_tag(target: Array<any>, field: string) {
+function filter_tag(target: any, field: string) {
   if (target.length === 0) {
     tableData.value = _.cloneDeep(origin_table.value);
     return;
   }
   tableData.value = origin_table.value.filter((item: any) => {
-    const hasIntersection = target.some((target_item: any) => {
-      return item.markers.includes(target_item);
-    });
-    if (hasIntersection) return item;
+    for (const element of item.markers) {
+      if (target.has(element)) {
+        return item; // 找到重合元素，立即返回 true
+      }
+    }
+  });
+}
+
+function filter_head(target: any, _: any) {
+  if (target.length === 0) {
+    tableData.value = _.cloneDeep(origin_table.value);
+    return;
+  }
+  tableData.value = origin_table.value.filter((item: any) => {
+    if (target.has(item.head)) {
+      return item; // 找到重合元素，立即返回 true
+    }
   });
 }
 
@@ -706,7 +569,6 @@ async function get_source() {
   await ApiGetSummarySource({
     project: route.params.project,
   }).then((res: any) => {
-    console.log(res);
     interface_status_list.value = res.markers;
     interface_head_list.value = res.members;
     interface_tag_list.value = res.tag;
@@ -766,6 +628,23 @@ function get_groups_filter_list() {
   return result_list;
 }
 
+function get_head_filter_list() {
+  let result_list: any = [];
+  let cache_name_list: any = [];
+  const result = origin_table.value.map((obj: any) => {
+    if (cache_name_list.includes(obj.head) === false) {
+      cache_name_list.push(obj.head);
+      const _head = interface_head_list.value.filter((head_item: any) => head_item.id === obj.head)
+      result_list.push({
+        text: `${_head[0].nick_name}(${_head[0].username})`,
+        value: obj.head,
+      });
+    }
+  });
+  cache_name_list = undefined;
+  return result_list;
+}
+
 function get_tags_filter_list() {
   const result = interface_tag_list.value.map((obj: any) => {
     return {
@@ -795,16 +674,13 @@ async function get_interface_list() {
   });
 }
 
-const multipleTableRef = ref<any>();
-const multipleSelection = ref<any[]>([]);
-const search = ref("");
+
 const handleSelectionChange = (val: any) => {
   multipleSelection.value = val;
 };
 
 function clean_select() {
-  multipleSelection.value = [];
-  multipleTableRef.value!.clearSelection();
+  multipleSelection.value = new Set();
 }
 
 const filterMethodHandler = (value: string, row: any, column: any) => {
@@ -813,122 +689,182 @@ const filterMethodHandler = (value: string, row: any, column: any) => {
 </script>
 
 <style scoped lang="scss">
-.items-center {
-  gap: 5px;
-  display: flex;
-  justify-content: start;
-}
-.table-tag {
-  display: flex;
+.default-server-div-tooltips {
+  display: inline-flex;
   align-items: center;
-  justify-content: start;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.action-icon {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 5px;
-  font-size: 14px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
   font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 8px;
-  color: var(--default-font-color);
-  cursor: pointer;
-  svg {
-    width: 15px;
+  color: #3ed0a4;
+  background-color: rgba(67, 217, 173, 0.1);
+  border: 1px solid rgba(67, 217, 173, 0.2);
+  border-radius: 4px;
+  transition: all 0.2s ease-in-out;
+}
+
+.dir-table-container {
+  height: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+
+  .method {
+    font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
   }
-}
-.action-icon:hover {
-  background-color: var(--default-bg);
-  color: black;
-}
-.has-bottom-border {
-  border-bottom: 1px solid var(--border-color-light);
-}
-.default-server-div {
-  font-size: 12px;
-  background-color: var(--default-bg);
-  border-radius: 5px;
-  padding: 0px 5px;
-  color: var(--global-theme-color);
-}
-.typing-span {
-  cursor: pointer;
-  display: flex;
-  justify-self: start;
-  align-items: center;
-  height: 20px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid #f2f4f7;
-  border-right: 1px solid #f2f4f7;
-  border-left: 1px solid #f2f4f7;
-  border-radius: 10px 10px 0 0;
-  height: 48px;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-}
-.table-header-right {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-}
-.header-2 {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid #f2f4f7;
-  border-right: 1px solid #f2f4f7;
-  border-left: 1px solid #f2f4f7;
-  border-radius: 10px 10px 0 0;
-  height: 48px;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-}
-.table-header-right-2 {
-  min-width: 0px;
-  display: flex;
-  padding-left: 0.5rem;
-  flex: 1;
-  justify-content: flex-end;
-  align-items: center;
-  .right-2-inner-div {
+
+  .header-check {
+    flex: 5;
+  }
+
+  .header-method {
+    flex: 10;
+  }
+
+  .header-name {
+    flex: 15;
+  }
+
+  .header-path {
+    flex: 25;
+  }
+
+  .header-groups {
+    flex: 25;
+  }
+
+  .header-status {
+    flex: 10;
+  }
+
+  .header-tag {
+    flex: 15;
+  }
+
+  .header-head {
+    flex: 15;
+  }
+
+  .table-content {
     flex: 1;
-    color: #344054;
-    font-size: 14px;
-    font-variant: tabular-nums;
-    line-height: 1.57143;
     display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    .right-2-inner-div-div {
-      min-width: min-content;
+    flex-direction: column;
+    overflow-y: auto;
+
+    .table-row {
       display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      button {
-        margin-left: 0px !important;
-        padding: 8px !important;
+      justify-content: center;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border: 1px solid #f0f0f0;
+      border-top: 0px;
+
+      .row-item {
+        display: flex;
+        align-items: center;
+        justify-content: start;
+        padding: 8px;
+        box-sizing: border-box;
+        border-right: 1px solid #f0f0f0;
+        min-width: 0;
       }
     }
   }
-}
-.table-header-left-2 {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-}
-.option-input {
-  width: 100%;
-  margin-bottom: 8px;
+
+  .default-server-div {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #39a988;
+    background-color: rgba(67, 217, 173, 0.1);
+    border: 1px solid rgba(67, 217, 173, 0.2);
+    border-radius: 4px;
+    transition: all 0.2s ease-in-out;
+  }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border: 1px solid #f0f0f0;
+    border-top: 0px;
+    background-color: #f0f0f0;
+
+    .header-item {
+      padding: 8px;
+      border-right: 1px solid #f0f0f0;
+    }
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #f0f0f0;
+    padding: 8px 10px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    height: 30px;
+    background-color: black;
+    color: white;
+
+    .text {
+      font-size: 0.9rem;
+      font-weight: 500;
+
+      .cancel-btn {
+        color: #039e74;
+        margin-left: 0.5rem;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 5px;
+        border-radius: 4px;
+      }
+
+      .cancel-btn:hover {
+        background-color: #f0f0f0;
+      }
+    }
+
+    .more-action {
+      display: flex;
+      align-items: center;
+      justify-content: end;
+
+
+      .actions {
+        display: flex;
+        align-items: center;
+
+
+        .action-icon {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 5px;
+          font-size: 14px;
+          font-weight: 500;
+          padding: 2px 8px;
+          border-radius: 4px;
+          color: white;
+          cursor: pointer;
+
+          svg {
+            width: 15px;
+          }
+        }
+
+        .action-icon:hover {
+          background-color: var(--default-bg);
+          color: black;
+        }
+      }
+    }
+  }
 }
 </style>
 
@@ -939,5 +875,9 @@ const filterMethodHandler = (value: string, row: any, column: any) => {
     padding: 4px 12px;
     height: auto;
   }
+}
+
+.el-dialog__title {
+  font-size: 1rem;
 }
 </style>

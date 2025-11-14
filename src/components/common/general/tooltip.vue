@@ -21,7 +21,6 @@
 
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import { ref } from 'vue'
 // @ts-ignore
 import { Tooltip } from 'reka-ui/namespaced'
 
@@ -37,7 +36,7 @@ defineProps({
     background: rgba(30, 30, 30, 0.95);
     color: #fff;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: 6px;
     min-width: 32px;
     font-size: 13px;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.16);

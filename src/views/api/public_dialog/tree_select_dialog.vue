@@ -181,6 +181,7 @@ onMounted(() => {
     project: route.params.project,
     search_range: "0,1",
     excluded_ids: "",
+    search_all:  true,
     type: props.type,
   };
   console.log(data);
