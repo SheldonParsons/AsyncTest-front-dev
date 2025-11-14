@@ -26,10 +26,12 @@
             " class="tree-node g-unselect" @mouseenter="current_node = data.id" @mouseleave="current_node = -1">
               <NodeWatcher :node="node" :data="data" @node-expanded="onExpand" @node-collapsed="onCollapse">
               </NodeWatcher>
-              <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
-                " @click.stop="changeExpanded(node)">
-                <ArrowRightBold />
-              </el-icon>
+              <div class="expand-icon">
+                <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+                  " @click.stop="changeExpanded(node)">
+                  <ArrowRightBold />
+                </el-icon>
+              </div>
               <div v-if="data.child_type !== 2" style="
                 display: flex;
                 justify-content: center;
@@ -1101,6 +1103,14 @@ function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
 </script>
 
 <style lang="scss" scoped>
+.expand-icon {
+  box-sizing: border-box;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.expand-icon:hover{
+  background-color: #e6e6e6;
+}
 .count-span {
   font-size: 12px;
   margin-left: 5px;
@@ -1314,6 +1324,8 @@ function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
   align-items: center;
   gap: 5px;
   width: 100%;
+  padding-left: 3px;
+  box-sizing: border-box;
 }
 </style>
 

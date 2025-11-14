@@ -13,6 +13,29 @@
         </el-input>
       </div>
     </div>
+    <el-skeleton v-if="loading" animated style="
+              width: 100%;
+              display: flex;
+              justify-content: start;
+              align-items: center;
+              flex-direction: column;
+              margin-bottom: 20px;
+            ">
+      <template #template>
+        <div v-for="item in 14" style="
+                  width: 100%;
+                  display: flex;
+                  justify-content: start;
+                  align-items: center;
+                  margin-top: 20px;
+                ">
+          <el-skeleton-item variant="h1" style="width: 2%; margin-left: 1%" />
+          <el-skeleton-item variant="h1" style="width: 15%; margin-left: 5%" />
+          <el-skeleton-item variant="h1" style="width: 15%; margin-left: 5%" />
+          <el-skeleton-item variant="h1" style="width: 55%; margin-left: 0%" />
+        </div>
+      </template>
+    </el-skeleton>
     <div class="header select-type" v-if="multipleSelection.size > 0 && !loading">
       <div class="text" style="display: flex;align-items: center;gap: 5px;">
         已选<AnimationButton v-model="multipleSelection.size"></AnimationButton>/
@@ -87,7 +110,7 @@
       </div>
     </div>
     <div class="table-content no-scroll">
-      <div class="table-row" v-if="tableData.length === 0" style="height: 100%;">
+      <div class="table-row" v-if="tableData.length === 0 && !loading" style="height: 100%;">
         <Empty></Empty>
       </div>
       <div class="table-row" v-for="(item, row_index) in tableData" :key="item.id">
