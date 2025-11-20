@@ -260,7 +260,8 @@ const info_type_mapping: any = {
     if_success: '条件分支',
     action_sleep: '强制等待',
     action_warning: '步骤警告',
-    error_failed: '抛出错误',
+    error_failed: '抛出异常',
+    error_warning: '异常提示',
     delay_success: '休眠步骤',
     delay_warning: '休眠警告'
 }
@@ -539,8 +540,9 @@ function reset_filter() {
             }
 
             .delay_warning,
+            .error_warning,
             .action_warning {
-                background: linear-gradient(to right, rgb(255, 123, 0), rgb(228, 160, 23), rgb(220, 133, 20));
+                background: linear-gradient(to right, rgb(255, 173, 96), rgb(255, 182, 36), rgb(255, 166, 49));
                 border: 1px solid rgb(255, 162, 40);
             }
 

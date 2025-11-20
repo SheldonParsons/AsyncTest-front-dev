@@ -11,6 +11,23 @@
                     <Radio v-model="data.error_mode" :items="assertMode"></Radio>
                 </div>
             </div>
+            <div class="step-item">
+                <div>是否抛出异常？</div>
+                <div>
+                    <SwitchAnimation :data="data.is_raise_exception" @action="changeShouldRise"
+                        :content="data.is_raise_exception ? '启用：当命中异常条件后，该步骤将以异常方式进行处理，在日志中异常将会传染到它的父级步骤' : '关闭：不当作异常，仅在当前局部空间（作用域）进行处理'"
+                        :bgcolor="'#f0f0f0'">
+                    </SwitchAnimation>
+                </div>
+            </div>
+            <div class="step-item">
+                <div>发生错误时</div>
+                <div>
+                    <Select :current="data.error_strategy"
+                        :items="data.is_raise_exception ? errorStepRaiseExceptionStrategy : errorStepNotRaiseExceptionStrategy"
+                        @change="changeErrorStraegy"></Select>
+                </div>
+            </div>
             <div class="step-item" v-if="data.error_mode === 'fast'">
                 <div style="display: inline-block;white-space: nowrap;">断言比较</div>
                 <div style="display: flex;justify-content: start;align-items: center;gap: 10px;">
@@ -46,12 +63,14 @@
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import InputUnderLine from '@/components/common/general/inputUnderLine.vue'
 import InputAnimation from '@/components/common/general/input.vue'
+import SwitchAnimation from '@/components/common/general/switch.vue'
 import { assertMode, patternMode, errorScriptDemo } from '@/views/case/utils/constants'
 import Select from '@/components/common/general/select_public.vue'
 import Radio from '@/components/common/general/radio.vue'
 import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
 import PythonCode from '@/components/common/general/pythonCode.vue'
 import MotionButton from '@/assets/motion/button.vue'
+import { errorStepRaiseExceptionStrategy, errorStepNotRaiseExceptionStrategy } from '@/views/case/utils/constants'
 
 function get_system_save() {
     if (navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
@@ -73,6 +92,15 @@ const props = defineProps({
         default: true
     }
 })
+
+function changeShouldRise(status: boolean) {
+    props.data.is_raise_exception = !status
+}
+
+
+function changeErrorStraegy(item: any) {
+    props.data.error_strategy = item.key
+}
 
 const script_demo = [
     { label: "获取全局变量", code: "at.gv.get('variable_key')\n" },

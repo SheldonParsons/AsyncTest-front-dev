@@ -27,7 +27,8 @@
               <NodeWatcher :node="node" :data="data" @node-expanded="onExpand" @node-collapsed="onCollapse">
               </NodeWatcher>
               <div class="expand-icon">
-                <el-icon v-if="data.child_type !== 2" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
+                <LoadingMini v-if="data.child_type !== 2 && current_loading_node === data.id"></LoadingMini>
+                <el-icon v-if="data.child_type !== 2 && current_loading_node !== data.id" :size="8" color="#606266" :class="node.expanded ? 'private-icon icon-expanded' : 'private-icon'
                   " @click.stop="changeExpanded(node)">
                   <ArrowRightBold />
                 </el-icon>
@@ -105,6 +106,7 @@ import ContextMemu from '@/components/layout/menus/comps_interface/context_menu.
 import SelectMenu from '@/components/layout/menus/comps_interface/select_menu.vue'
 import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
 import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
+import LoadingMini from '@/assets/motion/loading_mini.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
@@ -139,6 +141,7 @@ const isFristenter = ref(true)
 const dropIndicatorState = ref<any>({});
 const origin_tree: any = ref(null)
 const current_paste_object: any = ref(null)
+const current_loading_node: any = ref(-1)
 onMounted(async () => {
   // 调整一次高度
   await load_tree();
@@ -956,13 +959,25 @@ async function onExpand(data: any, node: any) {
     excluded_ids: '',
     node_id: node.data.id
   }
+  current_loading_node.value = data.id
+  const replace_item = searchNode(dataSource.value, node.data.id)
+  replace_item.children = []
   const search_data = await get_tree_data(params)
-  replaceChildrenData(search_data[0].children, node.data.id)
+  replaceChildrenData(search_data[0].children, replace_item)
+  current_loading_node.value = -1
   const index = firstLevelKeys.value.indexOf(data.id)
   if (index === -1) {
     firstLevelKeys.value.push(data.id)
   }
 }
+
+function replaceChildrenData(children: Array<any>, replace_item: any) {
+  if (children.length === 0) {
+    return
+  }
+  replace_item.children = children
+}
+
 
 // 4. 实现 onCollapse (负责所有收起逻辑)
 function onCollapse(data: any, node: any) {
@@ -972,13 +987,6 @@ function onCollapse(data: any, node: any) {
   }
 }
 
-function replaceChildrenData(children: Array<any>, target_id: number) {
-  if (children.length === 0) {
-    return
-  }
-  const replace_item = searchNode(dataSource.value, target_id)
-  replace_item.children = children
-}
 
 function searchNode(nodes: any, targetId: any) {
   if (!nodes || nodes.length === 0) {
@@ -1108,9 +1116,11 @@ function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
   border-radius: 4px;
   cursor: pointer;
 }
-.expand-icon:hover{
+
+.expand-icon:hover {
   background-color: #e6e6e6;
 }
+
 .count-span {
   font-size: 12px;
   margin-left: 5px;

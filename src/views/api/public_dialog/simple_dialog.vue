@@ -36,8 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, getCurrentInstance, computed, onMounted, onUnmounted, watch } from "vue";
-const { proxy }: any = getCurrentInstance();
+import { ref, computed, watch } from "vue";
 const core_value = ref("");
 // 使用v-model的props定义
 const props = defineProps({
@@ -75,6 +74,7 @@ watch(
 // 使用计算属性实现双向绑定
 const dialogVisible = computed({
   get: () => {
+    core_value.value = ""
     return props.modelValue
   },
   set: (value) => emit("update:modelValue", value),

@@ -40,6 +40,52 @@ export const errorMultitaskerStrategy: any = [
     }
 ]
 
+export const errorStepRaiseExceptionStrategy: any = [
+    {
+        key: 'current_step',
+        value: '跳过当前步骤'
+    },
+    {
+        key: 'current_multitasker',
+        value: '结束子执行器'
+    },
+    {
+        key: 'multitasker',
+        value: '结束执行器'
+    },
+    {
+        key: 'current_case',
+        value: '结束子用例'
+    },
+    {
+        key: 'case',
+        value: '结束用例'
+    },
+    {
+        key: 'raise',
+        value: '交由上级处理'
+    },
+    {
+        key: 'task',
+        value: '结束任务'
+    }
+]
+
+export const errorStepNotRaiseExceptionStrategy: any = [
+    {
+        key: 'current_step',
+        value: '跳过当前步骤'
+    },
+    {
+        key: 'current_multitasker',
+        value: '结束子执行器'
+    },
+    {
+        key: 'multitasker',
+        value: '结束执行器'
+    }
+]
+
 
 export const errorCaseStrategy: any = [
     {
@@ -48,7 +94,7 @@ export const errorCaseStrategy: any = [
     },
     {
         key: 'ref_case_inner',
-        value:'由引用用例内部抉择'
+        value: '由引用用例内部抉择'
     },
     {
         key: 'ref_child_case',
@@ -99,7 +145,7 @@ export const errorCaseRealStrategy: any = [
     }
 ]
 
-export const errorTaskRealStrategy:any = [
+export const errorTaskRealStrategy: any = [
     {
         key: 'current_step',
         value: '跳过当前步骤'
