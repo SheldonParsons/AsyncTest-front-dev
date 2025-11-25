@@ -19,16 +19,9 @@
       </div>
       <div style="display: flex;justify-content: end;align-items: center;width: 100%;height: 100%;gap: 20px;">
         <div style="width: 50px;height: 100%;">
-          <el-tooltip class="box-item" effect="light" placement="bottom">
-            <template #content>
-              <span @click="toProject" style="cursor: pointer">{{
-                $t("tooltip.center")
-                }}</span>
-            </template>
-            <div class="icon-cursor working-center" style="height: 100%" @click="toProject">
+          <div class="icon-cursor working-center" style="height: 100%" @click="toProject">
               <AngleColorful></AngleColorful>
             </div>
-          </el-tooltip>
         </div>
         <!-- <div>
           <el-tooltip class="box-item" effect="light" placement="bottom">

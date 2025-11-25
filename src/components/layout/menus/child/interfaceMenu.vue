@@ -676,7 +676,7 @@ function parseChromeFetch(fetchString: string) {
 
     // 1. 基础验证
     if (!s.startsWith('fetch(') || !s.endsWith(');')) {
-      window.$toast({ title: "无效的 'Copy as fetch' 格式。字符串必须以 'fetch(' 开头并以 ');' 结尾。", type: 'error' })
+      window.$toast({ title: "无效的 'fetch' 格式，请确认您的粘贴板内容。", type: 'error' })
       return false
     }
 

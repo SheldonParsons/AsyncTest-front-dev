@@ -60,8 +60,40 @@
                             </TooltipAnimation>
                         </div>
                     </div>
-
                 </div>
+                <div class="task-edit-item">
+                    <span class="title">开启定时任务</span>
+                    <div style="display: flex;justify-content: center;gap: 5px;">
+                        <SwitchAnimation :data="data.open_schedule" @action="changeSchedule"
+                            :content="data.open_schedule ? '启用：开启定时任务' : '关闭：定时任务已关闭'" :bgcolor="'#f0f0f0'">
+                        </SwitchAnimation>
+                    </div>
+                </div>
+                <div class="task-edit-item" v-if="data.open_schedule">
+                    <span class="title">循环周期</span>
+                    <div style="display: flex;justify-content: center;gap: 5px;">
+                        <Select :current="data.schedule_type" :items="taskScheduleType"
+                            @change="changeScheduleType"></Select>
+                    </div>
+                </div>
+                <div class="task-edit-item" v-if="data.open_schedule">
+                    <span class="title">循环时间</span>
+                    <div style="display: flex;justify-content: center;gap: 5px;" v-if="data.schedule_type === 'I'">
+                        <InputAnimation v-model="data.expression" :placeholder="'每隔几分钟执行一次'" :maxLength="3">
+                        </InputAnimation>
+                    </div>
+                    <div style="display: flex;justify-content: center;gap: 5px;" v-if="data.schedule_type === 'C'">
+                        <InputAnimation v-model="data.expression" :placeholder="'CRON 表达式'" :maxLength="50">
+                        </InputAnimation>
+                    </div>
+                    <div style="display: flex;justify-content: center;gap: 5px;"
+                        v-if="data.schedule_type !== 'C' && data.schedule_type !== 'I'">
+                        <Select :current="getScheduleTimeHour(data.expression)" :items="generateHours()"
+                            @change="changeTimeHour"></Select>:<Select :current="getScheduleTimeMinute(data.expression)"
+                            :items="generateMinutes()" @change="changeTimeMinute"></Select>
+                    </div>
+                </div>
+
             </div>
             <div style="min-width: 500px;display: flex;flex-direction: column;overflow: hidden;">
                 <div style="padding: 5px 0px;">
@@ -69,7 +101,8 @@
                         :current="Number(route.params.project)" @change="changeProject"></ProjectSelect>
                 </div>
                 <el-divider></el-divider>
-                <div style="overflow-y: auto;flex-grow: 1; min-height: 0;" class="no-scroll" v-if="current_project.id !== -1">
+                <div style="overflow-y: auto;flex-grow: 1; min-height: 0;" class="no-scroll"
+                    v-if="current_project.id !== -1">
                     <TreeNode style="width: 100%;" :project="current_project.id" :is_case="true" ref="caseTreeNodeRef"
                         @change_check="change_check" @ready="ready"></TreeNode>
                 </div>
@@ -120,6 +153,7 @@ import { useRoute } from "vue-router"
 import draggable from "vuedraggable";
 import { ApiGetEnvListAndUserSetting } from "@/api/interface/env";
 import DragHandle from '@/views/case/content/case_content/runner/tree/components/draghandle.vue'
+import SwitchAnimation from '@/components/common/general/switch.vue'
 import Select from '@/components/common/general/select_public.vue'
 import ProjectSelect from '@/components/common/general/select.vue'
 import Radio from '@/components/common/general/radio.vue'
@@ -129,7 +163,7 @@ import TooltipAnimation from '@/components/common/general/tooltip.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import DeleteBtn from '@/components/common/button/delete_btn.vue'
 import { errorTaskRealStrategy } from '@/views/case/utils/constants'
-import { multitaskerLoopStrategy } from '@/views/case/utils/constants'
+import { multitaskerLoopStrategy, taskScheduleType, generateHours, generateMinutes } from '@/views/case/utils/constants'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import { ApiGetTaskDetail } from '@/api/case/case/index'
 import Case from "@/assets/svg/tree/case.vue";
@@ -192,6 +226,10 @@ onMounted(async () => {
     }
 })
 
+function changeSchedule(status: boolean) {
+    data.value.open_schedule = !status
+}
+
 function ready() {
     caseTreeNodeRef.value.check(cache_id_list, true)
 }
@@ -253,13 +291,50 @@ function changeErrorStraegy(item: any) {
     data.value.error_strategy = item.key
 }
 
+function changeScheduleType(item: any) {
+    if (item.key === 'I' || item.key === 'C') {
+        data.value.expression = ''
+    } else {
+        data.value.expression = '00:00'
+    }
+    data.value.schedule_type = item.key
+}
+
+function changeTimeHour(item: any) {
+    if (!data.value.expression) {
+        data.value.expression = '00:00'
+    }
+    data.value.expression = item.key + data.value.expression.slice(2);
+    console.log(data.value.expression);
+
+}
+
+function changeTimeMinute(item: any) {
+    if (!data.value.expression) {
+        data.value.expression = '00:00'
+    }
+    data.value.expression = data.value.expression.slice(0, -2) + item.key;
+}
+
+function getScheduleTimeHour(expression: string) {
+    console.log(expression);
+
+    if (!expression) return '00'
+    return expression.slice(0, 2)
+}
+
+function getScheduleTimeMinute(expression: string) {
+    if (!expression) return '00'
+    return expression.slice(-2)
+}
+
 function delete_case(e: any) {
     case_list.value = case_list.value.filter((element: any) => {
         return element.id !== e.id
     })
     case_set.value.delete(e.id)
     console.log(e);
-    
+
     caseTreeNodeRef.value.check([e.id], false)
 }
 
@@ -292,9 +367,32 @@ function get_task_info() {
     data.value.case_list = case_list.value
     return data.value
 }
-
+function isValidTime(str: string) {
+    const regex = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+    return regex.test(str);
+}
 
 function check_task() {
+    if (data.value.open_schedule === true) {
+        if (taskScheduleType.some((item: any) => item.key === data.value.schedule_type) === false) {
+            window.$toast({ title: '循环周期错误', type: 'info' })
+            return false
+        }
+        if (data.value.schedule_type === 'I') {
+            const num = parseInt(data.value.expression, 10);
+            if (!(!Number.isNaN(num) && num > 0 && num < 999)) {
+                window.$toast({ title: '循环周期不合法，需要大于0，小于999', type: 'info' })
+                return false
+            }
+        } else if (data.value.schedule_type === 'C') {
+
+        } else {
+            if (!isValidTime(data.value.expression)) {
+                window.$toast({ title: '时间不合法', type: 'info' })
+                return false
+            }
+        }
+    }
     if (case_list.value.length === 0) {
         window.$toast({ title: '请至少选择一个测试用例', type: 'info' })
         return false

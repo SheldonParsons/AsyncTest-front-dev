@@ -228,6 +228,53 @@ export const multitaskerLoopStrategy: any = [
     }
 ]
 
+export const taskScheduleType: any = [
+    {
+        key: 'O',
+        value: '仅一次'
+    },
+    {
+        key: 'I',
+        value: '每分钟'
+    },
+    {
+        key: 'H',
+        value: '每小时'
+    },
+    {
+        key: 'D',
+        value: '每天'
+    },
+    {
+        key: 'W',
+        value: '每周'
+    },
+    {
+        key: 'BW',
+        value: '每两周'
+    },
+    {
+        key: 'M',
+        value: '每个月'
+    },
+    {
+        key: 'BM',
+        value: '每两个月'
+    },
+    {
+        key: 'Q',
+        value: '每季度'
+    },
+    {
+        key: 'Y',
+        value: '每年'
+    },
+    {
+        key: 'C',
+        value: 'CRON表达式'
+    }
+]
+
 export const caseMultitaskerLoopStrategy: any = [
     {
         key: 'loop_case',
@@ -242,6 +289,25 @@ export const caseMultitaskerLoopStrategy: any = [
         value: '并发执行'
     }
 ]
+
+export function generateHours(): { key: string, value: string }[] {
+  const result: { key: string, value: string }[] = [];
+  for (let i = 0; i < 24; i++) {
+    const str = i.toString().padStart(2, "0");
+    result.push({ key: str, value: str });
+  }
+  return result;
+}
+
+// 2. 生成 00~59 的分钟数组
+export function generateMinutes(): { key: string, value: string }[] {
+  const result: { key: string, value: string }[] = [];
+  for (let i = 0; i < 60; i++) {
+    const str = i.toString().padStart(2, "0");
+    result.push({ key: str, value: str });
+  }
+  return result;
+}
 
 
 

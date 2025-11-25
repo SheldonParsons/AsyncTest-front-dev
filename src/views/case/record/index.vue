@@ -132,13 +132,22 @@ function go_ahead_action(_tag: any, page: any, other_field = null) {
     }
 }
 
+function uuid24(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let uuid = '';
+    for (let i = 0; i < 24; i++) {
+        uuid += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return uuid;
+}
+
 async function crateTask() {
 
     const result = await taskDetailRef.value.open()
     if (result.action === 'cancel') return
 
     const data = taskDetailCheckRef.value.get_task_info()
-    const create_data = {
+    let create_data: any = {
         range_type: 'project',
         project: Number(route.params.project),
         name: data.name,
@@ -146,6 +155,15 @@ async function crateTask() {
         loop_strategy: data.loop_strategy,
         error_strategy: data.error_strategy,
         case_list: data.case_list.map((item: any) => item.id)
+    }
+
+    if (data.open_schedule === true) {
+        create_data.open_schedule = true
+        create_data.schedule_name = uuid24()
+        create_data.schedule_type = data.schedule_type
+        create_data.expression = data.expression
+    } else {
+        create_data.open_schedule = false
     }
 
     const params = {

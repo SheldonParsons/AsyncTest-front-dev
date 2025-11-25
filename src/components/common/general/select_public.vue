@@ -21,7 +21,8 @@ const props = defineProps({
         type: null
     },
     current: {
-        default: -1
+        default: -1,
+        type:null
     },
     padding: {
         default: '4px 8px'

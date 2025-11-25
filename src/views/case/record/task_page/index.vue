@@ -165,15 +165,35 @@ async function action(t: string, item: any, index: number) {
         if (result.action === 'cancel') return
 
         const data = taskDetailCheckRef.value.get_task_info()
-        const update_date = {
+        let update_date: any = {
             name: data.name,
             env: data.env,
             loop_strategy: data.loop_strategy,
             error_strategy: data.error_strategy,
-            case_list: data.case_list.map((item: any) => item.id)
+            case_list: data.case_list.map((item: any) => item.id),
+        }
+
+        if (data.open_schedule === true) {
+            update_date.open_schedule = true
+            if (data.schedule_name.length === 0) {
+                update_date.schedule_name = uuid24()
+            }
+            update_date.schedule_type = data.schedule_type
+            update_date.expression = data.expression
+        } else {
+            update_date.open_schedule = false
         }
         await tools.send(ApiEditTask, data.id, update_date)
     }
+}
+
+function uuid24(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let uuid = '';
+    for (let i = 0; i < 24; i++) {
+        uuid += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return uuid;
 }
 
 async function check_delete_dataset_confirm_text() {
