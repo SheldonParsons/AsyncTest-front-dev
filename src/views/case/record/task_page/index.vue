@@ -92,7 +92,6 @@ import { useRoute } from 'vue-router'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import TaskDetail from '@/views/case/record/task_page/detail.vue'
 import RunCaseSvg from '@/assets/logo/final/match_vue/play.vue'
-import useClipboard from "vue-clipboard3/dist/esm/index.js";
 import { HttpClass } from "@/utils/http";
 
 const route = useRoute()
@@ -353,8 +352,7 @@ async function get_task_info(task: any) {
     }
     const result = await tools.send(ApiTaskTools, _data)
     if (result) {
-        const { toClipboard } = useClipboard();
-        await toClipboard(result);
+        await navigator.clipboard.writeText(result);
         window.$toast({ title: '已复制任务接口信息至粘贴板' })
 
     }

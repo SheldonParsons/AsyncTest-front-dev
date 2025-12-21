@@ -45,7 +45,6 @@ const props = defineProps({
   padding-bottom: 10px;
   padding-left: 20px;
   margin-left: 0px !important;
-  z-index: 999;
   background-color: white;
   gap: 5px;
 

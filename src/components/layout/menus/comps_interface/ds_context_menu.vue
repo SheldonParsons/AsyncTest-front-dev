@@ -10,20 +10,14 @@
                     <ContextMenu.Content>
                         <motion.div class="context-menu-content" :initial="{ opacity: 0, scale: 0.9 }"
                             :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.9 }">
-                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(1, 'create_interface_under_dir')">
-                                添加接口
+                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(6, 'create_ds_under_dir')">
+                                添加数据模型
                                 <div class="context-menu-shortcut">
                                     <InterfaceIcon></InterfaceIcon>
                                 </div>
                             </ContextMenu.Item>
-                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(1, 'create_interface_under_dir_by_paste')">
-                                粘贴板创建（Fetch）
-                                <div class="context-menu-shortcut">
-                                    <PasteIcon></PasteIcon>
-                                </div>
-                            </ContextMenu.Item>
                             <ContextMenu.Separator class="context-menu-separator" />
-                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(0, 'create_child_dir')">
+                            <ContextMenu.Item class="context-menu-item" :disabled="data.child_type === 2" @select="menu_action(5, 'create_child_dir')">
                                 添加子目录
                                 <div class="context-menu-shortcut">
                                     <FolderPlusIcon></FolderPlusIcon>
@@ -63,14 +57,6 @@
                                                     damping: 20,
                                                     opacity: { duration: 0.2 },
                                                 }">
-                                                <ContextMenu.Item class="context-menu-item"
-                                                v-if="data.child_type !== 2"
-                                                @select="menu_action(-1, 'import_content')">
-                                                    导入
-                                                    <div class="context-menu-shortcut">
-                                                        <ImportIcon></ImportIcon>
-                                                    </div>
-                                                </ContextMenu.Item>
                                                 <ContextMenu.Item class="context-menu-item danger"
                                                     :disabled="data.child_type === 0" @select="menu_action(2, 'delete_node')">
                                                     删除

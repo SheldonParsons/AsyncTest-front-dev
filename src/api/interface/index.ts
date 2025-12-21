@@ -154,6 +154,16 @@ export function ApiGetSingleInterface(
   });
 }
 
+export function ApiGetSingleInterfaceList(
+  params: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet(`/api/interface/`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 // 创建接口响应
 export function ApiPostResponse(data: any): Promise<String> {
   return new Promise((resolve, reject) => {

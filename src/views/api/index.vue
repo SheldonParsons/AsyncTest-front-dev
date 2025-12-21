@@ -29,7 +29,10 @@
                   :class="getMethodClass(item, current_tab_name)">{{
                     method_list[item.t]
                   }}</span>
-
+                <span v-if="item.t === 7" class="method-span gradient-text">
+                  <DsLight v-if="current_tab_name === item.name" class="case-icon" style="height:15px" />
+                  <DS v-else class="case-icon" style="height:15px" />
+                </span>
                 <span class="method-span gradient-text g-e"
                   :class="current_tab_name !== item.name ? 'title' : 'title-light'">{{
                     item.title
@@ -76,6 +79,8 @@
       <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
       <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
         :target_type="current_target_type"></RootDir>
+      <DsDir v-if="show_type === 4" :page_target="current_page_target"></DsDir>
+      <DataStructure v-if="show_type === 5" :page_target="current_page_target"></DataStructure>
       <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
       <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
       <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
@@ -88,13 +93,17 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import Fold from "@/assets/svg/tree/fold.vue";
 import { useRoute, useRouter } from "vue-router";
+import DS from "@/assets/svg/tree/ds.vue";
+import DsLight from "@/assets/svg/tree/ds_light.vue";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
 import SettingBtn from "@/assets/svg/common/settings_btn.vue";
 import ContextMenu from "@/components/layout/menus/child/context_menu.vue";
 import Documentation from "./child_context/doc_page.vue";
+import DataStructure from "@/views/api/child_context/data_structure/index.vue"
 import EmptyPage from "./child_context/empty_page.vue";
 import CreatePage from "./child_context/create_empty_page.vue";
 import RootDir from "./child_context/root_dir_index.vue";
+import DsDir from '@/views/api/child_context/ds_dir.vue'
 import EnvSettingDialog from "@/views/api/public_dialog/env_setting_dialog.vue";
 import { GlobalState } from "@/state/index";
 import tools from "@/utils/tools";
@@ -128,11 +137,25 @@ const show_has_change_dialog = ref(false)
 const change_tab_cache_data: any = ref(null)
 const success_change_menu_tab_id: any = ref(null)
 const current_paste_object: any = ref(null)
+const current_page_target: any = ref()
 const page_mapping: any = {
   empty_page: 0,
   create_page: 1,
   api_page: 2,
   dir_page: 3,
+  ds_dir_page: 4,
+  ds_page: 5
+};
+
+const tab_type_to_show_page_mapping: any = {
+  0: "api_page",
+  1: "api_page",
+  2: "api_page",
+  3: "api_page",
+  4: "dir_page",
+  5: "create_page",
+  6: "ds_dir_page",
+  7: "ds_page"
 };
 
 interface EditorTab {
@@ -145,14 +168,6 @@ interface EditorTab {
   child_type: number;
 }
 
-const tab_type_to_show_page_mapping: any = {
-  0: "api_page",
-  1: "api_page",
-  2: "api_page",
-  3: "api_page",
-  4: "dir_page",
-  5: "create_page",
-};
 
 const props = defineProps({
   changeApiContent: {
@@ -289,13 +304,35 @@ watch(
       }
       const t = method_list.indexOf(val.data.method.toUpperCase());
       current_paste_object.value = val.data.current_paste_object
+      let target = val.data.target
+      if ("request" in val.data) {
+        target = val.data.request
+      }
       change_tab_and_change_page(
         val.data.name,
         t,
         val.data.id,
         false,
         null,
-        val.data.target
+        target
+      );
+    }
+    if (val.type === "click_ds") {
+      if (is_current_tab_by_index(val.data.id)) {
+        return;
+      }
+      let target = val.data.target
+      if ("ds_key" in val.data) {
+        target = val.data.ds_key
+      }
+
+      change_tab_and_change_page(
+        val.data.name,
+        7,
+        val.data.id,
+        false,
+        null,
+        target
       );
     }
     if (val.type === "click_dir" || val.type === "click_root_dir") {
@@ -310,6 +347,21 @@ watch(
         false,
         null,
         val.data.target,
+        val.data.child_type
+      );
+    }
+    if (val.type === "click_ds_dir" || val.type === "click_ds_root_dir") {
+      if (is_current_tab_by_index(val.data.id)) {
+        return;
+      }
+      current_target_type.value = val.data.child_type;
+      change_tab_and_change_page(
+        val.data.name,
+        6,
+        val.data.id,
+        false,
+        null,
+        val.data.ds_key,
         val.data.child_type
       );
     }
@@ -348,7 +400,7 @@ function change_tab_and_change_page(
   target_id = null,
   child_type = null
 ) {
-  if (name !== null && is_crtrent_tab(name)) {
+  if (name !== null && is_current_tab(name)) {
     return;
   }
   current_broadcast.value = broadcast
@@ -361,7 +413,7 @@ function change_tab_and_change_page(
   );
 }
 
-function is_crtrent_tab(name: string) {
+function is_current_tab(name: string) {
   return name === current_tab_name.value;
 }
 
@@ -453,6 +505,8 @@ function change_page(page_target: EditorTab | string, broadcast = true) {
     GlobalState.sendMessage("change_empty_tab", { id: null });
     show_type.value = 0;
   } else if (typeof page_target === "object" && "t" in page_target) {
+    console.log(page_target);
+    current_page_target.value = page_target
     current_target_id.value = page_target.target_id;
     current_node.value = page_target.index;
     change_page_status_by_t(page_target.t);

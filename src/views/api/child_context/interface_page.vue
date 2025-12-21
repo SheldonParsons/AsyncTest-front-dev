@@ -521,6 +521,7 @@ import {
   ApiGetSummarySource,
   ApiUpdateInterface,
   ApiGetSingleInterface,
+  ApiGetSingleInterfaceList,
   ApiPostResponse,
   ApiGetResponse,
   ApiDeleteResponse,
@@ -573,27 +574,59 @@ const show_json_editor = ref(true);
 const show_send_response_dialog = ref(false);
 const send_response: any = ref([]);
 const paste_interface_info_data: any = ref([])
+const is_outer_read_mode = ref(false)
 let stopWatchHandler: () => void;
 let originalData: any = null;
 let originalResponse: any = null;
 import deepDiff from "deep-diff";
 
 onMounted(async () => {
-  // 添加全局事件监听
-  window.addEventListener("keydown", addAltS);
+  console.log(props.interface_id);
+  
+  console.log(typeof props.interface_id === 'string');
+  
+  if (typeof props.interface_id === 'string') {
+    is_outer_read_mode.value = true
+    justGetReadData()
+  } else {
+    // 添加全局事件监听
+    window.addEventListener("keydown", addAltS);
 
-  await get_source();
-  GlobalState.sendMessage("clean_interface_change", {
-    node_id: props.node_id,
-  });
-  setupWatch();
-  setupWatchResponse();
-  if (data.value.statement.length === 0) {
-    show_markdown.value = false
-    collapseStatement.value = false
+    await get_source();
+    GlobalState.sendMessage("clean_interface_change", {
+      node_id: props.node_id,
+    });
+    setupWatch();
+    setupWatchResponse();
+    if (data.value.statement.length === 0) {
+      show_markdown.value = false
+      collapseStatement.value = false
+    }
+    try_paste_interface_info()
   }
-  try_paste_interface_info()
+
 });
+
+
+async function justGetReadData() {
+  const _data = {
+    interface_key: props.interface_id,
+    project: route.params.project
+  }
+  await ApiGetSingleInterfaceList(_data).then(async (res: any) => {
+    if (res.hasOwnProperty("result") && res.result === 0) {
+      window.$toast({ title: res.data, type: 'error' })
+      return false;
+    }
+    data.value = res;
+    if (data.value.statement.length !== 0) {
+      show_markdown.value = true;
+    } else {
+      show_markdown.value = false;
+    }
+    loading.value = false;
+  });
+}
 
 async function try_paste_interface_info() {
   if (paste_interface_info_data.value && paste_interface_info_data.value.url) {

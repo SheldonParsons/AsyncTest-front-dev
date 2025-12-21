@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion-v'
 import InterfaceIcon from "@/assets/svg/common/interface.vue";
 import CopyIcon from "@/assets/svg/common/copy.vue";
 import MoveIcon from "@/assets/svg/common/move.vue";
+import ImportIcon from '@/assets/svg/common/import_icon.vue'
 import FolderPlusIcon from "@/assets/svg/common/fold_plus.vue";
 import DeleteIcon from "@/assets/svg/common/delete.vue";
 import PasteIcon from '@/assets/svg/common/paste.vue'
@@ -59,22 +60,15 @@ function get_system() {
                     <motion.div class="context-menu-content" :initial="{ opacity: 0, scale: 0.9 }"
                         :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.9 }">
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
-                            @select="menu_action(1, 'create_interface_under_dir')">
-                            添加接口
+                            @select="menu_action(6, 'create_ds_under_dir')">
+                            添加数据模型
                             <div class="context-menu-shortcut">
                                 <InterfaceIcon></InterfaceIcon>
                             </div>
                         </DropdownMenuItem>
-                        <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
-                            @select="menu_action(1, 'create_interface_under_dir_by_paste')">
-                            粘贴板创建（Fetch）
-                            <div class="context-menu-shortcut">
-                                <PasteIcon></PasteIcon>
-                            </div>
-                        </DropdownMenuItem>
                         <DropdownMenuSeparator class="context-menu-separator" />
                         <DropdownMenuItem class="context-menu-item" :disabled="data.child_type === 2"
-                            @select="menu_action(0, 'create_child_dir')">
+                            @select="menu_action(5, 'create_child_dir')">
                             添加子目录
                             <div class="context-menu-shortcut">
                                 <FolderPlusIcon></FolderPlusIcon>
@@ -198,7 +192,7 @@ function get_system() {
     padding: 4px;
     margin-top: 5px;
     transform-origin: var(--radix-context-menu-content-transform-origin);
-    z-index: 2012!important;
+    z-index: 2012 !important;
 }
 
 .context-menu-item:hover {

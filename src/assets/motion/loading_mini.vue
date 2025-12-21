@@ -1,5 +1,16 @@
 <script setup>
 import { motion } from "motion-v"
+
+const props = defineProps({
+    width: {
+        default: '14px',
+        type: null
+    },
+    height: {
+        default: '14px',
+        type: null
+    }
+})
 </script>
 
 <template>
@@ -8,7 +19,7 @@ import { motion } from "motion-v"
             duration: 1.5,
             repeat: Infinity,
             ease: 'linear',
-        }" />
+        }" :style="{ width: props.width, height: props.height }" />
     </div>
 </template>
 
@@ -21,8 +32,6 @@ import { motion } from "motion-v"
     border-radius: 0px;
 
     .spinner {
-        width: 14px;
-        height: 14px;
         border-radius: 50%;
         border: 2px solid #f0f0f0;
         border-top-color: #2e2e2e;

@@ -7,7 +7,7 @@
                         <motion.div class="overlay" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                             :exit="{ opacity: 0 }" />
                     </Dialog.Overlay>
-                    <Dialog.Content as-child>
+                    <Dialog.Content as-child @escape-key-down="cancelAction">
                         <motion.div class="input-modal-container" :initial="dialogInitialState"
                             :animate="dialogOpenState" :exit="dialogInitialState" style="top: -50%;"
                             :style="{ transformPerspective: 200, top: topMove }">
@@ -29,7 +29,7 @@
                                                 {{ cancel_title }}
                                             </motion.button>
                                         </Dialog.Close>
-                                        <Dialog.Close as-child>
+                                        <Dialog.Close as-child v-if="showComfirm">
                                             <motion.button @click="comfirmAction" :whilePress="{ scale: 0.95 }" :whileHover="{ scale: 1.1 }"
                                                 :style="{ color: bgtype === 'black' ? 'black' : 'white', backgroundColor: bgtype === 'black' ? 'white' : 'black' }">
                                                 {{ confirm_title }}
@@ -63,6 +63,7 @@ const props = defineProps({
     bgtype: { type: String, default: 'black' },
     topMove: { type: String, default: '-20% !important' },
     showCancel: { type: Boolean, default: true },
+    showComfirm: { type: Boolean, default: true },
 })
 
 const visible = ref(false)

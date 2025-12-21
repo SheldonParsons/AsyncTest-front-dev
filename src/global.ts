@@ -38,6 +38,9 @@ const GlobalStatus = {
       files: {
         color: "#9373ee",
       },
+      ds: {
+        color: "#cd5e3c"
+      }
     };
   },
   regular_reqeust_method_info_map: () => {

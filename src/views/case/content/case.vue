@@ -527,7 +527,6 @@ const props = defineProps({
                 padding-right: 20px;
                 gap: 10px;
 
-                /* 1. 替换您的 .run-btn 样式 */
                 .run-btn {
                     width: 80px;
                     height: 25px;
@@ -538,26 +537,18 @@ const props = defineProps({
                     color: white;
                     font-size: 14px;
                     font-weight: 500;
-                    /* 核心修改 */
                     border: none;
-                    /* 移除边框，让渐变和阴影成为主体 */
                     background: linear-gradient(90deg, #3a7bd5, #00d2ff, #3a7bd5);
-                    /* 柔和的蓝-青渐变 */
                     background-size: 200% 200%;
                     animation: gradient-move 4s ease-in-out infinite;
-                    /* 动画更平滑，时间更长 */
                     padding: 4px;
                     border-radius: 6px;
-                    /* 更圆润的边角 */
                     box-sizing: border-box;
                     cursor: pointer;
                     transition: all 0.3s ease;
-                    /* 为悬停效果添加过渡 */
                     box-shadow: 0 4px 15px 0 rgba(0, 118, 255, 0.3);
-                    /* 添加与渐变色匹配的发光效果 */
                 }
 
-                /* 增强交互反馈 */
                 .run-btn:hover {
                     box-shadow: 0 6px 20px 0 rgba(0, 118, 255, 0.4);
                     transform: translateY(-2px);

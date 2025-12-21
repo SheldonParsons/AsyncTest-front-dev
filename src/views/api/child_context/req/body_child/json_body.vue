@@ -1,11 +1,11 @@
 <template>
   <div class="body-tools">
-    <div class="title">Json数据结构</div>
+    <div class="title">数据结构</div>
     <div class="tools">
-      <div @click="open_review_dialog">
+      <div @click="open_review_dialog" v-if="can_show_ds_detail">
         <PreView />预览
       </div>
-      <div @click="open_json_exchange_dialog">
+      <div @click="open_json_exchange_dialog" v-if="can_show_ds_detail">
         <ExChange />JSON转数据结构
       </div>
     </div>
@@ -17,7 +17,7 @@
         <div v-if="loading">
           <Loading></Loading>
         </div>
-        <SpecialButton v-else @click="addFirstData">添加数据</SpecialButton>
+        <SpecialButton v-if="!loading && can_show_ds_detail" @click="addFirstData">添加数据</SpecialButton>
       </template>
       <el-table-column label="字段名" min-width="40%">
         <template #default="scope">
@@ -33,15 +33,15 @@
       </el-table-column>
       <el-table-column label="类型" min-width="30%">
         <template #default="scope">
-          <MotionDropdown :scope="scope" :data="props.tableData[0].id === scope.row.id
+          <MotionDropdown :can_show_ds_detail="can_show_ds_detail" :scope="scope" :data="props.tableData[0].id === scope.row.id
             ? root_options
-            : options" @command="handleCommand"></MotionDropdown>
+            : options" @command="handleCommand" :excluded_ids="excluded_ids"></MotionDropdown>
         </template>
       </el-table-column>
       <el-table-column label="请求值">
         <template #default="scope">
-          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null'].includes(scope.row.t)">
-            {{ scope.row.default }}
+          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null', 'ds'].includes(scope.row.t)">
+            {{ scope.row.t === 'ds' ? '' : scope.row.default }}
           </div>
           <div v-else class="core-value">
             <div style="width: 100%">
@@ -59,10 +59,10 @@
       <el-table-column label="操作" min-width="20%">
         <template #default="scope">
           <div style="display: flex;align-items: center;gap:3px" class="other-action">
-            <motion.div v-if="props.tableData[0].id !== scope.row.id" :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }"
-              style="display: flex;align-items: center;justify-content: center;">
-              <el-icon @click="addNearNode(scope.row, scope.$index)"
-                size="16" class="action-icon action-icon-plus" color="#139659">
+            <motion.div v-if="props.tableData[0].id !== scope.row.id" :while-hover="{ scale: 1.05 }"
+              :while-press="{ scale: 0.9 }" style="display: flex;align-items: center;justify-content: center;">
+              <el-icon @click="addNearNode(scope.row, scope.$index)" size="16" class="action-icon action-icon-plus"
+                color="#139659">
                 <CirclePlus />
               </el-icon>
             </motion.div>
@@ -84,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, toRefs, nextTick } from "vue";
+import { ref, toRefs, nextTick, onMounted } from "vue";
 import { motion } from 'motion-v'
 import { useRoute } from "vue-router";
 import Loading from "@/views/api/child_component/params_child/comp/loading.vue";
@@ -100,10 +100,29 @@ import { ApiGetSummarySource } from "@/api/interface/index";
 import MotionDropdown from '@/views/api/child_context/req/body_child/comp/dropdown.vue'
 const route = useRoute();
 // 定义组件属性
-const props = defineProps<{
-  tableData: any[]; // 定义tableData属性为一个数组
-  interface: number;
-}>();
+const props = defineProps(
+  {
+    tableData: {
+      type: null
+    },
+    interface: {
+      type: Number,
+      default: -1,
+    },
+    canRootDs: {
+      type: Boolean,
+      default: true
+    },
+    excluded_ids: {
+      type: Array<Number>,
+      default: []
+    },
+    can_show_ds_detail: {
+      type: Boolean,
+      default: true
+    }
+  }
+);
 const emit = defineEmits(["exchange_json_value"]);
 const json_exchange_model = ref(false);
 const { tableData } = toRefs(props);
@@ -111,7 +130,7 @@ const unEditValueDialog: any = ref(null);
 const jsonExchangeValueDialog: any = ref(null);
 const loading = ref(false);
 const enableNewLine = ref(true);
-const root_options = [
+var root_options = [
   {
     value: "array",
     label: "array",
@@ -120,7 +139,19 @@ const root_options = [
     value: "object",
     label: "object",
   },
+  {
+    value: 'ds',
+    label: '引用模型'
+  }
 ];
+
+onMounted(() => {
+  if (props.canRootDs === false) {
+    root_options = root_options.filter((item: any) => {
+      return item.value !== 'ds'
+    })
+  }
+})
 
 const options = [
   {
@@ -151,24 +182,33 @@ const options = [
     value: "null",
     label: "null",
   },
+  {
+    value: 'ds',
+    label: '引用模型'
+  }
 ];
 
 const typingAttrMapping: any = GlobalStatus.regular_type_info_map();
 
 function open_review_dialog() {
   unEditValueDialog.value.open_dialog();
-  const _data = {
-    project: route.params.project,
-    interface: props.interface,
-    check_target: "get_variables",
-  };
-  ApiGetSummarySource(_data).then((res: any) => {
-    console.log(props.tableData[0]);
+  if (props.interface !== -1) {
+    const _data = {
+      project: route.params.project,
+      interface: props.interface,
+      check_target: "get_variables",
+    };
+    ApiGetSummarySource(_data).then((res: any) => {
+      console.log(props.tableData[0]);
 
-    unEditValueDialog.value.set_code(
-      convertSchemaToObject(props.tableData[0], res)
-    );
-  });
+      unEditValueDialog.value.set_code(
+        convertSchemaToObject(props.tableData[0], res)
+      );
+    });
+  } else {
+    convertSchemaToObject(props.tableData[0], {})
+  }
+
 }
 
 function open_json_exchange_dialog() {
@@ -269,9 +309,27 @@ function findParentNode(nodes: any[], targetId: number): any | null {
   return null; // 没有找到父节点
 }
 
+
 // 定义组件事件
 const handleCommand = (command: any) => {
-  command[0].t = command[1].label;
+  console.log(command);
+  if (command[1].value === 'ds') {
+    let name = command[2].name
+    if (name.includes("--")) {
+      const parts = name.split("--");
+      name = parts[1];
+    }
+  
+    command[0].t = 'ds'
+    console.log('content_type' in command[2]);
+    
+    command[0].name = 'content_type' in command[2] ? command[2].content_type : command[2].name
+    command[0]['ds_id'] = command[2].target
+    command[0].children = []
+    return
+  }
+
+  command[0].t = command[1].value;
   if (command[0].t === "null") {
     command[0].default = "null";
   }

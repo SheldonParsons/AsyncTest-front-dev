@@ -25,11 +25,26 @@
       <div><span>AsyncExecutor</span></div>
     </el-col>
   </el-row>
+  <el-row style="margin-bottom: 10px;margin-top: 20px;">
+    <el-col :span="2" class="flex">
+      <User />
+    </el-col>
+    <el-col :span="21" :offset="1" class="flex first-span">
+      <span>个人管理</span>
+    </el-col>
+  </el-row>
+  <el-row>
+    <el-col :span="21" :offset="1" class="flex router-menu" @click="switchRouter('settings_user_token')"
+      :class="{ active: 'settings_user_token' === activeLinkStyle }">
+      <div><span>API访问令牌</span></div>
+    </el-col>
+  </el-row>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import Source from "@/assets/svg/icon/source.vue";
+import User from "@/assets/svg/icon/user.vue";
 const { t } = useI18n();
 const props = defineProps({
   activeLinkStyle: {

@@ -38,7 +38,7 @@ const routes = [
             path: '/home/main/project/:project/settings',
             name: 'settings',
             component: () => import('@/views/settings/index.vue'),
-            children:[
+            children: [
               {
                 path: '/home/main/project/:project/settings/source/database',
                 name: 'settings_source_database',
@@ -53,6 +53,11 @@ const routes = [
                 path: '/home/main/project/:project/settings/source/asyncexecutor',
                 name: 'settings_asyncexecutor',
                 component: () => import('@/views/settings/source_management/async_executor.vue')
+              },
+              {
+                path: '/home/main/project/:project/settings/source/usertoken',
+                name: 'settings_user_token',
+                component: () => import('@/views/settings/source_management/user_api_token.vue')
               }
             ]
           },
@@ -95,7 +100,7 @@ const routes = [
                 path: '/home/main/project/ai/custom/plugin/project/:project',
                 name: 'ai_custom_plugin',
                 component: () => import('@/views/ai/custom_plugin/index.vue')
-              }, 
+              },
               {
                 path: '/home/main/project/ai/knwoledge/project/:project',
                 name: 'ai_knowledge',
