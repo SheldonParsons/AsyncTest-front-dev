@@ -1,5 +1,4 @@
 <template>
-    <!-- {{ dataSource }} -->
     <el-tree v-if="loading === false" style="margin-top: 10px;" class="api-tree" :key="treeKey" id="api-tree-core"
         ref="treeRef" draggable :data="dataSource" node-key="id" icon="ArrowRightBold" @node-click="changeMenu"
         :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
@@ -20,21 +19,54 @@
                         <ArrowRightBold />
                     </el-icon>
                 </div>
-                <div v-if="data.child_type !== 2" style="
+                <div v-if="node.level === 1" style="
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 color: black;
               ">
-                    <Fold v-if="!node.expanded"></Fold>
-                    <FoldExpend v-else></FoldExpend>
+                    <div style="width: 20px;">
+                        <img style="width: 20px;"
+                            src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg"
+                            alt="IntelliJ IDEA" width="80">
+                    </div>
+                </div>
+                <div v-if="data.child_type !== 2 && node.level !== 1 && data.code_type !== 2" style="
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: black;
+              ">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+                        <g fill="none" fill-rule="evenodd">
+                            <path fill="#9AA7B0" fill-opacity=".8"
+                                d="M7.9844,4 L6.6964,2.711 C6.3044,2.32 5.5324,2 4.9784,2 L1.0504,2 C1.0234,2 1.0004,2.022 1.0004,2.051 L1.0004,13 L9.0004,13 L9.0004,9 L15.0004,9 L15.0004,4 L7.9844,4 Z" />
+                            <polygon fill="#40B6E0" points="10 16 16 16 16 10 10 10" />
+                        </g>
+                    </svg>
+                </div>
+                <div v-if="data.child_type !== 2 && node.level !== 1 && data.code_type === 2" style="
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: black;
+              ">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+                        <g fill="none" fill-rule="evenodd">
+                            <path fill="#40B6E0" fill-opacity=".6"
+                                d="M15,8 C15,11.866 11.866,15 8,15 C4.134,15 1,11.866 1,8 C1,4.134 4.134,1 8,1 C11.866,1 15,4.134 15,8" />
+                            <path fill="#231F20" fill-opacity=".7"
+                                d="M5,4.28253174 C4.53,4.74153174 4.028,4.978 3.1,5 C2.061,5.022 1,4.2794 1,3.0004 C1,1.7124 1.971,1 3.1,1 C3.94833171,1 4.54833171,1.18475342 4.9,1.55426025 L5.5162,0.836730957 C4.8293999,0.270175195 4.28826904,0.0004 3.0982,0.0004 C1.3402,0.0004 0.0002,1.3584 0.0002,3.0004 C0.0002,4.6824 1.3642,6.0004 3.0022,6.0004 C4.29284668,6.0004 5.0232,5.5934 5.6162,4.9814 C5.2054,4.51548783 5,4.28253174 5,4.28253174 Z"
+                                transform="translate(5 5)" />
+                        </g>
+                    </svg>
                 </div>
                 <span v-if="data.child_type === 2" class="method-span gradient-text"
                     :class="method_color[data.method.toLowerCase()]">{{
                         data.method.toUpperCase() }}</span>
                 <div class="label-span-method">
-                    <div class="g-ellipsis">{{ data.name }}</div>
-                    <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
+                    <div class="g-ellipsis">{{ getName(data) }}</div>
+                    <!-- <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span> -->
                 </div>
             </div>
         </template>
@@ -88,6 +120,7 @@ const method_color: any = {
     post: "orange",
     put: "blue",
     delete: "red",
+    patch: "blue"
 };
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
 const dataSource: any = ref<Tree[]>([]);
@@ -122,6 +155,16 @@ async function checkImport() {
     return true
 }
 
+function getName(data: any) {
+    if ((data.child_type === 1 && data.code_type === 2) || (data.child_type === 2 && data.code_type === 3)) {
+        if (data.alias.length !== 0) {
+            return data.alias
+        }
+        return data.name
+    }
+    return data.name
+}
+
 async function load_tree() {
     if (isFristenter.value === true) {
         loading.value = true;
@@ -131,7 +174,7 @@ async function load_tree() {
     };
     dataSource.value = await get_tree_data(data)
     // console.log(newRoot);
-    
+
 
     // // ✅ 正确做法：直接把从接口拿回来的数组赋值给 dataSource
     // // 这样会重置数组长度，清除掉所有残留的旧节点
@@ -141,11 +184,11 @@ async function load_tree() {
     // } else {
     //     dataSource.value = []; // 防止接口返回空时报错
     // }
-    
+
     console.log(dataSource.value[0])
-    
+
     // 注意：这里要判空，防止数组为空时报错
-    if(dataSource.value[0]) {
+    if (dataSource.value[0]) {
         firstLevelKeys.value.push(dataSource.value[0].id)
     }
 

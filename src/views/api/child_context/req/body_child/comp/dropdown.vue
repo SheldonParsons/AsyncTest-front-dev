@@ -17,7 +17,7 @@
                         </template>
                     </TooltipAnimation>
                     <div v-if="scope.row.t === 'ds' && can_show_ds_detail" @click.stop>
-                        <DsDetail :index="scope.row.ds_id"></DsDetail>
+                        <DsDetail :index="inOuter ? scope.row.ds_target : scope.row.ds_id" :inOuter="inOuter"></DsDetail>
                     </div>
                 </div>
             </DropdownMenu.Trigger>
@@ -109,9 +109,10 @@ const props = defineProps<{
     data: Array<any>;
     excluded_ids: Array<Number>;
     can_show_ds_detail: Boolean;
+    inOuter: any;
 }>()
 
-function get_name(scope:any) {
+function get_name(scope: any) {
     if (scope.row.t === 'ds') {
         if ("content_type" in scope.row) {
             return scope.row.content_type

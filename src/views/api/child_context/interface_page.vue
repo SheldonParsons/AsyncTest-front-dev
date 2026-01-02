@@ -10,7 +10,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item :command="key" v-for="(value, key) in methodMapping" :key="key">{{ value
-                }}</el-dropdown-item>
+                  }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown></el-col>
@@ -50,7 +50,7 @@
     <div class="content-detail no-scroll" ref="interfaceInfoRef">
       <div v-if="loading === false">
         <RegularInput v-model="data.value.name"></RegularInput>
-        <el-row>
+        <el-row v-if="!is_outer_read_mode">
           <el-col :offset="1" :span="5">
             <RegularSelect label="状态" :showBadge="true" v-model="data.value.status" :optionList="testStatus"
               :selectedStatusLabel="selectedStatusLabel" :displayLabel="statusLabel"></RegularSelect>
@@ -154,7 +154,7 @@
               :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
               :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
               @exchange_json_body_value="handleExchangeValue" @change_raw_body="handle_change_raw_body"
-              :interface="interface_id"></Body>
+              :interface="interface_id" :inOuter="is_outer_read_mode"></Body>
             <Headers v-if="active_res_tab === 2" :canVar="true" :tableData="data.value.headers"
               :interface="interface_id">
             </Headers>
@@ -437,7 +437,7 @@
                     <div>
                       匹配结果：<span>{{
                         match.result === true ? "成功" : "失败"
-                        }}</span>
+                      }}</span>
                     </div>
                     <div>
                       结果值：<span>{{ match.value }}</span>
@@ -450,7 +450,7 @@
                 <div>
                   提取结果：<span>{{
                     pre_hook_step.data.result ? "成功" : "失败"
-                    }}</span>
+                  }}</span>
                 </div>
                 <div>
                   变量名：<span>{{ pre_hook_step.data.key }}</span>
@@ -540,8 +540,8 @@ const methodMapping: any = {
   post: "POST",
   put: "PUT",
   delete: "DELETE",
+  patch: "PATCH"
 };
-const { proxy }: any = getCurrentInstance();
 const loading = ref(true);
 const auth_ref: any = ref(null);
 const pre_action_ref: any = ref(null);
@@ -582,13 +582,15 @@ import deepDiff from "deep-diff";
 
 onMounted(async () => {
   console.log(props.interface_id);
-  
+
   console.log(typeof props.interface_id === 'string');
-  
+
   if (typeof props.interface_id === 'string') {
     is_outer_read_mode.value = true
+    window.addEventListener("keydown", addAltS);
     justGetReadData()
   } else {
+    is_outer_read_mode.value = false
     // 添加全局事件监听
     window.addEventListener("keydown", addAltS);
 
@@ -783,6 +785,10 @@ function toggleCollapse() {
 }
 
 function send() {
+  if (is_outer_read_mode.value) {
+    window.$toast({title: 'Resource From 接口暂不支持调试，请复制到普通接口'})
+    return
+  }
   const _data = {
     type: "run",
     content: {
@@ -1151,8 +1157,11 @@ function addAltS(event: any) {
     (event.key === "s" || event.code === "KeyS")
   ) {
     event.preventDefault(); // 阻止浏览器默认行为
-    save();
-    // 在这里执行你想要的逻辑
+    if (is_outer_read_mode.value) {
+      window.$toast({ title: 'Resource From 接口无法保存，请复制到普通接口' })
+    } else {
+      save();
+    }
   }
 }
 // 计算属性获取当前选中的标签值

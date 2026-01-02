@@ -6,7 +6,10 @@
       </div>
     </el-affix>
     <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
-      <ResourceFrom></ResourceFrom>
+      <ResourceFrom :t="current_source">
+        <div v-if="current_source == 'inner'">IntelliJ IDEA Interface</div>
+        <div v-if="current_source == 'outer'">AsyncTest Interface</div>
+      </ResourceFrom>
     </div>
     <div class="tree-div no-scroll" id="api-tree-div" ref="container" style="overflow: scroll;"
       v-if="current_source == 'inner'">

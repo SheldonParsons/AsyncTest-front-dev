@@ -1,11 +1,13 @@
 <template>
     <div class="ds-container">
-        <SplitterGroup direction="vertical" ref="groupRef">
-            <SplitterPanel :default-size="10" :min-size="10"
+        <SplitterGroup direction="vertical">
+            <SplitterPanel 
+                :default-size="10" 
+                :min-size="5"
                 style="display:flex; flex-direction:column; height:100%;overflow: scroll;"
                 class="caseContentRef no-scroll">
                 <div class="header">
-                    <div class="info">
+                   <div class="info">
                         <InputAnimation style="flex: 9;margin-top: 1px;" v-model="name" :placeholder="'名称'"
                             :maxLength="50">
                         </InputAnimation>
@@ -20,15 +22,25 @@
                     </div>
                 </div>
             </SplitterPanel>
-            <SplitterPanel class="animated-panel no-scroll" @resize="onPanelResize" style="
+
+            <SplitterPanel class="animated-panel" style="
             display:flex; flex-direction:column; height:100%; overflow-y: auto;
-          " ref="panelRef" :default-size="0" :min-size="85" :max-size="85" :collapsed-size="0">
-                <ObjectTable :tableData="dsData" :canRootDs="false" :excluded_ids="[page_target.target_id]">
+          " :default-size="10" :min-size="10" :max-size="10">
+                <div class="desc no-scroll" style="white-space: pre-line">
+                    {{ dsData[0]?.statement.length === 0 ? "暂无描述" : dsData[0]?.statement }} </div>
+            </SplitterPanel>
+
+            <SplitterPanel class="animated-panel no-scroll" style="
+            display:flex; flex-direction:column; height:100%; overflow-y: auto;
+          " :default-size="75" :min-size="20"> 
+                <ObjectTable :tableData="dsData" :canRootDs="false" :excluded_ids="[page_target.target_id]"
+                    :inOuter="inOuter">
                 </ObjectTable>
             </SplitterPanel>
-            <SplitterPanel class="animated-panel" @resize="onPanelResize" style="
+
+            <SplitterPanel class="animated-panel" style="
             display:flex; flex-direction:column; height:100%; overflow-y: auto;
-          " ref="panelRef" :default-size="0" :min-size="5" :max-size="5" :collapsed-size="0"></SplitterPanel>
+          " :default-size="5" :min-size="5" :max-size="5"></SplitterPanel>
         </SplitterGroup>
     </div>
 </template>
@@ -51,10 +63,11 @@ const props: any = defineProps({
 
 const route = useRoute();
 
-
 const dsData = ref([])
 
 const name = ref("")
+
+const inOuter = ref(false)
 
 onMounted(() => {
     name.value = props.page_target.title
@@ -65,16 +78,19 @@ onMounted(() => {
 
 function get_data() {
     if (typeof props.page_target.target_id === 'string') {
+        inOuter.value = true
         const _data = {
             ds_key: props.page_target.target_id,
             project: route.params.project
         }
         ApiGetDsingleList(_data).then((res: any) => {
             dsData.value = res.data
+            name.value = res.name
         })
     } else {
         ApiGetDsingle(props.page_target.target_id, {}).then((res: any) => {
             dsData.value = res.data
+            name.value = res.name
         })
     }
 }
@@ -154,6 +170,13 @@ function isMacOS(): boolean {
             gap: 10px;
             height: 100%;
         }
+    }
+    .desc {
+        border-left: 3px solid #f0f0f0;
+        padding-left: 10px;
+        font-size: 1rem;
+        font-weight: 500;
+        height: 90%;
     }
 }
 </style>

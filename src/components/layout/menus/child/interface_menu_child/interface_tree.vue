@@ -112,6 +112,7 @@ const method_color: any = {
     post: "orange",
     put: "blue",
     delete: "red",
+    patch: "blue"
 };
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
 const dataSource: any = ref<Tree[]>([]);

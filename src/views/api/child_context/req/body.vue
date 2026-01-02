@@ -33,6 +33,7 @@
           @exchange_json_value="handleExchangeJsonBodyValue"
           :tableData="props.tableData"
           :interface="interface"
+          :inOuter="inOuter"
         ></JsonBody>
       </div>
       <div v-show="bodyType === 'x-www-form-urlencoded'">
@@ -77,7 +78,8 @@ const props = defineProps<{
   formData: null;
   code: string,
   bodyType: any,
-  interface: number
+  interface: number,
+  inOuter:any
 }>();
 
 const bodyType = toRef(props, 'bodyType');

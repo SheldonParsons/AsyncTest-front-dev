@@ -17,21 +17,35 @@
                         <ArrowRightBold />
                     </el-icon>
                 </div>
-                <div v-if="data.child_type !== 4" style="
+                <div v-if="node.level === 1" style="
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 color: black;
               ">
-              <Fold v-if="!node.expanded"></Fold>
+                    <div style="width: 20px;">
+                        <img style="width: 20px;" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg" alt="IntelliJ IDEA" width="80">
+                    </div>
+                </div>
+                <div v-if="data.child_type !== 4 && node.level !== 1" style="
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: black;
+              ">
+                    <Fold v-if="!node.expanded"></Fold>
                     <FoldExpend v-else></FoldExpend>
                 </div>
                 <span v-if="data.child_type === 4" class="method-span gradient-text">
                     <DS class="case-icon" style="height: 13px" v-if="data.child_type === 4"></DS>
                 </span>
                 <div class="label-span-method">
-                    <div class="g-ellipsis">{{ data.name }}</div>
-                    <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
+                    <div class="g-ellipsis">{{ data.child_type === 4 && show_nick_name && data.alias.length > 0
+                        ? data.alias
+                        : data.name }}</div>
+                </div>
+                <div v-if="data.child_type === 0" @click.stop="show_nick_name = !show_nick_name">
+                    <SwitchBtn :type="show_nick_name"></SwitchBtn>
                 </div>
             </div>
         </template>
@@ -74,21 +88,12 @@ import { useRoute } from "vue-router";
 import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
-import ContextMemu from '@/components/layout/menus/comps_interface/ds_context_menu.vue'
-import SelectMenu from '@/components/layout/menus/comps_interface/select_menu.vue'
-import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
-import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
+import SwitchBtn from '@/components/layout/special/tooltips_btn.vue'
 import LoadingMini from '@/assets/motion/loading_mini.vue'
 import Importer from '@/components/layout/menus/comps/importer/index.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
-const method_color: any = {
-    get: "green",
-    post: "orange",
-    put: "blue",
-    delete: "red",
-};
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
 const dataSource: any = ref<Tree[]>([]);
 const treeRef: any = ref<InstanceType<typeof ElTree>>();
@@ -114,6 +119,7 @@ const current_paste_object: any = ref(null)
 const current_loading_node: any = ref(-1)
 const importRef: any = ref(null)
 const imporDialogtRef: any = ref(null)
+const show_nick_name = ref(false)
 
 onMounted(async () => {
     await load_tree();
@@ -146,6 +152,21 @@ async function get_tree_data(_data: any) {
     return await getOuterDsTree(_data).then((newData: any) => {
         return newData
     })
+}
+
+function get_name(data: any) {
+    console.log(data);
+
+    if (data.child_type === 4) {
+        if (show_nick_name.value === true) {
+            if (data.alias.length > 0) {
+                return data.alias
+            }
+        }
+        return data.name
+    } else {
+        return data.name
+    }
 }
 
 // ⭐ 新增：拖拽逻辑处理函数
@@ -865,7 +886,7 @@ interface Tree {
 
 function changeMenu(data: any, node: any, event: any, event_object: any) {
     console.log(node);
-    
+
     if (data.child_type === 1) {
         send_message_to_tab("click_ds_dir", data, node);
     } else if (data.child_type === 4) {

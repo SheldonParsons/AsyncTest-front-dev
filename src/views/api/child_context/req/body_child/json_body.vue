@@ -10,7 +10,7 @@
       </div>
     </div>
   </div>
-  <div class="private-table-outside">
+  <div class="private-table-outside" style="background-color: white;">
     <el-table v-model:data="tableData" style="width: 100%" row-key="id" default-expand-all class="main-table"
       :show-header="false">
       <template #empty>
@@ -33,7 +33,7 @@
       </el-table-column>
       <el-table-column label="类型" min-width="30%">
         <template #default="scope">
-          <MotionDropdown :can_show_ds_detail="can_show_ds_detail" :scope="scope" :data="props.tableData[0].id === scope.row.id
+          <MotionDropdown :can_show_ds_detail="can_show_ds_detail" :scope="scope" :inOuter="inOuter" :data="props.tableData[0].id === scope.row.id
             ? root_options
             : options" @command="handleCommand" :excluded_ids="excluded_ids"></MotionDropdown>
         </template>
@@ -120,6 +120,10 @@ const props = defineProps(
     can_show_ds_detail: {
       type: Boolean,
       default: true
+    },
+    inOuter: {
+      type: Boolean,
+      default: false
     }
   }
 );
@@ -319,10 +323,10 @@ const handleCommand = (command: any) => {
       const parts = name.split("--");
       name = parts[1];
     }
-  
+
     command[0].t = 'ds'
     console.log('content_type' in command[2]);
-    
+
     command[0].name = 'content_type' in command[2] ? command[2].content_type : command[2].name
     command[0]['ds_id'] = command[2].target
     command[0].children = []
@@ -474,6 +478,7 @@ function getRandomInt(min: any, max: any) {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
+  background-color: white;
 
   .title {
     font-size: 14px;

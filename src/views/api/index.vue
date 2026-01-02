@@ -27,7 +27,7 @@
                 </motion.div>
                 <span v-if="item.t < 4" class="method-span gradient-text"
                   :class="getMethodClass(item, current_tab_name)">{{
-                    method_list[item.t]
+                    item.t < 0 ? 'PATCH' : method_list[item.t]
                   }}</span>
                 <span v-if="item.t === 7" class="method-span gradient-text">
                   <DsLight v-if="current_tab_name === item.name" class="case-icon" style="height:15px" />
@@ -191,7 +191,8 @@ const method_t_mapping: any = {
   'get': 0,
   'post': 1,
   'put': 2,
-  'delete': 3
+  'delete': 3,
+  'patch': -1
 }
 // t的映射：0：get，1：post，2：put，3：delete，4：目录，5：新建内容
 watch(
@@ -378,7 +379,14 @@ function getMethodClass(item: any, current_tab_name: string) {
       return 'title'
     }
   }
-  method_color[item.t]
+  if (item.t < 0) {
+    if (current_tab_name === item.name) {
+      return 'blue'
+    } else {
+      return 'unactive-blue'
+    }
+  }
+
   if (current_tab_name === item.name) {
     return method_color[item.t]
   } else {
@@ -531,7 +539,12 @@ function change_page(page_target: EditorTab | string, broadcast = true) {
 function change_page_status_by_t(t: number) {
   show_type.value = -2;
   setTimeout(() => {
-    show_type.value = page_mapping[tab_type_to_show_page_mapping[t]];
+    if (is_interface(t)) {
+      show_type.value = 2
+    } else {
+      show_type.value = page_mapping[tab_type_to_show_page_mapping[t]];
+    }
+
     setTimeout(() => {
       GlobalState.sendMessage("paste_interface_info", { data: current_paste_object.value });
     }, 0)
@@ -637,7 +650,7 @@ function addTab(
 
 function closeTab(
   item: any,
-  index: Number,
+  index: number | string,
   delay_change_page: boolean = false
 ) {
   // 最后一个标签

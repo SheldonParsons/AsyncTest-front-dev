@@ -143,7 +143,7 @@ async function check_delete_dataset_confirm_text() {
     return true
 }
 
-async function action(t: string, item: any, index: number) {
+async function action(t: string, item: any, index: number | string) {
     if (t === 'copy') {
         const _data = {
             type: 1,

@@ -1,8 +1,32 @@
 <template>
-    <div class="resource-btn">
-        <div>Resource From</div>
+    <div class="resource-btn" :style="cssVars">
+        <slot></slot>
     </div>
 </template>
+
+<script lang="ts" setup>
+import { computed } from 'vue'
+const props = defineProps({
+    t: {
+        default: 'inner',
+        type: String
+    }
+})
+
+const cssVars = computed(() => {
+    if (props.t === 'inner') {
+        return {
+            '--t-linear': 'linear-gradient(90deg, #2b323c, #485563, #2b323c)',
+            '--t-color': 'white'
+        }
+    } else {
+        return {
+            '--t-linear': 'linear-gradient(to right, #0F1716, #1A2A26)',
+            '--t-color': '#C5A36A'
+        }
+    }
+})
+</script>
 
 
 <style lang="scss" scoped>
@@ -13,11 +37,11 @@
     justify-content: center;
     align-items: center;
     gap: 5px;
-    color: white;
+    color: var(--t-color);
     font-size: 14px;
     font-weight: 500;
     border: none;
-    // background: linear-gradient(90deg, #2b323c, #485563, #2b323c);
+    // background: linear-gradient(90deg, #ffffff, #ffffff, #ffffff);
     background-size: 200% 200%;
     animation: gradient-move 4s ease-in-out infinite;
     // padding: 4px;
@@ -26,9 +50,9 @@
     cursor: pointer;
     transition: all 0.3s ease;
     font-family: "Monoton-Regular", sans-serif;
-    background-image: 
-        url('https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/idea.png'), 
-        linear-gradient(90deg, #2b323c, #485563, #2b323c);
+    background-image:
+        url('https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/idea.png'),
+        var(--t-linear);
 
     /* 2. 设置不重复：两个层都不要重复 */
     background-repeat: no-repeat, no-repeat;
