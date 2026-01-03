@@ -29,8 +29,8 @@
                 align-items: center;
                 color: black;
               ">
-              <Fold v-if="!node.expanded"></Fold>
-                    <FoldExpend v-else></FoldExpend>
+                        <Fold v-if="!node.expanded"></Fold>
+                        <FoldExpend v-else></FoldExpend>
                     </div>
                     <span v-if="data.child_type === 4" class="method-span gradient-text">
                         <DS class="case-icon" style="height: 13px" v-if="data.child_type === 4"></DS>
@@ -39,7 +39,7 @@
                         <div class="g-ellipsis">{{ data.name }}</div>
                         <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
                     </div>
-                    <SelectMenu :data="data"
+                    <SelectDsMenu :data="data"
                         @action="(action_index, action_name, action_data) => action(action_index, action_name, action_data, node)"
                         @close="async () => {
                             // 只有当 current_node 仍然是当前组件的 id 时，才执行关闭重置
@@ -55,7 +55,7 @@
                             v-if="current_node === data.id || awalys_show_popover === data.id" class="hover-menu-box"
                             @click="() => { current_node = data.id; awalys_show_popover = data.id }">
                         </ExperBtn>
-                    </SelectMenu>
+                    </SelectDsMenu>
                 </div>
             </ContextMemu>
         </template>
@@ -99,7 +99,7 @@ import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
 import ContextMemu from '@/components/layout/menus/comps_interface/ds_context_menu.vue'
-import SelectMenu from '@/components/layout/menus/comps_interface/select_menu.vue'
+import SelectDsMenu from '@/components/layout/menus/comps_interface/select_ds_menu.vue'
 import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
 import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
 import LoadingMini from '@/assets/motion/loading_mini.vue'

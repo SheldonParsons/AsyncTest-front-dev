@@ -21,7 +21,7 @@
     <div class="process-dialog-content">
       <div style="width: 100%; border: 1px solid #f3f5f6; border-radius: 10px">
         <div class="editor-header">
-          <Params :disable="disableVar" :showVariable="canVar" @insert_action="insert_params" :interface="interface_id"
+          <Params :disable="disableVar" v-if="displayParam === true" :showVariable="canVar" @insert_action="insert_params" :interface="interface_id"
             :env="env_name"></Params>
         </div>
         <TextEditor v-if="controlText" :disable="props.disable" ref="ediorText" :code="code"
@@ -84,6 +84,10 @@ const props = defineProps({
   env_name: {
     type: String,
     default: '-1'
+  },
+  displayParam: {
+    type: Boolean,
+    default: true
   }
 });
 

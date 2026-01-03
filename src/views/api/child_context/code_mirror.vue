@@ -2,63 +2,50 @@
   <div style="width: 100%" v-show="show">
     <div id="editor-placeholder" ref="editorContainer" class="editor-container">
       <div class="edit-div" @click="show_edit_value">
-        <el-icon :size="18"><FullScreen /></el-icon>
+        <el-icon :size="18">
+          <FullScreen />
+        </el-icon>
       </div>
     </div>
-    <el-tooltip
-      ref="tooltipRef"
-      effect="light"
-      manual
-      v-model:visible="visible"
-      placement="top"
-      :virtual-ref="buttonRef"
-      virtual-triggering
-      trigger="click"
-      popper-class="singleton-tooltip"
-    >
+    <el-tooltip ref="tooltipRef" effect="light" manual v-model:visible="visible" placement="top"
+      :virtual-ref="buttonRef" virtual-triggering trigger="click" popper-class="singleton-tooltip">
       <template #content>
         <div class="mirror-tooltip">
           <div class="mirror-tooltip-header">
             <span>变量视图</span>
           </div>
           <div class="mirror-tooltip-divider"></div>
-          <div
-            style="
+          <div style="
               display: flex;
               justify-content: start;
               align-items: center;
               width: calc(100% - 20px);
               padding: 5px 10px;
-            "
-          >
+            ">
             <div style="color: var(--el-text-color-secondary); font-size: 14px">
               变量名：
             </div>
             <div>{{ variable_content.name }}</div>
           </div>
-          <div
-            style="
+          <div style="
               display: flex;
               justify-content: start;
               align-items: center;
               width: calc(100% - 20px);
               padding: 5px 10px;
-            "
-          >
+            ">
             <div style="color: var(--el-text-color-secondary); font-size: 14px">
               变量类型：
             </div>
             <div>{{ variable_type_mapping[variable_content.type][0] }}</div>
           </div>
-          <div
-            style="
+          <div style="
               display: flex;
               justify-content: start;
               align-items: center;
               width: calc(100% - 20px);
               padding: 5px 10px;
-            "
-          >
+            ">
             <div style="color: var(--el-text-color-secondary); font-size: 14px">
               变量来源：
             </div>
@@ -68,15 +55,9 @@
       </template>
     </el-tooltip>
   </div>
-  <EditValue
-    :disableVar="props.disableVar"
-    :canVar="canVar"
-    :interface_id="interface_id"
-    :disable="props.disable"
-    ref="editValueDialog"
-    @add_code="add_code"
-    :enableNewLine="props.enableNewLine"
-  ></EditValue>
+  <EditValue v-if="display === true" :displayParam="displayParam" :disableVar="props.disableVar" :canVar="canVar" :interface_id="interface_id"
+    :disable="props.disable" ref="editValueDialog" @add_code="add_code" :enableNewLine="props.enableNewLine">
+  </EditValue>
 </template>
 
 <script setup lang="ts">
@@ -143,6 +124,14 @@ const props = defineProps({
     type: Number,
     default: -1,
   },
+  display: {
+    type: Boolean,
+    default: true
+  },
+  displayParam: {
+    type: Boolean,
+    default: true
+  }
 });
 
 let editorView: any;
@@ -165,10 +154,10 @@ function add_code(content: any) {
 }
 
 function show_edit_value() {
-  // if (props.disable) {
-  //   tools.message("您无法在只读状态下编辑内容", proxy);
-  //   return
-  // };
+  if (props.display === false) {
+    tools.message("您无法在只读状态下编辑内容", proxy);
+    return
+  };
   editValueDialog.value.open_dialog();
   editValueDialog.value.set_code(editorView.state.doc.toString());
 }
@@ -268,7 +257,7 @@ function initCodeMirror() {
           });
         },
         methods: {
-          handleClick(event: any) {},
+          handleClick(event: any) { },
           handleMouseenter(event: any) {
             this.$nextTick(() => {
               variable_content.value = parseExpression(
@@ -277,7 +266,7 @@ function initCodeMirror() {
               buttonRef.value = event.currentTarget.$el || event.currentTarget;
             });
           },
-          handleMouseleave(event: any) {},
+          handleMouseleave(event: any) { },
         },
       });
       app.mount(container);
@@ -310,7 +299,7 @@ function initCodeMirror() {
           });
         },
         methods: {
-          handleClick(event: any) {},
+          handleClick(event: any) { },
           handleMouseenter(event: any) {
             this.$nextTick(() => {
               variable_content.value = parseExpression(
@@ -319,7 +308,7 @@ function initCodeMirror() {
               buttonRef.value = event.currentTarget.$el || event.currentTarget;
             });
           },
-          handleMouseleave(event: any) {},
+          handleMouseleave(event: any) { },
         },
       });
       app.mount(container);
@@ -506,12 +495,14 @@ onBeforeUnmount(() => {
   padding: 0px;
   border-radius: 10px;
 }
+
 .mirror-tooltip {
   display: flex;
   flex-direction: column;
   width: 300px;
   align-items: center;
   justify-content: start;
+
   .mirror-tooltip-header {
     width: calc(100% - 20px);
     height: 30px;
@@ -522,28 +513,34 @@ onBeforeUnmount(() => {
     padding: 5px 10px;
     font-weight: 500;
   }
+
   .mirror-tooltip-divider {
     width: 100%;
     border-bottom: 1px solid var(--border-color);
   }
 }
+
 .edit-div {
   display: flex;
   justify-content: center;
   margin-right: 5px;
   align-items: center;
 }
+
 .edit-div i {
   padding: 4px;
   cursor: pointer;
   border-radius: 4px;
 }
+
 .edit-div i:hover {
   background-color: var(--hover-bg);
 }
+
 .editor-container:hover {
   background-color: white;
 }
+
 .editor-container {
   display: flex;
   align-items: center;
@@ -554,26 +551,34 @@ onBeforeUnmount(() => {
   /* border: 1px solid transparent; */
   width: 100%;
   overflow: hidden;
+
   .cm-scroller {
     overflow: hidden;
   }
+
   .cm-content {
     padding: 0px;
   }
+
   .cm-editor {
     font-size: 12px;
     outline: unset;
   }
 }
+
 .cm-line {
   width: 100%;
   display: flex !important;
   align-items: center;
 }
+
 .cm-editor {
   width: 100%;
-  height: 100% !important; /* 确保编辑器高度填满容器 */
-  overflow: hidden !important; /* 隐藏滚动条 */
-  white-space: nowrap !important; /* 禁止换行 */
+  height: 100% !important;
+  /* 确保编辑器高度填满容器 */
+  overflow: hidden !important;
+  /* 隐藏滚动条 */
+  white-space: nowrap !important;
+  /* 禁止换行 */
 }
 </style>

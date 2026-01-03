@@ -2,7 +2,7 @@
     <div class="motion-container">
         <DropdownMenu.Root v-model:open="open">
             <DropdownMenu.Trigger as-child :disabled="can_show_ds_detail === false">
-                <div style="display: flex;justify-content: center;align-items: center;gap: 3px;">
+                <div style="display: flex;justify-content: center;align-items: center;gap: 5px;">
                     <TooltipAnimation :isOpen="showIdTooltip === scope.row.id">
                         <template #trigger>
                             <motion.button class="motion-trigger g-e" @mouseenter="showIdTooltip = scope.row.id"
@@ -16,41 +16,26 @@
                             <div>{{ get_name(scope) }}</div>
                         </template>
                     </TooltipAnimation>
-                    <div v-if="scope.row.t === 'ds' && can_show_ds_detail" @click.stop>
-                        <DsDetail :index="inOuter ? scope.row.ds_target : scope.row.ds_id" :inOuter="inOuter"></DsDetail>
-                    </div>
                 </div>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
                 <AnimatePresence>
-                    <DropdownMenu.Content v-if="open" :side-offset="10" style="z-index: 9999;" side="right">
+                    <DropdownMenu.Content v-if="open && inOuter === false" :side-offset="10" style="z-index: 9999;"
+                        side="right">
                         <motion.div class="motion-content" :initial="{ opacity: 0, scale: 0.85 }"
                             :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.85 }"
                             :transition="{ duration: 0.2 }" :style="{ willChange: 'transform, opacity' }">
-                            <div class="content">
-                                <div class="header">
-                                    <div>数据类型</div>
-                                    <motion.div class="close-icon" :while-hover="{ scale: 1.05 }"
-                                        :while-press="{ scale: 0.95 }">
-                                        <el-icon @click="open = false">
-                                            <CloseBold />
-                                        </el-icon>
-                                    </motion.div>
-                                </div>
+                            <div class="context">
                                 <div class="main">
-                                    <div class="left-menu">
-                                        <div v-for="item in props.data" :key="item.value">
-                                            <motion.div :while-press="{ scale: 0.95 }" class="left-item"
-                                                @click="handleCommand([scope.row, item])">
-                                                {{ item.value === 'ds' ? '引用类型' : item.label.charAt(0).toUpperCase() +
-                                                    item.label.slice(1) }}
-                                            </motion.div>
-                                        </div>
+                                    <div style="padding: 10px;">
+                                        <MotionDropDown :data="props.data" @change="handleCommand"></MotionDropDown>
                                     </div>
                                     <div class="right-content">
                                         <div v-if="current_type !== 'ds'" class="base-type-content">
                                             <DS class="case-icon" style="height: 33px"></DS>
-                                            <div style="font-size: 0.8rem;">暂未开放</div>
+                                            <div
+                                                style="font-size: 0.8rem;display: flex;justify-content: center;align-items: center;">
+                                                暂未开放</div>
                                         </div>
                                         <div v-if="current_type === 'ds'" class="ds-type-content">
                                             <div style="width: 100%;">
@@ -88,6 +73,7 @@ import TreeNode from '@/views/case/content/case_content/runner/tree/components/s
 import { useRoute } from "vue-router";
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
 import DsDetail from '@/views/api/child_context/req/body_child/comp/ds_detail.vue'
+import MotionDropDown from '@/views/api/child_context/req/body_child/comp/motion_dropdown.vue'
 
 const route = useRoute();
 
@@ -101,16 +87,32 @@ const showIdTooltip = ref(-1)
 
 const dsTreeNodeRef: any = ref(null)
 
+
 // 2. 定义组件的 props
-const props = defineProps<{
+const props = defineProps({
     // `current` 用于显示在触发器按钮上的当前值
-    scope: any;
+    scope: {
+        default: null,
+        type: null
+    },
     // `data` 是下拉菜单的选项列表
-    data: Array<any>;
-    excluded_ids: Array<Number>;
-    can_show_ds_detail: Boolean;
-    inOuter: any;
-}>()
+    data: {
+        default: [],
+        type: null
+    },
+    excluded_ids: {
+        default: [],
+        type: Array<Number>
+    },
+    can_show_ds_detail: {
+        default: true,
+        type: Boolean
+    },
+    inOuter: {
+        type: Boolean,
+        default: false
+    }
+})
 
 function get_name(scope: any) {
     if (scope.row.t === 'ds') {
@@ -132,7 +134,7 @@ watch(filterText, (val: any) => {
 // 3. 定义组件要触发的事件
 const emit = defineEmits<{
     // `command` 事件在用户点击选项时触发，并携带选项的 value
-    (e: 'command', value: string | number): void;
+    (e: 'command', value: any): void;
 }>()
 
 const open = ref(false)
@@ -150,10 +152,10 @@ function choiceDs(command: any) {
 }
 
 // 4. 点击事件处理函数
-const handleCommand = (command: any) => {
-    current_type.value = command[1].value
-    if (command[1].value === 'ds') return
-    emit('command', command)
+const handleCommand = (item: any) => {
+    current_type.value = item.value
+    if (item.value === 'ds') return
+    emit('command', [props.scope.row, item])
 }
 </script>
 
@@ -180,68 +182,37 @@ const handleCommand = (command: any) => {
 .motion-content {
     background-color: #ffffff;
     height: 100%;
+    background-color: var(--layer-transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid #90a4a8;
+    color: black;
+    border-radius: 6px;
+    padding: 4px;
+    margin-top: 5px;
+    transform-origin: var(--radix-context-menu-content-transform-origin);
+    z-index: 2012 !important;
+    min-width: 300px;
 
-    .content {
-        min-width: 300px;
+    .context {
         display: flex;
         flex-direction: column;
         height: 100%;
-
-        .header {
-            height: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.9rem;
-            background-color: rgb(0, 0, 0);
-            height: 40px;
-            color: rgb(255, 255, 255);
-            border-radius: 6px 6px 0px 0px;
-            padding: 6px;
-            box-sizing: border-box;
-            border-left: 1px solid #f0f0f0;
-            border-top: 1px solid #f0f0f0;
-            border-right: 1px solid #f0f0f0;
-        }
+        width: 100%;
 
         .main {
             padding: 4px;
             display: flex;
             justify-content: center;
             align-items: center;
+            flex-direction: column;
             gap: 5px;
             height: 100%;
             width: 100%;
             box-sizing: border-box;
             align-items: stretch;
-            border: 1px solid #f0f0f0;
-
-            .left-menu {
-                flex: 30;
-                border-right: 1px solid #f0f0f0;
-                background-color: black;
-                color: #f0f0f0;
-                padding: 5px;
-                box-sizing: border-box;
-                display: flex;
-                flex-direction: column;
-                border-radius: 6px;
-
-                .left-item {
-                    padding: 5px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 0.9rem;
-                }
-
-                .left-item:hover {
-                    background-color: #59c173;
-                }
-            }
+            // border: 1px solid #f0f0f0;
 
             .right-content {
-                flex: 70;
-                display: flex;
 
                 .base-type-content {
                     height: 100%;
@@ -251,8 +222,8 @@ const handleCommand = (command: any) => {
                     align-items: center;
                     flex-direction: column;
                     gap: 5px;
-                    background-color: #f0f0f0;
                     border-radius: 6px;
+                    min-height: 200px;
                 }
 
                 .ds-type-content {
@@ -260,7 +231,6 @@ const handleCommand = (command: any) => {
                     width: 100%;
                     display: flex;
                     justify-content: start;
-                    flex-direction: column;
                     align-items: start;
                     flex-direction: column;
                     gap: 5px;

@@ -39,7 +39,7 @@ const props = defineProps({
     }
 })
 
-const setSelectedTab = (index: number) => {
+const setSelectedTab = (index: any) => {
     emit('change', index)
 }
 </script>

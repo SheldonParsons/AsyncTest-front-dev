@@ -1,13 +1,11 @@
 <template>
     <div class="ds-container">
         <SplitterGroup direction="vertical">
-            <SplitterPanel 
-                :default-size="10" 
-                :min-size="5"
+            <SplitterPanel :default-size="10" :min-size="5"
                 style="display:flex; flex-direction:column; height:100%;overflow: scroll;"
                 class="caseContentRef no-scroll">
                 <div class="header">
-                   <div class="info">
+                    <div class="info">
                         <InputAnimation style="flex: 9;margin-top: 1px;" v-model="name" :placeholder="'名称'"
                             :maxLength="50">
                         </InputAnimation>
@@ -32,7 +30,7 @@
 
             <SplitterPanel class="animated-panel no-scroll" style="
             display:flex; flex-direction:column; height:100%; overflow-y: auto;
-          " :default-size="75" :min-size="20"> 
+          " :default-size="75" :min-size="20">
                 <ObjectTable :tableData="dsData" :canRootDs="false" :excluded_ids="[page_target.target_id]"
                     :inOuter="inOuter">
                 </ObjectTable>
@@ -111,9 +109,10 @@ function addAltS(event: any) {
 }
 
 async function save() {
-    console.log(props.page_target);
-
-    console.log(dsData.value);
+    if (inOuter.value) {
+        window.$toast({ title: 'IntelliJ IDEA 数据结构无法保存，请复制到 AsyncTest 数据结构' })
+        return
+    }
     const _data = {
         type: 0,
         child_action_type: "update_ds",
@@ -171,6 +170,7 @@ function isMacOS(): boolean {
             height: 100%;
         }
     }
+
     .desc {
         border-left: 3px solid #f0f0f0;
         padding-left: 10px;

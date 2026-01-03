@@ -149,7 +149,6 @@
         <el-row>
           <el-col :span="22" :offset="1">
             <Params v-if="active_res_tab === 0" :tableData="data.value.query" :interface_id="interface_id"></Params>
-
             <Body v-show="active_res_tab === 1" :tableData="data.value.json_data"
               :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
               :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
@@ -1158,7 +1157,7 @@ function addAltS(event: any) {
   ) {
     event.preventDefault(); // 阻止浏览器默认行为
     if (is_outer_read_mode.value) {
-      window.$toast({ title: 'Resource From 接口无法保存，请复制到普通接口' })
+      window.$toast({ title: 'IntelliJ IDEA 接口无法保存，请复制到 AsyncTest 接口' })
     } else {
       save();
     }

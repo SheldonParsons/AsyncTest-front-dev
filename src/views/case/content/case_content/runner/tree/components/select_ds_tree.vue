@@ -142,10 +142,10 @@ function changeExpanded(node: any) {
 async function get_tree_node_data(data: any, node: any) {
   const params = {
     project: route.params.project,
-    search_range: '0,1,3',
+    search_range: '0,1,4',
     excluded_ids: props.excluded_ids.join(","),
     node_id: node.data.id,
-    type: 1
+    type: 2
   }
   const search_data = await get_tree_data(params)
   replaceChildrenData(search_data[0].children, node.data.id)

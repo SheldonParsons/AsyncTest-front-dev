@@ -5,12 +5,12 @@
       <div @click="open_review_dialog" v-if="can_show_ds_detail">
         <PreView />预览
       </div>
-      <div @click="open_json_exchange_dialog" v-if="can_show_ds_detail">
+      <div @click="open_json_exchange_dialog" v-if="can_show_ds_detail && inOuter === false">
         <ExChange />JSON转数据结构
       </div>
     </div>
   </div>
-  <div class="private-table-outside" style="background-color: white;">
+  <div class="private-table-outside">
     <el-table v-model:data="tableData" style="width: 100%" row-key="id" default-expand-all class="main-table"
       :show-header="false">
       <template #empty>
@@ -40,12 +40,17 @@
       </el-table-column>
       <el-table-column label="请求值">
         <template #default="scope">
-          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null', 'ds'].includes(scope.row.t)">
-            {{ scope.row.t === 'ds' ? '' : scope.row.default }}
+          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null', 'ds'].includes(scope.row.t) && scope.row.t !== 'ds'">
+            {{ scope.row.default }}
           </div>
-          <div v-else class="core-value">
+          <div v-if="scope.row.t === 'ds' && can_show_ds_detail" @click.stop class="ds-detail-btn" style="width: 30px;">
+            <DsDetail :index="inOuter ? scope.row.ds_target : scope.row.ds_id" :inOuter="inOuter">
+            </DsDetail>
+          </div>
+          <div v-if="!['object', 'array', 'null', 'ds'].includes(scope.row.t)" class="core-value">
             <div style="width: 100%">
-              <CodeMirror v-model="scope.row.default" :enableNewLine="enableNewLine" :interface_id="interface">
+              <CodeMirror :display="can_show_ds_detail" v-model="scope.row.default" :enableNewLine="enableNewLine"
+                :interface_id="interface">
               </CodeMirror>
             </div>
           </div>
@@ -53,10 +58,12 @@
       </el-table-column>
       <el-table-column label="说明" min-width="50%">
         <template #default="scope">
-          <input placeholder="说明" v-model="scope.row.statement" class="private-input" />
+          <CodeMirror :display="can_show_ds_detail" v-model="scope.row.statement" :enableNewLine="enableNewLine"
+            :disable="can_show_ds_detail === false || inOuter === true" :canVar="false" :displayParam="false">
+          </CodeMirror>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="20%">
+      <el-table-column label="操作" min-width="20%" v-if="inOuter === false && can_show_ds_detail === true">
         <template #default="scope">
           <div style="display: flex;align-items: center;gap:3px" class="other-action">
             <motion.div v-if="props.tableData[0].id !== scope.row.id" :while-hover="{ scale: 1.05 }"
@@ -96,6 +103,7 @@ import PreView from "@/assets/svg/common/preview.vue";
 import ExChange from "@/assets/svg/common/exchange.vue";
 import GlobalStatus from "@/global";
 import { convertSchemaToObject } from "../object_to_string";
+import DsDetail from '@/views/api/child_context/req/body_child/comp/ds_detail.vue'
 import { ApiGetSummarySource } from "@/api/interface/index";
 import MotionDropdown from '@/views/api/child_context/req/body_child/comp/dropdown.vue'
 const route = useRoute();
@@ -478,7 +486,7 @@ function getRandomInt(min: any, max: any) {
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   padding: 7px 12px;
-  background-color: white;
+  // background-color: white;
 
   .title {
     font-size: 14px;

@@ -31,7 +31,7 @@ import InterfaceTree from '@/components/layout/menus/child/interface_menu_child/
 import OuterInterfaceTree from '@/components/layout/menus/child/interface_menu_child/outer_interface_tree.vue'
 import DataStructureTree from '@/components/layout/menus/child/interface_menu_child/data_structure_tree.vue'
 import OuterDataStructureTree from '@/components/layout/menus/child/interface_menu_child/outer_data_structure_tree.vue'
-import tools from "@/utils/tools";
+import { GlobalState } from "@/state/index";
 import { Filter } from "@element-plus/icons-vue";
 import ResourceFrom from '@/components/layout/menus/child/interface_menu_child/resource_from.vue'
 import _ from 'lodash'
@@ -46,6 +46,7 @@ const header: any = ref(null);
 
 function enter_project_summary() {
   current_source.value = current_source.value === 'inner' ? 'outer' : 'inner'
+  GlobalState.sendMessage("clean_all");
 }
 
 

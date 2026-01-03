@@ -27,22 +27,21 @@
                 </motion.div>
                 <span v-if="item.t < 4" class="method-span gradient-text"
                   :class="getMethodClass(item, current_tab_name)">{{
-                    item.t < 0 ? 'PATCH' : method_list[item.t]
-                  }}</span>
-                <span v-if="item.t === 7" class="method-span gradient-text">
-                  <DsLight v-if="current_tab_name === item.name" class="case-icon" style="height:15px" />
-                  <DS v-else class="case-icon" style="height:15px" />
-                </span>
-                <span class="method-span gradient-text g-e"
-                  :class="current_tab_name !== item.name ? 'title' : 'title-light'">{{
-                    item.title
-                  }}</span>
-                <div class="suffix-slot" @click.stop>
-                  <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
-                  <el-icon class="close-icon" @click.stop="closeTab(item, index)">
-                    <CloseBold />
-                  </el-icon>
-                </div>
+                    item.t < 0 ? 'PATCH' : method_list[item.t] }}</span>
+                    <span v-if="item.t === 7" class="method-span gradient-text">
+                      <DsLight v-if="current_tab_name === item.name" class="case-icon" style="height:15px" />
+                      <DS v-else class="case-icon" style="height:15px" />
+                    </span>
+                    <span class="method-span gradient-text g-e"
+                      :class="current_tab_name !== item.name ? 'title' : 'title-light'">{{
+                        item.title
+                      }}</span>
+                    <div class="suffix-slot" @click.stop>
+                      <el-badge v-if="item.hasChange" is-dot class="dot-badge" />
+                      <el-icon class="close-icon" @click.stop="closeTab(item, index)">
+                        <CloseBold />
+                      </el-icon>
+                    </div>
               </motion.div>
             </div>
             <div class="icon-div" style="border-left: 1px solid #f5f5f5;width: 70px;">
@@ -98,7 +97,7 @@ import DsLight from "@/assets/svg/tree/ds_light.vue";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
 import SettingBtn from "@/assets/svg/common/settings_btn.vue";
 import ContextMenu from "@/components/layout/menus/child/context_menu.vue";
-import Documentation from "./child_context/doc_page.vue";
+import Documentation from "@/views/api/child_context/doc_page.vue";
 import DataStructure from "@/views/api/child_context/data_structure/index.vue"
 import EmptyPage from "./child_context/empty_page.vue";
 import CreatePage from "./child_context/create_empty_page.vue";
@@ -198,6 +197,10 @@ const method_t_mapping: any = {
 watch(
   () => GlobalState.count,
   (newCount) => {
+    if (GlobalState.message === 'clean_all') {
+      editableTabs.value = []
+      cleanTab()
+    }
     if (GlobalState.message === "clean_interface_change") {
       const node_id = GlobalState.data.node_id;
       for (let i = 0; i < editableTabs.value.length; i++) {
@@ -655,10 +658,7 @@ function closeTab(
 ) {
   // 最后一个标签
   if (editableTabs.value.length === 1) {
-    change_page("empty_page");
-    clean_editor_tab();
-    current_tab_name.value = null;
-    // 非最后一个，但是是当前标签
+    cleanTab()
   } else if (current_tab_name.value === item.name) {
     editableTabs.value.splice(index, 1);
     current_tab_name.value =
@@ -672,6 +672,12 @@ function closeTab(
     editableTabs.value.splice(index, 1);
   }
   return null;
+}
+
+function cleanTab() {
+  change_page("empty_page");
+  clean_editor_tab();
+  current_tab_name.value = null;
 }
 
 function clean_editor_tab() {
