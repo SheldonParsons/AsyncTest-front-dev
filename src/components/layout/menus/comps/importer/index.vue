@@ -32,6 +32,9 @@
     <div class="preview" v-if="previewPage === 'postman'">
         <InterfacePreview :data="previewData"></InterfacePreview>
     </div>
+    <div class="preview" v-if="previewPage === 'idea'">
+        <IdeaPreview @close="close"></IdeaPreview>
+    </div>
 </template>
 
 <script setup lang="ts">
@@ -42,24 +45,40 @@ import ImportIcon from '@/assets/svg/common/import_icon.vue'
 import LoadingMini from '@/assets/motion/loading_mini.vue'
 import { PostmanParser } from '@/components/layout/menus/comps/importer/resolve_postman'
 import InterfacePreview from '@/components/layout/menus/comps/importer/interface_preview.vue'
+import IdeaPreview from '@/components/layout/menus/comps/importer/idea_preview.vue'
 import tools from "@/utils/tools";
 
 const FILE_MAX_COUNT = 1;
 const choiceImporter = ref(null)
 const previewPage = ref(null)
 const loading = ref(false)
-const previewData:any = ref(null)
+const previewData: any = ref(null)
+
+const emit = defineEmits(['close'])
+
+function close() {
+    emit("close")
+}
 
 const postman_mapping: any = {
     json: "json"
 };
 
 function choiceImporterAction(importer: any) {
+    console.log(importer);
+
     loading.value = true
-    setTimeout(() => {
-        choiceImporter.value = importer.key
-        loading.value = false
-    }, 500)
+    if (importer.key === 'idea') {
+        setTimeout(() => {
+            previewPage.value = importer.key
+            loading.value = false
+        }, 500)
+    } else {
+        setTimeout(() => {
+            choiceImporter.value = importer.key
+            loading.value = false
+        }, 500)
+    }
 }
 
 function fileHandleChange(options: any) {
@@ -78,10 +97,10 @@ function fileHandleChange(options: any) {
             previewData.value = postmanParser.parse(e.target.result)
         } catch (error) {
             loading.value = false
-            tools.message("解析文件失败，请检查您上传的文件格式。")      
-            return      
+            tools.message("解析文件失败，请检查您上传的文件格式。")
+            return
         }
-        
+
         console.log(previewData.value);
         setTimeout(() => {
             loading.value = false
@@ -121,6 +140,7 @@ function fileHandleChange(options: any) {
         align-items: center;
         // border-bottom: 1px solid #f0f0f0;
         padding: 5px;
+        gap: 5px;
 
         .item {
             // height: 50px;
@@ -129,13 +149,13 @@ function fileHandleChange(options: any) {
             justify-content: center;
             align-items: center;
             padding: 4px 8px;
-            border: 1px solid #f0f0f0;
+            border: 2px solid #f0f0f0;
             border-radius: 8px;
             gap: 8px;
 
             .img {
-                width: 40px;
-                height: 40px;
+                width: 35px;
+                height: 35px;
                 border-radius: 4px;
                 object-fit: fill;
             }
@@ -148,7 +168,7 @@ function fileHandleChange(options: any) {
         }
 
         .item:hover {
-            border: 1px solid #006e54;
+            border: 2px solid #000000;
         }
 
         .choice {

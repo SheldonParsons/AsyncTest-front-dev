@@ -1,6 +1,6 @@
 <template>
   <div class="body-tools">
-    <div class="title">数据结构</div>
+    <div class="title">数据结构 <span v-if="dsName.length > 0"> （{{ dsName }}）</span></div>
     <div class="tools">
       <div @click="open_review_dialog" v-if="can_show_ds_detail">
         <PreView />预览
@@ -132,6 +132,10 @@ const props = defineProps(
     inOuter: {
       type: Boolean,
       default: false
+    },
+    dsName: {
+      type: String,
+      default: ""
     }
   }
 );
@@ -201,6 +205,17 @@ const options = [
 ];
 
 const typingAttrMapping: any = GlobalStatus.regular_type_info_map();
+
+function can_show_ds_target() {
+  if (props.can_show_ds_detail === false && props.tableData && props.tableData.length > 0 && ('ds_target' in props.tableData[0] || 'name' in props.tableData[0])) {
+    return true
+  }
+  return false
+}
+
+function get_ds_target() {
+  return ` （${props.tableData[0].name}）`
+}
 
 function open_review_dialog() {
   unEditValueDialog.value.open_dialog();

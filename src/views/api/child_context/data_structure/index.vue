@@ -110,7 +110,7 @@ function addAltS(event: any) {
 
 async function save() {
     if (inOuter.value) {
-        window.$toast({ title: 'IntelliJ IDEA 数据结构无法保存，请复制到 AsyncTest 数据结构' })
+        window.$toast({ title: 'IntelliJ IDEA 数据结构无法修改，请同步到 AsyncTest 数据结构' })
         return
     }
     const _data = {

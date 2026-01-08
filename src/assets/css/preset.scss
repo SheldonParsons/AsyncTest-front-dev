@@ -100,6 +100,9 @@
   --el-radio-button-checked-bg-color: black !important;
   --el-radio-button-checked-border-color: black !important;
 }
+.el-table,.el-table tr {
+  background-color: transparent;
+}
 
 .el-table__inner-wrapper:before {
   background-color: transparent;

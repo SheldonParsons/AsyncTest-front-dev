@@ -785,7 +785,7 @@ function toggleCollapse() {
 
 function send() {
   if (is_outer_read_mode.value) {
-    window.$toast({title: 'Resource From 接口暂不支持调试，请复制到普通接口'})
+    window.$toast({title: 'IntelliJ IDEA 接口暂不支持调试，请同步到普通接口'})
     return
   }
   const _data = {
@@ -1157,7 +1157,7 @@ function addAltS(event: any) {
   ) {
     event.preventDefault(); // 阻止浏览器默认行为
     if (is_outer_read_mode.value) {
-      window.$toast({ title: 'IntelliJ IDEA 接口无法保存，请复制到 AsyncTest 接口' })
+      window.$toast({ title: 'IntelliJ IDEA 接口无法保存，请同步到 AsyncTest 接口' })
     } else {
       save();
     }
@@ -1227,6 +1227,10 @@ function clearUrl() {
 const emit = defineEmits(['change_method'])
 
 async function save() {
+  if (is_outer_read_mode.value) {
+    window.$toast({title: 'IntelliJ IDEA 接口无法修改，请同步到普通接口'})
+    return
+  }
   const content = getChangedTopLevelFields(data.value, originalData);
   const response_content = getChangedTopLevelFields(
     responseOptions.value,

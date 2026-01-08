@@ -66,7 +66,6 @@
                         data.method.toUpperCase() }}</span>
                 <div class="label-span-method">
                     <div class="g-ellipsis">{{ getName(data) }}</div>
-                    <!-- <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span> -->
                 </div>
             </div>
         </template>
@@ -89,32 +88,22 @@
     <TreeDialog v-model="show_tree_dialog" v-if="show_tree_dialog" :excluded_id="excluded_id" :move_name="move_name"
         @action="move_node">
     </TreeDialog>
-    <DialogAnimation ref="imporDialogtRef" :showComfirm="false" title="导入接口" cancel_title="取消" confirm_title="导入"
-        :bgtype="'white'" :before_comfirm="checkImport" :topMove="'0% !important'">
-        <Importer ref="importRef"></Importer>
-    </DialogAnimation>
 </template>
 
 
 <script lang="ts" setup>
 import { ref, watch, onMounted, getCurrentInstance, nextTick } from "vue";
-import DialogAnimation from '@/components/common/general/dialog.vue'
 import tools from "@/utils/tools";
-import Fold from "@/assets/svg/tree/fold.vue";
-import FoldExpend from "@/assets/svg/tree/fold_expend.vue";
 import { ElTree } from "element-plus";
 import { getOuterTree, ApiActionApiTree } from "@/api/program/tree";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
-import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
 import LoadingMini from '@/assets/motion/loading_mini.vue'
-import Importer from '@/components/layout/menus/comps/importer/index.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
-const router = useRouter();
 const method_color: any = {
     get: "green",
     post: "orange",

@@ -1,12 +1,12 @@
 <template>
-    <div class="motion-container">
+    <div class="motion-dropdown-container">
         <DropdownMenu.Root v-model:open="open">
-            <DropdownMenu.Trigger as-child :disabled="can_show_ds_detail === false">
+            <DropdownMenu.Trigger asChild :disabled="can_show_ds_detail === false">
                 <div style="display: flex;justify-content: center;align-items: center;gap: 5px;">
                     <TooltipAnimation :isOpen="showIdTooltip === scope.row.id">
                         <template #trigger>
-                            <motion.button class="motion-trigger g-e" @mouseenter="showIdTooltip = scope.row.id"
-                                @mouseleave="showIdTooltip = -1" :style="{
+                            <motion.button class="motion-dropdown-trigger g-e"
+                                @mouseenter="showIdTooltip = scope.row.id" @mouseleave="showIdTooltip = -1" :style="{
                                     color: typingAttrMapping[scope.row.t]['color'],
                                 }" :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.95 }">
                                 {{ get_name(scope) }} ▾
@@ -22,7 +22,7 @@
                 <AnimatePresence>
                     <DropdownMenu.Content v-if="open && inOuter === false" :side-offset="10" style="z-index: 9999;"
                         side="right">
-                        <motion.div class="motion-content" :initial="{ opacity: 0, scale: 0.85 }"
+                        <motion.div class="motion-dropdown-content" :initial="{ opacity: 0, scale: 0.85 }"
                             :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.85 }"
                             :transition="{ duration: 0.2 }" :style="{ willChange: 'transform, opacity' }">
                             <div class="context">
@@ -66,13 +66,11 @@ import { ref, watch } from 'vue'
 import { DropdownMenu } from 'reka-ui/namespaced'
 import { motion, AnimatePresence } from 'motion-v'
 import GlobalStatus from "@/global";
-import { CloseBold } from "@element-plus/icons-vue";
 import { Filter } from "@element-plus/icons-vue";
 import DS from "@/assets/svg/tree/ds.vue";
 import TreeNode from '@/views/case/content/case_content/runner/tree/components/select_ds_tree.vue'
 import { useRoute } from "vue-router";
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
-import DsDetail from '@/views/api/child_context/req/body_child/comp/ds_detail.vue'
 import MotionDropDown from '@/views/api/child_context/req/body_child/comp/motion_dropdown.vue'
 
 const route = useRoute();
@@ -161,13 +159,13 @@ const handleCommand = (item: any) => {
 
 <style lang="scss" scoped>
 /* 样式保持不变 */
-.motion-container {
+.motion-dropdown-container {
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.motion-trigger {
+.motion-dropdown-trigger {
     padding: 4px 8px;
     border-radius: 6px;
     background-color: #ffffff;
@@ -179,7 +177,7 @@ const handleCommand = (item: any) => {
     font-size: 0.9rem;
 }
 
-.motion-content {
+.motion-dropdown-content {
     background-color: #ffffff;
     height: 100%;
     background-color: var(--layer-transparent);
@@ -242,32 +240,5 @@ const handleCommand = (item: any) => {
             }
         }
     }
-
-    .close-icon {
-        padding: 3px;
-        cursor: pointer;
-        border-radius: 4px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-
-    .close-icon:hover {
-        background-color: #f0f0f0;
-        color: black;
-    }
-}
-
-.motion-item {
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: none;
-    color: #f5f5f5;
-    text-align: left;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    box-sizing: border-box;
 }
 </style>

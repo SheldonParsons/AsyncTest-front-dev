@@ -17,7 +17,7 @@
                 <AnimatePresence>
                     <DropdownMenu.Content v-if="open" :side-offset="10" style="z-index: 9999;" side="bottom">
                         <div class="no-scroll panel">
-                            <ObjectTable :tableData="dsData" :canRootDs="false" :inOuter="inOuter"
+                            <ObjectTable :tableData="dsData" :dsName="dsName" :canRootDs="false" :inOuter="inOuter"
                                 :can_show_ds_detail="false">
                             </ObjectTable>
                         </div>
@@ -40,6 +40,8 @@ import { ApiGetDsingle, ApiGetDsingleList } from '@/api/ds/index'
 const route = useRoute()
 
 const dsData = ref([])
+
+const dsName = ref("")
 
 const open = ref(false)
 
@@ -67,6 +69,7 @@ watch(open, (val: any) => {
                     return
                 }
                 dsData.value = res.data
+                dsName.value = res.name
             })
         } else {
             ApiGetDsingle(props.index, {}).then((res: any) => {
@@ -75,6 +78,7 @@ watch(open, (val: any) => {
                     return
                 }
                 dsData.value = res.data
+                dsName.value = res.name
             })
         }
     }

@@ -36,7 +36,9 @@
                         <DS class="case-icon" style="height: 13px" v-if="data.child_type === 4"></DS>
                     </span>
                     <div class="label-span-method">
-                        <div class="g-ellipsis">{{ data.name }}</div>
+                        <div class="g-ellipsis">{{ data.child_type === 4 && show_nick_name && data.remark.length > 0
+                        ? data.remark
+                        : data.name }}</div>
                         <span class="count-span" v-if="data.child_type < 2">({{ data.count }})</span>
                     </div>
                     <SelectDsMenu :data="data"
@@ -56,6 +58,9 @@
                             @click="() => { current_node = data.id; awalys_show_popover = data.id }">
                         </ExperBtn>
                     </SelectDsMenu>
+                    <div v-if="data.child_type === 0" @click.stop="show_nick_name = !show_nick_name">
+                        <SwitchBtn :type="show_nick_name"></SwitchBtn>
+                    </div>
                 </div>
             </ContextMemu>
         </template>
@@ -78,16 +83,11 @@
     <TreeDialog v-model="show_tree_dialog" v-if="show_tree_dialog" :excluded_id="excluded_id" :move_name="move_name"
         @action="move_node">
     </TreeDialog>
-    <DialogAnimation ref="imporDialogtRef" :showComfirm="false" title="导入接口" cancel_title="取消" confirm_title="导入"
-        :bgtype="'white'" :before_comfirm="checkImport" :topMove="'0% !important'">
-        <Importer ref="importRef"></Importer>
-    </DialogAnimation>
 </template>
 
 
 <script lang="ts" setup>
 import { ref, watch, onMounted, getCurrentInstance, nextTick } from "vue";
-import DialogAnimation from '@/components/common/general/dialog.vue'
 import tools from "@/utils/tools";
 import DS from "@/assets/svg/tree/ds.vue";
 import { ElTree } from "element-plus";
@@ -103,7 +103,7 @@ import SelectDsMenu from '@/components/layout/menus/comps_interface/select_ds_me
 import ExperBtn from '@/components/layout/menus/comps_interface/exper_btn.vue'
 import NodeWatcher from "@/components/layout/menus/child/NodeWatcher.vue";
 import LoadingMini from '@/assets/motion/loading_mini.vue'
-import Importer from '@/components/layout/menus/comps/importer/index.vue'
+import SwitchBtn from '@/components/layout/special/tooltips_btn.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
@@ -114,6 +114,7 @@ const method_color: any = {
     delete: "red",
 };
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
+const show_nick_name = ref(false)
 const dataSource: any = ref<Tree[]>([]);
 const treeRef: any = ref<InstanceType<typeof ElTree>>();
 const filterText = ref("");

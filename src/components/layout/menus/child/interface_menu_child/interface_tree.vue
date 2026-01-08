@@ -80,7 +80,7 @@
     </TreeDialog>
     <DialogAnimation ref="imporDialogtRef" :showComfirm="false" title="导入接口" cancel_title="取消" confirm_title="导入"
         :bgtype="'white'" :before_comfirm="checkImport" :topMove="'0% !important'">
-        <Importer ref="importRef"></Importer>
+        <Importer ref="importRef" @close="closeImport"></Importer>
     </DialogAnimation>
 </template>
 
@@ -93,7 +93,7 @@ import Fold from "@/assets/svg/tree/fold.vue";
 import FoldExpend from "@/assets/svg/tree/fold_expend.vue";
 import { ElTree } from "element-plus";
 import { getTree, ApiActionApiTree } from "@/api/program/tree";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
@@ -106,7 +106,6 @@ import Importer from '@/components/layout/menus/comps/importer/index.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
-const router = useRouter();
 const method_color: any = {
     get: "green",
     post: "orange",
@@ -554,6 +553,7 @@ watch(
             };
             changeMenu(_data, null, null, null);
         } else if (GlobalState.message === "reload_tree") {
+            console.log("in reload tree");
             save_current_hightlight();
             await load_tree();
             highlightNodeById(current_highlight_node.value);
@@ -722,6 +722,10 @@ function parseChromeFetch(fetchString: string) {
 }
 
 const current_tree_node: any = ref()
+
+function closeImport() {
+    imporDialogtRef.value.close()
+}
 
 async function action(father: number, action_type: string, data: any, node = null) {
     clean_popover()

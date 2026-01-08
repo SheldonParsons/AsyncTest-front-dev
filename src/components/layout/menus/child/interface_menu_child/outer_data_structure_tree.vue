@@ -68,16 +68,11 @@
     <TreeDialog v-model="show_tree_dialog" v-if="show_tree_dialog" :excluded_id="excluded_id" :move_name="move_name"
         @action="move_node">
     </TreeDialog>
-    <DialogAnimation ref="imporDialogtRef" :showComfirm="false" title="导入接口" cancel_title="取消" confirm_title="导入"
-        :bgtype="'white'" :before_comfirm="checkImport" :topMove="'0% !important'">
-        <Importer ref="importRef"></Importer>
-    </DialogAnimation>
 </template>
 
 
 <script lang="ts" setup>
 import { ref, watch, onMounted, getCurrentInstance, nextTick } from "vue";
-import DialogAnimation from '@/components/common/general/dialog.vue'
 import tools from "@/utils/tools";
 import DS from "@/assets/svg/tree/ds.vue";
 import { ElTree } from "element-plus";
@@ -90,7 +85,6 @@ import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
 import SwitchBtn from '@/components/layout/special/tooltips_btn.vue'
 import LoadingMini from '@/assets/motion/loading_mini.vue'
-import Importer from '@/components/layout/menus/comps/importer/index.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();

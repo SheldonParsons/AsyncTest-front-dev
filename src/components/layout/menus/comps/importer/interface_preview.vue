@@ -6,7 +6,7 @@
                     src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/importer/postman.png" alt="">
                 <InputAnimation v-model="filterText" :placeholder="'搜索 接口/目录名'" :maxLength="50"></InputAnimation>
             </div>
-            <el-tree style="margin-top: 10px;" show-checkbox class="api-tree no-scroll" ref="treeRef" draggable
+            <el-tree style="margin-top: 10px;" show-checkbox class="api-tree no-scroll" ref="treeRef"
                 :key="treeKey" id="api-tree-core" :data="data.tree" node-key="id" icon="ArrowRightBold"
                 :highlight-current="true" :expand-on-click-node="false" :default-expanded-keys="firstLevelKeys"
                 icon-class="none" :filter-node-method="filterNode">
@@ -182,6 +182,8 @@ function setChecked() {
 }
 
 async function run_import() {
+    window.$toast({title: '该功能暂未开放，敬请期待。'})
+    return
     if (loading.value === true) return
     setChecked()
     if (!check()) {
@@ -190,6 +192,7 @@ async function run_import() {
     loading.value = true
     setTimeout(() => {
         loading.value = false
+        window.$toast({title: '该功能暂未开放，敬请期待。'})
     }, 2000)
 }
 

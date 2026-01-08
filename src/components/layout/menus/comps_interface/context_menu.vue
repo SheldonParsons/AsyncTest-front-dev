@@ -66,7 +66,7 @@
                                                 <ContextMenu.Item class="context-menu-item"
                                                 v-if="data.child_type !== 2"
                                                 @select="menu_action(-1, 'import_content')">
-                                                    导入
+                                                    导入/同步
                                                     <div class="context-menu-shortcut">
                                                         <ImportIcon></ImportIcon>
                                                     </div>
