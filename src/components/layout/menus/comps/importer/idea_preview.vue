@@ -97,7 +97,7 @@
                 <InputAnimation v-model="filterDirText" :placeholder="'搜索 目录名'" :maxLength="50"></InputAnimation>
             </div>
             <div style="display: flex;flex: 1;gap: 10px;min-height: 0px;">
-                <div style="display: flex;flex-direction: column;gap: 10px;height: 100%;">
+                <div style="flex: 5;display: flex;flex-direction: column;gap: 10px;height: 100%;min-width: 0;">
                     <div class="dir-tree no-scroll">
                         <el-tree ref="treeRefInterface" :data="targetDirSourceData" node-key="id" icon="ArrowRightBold"
                             @node-click="choice_interface_node" :highlight-current="true" :expand-on-click-node="false"
@@ -208,7 +208,7 @@
                         </div>
                     </div>
                 </div>
-                <div style="flex: 5;display: flex;flex-direction: column;gap: 10px;">
+                <div style="flex: 5;display: flex;flex-direction: column;gap: 10px;min-width: 0;height: 100%;">
                     <div class="dir-tree no-scroll">
                         <el-tree ref="treeRefDs" :data="targetDirSourceDataDs" node-key="id" icon="ArrowRightBold"
                             @node-click="choice_ds_node" :highlight-current="true" :expand-on-click-node="false"

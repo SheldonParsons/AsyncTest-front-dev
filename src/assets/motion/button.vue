@@ -5,8 +5,8 @@
             borderColor: '#939393',
             backgroundColor: '#939393'
         }" :initial="{
-            borderColor: '#e3e3e3',
-            backgroundColor: '#e3e3e3'
+            borderColor: '#000000',
+            backgroundColor: '#000000'
         }" :transition="{
             duration: 0.2,
             ease: 'linear'

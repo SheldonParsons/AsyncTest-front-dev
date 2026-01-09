@@ -528,6 +528,8 @@ watch(
             GlobalState.message === "change_dir_tab" ||
             GlobalState.message === "change_interface_tab"
         ) {
+            console.log(GlobalState.data.id);
+            
             const node_id: number = GlobalState.data.id;
             await highlightNodeById(node_id);
         } else if (GlobalState.message === "change_empty_tab") {
@@ -930,6 +932,8 @@ interface Tree {
 function changeMenu(data: any, node: any, event: any, event_object: any) {
     if (data.child_type === 2) {
         send_message_to_tab("click_interface", data, node);
+    } else {
+        send_message_to_tab("click_outer_interface", data, node);
     }
     // if (data.child_type === 1) {
     //     send_message_to_tab("click_dir", data, node);

@@ -113,11 +113,16 @@ const props = defineProps({
 })
 
 function get_name(scope: any) {
+    console.log(scope.row);
+
     if (scope.row.t === 'ds') {
         if ("content_type" in scope.row) {
             return scope.row.content_type
         } else {
-            return scope.row.name
+            if (!('t_name' in scope.row)) {
+                scope.row.t_name = scope.row.name
+            }
+            return scope.row.t_name
         }
     } else {
         return scope.row.t.charAt(0).toUpperCase() + scope.row.t.slice(1)

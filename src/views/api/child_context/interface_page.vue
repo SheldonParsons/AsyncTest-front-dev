@@ -715,7 +715,7 @@ const props = defineProps({
     default: null,
   },
   interface_id: {
-    type: Number,
+    type: null,
     default: null,
   },
   is_case: {

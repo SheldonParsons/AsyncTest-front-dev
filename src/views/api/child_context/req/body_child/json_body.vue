@@ -11,7 +11,7 @@
     </div>
   </div>
   <div class="private-table-outside">
-    <el-table v-model:data="tableData" style="width: 100%" row-key="id" default-expand-all class="main-table"
+    <el-table v-model:data="tableData" style="width: 100%" row-key="id" default-expand-all class="main-table no-scroll"
       :show-header="false">
       <template #empty>
         <div v-if="loading">
@@ -40,7 +40,8 @@
       </el-table-column>
       <el-table-column label="请求值">
         <template #default="scope">
-          <div class="private-deafult g-unselect" v-if="['object', 'array', 'null', 'ds'].includes(scope.row.t) && scope.row.t !== 'ds'">
+          <div class="private-deafult g-unselect"
+            v-if="['object', 'array', 'null', 'ds'].includes(scope.row.t) && scope.row.t !== 'ds'">
             {{ scope.row.default }}
           </div>
           <div v-if="scope.row.t === 'ds' && can_show_ds_detail" @click.stop class="ds-detail-btn" style="width: 30px;">
@@ -106,6 +107,8 @@ import { convertSchemaToObject } from "../object_to_string";
 import DsDetail from '@/views/api/child_context/req/body_child/comp/ds_detail.vue'
 import { ApiGetSummarySource } from "@/api/interface/index";
 import MotionDropdown from '@/views/api/child_context/req/body_child/comp/dropdown.vue'
+import tools from '@/utils/tools'
+import { ApiDsMixin, } from '@/api/ds/index'
 const route = useRoute();
 // 定义组件属性
 const props = defineProps(
@@ -217,7 +220,34 @@ function get_ds_target() {
   return ` （${props.tableData[0].name}）`
 }
 
-function open_review_dialog() {
+const is_loading_preview = ref(false)
+async function open_review_dialog() {
+  if (is_loading_preview.value) {
+    window.$toast({ title: '正在加载预览信息，请勿重复提交' })
+    return
+  }
+  is_loading_preview.value = true
+  const preview_data = {
+    type: 0,
+    child_action_type: "generate_review",
+    content: {
+      json_data: props.tableData,
+      is_outer_ds: props.inOuter,
+      project: route.params.project
+    }
+  }
+  const res = await tools.send(ApiDsMixin, preview_data)
+  if (res === false) {
+    is_loading_preview.value = false
+    return
+  } else {
+    unEditValueDialog.value.open_dialog();
+    unEditValueDialog.value.set_code(res);
+    is_loading_preview.value = false
+    return
+  }
+
+
   unEditValueDialog.value.open_dialog();
   if (props.interface !== -1) {
     const _data = {
@@ -346,10 +376,11 @@ const handleCommand = (command: any) => {
       const parts = name.split("--");
       name = parts[1];
     }
-
+    if (!('t_name' in command[2])) {
+      command[0].t_name = name
+    }
     command[0].t = 'ds'
     console.log('content_type' in command[2]);
-
     command[0].name = 'content_type' in command[2] ? command[2].content_type : command[2].name
     command[0]['ds_id'] = command[2].target
     command[0].children = []

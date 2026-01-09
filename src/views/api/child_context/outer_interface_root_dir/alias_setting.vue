@@ -2,41 +2,39 @@
     <SplitterGroup direction="vertical">
         <SplitterPanel :default-size="7" :min-size="7" :max-size="7">
             <div
-                style="height:100%;width: 100%;display: flex;justify-content: end;align-items: center;padding-right: 20px;box-sizing: border-box;">
+                style="height:100%;width: 100%;display: flex;justify-content: end;align-items: center;box-sizing: border-box;padding: 5px;gap: 10px;padding-right: 20px;">
+                <div>
+                    <InputAnimation v-model="search_text" :placeholder="'搜索目录、路径'" :maxLength="50"></InputAnimation>
+                </div>
                 <MotionButton @click="more_action('create', null, null)" style="width: 100px;height: 30px;">
                     <div style="display: flex;justify-content: space-between;align-items: center;gap: 3px;">
-                        <div style="font-size: 14px;color: white;">新增 Client</div>
+                        <div style="font-size: 14px;color: white;">新增 Alias</div>
                     </div>
                 </MotionButton>
             </div>
         </SplitterPanel>
-        <SplitterPanel :default-size="78" :min-size="78" :max-size="78">
+        <SplitterPanel :default-size="71" :min-size="71" :max-size="71">
             <div class="data-set-container">
                 <BlankAmination v-if="data.length === 0"></BlankAmination>
                 <motion.div v-if="data.length !== 0" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                     :exit="{ opacity: 0 }" :transition="{ duration: 1.2 }" class="header">
                     <div class="inner">
-                        <div class="title title-id">ID</div>
-                        <div class="title title-name">客户端名称</div>
-                        <div class="title title-running-task">运行中任务</div>
-                        <div class="title title-update">连接信息</div>
-                        <div class="title title-update-person">空闲内存</div>
+                        <div class="title title-name">Alias</div>
+                        <div class="title title-update">匹配模式</div>
+                        <div class="title title-update-person">关联模块</div>
                         <div class="title title-status">是否启用</div>
-                        <div class="title title-status">状态</div>
+                        <div class="title title-status">匹配名称</div>
+                        <div class="title title-action">匹配路径</div>
                         <div class="title title-action">操作</div>
-                        <div class="title title-action">探测</div>
                     </div>
                 </motion.div>
                 <div class="data no-scroll" v-if="data.length !== 0">
                     <motion.div :initial="{ opacity: 0 }" :animate="{ opacity: 1 }" :exit="{ opacity: 0 }"
                         :transition="{ duration: 1.2 }" class="data-item" v-for="(item, index) in data" :key="index">
-                        <div class="title title-id g-e"><span># {{ item.id }}</span></div>
-                        <div class="title title-name g-e"><span>{{ item.name }}</span></div>
-                        <div class="title title-running-task g-e"><span>{{ item.running_task }}</span></div>
-                        <div class="title title-update" style="cursor: pointer;"><span>{{ item.ip + ':' +
-                            item.port }}</span>
+                        <div class="title title-name g-e"><span>{{ item.alias }}</span></div>
+                        <div class="title title-update" style="cursor: pointer;"><span>{{ item.match_type }}</span>
                         </div>
-                        <div class="title title-update-person" style="cursor: pointer;">{{ item.memory_available }} Mb
+                        <div class="title title-update-person" style="cursor: pointer;">{{ item.match_module }}
                         </div>
                         <div class="title title-update-person" style="cursor: pointer;">
                             <div class="switch-container">
@@ -63,8 +61,11 @@
                                 </Switch.Root>
                             </div>
                         </div>
-                        <div class="title title-update-person" style="cursor: pointer;" :class="item.status">{{
-                            item.status.toUpperCase() }}
+                        <div class="title title-update-person" style="cursor: pointer;" :class="item.status">
+                            {{ item.match_name }}
+                        </div>
+                        <div class="title title-action" @click.stop>
+                            {{ item.match_path }}
                         </div>
                         <div class="title title-action" @click.stop>
                             <div>
@@ -72,13 +73,6 @@
                                     @action="(action_type: any) => more_action(action_type, item, index)">
                                 </ActionGroup>
                             </div>
-                        </div>
-                        <div class="title title-action" @click.stop>
-                            <motion.div @click="source_ping(item)" class="run-btn" :whilePress="{ scale: 0.9 }"
-                                :whileHover="{ scale: 1.05 }">
-                                <PingSvg />
-                                <div>Ping</div>
-                            </motion.div>
                         </div>
                     </motion.div>
                 </div>
@@ -90,12 +84,9 @@
             </div>
         </SplitterPanel>
     </SplitterGroup>
-    <DialogAnimation ref="clientDetailRef" :title="is_edit ? '编辑 AsyncExecutor Client' : '新增 AsyncExecutor Client'"
+    <DialogAnimation ref="clientDetailRef" :title="is_edit ? '编辑 Alias' : '新增 Alias'"
         cancel_title="取消" :confirm_title="is_edit ? '修改' : '新增'" :bgtype="'white'" :before_comfirm="check_client_detail"
         :topMove="'0% !important'">
-        <AsyncExecutorDetail ref="asyncExecutorDetailRef" @ping="create_ping" :is_edit="is_edit"
-            :client_info="current_client_info">
-        </AsyncExecutorDetail>
     </DialogAnimation>
 </template>
 
@@ -106,19 +97,19 @@ import { motion } from 'motion-v'
 import { SplitterGroup, SplitterPanel } from 'reka-ui'
 // @ts-ignore
 import { Switch, Tooltip } from 'reka-ui/namespaced';
+import InputAnimation from '@/components/common/general/input.vue'
 import Pagination from '@/components/common/general/pagination.vue'
 import { HttpClass } from "@/utils/http";
 import MotionButton from '@/assets/motion/button.vue'
 import BlankAmination from '@/components/common/blank/blank_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
-import PingSvg from '@/assets/logo/final/match_vue/ping.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
-import AsyncExecutorDetail from '@/views/settings/source_management/async_executor_child/client_detail.vue'
 import { useRoute } from 'vue-router'
-import { ApiGetAsyncExecutorClientList, ApiPostAsyncExecutorClient, ApiAsyncExecutorClient, ApiDeleteAsyncExecutorClient } from '@/api/project/index'
+import { ApiGetAliasSettingList, ApiPostAliasSetting, ApiUpdateAliasSetting, ApiDeleteAliasSetting } from '@/api/project/index'
 import tools from '@/utils/tools'
 
 const route = useRoute()
+const search_text = ref("")
 const data: any = ref([])
 
 let cancelTokenSource: any;
@@ -142,54 +133,16 @@ onMounted(async () => {
 })
 
 const toggleChecked = async (item: any) => {
-    const update_result = await tools.send(ApiAsyncExecutorClient, item.id, {}, { enable: !item.enable })
+    const update_result = await tools.send(ApiUpdateAliasSetting, item.id, {}, { enable: !item.enable })
     if (update_result) {
         item.enable = update_result.enable
-        item.status = update_result.status
-        console.log(update_result.enable);
         window.$toast({ title: `${update_result.enable ? '已启用' : '已禁用'}` })
     } else {
         item.enable = false
-        item.status = 'OFFLINE'
     }
 }
 
-async function source_ping(item: any) {
-    const params = {
-        id: item.id,
-        type: 'ping'
-    }
-    function _reflush_data(ping_result: any) {
-        if (ping_result.result == true) {
-            item.memory_available = ping_result.info.memory_available
-        } else {
-            item.enable = ping_result.info.enable
-        }
-        item.status = ping_result.info.status
-    }
-    await ping({}, params, _reflush_data)
-}
 
-async function create_ping(data: any) {
-    const params = {
-        type: 'ping'
-    }
-    await ping(data, params)
-}
-
-async function ping(data: any, params: any, callback: any = null) {
-    const ping_result = await tools.send(ApiPostAsyncExecutorClient, data, params)
-    if (ping_result) {
-        if (ping_result.result == true) {
-            window.$toast({ title: `连接成功！空闲内存:${ping_result.info.memory_available} Mb`, type: 'success' })
-        } else {
-            window.$toast({ title: `无法连接，请检查配置信息`, type: 'error' })
-        }
-        if (callback) {
-            callback(ping_result)
-        }
-    }
-}
 
 function omit(obj: any, keys: any) {
     return Object.fromEntries(
@@ -199,7 +152,7 @@ function omit(obj: any, keys: any) {
 
 async function more_action(t: string, item: any, index: any) {
     if (t === 'delete') {
-        const update_result = await tools.send(ApiDeleteAsyncExecutorClient, item.id, {})
+        const update_result = await tools.send(ApiDeleteAliasSetting, item.id, {})
         if (update_result) {
             cancelTokenSource = getAbortController()
             await get_data(cancelTokenSource)
@@ -212,7 +165,7 @@ async function more_action(t: string, item: any, index: any) {
         if (result.action === 'cancel') return
         let _data = asyncExecutorDetailRef.value.get_data()
         _data = omit(_data, ['name', 'ip', 'port'])
-        const update_result = await tools.send(ApiAsyncExecutorClient, item.id, {}, _data)
+        const update_result = await tools.send(ApiUpdateAliasSetting, item.id, {}, _data)
         console.log(update_result);
         const index = data.value.findIndex((origin_item: any) => origin_item.id, item.id)
         data.value[index] = update_result
@@ -224,7 +177,7 @@ async function more_action(t: string, item: any, index: any) {
         const params = {
             type: 'create'
         }
-        const post_result = await tools.send(ApiPostAsyncExecutorClient, _data, params)
+        const post_result = await tools.send(ApiPostAliasSetting, _data, params)
         if (post_result) {
             data.value.unshift(post_result)
         }
@@ -253,7 +206,7 @@ async function get_data(cancelTokenSource: any) {
         page: page_number.value
     }
     data.value = []
-    ApiGetAsyncExecutorClientList({ params: _data, cancelToken: cancelTokenSource.token }).then((res: any) => {
+    ApiGetAliasSettingList({ params: _data, cancelToken: cancelTokenSource.token }).then((res: any) => {
         data.value = res.data
         total_count.value = res.total
     })

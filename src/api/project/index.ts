@@ -187,6 +187,59 @@ export function ApiPostDatabaseConnectionValid(
   });
 }
 
+export function ApiGetAliasSettingList(config: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.cancelHttpGet(`/project/alias_setting`, config).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiPostAliasSetting(
+  data: any,
+  params: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http
+      .httpPost(
+        "/project/alias_setting",
+        data,
+        (params = params)
+      )
+      .then((res: any) => {
+        resolve(res);
+      });
+  });
+}
+
+// 修改 AsyncExecutorClient
+export function ApiUpdateAliasSetting(
+  id: number,
+  params: any,
+  data: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http
+      .httpPut(`/project/alias_setting/${id}`, data, params)
+      .then((res: any) => {
+        resolve(res);
+      });
+  });
+}
+
+// 删除 AsyncExecutorClient
+export function ApiDeleteAliasSetting(
+  pk: string,
+  data: any
+): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpDelete(`/project/alias_setting/${pk}`, data).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+
 
 // AsyncExecutorClient列表
 export function ApiGetAsyncExecutorClientList(config: any): Promise<String> {

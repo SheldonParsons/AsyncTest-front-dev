@@ -80,6 +80,7 @@
         :target_type="current_target_type"></RootDir>
       <DsDir v-if="show_type === 4" :page_target="current_page_target"></DsDir>
       <DataStructure v-if="show_type === 5" :page_target="current_page_target"></DataStructure>
+      <OuterRootDir v-if="show_type === 6"></OuterRootDir>
       <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
       <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
       <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
@@ -91,7 +92,7 @@
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import Fold from "@/assets/svg/tree/fold.vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import DS from "@/assets/svg/tree/ds.vue";
 import DsLight from "@/assets/svg/tree/ds_light.vue";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
@@ -103,6 +104,7 @@ import EmptyPage from "./child_context/empty_page.vue";
 import CreatePage from "./child_context/create_empty_page.vue";
 import RootDir from "./child_context/root_dir_index.vue";
 import DsDir from '@/views/api/child_context/ds_dir.vue'
+import OuterRootDir from '@/views/api/child_context/outer_interface_root_dir/index.vue'
 import EnvSettingDialog from "@/views/api/public_dialog/env_setting_dialog.vue";
 import { GlobalState } from "@/state/index";
 import tools from "@/utils/tools";
@@ -143,7 +145,8 @@ const page_mapping: any = {
   api_page: 2,
   dir_page: 3,
   ds_dir_page: 4,
-  ds_page: 5
+  ds_page: 5,
+  outer_interface_root_dir_page: 6
 };
 
 const tab_type_to_show_page_mapping: any = {
@@ -154,7 +157,8 @@ const tab_type_to_show_page_mapping: any = {
   4: "dir_page",
   5: "create_page",
   6: "ds_dir_page",
-  7: "ds_page"
+  7: "ds_page",
+  8: "outer_interface_root_dir_page"
 };
 
 interface EditorTab {
@@ -302,7 +306,21 @@ function findLastNonNull(arr: (EditorTab | null)[]): EditorTab | null {
 watch(
   () => props.changeApiContent,
   (val) => {
-    if (val.type === "click_interface") {
+    if (val.type === "click_outer_interface") {
+      console.log(val.data);
+      console.log(val.node)
+      if (val.data.child_type === 0 && val.node.level === 1) {
+        console.log("root dir");
+        change_tab_and_change_page(
+          'IDEA 全局设置',
+          8,
+          val.data.id,
+          false,
+          null,
+          null
+        );
+      }
+    } else if (val.type === "click_interface") {
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
@@ -320,8 +338,7 @@ watch(
         null,
         target
       );
-    }
-    if (val.type === "click_ds") {
+    } else if (val.type === "click_ds") {
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
@@ -338,8 +355,7 @@ watch(
         null,
         target
       );
-    }
-    if (val.type === "click_dir" || val.type === "click_root_dir") {
+    } else if (val.type === "click_dir" || val.type === "click_root_dir") {
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
@@ -353,8 +369,7 @@ watch(
         val.data.target,
         val.data.child_type
       );
-    }
-    if (val.type === "click_ds_dir" || val.type === "click_ds_root_dir") {
+    } else if (val.type === "click_ds_dir" || val.type === "click_ds_root_dir") {
       if (is_current_tab_by_index(val.data.id)) {
         return;
       }
@@ -547,7 +562,6 @@ function change_page_status_by_t(t: number) {
     } else {
       show_type.value = page_mapping[tab_type_to_show_page_mapping[t]];
     }
-
     setTimeout(() => {
       GlobalState.sendMessage("paste_interface_info", { data: current_paste_object.value });
     }, 0)
@@ -559,7 +573,7 @@ function is_interface(t: number) {
 }
 
 function is_dir(t: number) {
-  return t === 4;
+  return t === 4 || t === 6;
 }
 
 function try_change_current_tab(name: string, index: number = -1): boolean {
