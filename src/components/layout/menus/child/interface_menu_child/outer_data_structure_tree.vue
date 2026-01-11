@@ -44,6 +44,11 @@
                         ? data.alias
                         : data.name }}</div>
                 </div>
+                <div v-if="data.child_type === 0 && node.level === 1" @click.stop="reFlush">
+                    <MiniIconBtn :text="'刷新'">
+                        <Refresh></Refresh>
+                    </MiniIconBtn>
+                </div>
                 <div v-if="data.child_type === 0" @click.stop="show_nick_name = !show_nick_name">
                     <SwitchBtn :type="show_nick_name"></SwitchBtn>
                 </div>
@@ -85,6 +90,8 @@ import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
 import SwitchBtn from '@/components/layout/special/tooltips_btn.vue'
 import LoadingMini from '@/assets/motion/loading_mini.vue'
+import MiniIconBtn from '@/components/common/general/mini_icon_btn.vue'
+import Refresh from '@/assets/svg/common/refresh.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
@@ -119,8 +126,8 @@ onMounted(async () => {
     await load_tree();
 });
 
-async function checkImport() {
-    return true
+async function reFlush() {
+    await load_tree();
 }
 
 async function load_tree(search_range = [0, 1, 4], excluded_ids = []) {

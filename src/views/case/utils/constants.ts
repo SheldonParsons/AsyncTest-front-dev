@@ -9,6 +9,25 @@ export const envStrategy: any = [
     }
 ]
 
+export const timeoutStrategy: any = [
+    {
+        key: 'no',
+        value: "不重试"
+    },
+    {
+        key: 'timeout',
+        value: "超时重试"
+    },
+    {
+        key: "code",
+        value: "响应码"
+    },
+    {
+        key: "script",
+        value: "自定义脚本"
+    }
+]
+
 export const errorMultitaskerStrategy: any = [
     {
         key: 'current_step',
@@ -291,22 +310,22 @@ export const caseMultitaskerLoopStrategy: any = [
 ]
 
 export function generateHours(): { key: string, value: string }[] {
-  const result: { key: string, value: string }[] = [];
-  for (let i = 0; i < 24; i++) {
-    const str = i.toString().padStart(2, "0");
-    result.push({ key: str, value: str });
-  }
-  return result;
+    const result: { key: string, value: string }[] = [];
+    for (let i = 0; i < 24; i++) {
+        const str = i.toString().padStart(2, "0");
+        result.push({ key: str, value: str });
+    }
+    return result;
 }
 
 // 2. 生成 00~59 的分钟数组
 export function generateMinutes(): { key: string, value: string }[] {
-  const result: { key: string, value: string }[] = [];
-  for (let i = 0; i < 60; i++) {
-    const str = i.toString().padStart(2, "0");
-    result.push({ key: str, value: str });
-  }
-  return result;
+    const result: { key: string, value: string }[] = [];
+    for (let i = 0; i < 60; i++) {
+        const str = i.toString().padStart(2, "0");
+        result.push({ key: str, value: str });
+    }
+    return result;
 }
 
 

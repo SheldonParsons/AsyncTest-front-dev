@@ -63,12 +63,12 @@
                                     @click.stop="show_nick_name = !show_nick_name">
                                     <SwitchBtn :type="show_nick_name" :trueText="'显示原始名'"></SwitchBtn>
                                 </div>
-                                <div v-if="data.child_type !== 0" @click="setNameMatch(data)">
+                                <div v-if="node.level !== 1" @click="setNameMatch(data)">
                                     <MiniIconBtn :text="'设置匹配名称'">
                                         <GetNameSvg></GetNameSvg>
                                     </MiniIconBtn>
                                 </div>
-                                <div v-if="data.child_type !== 0" @click="setPathMatch(data)">
+                                <div v-if="node.level !== 1" @click="setPathMatch(data)">
                                     <MiniIconBtn :text="'设置匹配路径'">
                                         <GetPathSvg></GetPathSvg>
                                     </MiniIconBtn>
