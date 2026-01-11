@@ -67,6 +67,14 @@
                 <div class="label-span-method">
                     <div class="g-ellipsis">{{ getName(data) }}</div>
                 </div>
+                <div v-if="data.child_type === 0 && node.level === 1" @click.stop="reFlush">
+                    <MiniIconBtn :text="'刷新'">
+                        <Refresh></Refresh>
+                    </MiniIconBtn>
+                </div>
+                <div v-if="data.child_type === 0 && node.level === 1" @click.stop="show_nick_name = !show_nick_name">
+                    <SwitchBtn :type="show_nick_name" :trueText="'显示原始名'"></SwitchBtn>
+                </div>
             </div>
         </template>
     </el-tree>
@@ -101,15 +109,18 @@ import SimpleDialog from "@/views/api/public_dialog/simple_dialog.vue";
 import TreeDialog from "@/views/api/public_dialog/tree_select_dialog.vue";
 import { GlobalState } from "@/state/index";
 import LoadingMini from '@/assets/motion/loading_mini.vue'
+import SwitchBtn from '@/components/layout/special/tooltips_btn.vue'
+import MiniIconBtn from '@/components/common/general/mini_icon_btn.vue'
+import Refresh from '@/assets/svg/common/refresh.vue'
 import _ from 'lodash'
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
 const method_color: any = {
-    get: "green",
-    post: "orange",
-    put: "blue",
-    delete: "red",
-    patch: "blue"
+    get: "get",
+    post: "post",
+    put: "put",
+    delete: "delete",
+    patch: "patch"
 };
 const emit = defineEmits(["changeMenu", "switchRouterAction"]);
 const dataSource: any = ref<Tree[]>([]);
@@ -118,6 +129,7 @@ const filterText = ref("");
 const current_node = ref(-1);
 const show_popover = ref(true);
 const awalys_show_popover = ref(-1);
+const show_nick_name = ref(true)
 const loading = ref(false);
 const show_dialog = ref(false);
 const show_tree_dialog = ref(false);
@@ -140,11 +152,20 @@ onMounted(async () => {
     await load_tree();
 });
 
+async function reFlush() {
+    await load_tree();
+}
+
 async function checkImport() {
     return true
 }
 
 function getName(data: any) {
+    if (show_nick_name.value) {
+        if (data.ast_alias && data.ast_alias.length > 0) {
+            return data.ast_alias
+        }
+    }
     if ((data.child_type === 1 && data.code_type === 2) || (data.child_type === 2 && data.code_type === 3)) {
         if (data.alias.length !== 0) {
             return data.alias
@@ -529,7 +550,7 @@ watch(
             GlobalState.message === "change_interface_tab"
         ) {
             console.log(GlobalState.data.id);
-            
+
             const node_id: number = GlobalState.data.id;
             await highlightNodeById(node_id);
         } else if (GlobalState.message === "change_empty_tab") {
@@ -1259,50 +1280,58 @@ function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
     height: calc(100vh - 313px);
 }
 
-.red {
-    background: linear-gradient(180deg, black 0%, #9c4c4c 30%);
-}
-
-.green {
-    background: linear-gradient(180deg, black 0%, #4fa380 50%);
-}
-
-.blue {
-    background: linear-gradient(180deg, black 0%, #504c9d 30%);
-}
-
-.orange {
-    // color: #eead0e;
-    background: linear-gradient(180deg, black 0%, #b87e52 50%);
-}
-
-.gradient-text {
-    /* 定义背景渐变 */
-    /* 将背景裁剪到文字（仅 WebKit 内核生效）*/
-    -webkit-background-clip: text;
-    /* 文字本身透明，这样才能显示背景 */
-    -webkit-text-fill-color: transparent;
-    /* 对非 WebKit 浏览器，也可以加上普通 background-clip */
-    background-clip: text;
-    /* 如果希望支持 Firefox，需要开启 text-fill-color 的标准属性（目前仍需前缀或兼容写法） */
-    color: transparent;
-    font-weight: 800;
-}
-
-.purple {
-    background: linear-gradient(to right, #7b42f6, #b01eff);
-    /* 从左到右的渐变 */
-    -webkit-background-clip: text;
-    /* 背景裁剪为文字 */
-    color: transparent;
-    font-size: 12px !important;
-}
-
 .method-span {
-    font-weight: 500;
-    font-size: 10px;
-    text-align: right;
-    font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 4px;
+    border-radius: 4px;
+    /* 小圆角更显硬朗高级 */
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+}
+
+/* --- 1. GET: 最轻，只读 (Light Ghost) --- */
+.get {
+    background-color: #f3f4f6;
+    /* 极浅灰 */
+    color: #52525b;
+    /* 深灰字 */
+    border-color: #e5e7eb;
+    /* 浅边框 */
+}
+
+/* --- 2. POST: 新增，强调 (Solid Black) --- */
+.post {
+    background-color: #18181b;
+    /* 接近纯黑 */
+    color: #ffffff;
+    /* 纯白字 */
+    border-color: #18181b;
+}
+
+/* --- 3. PUT/PATCH: 修改，中间态 (Medium Gray) --- */
+.put,
+.patch {
+    background-color: #e4e4e7;
+    /* 中灰 */
+    color: #27272a;
+    /* 近黑字 */
+    border-color: #d4d4d8;
+}
+
+/* --- 4. DELETE: 危险，高对比镂空 (Outlined Danger) --- */
+.delete {
+    background-color: transparent;
+    color: #000000;
+    border: 1px solid #000000;
+    /* 实线黑边框，强调边界 */
+    font-weight: 700;
+    /*以此区分 */
 }
 
 .label-span {

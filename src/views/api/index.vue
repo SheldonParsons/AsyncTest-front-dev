@@ -10,7 +10,7 @@
               </el-icon>
             </div>
             <div class="no-scroll" id="tabsUl"
-              style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: scroll;gap: 5px;">
+              style="flex: 1;display: flex;align-items: center;justify-content: start;height: 100%;overflow: scroll;gap: 5px;padding: 0px 5px;">
               <motion.div v-for="(item, index) in editableTabs" :key="item.name" class="tab-item"
                 :class="{ active: current_tab_name === item.name }" :initial="{ opacity: 0, y: -4 }"
                 :animate="{ opacity: 1, y: 0 }" :whileHover="{ backgroundColor: '#ebeff5', color: '#222' }"
@@ -117,8 +117,8 @@ import {
 
 const { proxy }: any = getCurrentInstance();
 const method_list = ["GET", "POST", "PUT", "DELETE"];
-const method_color = ["green", "orange", "blue", "red"];
-const method_color_unactive = ["unactive-green", "unactive-orange", "unactive-blue", "unactive-red"];
+const method_color = ["get", "post", "put", "delete"];
+const method_color_unactive = ["unactive-get", "unactive-post", "unactive-put", "unactive-delete"];
 const show_type = ref(1);
 const visible_env_setting_dialog = ref(false);
 const route = useRoute();
@@ -399,9 +399,9 @@ function getMethodClass(item: any, current_tab_name: string) {
   }
   if (item.t < 0) {
     if (current_tab_name === item.name) {
-      return 'blue'
+      return 'patch'
     } else {
-      return 'unactive-blue'
+      return 'unactive-patch'
     }
   }
 
@@ -838,9 +838,7 @@ function change_user_env(item: any) {
     cursor: pointer;
     user-select: none;
     background-color: #f0f5f9 !important;
-    ;
     color: #444 !important;
-    ;
     transition: background-color .18s, color .18s;
     position: relative;
     font-size: 14px;
@@ -971,39 +969,23 @@ function change_user_env(item: any) {
   background: linear-gradient(360deg, #ffffff, rgb(255, 255, 255));
 }
 
-
-.red {
-  background: linear-gradient(360deg, #9c4c4c, white);
+.get,
+.post,
+.put,
+.delete {
+  background-color: #f3f4f6;
+  color: #52525b;
+  border-color: #e5e7eb;
 }
 
-.green {
-  background: linear-gradient(360deg, #4fa380, white);
+
+.unactive-get,
+.unactive-post,
+.unactive-put,
+.unactive-delete {
+  background: black;
 }
 
-.blue {
-  background: linear-gradient(360deg, #504c9d, white);
-}
-
-.orange {
-  // color: #eead0e;
-  background: linear-gradient(360deg, #976b49, white);
-}
-
-.unactive-red {
-  background: linear-gradient(180deg, black 0%, #9c4c4c 20%);
-}
-
-.unactive-green {
-  background: linear-gradient(180deg, black 0%, #4fa380 60%);
-}
-
-.unactive-blue {
-  background: linear-gradient(180deg, black 0%, #504c9d 30%);
-}
-
-.unactive-orange {
-  background: linear-gradient(180deg, black 0%, #976b49 30%);
-}
 
 .gradient-text {
   /* 定义背景渐变 */
@@ -1019,11 +1001,18 @@ function change_user_env(item: any) {
 }
 
 .method-span {
-  margin-right: 5px;
-  font-weight: 500;
+  font-family: "JetBrains Mono", monospace;
   font-size: 12px;
+  font-weight: 600;
+  padding: 4px 4px;
+  border-radius: 4px;
+  /* 小圆角更显硬朗高级 */
   line-height: 1;
-  font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
 }
 
 .fade-enter-active,

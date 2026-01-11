@@ -2,7 +2,7 @@
   <div class="custom-tree-container" style="height: 100%">
     <el-affix :offset="60">
       <div class="tree-search" style="display: flex; align-items: center; margin-bottom: 10px">
-        <el-input v-model="filterText" placeholder="搜索" :suffix-icon="Filter" />
+        <el-input v-model="filterText" placeholder="搜索" :suffix-icon="Filter" disabled />
       </div>
     </el-affix>
     <div ref="header" class="project-summary g-unselect" @click="enter_project_summary" id="api-project-summery">
@@ -220,13 +220,6 @@ function enter_project_summary() {
   /* 背景裁剪为文字 */
   color: transparent;
   font-size: 12px !important;
-}
-
-.method-span {
-  font-weight: 500;
-  font-size: 10px;
-  text-align: right;
-  font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 .label-span {

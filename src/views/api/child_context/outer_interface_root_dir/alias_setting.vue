@@ -31,14 +31,23 @@
                 <div class="data no-scroll" v-if="data.length !== 0">
                     <motion.div :initial="{ opacity: 0 }" :animate="{ opacity: 1 }" :exit="{ opacity: 0 }"
                         :transition="{ duration: 1.2 }" class="data-item" v-for="(item, index) in data" :key="index">
-                        <div class="title title-name g-e"><span>{{ item.alias }}</span></div>
-                        <div class="title title-update" style="cursor: pointer;"><span>{{ item.match_type }}</span>
+                        <div class="title title-name"><span>
+                                <HoverTooltip :text="item.alias">
+                                    <div class="g-e">{{ item.alias }}</div>
+                                </HoverTooltip>
+                            </span></div>
+                        <div class="title title-update" style="cursor: pointer;"><span>{{ String(item.match_type) ===
+                            '0' ? '名称匹配' : '精准匹配' }}</span>
                         </div>
-                        <div class="title title-update-person" style="cursor: pointer;">{{ item.match_module }}
+                        <div class="title title-update-person" style="cursor: pointer;">
+                            <HoverTooltip :text="item.match_modules">
+                                <div class="g-e">{{ item.match_modules === 'all' ? '所有模块' :
+                                    item.match_modules
+                                    }}</div>
+                            </HoverTooltip>
                         </div>
                         <div class="title title-update-person" style="cursor: pointer;">
                             <div class="switch-container">
-
                                 <Switch.Root v-model="item.enable" :class="{ checked_animation: item.enable }"
                                     @click="toggleChecked(item)">
                                     <motion.button class="switch" :initial="item.enable" :animate="{
@@ -61,11 +70,17 @@
                                 </Switch.Root>
                             </div>
                         </div>
-                        <div class="title title-update-person" style="cursor: pointer;" :class="item.status">
-                            {{ item.match_name }}
+                        <div class="title title-update-person" style="cursor: pointer;">
+                            <HoverTooltip :text="String(item.match_type) === '0' ? item.match_name : '暂无'">
+                                <div class="g-e">{{ String(item.match_type) === '0' ? item.match_name : '-' }}
+                                </div>
+                            </HoverTooltip>
                         </div>
                         <div class="title title-action" @click.stop>
-                            {{ item.match_path }}
+                            <HoverTooltip :text="String(item.match_type) === '0' ? '暂无' : item.match_path">
+                                <div class="g-e">{{ String(item.match_type) === '0' ? "-" :
+                                    item.match_path_name }}</div>
+                            </HoverTooltip>
                         </div>
                         <div class="title title-action" @click.stop>
                             <div>
@@ -84,9 +99,10 @@
             </div>
         </SplitterPanel>
     </SplitterGroup>
-    <DialogAnimation ref="clientDetailRef" :title="is_edit ? '编辑 Alias' : '新增 Alias'"
-        cancel_title="取消" :confirm_title="is_edit ? '修改' : '新增'" :bgtype="'white'" :before_comfirm="check_client_detail"
+    <DialogAnimation ref="clientDetailRef" :title="is_edit ? '编辑 Alias' : '新增 Alias'" cancel_title="取消"
+        :confirm_title="is_edit ? '修改' : '新增'" :bgtype="'white'" :before_comfirm="check_client_detail"
         :topMove="'0% !important'">
+        <Setting ref="asyncExecutorDetailRef" :is_edit="is_edit" :edit_object="edit_object"></Setting>
     </DialogAnimation>
 </template>
 
@@ -96,7 +112,8 @@ import { onMounted, ref } from 'vue'
 import { motion } from 'motion-v'
 import { SplitterGroup, SplitterPanel } from 'reka-ui'
 // @ts-ignore
-import { Switch, Tooltip } from 'reka-ui/namespaced';
+import { Switch } from 'reka-ui/namespaced';
+import HoverTooltip from '@/components/common/general/tooltip_hover.vue'
 import InputAnimation from '@/components/common/general/input.vue'
 import Pagination from '@/components/common/general/pagination.vue'
 import { HttpClass } from "@/utils/http";
@@ -104,6 +121,7 @@ import MotionButton from '@/assets/motion/button.vue'
 import BlankAmination from '@/components/common/blank/blank_animation.vue'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import DialogAnimation from '@/components/common/general/dialog.vue'
+import Setting from '@/views/api/child_context/outer_interface_root_dir/alias_child/setting.vue'
 import { useRoute } from 'vue-router'
 import { ApiGetAliasSettingList, ApiPostAliasSetting, ApiUpdateAliasSetting, ApiDeleteAliasSetting } from '@/api/project/index'
 import tools from '@/utils/tools'
@@ -120,6 +138,7 @@ const page_size = ref(10)
 const page_number = ref(1)
 const total_count = ref(0)
 const is_edit = ref(false)
+const edit_object= ref(null)
 const asyncExecutorDetailRef: any = ref(null)
 
 const actionDesc: any = {
@@ -161,25 +180,23 @@ async function more_action(t: string, item: any, index: any) {
     } else if (t === 'batchEdit') {
         is_edit.value = true
         current_client_info.value = item
+        edit_object.value = item
         const result = await clientDetailRef.value.open()
         if (result.action === 'cancel') return
-        let _data = asyncExecutorDetailRef.value.get_data()
-        _data = omit(_data, ['name', 'ip', 'port'])
-        const update_result = await tools.send(ApiUpdateAliasSetting, item.id, {}, _data)
-        console.log(update_result);
-        const index = data.value.findIndex((origin_item: any) => origin_item.id, item.id)
-        data.value[index] = update_result
+        const _data = await asyncExecutorDetailRef.value.create()
+        if (_data !== false) {
+            cancelTokenSource = getAbortController()
+            await get_data(cancelTokenSource)
+        }
+        edit_object.value = null
     } else if (t === 'create') {
         is_edit.value = false
         const result = await clientDetailRef.value.open()
         if (result.action === 'cancel') return
-        const _data = asyncExecutorDetailRef.value.get_data()
-        const params = {
-            type: 'create'
-        }
-        const post_result = await tools.send(ApiPostAliasSetting, _data, params)
-        if (post_result) {
-            data.value.unshift(post_result)
+        const _data = await asyncExecutorDetailRef.value.create()
+        if (_data !== false) {
+            cancelTokenSource = getAbortController()
+            await get_data(cancelTokenSource)
         }
     }
 }

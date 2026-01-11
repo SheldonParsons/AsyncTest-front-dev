@@ -1122,37 +1122,6 @@ function applyCallbackToParents(nodes: any, targetId: any, callback: any) {
   cursor: pointer;
 }
 
-.red {
-  color: #ff6a6a;
-}
-
-.green {
-  color: #3cb371;
-}
-
-.blue {
-  color: #1e90ff;
-}
-
-.orange {
-  color: #eead0e;
-}
-
-.purple {
-  background: linear-gradient(to right, #7b42f6, #b01eff);
-  /* 从左到右的渐变 */
-  -webkit-background-clip: text;
-  /* 背景裁剪为文字 */
-  color: transparent;
-  font-size: 12px !important;
-}
-
-.method-span {
-  font-weight: 500;
-  font-size: 10px;
-  text-align: right;
-}
-
 .label-span {
   display: flex;
   align-items: center;

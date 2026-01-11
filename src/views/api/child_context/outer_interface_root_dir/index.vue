@@ -2,10 +2,10 @@
     <SplitterGroup direction="vertical">
         <SplitterPanel :default-size="6" :min-size="6" :max-size="6">
             <div class="switch-tab">
-                <div :class="{ active: activeTab === 'A' }" @click="activeTab = 'A'">
+                <div :class="{ active: activeTab === 'A' }" @click="changeTab('A')">
                     <span>别名管理</span>
                 </div>
-                <div :class="{ active: activeTab === 'B' }" @click="activeTab = 'B'">
+                <div :class="{ active: activeTab === 'B' }" @click="changeTab('B')">
                     <span>提交记录</span>
                 </div>
             </div>
@@ -26,6 +26,13 @@ import { useRoute } from 'vue-router'
 
 const router = useRoute()
 const activeTab = ref<"A" | "B">("A");
+function changeTab(tab: "A" | "B") {
+    if (tab === 'B') {
+        window.$toast({ title: '暂未开放，敬请期待' })
+        return
+    }
+    activeTab.value = tab
+}
 </script>
 
 <style lang="scss" scope>
