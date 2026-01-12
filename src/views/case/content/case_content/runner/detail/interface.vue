@@ -41,7 +41,7 @@
                 v-if="data.retry_strategy === 'code' || data.retry_strategy === 'script' || data.retry_strategy === 'timeout'">
                 <div style="min-height: 42px;display: flex;align-items: center;">重试次数</div>
                 <div>
-                    <InputAnimation v-model="data.timeout_times" :placeholder="'超时时间'" :maxLength="3">
+                    <InputAnimation v-model="data.retry_times" :placeholder="'重试次数'" :maxLength="3">
                     </InputAnimation>
                 </div>
             </div>
@@ -186,8 +186,8 @@ function checkTimeout(value: any) {
         return false
     }
 
-    if (n > 300 || n < 1) {
-        window.$toast({ title: '超时时间不合法，请在1~300秒之间进行设置' })
+    if (n > 600 || n < 1) {
+        window.$toast({ title: '超时时间不合法，请在1~600秒之间进行设置' })
         return false
     }
 
@@ -235,26 +235,22 @@ function check() {
     }
     if (!checkTimeout(props.data.timeout)) return false
     if (props.data.retry_strategy === 'timeout') {
-        if (!props.data.timeout_times) {
+        if (!props.data.retry_times) {
             window.$toast({ title: '请设置重试次数' })
             return false
         }
-        if (!checkRetryTimes(props.data.timeout_times)) return false
+        if (!checkRetryTimes(props.data.retry_times)) return false
     }
     if (props.data.retry_strategy === 'code') {
         if (props.data.should_raise === false) {
             window.$toast({ title: '重试策略为响应码时，请开启异常响应码并设置' })
             return false
         }
-        if (!checkRetryTimes(props.data.timeout_times)) return false
+        if (!checkRetryTimes(props.data.retry_times)) return false
         if (!checkRaiseCodeAsString(raiseCodeAsString.value)) return false
     }
     if (props.data.retry_strategy === 'script') {
-        if (props.data.should_raise === false) {
-            window.$toast({ title: '重试策略为自定义脚本时，请开启异常响应码并设置' })
-            return false
-        }
-        if (!checkRetryTimes(props.data.timeout_times)) return false
+        if (!checkRetryTimes(props.data.retry_times)) return false
     }
     return true
 }
