@@ -1,6 +1,7 @@
 <template>
   <div class="checkbox-container">
     <Checkbox.Root class="root" v-if="check === 'check' || check === 'none'"
+      :style="{ '--checkbox-border-color': borderColor }"
       :class="{ checked: check !== 'none' && read_only === 0, checkedRead: check !== 'none' && read_only > 0 }"
       as-child>
       <motion.button :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.95 }"
@@ -16,7 +17,7 @@
         </svg>
       </motion.button>
     </Checkbox.Root>
-    <Checkbox.Root v-if="check === 'part'" class="root"
+    <Checkbox.Root v-if="check === 'part'" class="root" :style="{ '--checkbox-border-color': borderColor }"
       :class="{ checked: check !== 'none' && read_only === 0, checkedRead: check !== 'none' && read_only > 0 }"
       as-child>
       <motion.button :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.95 }" @click.stop="toggleChecked"
@@ -48,6 +49,10 @@ const props = defineProps({
   read_only: {
     default: 0,
     type: Number
+  },
+  borderColor: {
+    type: String,
+    default: '#000',
   }
 })
 const emit = defineEmits(['change'])
@@ -69,7 +74,7 @@ const toggleChecked = () => {
   }
 }
 </script>
-<style>
+<style lang="scss" scoped>
 .checkbox-container {
   display: flex;
   align-items: center;
@@ -93,7 +98,7 @@ const toggleChecked = () => {
   width: 14px;
   height: 14px;
   border-radius: 5px;
-
+  border: 2px solid var(--checkbox-border-color);
   cursor: pointer;
   padding: 0px;
   background-color: transparent;

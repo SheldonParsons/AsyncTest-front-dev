@@ -1,17 +1,18 @@
 <template>
   <div style="height: 100%;display: flex;flex-direction: column;">
     <el-config-provider :locale="store.state.locale">
-      <div class="header-affix">
+      <div class="header-affix" v-if="route.path !== '/login'">
         <commonHeader style="height: inherit;" @up="upZIndex" />
       </div>
     </el-config-provider>
     <router-view v-if="flag" class="main-router" />
-    <ToastView ref="toastRef"/>
+    <ToastView ref="toastRef" />
   </div>
 </template>
 <script setup lang="ts">
 import commonHeader from "./components/layout/headers/commonHeader.vue";
 import { useStore } from "@/store";
+import { useRoute } from 'vue-router'
 import { onMounted, ref } from "vue";
 import ToastView from '@/views/api/public_dialog/motion_dev_component/toast_animation.vue'
 
@@ -19,6 +20,7 @@ const upHeaderZIndex = ref(false);
 
 const toastRef = ref()
 const store = useStore();
+const route = useRoute()
 const flag = ref(false);
 
 onMounted(() => {

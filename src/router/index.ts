@@ -2,15 +2,11 @@ import { createRouter, createWebHistory, createMemoryHistory } from 'vue-router'
 
 const routes = [
   {
-    path: '/',
-    redirect: '/login'
-  },
-  {
     path: '/login',
     name: 'login',
-    component: () => import('@/views/login/loginIndexNew.vue'),
+    component: () => import('@/components/FirstPage.vue'),
     meta: {
-      title: '',
+      title: 'AsyncTest - Asynchronous Way of Testing',
       keepAlive: false
     }
   },

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Panel Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: sans-serif;
+            background: #000;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .main-wrapper {
+            transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+                        filter 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 100px 50px;
+        }
+
+        body.login-active .main-wrapper {
+            transform: translateX(-30%) scale(0.9);
+            filter: blur(8px);
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        .login-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 100%;
+            max-width: 550px;
+            height: 100vh;
+            background: rgba(20, 20, 20, 0.98);
+            backdrop-filter: blur(40px);
+            z-index: 2000;
+            transform: translateX(100%);
+            transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 50px;
+            overflow-y: auto;
+        }
+
+        body.login-active .login-panel {
+            transform: translateX(0);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 24px;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .login-content h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <h1>Login Panel Test</h1>
+        <p>点击按钮测试登录面板滑入效果</p>
+
+        <button class="btn" onclick="openPanel(event)">打开登录面板</button>
+
+        <div class="status" id="status">
+            Status: Ready
+        </div>
+
+        <p>如果点击按钮后：</p>
+        <ul>
+            <li>✅ 这段文字向左滑动并模糊 - CSS 工作正常</li>
+            <li>✅ 右侧面板滑入 - CSS 工作正常</li>
+            <li>❌ 没有任何变化 - CSS 可能有问题</li>
+        </ul>
+    </div>
+
+    <div class="login-panel">
+        <button class="close-btn" onclick="closePanel()">×</button>
+        <div class="login-content">
+            <h2>登录面板</h2>
+            <p>这是一个测试面板</p>
+            <p>按 ESC 或点击 × 按钮关闭</p>
+            <br><br>
+            <button class="btn" onclick="closePanel()">关闭面板</button>
+        </div>
+    </div>
+
+    <script>
+        console.log('Test page loaded');
+
+        function openPanel(event) {
+            console.log('Opening panel...');
+            if (event) {
+                event.stopPropagation();
+            }
+            document.body.classList.add('login-active');
+            document.getElementById('status').textContent = 'Status: Panel is OPEN (body has login-active class)';
+            console.log('Body classes:', document.body.className);
+            console.log('Has login-active:', document.body.classList.contains('login-active'));
+
+            // Log computed styles
+            const panel = document.querySelector('.login-panel');
+            const styles = window.getComputedStyle(panel);
+            console.log('Panel transform:', styles.transform);
+            console.log('Panel right position:', styles.right);
+        }
+
+        function closePanel() {
+            console.log('Closing panel...');
+            document.body.classList.remove('login-active');
+            document.getElementById('status').textContent = 'Status: Panel is CLOSED';
+        }
+
+        // Close on ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closePanel();
+            }
+        });
+
+        // Click outside to close
+        document.querySelector('.main-wrapper').addEventListener('click', () => {
+            if (document.body.classList.contains('login-active')) {
+                closePanel();
+            }
+        });
+
+        document.querySelector('.login-panel').addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    </script>
+</body>
+</html>

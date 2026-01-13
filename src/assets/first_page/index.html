@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AsyncTest - 现代化 API 测试与管理平台</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Main Content Wrapper -->
+    <div class="main-wrapper">
+        <!-- Header Navigation -->
+        <header class="header">
+            <div class="container">
+                <nav class="nav">
+                    <div class="nav-left">
+                        <a href="#" class="logo">
+                            <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_light2.svg" alt="AsyncTest" class="logo-image" />
+                            <span class="logo-text">AsyncTest</span>
+                        </a>
+                    </div>
+                    <div class="nav-center">
+                        <a href="#features" class="nav-link">功能</a>
+                        <a href="#docs" class="nav-link">文档</a>
+                        <a href="#showcase" class="nav-link">案例</a>
+                    </div>
+                    <div class="nav-right">
+                        <a href="https://docs.asynctest.com/ast_caller/install.html" class="btn-secondary idea-plugin-btn" target="_blank">
+                            <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg" alt="IDEA" class="idea-icon" />
+                            <span>IDEA Plugin</span>
+                        </a>
+                        <button class="btn-primary btn-login-trigger">开始使用</button>
+                    </div>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <h1 class="hero-title">
+                        <span class="gradient-text">Async</span>hronous Way of
+                        <span class="gradient-text">Test</span>ing for Any Interface
+                    </h1>
+                    <p class="hero-subtitle">
+                        全异步协程驱动 · 协商式取消模型 · 接口文档同步 · Mock 快速响应 · 智能用例编排
+                    </p>
+                    <div class="hero-actions">
+                        <button class="btn-hero-primary btn-login-trigger">
+                            <span>快速开始</span>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <button class="btn-hero-secondary">查看文档</button>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="stat-item">
+                            <div class="stat-value">1000+</div>
+                            <div class="stat-label">活跃用户</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-item">
+                            <div class="stat-value">50K+</div>
+                            <div class="stat-label">API 测试</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-item">
+                            <div class="stat-value">99.9%</div>
+                            <div class="stat-label">测试准确率</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Demo -->
+                <div class="hero-demo">
+                    <div class="demo-window">
+                        <div class="window-header">
+                            <div class="window-dots">
+                                <span class="dot dot-red"></span>
+                                <span class="dot dot-yellow"></span>
+                                <span class="dot dot-green"></span>
+                            </div>
+                            <div class="window-title">API 测试.vue</div>
+                        </div>
+                        <div class="window-content">
+                            <pre class="code"><span class="code-keyword">import</span> { <span class="code-function">httpPost</span> } <span class="code-keyword">from</span> <span class="code-string">'@/utils/http'</span>
+
+<span class="code-comment">// 创建 API 测试</span>
+<span class="code-keyword">const</span> <span class="code-variable">testAPI</span> = <span class="code-keyword">async</span> () => {
+  <span class="code-keyword">const</span> response = <span class="code-keyword">await</span> <span class="code-function">httpPost</span>(<span class="code-string">'/api/test'</span>, {
+    <span class="code-property">method</span>: <span class="code-string">'GET'</span>,
+    <span class="code-property">url</span>: <span class="code-string">'https://api.example.com/users'</span>
+  })
+  <span class="code-keyword">return</span> response
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Background decorations -->
+            <div class="hero-bg">
+                <div class="grid-overlay"></div>
+                <div class="glow glow-1"></div>
+                <div class="glow glow-2"></div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features" id="features">
+            <div class="container">
+                <div class="section-header">
+                    <h2 class="section-title">核心功能</h2>
+                    <p class="section-subtitle">一站式 API 测试解决方案</p>
+                </div>
+
+                <div class="features-grid">
+                    <!-- Feature 1 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">全异步协程</h3>
+                        <p class="feature-description">
+                            基于 Kotlin 协程的全异步执行模型，协商式取消机制，高效处理大规模接口测试
+                        </p>
+                        <ul class="feature-list">
+                            <li>协程驱动执行</li>
+                            <li>协商式取消</li>
+                            <li>高并发支持</li>
+                        </ul>
+                    </div>
+
+                    <!-- Feature 2 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor"
+                                    stroke-width="2" />
+                                <path d="M3 9h18M9 21V9" stroke="currentColor" stroke-width="2" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">可视化编排</h3>
+                        <p class="feature-description">
+                            拖拽式流程编排，直观的可视化界面，轻松构建复杂测试流程
+                        </p>
+                        <ul class="feature-list">
+                            <li>拖拽式编排</li>
+                            <li>流程可视化</li>
+                            <li>条件分支控制</li>
+                        </ul>
+                    </div>
+
+                    <!-- Feature 3 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                                <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">实时监控</h3>
+                        <p class="feature-description">
+                            实时监控 API 性能，自动记录请求响应，提供详细的性能分析报告
+                        </p>
+                        <ul class="feature-list">
+                            <li>性能监控</li>
+                            <li>请求录制</li>
+                            <li>数据分析</li>
+                        </ul>
+                    </div>
+
+                    <!-- Feature 4 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+                                    stroke="currentColor" stroke-width="2" />
+                                <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                                <line x1="12" y1="22.08" x2="12" y2="12" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">Mock 服务</h3>
+                        <p class="feature-description">
+                            强大的 Mock 数据生成，支持动态规则，模拟各种 API 响应场景
+                        </p>
+                        <ul class="feature-list">
+                            <li>动态 Mock 规则</li>
+                            <li>录制回放</li>
+                            <li>自定义响应</li>
+                        </ul>
+                    </div>
+
+                    <!-- Feature 5 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">数据驱动</h3>
+                        <p class="feature-description">
+                            支持数据驱动测试，导入 Excel/CSV，批量执行测试用例
+                        </p>
+                        <ul class="feature-list">
+                            <li>Excel/CSV 导入</li>
+                            <li>参数化测试</li>
+                            <li>批量执行</li>
+                        </ul>
+                    </div>
+
+                    <!-- Feature 6 -->
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <h3 class="feature-title">团队协作</h3>
+                        <p class="feature-description">
+                            多人协作测试，权限管理，版本控制，满足团队开发需求
+                        </p>
+                        <ul class="feature-list">
+                            <li>多人协作</li>
+                            <li>权限控制</li>
+                            <li>版本管理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tech Stack Section -->
+        <section class="tech-stack">
+            <div class="container">
+                <div class="section-header">
+                    <h2 class="section-title">技术栈</h2>
+                    <p class="section-subtitle">基于现代化技术构建</p>
+                </div>
+
+                <div class="tech-grid">
+                    <div class="tech-item">
+                        <div class="tech-logo">Vue 3</div>
+                        <p class="tech-description">Composition API</p>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-logo">TypeScript</div>
+                        <p class="tech-description">类型安全</p>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-logo">Vite</div>
+                        <p class="tech-description">极速构建</p>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-logo">Element Plus</div>
+                        <p class="tech-description">UI 组件库</p>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-logo">Monaco</div>
+                        <p class="tech-description">代码编辑器</p>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-logo">IndexedDB</div>
+                        <p class="tech-description">本地存储</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="cta">
+            <div class="container">
+                <div class="cta-content">
+                    <h2 class="cta-title">立即开始使用 AsyncTest</h2>
+                    <p class="cta-subtitle">快速搭建你的 API 测试环境</p>
+                    <div class="cta-actions">
+                        <div class="cta-card">
+                            <div class="cta-card-icon">📦</div>
+                            <h3 class="cta-card-title">安装</h3>
+                            <p class="cta-card-description">使用 yarn 快速安装依赖</p>
+                            <code class="cta-code">yarn install</code>
+                        </div>
+                        <div class="cta-card">
+                            <div class="cta-card-icon">🚀</div>
+                            <h3 class="cta-card-title">启动</h3>
+                            <p class="cta-card-description">启动开发服务器</p>
+                            <code class="cta-code">yarn dev</code>
+                        </div>
+                        <div class="cta-card">
+                            <div class="cta-card-icon">📚</div>
+                            <h3 class="cta-card-title">学习</h3>
+                            <p class="cta-card-description">浏览文档和示例</p>
+                            <button class="cta-card-button">查看文档</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Background decoration -->
+            <div class="cta-bg">
+                <div class="glow glow-3"></div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="container">
+                <div class="footer-content">
+                    <div class="footer-left">
+                        <div class="footer-logo">
+                            <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_light2.svg" alt="AsyncTest" class="footer-logo-image" />
+                        </div>
+                        <p class="footer-description">Asynchronous Way of Testing for Any Interface</p>
+                    </div>
+                    <div class="footer-links">
+                        <div class="footer-group">
+                            <h4 class="footer-title">产品</h4>
+                            <a href="#" class="footer-link">功能</a>
+                            <a href="#" class="footer-link">定价</a>
+                            <a href="#" class="footer-link">案例</a>
+                        </div>
+                        <div class="footer-group">
+                            <h4 class="footer-title">资源</h4>
+                            <a href="#" class="footer-link">文档</a>
+                            <a href="#" class="footer-link">API 参考</a>
+                            <a href="#" class="footer-link">更新日志</a>
+                        </div>
+                        <div class="footer-group">
+                            <h4 class="footer-title">社区</h4>
+                            <a href="#" class="footer-link">GitHub</a>
+                            <a href="#" class="footer-link">讨论区</a>
+                            <a href="#" class="footer-link">贡献指南</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <p class="footer-copyright">© 2024 AsyncTest. All rights reserved.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <!-- End Main Wrapper -->
+
+    <!-- Login Panel -->
+    <div class="login-panel">
+        <button class="login-close" aria-label="关闭登录" id="loginCloseBtn">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+        </button>
+
+        <div class="login-content">
+            <div class="login-header">
+                <div class="login-logo">
+                    <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_light2.svg" alt="AsyncTest" class="login-logo-image" />
+                </div>
+                <h2 class="login-title">欢迎回来</h2>
+                <p class="login-subtitle">登录以访问你的 API 测试工作区</p>
+            </div>
+
+            <form class="login-form">
+                <div class="form-group">
+                    <label class="form-label">邮箱地址</label>
+                    <div class="input-wrapper">
+                        <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <input type="email" class="form-input" placeholder="your@email.com" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <div class="input-wrapper">
+                        <svg class="input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <input type="password" class="form-input" placeholder="••••••••" required>
+                        <button type="button" class="password-toggle" aria-label="显示密码">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-options">
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" class="checkbox-input">
+                        <span class="checkbox-label">记住我</span>
+                    </label>
+                    <a href="#" class="forgot-link">忘记密码？</a>
+                </div>
+
+                <button type="submit" class="btn-login-submit">
+                    <span>登录</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                </button>
+
+                <div class="divider">
+                    <span class="divider-text">或者使用</span>
+                </div>
+
+                <div class="social-login">
+                    <button type="button" class="btn-social">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                        </svg>
+                        <span>GitHub</span>
+                    </button>
+                    <button type="button" class="btn-social">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                fill="#4285F4" />
+                            <path
+                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                fill="#34A853" />
+                            <path
+                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                fill="#FBBC05" />
+                            <path
+                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                fill="#EA4335" />
+                        </svg>
+                        <span>Google</span>
+                    </button>
+                </div>
+
+                <div class="signup-prompt">
+                    还没有账号？<a href="#" class="signup-link">立即注册</a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Login Background Decoration -->
+        <div class="login-bg">
+            <div class="login-glow login-glow-1"></div>
+            <div class="login-glow login-glow-2"></div>
+            <div class="login-grid"></div>
+            <div class="login-particles">
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
