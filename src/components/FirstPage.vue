@@ -492,6 +492,8 @@ function rememberCheck() {
 
       loginForm.value.checked = res.remember;
       console.log(res.remember);
+      console.log("----");
+      
 
       if (res.remember === true) {
         // 如果记住密码，将账号密码填充至登陆输入框
@@ -511,7 +513,7 @@ function rememberCheck() {
 
 function changeRemember(status: string) {
   loginForm.value.checked = status === 'check'
-  store.dispatch('saveRemember', status)
+  store.dispatch('saveRemember', loginForm.value.checked)
 }
 
 
@@ -882,7 +884,7 @@ watch(isLoginActive, (newVal) => {
     background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
     border: 1px solid rgba(52, 211, 153, 0.3);
     color: white;
-    padding: 0.875rem 2rem;
+    padding: 0.875rem 1rem;
     border-radius: 0.75rem;
     font-size: 1rem;
     font-weight: 600;
@@ -928,7 +930,7 @@ watch(isLoginActive, (newVal) => {
     background: var(--color-bg-card);
     border: 1px solid var(--color-border);
     color: var(--color-text-primary);
-    padding: 1rem 2rem;
+    padding: 0.8rem 1rem;
     border-radius: 0.75rem;
     font-size: 1rem;
     font-weight: 600;

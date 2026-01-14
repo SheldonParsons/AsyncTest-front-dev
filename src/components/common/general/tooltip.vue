@@ -35,7 +35,7 @@ defineProps({
 .tooltip-content {
     background: rgba(30, 30, 30, 0.95);
     color: #fff;
-    padding: 8px 12px;
+    padding: 8px;
     border-radius: 6px;
     min-width: 32px;
     font-size: 13px;
@@ -43,9 +43,8 @@ defineProps({
     user-select: none;
     pointer-events: auto;
     max-width: 500px;
+    display: flex;
+    justify-content: center;
 }
 
-.tooltip-arrow {
-    /* 自定义箭头样式 */
-}
 </style>

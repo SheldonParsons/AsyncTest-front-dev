@@ -50,7 +50,7 @@ import Data from "./child/dataMenu.vue";
 import Mock from "./child/mockMenu.vue";
 import Open from "./child/openMenu.vue";
 import Otherwise from "./child/otherwiseMenu.vue";
-import Interface from "@/components/layout/menus/child/interfaceMenu.vue";
+import Interface from "./child/interfaceMenu.vue";
 import Case from './child/caseMenu.vue'
 import AI from "./child/ai_menu.vue";
 import AppConversation from "./child/app_conversation.vue";

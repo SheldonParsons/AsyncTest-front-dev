@@ -1,0 +1,47 @@
+.el-tree--highlight-current .el-tree-node.is-current>.el-tree-node__content {
+    background-color: var(--greyLight-0);
+}
+
+.el-tree-node__content {
+    border-radius: 5px;
+}
+
+.el-tree-node__label {
+    width: 100%;
+
+    .tree-node {
+        width: 100%;
+    }
+}
+
+.el-tree-node__expand-icon {
+    display: none;
+}
+
+.icon-expanded {
+    transform: rotate(90deg);
+}
+
+.private-icon {
+    transition: transform 0.2s ease-in-out;
+    padding: 5px;
+}
+
+.private-right-icon {
+    transition: transform 0.2s ease-in-out;
+    margin-left: 5px;
+    margin-top: 3px;
+}
+
+.case-node {
+    margin-left: 10px;
+}
+
+/* 禁用 el-tree 节点的展开/收起动画 */
+.el-tree-node__children {
+    transition: none !important;
+}
+
+.el-tree-node__expand-icon {
+    transition: none !important;
+}

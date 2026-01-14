@@ -163,8 +163,6 @@ const { proxy }: any = getCurrentInstance();
 const showNews = ref(true);
 
 onMounted(() => {
-  console.log("123123123");
-
   rememberCheck();
 });
 router.beforeEach((to: any, from: any, next: any) => {
