@@ -277,92 +277,147 @@ function getRandomInt(min: any, max: any) {
 .body-tools {
   display: flex;
   justify-content: space-between;
-  border-top: 1px solid var(--border-color);
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
-  padding: 7px 12px;
+  padding: 8px 12px;
+
   .title {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
     display: flex;
     align-items: center;
   }
+
   .tools {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+
     div {
       font-size: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      padding: 4px 8px;
+      padding: 4px 10px;
       gap: 4px;
-      border-radius: 8px;
-    }
-    div:hover {
-      background-color: var(--hover-bg);
+      border-radius: 5px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      transition: all 0.15s ease;
+      font-weight: 500;
+      color: #374151;
+
+      &:hover {
+        background: #f9fafb;
+        border-color: #10b981;
+        color: #10b981;
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
     }
   }
 }
+
+.private-table-outside {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  overflow: hidden;
+}
+
 .root-icon {
   display: flex;
+
   span {
     cursor: pointer;
-    padding: 0px 3px;
+    padding: 2px 6px;
     height: 20px;
     border-radius: 4px;
-    font-size: 13px;
-    background-color: var(--dark);
+    font-size: 12px;
+    background: #10b981;
     color: white;
     display: flex;
     align-items: center;
+    font-weight: 600;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background: #059669;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
   }
 }
+
 .core-value {
   display: flex;
   justify-content: start;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+
   .array-item:not(:first-child) {
-    margin-top: 5px;
+    margin-top: 6px;
   }
+
   .array-item {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
   }
 }
+
 .private-input {
   margin: 0;
-  padding: 5px;
-  border: none;
+  padding: 4px 6px;
   border: 1px solid transparent;
   outline: none;
   background-color: transparent;
-  font-size: 14px;
+  font-size: 13px;
   width: 100%;
-  border-radius: 8px;
+  border-radius: 4px;
   font-weight: 500;
-  transition: border-color 0.3s ease, color 0.3s ease;
+  transition: all 0.15s ease;
+  color: #374151;
+
+  &::placeholder {
+    color: #9ca3af;
+  }
+
+  &:hover {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+  }
+
+  &:focus {
+    background-color: #ffffff;
+    border-color: #10b981;
+    color: #111827;
+  }
 }
-.private-input:hover,
-.private-input:focus {
-  color: var(--primary);
-  border: 1px solid var(--border-color) !important;
-  background-color: white;
-}
+
 .private-deafult {
   cursor: not-allowed;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--primary);
+  color: #9ca3af;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background-color: #f9fafb;
 }
+
 .typing-span {
   cursor: pointer;
   display: flex;
@@ -370,20 +425,61 @@ function getRandomInt(min: any, max: any) {
   align-items: center;
   height: 20px;
   font-weight: 600;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: #10b981;
+  }
 }
+
 .custom-mini {
   width: 20px;
   height: 20px;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background-color: #f3f4f6;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 }
-.custom-mini:hover {
-  background-color: white;
-  border-radius: 3px;
-  cursor: pointer;
-}
+
 .action-icon {
   cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
 }
+
 .action-icon-close {
   margin-left: 3px;
+}
+</style>
+
+<style lang="scss">
+.main-table {
+  background: #ffffff;
+
+  .cell {
+    padding: 4px 6px;
+  }
+
+  .el-table__row {
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background-color: #f9fafb !important;
+    }
+  }
+
+  .el-table__empty-block {
+    background: #ffffff;
+  }
 }
 </style>

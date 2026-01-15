@@ -1,5 +1,5 @@
 <template>
-  <h4 class="doc-base-title">{{ label }}</h4>
+  <div class="doc-base-title">{{ label }}</div>
   <el-select v-model="localValue" placeholder="服务">
     <el-option-group
       v-for="(group, index) in options"
@@ -51,34 +51,142 @@ watch(localValue, (newValue) => {
   emit("update:modelValue", newValue);
 });
 </script>
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.doc-base-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  line-height: 22px;
+}
+
+:deep(.el-select__wrapper) {
+  min-height: 36px;
+  padding: 6px 12px;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s ease;
+
+  &:hover {
+    border-color: rgba(0, 0, 0, 0.25);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  }
+
+  &.is-focused {
+    border-color: #1a1a1a;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+  }
+}
+</style>
 
 <style lang="scss">
 .items-center {
-  gap: 5px;
+  gap: 8px;
   display: flex;
-  justify-content: start;
-  .items-server {
-    float: right;
-    color: var(--el-text-color-secondary);
-    font-size: 13px;
-  }
-}
-.doc-base-select
-  .el-select__wrapper
-  .el-select__selection
-  .el-select__selected-item {
-  display: flex;
+  justify-content: space-between;
   align-items: center;
-  .el-badge {
-    display: flex;
-  }
-  span {
-    margin-left: 5px;
+  width: 100%;
+
+  .items-server {
+    margin-left: auto;
+    color: #999;
+    font-size: 12px;
+    transition: color 0.2s ease;
   }
 }
 
-.doc-base-option-mul.is-hovering {
-  background-color: #f4fcff;
+.doc-base-select {
+  .el-select__wrapper {
+    .el-select__selection .el-select__selected-item {
+      display: flex;
+      align-items: center;
+      line-height: 1;
+
+      .el-badge {
+        display: flex;
+        align-items: center;
+      }
+
+      span {
+        margin-left: 6px;
+        font-size: 14px;
+        color: #1a1a1a;
+        line-height: 1;
+      }
+    }
+  }
+}
+
+.doc-base-option-mul {
+  border-radius: 4px;
+  margin: 2px 6px;
+  padding: 8px 10px !important;
+  transition: all 0.2s ease;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+
+  &.is-hovering {
+    background: rgba(0, 0, 0, 0.04);
+    transform: translateX(2px);
+
+    .items-server {
+      color: #666;
+    }
+  }
+
+  &.is-selected {
+    background: rgba(0, 0, 0, 0.08);
+    font-weight: 500;
+    color: #000000;
+
+    .items-server {
+      color: #000000;
+    }
+  }
+}
+
+.el-select-group__title {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(0, 0, 0, 0.02);
+  border-left: 2px solid rgba(0, 0, 0, 0.15);
+  margin: 2px 6px 2px 6px;
+  height: 24px;
+  line-height: 16px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.el-select-dropdown {
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

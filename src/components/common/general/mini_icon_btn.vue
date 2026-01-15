@@ -1,7 +1,7 @@
 <template>
     <TooltipAnimation :isOpen="showIdTooltip">
         <template #trigger>
-            <motion.div :while-press="{ scale: 0.9 }" class="default-btn" @mouseenter="showIdTooltip = true"
+            <motion.div :while-press="{ scale: 0.9 }" class="mini-default-btn" @mouseenter="showIdTooltip = true"
                 @mouseleave="showIdTooltip = false">
                 <slot></slot>
             </motion.div>
@@ -30,9 +30,9 @@ const showIdTooltip = ref(false)
 </script>
 
 <style lang="scss" scope>
-.default-btn {
+.mini-default-btn {
     padding: 3px;
-    border-radius: 4px;
+    border-radius: 6px;
     border: 1px solid #f0f0f0;
     display: flex;
     justify-content: center;

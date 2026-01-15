@@ -40,7 +40,7 @@ const showIdTooltip = ref(false)
 <style lang="scss" scope>
     .default-btn {
         padding: 3px;
-        border-radius: 4px;
+        border-radius: 6px;
         border: 1px solid #f0f0f0;
         display: flex;
         justify-content: center;

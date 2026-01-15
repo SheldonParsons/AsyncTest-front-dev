@@ -87,38 +87,60 @@ async function code_change(value: string) {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+
   div {
     font-size: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 4px 10px;
     gap: 4px;
-    border-radius: 8px;
-  }
-  div:hover {
-    background-color: var(--hover-bg);
+    border-radius: 5px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    transition: all 0.15s ease;
+    font-weight: 500;
+    color: #374151;
+
+    &:hover {
+      background: #f9fafb;
+      border-color: #10b981;
+      color: #10b981;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
   }
 }
+
 .process-dialog-content {
-  //   padding: 24px;
   font-size: 14px;
+
+  > div {
+    background: #ffffff;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+  }
+
   .editor-header {
-    height: 2.5rem;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
+    height: 42px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
     flex-flow: wrap;
     min-width: 0;
     display: flex;
     flex-shrink: 0;
     align-items: center;
     flex-wrap: nowrap;
-    border-bottom: 1px solid #f3f5f6;
+    border-bottom: 1px solid #e5e7eb !important;
     justify-content: space-between;
+    background: #ffffff;
   }
 }
 </style>

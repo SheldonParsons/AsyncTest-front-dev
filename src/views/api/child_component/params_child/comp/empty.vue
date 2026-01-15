@@ -4,7 +4,7 @@
       ><img
         class="logo-img g-unselect empty-img"
         style="height: inherit"
-        src="@/assets/logo/final/logo_full.svg"
+        src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full.svg"
         alt="empty"
     /></span>
     <div class="opening">
@@ -54,7 +54,7 @@ function open_summary() {
   text-align: center;
   text-transform: none;
   vertical-align: -0.125em;
-  width: 80px;
+  width: 40px;
   padding: 20px;
   text-rendering: optimizelegibility;
   -webkit-font-smoothing: antialiased;

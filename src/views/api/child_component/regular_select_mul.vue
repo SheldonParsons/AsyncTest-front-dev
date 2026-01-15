@@ -1,5 +1,5 @@
 <template>
-  <h4 class="doc-base-title">{{ label }}</h4>
+  <div class="doc-base-title">{{ label }}</div>
   <el-select multiple v-model="localValue" placeholder="查找标签" class="regular-mul-select">
     <el-option
       class="doc-base-option-mul"
@@ -84,39 +84,192 @@ function onConfirmFooter() {
 }
 </script>
 <style lang="scss" scoped>
+.doc-base-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  line-height: 22px;
+}
+
 .option-input {
   width: 100%;
   margin-bottom: 8px;
+
+  :deep(.el-input__wrapper) {
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: rgba(0, 0, 0, 0.25);
+    }
+
+    &.is-focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+    }
+  }
 }
 </style>
-
-<style lang="scss">
-.doc-base-select
-  .el-select__wrapper
-  .el-select__selection
-  .el-select__selected-item {
-  display: flex;
-  align-items: center;
-  .el-badge {
-    display: flex;
-  }
-  span {
-    margin-left: 5px;
-  }
-}
-
-.doc-base-option-mul.is-hovering {
-  background-color: #f4fcff;
-}
-</style>
-
 
 <style lang="scss">
 .regular-mul-select {
   .el-select__wrapper {
-    min-height: 32px;
-    padding: 4px 12px;
+    min-height: 36px!important;
+    padding: 6px 12px!important;
     height: auto;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: all 0.25s ease;
+
+    &:hover {
+      border-color: rgba(0, 0, 0, 0.25);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+
+    &.is-focused {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+    }
+  }
+
+  .el-select__selection {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0;
+
+    .el-select__selected-item {
+      display: flex;
+      align-items: center;
+      line-height: 1;
+
+      .el-badge {
+        display: flex;
+        align-items: center;
+      }
+
+      span {
+        margin-left: 6px;
+        font-size: 14px;
+        color: #1a1a1a;
+        line-height: 1;
+      }
+    }
+
+    .el-tag {
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.06);
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      color: #1a1a1a;
+      font-weight: 500;
+      font-size: 13px;
+      padding: 0 8px;
+      margin: 2px 4px 2px 0;
+      height: 22px;
+      line-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.1);
+        border-color: rgba(0, 0, 0, 0.2);
+      }
+
+      .el-tag__close {
+        transition: all 0.2s ease;
+        color: #666;
+        margin-left: 4px;
+
+        &:hover {
+          background-color: rgba(0, 0, 0, 0.15);
+          color: #000;
+        }
+      }
+    }
+  }
+}
+
+.doc-base-option-mul {
+  border-radius: 4px;
+  margin: 2px 6px;
+  padding: 8px 10px !important;
+  transition: all 0.2s ease;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+
+  &.is-hovering {
+    background: rgba(0, 0, 0, 0.04);
+    transform: translateX(2px);
+  }
+
+  &.is-selected {
+    background: rgba(0, 0, 0, 0.08);
+    font-weight: 500;
+    color: #000000;
+  }
+}
+
+.el-select-dropdown__header {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  margin-bottom: 4px;
+
+  .el-button {
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-size: 13px;
+
+    &:hover {
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    &--primary {
+      background: #1a1a1a;
+      border-color: #1a1a1a;
+      color: #ffffff;
+
+      &:hover {
+        background: #000000;
+        border-color: #000000;
+      }
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+.el-select-dropdown {
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

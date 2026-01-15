@@ -75,25 +75,18 @@
             align-items: center;
             justify-content: space-between;
           ">
-              <div class="doc-base-title-statement" style="margin-bottom: 5px">
-                说明文档
-              </div>
-              <div>
-                <EditButton v-if="show_markdown" class="special-btn"
-                  @click="show_markdown = false; collapseStatement = false;">
-                </EditButton>
-                <DoneButton v-if="!show_markdown" class="special-btn" @click="done_statement"></DoneButton>
-              </div>
             </div>
           </el-col>
         </el-row>
         <el-row>
-          <el-col :offset="1" :span="22">
+          <el-col :offset="1" :span="22" style="padding-top: 10px;">
             <motion.div ref="statementRef" :style="{ 'height': collapseStatement ? '150px' : '100%' }"
               class="statement">
-              <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
-                placeholder="用例描述信息（支持MarkDown格式）" />
-              <MarkDown v-else :data="data.value.statement"></MarkDown>
+              <!-- <el-input v-if="!show_markdown" v-model="data.value.statement" :autosize="{ minRows: 4 }" type="textarea"
+                placeholder="用例描述信息（支持MarkDown格式）" /> -->
+              <MultiInput @save="done_statement" :showMarkdown="show_markdown" v-model="data.value.statement">
+              </MultiInput>
+              <!-- <MarkDown v-else :data="data.value.statement"></MarkDown> -->
               <div ref="collapseRef" v-if="data.value.statement.split('\n').length > 4" class="collapse"
                 :style="{ 'height': collapseStatement ? '100px' : '28px', 'position': collapseStatement ? 'absolute' : 'unset' }"
                 @click="toggleCollapse" style="display: flex;justify-content: center;">
@@ -108,47 +101,31 @@
           </el-col>
         </el-row>
       </div>
-      <el-row v-if="loading === true" style="margin-top: 20px">
+      <el-row v-if="loading === true" style="margin-top: 10px;">
         <el-col :span="22" :offset="1">
           <el-skeleton :rows="8" animated />
         </el-col>
       </el-row>
-      <div style="margin-top: 20px">
-        <el-divider></el-divider>
-      </div>
-      <el-row style="margin-top: 20px">
-        <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">请求参数</span></el-col>
+      <el-row style="margin-top: 10px;">
+        <el-col :span="22" :offset="1">
+          <div class="ast-header-left">
+            <span class="ast-block-icon"></span>
+            <label class="ast-label">请求参数</label>
+          </div>
+        </el-col>
       </el-row>
       <div v-if="loading === false">
-        <el-row style="margin-top: 20px">
+        <el-row style="margin-top: 10px;">
           <el-col :span="22" :offset="1">
-            <div class="tab-core g-unselect">
-              <div style="display: flex; gap: 5px; font-size: 14px; width: 100%">
-                <div :class="{ 'active-tab': active_res_tab === 0 }" @click="active_res_tab = 0" class="un-active-tab">
-                  <span>Params</span>
-                </div>
-                <div :class="{ 'active-tab': active_res_tab === 1 }" @click="active_res_tab = 1" class="un-active-tab">
-                  <span>Body</span>
-                </div>
-                <div :class="{ 'active-tab': active_res_tab === 2 }" @click="active_res_tab = 2" class="un-active-tab">
-                  <span>Headers</span>
-                </div>
-                <div :class="{ 'active-tab': active_res_tab === 5 }" @click="active_res_tab = 5" class="un-active-tab">
-                  <span>前置操作</span>
-                </div>
-                <div :class="{ 'active-tab': active_res_tab === 6 }" @click="active_res_tab = 6" class="un-active-tab">
-                  <span>后置操作</span>
-                </div>
-                <div :class="{ 'active-tab': active_res_tab === 4 }" @click="active_res_tab = 4" class="un-active-tab">
-                  <span>Auth</span>
-                </div>
-              </div>
-            </div>
+            <ChoiceParamPosition :active_res_tab="active_res_tab" @change_tab="val => active_res_tab = val"
+              :disable_index="4">
+            </ChoiceParamPosition>
           </el-col>
         </el-row>
         <el-row>
           <el-col :span="22" :offset="1">
             <Params v-if="active_res_tab === 0" :tableData="data.value.query" :interface_id="interface_id"></Params>
+
             <Body v-show="active_res_tab === 1" :tableData="data.value.json_data"
               :wwwData="data.value.x_www_form_urlencoded" :formData="data.value.form_data" :code="data.value.raw"
               :bodyType="data.value.body_type" @change_body_type="handleChangeBodyType"
@@ -172,87 +149,41 @@
           </el-col>
         </el-row>
       </div>
-      <el-row v-else style="margin-top: 20px">
+      <el-row v-else style="margin-top: 10px;">
         <el-col :span="22" :offset="1">
           <el-skeleton :rows="5" animated />
         </el-col>
       </el-row>
-      <div style="margin-top: 20px">
-        <el-divider></el-divider>
-      </div>
-      <div style="margin-bottom: 170px">
-        <el-row style="margin-top: 20px">
-          <el-col :span="22" :offset="1"><span style="font-size: 14px; font-weight: 500">返回响应示例</span></el-col>
+      <div class="section-separator"></div>
+      <div class="response-section" style="margin-bottom: 170px">
+        <el-row style="margin-top: 0">
+          <el-col :span="22" :offset="1">
+            <div class="ast-header-left">
+              <span class="ast-block-icon"></span>
+              <label class="ast-label">返回响应示例</label>
+            </div>
+          </el-col>
         </el-row>
         <div v-if="loading === false">
-          <el-row style="margin-top: 20px">
+          <el-row style="margin-top: 10px">
             <el-col :span="22" :offset="1">
-              <div class="tab-core">
-                <div class="no-scroll" style="
-                display: flex;
-                align-items: end;
-                justify-content: start;
-                overflow: scroll;
-              ">
-                  <div v-for="(item, index) in responseOptions"
-                    :class="{ 'active-tab': current_response.id === item.id }" @click="change_response_tab(item)"
-                    class="un-active-tab">
-                    <div style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: start;
-                    padding-bottom: 0px;
-                  " class="response-name-status g-unselect">
-                      <div class="response-menu-div" style="padding-bottom: 0px">
-                        {{ item.name }}
-                      </div>
-                      <div style="padding-bottom: 0px">({{ item.status }})</div>
-                    </div>
-                  </div>
-                </div>
-                <AddButton @click="add_response_handle"></AddButton>
-              </div>
+              <ResponseTabs
+                :response-options="responseOptions"
+                :current-id="current_response.id"
+                @change="change_response_tab"
+                @add="add_response_handle"
+              />
             </el-col>
           </el-row>
           <div>
-            <el-row style="margin-top: 20px">
+            <el-row style="margin-top: 5px">
               <el-col :span="22" :offset="1">
-                <div class="response-line">
-                  <div class="response-base-info">
-                    <div class="response-base-info-text">HTTP状态码:</div>
-                    <div class="response-base-info-dropdown">
-                      <el-dropdown @command="handleStatusCommand" trigger="click">
-                        <SimpleInput v-model="current_response.status" :maxLength="3"></SimpleInput>
-                        <template #dropdown>
-                          <el-dropdown-menu class="response-status-dropdown">
-                            <el-dropdown-item v-for="([code, message], index) in Object.entries(
-                              GlobalStatus.regular_response_status_map()
-                            )" :command="code">
-                              <div style="
-                              display: flex;
-                              align-items: center;
-                              justify-content: center;
-                              gap: 5px;
-                            ">
-                                <div>{{ code }}</div>
-                                <div>{{ message }}</div>
-                              </div>
-                            </el-dropdown-item>
-                          </el-dropdown-menu>
-                        </template>
-                      </el-dropdown>
-                    </div>
-                    <div class="response-base-info-text" style="margin-left: 10px">
-                      名称:
-                    </div>
-                    <SimpleInput v-model="current_response.name" :inputWidth="100"></SimpleInput>
-                  </div>
-                  <div>
-                    <DeleteButton @click="delete_response(current_response)"></DeleteButton>
-                  </div>
-                </div>
+                <ResponseLine
+                  v-model="current_response"
+                  @delete="delete_response(current_response)"
+                />
               </el-col></el-row>
-            <el-row style="margin-top: 20px">
+            <el-row style="margin-top: 10px">
               <el-col :span="22" :offset="1">
                 <div class="process-dialog-content">
                   <div style="
@@ -273,14 +204,14 @@
                 </div>
               </el-col>
             </el-row>
-            <el-row style="margin-top: 20px">
+            <el-row style="margin-top: 10px">
               <el-col :span="22" :offset="1">
                 <Headers :canVar="false" :tableData="current_response.headers"></Headers>
               </el-col>
             </el-row>
           </div>
         </div>
-        <el-row v-else style="margin-top: 20px">
+        <el-row v-else style="margin-top: 10px;">
           <el-col :span="22" :offset="1">
             <el-skeleton :rows="5" animated />
           </el-col>
@@ -288,191 +219,7 @@
       </div>
     </div>
   </div>
-  <el-dialog v-model="show_send_response_dialog" :show-close="false" style="border-radius: 12px; margin-top: 20px"
-    class="process-dialog">
-    <div class="temp-log-header">
-      <div>临时日志(Testing)</div>
-    </div>
-    <div style="padding: 20px; min-height: 500px">
-      <div v-for="(item, index) in send_response" :key="index">
-        <div v-if="item.event === 'start'" style="font-weight: 500; padding: 10px">
-          {{ tools.getFormattedTimeMs(item.data.time) }}:任务ID：{{
-            item.data.data
-          }}
-        </div>
-        <div v-if="item.event === 'end'" style="font-weight: 500; padding: 10px">
-          {{ tools.getFormattedTimeMs(item.data.time) }}:任务结束：{{
-            item.data.data
-          }}
-        </div>
-        <div v-if="item.event === 'heartbeat'" style="font-weight: 500; padding: 10px">
-          {{ tools.getFormattedTimeMs(item.data.time) }}:Heartbeat，{{
-            item.data.data
-          }}
-        </div>
-        <div v-if="item.event === 'message'" style="display: flex; flex-direction: column">
-          <div v-if="item.data.type === 'global'" style="font-weight: 500; padding: 10px">
-            {{ tools.getFormattedTimeMs(item.data.time) }}
-            <div style="margin-top: 10px"
-              v-if="item.data.result === 'error-stop' || item.data.result === 'error-exception'"
-              class="temp-log-error-info" v-html="item.data.data.replace(/\n/g, '<br>')"></div>
-            <span v-else>：{{ item.data.data }}</span>
-          </div>
-          <div v-if="item.data.type === 'inner' || item.data.type === 'normal'" style="padding: 10px">
-            <div style="font-weight: 500">
-              {{ tools.getFormattedTimeMs(item.data.time) }}:{{
-                item.data.position
-              }}
-            </div>
-            <div style="margin-top: 10px" :class="{
-              'temp-log-success-info':
-                item.data.result.indexOf('success') !== -1,
-              'temp-log-warning-info':
-                item.data.result.indexOf('warning') !== -1,
-              'temp-log-error-info': item.data.result === 'error',
-            }" v-html="item.data.desc.replace(/\n/g, '<br>')"></div>
-          </div>
-          <div v-if="item.data.type === 'request'" style="padding: 10px">
-            <div style="font-weight: 500">
-              {{
-                tools.getFormattedTimeMs(JSON.parse(item.data.data).time)
-              }}:实际请求内容
-            </div>
-            <div style="margin-top: 10px" class="temp-log-success-info">
-              <div>请求方法:{{ JSON.parse(item.data.data).method }}</div>
-              <div>URL:{{ JSON.parse(item.data.data).url }}</div>
-              <div>请求头:</div>
-              <div>{{ JSON.parse(item.data.data).headers }}</div>
-              <div>Params:</div>
-              <div>{{ JSON.parse(item.data.data).query_params }}</div>
-              <div>请求体:</div>
-              <div>{{ JSON.parse(item.data.data).body }}</div>
-            </div>
-          </div>
-          <div v-if="item.data.type === 'process'" style="padding: 10px">
-            <div style="font-weight: 500">请求过程</div>
-            <div style="margin-top: 10px" class="temp-log-success-info" v-for="(process, index) in item.data.data"
-              :key="index">
-              {{ process }}
-            </div>
-          </div>
-          <div v-if="item.data.type === 'response'" style="padding: 10px">
-            <div style="font-weight: 500">
-              {{
-                tools.getFormattedTimeMs(JSON.parse(item.data.data).time)
-              }}:响应内容
-            </div>
-            <div style="margin-top: 10px" class="temp-log-success-info">
-              <div>响应码:{{ JSON.parse(item.data.data).status }}</div>
-              <div>响应头:</div>
-              <div>{{ JSON.parse(item.data.data).headers }}</div>
-              <div>响应体:</div>
-              <div>{{ JSON.parse(item.data.data).body }}</div>
-            </div>
-          </div>
-          <div v-if="item.data.type === 'error'" style="padding: 10px">
-            <div style="font-weight: 500">
-              {{
-                tools.getFormattedTimeMs(item.data.data.time)
-              }}:接口异常
-            </div>
-            <div style="margin-top: 10px" class="temp-log-error-info">
-              <div>{{ item.data.data.info }}</div>
-            </div>
-          </div>
-          <div v-if="item.data.type === 'change_temporary_variable'" style="padding: 10px">
-            <div style="font-weight: 500">
-              {{ tools.getFormattedTimeMs(item.data.data.time) }}:临时变量替换
-            </div>
-            <div style="margin-top: 10px" class="temp-log-success-info">
-              <div>临时变量: {{ item.data.data.key }}</div>
-              <div>动态值变为: {{ item.data.data.value }}</div>
-              <div>来自接口: {{ item.data.data.interface }}</div>
-            </div>
-          </div>
-          <div v-if="
-            (item.data.type === 'pre_hooks' ||
-              item.data.type === 'after_hooks') &&
-            item.data.data.length > 0
-          " style="padding: 10px">
-            <div v-for="(pre_hook_step, index) in item.data.data" :key="index">
-              <div style="font-weight: 500">
-                {{ tools.getFormattedTimeMs(pre_hook_step.time) }}:{{
-                  item.data.type === "after_hooks" ? "后置操作" : "前置操作"
-                }}
-              </div>
-              <div v-if="pre_hook_step.type === 'print'" style="margin-top: 10px" class="temp-log-success-info">
-                <div>打印内容:</div>
-                <div>{{ pre_hook_step.data }}</div>
-              </div>
-              <div v-if="pre_hook_step.type === 'wait'" style="margin-top: 10px" class="temp-log-success-info">
-                <div>等待:</div>
-                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
-              </div>
-              <div v-if="pre_hook_step.type === 'script'" style="margin-top: 10px" class="temp-log-success-info">
-                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
-              </div>
-              <div v-if="pre_hook_step.type === 'script_error' || pre_hook_step.type === 'hooks_error'"
-                style="margin-top: 10px" class="temp-log-error-info">
-                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
-              </div>
-              <div v-if="pre_hook_step.type === 'hooks_warning'" style="margin-top: 10px" class="temp-log-warning-info">
-                <div v-html="pre_hook_step.data.replace(/\n/g, '<br>')"></div>
-              </div>
-
-              <div v-if="pre_hook_step.type === 'database'" style="margin-top: 10px" class="temp-log-success-info">
-                <div>数据库操作:</div>
-                <div>操作名称: <span style="font-weight: 500;">{{ pre_hook_step.data.name }}</span></div>
-                <div>最终SQL: <span style="font-weight: 500;">{{ pre_hook_step.data.sql }}</span></div>
-                <div>
-                  SQL结果：<span style="font-weight: 500;">{{ pre_hook_step.data.origin_str }}</span>
-                </div>
-                <div v-if="pre_hook_step.data.data.length > 0">
-                  参数设置：
-                  <div v-for="(match, index) in pre_hook_step.data.data" :key="index" style="">
-                    <div>
-                      Jsonpath：<span>{{ match.json_path }}</span>
-                    </div>
-                    <div>
-                      匹配结果：<span>{{
-                        match.result === true ? "成功" : "失败"
-                      }}</span>
-                    </div>
-                    <div>
-                      结果值：<span>{{ match.value }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="pre_hook_step.type === 'extract'" style="margin-top: 10px" class="temp-log-success-info">
-                <div>提取变量:</div>
-                <div>
-                  提取结果：<span>{{
-                    pre_hook_step.data.result ? "成功" : "失败"
-                  }}</span>
-                </div>
-                <div>
-                  变量名：<span>{{ pre_hook_step.data.key }}</span>
-                </div>
-                <div>
-                  变量值：<span>{{ pre_hook_step.data.value }}</span>
-                </div>
-                <div>
-                  提取来源：<span>{{ pre_hook_step.data.source }}</span>
-                </div>
-                <div>
-                  提取方式：<span>{{ pre_hook_step.data.extract_range }}</span>
-                </div>
-                <div>
-                  提取到：<span>{{ pre_hook_step.data.t }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </el-dialog>
+  <TempLogDialog v-model="show_send_response_dialog" :log-data="send_response" />
 </template>
 
 <script lang="ts" setup>
@@ -501,17 +248,19 @@ import PreAction from "@/views/api/child_context/root_dir/pre_action.vue";
 import AfterAction from "@/views/api/child_context/root_dir/after_action.vue";
 import NewJsonEditor from "@/components/common/editor/NewJsonEditor.vue";
 import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
-import DeleteButton from "@/assets/svg/common/delete_btn.vue";
-import AddButton from "@/assets/svg/common/add_btn.vue";
+import ChoiceParamPosition from '@/views/api/child_context/widget_cpm/choice_param_position.vue'
 import Body from "./req/body.vue";
 import Params from "./req/params.vue";
 import Headers from "./req/headers.vue";
 import GlobalStatus from "@/global";
 import MotionButton from '@/assets/motion/button.vue'
-import SimpleInput from "@/components/common/input/simpleInput.vue";
 import tools from "@/utils/tools";
 import ArrowDownIcon from '@/assets/logo/final/match_vue/arrow_down.vue'
 import ArrowUpIcon from '@/assets/logo/final/match_vue/arrow_up.vue'
+import MultiInput from '@/views/api/child_context/widget_cpm/multi_input.vue'
+import ResponseLine from '@/views/api/child_context/widget_cpm/response_line.vue'
+import ResponseTabs from '@/views/api/child_context/widget_cpm/response_tabs.vue'
+import TempLogDialog from '@/views/api/child_context/widget_cpm/temp_log_dialog.vue'
 import _ from "lodash";
 //debounce
 
@@ -785,7 +534,7 @@ function toggleCollapse() {
 
 function send() {
   if (is_outer_read_mode.value) {
-    window.$toast({title: 'IntelliJ IDEA 接口暂不支持调试，请同步到普通接口'})
+    window.$toast({ title: 'IntelliJ IDEA 接口暂不支持调试，请同步到普通接口' })
     return
   }
   const _data = {
@@ -875,10 +624,6 @@ function showChangeIndicator() {
   });
 }
 
-function handleStatusCommand(command: string | number | object) {
-  current_response.value.status = command;
-}
-
 async function get_source() {
   const res_data = {
     interface: props.interface_id,
@@ -937,11 +682,11 @@ function set_server_options(server_mappings: any) {
   ];
 }
 
-function done_statement() {
+function done_statement(value: boolean) {
   if (data.value.statement === "") {
-    window.$toast({ title: "说明文档不能为空", type: 'info' })
+    window.$toast({ title: "转 Markdown 内容不能为空", type: 'info' })
   } else {
-    show_markdown.value = true;
+    show_markdown.value = value;
   }
 }
 
@@ -1228,7 +973,7 @@ const emit = defineEmits(['change_method'])
 
 async function save() {
   if (is_outer_read_mode.value) {
-    window.$toast({title: 'IntelliJ IDEA 接口无法修改，请同步到普通接口'})
+    window.$toast({ title: 'IntelliJ IDEA 接口无法修改，请同步到普通接口' })
     return
   }
   const content = getChangedTopLevelFields(data.value, originalData);
@@ -1348,7 +1093,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   color: gray;
   font-size: 0.9em;
   font-weight: 500;
-  margin-top: 20px;
+  margin-top: 10px;;
   margin-bottom: 5px;
 }
 
@@ -1398,61 +1143,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   color: rgba(#f89898, 1);
 }
 
-.temp-log-error-info {
-  padding: 10px;
-  background-color: rgba(#f89898, 0.1);
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-}
-
-.temp-log-success-info {
-  padding: 10px;
-  background-color: rgba(#28c0a1, 0.1);
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-}
-
-.temp-log-warning-info {
-  padding: 10px;
-  background-color: rgba(#ffbf00, 0.1);
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-}
-
-.temp-log-header {
-  height: 30px;
-  padding: 10px 20px;
-  display: flex;
-  align-items: center;
-  font-weight: 500;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.add-response {
-  padding: 0px 4px;
-  display: flex;
-  align-items: center;
-  margin-bottom: 5px;
-  border-radius: 4px;
-  font-size: 13px;
-  min-width: 35px;
-}
-
-.add-response:hover {
-  background-color: var(--hover-bg);
-}
-
-.response-menu-div {
-  max-width: 200px;
-  /* 设置最大宽度 */
-  white-space: nowrap;
-  /* 不换行 */
-  overflow: hidden;
-  /* 隐藏超出部分 */
-  text-overflow: ellipsis;
-  /* 使用省略号表示超出部分 */
-}
-
 .hover-menu-box {
   width: 1.4rem !important;
   height: 0.9rem !important;
@@ -1460,28 +1150,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   svg {
     width: 14px !important;
     height: 14px !important;
-  }
-}
-
-.response-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.response-base-info {
-  display: flex;
-  align-items: center;
-  justify-content: start;
-
-  .response-base-info-text {
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .response-base-info-dropdown {
-    display: flex;
-    align-items: center;
   }
 }
 
@@ -1506,7 +1174,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 }
 
 .body-tools {
-  margin-top: 20px;
+  margin-top: 10px;;
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--border-color);
@@ -1529,47 +1197,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
   padding: 10px;
-}
-
-.tab-core {
-  display: flex;
-  justify-content: space-between;
-  font-size: 14px;
-  border-bottom: 1px solid var(--border-color);
-
-  div {
-    cursor: pointer;
-
-    // padding-bottom: 5px;
-    span {
-      padding: 3px 10px;
-    }
-
-    span:hover {
-      background-color: var(--hover-bg);
-      border-radius: 8px;
-    }
-
-    .response-name-status {
-      padding: 3px 10px;
-    }
-
-    .response-name-status:hover {
-      background-color: var(--hover-bg);
-      border-radius: 8px;
-    }
-  }
-
-  .active-tab {
-    font-weight: 500;
-    border-bottom: 2px solid black !important;
-    padding-bottom: 5px;
-  }
-
-  .un-active-tab {
-    border-bottom: 2px solid transparent;
-    padding-bottom: 5px;
-  }
 }
 
 .switch-tab {
@@ -1654,13 +1281,78 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   font-size: 1.1em;
   margin-left: 1%;
 }
+
+.ast-header-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 4px;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0) 100%);
+  border-radius: 4px;
+}
+
+.ast-block-icon {
+  width: 4px !important;
+  height: 18px !important;
+  background: linear-gradient(180deg, #10b981 0%, #34d399 100%) !important;
+  border-radius: 2px !important;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.4) !important;
+  flex-shrink: 0;
+  transform: scaleY(1.1);
+}
+
+.ast-label {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #0a0a0a !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1;
+}
+
+.section-separator {
+  height: 40px;
+  background: linear-gradient(180deg, transparent 0%, rgba(243, 244, 246, 0.8) 50%, transparent 100%);
+  position: relative;
+  margin-top: 20px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 4.16%;
+    right: 4.16%;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(209, 213, 219, 0.4) 20%, rgba(209, 213, 219, 0.4) 80%, transparent 100%);
+  }
+
+  &::after {
+    content: '···';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(156, 163, 175, 0.5);
+    font-size: 20px;
+    letter-spacing: 8px;
+    background: white;
+    padding: 0 16px;
+    border-radius: 10px;
+  }
+}
+
+.response-section {
+  background: linear-gradient(180deg, rgba(249, 250, 251, 0.6) 0%, rgba(249, 250, 251, 0.3) 100px, transparent 200px);
+  padding-top: 32px;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.02);
+}
+
 </style>
 
 <style lang="scss">
-.response-status-dropdown {
-  height: 300px;
-}
-
 .main-table {
   .cell {
     display: flex;
@@ -1678,7 +1370,7 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 .doc-base-title {
   color: gray;
   font-size: 0.9em;
-  margin: 20px 0px !important;
+  margin: 10px 0px !important;
   font-weight: 500;
 }
 
