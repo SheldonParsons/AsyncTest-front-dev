@@ -275,7 +275,7 @@ router.beforeEach(async (to: any, from: any, next: any) => {
 })
 
 function getHeader(r: any) {
-  isLogin.value = r.name.indexOf("login") === -1
+  isLogin.value = r.name && r.name.indexOf("login") === -1
   store.dispatch("saveGlobalHeader", isLogin.value)
 }
 

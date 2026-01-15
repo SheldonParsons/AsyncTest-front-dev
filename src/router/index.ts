@@ -2,6 +2,10 @@ import { createRouter, createWebHistory, createMemoryHistory } from 'vue-router'
 
 const routes = [
   {
+    path: '/',
+    redirect: '/login'
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/components/FirstPage.vue'),
