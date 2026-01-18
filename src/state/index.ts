@@ -1,6 +1,7 @@
 // src/state/index.ts
 import { reactive } from "vue";
 
+
 // 如果有多个不同业务的内部状态共享
 // 使用具名导出更容易维护
 export const state = reactive({
@@ -22,10 +23,13 @@ interface GlobalModuleState<T = any> {
   user_env: string | null;
   sendMessage: (message: string, data?: T) => void;
   addCacheInterface: (node_id: number) => void;
+  getAsyncResult: (message: string) => Promise<boolean>;
   deleteCacheInterface: (node_ids: Array<number>) => void;
   setUserEnv: (message: string, user_env: string) => void;
   setUserEnvNoBroadcase: (user_env: string) => void;
 }
+
+export const bus = new EventTarget()
 
 export const GlobalState = reactive<GlobalModuleState>({
   message: "",
@@ -33,6 +37,17 @@ export const GlobalState = reactive<GlobalModuleState>({
   count: 0,
   cache_interface_node_list: [],
   user_env: null,
+  async getAsyncResult(message: string): Promise<boolean> {
+    console.log("in message");
+    console.log(message);
+    
+    
+    return new Promise((resolve) => {
+      bus.dispatchEvent(
+        new CustomEvent(message, { detail: resolve })
+      )
+    })
+  },
   sendMessage(message: string, data: any = null) {
     this.message = message;
     this.data = data;

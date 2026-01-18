@@ -1,27 +1,29 @@
 <template>
-  <div style="height: 100%;overflow: scroll;">
-  <Input
-    placeholder="搜索数据 范围：用户昵称、接口名"
-    title="监听接口列表"
-    :handlerFunction="getAuditInterfaceList"
-  >
-    <template #headers>
-      <th class="disappear-auto">Method</th>
-      <th>描述</th>
-      <th class="disappear-auto">名称</th>
-      <th class="disappear-auto">核心内容</th>
-      <th>创建者</th>
-      <th>时间</th>
-    </template>
-    <template v-slot:main="{ item }">
-        <td class="disappear-auto">{{ item.method }}</td>
-        <td class="disappear-auto">{{ item.description }}</td>
-        <td class="disappear-auto">{{ item.name }}</td>
-        <td class="disappear-auto">{{ item.core_content }}</td>
-        <td class="disappear-auto">{{ item.create_by }}</td>
-        <td class="disappear-auto">{{ new Date(item.add_time).toLocaleString() }}</td>
-    </template>
-  </Input>
+  <div class="audit-container">
+    <Input placeholder="搜索数据 范围：用户昵称、接口名" title="监听接口列表" :handlerFunction="getAuditInterfaceList">
+      <template #headers>
+        <th class="col-method">Method</th>
+        <th class="col-desc">描述</th>
+        <th class="col-name">名称</th>
+        <th class="col-core">核心内容</th>
+        <th class="col-creator">创建者</th>
+        <th class="col-time">时间</th>
+      </template>
+      <template v-slot:main="{ item }">
+        <td class="col-method">{{ item.method }}</td>
+        <td class="col-desc" :title="item.description">
+          <div class="text-ellipsis">{{ item.description }}</div>
+        </td>
+        <td class="col-name" :title="item.name">
+          <div class="text-ellipsis">{{ item.name }}</div>
+        </td>
+        <td class="col-core" :title="item.core_content">
+          <div class="text-ellipsis">{{ item.core_content }}</div>
+        </td>
+        <td class="col-creator">{{ item.create_by }}</td>
+        <td class="col-time">{{ new Date(item.add_time).toLocaleString() }}</td>
+      </template>
+    </Input>
   </div>
 </template>
 
@@ -31,78 +33,92 @@ import { getAuditInterfaceList } from "@/api/audit";
 </script>
 
 <style lang="scss" scoped>
+.audit-container {
+  height: 100%;
+  overflow: auto;
+}
 
-.styled-table {
-  border-top: 2px solid var(--global-theme-color);
-  border-collapse: collapse;
-  margin: 25px 0;
-  font-size: 0.9em;
-  width: 100%;
-  // border-radius: 5px 5px 0px 0px;
-  overflow: hidden;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-  .action-td {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
+/* 使用 :deep() 穿透到子组件的表格样式 */
+:deep(.styled-table) {
+  /* 列宽设置 - 核心内容占最大比例 */
+  .col-method {
+    width: 8%;
+    min-width: 70px;
   }
-  .desc-td {
-    width: 5%;
+
+  .col-desc {
+    width: 15%;
+    min-width: 120px;
   }
-  .long-td {
-    width: 300px;
+
+  .col-name {
+    width: 12%;
+    min-width: 100px;
   }
-  .long-td div {
-    // width: 30vw;
-    max-width: 300px;
-    overflow: hidden;
-    word-break: break-all;
-    text-overflow: ellipsis;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
+
+  .col-core {
+    width: 40%;
+    min-width: 200px;
+  }
+
+  .col-creator {
+    width: 10%;
+    min-width: 80px;
+  }
+
+  .col-time {
+    width: 15%;
+    min-width: 140px;
+  }
+
+  /* 短文本列 - 单行显示省略 */
+  .col-method,
+  .col-creator,
+  .col-time {
     white-space: nowrap;
-    margin: 0;
-    font-size: 16px;
-  }
-  .desc-td div {
-    width: 10vw;
     overflow: hidden;
-    word-break: break-all;
     text-overflow: ellipsis;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-    white-space: nowrap;
-    margin: 0;
-    cursor: default;
-    font-size: 14px;
   }
-}
 
-.styled-table thead tr {
-  text-align: left;
-  color: black;
-  border-bottom: 1px solid #E6E6E6;
-}
+  /* 描述和名称 - 限制行数 */
+  .col-desc .text-ellipsis,
+  .col-name .text-ellipsis {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    line-height: 1.5;
+  }
 
-.styled-table th,
-.styled-table td {
-  padding: 12px 15px;
-}
+  /* 核心内容 - 换行显示 */
+  .col-core .text-ellipsis {
+    white-space: normal;
+    word-wrap: break-word;
+    word-break: break-word;
+    line-height: 1.6;
+    max-height: none;
+  }
 
-.styled-table tbody tr {
-  border-bottom: 1px solid #dddddd;
-}
+  /* 单元格内边距优化 */
+  td {
+    padding: 14px 12px;
+    vertical-align: top;
+  }
 
-.styled-table tbody tr:nth-of-type(even) {
-  background-color: #f3f3f3;
-}
+  th {
+    padding: 14px 12px;
+    font-weight: 600;
+    background-color: rgba(0, 0, 0, 0.02);
+  }
 
-.styled-table tbody tr:last-of-type {
-  border-bottom: 2px solid var(--global-theme-color);
-}
+  /* 行样式优化 */
+  tbody tr {
+    transition: background-color 0.2s;
 
-.styled-table tbody tr td.active-row {
-  font-weight: bold;
-  color: var(--method-color);
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.03) !important;
+    }
+  }
 }
 </style>

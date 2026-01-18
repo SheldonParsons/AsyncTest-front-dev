@@ -239,9 +239,10 @@ function clearInfinite() {
   margin: 25px 0;
   font-size: 0.9em;
   width: 100%;
-  // border-radius: 5px 5px 0px 0px;
+  table-layout: fixed;
   overflow: hidden;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+
   .action-td {
     display: flex;
     flex-direction: row;
@@ -254,7 +255,6 @@ function clearInfinite() {
     width: 300px;
   }
   .long-td div {
-    // width: 30vw;
     max-width: 300px;
     overflow: hidden;
     word-break: break-all;
@@ -288,6 +288,8 @@ function clearInfinite() {
 .styled-table th,
 .styled-table td {
   padding: 12px 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .styled-table tbody tr {

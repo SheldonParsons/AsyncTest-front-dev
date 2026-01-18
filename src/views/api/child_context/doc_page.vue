@@ -2,10 +2,10 @@
   <SplitterGroup direction="vertical">
     <SplitterPanel :default-size="6" :min-size="6" :max-size="6">
       <div class="switch-tab">
-        <div :class="{ active: activeTab === 'A' }" @click="activeTab = 'A'">
+        <div :class="{ active: activeTab === 'A' }" @click="changeTab('A')">
           <span>接口信息</span>
         </div>
-        <div :class="{ active: activeTab === 'B' }" @click="activeTab = 'B'">
+        <div :class="{ active: activeTab === 'B' }" @click="changeTab('B')">
           <span>Mock</span>
         </div>
       </div>
@@ -20,10 +20,12 @@
 </template>
 <script lang="ts" setup>
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import MockPage from "./mock_page.vue";
-import InterfacePage from "./interface_page.vue";
-const activeTab = ref<"A" | "B">("A");
+import InterfacePage from "@/views/api/child_context/interface_page.vue";
+import { GlobalState } from "@/state/index";
+const activeTab = ref("A");
+const prepareChangeTab = ref("")
 const props = defineProps({
   node_id: {
     type: Number,
@@ -34,6 +36,30 @@ const props = defineProps({
     default: null,
   }
 });
+
+function changeTab(tab: 'A' | 'B') {
+  if (tab !== 'A') {
+    prepareChangeTab.value = tab
+    GlobalState.sendMessage("interface_close_commit_on_tab");
+  } else {
+    activeTab.value = tab
+    prepareChangeTab.value = ""
+  }
+
+}
+
+watch(
+  () => GlobalState.count,
+  async (newCount) => {
+    if (GlobalState.message === "commit_change_tab") {
+      activeTab.value = prepareChangeTab.value
+      prepareChangeTab.value = ""
+      GlobalState.sendMessage("clean_interface_change", {
+        node_id: props.node_id,
+      });
+    }
+  }
+);
 </script>
 
 <style lang="scss" scope>

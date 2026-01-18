@@ -167,21 +167,14 @@
         <div v-if="loading === false">
           <el-row style="margin-top: 10px">
             <el-col :span="22" :offset="1">
-              <ResponseTabs
-                :response-options="responseOptions"
-                :current-id="current_response.id"
-                @change="change_response_tab"
-                @add="add_response_handle"
-              />
+              <ResponseTabs :response-options="responseOptions" :current-id="current_response.id"
+                @change="change_response_tab" @add="add_response_handle" />
             </el-col>
           </el-row>
           <div>
             <el-row style="margin-top: 5px">
               <el-col :span="22" :offset="1">
-                <ResponseLine
-                  v-model="current_response"
-                  @delete="delete_response(current_response)"
-                />
+                <ResponseLine v-model="current_response" @delete="delete_response(current_response)" />
               </el-col></el-row>
             <el-row style="margin-top: 10px">
               <el-col :span="22" :offset="1">
@@ -220,6 +213,10 @@
     </div>
   </div>
   <TempLogDialog v-model="show_send_response_dialog" :log-data="send_response" />
+  <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
+  </NormalDialog>
+  <NormalDialog v-model="show_has_change_dialog_on_tab" @action="has_change_action_on_tab">
+  </NormalDialog>
 </template>
 
 <script lang="ts" setup>
@@ -242,25 +239,21 @@ import RegularSelect from "../child_component/regular_select.vue";
 import RegularSelectMul from "../child_component/regular_select_mul.vue";
 import RegularSelectGroup from "../child_component/regular_select_group.vue";
 import Auth from "@/views/api/child_context/root_dir/auth.vue";
-import EditButton from "@/assets/svg/common/edit_btn.vue";
-import DoneButton from "@/assets/svg/common/done_btn.vue";
 import PreAction from "@/views/api/child_context/root_dir/pre_action.vue";
 import AfterAction from "@/views/api/child_context/root_dir/after_action.vue";
 import NewJsonEditor from "@/components/common/editor/NewJsonEditor.vue";
-import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
 import ChoiceParamPosition from '@/views/api/child_context/widget_cpm/choice_param_position.vue'
 import Body from "./req/body.vue";
 import Params from "./req/params.vue";
 import Headers from "./req/headers.vue";
-import GlobalStatus from "@/global";
 import MotionButton from '@/assets/motion/button.vue'
-import tools from "@/utils/tools";
 import ArrowDownIcon from '@/assets/logo/final/match_vue/arrow_down.vue'
 import ArrowUpIcon from '@/assets/logo/final/match_vue/arrow_up.vue'
 import MultiInput from '@/views/api/child_context/widget_cpm/multi_input.vue'
 import ResponseLine from '@/views/api/child_context/widget_cpm/response_line.vue'
 import ResponseTabs from '@/views/api/child_context/widget_cpm/response_tabs.vue'
 import TempLogDialog from '@/views/api/child_context/widget_cpm/temp_log_dialog.vue'
+import NormalDialog from '@/views/case/components/dialog.vue'
 import _ from "lodash";
 //debounce
 
@@ -279,7 +272,7 @@ import {
 import { StreamPostApi } from "@/api/sse/index";
 import { ApiGetProjectServerParameters } from "@/api/interface/env";
 import { useRoute } from "vue-router";
-import { GlobalState } from "@/state/index";
+import { GlobalState, bus } from "@/state/index";
 const route = useRoute();
 const show_markdown = ref(false);
 // 全局对象
@@ -294,6 +287,8 @@ const loading = ref(true);
 const auth_ref: any = ref(null);
 const pre_action_ref: any = ref(null);
 const after_action_ref: any = ref(null);
+const show_has_change_dialog = ref(false)
+const show_has_change_dialog_on_tab = ref(false)
 const activeTab = ref<"A" | "B">("B");
 const hasShown = ref({ A: true, B: false });
 const active_res_tab = ref(1);
@@ -303,6 +298,7 @@ const marker_list: any = ref([]);
 const serverOptions: any = ref([]);
 const responseOptions: any = ref([]);
 const collapseStatement = ref(true)
+const isChange = ref(true)
 const interfaceInfoRef: any = ref(null)
 const current_response: any = ref({
   content: "",
@@ -327,6 +323,7 @@ let stopWatchHandler: () => void;
 let originalData: any = null;
 let originalResponse: any = null;
 import deepDiff from "deep-diff";
+let pendingResolve: ((result: boolean) => void) | null = null
 
 onMounted(async () => {
   console.log(props.interface_id);
@@ -354,8 +351,51 @@ onMounted(async () => {
     }
     try_paste_interface_info()
   }
+  // const handler = (e: Event) => {
+  //   console.log("in handler");
 
+  //   const { resolve } = (e as CustomEvent).detail
+  //   pendingResolve = resolve
+  //   show_has_change_dialog.value = true
+  // }
+
+  // bus.addEventListener('get_interface_close_valid', handler)
+
+  // onBeforeUnmount(() => {
+  //   bus.removeEventListener('get_interface_close_valid', handler)
+  // })
 });
+
+async function has_change_action_on_tab(action_name: string) {
+  if (action_name === 'pass') {
+    show_has_change_dialog_on_tab.value = false
+  } else if (action_name === 'save') {
+    show_has_change_dialog_on_tab.value = false
+    await save()
+    GlobalState.sendMessage('commit_change_tab')
+  } else if (action_name === 'nosave') {
+    show_has_change_dialog_on_tab.value = false
+    GlobalState.sendMessage('commit_change_tab')
+  }
+}
+
+async function has_change_action(action_name: string) {
+  GlobalState.sendMessage("change_leave_dialog", { action_name: action_name });
+  if (action_name === 'pass') {
+    show_has_change_dialog.value = false
+    if (!pendingResolve) return
+    pendingResolve(false)
+  } else if (action_name === 'save') {
+    show_has_change_dialog.value = false
+    if (!pendingResolve) return
+    await save()
+    pendingResolve(true)
+  } else if (action_name === 'nosave') {
+    show_has_change_dialog.value = false
+    if (!pendingResolve) return
+    pendingResolve(true)
+  }
+}
 
 
 async function justGetReadData() {
@@ -507,6 +547,16 @@ watch(
       GlobalState.sendMessage('save_done', true)
     } else if (GlobalState.message === 'paste_interface_info') {
       paste_interface_info_data.value = GlobalState.data.data
+    } else if (GlobalState.message === 'interface_close_commit') {
+      if (isChange.value) {
+        show_has_change_dialog.value = true
+      }
+    } else if (GlobalState.message === 'interface_close_commit_on_tab') {
+      if (isChange.value) {
+        show_has_change_dialog_on_tab.value = true
+      } else {
+        GlobalState.sendMessage('commit_change_tab')
+      }
     }
   }
 );
@@ -619,6 +669,7 @@ function change_response_tab(item: any) {
 
 // 发送修改提示
 function showChangeIndicator() {
+  isChange.value = true
   GlobalState.sendMessage("change_interface_content", {
     node_id: props.node_id,
   });
@@ -725,6 +776,7 @@ async function get_file_list() {
 
 function handleChangeBodyType(label: string) {
   data.value.body_type = label;
+  window.$toast({ title: `您变更了请求类型为：${label.toUpperCase()}，注意保存` })
 }
 
 function insert_params(text: string) {
@@ -981,6 +1033,7 @@ async function save() {
     responseOptions.value,
     originalResponse
   );
+  isChange.value = false
   setupWatch();
   setupWatchResponse();
   enableWatch.value = true;
@@ -1093,7 +1146,8 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   color: gray;
   font-size: 0.9em;
   font-weight: 500;
-  margin-top: 10px;;
+  margin-top: 10px;
+  ;
   margin-bottom: 5px;
 }
 
@@ -1174,7 +1228,8 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
 }
 
 .body-tools {
-  margin-top: 10px;;
+  margin-top: 10px;
+  ;
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--border-color);
@@ -1349,7 +1404,6 @@ const getChangedTopLevelFields = (data: any, original_data: any) => {
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.02);
 }
-
 </style>
 
 <style lang="scss">

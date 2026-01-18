@@ -83,8 +83,8 @@
       <OuterRootDir v-if="show_type === 6"></OuterRootDir>
       <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>
       <EnvSettingDialog v-model="visible_env_setting_dialog" v-if="visible_env_setting_dialog"></EnvSettingDialog>
-      <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
-      </NormalDialog>
+      <!-- <NormalDialog v-model="show_has_change_dialog" @action="has_change_action">
+      </NormalDialog> -->
     </SplitterPanel>
   </SplitterGroup>
 </template>
@@ -92,7 +92,7 @@
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { ref, onMounted, nextTick, watch, getCurrentInstance } from "vue";
 import Fold from "@/assets/svg/tree/fold.vue";
-import { useRoute } from "vue-router";
+import { useRoute, onBeforeRouteLeave } from "vue-router";
 import DS from "@/assets/svg/tree/ds.vue";
 import DsLight from "@/assets/svg/tree/ds_light.vue";
 import PlusBold from "@/assets/svg/common/addIcon.vue";
@@ -189,6 +189,22 @@ onMounted(() => {
   loadScript("/libs/codemirror.js");
   get_env_list_and_user_env();
 });
+
+// onBeforeRouteLeave(async (to, from, next) => {
+//   const has_change = is_current_tab_has_change()
+//   console.log(has_change);
+  
+//   if (has_change) {
+//     console.log(123123);
+    
+//     const canClose = await GlobalState.getAsyncResult("get_interface_close_valid");
+//     console.log(canClose);
+    
+//     next(canClose)
+//   } else {
+//     next(true)
+//   }
+// })
 
 const method_t_mapping: any = {
   'get': 0,
@@ -291,6 +307,9 @@ watch(
     if (GlobalState.message === 'save_done') {
       const editor_tab: EditorTab = real_change_tab()
       change_page(editor_tab, current_broadcast.value);
+    }
+    if (GlobalState.message === 'change_leave_dialog') {
+      has_change_action(GlobalState.data.action_name)
     }
   }
 );
@@ -491,20 +510,20 @@ function change_tab(
     const editor_tab: EditorTab = real_change_tab()
     change_page(editor_tab, current_broadcast.value);
   } else {
-    show_has_change_dialog.value = true
+    GlobalState.sendMessage("interface_close_commit");
   }
 }
 
 function has_change_action(action_name: string) {
   if (action_name === 'pass') {
-    show_has_change_dialog.value = false
+    // show_has_change_dialog.value = false
     GlobalState.sendMessage("rollback_node_highlight", { id: success_change_menu_tab_id.value });
   } else if (action_name === 'save') {
-    show_has_change_dialog.value = false
+    // show_has_change_dialog.value = false
     clean_has_change()
     GlobalState.sendMessage("save_interface", action_name);
   } else if (action_name === 'nosave') {
-    show_has_change_dialog.value = false
+    // show_has_change_dialog.value = false
     clean_has_change()
     const editor_tab: EditorTab = real_change_tab()
     change_page(editor_tab, current_broadcast.value);

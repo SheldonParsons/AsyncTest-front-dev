@@ -2,13 +2,9 @@
   <div class="sidebar-container">
     <div class="menu-modern">
       <!-- Menu Items -->
-      <div
-        v-for="(item, index) in menuItems"
-        :key="item.name"
+      <div v-for="(item, index) in menuItems" :key="item.name"
         :class="['menu-item', { 'menu-item-active': isActive(item.route) }]"
-        :style="{ animationDelay: `${index * 0.05}s` }"
-        @click="switchRouter(item.route)"
-      >
+        :style="{ animationDelay: `${index * 0.05}s` }" @click="switchRouter(item.route)">
         <div class="menu-item-inner">
           <div class="icon-wrapper">
             <component :is="item.icon" class="menu-icon"></component>
@@ -23,11 +19,8 @@
       <div class="menu-divider"></div>
 
       <!-- Settings -->
-      <div
-        :class="['menu-item', { 'menu-item-active': isActive('settings') }]"
-        style="animation-delay: 0.15s"
-        @click="switchRouter('settings_source_database')"
-      >
+      <div :class="['menu-item', { 'menu-item-active': isActive('settings') }]" style="animation-delay: 0.15s"
+        @click="switchRouter('settings_source_database')">
         <div class="menu-item-inner">
           <div class="icon-wrapper">
             <SETTING class="menu-icon"></SETTING>
@@ -42,12 +35,8 @@
       <div class="menu-divider"></div>
 
       <!-- Audit (conditional) -->
-      <div
-        v-if="showMenu"
-        :class="['menu-item', { 'menu-item-active': isActive('audit') }]"
-        style="animation-delay: 0.2s"
-        @click="switchRouter('audit')"
-      >
+      <div v-if="showMenu" :class="['menu-item', { 'menu-item-active': isActive('audit') }]"
+        style="animation-delay: 0.2s" @click="switchRouter('audit')">
         <div class="menu-item-inner">
           <div class="icon-wrapper">
             <AUDIT class="menu-icon"></AUDIT>
@@ -112,12 +101,12 @@ watch(() => route.name, (newName, oldName) => {
 onMounted(() => {
   switchRouter(router.currentRoute.value.name);
   store.dispatch("getUser").then((res: any) => {
-      if (res && res.username) {
-        if (["a80646"].indexOf(res.username) !== -1) {
-          showMenu.value = true
-        }
+    if (res && res.username) {
+      if (["a80646"].indexOf(res.username) !== -1) {
+        showMenu.value = true
       }
-    });
+    }
+  });
 });
 
 defineExpose({
@@ -143,12 +132,25 @@ function switchRouter(routerName: string) {
     tools.message('功能升级中，暂时停用，敬请期待', proxy, 'info');
     return
   }
-  emit("switchRouterAction", routerName);
   const params = { project: Number(route.params.project) };
+  console.log(router.currentRoute.value.name);
+  console.log(routerName);
+  
+  
   if (router.currentRoute.value.name !== routerName) {
-    router.push({ name: routerName, params });
+    router.push({ name: routerName, params }).then(() => {
+      console.log("999999");
+      
+      emit("switchRouterAction", routerName);
+    }).catch((err:any) => {
+      console.log("err");
+      console.log(err);
+      
+    })
+  } else {
+    emit("switchRouterAction", routerName);
+    currentFocuseIcon.value = routerName;
   }
-  currentFocuseIcon.value = routerName;
 }
 </script>
 
@@ -209,14 +211,12 @@ function switchRouter(routerName: string) {
     position: absolute;
     inset: -2px;
     border-radius: 12px;
-    background: conic-gradient(
-      from 0deg,
-      transparent 0deg,
-      rgba(16, 185, 129, 0.15) 90deg,
-      rgba(52, 211, 153, 0.2) 180deg,
-      rgba(16, 185, 129, 0.15) 270deg,
-      transparent 360deg
-    );
+    background: conic-gradient(from 0deg,
+        transparent 0deg,
+        rgba(16, 185, 129, 0.15) 90deg,
+        rgba(52, 211, 153, 0.2) 180deg,
+        rgba(16, 185, 129, 0.15) 270deg,
+        transparent 360deg);
     opacity: 0;
     animation: rotate 3s linear infinite;
     animation-play-state: paused;
@@ -372,6 +372,7 @@ function switchRouter(routerName: string) {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -382,16 +383,20 @@ function switchRouter(routerName: string) {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.8;
     transform: scale(1);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.1);
@@ -399,24 +404,32 @@ function switchRouter(routerName: string) {
 }
 
 @keyframes iconBounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(-1px) rotate(8deg);
   }
+
   25% {
     transform: translateY(-3px) rotate(-5deg);
   }
+
   50% {
     transform: translateY(-1px) rotate(8deg);
   }
+
   75% {
     transform: translateY(-2px) rotate(5deg);
   }
 }
 
 @keyframes labelFloat {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-2px);
   }
