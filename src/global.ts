@@ -1,6 +1,7 @@
 const GlobalStatus = {
   localhost: "http://localhost:3333",
   product_host: "https://www.asynctest.com",
+  product_docs_host: "https://www.docs.asynctest.com",
   cookieTag: "DjangoToken",
   anonymousPage: "login",
   anonymousPath: "anonymous",

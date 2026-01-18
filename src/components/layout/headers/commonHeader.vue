@@ -13,11 +13,8 @@
         <!-- Left section: Logo & Project info -->
         <div class="header-left">
           <div class="logo-section" @click="toProject">
-            <img
-              class="logo-image g-unselect"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full.svg"
-              alt="AsyncTest"
-            />
+            <img class="logo-image g-unselect"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full.svg" alt="AsyncTest" />
             <span class="logo-text g-unselect">AsyncTest</span>
           </div>
 
@@ -37,12 +34,8 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.project" side="bottom">
                 <template #trigger>
-                  <div
-                    class="action-btn"
-                    @mouseenter="tooltipStates.project = true"
-                    @mouseleave="tooltipStates.project = false"
-                    @click="toProject"
-                  >
+                  <div class="action-btn" @mouseenter="tooltipStates.project = true"
+                    @mouseleave="tooltipStates.project = false" @click="toProject">
                     <AnimatedHomeIcon :size="20" />
                   </div>
                 </template>
@@ -54,22 +47,13 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.plugin" side="bottom">
                 <template #trigger>
-                  <a
-                    :href="pluginDownloadUrl"
-                    class="action-btn plugin-link"
-                    download
-                    @mouseenter="tooltipStates.plugin = true"
-                    @mouseleave="tooltipStates.plugin = false"
-                  >
+                  <a :href="pluginDownloadUrl" class="action-btn plugin-link" download
+                    @mouseenter="tooltipStates.plugin = true" @mouseleave="tooltipStates.plugin = false">
                     <div class="idea-icon-wrapper">
-                      <img
-                        :src="ideaIconUrl"
-                        alt="IntelliJ IDEA"
-                        class="idea-icon"
-                      />
+                      <img :src="ideaIconUrl" alt="IntelliJ IDEA" class="idea-icon" />
                       <div class="download-indicator">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
                         </svg>
                       </div>
                     </div>
@@ -83,14 +67,8 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.docs" side="bottom">
                 <template #trigger>
-                  <a
-                    :href="docsUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="action-btn"
-                    @mouseenter="tooltipStates.docs = true"
-                    @mouseleave="tooltipStates.docs = false"
-                  >
+                  <a :href="GlobalStatus.product_docs_host" target="_blank" rel="noopener noreferrer" class="action-btn"
+                    @mouseenter="tooltipStates.docs = true" @mouseleave="tooltipStates.docs = false">
                     <AnimatedDocIcon :size="20" />
                   </a>
                 </template>
@@ -141,12 +119,8 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.logout" side="bottom">
                 <template #trigger>
-                  <div
-                    class="action-btn logout-btn"
-                    @mouseenter="tooltipStates.logout = true"
-                    @mouseleave="tooltipStates.logout = false"
-                    @click="logout"
-                  >
+                  <div class="action-btn logout-btn" @mouseenter="tooltipStates.logout = true"
+                    @mouseleave="tooltipStates.logout = false" @click="logout">
                     <AnimatedLogoutIcon :size="20" />
                   </div>
                 </template>
@@ -178,6 +152,7 @@ import AnimatedLanguageIcon from "@/assets/svg/header/AnimatedLanguageIcon.vue"
 import AnimatedLogoutIcon from "@/assets/svg/header/AnimatedLogoutIcon.vue"
 import AnimatedDocIcon from "@/assets/svg/header/AnimatedDocIcon.vue"
 import AnimatedHomeIcon from "@/assets/svg/header/AnimatedHomeIcon.vue"
+import GlobalStatus from "@/global";
 
 const store: any = useStore()
 const router: any = useRouter()
@@ -201,7 +176,6 @@ const tooltipStates = reactive({
 
 // External URLs
 const pluginDownloadUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/AsyncTestCallerDocs/AsyncTest%20Caller.zip"
-const docsUrl = "https://docs.asynctest.com/"
 const ideaIconUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg"
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -282,9 +256,8 @@ function getHeader(r: any) {
 function getUserImage() {
   store.dispatch("getUser").then((res: any) => {
     if (res && res.id) {
-      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${
-        res.userId + (0 % 100)
-      }.png`
+      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.userId + (0 % 100)
+        }.png`
     }
   })
 }
@@ -408,42 +381,56 @@ function toProject() {
 }
 
 @keyframes floatOrb1 {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translate(0, 0) scale(1);
   }
+
   25% {
     transform: translate(20px, -15px) scale(1.08);
   }
+
   50% {
     transform: translate(-15px, -10px) scale(0.92);
   }
+
   75% {
     transform: translate(-20px, 12px) scale(1.05);
   }
 }
 
 @keyframes floatOrb2 {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translate(0, 0) scale(1) rotate(0deg);
   }
+
   33% {
     transform: translate(-18px, 15px) scale(1.06) rotate(5deg);
   }
+
   66% {
     transform: translate(15px, -12px) scale(0.94) rotate(-5deg);
   }
 }
 
 @keyframes floatOrb3 {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translate(0, 0) scale(1);
   }
+
   30% {
     transform: translate(18px, 10px) scale(1.04);
   }
+
   60% {
     transform: translate(-12px, -15px) scale(0.96);
   }
+
   90% {
     transform: translate(10px, -8px) scale(1.02);
   }
@@ -554,7 +541,7 @@ function toProject() {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
     animation: shimmer 3s infinite;
   }
 
@@ -569,8 +556,13 @@ function toProject() {
 }
 
 @keyframes shimmer {
-  0% { left: -100%; }
-  100% { left: 100%; }
+  0% {
+    left: -100%;
+  }
+
+  100% {
+    left: 100%;
+  }
 }
 
 // Slide fade transition
@@ -706,24 +698,32 @@ function toProject() {
 }
 
 @keyframes bounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1) translateY(0);
   }
+
   50% {
     transform: scale(1) translateY(-3px);
   }
 }
 
 @keyframes iconBounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   25% {
     transform: translateY(-4px);
   }
+
   50% {
     transform: translateY(0);
   }
+
   75% {
     transform: translateY(-2px);
   }
@@ -778,9 +778,12 @@ function toProject() {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
   }
+
   50% {
     box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
   }

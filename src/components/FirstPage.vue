@@ -22,8 +22,8 @@
               <a href="#showcase" class="nav-link" @click.prevent="scrollToSection('showcase')">ShowCase</a>
             </div>
             <div class="nav-right">
-              <a href="https://docs.asynctest.com/ast_caller/install.html" class="btn-secondary idea-plugin-btn"
-                target="_blank">
+              <a :href="GlobalStatus.product_docs_host + '/ast_caller/install.html'"
+                class="btn-secondary idea-plugin-btn" target="_blank">
                 <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg" alt="IDEA"
                   class="idea-icon" />
                 <span>IDEA Plugin</span>
@@ -53,7 +53,8 @@
                     stroke-linejoin="round" />
                 </svg>
               </button>
-              <a href="https://docs.asynctest.com/start.html" class="btn-hero-secondary" target="_blank">查看文档</a>
+              <a :href="GlobalStatus.product_docs_host + '/start.html'" class="btn-hero-secondary"
+                target="_blank">查看文档</a>
             </div>
             <div class="hero-stats">
               <div class="stat-item">
@@ -316,6 +317,7 @@ import { ApiLogin } from "@/api/anonymous/index";
 import { useStore } from "@/store";
 import { useRouter } from "vue-router";
 import CaseDemoVideo from '@/components/video.vue'
+import GlobalStatus from "@/global";
 
 // ========================================
 // 数据定义
@@ -493,7 +495,7 @@ function rememberCheck() {
       loginForm.value.checked = res.remember;
       console.log(res.remember);
       console.log("----");
-      
+
 
       if (res.remember === true) {
         // 如果记住密码，将账号密码填充至登陆输入框
