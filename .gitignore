@@ -30,3 +30,7 @@ CLAUDE.md
 *.njsproj
 *.sln
 *.sw?
+
+# pack
+linux_build.zip
+mac_pack.sh

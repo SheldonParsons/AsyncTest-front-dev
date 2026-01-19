@@ -1,6 +1,7 @@
 const GlobalStatus = {
   localhost: "http://localhost:3333",
   product_host: "https://www.asynctest.com",
+  // product_host: "http://10.23.224.40:80",
   product_docs_host: "https://www.docs.asynctest.com",
   cookieTag: "DjangoToken",
   anonymousPage: "login",
@@ -13,6 +14,14 @@ const GlobalStatus = {
     ["#436363", "#2f4f4f"],
   ],
   lightColor: "#28c0a1",
+  get_product_host: () => {
+    const hostname = window.location.hostname
+    if (hostname.includes('asynctest')) {
+      return 'https://www.asynctest.com'
+    } else {
+      return 'http://10.23.224.40:80'
+    }
+  },
   regular_type_info_map: () => {
     return {
       string: {

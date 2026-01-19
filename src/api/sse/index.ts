@@ -97,11 +97,14 @@ export const ssePost = async (
     { method: "POST" },
     fetchOptions
   );
-
+  console.log("-----");
+  
+  console.log(window.location.hostname);
+  
   // 5.2 组装请求URL
   const urlWithPrefix = `${
     import.meta.env.PROD
-      ? GlobalStatus.product_host + "/server"
+      ? GlobalStatus.get_product_host() + "/server"
       : GlobalStatus.localhost + "/api"
   }${url.startsWith("/") ? url : `/${url}`}`;
 
