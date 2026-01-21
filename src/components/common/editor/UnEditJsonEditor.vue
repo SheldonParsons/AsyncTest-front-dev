@@ -7,21 +7,12 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, getCurrentInstance, watch } from "vue";
+import { onMounted, ref, getCurrentInstance, watch, shallowRef } from "vue";
 import { JSONFormat, preprocessJson } from "./formatter";
 
 import tools from "@/utils/tools";
 import { useI18n } from "vue-i18n";
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
-import GlobalStatus from "@/global";
-import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import { parse } from "@prantlf/jsonlint";
-
-self.MonacoEnvironment = {
-  getWorker(workerId, label) {
-    return new EditorWorker();
-  },
-};
 
 const { t } = useI18n();
 
@@ -70,7 +61,7 @@ const emit = defineEmits(["update:modelValue", "stopChangeCode"]);
 const dom = ref();
 
 // monaco实例
-const monaco = ref();
+const monaco = shallowRef();
 
 // {{}}正则
 const localRe = /\{{2}.*?\}{2}/g;
@@ -110,16 +101,22 @@ function choiceLanguage(command: any) {
   createLanguage(monaco.value);
   tools.message(
     t("component.editor.changeLanguage") +
-      languageMapping[defaultLanguage.value],
+    languageMapping[defaultLanguage.value],
     proxy
   );
 }
 
 onMounted(async () => {
-  // 动态加载monaco
-  import("monaco-editor").then(async (m) => {
-    await createLanguage(m);
-  });
+  // 🟢 【修改】改为动态并行引入核心包和 JSON 语言包
+  // 1. editor.api: 核心功能
+  // 2. json.contribution: 注册 JSON 语言能力
+  const [m] = await Promise.all([
+    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/language/json/monaco.contribution')
+  ]);
+
+  monaco.value = m;
+  await createLanguage(m);
 });
 
 function dispose() {
@@ -175,7 +172,6 @@ async function createLanguage(m: any) {
       { token: "string.quote", foreground: "CD5555" }, // 红色
       { token: "delimiter", foreground: "000000" }, // 蓝色
       { token: "delimiter.square", foreground: "000000" }, // 粉红色 // 指定双引号的颜色
-      { background: "F5F5F5" },
     ],
     colors: {
       "editor.foreground": "#000000",
@@ -219,7 +215,7 @@ async function createLanguage(m: any) {
   instance = monaco.value.editor.create(dom.value, {
     model,
     tabSize: 2,
-    fontSize: "13px",
+    fontSize: 14,
     readOnly: true,
     automaticLayout: true,
     fontFamily: '"JetBrains Mono", monospace',
@@ -484,32 +480,37 @@ function isJsonKeyPosition(model: any, position: any) {
 .slide-enter-to,
 .slide-leave-from {
   opacity: 1;
-  max-height: 1000px; /* 设置一个足够大的值 */
+  max-height: 1000px;
+  /* 设置一个足够大的值 */
 }
+
 .placeholder {
   position: absolute;
   top: 41px;
-  left: 70px; /* 对齐行号区域 */
+  left: 70px;
+  /* 对齐行号区域 */
   color: #999;
   font-style: italic;
-  pointer-events: none; /* 允许穿透点击编辑器 */
+  pointer-events: none;
+  /* 允许穿透点击编辑器 */
   z-index: 2;
 }
+
 .ed {
   width: 100%;
   height: 100%;
   // margin-left: 5%;
 }
+
 .ed-header {
   height: 35px;
   width: calc(100% + 20px);
   border-radius: 5px 5px 0px 0px;
-  background-image: linear-gradient(
-    90deg,
-    var(--dialog-deep-color) 80%,
-    var(--dialog-color)
-  );
+  background-image: linear-gradient(90deg,
+      var(--dialog-deep-color) 80%,
+      var(--dialog-color));
   text-align: center;
+
   p {
     color: white;
     font-size: 16px;
@@ -521,15 +522,19 @@ function isJsonKeyPosition(model: any, position: any) {
     padding-left: 20px;
   }
 }
+
 .editor {
   height: 400px;
   width: 100%;
 }
+
 .el-row {
   height: inherit;
 }
+
 .language-col {
   height: inherit;
+
   span.el-dropdown-link {
     cursor: pointer;
     margin-top: 10px;
@@ -538,6 +543,7 @@ function isJsonKeyPosition(model: any, position: any) {
     font-weight: 500;
     display: flex;
   }
+
   .el-dropdown {
     height: 100%;
   }

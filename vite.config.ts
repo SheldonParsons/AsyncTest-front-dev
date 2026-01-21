@@ -3,6 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import path from "path";
 import config from "./app.config.js";
 import vitePluginCompression from "vite-plugin-compression";
+import monacoEditorPlugin from "vite-plugin-monaco-editor";
 export default defineConfig({
   define: {
     __VUE_I18N_FULL_INSTALL__: true,
@@ -53,7 +54,19 @@ export default defineConfig({
         defineModel: true, // 启用实验性功能
       },
     }),
-    vitePluginCompression(),
+    (monacoEditorPlugin as any).default({
+      // 这里的列表是 Worker，Python 没有 Worker，所以去掉 python
+      languageWorkers: ['editorWorkerService', 'typescript', 'json'],
+      // 强制指定你需要的高亮语言（防止默认加载全部）
+      languages: ['json', 'typescript', 'python']
+    }),
+    vitePluginCompression({
+      verbose: true,
+      disable: false,
+      threshold: 10240,
+      algorithm: "gzip",
+      ext: ".gz",
+    }),
   ],
   resolve: {
     alias: {
@@ -70,6 +83,8 @@ export default defineConfig({
     // 必须启用 SSR manifest
     ssrManifest: true,
     manifest: true,
+    sourcemap: false,
+    minify: 'esbuild',
     // 确保输入路径正确
     rollupOptions: {
       output: {

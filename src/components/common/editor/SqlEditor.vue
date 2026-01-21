@@ -2,7 +2,8 @@
   <transition name="slide" appear>
     <div style="position: relative;">
       <div class="ed editor" ref="dom"></div>
-      <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{ '\{\{username\}\}' }}</span></div>
+      <div v-if="showPlaceholder" class="placeholder">可使用变量，如：SELECT * FROM user WHERE name = <span>{{
+          '\{\{username\}\}' }}</span></div>
     </div>
   </transition>
 </template>
@@ -56,15 +57,20 @@ watch(
 );
 
 onMounted(async () => {
-  // 动态加载monaco
-  import("monaco-editor").then(async (m) => {
-    import("monaco-editor/esm/vs/basic-languages/mysql/mysql").then(
-      async (p) => {
-        mysqlLanguage.value = p.language;
-        await createLanguage(m);
-      }
-    );
-  });
+  // ✅ 改为动态并行引入
+  // 1. editor.api: 核心功能
+  // 2. mysql.contribution: 自动注册 mysql 语言 ID 和高亮规则
+  // 3. mysql: 获取语言定义（为了拿到 keywords 做补全）
+  const [m, _, langDef] = await Promise.all([
+    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution'),
+    import('monaco-editor/esm/vs/basic-languages/mysql/mysql')
+  ]);
+
+  monaco.value = m;
+  mysqlLanguage.value = langDef.language;
+
+  await createLanguage();
 });
 
 onBeforeUnmount(() => {
@@ -74,8 +80,7 @@ onBeforeUnmount(() => {
   }
 });
 
-async function createLanguage(m: any) {
-  monaco.value = m;
+async function createLanguage() {
   monaco.value.languages.register({ id: defaultLanguage.value });
   // 设置自定义皮肤
   monaco.value.editor.defineTheme("fizz", {
@@ -89,7 +94,6 @@ async function createLanguage(m: any) {
       { token: "string.quote", foreground: "CD5555" }, // 红色
       { token: "delimiter", foreground: "000000" }, // 蓝色
       { token: "delimiter.square", foreground: "000000" }, // 粉红色 // 指定双引号的颜色
-      { background: "ffffff" },
     ],
     colors: {
       "editor.foreground": "#000000",
@@ -113,7 +117,7 @@ async function createLanguage(m: any) {
   instance = monaco.value.editor.create(dom.value, {
     model,
     tabSize: 4,
-    fontSize: "14px",
+    fontSize: 14,
     readOnly: props.disable,
     automaticLayout: true,
     fontFamily: '"JetBrains Mono", monospace',
@@ -130,18 +134,18 @@ async function createLanguage(m: any) {
       size: "fit", // "proportional" | "fill" | "fit"
     },
   });
-  instance.getDomNode().addEventListener('wheel', function(event:any) {
+  instance.getDomNode().addEventListener('wheel', function (event: any) {
     const currentScrollTop = instance.getScrollTop();
     const maxScrollTop = instance.getScrollHeight() - instance.getLayoutInfo().height;
 
     if (
-        (currentScrollTop <= 0 && event.deltaY < 0) ||
-        (currentScrollTop >= maxScrollTop && event.deltaY > 0)
+      (currentScrollTop <= 0 && event.deltaY < 0) ||
+      (currentScrollTop >= maxScrollTop && event.deltaY > 0)
     ) {
-        event.stopPropagation();
-        window.scrollBy(0, event.deltaY);
+      event.stopPropagation();
+      window.scrollBy(0, event.deltaY);
     }
-}, { capture: true });
+  }, { capture: true });
 
   // 监听内容变化
   instance.onDidChangeModelContent(() => {
@@ -251,33 +255,38 @@ function initRegister() {
 .slide-enter-to,
 .slide-leave-from {
   opacity: 1;
-  max-height: 1000px; /* 设置一个足够大的值 */
+  max-height: 1000px;
+  /* 设置一个足够大的值 */
 }
+
 .placeholder {
   position: absolute;
   top: 2px;
-  left: 70px; /* 对齐行号区域 */
+  left: 70px;
+  /* 对齐行号区域 */
   color: #bcbcbc;
   font-style: italic;
-  pointer-events: none; /* 允许穿透点击编辑器 */
+  pointer-events: none;
+  /* 允许穿透点击编辑器 */
   z-index: 2;
   font-size: 12px;
 }
+
 .ed {
   width: 100%;
   height: 100%;
   // margin-left: 5%;
 }
+
 .ed-header {
   height: 35px;
   width: calc(100% + 20px);
   border-radius: 5px 5px 0px 0px;
-  background-image: linear-gradient(
-    90deg,
-    var(--dialog-deep-color) 80%,
-    var(--dialog-color)
-  );
+  background-image: linear-gradient(90deg,
+      var(--dialog-deep-color) 80%,
+      var(--dialog-color));
   text-align: center;
+
   p {
     color: white;
     font-size: 16px;
@@ -289,15 +298,19 @@ function initRegister() {
     padding-left: 20px;
   }
 }
+
 .editor {
   height: 100px;
   width: 100%;
 }
+
 .el-row {
   height: inherit;
 }
+
 .language-col {
   height: inherit;
+
   span.el-dropdown-link {
     cursor: pointer;
     margin-top: 10px;
@@ -306,6 +319,7 @@ function initRegister() {
     font-weight: 500;
     display: flex;
   }
+
   .el-dropdown {
     height: 100%;
   }

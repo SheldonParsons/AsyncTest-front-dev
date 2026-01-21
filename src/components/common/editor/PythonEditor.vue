@@ -14,7 +14,7 @@ const emit = defineEmits(["change"]);
 const dom = ref();
 
 // monaco实例
-const monaco = ref();
+const monacoCore = ref();
 
 // 自定义语言
 const _CUSTOMER = "python";
@@ -55,14 +55,14 @@ watch(
 );
 
 onMounted(async () => {
-  // 使用 Promise.all 并行加载
-  const [m, p] = await Promise.all([
-    import("monaco-editor"),
-    import("monaco-editor/esm/vs/basic-languages/python/python"),
+  const [m, contribution, pythonDef] = await Promise.all([
+    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/basic-languages/python/python.contribution'),
+    import('monaco-editor/esm/vs/basic-languages/python/python')
   ]);
-
-  pythonLanguage.value = p.language;
-  await createLanguage(m);
+  monacoCore.value = m;
+  pythonLanguage.value = pythonDef.language;
+  await createLanguage();
 });
 
 onBeforeUnmount(() => {
@@ -78,11 +78,9 @@ onBeforeUnmount(() => {
     model.dispose();
   }
 });
-async function createLanguage(m: any) {
-  monaco.value = m;
-  monaco.value.languages.register({ id: defaultLanguage.value });
+async function createLanguage() {
   // 设置自定义皮肤
-  monaco.value.editor.defineTheme("fizz", {
+  monacoCore.value.editor.defineTheme("fizz", {
     base: "vs",
     inherit: true,
     rules: [
@@ -94,7 +92,6 @@ async function createLanguage(m: any) {
       { token: "string.quote", foreground: "CD5555" }, // 红色
       { token: "delimiter", foreground: "000000" }, // 蓝色
       { token: "delimiter.square", foreground: "000000" }, // 粉红色 // 指定双引号的颜色
-      { background: "ffffff" },
     ],
     colors: {
       "editor.foreground": "#000000",
@@ -107,18 +104,18 @@ async function createLanguage(m: any) {
       "editor.inactiveSelectionBackground": "#88000015",
     },
   });
-  monaco.value.editor.setTheme("fizz");
+  monacoCore.value.editor.setTheme("fizz");
 
   // 创建编辑器model
-  model = monaco.value.editor.createModel(
+  model = monacoCore.value.editor.createModel(
     props.code,
     defaultLanguage.value
   );
   // 创建编辑器实例
-  instance = monaco.value.editor.create(dom.value, {
+  instance = monacoCore.value.editor.create(dom.value, {
     model,
     tabSize: 4,
-    fontSize: "14px",
+    fontSize: 14,
     fixedOverflowWidgets: true,
     readOnly: props.disable,
     automaticLayout: true,
@@ -174,7 +171,7 @@ const insertText = (text: string) => {
     // 仅在插入文本前执行一次，确保没有重复操作
     instance.executeEdits(null, [
       {
-        range: new monaco.value.Range(
+        range: new monacoCore.value.Range(
           position.lineNumber,
           position.column,
           position.lineNumber,
@@ -192,7 +189,7 @@ const insertText = (text: string) => {
     };
     // 使用 setSelection 确保更新光标位置
     instance.setSelection(
-      new monaco.value.Selection(
+      new monacoCore.value.Selection(
         newPosition.lineNumber,
         newPosition.column,
         newPosition.lineNumber,
@@ -209,9 +206,9 @@ defineExpose({
 
 // 注册通用功能
 function initRegister() {
-  const customProvider = createPythonCompletionProvider(monaco.value, pythonLanguage.value);
+  const customProvider = createPythonCompletionProvider(monacoCore.value, pythonLanguage.value);
   // 补全代码监听
-  codeCompleteProvider = monaco.value.languages.registerCompletionItemProvider(
+  codeCompleteProvider = monacoCore.value.languages.registerCompletionItemProvider(
     defaultLanguage.value,
     customProvider
   );

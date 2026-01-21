@@ -7,7 +7,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, onBeforeUnmount, watch } from "vue";
+import { onMounted, ref, onBeforeUnmount, watch, shallowRef } from "vue";
 
 const showPlaceholder = ref(true);
 
@@ -17,7 +17,7 @@ const emit = defineEmits(["change"]);
 const dom = ref();
 
 // monaco实例
-const monaco = ref();
+const monaco:any = shallowRef(null);
 
 // 当前语言
 const defaultLanguage = ref("plaintext");
@@ -127,11 +127,12 @@ const enablePreventNewline = (editor: any, monaco: any) => {
 };
 
 onMounted(async () => {
-  // 修改点 2: 移除 MySQL 模块的加载
-  await import("monaco-editor").then(async (m) => {
-    // 直接创建编辑器，无需加载语言模块
-    await createLanguage(m);
-  });
+  // ✅ 动态引入核心 API (解决 SSR CSS 问题 + 按需加载)
+  // plaintext 不需要额外的 contribution 文件，因为它很基础，且你自定义了 tokenizer
+  const m = await import('monaco-editor/esm/vs/editor/editor.api');
+  
+  monaco.value = m;
+  await createLanguage();
 });
 
 onBeforeUnmount(() => {
@@ -150,8 +151,7 @@ onBeforeUnmount(() => {
 let preventNewlineCommandIds: string[] = []; // 新增命令ID存储
 let preventNewlineDisposables: any = []; // 仅存储可销毁对象
 
-async function createLanguage(m: any) {
-  monaco.value = m;
+async function createLanguage() {
   // 定义自定义语法高亮规则
   monaco.value.languages.setMonarchTokensProvider("plaintext", {
     tokenizer: {
@@ -173,7 +173,6 @@ async function createLanguage(m: any) {
     rules: [
       { token: "custom.orange", foreground: "#FF8C00", fontStyle: "italic" }, // 橙色
       { token: "custom.blue", foreground: "#4169E1", fontStyle: "italic" }, // 粉红色 // 指定双引号的颜色
-      { background: "ffffff" },
     ],
     colors: {
       "editor.foreground": "#000000",
@@ -195,7 +194,7 @@ async function createLanguage(m: any) {
   instance = monaco.value.editor.create(dom.value, {
     model,
     tabSize: 4,
-    fontSize: "14px",
+    fontSize: 14,
     automaticLayout: true,
     fontFamily: '"JetBrains Mono", monospace',
     scrollBeyondLastLine: false,

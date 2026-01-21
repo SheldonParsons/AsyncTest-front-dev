@@ -46,12 +46,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, getCurrentInstance } from "vue";
-import TextEditor from "@/components/common/editor/TextEditor.vue";
+import { ref } from "vue";
 import UnEditJsonEditor from "@/components/common/editor/UnEditJsonEditor.vue";
-import Params from "@/views/api/child_component/params.vue";
-import tools from "@/utils/tools";
-const { proxy }: any = getCurrentInstance();
 const visiable = ref(false);
 const ediorText: any = ref(null);
 const code = ref("");

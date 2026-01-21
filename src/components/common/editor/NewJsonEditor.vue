@@ -19,7 +19,6 @@ import { JSONFormatError, preprocessJson } from "./formatter";
 
 import tools from "@/utils/tools";
 import { useI18n } from "vue-i18n";
-import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import { parse } from "@prantlf/jsonlint";
 const isExternalUpdate = ref(false);
 
@@ -116,24 +115,16 @@ const registerList: any = [];
 const insertData: any = [];
 
 onMounted(async () => {
-  // 动态加载monaco
-  // import("monaco-editor").then(async (m) => {
-  //   await createLanguage(m);
-  // });
-
   // 先确保DOM加载完成
   await nextTick();
 
-  // 动态加载monaco前确保worker配置
-  (window as any).MonacoEnvironment = {
-    getWorker(_: any, label: any) {
-      return new JsonWorker();
-    },
-  };
-
   // 使用独立作用域加载
-  const monacoModule = await import("monaco-editor");
-  monaco.value = monacoModule; // 直接访问editor
+  const [monacoCore] = await Promise.all([
+    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/language/json/monaco.contribution')
+  ]);
+
+  monaco.value = monacoCore;
   await createLanguage();
 });
 
@@ -202,7 +193,6 @@ async function createLanguage() {
       { token: "number", foreground: "0000FF" },
       { token: "delimiter", foreground: "000000" },
       { token: "delimiter.square", foreground: "000000" },
-      { background: "ffffff" },
     ],
     colors: {
       "editor.foreground": "#000000",
@@ -253,7 +243,7 @@ async function createLanguage() {
     instance.value = monaco.value.editor.create(dom.value, {
       model,
       tabSize: 2,
-      fontSize: 13,
+      fontSize: 14,
       fontLigatures: true,
       automaticLayout: true,
       scrollBeyondLastLine: false,
@@ -513,32 +503,37 @@ defineExpose({
 .slide-enter-to,
 .slide-leave-from {
   opacity: 1;
-  max-height: 1000px; /* 设置一个足够大的值 */
+  max-height: 1000px;
+  /* 设置一个足够大的值 */
 }
+
 .placeholder {
   position: absolute;
   top: 41px;
-  left: 70px; /* 对齐行号区域 */
+  left: 70px;
+  /* 对齐行号区域 */
   color: #999;
   font-style: italic;
-  pointer-events: none; /* 允许穿透点击编辑器 */
+  pointer-events: none;
+  /* 允许穿透点击编辑器 */
   z-index: 2;
 }
+
 .ed {
   width: 100%;
   height: 100%;
   // margin-left: 5%;
 }
+
 .ed-header {
   height: 35px;
   width: calc(100% + 20px);
   border-radius: 5px 5px 0px 0px;
-  background-image: linear-gradient(
-    90deg,
-    var(--dialog-deep-color) 80%,
-    var(--dialog-color)
-  );
+  background-image: linear-gradient(90deg,
+      var(--dialog-deep-color) 80%,
+      var(--dialog-color));
   text-align: center;
+
   p {
     color: white;
     font-size: 16px;
@@ -550,15 +545,19 @@ defineExpose({
     padding-left: 20px;
   }
 }
+
 .editor {
   height: 300px;
   width: 100%;
 }
+
 .el-row {
   height: inherit;
 }
+
 .language-col {
   height: inherit;
+
   span.el-dropdown-link {
     cursor: pointer;
     margin-top: 10px;
@@ -567,6 +566,7 @@ defineExpose({
     font-weight: 500;
     display: flex;
   }
+
   .el-dropdown {
     height: 100%;
   }
