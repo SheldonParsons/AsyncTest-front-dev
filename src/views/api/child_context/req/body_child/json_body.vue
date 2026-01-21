@@ -703,6 +703,7 @@ function getRandomInt(min: any, max: any) {
 <style lang="scss">
 .main-table {
   background: #ffffff;
+  height: 100%;
 
   .cell {
     padding: 4px 6px;

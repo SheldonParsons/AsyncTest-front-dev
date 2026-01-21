@@ -21,7 +21,7 @@
                   true,
                   item.name
                 )">
-                <motion.div v-if="item.t === 4" class="icon-box">
+                <motion.div v-if="item.t === 4 || item.t === 6" class="icon-box">
                   <Fold style="margin-right:5px;"
                     :style="{ color: current_tab_name === item.name ? '#eeeeee' : 'black' }" />
                 </motion.div>
@@ -78,7 +78,7 @@
       <Documentation v-if="show_type === 2" :node_id="current_node" :interface_id="current_target_id"></Documentation>
       <RootDir v-if="show_type === 3" :node_id="current_node" :dir_id="current_target_id"
         :target_type="current_target_type"></RootDir>
-      <DsDir v-if="show_type === 4" :page_target="current_page_target"></DsDir>
+      <DsDir v-if="show_type === 4" :page_target="current_page_target" :node_id="current_node"></DsDir>
       <DataStructure v-if="show_type === 5" :page_target="current_page_target"></DataStructure>
       <OuterRootDir v-if="show_type === 6"></OuterRootDir>
       <ContextMenu :x="x" :y="y" :visible="visible"></ContextMenu>

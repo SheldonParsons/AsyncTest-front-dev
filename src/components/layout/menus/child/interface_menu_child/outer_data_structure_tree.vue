@@ -156,8 +156,6 @@ async function get_tree_data(_data: any) {
 }
 
 function get_name(data: any) {
-    console.log(data);
-
     if (data.child_type === 4) {
         if (show_nick_name.value === true) {
             if (data.alias.length > 0) {

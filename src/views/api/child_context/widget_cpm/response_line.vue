@@ -5,20 +5,13 @@
         <span class="response-label">HTTP状态码</span>
         <el-dropdown @command="handleStatusCommand" trigger="click" class="status-dropdown">
           <motion.div :while-hover="{ scale: 1.02 }" :while-tap="{ scale: 0.98 }">
-            <input
-              :value="modelValue.status"
-              class="response-input status-input"
-              maxlength="3"
-              readonly
-            />
+            <input :value="modelValue.status" class="response-input status-input" maxlength="3" readonly />
           </motion.div>
           <template #dropdown>
             <el-dropdown-menu class="response-status-dropdown">
               <el-dropdown-item
                 v-for="([code, message], index) in Object.entries(GlobalStatus.regular_response_status_map())"
-                :key="index"
-                :command="code"
-              >
+                :key="index" :command="code">
                 <div class="status-option">
                   <span class="status-code">{{ code }}</span>
                   <span class="status-message">{{ message }}</span>
@@ -30,24 +23,16 @@
       </div>
       <div class="response-info-item">
         <span class="response-label">名称</span>
-        <input
-          :value="modelValue.name"
-          @input="handleNameInput"
-          class="response-input name-input"
-          placeholder="响应名称"
-        />
+        <input :value="modelValue.name" @input="handleNameInput" class="response-input name-input" placeholder="响应名称" />
       </div>
     </div>
-    <motion.button
-      :while-hover="{ scale: 1.05 }"
-      :while-tap="{ scale: 0.95 }"
-      class="delete-btn"
-      @click="$emit('delete')"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-        <path d="M3 6h18"/>
-        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    <motion.button :while-hover="{ scale: 1.05 }" :while-tap="{ scale: 0.95 }" class="delete-btn"
+      @click="$emit('delete')">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+        <path d="M3 6h18" />
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       </svg>
     </motion.button>
   </div>
@@ -174,13 +159,12 @@ function handleNameInput(event: Event) {
 
   .status-code {
     font-weight: 600;
-    color: #111827;
     min-width: 40px;
   }
 
   .status-message {
-    color: #6b7280;
     font-size: 13px;
+    opacity: 0.7;
   }
 }
 
@@ -223,5 +207,20 @@ function handleNameInput(event: Event) {
 <style lang="scss">
 .response-status-dropdown {
   height: 300px;
+  overflow-y: auto; 
+
+  .el-dropdown-menu__item {
+    &:hover,
+    &:focus {
+      .status-option {
+        .status-code {
+          color: #ffffff !important;
+        }
+        .status-message {
+          color: rgba(255, 255, 255, 0.9) !important;
+        }
+      }
+    }
+  }
 }
 </style>

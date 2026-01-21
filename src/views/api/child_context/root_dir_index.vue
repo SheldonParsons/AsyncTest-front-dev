@@ -9,7 +9,7 @@
       </div>
     </div>
     <div style="overflow-y: hidden;height: 100%;">
-      <MenuSetting v-if="tag === 'menu'" :target_type="target_type" :dir="dir"></MenuSetting>
+      <MenuSetting v-if="tag === 'menu'" :target_type="target_type" :dir="dir" :node_id="node_id"></MenuSetting>
       <InterfaceTable v-if="tag === 'interface'" :target_type="target_type" :dir="dir" :node_id="node_id">
       </InterfaceTable>
       <PreAction ref="pre_action_ref" v-if="tag === 'pre_action'" :offset="1" :span="22"
