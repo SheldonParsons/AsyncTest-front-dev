@@ -97,9 +97,6 @@ export const ssePost = async (
     { method: "POST" },
     fetchOptions
   );
-  console.log("-----");
-  
-  console.log(window.location.hostname);
   
   // 5.2 组装请求URL
   const urlWithPrefix = `${
@@ -107,7 +104,7 @@ export const ssePost = async (
       ? GlobalStatus.get_product_host() + "/server"
       : GlobalStatus.localhost + "/api"
   }${url.startsWith("/") ? url : `/${url}`}`;
-
+  
   // 5.3 结构body参数，并处理body对应的数据
   const { body } = fetchOptions;
   if (body) options.body = JSON.stringify(body);

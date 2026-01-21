@@ -19,3 +19,5 @@ declare module 'monaco-editor/esm/vs/basic-languages/python/python';
 declare module 'monaco-editor/esm/vs/language/json/monaco.contribution';
 
 declare module 'monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution'
+
+declare module 'monaco-editor/esm/vs/editor/editor.main'

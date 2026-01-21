@@ -5,8 +5,11 @@ export function JSONFormat(JSONstr: any) {
   try {
     const { processedJson, placeholders } = processJson(JSONstr);
     const formattedJson = JSON.stringify(JSON.parse(processedJson), null, 2);
-    return restorePlaceholders(formattedJson, placeholders);
+    const result = restorePlaceholders(formattedJson, placeholders);
+    if (Array.isArray(result) && result.length === 0) return '[]';
+    return result
   } catch (error) {
+    if (Array.isArray(JSONstr) && JSONstr.length === 0) return '[]';
     return JSONstr;
   }
 }

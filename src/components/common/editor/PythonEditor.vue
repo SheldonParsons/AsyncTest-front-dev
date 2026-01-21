@@ -56,12 +56,14 @@ watch(
 
 onMounted(async () => {
   const [m, contribution, pythonDef] = await Promise.all([
-    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/editor/editor.main'),
     import('monaco-editor/esm/vs/basic-languages/python/python.contribution'),
     import('monaco-editor/esm/vs/basic-languages/python/python')
   ]);
   monacoCore.value = m;
   pythonLanguage.value = pythonDef.language;
+  console.log(pythonLanguage.value);
+  
   await createLanguage();
 });
 

@@ -229,7 +229,6 @@ async function createLanguage() {
       { open: "{%", close: "%}" },
     ],
   });
-
   // 创建编辑器model
   const model = monaco.value.editor.createModel(
     props.modelValue,

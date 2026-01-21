@@ -107,11 +107,8 @@ function choiceLanguage(command: any) {
 }
 
 onMounted(async () => {
-  // 🟢 【修改】改为动态并行引入核心包和 JSON 语言包
-  // 1. editor.api: 核心功能
-  // 2. json.contribution: 注册 JSON 语言能力
   const [m] = await Promise.all([
-    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/editor/editor.main'),
     import('monaco-editor/esm/vs/language/json/monaco.contribution')
   ]);
 
@@ -206,9 +203,10 @@ async function createLanguage(m: any) {
       { open: "{{", close: "}}" },
     ],
   });
+  const text = _t.data === undefined ? JSONFormat(_t) : JSONFormat(_t.data)
   // 创建编辑器model
   const model = monaco.value.editor.createModel(
-    _t.data === undefined ? JSONFormat(_t) : JSONFormat(_t.data),
+    text,
     defaultLanguage.value
   );
   // 创建编辑器实例
