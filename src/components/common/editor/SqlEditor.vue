@@ -57,12 +57,8 @@ watch(
 );
 
 onMounted(async () => {
-  // ✅ 改为动态并行引入
-  // 1. editor.api: 核心功能
-  // 2. mysql.contribution: 自动注册 mysql 语言 ID 和高亮规则
-  // 3. mysql: 获取语言定义（为了拿到 keywords 做补全）
   const [m, _, langDef] = await Promise.all([
-    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/editor/editor.main'),
     import('monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution'),
     import('monaco-editor/esm/vs/basic-languages/mysql/mysql')
   ]);

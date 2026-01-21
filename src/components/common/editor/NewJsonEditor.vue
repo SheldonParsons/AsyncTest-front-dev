@@ -120,7 +120,7 @@ onMounted(async () => {
 
   // 使用独立作用域加载
   const [monacoCore] = await Promise.all([
-    import('monaco-editor/esm/vs/editor/editor.api'),
+    import('monaco-editor/esm/vs/editor/editor.main'),
     import('monaco-editor/esm/vs/language/json/monaco.contribution')
   ]);
 

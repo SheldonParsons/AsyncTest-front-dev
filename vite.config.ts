@@ -71,6 +71,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      "monaco-editor/esm/vs/editor/editor.api": "monaco-editor/esm/vs/editor/editor.main",
     },
   },
   optimizeDeps: {

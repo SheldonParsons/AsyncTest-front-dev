@@ -129,7 +129,7 @@ const enablePreventNewline = (editor: any, monaco: any) => {
 onMounted(async () => {
   // ✅ 动态引入核心 API (解决 SSR CSS 问题 + 按需加载)
   // plaintext 不需要额外的 contribution 文件，因为它很基础，且你自定义了 tokenizer
-  const m = await import('monaco-editor/esm/vs/editor/editor.api');
+  const m = await import('monaco-editor/esm/vs/editor/editor.main');
   
   monaco.value = m;
   await createLanguage();
