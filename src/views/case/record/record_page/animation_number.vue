@@ -6,11 +6,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { AnimateNumber } from 'motion-plus-vue';
-import tools from '@/utils/tools'
 
-// 1. Props 定义保持不变
 const props = defineProps({
     start_at: {
         type: Number,
@@ -20,6 +18,10 @@ const props = defineProps({
         type: Number,
         default: 0,
     },
+    server_current_time: {
+        type: Number,
+        default: 0
+    }
 });
 
 const number = {
@@ -28,68 +30,66 @@ const number = {
     fontVariantNumeric: 'tabular-nums',
 };
 
-// 2. 统一的显示值 ref
-const displayValue: any = ref(0);
+const displayValue = ref(0);
 
-// 3. 动画循环所需的变量
-let animationFrameId: number | null = null;
+let timerId: ReturnType<typeof setInterval> | null = null;
+let localAnchor = 0;   
+let baseDuration = 0;  
 
-/**
- * 动画更新函数
- * 在每一帧都会被调用，并实时检查 props 的变化
- */
-const update = async () => {
-    // --- 核心修正：在每一帧都检查 end_at ---
+
+const initTimerState = () => {
     if (props.end_at > 0) {
-        // 如果 end_at 有效，说明计时已结束
-        // 立即计算最终耗时并停止动画循环
-        const durationMs = props.end_at - props.start_at;
-        const finalSeconds = durationMs > 0 ? durationMs / 1000 : 0;
-
-        displayValue.value = Number(finalSeconds.toFixed(2));
-
-        // 清理动画帧，确保循环停止
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null; // 置空以防重复取消
-        }
-        return; // 结束当前 update 函数的执行
+        const total = Math.max(0, props.end_at - props.start_at);
+        displayValue.value = Number((total / 1000).toFixed(2));
+        stopLoop();
+        return;
     }
-    const diffMs = Math.abs(Date.now() - props.start_at);
-    // 2. 将毫秒转换为秒
-    const diffSeconds = diffMs / 1000;
-    // 3. 使用 toFixed(2) 保留两位小数，并返回字符串
-    displayValue.value = Number(diffSeconds.toFixed(2));
-    await tools.delaySec(800)
-    // 请求下一帧以继续循环
-    animationFrameId = requestAnimationFrame(update);
+
+    const serverNow = props.server_current_time || props.start_at; 
+    baseDuration = Math.max(0, serverNow - props.start_at);
+    localAnchor = Date.now();
+
+    startLoop();
 };
 
-
-// onMounted 现在只负责启动循环
-onMounted(async () => {
-    if (props.end_at === 0) {
-        animationFrameId = requestAnimationFrame(update);
-    } else {
-        fix_value()
+const update = () => {
+    if (props.end_at > 0) {
+        initTimerState();
+        return;
     }
+
+    const localPassed = Date.now() - localAnchor;
+    const totalMs = baseDuration + localPassed;
+
+    displayValue.value = Number((totalMs / 1000).toFixed(2));
+};
+
+const startLoop = () => {
+    stopLoop();
+    update();
+    timerId = setInterval(update, 1000);
+};
+
+const stopLoop = () => {
+    if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+    }
+};
+
+onMounted(() => {
+    initTimerState();
 });
 
-async function fix_value() {
-    const diffMs = Math.abs(props.end_at - props.start_at);
-    // 2. 将毫秒转换为秒
-    const diffSeconds = diffMs / 1000;
-    // 3. 使用 toFixed(2) 保留两位小数，并返回字符串
-    nextTick(() => {
-        displayValue.value = Number(diffSeconds.toFixed(2));
-    })
-}
-
-// onBeforeUnmount 负责在组件销毁时清理定时器
-onBeforeUnmount(() => {
-    if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+watch(
+    [() => props.start_at, () => props.server_current_time, () => props.end_at],
+    () => {
+        initTimerState();
     }
+);
+
+onBeforeUnmount(() => {
+    stopLoop();
 });
 </script>
 

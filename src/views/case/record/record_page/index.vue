@@ -29,7 +29,8 @@
                         <div class="title title-time g-e" :class="{ 'running': item.end_at === 0 }"><span>{{
                             item.end_at === 0 ? '未结束' : tools.getFormattedTimeOriginMs(item.end_at) }}</span></div>
                         <div class="title title-name g-e"><span>
-                                <AnimationNumber :start_at="item.start_at" :end_at="item.end_at"></AnimationNumber>
+                                <AnimationNumber :start_at="item.start_at"
+                                    :end_at="item.end_at" :server_current_time="item.current_time"></AnimationNumber>
                             </span>
                         </div>
                         <div class="title title-count g-e"><span>{{
@@ -388,6 +389,13 @@ async function get_record() {
             }
 
             .completed {
+                background-image: linear-gradient(to right, rgb(169, 172, 255), rgb(0, 30, 255), rgb(17, 0, 255));
+                font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
+                -webkit-background-clip: text;
+                color: transparent;
+            }
+
+            .pending {
                 background-image: linear-gradient(to right, rgb(169, 172, 255), rgb(0, 30, 255), rgb(17, 0, 255));
                 font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important;
                 -webkit-background-clip: text;
