@@ -1,7 +1,8 @@
 <template>
     <div class="case-table-contaniner">
-        <ag-grid-vue v-show="show_table" style="width:100%; height:100%;" :columnDefs="columnDefs" :defaultColDef="defaultColDef"
-            :gridOptions="gridOptions" @grid-ready="onGridReady" class="ag-theme-quartz" />
+        <ag-grid-vue v-show="show_table" style="width:100%; height:100%;" :columnDefs="columnDefs"
+            :defaultColDef="defaultColDef" :gridOptions="gridOptions" @grid-ready="onGridReady"
+            class="ag-theme-quartz" />
     </div>
 
     <DialogAnimation ref="taskDetailRef" title="任务整体日志" confirm_title="关闭" :bgtype="'white'" :topMove="'0% !important'"
@@ -119,7 +120,8 @@ onMounted(async () => {
             ...getWidthFlexConfig(field),
             cellRendererParams: {
                 show_case_table_record: show_case_table_record,
-                to_step_page: to_step_page
+                to_step_page: to_step_page,
+                get_system_time: get_system_time
             }
         })
     }
@@ -284,9 +286,6 @@ function stopRecordChecking() {
         // forEachNode 会遍历网格中的每一个 RowNode
         gridApi.value.forEachNode((node: any) => {
             // node.data 包含了你最初提供给这一行的数据对象
-            console.log(node.data.index_in_global_list);
-            console.log(current_child_case_index.value);
-            console.log(node.data.status);
             if (node.data.index_in_global_list === current_child_case_index.value && node.data.status.includes('end_')) {
                 is_stop = true
             }
@@ -306,6 +305,12 @@ async function startPolling(callback: any) {
     poller.value.start()
 }
 
+const current_system_time = ref(0)
+
+function get_system_time() {
+    return current_system_time.value
+}
+
 async function refresh_data() {
     const _data = {
         type: 'child_case_list',
@@ -317,6 +322,7 @@ async function refresh_data() {
         poller.value.stop()
         return
     }
+    current_system_time.value = res.current_time
     let has_running_task = false
     for (let i = 0; i < res.data.length; i++) {
         if (res.data[i].status.includes('running')) {

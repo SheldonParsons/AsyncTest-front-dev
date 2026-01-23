@@ -143,7 +143,7 @@ async function deleteTask(id: any) {
 
 
 
-async function action(t: string, item: any, index: number) {
+async function action(t: string, item: any, index: any) {
     if (t === 'to_record') {
         emit('action', item.id)
     } else if (t === 'delete') {
@@ -352,7 +352,7 @@ async function get_task_info(task: any) {
     }
     const result = await tools.send(ApiTaskTools, _data)
     if (result) {
-        await navigator.clipboard.writeText(result);
+        await tools.copyText(result)
         window.$toast({ title: '已复制任务接口信息至粘贴板' })
 
     }

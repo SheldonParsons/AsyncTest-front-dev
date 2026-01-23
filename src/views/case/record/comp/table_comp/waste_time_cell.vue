@@ -6,7 +6,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, defineExpose, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 // import { AnimateNumber } from 'motion-plus-vue';
 // import tools from '@/utils/tools'
 
@@ -29,6 +29,7 @@ let animationFrameId: number | null = null;
 let currentStart: number = props.params.data.start;
 let currentEnd: number = props.params.data.end;
 
+
 // 2. 动画循环函数（现在改名为 tick，职责更单一）
 //    它只负责根据当前状态更新UI
 // 2. tick 函数现在是同步的，不再有 async/await
@@ -36,12 +37,17 @@ function tick(currentTime: DOMHighResTimeStamp) {
     // a. 检查是否到了更新UI的时间
     if (currentTime - lastUpdateTime > UPDATE_INTERVAL) {
         // b. 更新UI
-        const ms = Date.now() - currentStart;
-        displayValue.value = Number((ms / 1000).toFixed(3));
+        const system_time = props.params.get_system_time()
+        if (system_time === 0) {
+            displayValue.value = 0
+        } else {
+            const ms = system_time - currentStart;
+            displayValue.value = Number((ms / 1000).toFixed(3));
+        }
         // c. 更新上一次的更新时间戳
         lastUpdateTime = currentTime;
     }
-    
+
     // d. 无论是否更新UI，都继续请求下一帧，保持循环运行
     animationFrameId = requestAnimationFrame(tick);
 }
@@ -50,7 +56,7 @@ function tick(currentTime: DOMHighResTimeStamp) {
 function startTicking() {
     // 防止重复启动
     if (animationFrameId === null && currentStart > 0) {
-        lastUpdateTime = 0; 
+        lastUpdateTime = 0;
         animationFrameId = requestAnimationFrame(tick);
     }
 }

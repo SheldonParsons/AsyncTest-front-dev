@@ -38,7 +38,7 @@ import DatePicker from '@/views/settings/source_management/api_token_child/DateP
 import { useRoute } from 'vue-router'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import { ApiPostApiKeyClient } from '@/api/personal/index'
-import useClipboard from "vue-clipboard3/dist/esm/index.js";
+import tools from "@/utils/tools";
 import _ from 'lodash'
 const route = useRoute()
 
@@ -91,7 +91,7 @@ onMounted(() => {
 })
 
 async function copyContent() {
-    await navigator.clipboard.writeText(token.value);
+    await tools.copyText(token.value)
     window.$toast({ title: '已复制至剪贴板', type: 'success' })
 }
 
