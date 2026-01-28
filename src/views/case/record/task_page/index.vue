@@ -38,7 +38,9 @@
                         </div>
                         <div class="title title-action" @click.stop>
                             <div>
-                                <ActionGroup :group="['delete', 'batchEdit']" :actionDesc="actionDesc"
+                                <ActionGroup :group="['delete', 'batchEdit', 'stopTask']"
+                                    :other_icons="[{ name: 'stopTask', url: 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/icons/public/stop.svg' }]"
+                                    :actionDesc="actionDesc"
                                     @action="(action_type) => action(action_type, item, index)">
                                 </ActionGroup>
                             </div>
@@ -85,6 +87,7 @@ import BlankAmination from '@/components/common/blank/blank_animation.vue'
 import { SplitterGroup, SplitterPanel } from 'reka-ui'
 import ActionGroup from '@/views/case/content/case_content/runner/tree/components/action_group.vue'
 import { ApiGetTaskList, ApiDeleteTask, ApiEditTask, ApiTaskTools } from '@/api/case/case/index'
+import { ApiPostAsyncExecutorClient } from '@/api/project/index'
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import { send_action } from '@/views/case/record/utils/Sender'
 import tools from '@/utils/tools'
@@ -122,7 +125,8 @@ function run_task(task: any) {
 const actionDesc: any = {
     copy: '复制',
     delete: '删除',
-    batchEdit: '编辑任务'
+    batchEdit: '编辑任务',
+    stopTask: '停止任务'
 }
 
 const props = defineProps({
@@ -183,6 +187,25 @@ async function action(t: string, item: any, index: any) {
             update_date.open_schedule = false
         }
         await tools.send(ApiEditTask, data.id, update_date)
+    } else if (t === 'stopTask') {
+        const params = {
+            type: 'stop_all_task'
+        }
+        const _data = {
+            task_id: item.id
+        }
+        stop_all_task(_data, params)
+    }
+}
+
+async function stop_all_task(data: any, params: any) {
+    const stop_result = await tools.send(ApiPostAsyncExecutorClient, data, params)
+    if (stop_result) {
+        if (stop_result.result === true) {
+            window.$toast({ title: stop_result.message, type: 'info' })
+        } else {
+            window.$toast({ title: stop_result.message, type: 'error' })
+        }
     }
 }
 

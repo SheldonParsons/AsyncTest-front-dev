@@ -1,6 +1,9 @@
 <template>
     <div class="counter-container">
-        <AnimateNumber :style="number" :value="displayValue" />
+        <span v-if="end_at > 0" :style="number" class="static-number">
+            {{ displayValue.toFixed(2) }}
+        </span>
+        <AnimateNumber v-else :style="number" :value="displayValue" :options="{ decimalPlaces: 2 }" />
         <span class="unit">秒</span>
     </div>
 </template>
@@ -33,19 +36,19 @@ const number = {
 const displayValue = ref(0);
 
 let timerId: ReturnType<typeof setInterval> | null = null;
-let localAnchor = 0;   
-let baseDuration = 0;  
+let localAnchor = 0;
+let baseDuration = 0;
 
 
 const initTimerState = () => {
     if (props.end_at > 0) {
         const total = Math.max(0, props.end_at - props.start_at);
         displayValue.value = Number((total / 1000).toFixed(2));
+        console.log(displayValue.value);
         stopLoop();
         return;
     }
-
-    const serverNow = props.server_current_time || props.start_at; 
+    const serverNow = props.server_current_time || props.start_at;
     baseDuration = Math.max(0, serverNow - props.start_at);
     localAnchor = Date.now();
 
@@ -57,7 +60,6 @@ const update = () => {
         initTimerState();
         return;
     }
-
     const localPassed = Date.now() - localAnchor;
     const totalMs = baseDuration + localPassed;
 

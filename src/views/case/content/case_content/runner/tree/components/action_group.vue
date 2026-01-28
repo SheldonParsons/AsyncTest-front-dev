@@ -6,7 +6,10 @@
                     <Tooltip.Trigger class="tooltip-trigger-switch" as-child>
                         <div class="item" @click.stop="action(item)"
                             :style="{ backgroundColor: itemBackgroundColor, color: itemColor }">
-                            <component :is="icons[item]" />
+                            <component v-if="icons[item]" :is="icons[item]" />
+                            <div v-else class="remote-icon-wrapper">
+                                <img :src="getRemoteIconUrl(item)" class="remote-icon-img" alt="" />
+                            </div>
                         </div>
                     </Tooltip.Trigger>
 
@@ -73,6 +76,10 @@ const props = defineProps({
     itemColor: {
         type: String,
         default: 'rgb(148, 148, 148)'
+    },
+    other_icons: {
+        type: null,
+        default: () => []
     }
 })
 
@@ -121,6 +128,11 @@ function onLeave(e: MouseEvent) {
 function action(t: string) {
     emit('action', t)
 }
+
+const getRemoteIconUrl = (name: string): string | undefined => {
+    const iconData: any = props.other_icons.find((i: any) => i.name === name)
+    return iconData ? iconData.url : undefined
+}
 </script>
 
 <style lang="scss" scoped>
@@ -152,6 +164,26 @@ function action(t: string) {
     svg {
         width: 0.7rem;
         height: 0.7rem;
+    }
+
+    .remote-icon-wrapper {
+        width: 0.7rem;
+        height: 0.7rem;
+        overflow: hidden; // 关键：隐藏原本的图片
+        display: flex; // 保持内部 img 对齐
+        align-items: center;
+        justify-content: center;
+
+        .remote-icon-img {
+            width: 100%;
+            height: 100%;
+            // 1. 将原始图片移到容器左侧看不见的地方 (-100%)
+            transform: translateX(-100%);
+            // 2. 利用 drop-shadow 把影子投射回容器中央
+            //    currentColor 让影子继承父级文字颜色
+            //    $icon-size 必须和上面的宽度一致，才能正好投射回来
+            filter: drop-shadow(0.7rem 0 0 currentColor);
+        }
     }
 }
 

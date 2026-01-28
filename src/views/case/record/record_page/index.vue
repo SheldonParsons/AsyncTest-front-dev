@@ -29,8 +29,8 @@
                         <div class="title title-time g-e" :class="{ 'running': item.end_at === 0 }"><span>{{
                             item.end_at === 0 ? '未结束' : tools.getFormattedTimeOriginMs(item.end_at) }}</span></div>
                         <div class="title title-name g-e"><span>
-                                <AnimationNumber :start_at="item.start_at"
-                                    :end_at="item.end_at" :server_current_time="item.current_time"></AnimationNumber>
+                                <AnimationNumber :start_at="item.start_at" :end_at="item.end_at"
+                                    :server_current_time="item.current_time"></AnimationNumber>
                             </span>
                         </div>
                         <div class="title title-count g-e"><span>{{
@@ -43,6 +43,7 @@
                             item.exec_user }}</span></div>
                         <div class="title title-action" @click.stop>
                             <div @click="open_summary_record(item)" class="run-btn">Record</div>
+                            <div @click="stopTask(item)" class="stop-btn">停止任务</div>
                         </div>
                     </motion.div>
                 </div>
@@ -75,6 +76,7 @@ import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import ProcessRecord from '@/views/case/record/comp/process_record.vue'
 import tools from '@/utils/tools'
 import AnimationNumber from '@/views/case/record/record_page/animation_number.vue'
+import { ApiPostAsyncExecutorClient } from '@/api/project/index'
 
 const data: any = ref([])
 
@@ -219,6 +221,32 @@ onUnmounted(() => {
 })
 
 
+async function stopTask(item: any) {
+    console.log(item);
+
+    const params = {
+        type: 'stop_task'
+    }
+    const _data = {
+        executor_id: item.executor,
+        record_id: item.id
+    }
+    await stop_all_task(_data, params)
+}
+
+
+async function stop_all_task(data: any, params: any) {
+    const stop_result = await tools.send(ApiPostAsyncExecutorClient, data, params)
+    if (stop_result) {
+        if (stop_result.result === true) {
+            window.$toast({ title: stop_result.message, type: 'info' })
+        } else {
+            window.$toast({ title: stop_result.message, type: 'error' })
+        }
+    }
+}
+
+
 async function get_record() {
     const _data = {
         type: 'record',
@@ -301,6 +329,40 @@ async function get_record() {
 
 .run-btn svg {
     width: 14px;
+}
+
+.stop-btn {
+    width: 80px;
+    height: 25px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border: none;
+    background: linear-gradient(to right, #dc3545, #c82333, #bd2130);
+    /* 红色渐变表示停止操作 */
+    background-size: 200% 200%;
+    animation: gradient-move 4s ease-in-out infinite;
+    padding: 4px;
+    border-radius: 6px;
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px 0 rgba(220, 53, 69, 0.3);
+    font-family: "Monoton-Regular", "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+}
+
+.stop-btn:hover {
+    box-shadow: 0 6px 20px 0 rgba(220, 53, 69, 0.4);
+    transform: translateY(-2px);
+}
+
+.stop-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 10px 0 rgba(220, 53, 69, 0.2);
 }
 
 @keyframes gradient-move {
@@ -460,7 +522,10 @@ async function get_record() {
             }
 
             .title-action {
-                flex: 20
+                flex: 30;
+                display: flex;
+                gap: 10px;
+                justify-content: center;
             }
         }
 
@@ -517,7 +582,7 @@ async function get_record() {
         }
 
         .title-action {
-            flex: 20
+            flex: 30
         }
     }
 

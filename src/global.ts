@@ -16,7 +16,9 @@ const GlobalStatus = {
   lightColor: "#28c0a1",
   get_product_host: () => {
     const hostname = window.location.hostname
-    if (hostname.includes('asynctest')) {
+    if (hostname.includes('asynctest.gree')) {
+      return 'http://asynctest.gree.com'
+    } else if (hostname.includes('asynctest')) {
       return 'https://www.asynctest.com'
     } else {
       return 'http://10.23.224.40:80'

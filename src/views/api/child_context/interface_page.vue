@@ -87,7 +87,7 @@
               <MultiInput @save="done_statement" :showMarkdown="show_markdown" v-model="data.value.statement">
               </MultiInput>
               <!-- <MarkDown v-else :data="data.value.statement"></MarkDown> -->
-              <div ref="collapseRef" v-if="data.value.statement.split('\n').length > 4" class="collapse"
+              <div ref="collapseRef" v-if="data.value.statement.split('\n').length > 0" class="collapse"
                 :style="{ 'height': collapseStatement ? '100px' : '28px', 'position': collapseStatement ? 'absolute' : 'unset' }"
                 @click="toggleCollapse" style="display: flex;justify-content: center;">
                 <div style="display: flex;justify-content: center;align-items: center;min-width: 200px;">
