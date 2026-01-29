@@ -583,7 +583,7 @@ function validateUser() {
         if (projectId === null) {
           router.push({ name: "project" });
         } else {
-          router.push({ name: "data", params: { project: projectId } });
+          router.push({ name: "interface", params: { project: projectId } });
         }
       });
     } else {
