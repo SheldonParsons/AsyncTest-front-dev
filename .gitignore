@@ -25,6 +25,10 @@ yarn.lock
 CLAUDE.md
 .claude/
 
+# LLM
+.prompt/
+ui-style-guide.md
+
 
 *.ntvs*
 *.njsproj
