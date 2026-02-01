@@ -40,7 +40,6 @@
                         </div>
                         <div class="title title-update-person" style="cursor: pointer;">
                             <div class="switch-container">
-
                                 <Switch.Root v-model="item.enable" :class="{ checked_animation: item.enable }"
                                     @click="toggleChecked(item)">
                                     <motion.button class="switch" :initial="item.enable" :animate="{

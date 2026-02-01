@@ -81,6 +81,44 @@ function legacyCopy(text: string) {
   }
 }
 
+tools.pasteText = async (): Promise<string | null> => {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (e) {
+      console.warn('Clipboard API readText failed:', e);
+    }
+  }
+
+  // 兜底方案（老方法，需用户主动事件触发）
+  return legacyPaste();
+};
+
+function legacyPaste(): string | null {
+  try {
+    const textarea = document.createElement('textarea');
+
+    // 防止页面滚动
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+
+    textarea.focus();
+
+    // 这里必须在用户点击/按键事件中触发，否则 execCommand('paste') 会失败
+    const success = document.execCommand('paste');
+    const value = success ? textarea.value : null;
+
+    document.body.removeChild(textarea);
+
+    return value;
+  } catch (e) {
+    console.warn('Legacy paste failed:', e);
+    return null;
+  }
+}
+
+
 tools.getFormattedTimeOriginMsHasYear = (timestamp: any) => {
   const date = new Date(timestamp);
 

@@ -298,7 +298,7 @@ const marker_list: any = ref([]);
 const serverOptions: any = ref([]);
 const responseOptions: any = ref([]);
 const collapseStatement = ref(true)
-const isChange = ref(true)
+const isChange = ref(false)
 const interfaceInfoRef: any = ref(null)
 const current_response: any = ref({
   content: "",

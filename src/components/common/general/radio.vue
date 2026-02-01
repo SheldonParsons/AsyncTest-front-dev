@@ -2,7 +2,7 @@
     <div class="radio-container">
         <RadioGroup.Root v-model="model" class="root">
             <div v-for="item in items" :key="item.key" class="item-wrapper">
-                <RadioGroup.Item :value="item.key" :id="item.key" as-child>
+                <RadioGroup.Item :value="item.key" :id="uniqueId(item.key)" as-child>
                     <motion.button class="radio-item" :style="{ scale, willChange: 'transform' }">
                         <div
                             style="position: absolute;border: 2px solid black;border-radius: 50%;box-sizing: border-box;background: white;width: 100%;height: 100%;top: 0;">
@@ -42,7 +42,7 @@
                         </AnimatePresence>
                     </motion.button>
                 </RadioGroup.Item>
-                <label class="label" :for="item.key">
+                <label class="label" :for="uniqueId(item.key)">
                     {{ item.value }}
                 </label>
             </div>
@@ -54,6 +54,7 @@
 // @ts-ignore
 import { RadioGroup } from 'reka-ui/namespaced'
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion-v'
+import { getCurrentInstance } from 'vue'
 
 // 使用 defineModel 来支持 v-model
 const model = defineModel<string>()
@@ -65,6 +66,14 @@ defineProps<{
 
 const scale = useMotionValue(1)
 const borderWidth = useTransform(scale, [0.95, 1.05], [3, 1.5])
+
+// 生成唯一ID：使用Vue实例的uid
+const instance = getCurrentInstance()
+const instanceId = instance?.uid || Math.random().toString(36).substr(2, 9)
+
+const uniqueId = (key: string) => {
+    return `radio-${instanceId}-${key}`
+}
 </script>
 
 <style lang="scss" scoped>

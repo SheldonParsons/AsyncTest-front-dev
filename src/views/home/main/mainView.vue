@@ -1,28 +1,35 @@
 <template>
   <div class="main-container">
     <motion.div class="main-container-core">
-      <!-- 第一层：左(固定10%) + 其余(90%) -->
       <SplitterGroup direction="horizontal" ref="groupRef">
-        <!-- 左：永远 10%，不可调 -->
-        <SplitterPanel :default-size="leftPct" :min-size="leftPct" :max-size="leftPct"
-          class="radius-container white-bg-container">
+        
+        <SplitterPanel 
+          :default-size="leftPct" 
+          :min-size="leftPct" 
+          :max-size="leftPct"
+          class="radius-container white-bg-container"
+        >
           <TopMenu ref="new_menu" class="new-content-menu" @switchRouterAction="changeChildMenu" />
         </SplitterPanel>
-
-        <!-- 必须放一个把手，但禁用并隐藏宽度 -->
+        
         <SplitterResizeHandle disabled class="FixSplitterResizeHandle" />
-        <!-- 右侧整体（含中+右） -->
-        <SplitterPanel :default-size="rightPct">
-          <!-- 第二层：中(可折叠，可调) + 右(可调) -->
+        
+        <SplitterPanel :default-size="rightPct" :min-size="rightPct">
           <SplitterGroup direction="horizontal">
-            <!-- 中：默认20，可折叠 -->
-            <SplitterPanel :default-size="20" :min-size="10" :max-size="30" collapsible :collapsed-size="0"
-              class="radius-container white-bg-container">
+            <SplitterPanel 
+              :default-size="20" 
+              :min-size="10" 
+              :max-size="30" 
+              collapsible 
+              :collapsed-size="0"
+              class="radius-container white-bg-container"
+            >
               <Menu @change_sub_menu="change_sub_menu" :routeName="routername" class="detail-menu" :apiItem="apiItem"
                 @changeMenu="changeMenu" />
             </SplitterPanel>
+            
             <SplitterResizeHandle class="SplitterResizeHandle" />
-            <!-- 右：默认70，可调 -->
+            
             <SplitterPanel :default-size="80" :min-size="10" class="radius-container white-bg-container">
               <router-view @change_page="changePage" :changeApiContent="changeApiContent" class="panel-router" />
             </SplitterPanel>
@@ -46,7 +53,7 @@ const apiItem: any = ref(null);
 const changeApiContent: any = ref(null);
 const new_menu: any = ref(null);
 const MAX_PX = 80     // 左栏最多 80px
-const BASE_PCT = 5    // 想要的默认百分比
+const BASE_PCT = 5    // 默认基础百分比
 
 const groupRef = ref<any>(null)
 const groupW = ref(0)
@@ -55,29 +62,45 @@ let ro: ResizeObserver | null = null
 onMounted(async () => {
   await nextTick()
   const el = groupRef.value?.$el
-  if (el instanceof Element) {
+  // 确保监听的是 SplitterGroup 的根元素
+  const target = el instanceof Element ? el : document.querySelector('.main-container-core')
+  
+  if (target) {
+    // 立即获取一次宽度，避免初始渲染闪烁
+    groupW.value = target.getBoundingClientRect().width
+    
     ro = new ResizeObserver(([entry]) => {
+      // 使用 contentRect 获取精确宽度
       groupW.value = entry.contentRect.width
     })
-    ro.observe(el)
+    ro.observe(target)
   }
 })
+
 onBeforeUnmount(() => ro?.disconnect())
 
+// --- 核心修复逻辑 ---
 const leftPct = computed(() => {
   if (!groupW.value) return BASE_PCT
+  // 计算精确的百分比 (例如 4.231%)
   const limitPct = (MAX_PX / groupW.value) * 100
-  return Math.floor(Math.min(BASE_PCT, limitPct))
+  // 取较小值，并保留5位小数避免精度溢出，千万不要用 Math.floor
+  const preciseVal = Math.min(BASE_PCT, limitPct)
+  return Number(preciseVal.toFixed(5))
 })
-const rightPct = computed(() => 100 - leftPct.value)
+
+const rightPct = computed(() => {
+  // 确保左右相加严格等于 100
+  return Number((100 - leftPct.value).toFixed(5))
+})
+// ------------------
 
 onBeforeRouteUpdate((to: any, from) => {
-  // 在路由更新时执行的逻辑
   changeChildMenu(to.name);
 });
 
 function change_sub_menu(data: any) {
-  new_menu.value.change_focus(data);
+  if (new_menu.value) new_menu.value.change_focus(data);
 }
 
 function changeMenu(data: any) {
@@ -101,6 +124,8 @@ function changeChildMenu(name: string, call_back: any = () => { }) {
 
 .radius-container {
   border-radius: 10px;
+  /* 增加 overflow hidden 防止内容撑开导致计算误差 */
+  overflow: hidden; 
 }
 
 .white-bg-container {
@@ -110,12 +135,11 @@ function changeChildMenu(name: string, call_back: any = () => { }) {
 .panel-router {
   background-image: url('@/assets/background/white_bg-op10.png');
   background-repeat: no-repeat;
-  background-position: left bottom;
+  background-position: -150px 200px;
   background-size: contain;
-  background-color: rgba(255,255,255,0.1);
-  background-position: -150px 200px; 
+  background-color: rgba(255, 255, 255, 0.1);
+  height: 100%; /* 确保路由视图填满面板 */
 }
-
 
 .main-container {
   height: 100%;
@@ -126,12 +150,15 @@ function changeChildMenu(name: string, call_back: any = () => { }) {
   .main-container-core {
     position: absolute;
     inset: 10px;
+    display: flex; /* 确保 motion div 表现为容器 */
+    flex-direction: column;
   }
 }
 
 .FixSplitterResizeHandle[data-orientation="horizontal"] {
   width: 0.3rem;
   background-color: rgb(242, 244, 247);
+  cursor: default; /* 既然 disabled，就不要显示拖拽手势 */
 }
 
 .FixSplitterResizeHandle[data-orientation="vertical"] {
@@ -141,6 +168,11 @@ function changeChildMenu(name: string, call_back: any = () => { }) {
 .SplitterResizeHandle[data-orientation="horizontal"] {
   width: 0.5rem;
   background-color: rgb(242, 244, 247);
+  transition: background-color 0.2s;
+  
+  &:hover, &[data-active] {
+    background-color: rgb(200, 200, 200); /* 增加一点交互反馈 */
+  }
 }
 
 .SplitterResizeHandle[data-orientation="vertical"] {

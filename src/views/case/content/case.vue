@@ -11,16 +11,12 @@
                         </AstButton>
                     </div>
                     <div class="dataset-group-tab-atcion" v-if="current_page === 1 && !isOpen">
-                        <AstButton @click="editTableName">
-                            <div style="display: flex; gap: 4px;font-size: 0.8rem;">
-                                <EditDatasetSvg style="width: 15px;"></EditDatasetSvg>修改数据集
-                            </div>
-                        </AstButton>
-                        <AstButton @click="deleteTable" bgColor="#f38181" fontColor="#eeeeee">
-                            <div style="display: flex; gap: 4px;font-size: 0.8rem;">
-                                <DeleteDatasetSvg style="width: 15px;"></DeleteDatasetSvg>删除数据集
-                            </div>
-                        </AstButton>
+                        <motion.div @click="editTableName" class="edit-dataset-btn" :whilePress="{ scale: 0.9 }">
+                            <EditDatasetSvg style="width: 15px;"></EditDatasetSvg>修改数据集
+                        </motion.div>
+                        <motion.div @click="deleteTable" class="delete-dataset-btn" :whilePress="{ scale: 0.9 }">
+                            <DeleteDatasetSvg style="width: 15px;"></DeleteDatasetSvg>删除数据集
+                        </motion.div>
                     </div>
                     <div class="case-group-tab-atcion" v-if="current_page === 0">
                         <motion.div @click="run_case_task" class="run-btn" :whilePress="{ scale: 0.9 }"
@@ -589,6 +585,138 @@ const props = defineProps({
                     box-sizing: border-box;
                     border-radius: 4px;
                     cursor: pointer;
+                }
+
+                .edit-dataset-btn {
+                    position: relative;
+                    color: white;
+                    box-sizing: border-box;
+                    padding: 5px 16px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 6px;
+                    background: linear-gradient(135deg, #1a1a1a, #2d2d2d, #1a1a1a);
+                    background-size: 200% 200%;
+                    animation: gradient-shift 3s ease infinite;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
+                                0 0 20px rgba(255, 255, 255, 0.1);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    overflow: hidden;
+                }
+
+                .edit-dataset-btn::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: -100%;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+                    transition: left 0.5s;
+                }
+
+                .edit-dataset-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5),
+                                0 0 30px rgba(255, 255, 255, 0.15);
+                    background: linear-gradient(135deg, #2d2d2d, #404040, #2d2d2d);
+                }
+
+                .edit-dataset-btn:hover::before {
+                    left: 100%;
+                }
+
+                .edit-dataset-btn:active {
+                    transform: translateY(0);
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3),
+                                0 0 15px rgba(255, 255, 255, 0.08);
+                }
+
+                .edit-dataset-btn svg {
+                    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+                    transition: transform 0.3s ease;
+                }
+
+                .edit-dataset-btn:hover svg {
+                    transform: scale(1.1);
+                }
+
+                .delete-dataset-btn {
+                    position: relative;
+                    color: white;
+                    box-sizing: border-box;
+                    padding: 5px 16px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 6px;
+                    background: linear-gradient(135deg, #dc3545, #c82333, #dc3545);
+                    background-size: 200% 200%;
+                    animation: gradient-shift 3s ease infinite;
+                    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4),
+                                0 0 20px rgba(220, 53, 69, 0.2);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    overflow: hidden;
+                }
+
+                .delete-dataset-btn::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: -100%;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+                    transition: left 0.5s;
+                }
+
+                .delete-dataset-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(220, 53, 69, 0.5),
+                                0 0 30px rgba(220, 53, 69, 0.25);
+                    background: linear-gradient(135deg, #e74c3c, #dc3545, #e74c3c);
+                }
+
+                .delete-dataset-btn:hover::before {
+                    left: 100%;
+                }
+
+                .delete-dataset-btn:active {
+                    transform: translateY(0);
+                    box-shadow: 0 2px 10px rgba(220, 53, 69, 0.3),
+                                0 0 15px rgba(220, 53, 69, 0.15);
+                }
+
+                .delete-dataset-btn svg {
+                    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+                    transition: transform 0.3s ease;
+                }
+
+                .delete-dataset-btn:hover svg {
+                    transform: scale(1.1);
+                }
+
+                @keyframes gradient-shift {
+                    0% {
+                        background-position: 0% 50%;
+                    }
+                    50% {
+                        background-position: 100% 50%;
+                    }
+                    100% {
+                        background-position: 0% 50%;
+                    }
                 }
 
             }

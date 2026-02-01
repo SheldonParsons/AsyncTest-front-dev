@@ -45,6 +45,11 @@ const routes = [
                 component: () => import('@/views/settings/source_management/database.vue')
               },
               {
+                path: '/home/main/project/:project/settings/source/datasource',
+                name: 'settings_source_datasource',
+                component: () => import('@/views/settings/source_management/datasource.vue')
+              },
+              {
                 path: '/home/main/project/:project/settings/source/files',
                 name: 'settings_source_files',
                 component: () => import('@/views/settings/source_management/files.vue')

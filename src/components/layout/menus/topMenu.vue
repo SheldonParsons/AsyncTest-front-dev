@@ -20,7 +20,7 @@
 
       <!-- Settings -->
       <div :class="['menu-item', { 'menu-item-active': isActive('settings') }]" style="animation-delay: 0.15s"
-        @click="switchRouter('settings_source_database')">
+        @click="switchRouter('settings_source_datasource')">
         <div class="menu-item-inner">
           <div class="icon-wrapper">
             <SETTING class="menu-icon"></SETTING>

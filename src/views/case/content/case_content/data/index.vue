@@ -1,6 +1,6 @@
 <template>
     <SplitterGroup direction="vertical" ref="groupRef">
-        <SplitterPanel :default-size="10"
+        <SplitterPanel :default-size="10" v-if="global === false"
             style="display:flex; flex-direction:column; height:100%;justify-content: center;">
             <div class="data-container-case-ag-grid-tips">此处的数据将会在您运行用例时被覆盖到当前环境变量中，（变量优先级 : 临时变量 > 环境变量 > 全局变量）。</div>
         </SplitterPanel>
@@ -25,7 +25,8 @@
                                 <path d="M9 3v18" />
                                 <path d="M15 3v18" />
                             </svg>新增列</motion.div>
-                        <Swtich ref="dependRef" @action="action_change_depends" :data="env.depend === 1"></Swtich>
+                        <Swtich ref="dependRef" v-if="global === false" @action="action_change_depends"
+                            :data="env.depend === 1"></Swtich>
                     </div>
 
                     <div class="max">
@@ -34,7 +35,7 @@
                         </motion.div>
                     </div>
                 </div>
-                <ag-grid-vue style="width:100%; height:100%;" :columnDefs="columnDefs" :rowData="rowData"
+                <ag-grid-vue v-if="isReady" style="width:100%; height:100%;" :columnDefs="columnDefs" :rowData="rowData"
                     :defaultColDef="defaultColDef" :gridOptions="gridOptions" :rowDragText="rowDragText"
                     @grid-ready="onGridReady" class="ag-theme-quartz" @cell-value-changed="action_edit_cell" />
             </div>
@@ -86,6 +87,7 @@ const canChangeColInfo = ref(true)
 const dependRef: any = ref(null)
 const current_row: any = ref(null)
 const create_col_data: any = ref(null)
+const isReady = ref(false)
 defineExpose({
     Cell,
     Rol,
@@ -104,10 +106,27 @@ const props = defineProps({
     },
     dataset: {
         type: null
+    },
+    global: {
+        type: null,
+        default: false
+    },
+    can_edit: {
+        type: Boolean,
+        default: true
     }
 })
 
 const emit = defineEmits(['change_depend'])
+
+// 权限检查的 send_action 包装函数
+async function send_action_with_permission(data: any) {
+    if (!props.can_edit) {
+        window.$toast({ title: '您无权修改' })
+        return false
+    }
+    return await send_action(data)
+}
 
 // 最大化状态
 function toggleMaximize() {
@@ -115,10 +134,12 @@ function toggleMaximize() {
 }
 
 onMounted(() => {
-    console.log(props.data.cols);
+    // 1. 创建临时数组，避免在循环中频繁触发 Vue 响应式更新
+    const tempCols = [] 
+    
     for (let i = 0; i < props.data.cols.length; i++) {
         if (i === 0) {
-            columnDefs.value.push({
+            tempCols.push({  // 修改：push 到 tempCols
                 filter: 'agTextColumnFilter',
                 field: props.data.cols[i].name,
                 headerName: '数据名',
@@ -134,13 +155,13 @@ onMounted(() => {
                     name: props.data.cols[i].name,
                     id: props.data.cols[i].id,
                     desc: props.data.cols[i].desc,
-                    env_name: props.env.name,
+                    env_name: props.env ? props.env.name : null,
                     edit_col: action_edit_col,
                     batch_edit_col: action_batch_col,
                 }
             })
         } else {
-            columnDefs.value.push({
+            tempCols.push({ // 修改：push 到 tempCols
                 filter: 'agTextColumnFilter',
                 field: props.data.cols[i].name,
                 headerName: props.data.cols[i].name,
@@ -162,26 +183,30 @@ onMounted(() => {
             })
         }
     }
-    console.log(columnDefs.value);
-    
-    columnDefs.value.push(
-        {
-            field: '$ast_action',
-            headerName: '操作',
-            cellRenderer: 'ActionCell',
-            editable: false,
-            pinned: 'right',
-            filter: false,
-            maxWidth: 100,
-            minWidth: 100,
-            cellRendererParams: {
-                add_row: action_add_blank_row,
-                delete_row: action_delete_row,
-                copy_row: action_copy_row,
-                eidt_row: action_edit_row
-            }
-        })
+
+    tempCols.push({ // 修改：push 到 tempCols
+        field: '$ast_action',
+        headerName: '操作',
+        cellRenderer: 'ActionCell',
+        editable: false,
+        pinned: 'right',
+        filter: false,
+        maxWidth: 100,
+        minWidth: 100,
+        cellRendererParams: {
+            add_row: action_add_blank_row,
+            delete_row: action_delete_row,
+            copy_row: action_copy_row,
+            eidt_row: action_edit_row
+        }
+    })
+
+    // 2. 一次性赋值给响应式对象
+    columnDefs.value = tempCols 
     rowData.value = _.cloneDeep(props.data.rows)
+    
+    // 3. 标记数据已准备好，允许渲染 Grid
+    isReady.value = true 
 })
 
 // 默认列配置：可过滤、可编辑、不允许调整宽度、自适应宽度
@@ -206,7 +231,7 @@ async function onRowDragEnd(event: any) {
             target_index: event.node.rowIndex
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     gridApi.value!.setGridOption("suppressRowDrag", false);
     if (!result) return
     window.$toast({ title: '更新位置成功' })
@@ -228,7 +253,7 @@ async function action_edit_cell(e: CellValueChangedEvent) {
                 value: e.value.data
             }
         }
-        const result = await send_action(_data)
+        const result = await send_action_with_permission(_data)
         if (!result) return
         window.$toast({ title: '更新单元格内容成功。' })
     }
@@ -249,7 +274,7 @@ async function action_copy_row(params: any) {
             t: 'copy'
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return
     action_add_row(params.node.childIndex + 1, result)
 }
@@ -264,7 +289,7 @@ async function action_add_blank_row(params: any) {
             t: 'blank'
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return
     action_add_row(params.node.childIndex + 1, result)
 }
@@ -279,7 +304,7 @@ async function action_add_last_blank_row() {
             t: 'blank'
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return
     action_add_row(rowData.value.length, result)
 }
@@ -310,7 +335,7 @@ async function action_edit_col(col_id: number, origin_data: any, data: any) {
             new_col_name: data,
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
     window.$toast({ title: `列名称更新成功。` })
 }
@@ -327,7 +352,7 @@ async function api_edit_col(data: any, name: string, desc: string) {
             new_col_desc: desc
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
     return true
 }
@@ -403,7 +428,7 @@ async function api_create_col(data: any) {
             columns: data
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
     create_col_data.value = result
     return true
@@ -459,18 +484,13 @@ async function action_delete_row(params: any) {
             row_id: current_row.value.id
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
     rowData.value.splice(params.node.rowIndex, 1)
     window.$toast({ title: '删除行成功。' })
 }
 
 async function action_edit_row(params: any) {
-    console.log(params.node.rowIndex);
-    console.log(rowData.value);
-    console.log(columnDefs.value);
-
-
     let current_row_data = []
     for (let i = 0; i < columnDefs.value.length - 1; i++) {
         current_row_data.push(rowData.value[params.node.rowIndex][columnDefs.value[i].field].data)
@@ -499,7 +519,7 @@ async function api_edit_row(data: any) {
             data: data
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
     return true
 }
@@ -521,7 +541,7 @@ async function action_delete_col(col_instance: any) {
             col_id: col_instance.id
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) return false
 
     columnDefs.value = columnDefs.value.filter((col: any) => {
@@ -551,7 +571,7 @@ async function action_change_depends(checked: boolean) {
             table_id: props.env.table_id
         }
     }
-    const result = await send_action(_data)
+    const result = await send_action_with_permission(_data)
     if (!result) {
         dependRef.value.toggle()
         return
@@ -602,7 +622,7 @@ function onGridReady(e: GridReadyEvent) {
 .data-container-case-ag-grid {
     .controller {
         box-sizing: border-box;
-        padding: 10px 10px 10px 0;
+        padding: 20px 10px 20px 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -614,17 +634,78 @@ function onGridReady(e: GridReadyEvent) {
             width: 100%;
 
             .btn {
-                background-color: black;
+                position: relative;
                 color: white;
                 box-sizing: border-box;
-                padding: 5px 10px;
+                padding: 5px 16px;
                 font-size: 14px;
-                border-radius: 4px;
+                font-weight: 500;
+                border: none;
+                border-radius: 8px;
                 cursor: pointer;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                gap: 3px;
+                gap: 6px;
+                background: linear-gradient(135deg, #1a1a1a, #2d2d2d, #1a1a1a);
+                background-size: 200% 200%;
+                animation: gradient-shift 3s ease infinite;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
+                    0 0 20px rgba(255, 255, 255, 0.1);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                overflow: hidden;
+                will-change: transform, box-shadow;
+            }
+
+            .btn::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+                transition: left 0.5s;
+            }
+
+            .btn:hover {
+                transform: translateY(-2px) !important;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5),
+                    0 0 30px rgba(255, 255, 255, 0.15);
+                background: linear-gradient(135deg, #2d2d2d, #404040, #2d2d2d);
+            }
+
+            .btn:hover::before {
+                left: 100%;
+            }
+
+            .btn:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3),
+                    0 0 15px rgba(255, 255, 255, 0.08);
+            }
+
+            .btn svg {
+                filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+                transition: transform 0.3s ease;
+            }
+
+            .btn:hover svg {
+                transform: scale(1.1);
+            }
+
+            @keyframes gradient-shift {
+                0% {
+                    background-position: 0% 50%;
+                }
+
+                50% {
+                    background-position: 100% 50%;
+                }
+
+                100% {
+                    background-position: 0% 50%;
+                }
             }
         }
     }
@@ -698,7 +779,7 @@ function onGridReady(e: GridReadyEvent) {
     left: 0;
     width: 100vw;
     height: 100vh;
-    z-index: 99;
+    z-index: 999;
     background: white;
     display: flex;
     flex-direction: column;

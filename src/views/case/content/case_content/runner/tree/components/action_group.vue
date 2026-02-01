@@ -158,7 +158,7 @@ const getRemoteIconUrl = (name: string): string | undefined => {
 
     .item:hover {
         background-color: rgba(132, 132, 132, 0.3) !important;
-        color: black !important;
+        color: rgb(0, 0, 0) !important;
     }
 
     svg {

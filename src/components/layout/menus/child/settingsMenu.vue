@@ -8,6 +8,12 @@
     </el-col>
   </el-row>
   <el-row>
+    <el-col :span="21" :offset="1" class="flex router-menu" @click="switchRouter('settings_source_datasource')"
+      :class="{ active: 'settings_source_datasource' === activeLinkStyle }">
+      <div><span>数据源（全局）</span></div>
+    </el-col>
+  </el-row>
+  <el-row>
     <el-col :span="21" :offset="1" class="flex router-menu" @click="switchRouter('settings_source_database')"
       :class="{ active: 'settings_source_database' === activeLinkStyle }">
       <div><span>数据库连接</span></div>

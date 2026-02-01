@@ -774,7 +774,7 @@ async function action(father: number, action_type: string, data: any, node = nul
         return
     }
     if (action_type === 'create_interface_under_dir_by_paste') {
-        const textFromClipboard = await navigator.clipboard.readText();
+        const textFromClipboard = await tools.pasteText()
         const paste_value = parseChromeFetch(textFromClipboard)
         if (paste_value === false) return
         current_paste_object.value = paste_value

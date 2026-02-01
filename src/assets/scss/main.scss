@@ -2,6 +2,7 @@
   font-family: 'Monoton-Regular';
   src: url('@/assets/font/Gotham-Rounded-Bold.woff');
 }
+
 @font-face {
   font-family: 'Alata-Regular';
   src: url('@/assets/font/Alata-Regular.woff');
@@ -65,14 +66,53 @@ h2,
 h3,
 h4,
 h5 {
-  font-family:  'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-  'Microsoft YaHei', '微软雅黑', Arial, sans-serif ;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
   margin-top: 0;
 }
+
 .project-name {
   font-family: 'Monoton-Regular', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
-  'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
 }
-body::-webkit-scrollbar {
-  display: none; /* 隐藏滚动条 */
+
+
+/* 1. 针对 Firefox 的标准属性 */
+* {
+  /* 对应你的 width: 4px，Firefox 只有 auto, thin, none 三种可选 */
+  scrollbar-width: thin;
+
+  /* 对应你的 thumb 和 track 颜色 */
+  /* 格式: scrollbar-color: <thumb> <track>; */
+  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+}
+
+/* 2. 针对 Webkit (Chrome, Edge, Safari) 的自定义属性 */
+/* 使用 ::-webkit-scrollbar 覆盖所有元素的滚动条 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+  /* 如果有横向滚动条，也设为 4px */
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+
+  /* 确保 thumb 即使很短也能被看见 */
+  min-height: 20px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  /* 激活（点击）状态，体验更好 */
+  &:active {
+    background: rgba(255, 255, 255, 0.4);
+  }
 }
