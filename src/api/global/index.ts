@@ -83,3 +83,12 @@ export function ApiGetGlobalUserList(params: any): Promise<String> {
     });
   });
 }
+
+// 获取全局数据源简单列表
+export function ApiGetGlobalDatasourceSimple(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet(`/global/datasource/simple/`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}

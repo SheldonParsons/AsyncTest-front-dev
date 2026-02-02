@@ -894,6 +894,14 @@ function getRandomInt(min: any, max: any) {
   .el-dropdown-menu__item {
     border-radius: 0px !important;
   }
+
+  .el-table__header-wrapper {
+    z-index: 2;
+  }
+
+  .el-table__body-wrapper {
+    z-index: 1;
+  }
 }
 .database-info {
   display: flex;

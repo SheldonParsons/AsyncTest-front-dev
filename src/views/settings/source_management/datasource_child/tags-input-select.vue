@@ -25,7 +25,11 @@
                 </div>
 
                 <TagsInputItemDelete v-if="!disabled" class="tag-delete" @click.stop>
-                    <Icon icon="lucide:x" />
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                    </svg>
                 </TagsInputItemDelete>
             </TagsInputItem>
 
@@ -48,7 +52,12 @@
         <div class="dialog-content-wrapper">
             <div class="dialog-header">
                 <div class="dialog-search">
-                    <Icon icon="lucide:search" class="search-icon" />
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="search-icon">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.3-4.3" />
+                    </svg>
                     <input
                         v-model="dialogSearchTerm"
                         type="text"
@@ -65,7 +74,11 @@
                         @click="toggleSelectAll"
                     >
                         <div class="checkbox-box">
-                            <Icon v-if="isAllSelected" icon="lucide:check" class="check-icon" />
+                            <svg v-if="isAllSelected" xmlns="http://www.w3.org/2000/svg" width="12" height="12"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" class="check-icon">
+                                <path d="M20 6 9 17l-5-5" />
+                            </svg>
                         </div>
                         <span class="select-all-text">全选</span>
                     </div>
@@ -82,7 +95,11 @@
                     @click="toggleSelection(opt[valueKey])"
                 >
                     <div class="checkbox-box">
-                        <Icon v-if="tempSelectedIds.includes(opt[valueKey])" icon="lucide:check" class="check-icon" />
+                        <svg v-if="tempSelectedIds.includes(opt[valueKey])" xmlns="http://www.w3.org/2000/svg"
+                            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon">
+                            <path d="M20 6 9 17l-5-5" />
+                        </svg>
                     </div>
 
                     <img
@@ -97,7 +114,13 @@
                 </div>
 
                 <div v-if="filteredDialogOptions.length === 0" class="empty-state">
-                    <Icon icon="lucide:inbox" class="empty-icon" />
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+                        class="empty-icon">
+                        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+                        <path
+                            d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+                    </svg>
                     <div class="empty-text">没有找到匹配项</div>
                 </div>
             </div>
@@ -107,7 +130,6 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Icon } from '@iconify/vue'
 import {
     TagsInputRoot,
     TagsInputItem,

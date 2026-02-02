@@ -1,123 +1,127 @@
 <template>
     <div class="datasource-wrapper">
         <div v-show="!isEditMode" class="datasource-container">
-        <!-- 顶部操作栏 -->
-        <div class="datasource-header">
-            <div class="search-wrapper">
-                <input v-model="searchKeyword" type="text" placeholder="搜索数据源名称..." class="search-input"
-                    @input="handleSearch" />
-                <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                </svg>
+            <!-- 顶部操作栏 -->
+            <div class="datasource-header">
+                <div class="search-wrapper">
+                    <input v-model="searchKeyword" type="text" placeholder="搜索数据源名称..." class="search-input"
+                        @input="handleSearch" />
+                    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.3-4.3" />
+                    </svg>
+                </div>
+
+                <motion.div class="add-datasource-btn" :whilePress="{ scale: 0.95 }" @click="handleAddDatasource">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14" />
+                        <path d="M12 5v14" />
+                    </svg>
+                    添加数据源
+                </motion.div>
             </div>
 
-            <motion.div class="add-datasource-btn" :whilePress="{ scale: 0.95 }" @click="handleAddDatasource">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12h14" />
-                    <path d="M12 5v14" />
-                </svg>
-                添加数据源
-            </motion.div>
-        </div>
-
-        <!-- 数据表格 -->
-        <div class="datasource-table-wrapper no-scroll">
-            <table class="datasource-table">
-                <thead>
-                    <tr>
-                        <th>数据源名称</th>
-                        <th>创建人</th>
-                        <th>更新时间</th>
-                        <th>是否启用</th>
-                        <th>应用范围</th>
-                        <th>数据源类型</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <motion.tr v-for="item in displayData" :key="item.id" :initial="{ opacity: 0, y: 20 }"
-                        :animate="{ opacity: 1, y: 0 }" :transition="{ duration: 0.3 }" class="table-row">
-                        <td class="name-cell">
-                            <div class="name-wrapper">
-                                <div class="name-icon">{{ item.name.charAt(0).toUpperCase() }}</div>
-                                <span class="name-text">{{ item.name }}</span>
-                            </div>
-                        </td>
-                        <td>{{ item.create_by }}</td>
-                        <td>{{ tools.getLocaleDateTime(item.update_time, false) }}</td>
-                        <td>
-                            <SimpleSwitch v-model="item.enable"
-                                @update:model-value="(value) => handleToggleEnable(value, item)" />
-                        </td>
-                        <td>
-                            <div class="scope-wrapper">
-                                <Tooltip v-if="!item.is_public_read" :is-open="openTooltipId === item.id" side="top">
-                                    <template #trigger>
-                                        <span class="scope-badge project" @mouseenter="cleanAndSetTooltipEvent(item.id)"
-                                            @mouseleave="delayChange">
-                                            范围
-                                        </span>
-                                    </template>
-                                    <div class="tooltip-mapping-list" @mouseenter="cleanAndSetTooltipEvent(item.id)"
-                                        @mouseleave="openTooltipId = null">
-                                        <div v-if="item.read_mapping?.projects?.length > 0" class="mapping-section">
-                                            <div class="tooltip-title">可使用项目</div>
-                                            <div class="mapping-items">
-                                                <div v-for="project in item.read_mapping.projects" :key="project.id"
-                                                    class="mapping-item">
-                                                    {{ project.name }}
+            <!-- 数据表格 -->
+            <div class="datasource-table-wrapper no-scroll">
+                <table class="datasource-table">
+                    <thead>
+                        <tr>
+                            <th>数据源名称</th>
+                            <th>创建人</th>
+                            <th>更新时间</th>
+                            <th>是否启用</th>
+                            <th>应用范围</th>
+                            <th>数据源类型</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <motion.tr v-for="item in displayData" :key="item.id" :initial="{ opacity: 0, y: 20 }"
+                            :animate="{ opacity: 1, y: 0 }" :transition="{ duration: 0.3 }" class="table-row">
+                            <td class="name-cell">
+                                <div class="name-wrapper">
+                                    <div class="name-icon">{{ item.name.charAt(0).toUpperCase() }}</div>
+                                    <span class="name-text">{{ item.name }}</span>
+                                </div>
+                            </td>
+                            <td>{{ item.create_by }}</td>
+                            <td>{{ tools.getLocaleDateTime(item.update_time, false) }}</td>
+                            <td>
+                                <SimpleSwitch v-model="item.enable"
+                                    @update:model-value="(value) => handleToggleEnable(value, item)" />
+                            </td>
+                            <td>
+                                <div class="scope-wrapper">
+                                    <Tooltip v-if="!item.is_public_read" :is-open="openTooltipId === item.id"
+                                        side="top">
+                                        <template #trigger>
+                                            <span class="scope-badge project"
+                                                @mouseenter="cleanAndSetTooltipEvent(item.id)"
+                                                @mouseleave="delayChange">
+                                                范围
+                                            </span>
+                                        </template>
+                                        <div class="tooltip-mapping-list" @mouseenter="cleanAndSetTooltipEvent(item.id)"
+                                            @mouseleave="openTooltipId = null">
+                                            <div v-if="item.read_mapping?.projects?.length > 0" class="mapping-section">
+                                                <div class="tooltip-title">可使用项目</div>
+                                                <div class="mapping-items">
+                                                    <div v-for="project in item.read_mapping.projects" :key="project.id"
+                                                        class="mapping-item">
+                                                        {{ project.name }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div v-if="item.read_mapping?.users?.length > 0" class="mapping-section">
+                                                <div class="tooltip-title">可使用用户</div>
+                                                <div class="mapping-items">
+                                                    <div v-for="user in item.read_mapping.users" :key="user.id"
+                                                        class="mapping-item">
+                                                        {{ user.name }}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div v-if="item.read_mapping?.users?.length > 0" class="mapping-section">
-                                            <div class="tooltip-title">可使用用户</div>
-                                            <div class="mapping-items">
-                                                <div v-for="user in item.read_mapping.users" :key="user.id"
-                                                    class="mapping-item">
-                                                    {{ user.name }}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Tooltip>
-                                <span v-else class="scope-badge global">
-                                    全局
-                                </span>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="type-tag">{{ item.source_type === 'table' ? '表格' : item.source_type }}</span>
-                        </td>
-                        <td>
-                            <ActionGroup :group="['copy', 'batchEdit', 'delete']" :actionDesc="{
-                                copy: '复制',
-                                batchEdit: '编辑',
-                                delete: '删除'
-                            }" :itemBackgroundColor="'rgba(0, 0, 0, 0.05)'" :itemColor="'#1a1a1a'"
-                                @action="(action) => handleAction(action, item)" />
-                        </td>
-                    </motion.tr>
-                </tbody>
-            </table>
+                                    </Tooltip>
+                                    <span v-else class="scope-badge global">
+                                        全局
+                                    </span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="type-tag">{{ item.source_type === 'table' ? '表格' : item.source_type
+                                    }}</span>
+                            </td>
+                            <td>
+                                <ActionGroup :group="['copy', 'batchEdit', 'delete']" :actionDesc="{
+                                    copy: '复制',
+                                    batchEdit: '编辑',
+                                    delete: '删除'
+                                }" :itemBackgroundColor="'rgba(0, 0, 0, 0.05)'" :itemColor="'#1a1a1a'"
+                                    @action="(action) => handleAction(action, item)" />
+                            </td>
+                        </motion.tr>
+                    </tbody>
+                </table>
 
-            <div v-if="displayData.length === 0" class="empty-state">
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                    <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
-                </svg>
-                <p>暂无数据源</p>
+                <div v-if="displayData.length === 0" class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                        <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+                    </svg>
+                    <p>暂无数据源</p>
+                </div>
             </div>
-        </div>
 
-        <!-- 分页器 -->
-        <div class="pagination-wrapper">
-            <Pagination :total="totalCount" :size="pageSize" @changePage="handlePageChange" />
-        </div>
+            <!-- 分页器 -->
+            <div class="pagination-wrapper">
+                <Pagination :total="totalCount" :size="pageSize" @changePage="handlePageChange" />
+            </div>
         </div>
 
         <DatasourceEdit v-if="isEditMode" :initialData="currentEditData" :isEdit="isEditMode" @back="handleBack"
@@ -307,13 +311,15 @@ async function handleAction(action: string, item: any) {
     }
 }
 
-function handleBack() {
+async function handleBack() {
     isEditMode.value = false
     currentEditData.value = null
+    await get_data()
 }
 
 async function handleSave() {
-    handleBack()
+    isEditMode.value = false
+    currentEditData.value = null
     await get_data() // 重新获取数据列表
 }
 </script>
@@ -483,7 +489,7 @@ async function handleSave() {
         background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%);
         position: sticky;
         top: 0;
-        z-index: 0;
+        z-index: 10;
 
         tr {
             th {

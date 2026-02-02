@@ -21,6 +21,9 @@
                         @change="changeParamStraegy"></Select>
                 </div>
             </div>
+            <div class="step-item" style="width: 100%;">
+                <GlobalDatasource v-model="data.global_datasource"/>
+            </div>
             <div class="step-item">
                 <div style="display: inline-block;white-space: nowrap;">执行方式</div>
                 <div>
@@ -106,6 +109,7 @@ import { ApiGetDatasetList } from '@/api/case/dataset/index'
 import InputAnimation from '@/components/common/general/input.vue'
 import MarkDown from "@/views/api/child_component/params_child/comp/markdown.vue";
 import PythonCode from '@/components/common/general/pythonCode.vue'
+import GlobalDatasource from '@/views/case/content/case_content/runner/global_datasource.vue'
 import { useRoute } from "vue-router"
 import { ApiGetEnvListAndUserSetting } from "@/api/interface/env";
 import { createDatasetScript, multitaskerDriveStrategy, multitaskerLoopStrategy, errorCaseRealStrategy, errorParamsCoverStrategy } from '@/views/case/utils/constants'

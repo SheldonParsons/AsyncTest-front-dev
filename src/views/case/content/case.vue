@@ -218,7 +218,7 @@ function case_done() {
     case_info.value = caseStepRef.value.get_case()
 }
 
-let current_run_task_list:Array<number> = []
+let current_run_task_list: Array<number> = []
 
 async function run_case_task() {
     if (current_run_task_list.includes(props.case_id)) {
@@ -292,7 +292,8 @@ async function saveCase() {
             drive_strategy: case_info.value.drive_strategy,
             data_set: case_info.value.data_set,
             before_script: case_info.value.before_script,
-            loop_times: case_info.value.loop_times
+            loop_times: case_info.value.loop_times,
+            global_datasource: case_info.value.global_datasource
         }
     }
     const result = await send_case_action(_data)
@@ -605,7 +606,7 @@ const props = defineProps({
                     background-size: 200% 200%;
                     animation: gradient-shift 3s ease infinite;
                     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
-                                0 0 20px rgba(255, 255, 255, 0.1);
+                        0 0 20px rgba(255, 255, 255, 0.1);
                     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                     overflow: hidden;
                 }
@@ -624,7 +625,7 @@ const props = defineProps({
                 .edit-dataset-btn:hover {
                     transform: translateY(-2px);
                     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5),
-                                0 0 30px rgba(255, 255, 255, 0.15);
+                        0 0 30px rgba(255, 255, 255, 0.15);
                     background: linear-gradient(135deg, #2d2d2d, #404040, #2d2d2d);
                 }
 
@@ -635,7 +636,7 @@ const props = defineProps({
                 .edit-dataset-btn:active {
                     transform: translateY(0);
                     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3),
-                                0 0 15px rgba(255, 255, 255, 0.08);
+                        0 0 15px rgba(255, 255, 255, 0.08);
                 }
 
                 .edit-dataset-btn svg {
@@ -665,7 +666,7 @@ const props = defineProps({
                     background-size: 200% 200%;
                     animation: gradient-shift 3s ease infinite;
                     box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4),
-                                0 0 20px rgba(220, 53, 69, 0.2);
+                        0 0 20px rgba(220, 53, 69, 0.2);
                     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                     overflow: hidden;
                 }
@@ -684,7 +685,7 @@ const props = defineProps({
                 .delete-dataset-btn:hover {
                     transform: translateY(-2px);
                     box-shadow: 0 6px 20px rgba(220, 53, 69, 0.5),
-                                0 0 30px rgba(220, 53, 69, 0.25);
+                        0 0 30px rgba(220, 53, 69, 0.25);
                     background: linear-gradient(135deg, #e74c3c, #dc3545, #e74c3c);
                 }
 
@@ -695,7 +696,7 @@ const props = defineProps({
                 .delete-dataset-btn:active {
                     transform: translateY(0);
                     box-shadow: 0 2px 10px rgba(220, 53, 69, 0.3),
-                                0 0 15px rgba(220, 53, 69, 0.15);
+                        0 0 15px rgba(220, 53, 69, 0.15);
                 }
 
                 .delete-dataset-btn svg {
@@ -711,9 +712,11 @@ const props = defineProps({
                     0% {
                         background-position: 0% 50%;
                     }
+
                     50% {
                         background-position: 100% 50%;
                     }
+
                     100% {
                         background-position: 0% 50%;
                     }
