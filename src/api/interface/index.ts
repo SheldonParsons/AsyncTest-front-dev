@@ -419,3 +419,17 @@ export function ApiRunInterface(data: any): Promise<String> {
       });
   });
 }
+
+// 接口Debug信息
+export function ApiInterfaceDebug(data: any): Promise<String> {
+  return new Promise((resolve, reject) => {
+    http
+      .httpPost("/api/interface/debug/", data)
+      .then((res: any) => {
+        resolve(res);
+      })
+      .catch((err: any) => {
+        reject(err);
+      });
+  });
+}

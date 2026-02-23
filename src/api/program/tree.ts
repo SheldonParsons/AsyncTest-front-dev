@@ -18,6 +18,15 @@ export function getOuterTree(params: any): Promise<String> {
   });
 }
 
+// 获取模块名称
+export function getOuterTreeModule(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet("/api/outer_interface/module/", params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 // 获取提供商列表
 export function getOuterDsTree(params: any): Promise<String> {
   return new Promise((resolve) => {

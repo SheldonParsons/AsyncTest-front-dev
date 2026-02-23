@@ -1,5 +1,5 @@
 <template>
-  <div style="display: flex;flex-direction: column;height: 100%;min-width: 775px;">
+  <div style="display: flex;flex-direction: column;height: 100%;min-width: 775px;position: relative;">
     <div>
       <el-row v-if="loading === false" class="url-inputer">
         <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
@@ -210,6 +210,7 @@
           </el-col>
         </el-row>
       </div>
+      <RequestRecord ref="requestRecordRef" :interface="props.interface_id" />
     </div>
   </div>
   <TempLogDialog v-model="show_send_response_dialog" :log-data="send_response" />
@@ -254,6 +255,7 @@ import ResponseLine from '@/views/api/child_context/widget_cpm/response_line.vue
 import ResponseTabs from '@/views/api/child_context/widget_cpm/response_tabs.vue'
 import TempLogDialog from '@/views/api/child_context/widget_cpm/temp_log_dialog.vue'
 import NormalDialog from '@/views/case/components/dialog.vue'
+import RequestRecord from '@/views/api/child_context/request_record/index.vue'
 import _ from "lodash";
 //debounce
 
@@ -268,6 +270,7 @@ import {
   ApiDeleteResponse,
   ApiUpdateResponse,
   ApiPostTag,
+  ApiRunInterface
 } from "@/api/interface/index";
 import { StreamPostApi } from "@/api/sse/index";
 import { ApiGetProjectServerParameters } from "@/api/interface/env";
@@ -298,6 +301,7 @@ const marker_list: any = ref([]);
 const serverOptions: any = ref([]);
 const responseOptions: any = ref([]);
 const collapseStatement = ref(true)
+const requestRecordRef: any = ref(null)
 const isChange = ref(false)
 const interfaceInfoRef: any = ref(null)
 const current_response: any = ref({
@@ -594,11 +598,17 @@ function send() {
       project: route.params.project,
     },
   };
-  show_send_response_dialog.value = true;
+  // show_send_response_dialog.value = true;
   send_response.value = [];
-  StreamPostApi("api/interface/run/", _data, async (res: any) => {
-    send_response.value.push(res);
-  });
+  ApiRunInterface(_data).then((res: any) => {
+    console.log(res);
+    requestRecordRef.value.showTaskDetail(res.data)
+  })
+  // StreamPostApi("api/interface/run/", _data, async (res: any) => {
+  //   console.log(res);
+  //   requestRecordRef.value.showTaskDetail(res.data)
+  //   // send_response.value.push(res);
+  // });
 }
 
 function update_env_and_interface_env() {

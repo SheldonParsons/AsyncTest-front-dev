@@ -215,7 +215,7 @@ import GetPathSvg from '@/assets/svg/common/get_path.vue'
 import TooltipAnimation from '@/components/common/general/tooltip.vue'
 import GetNameSvg from '@/assets/svg/common/get_name.vue'
 import InfoSvg from '@/assets/svg/common/new_icon/info.vue'
-import { getOuterTree } from "@/api/program/tree";
+import { getOuterTree, getOuterTreeModule } from "@/api/program/tree";
 import { MatchType } from '@/views/api/child_context/outer_interface_root_dir/constants'
 import { ApiPostAliasSetting } from '@/api/project/index'
 import tools from '@/utils/tools'
@@ -255,10 +255,7 @@ const adding_data = ref<any[]>([])
 // edit_object 备份
 const edit_object_backup = ref<any>(null)
 
-const FakeMatchModulesData = ref([
-    { name: '所有模块', code: 'all' },
-    { name: 'gree-admin-boot', code: 'gree-admin-boot' }
-])
+const FakeMatchModulesData = ref()
 
 const method_color: any = {
     get: "get",
@@ -275,6 +272,7 @@ defineExpose({ create, check_content })
 onMounted(() => {
     initEditData()
     getData()
+    initModuleName()
 })
 
 function check_content() { return true }
@@ -295,6 +293,20 @@ watch(filterText, (val: string) => {
 });
 
 // ==================== 数据获取 ====================
+
+async function initModuleName() {
+    const params = { project: route.params.project }
+    const data: any = await getOuterTreeModule(params)
+    FakeMatchModulesData.value = [{ name: '所有模块', code: 'all' }]
+    for (let i = 0; i < data.length; i++) {
+        console.log(data[i]);
+        
+        FakeMatchModulesData.value.push({
+            name: data[i],
+            code: data[i]
+        })
+    }
+}
 
 async function getData() {
     const params = { project: route.params.project }

@@ -110,9 +110,17 @@
 
           <!-- User Section -->
           <div class="user-section">
-            <div class="avatar-container">
-              <el-avatar :size="36" :src="userImage" class="user-avatar" />
-              <div class="online-indicator"></div>
+            <div class="action-item">
+              <AstTooltip :isOpen="tooltipStates.profile" side="bottom">
+                <template #trigger>
+                  <div class="avatar-container" @mouseenter="tooltipStates.profile = true"
+                    @mouseleave="tooltipStates.profile = false" @click="openUserProfile">
+                    <el-avatar :size="36" :src="userImage" class="user-avatar" />
+                    <div class="online-indicator"></div>
+                  </div>
+                </template>
+                <span>个人信息</span>
+              </AstTooltip>
             </div>
 
             <!-- Logout -->
@@ -132,6 +140,9 @@
       </div>
     </div>
   </div>
+
+  <!-- User Profile Dialog -->
+  <UserProfileDialog ref="userProfileDialogRef" />
 </template>
 
 <script setup lang="ts">
@@ -153,6 +164,7 @@ import AnimatedLogoutIcon from "@/assets/svg/header/AnimatedLogoutIcon.vue"
 import AnimatedDocIcon from "@/assets/svg/header/AnimatedDocIcon.vue"
 import AnimatedHomeIcon from "@/assets/svg/header/AnimatedHomeIcon.vue"
 import GlobalStatus from "@/global";
+import UserProfileDialog from "@/components/layout/dialogs/UserProfileDialog.vue"
 
 const store: any = useStore()
 const router: any = useRouter()
@@ -171,7 +183,8 @@ const tooltipStates = reactive({
   project: false,
   plugin: false,
   docs: false,
-  logout: false
+  logout: false,
+  profile: false
 })
 
 // External URLs
@@ -179,6 +192,7 @@ const pluginDownloadUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/A
 const ideaIconUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/IntelliJ_IDEA_Icon.svg"
 
 const containerRef = ref<HTMLDivElement | null>(null)
+const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null)
 
 const emit = defineEmits(["up"])
 
@@ -291,6 +305,10 @@ function logout() {
 function toProject() {
   router.push({ name: "project" })
   inProject.value = false
+}
+
+function openUserProfile() {
+  userProfileDialogRef.value?.open()
 }
 </script>
 

@@ -77,13 +77,8 @@ h5 {
 }
 
 
-/* 1. 针对 Firefox 的标准属性 */
-* {
-  /* 对应你的 width: 4px，Firefox 只有 auto, thin, none 三种可选 */
+div {
   scrollbar-width: thin;
-
-  /* 对应你的 thumb 和 track 颜色 */
-  /* 格式: scrollbar-color: <thumb> <track>; */
   scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
 }
 
