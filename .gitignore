@@ -24,6 +24,8 @@ uploads
 yarn.lock
 CLAUDE.md
 .claude/
+.agents
+.opencode
 
 # LLM
 .prompt/

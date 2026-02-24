@@ -262,37 +262,41 @@ const phases = computed(() => {
         }
     }
 
-    // 3. DNS解析阶段
-    if (data.dns_start !== null && data.dns_end !== null && data.dns_start !== undefined && data.dns_end !== undefined) {
-        const dnsDuration = data.dns_end - data.dns_start;
-        if (dnsDuration > 0) {
-            result.dns = {
-                start: currentTime,
-                duration: dnsDuration
-            };
-            currentTime += dnsDuration;
-        }
-    }
-
-    // 4. 建立连接阶段
+    // 3. 连接创建阶段 - 分为DNS和其他连接部分
     if (data.conn_create_start !== null && data.conn_create_end !== null && data.conn_create_start !== undefined && data.conn_create_end !== undefined) {
-        const connDuration:any = data.conn_create_end_at - data.conn_create_start_at;
-        if (connDuration > 0) {
+        // 3.1 DNS解析阶段（连接创建的第一部分）
+        if (data.dns_start !== null && data.dns_end !== null && data.dns_start !== undefined && data.dns_end !== undefined) {
+            const dnsDuration = data.dns_end - data.dns_start;
+            if (dnsDuration > 0) {
+                result.dns = {
+                    start: currentTime,
+                    duration: dnsDuration
+                };
+                currentTime += dnsDuration;
+            }
+        }
+
+        // 3.2 连接建立的其他部分（SSL握手等）
+        const connDuration = data.conn_create_end - data.conn_create_start;
+        const dnsTime = (data.dns_end && data.dns_start) ? (data.dns_end - data.dns_start) : 0;
+        const otherConnDuration = connDuration - dnsTime;
+
+        if (otherConnDuration > 0) {
             result.connection = {
                 start: currentTime,
-                duration: connDuration
+                duration: otherConnDuration
             };
-            currentTime += connDuration;
+            currentTime += otherConnDuration;
         }
     }
 
-    // 5. 请求响应阶段（总时间减去前面所有阶段的剩余时间）
+    // 4. 请求响应阶段
     if (data.total_time !== null && data.total_time !== undefined && data.total_time > 0) {
-        const remainingTime = data.total_time - currentTime;
-        if (remainingTime > 0) {
+        const requestResponseDuration = data.total_time - currentTime;
+        if (requestResponseDuration > 0) {
             result.request_response = {
                 start: currentTime,
-                duration: remainingTime
+                duration: requestResponseDuration
             };
         }
     }
@@ -354,8 +358,31 @@ function showTooltip(event: MouseEvent, phase: string, phaseData: Phase) {
     tooltip.percentage = getPercentage(phaseData);
     tooltip.startTime = formatDuration(phaseData.start);
     tooltip.endTime = formatDuration(phaseData.start + phaseData.duration);
-    tooltip.x = event.clientX;
-    tooltip.y = event.clientY;
+
+    // 智能定位：检测是否靠近屏幕右边或底部
+    const tooltipWidth = 220; // tooltip 的大概宽度
+    const tooltipHeight = 100; // tooltip 的大概高度
+    const padding = 10;
+
+    // 水平定位
+    const spaceOnRight = window.innerWidth - event.clientX;
+    if (spaceOnRight < tooltipWidth + padding) {
+        // 靠近右边，显示在鼠标左边
+        tooltip.x = event.clientX - tooltipWidth - padding;
+    } else {
+        // 显示在鼠标右边
+        tooltip.x = event.clientX + padding;
+    }
+
+    // 垂直定位
+    const spaceOnBottom = window.innerHeight - event.clientY;
+    if (spaceOnBottom < tooltipHeight + padding) {
+        // 靠近底部，显示在鼠标上方
+        tooltip.y = event.clientY - tooltipHeight - padding;
+    } else {
+        // 显示在鼠标下方
+        tooltip.y = event.clientY + padding;
+    }
 }
 
 // 隐藏tooltip
@@ -379,33 +406,53 @@ const detailItems = computed(() => {
         { label: '网络耗时', value: formatDuration(data.network_time), loading: props.isRunning && !data.network_time },
     ];
 
-    // 添加可选字段（只显示持续时间，不显示绝对时间点）
-    if (data.queue_start !== null || props.isRunning) {
-        items.push({ label: '队列开始耗时', value: formatDuration(data.queue_start), loading: props.isRunning && !data.queue_start });
-    }
-    if (data.queue_end !== null || props.isRunning) {
-        items.push({ label: '队列结束耗时', value: formatDuration(data.queue_end), loading: props.isRunning && !data.queue_end });
-    }
-    if (data.dns_start !== null || props.isRunning) {
-        items.push({ label: 'DNS开始耗时', value: formatDuration(data.dns_start), loading: props.isRunning && !data.dns_start });
-    }
-    if (data.dns_end !== null || props.isRunning) {
-        items.push({ label: 'DNS结束耗时', value: formatDuration(data.dns_end), loading: props.isRunning && !data.dns_end });
-    }
-    if (data.conn_create_start !== null || props.isRunning) {
-        items.push({ label: '连接创建开始耗时', value: formatDuration(data.conn_create_start), loading: props.isRunning && !data.conn_create_start });
-    }
-    if (data.conn_create_end !== null || props.isRunning) {
-        items.push({ label: '连接创建结束耗时', value: formatDuration(data.conn_create_end), loading: props.isRunning && !data.conn_create_end });
-    }
+    // 重定向
     if (data.redirect_time !== null || props.isRunning) {
         items.push({ label: '重定向耗时', value: formatDuration(data.redirect_time), loading: props.isRunning && !data.redirect_time });
     }
-    if (data.error_time !== null) {
-        items.push({ label: '错误耗时', value: formatDuration(data.error_time), loading: false });
+
+    // 队列等待
+    if (data.queue_start !== null || props.isRunning) {
+        const queueDuration = (data.queue_end !== null && data.queue_start !== null) ? data.queue_end - data.queue_start : null;
+        items.push({ label: '队列等待', value: formatDuration(queueDuration), loading: props.isRunning && !queueDuration });
     }
+
+    // 连接创建总时间
+    if (data.conn_create_start !== null || props.isRunning) {
+        const connDuration = (data.conn_create_end !== null && data.conn_create_start !== null) ? data.conn_create_end - data.conn_create_start : null;
+        items.push({ label: '连接创建总耗时', value: formatDuration(connDuration), loading: props.isRunning && !connDuration });
+    }
+
+    // DNS解析（连接创建的一部分）
+    if (data.dns_start !== null || props.isRunning) {
+        const dnsDuration = (data.dns_end !== null && data.dns_start !== null) ? data.dns_end - data.dns_start : null;
+        items.push({ label: '  └ DNS解析', value: formatDuration(dnsDuration), loading: props.isRunning && !dnsDuration });
+    }
+
+    // 其他连接时间（SSL握手等）
+    if (data.conn_create_start !== null && data.dns_start !== null) {
+        const connTotal = (data.conn_create_end !== null && data.conn_create_start !== null) ? data.conn_create_end - data.conn_create_start : null;
+        const dnsTime = (data.dns_end !== null && data.dns_start !== null) ? data.dns_end - data.dns_start : null;
+        const otherConn = (connTotal !== null && dnsTime !== null) ? connTotal - dnsTime : null;
+        if (otherConn !== null && otherConn > 0) {
+            items.push({ label: '  └ SSL握手等', value: formatDuration(otherConn), loading: false });
+        }
+    }
+
+    // 请求响应时间
+    if (data.total_time !== null && data.conn_create_end !== null) {
+        const requestResponseTime = data.total_time - data.conn_create_end;
+        items.push({ label: '请求响应耗时', value: formatDuration(requestResponseTime), loading: false });
+    }
+
+    // 最后chunk接收时间
     if (data.receive_chunk_time_last !== null || props.isRunning) {
         items.push({ label: '最后chunk耗时', value: formatDuration(data.receive_chunk_time_last), loading: props.isRunning && !data.receive_chunk_time_last });
+    }
+
+    // 错误时间
+    if (data.error_time !== null) {
+        items.push({ label: '错误耗时', value: formatDuration(data.error_time), loading: false });
     }
 
     return items;

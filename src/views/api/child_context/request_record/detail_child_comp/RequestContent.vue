@@ -67,10 +67,10 @@
             </div>
 
             <!-- Body -->
-            <div class="section" :class="{ loading: isRunning && !requestData.body }">
+            <div class="section" :class="{ loading: isRunning && requestData.body === undefined }">
                 <div class="section-header">
                     <span class="section-title">请求Body</span>
-                    <span v-if="isRunning && !requestData.body" class="loading-dots">
+                    <span v-if="isRunning && requestData.body === undefined" class="loading-dots">
                         <span class="dot"></span>
                         <span class="dot"></span>
                         <span class="dot"></span>
@@ -78,13 +78,14 @@
                 </div>
                 <div class="section-content">
                     <CodeHighlight
-                        v-if="requestData.body"
+                        v-if="hasBody(requestData.body)"
                         :content="requestData.body"
                         :language="detectBodyLanguage(requestData.body)"
                         height="250px"
                         empty-text="无请求Body"
                     />
-                    <div v-else class="skeleton-editor large"></div>
+                    <div v-else-if="isRunning && requestData.body === undefined" class="skeleton-editor large"></div>
+                    <div v-else class="empty-body">无请求Body</div>
                 </div>
             </div>
 
@@ -151,6 +152,11 @@ function formatTime(timestamp: string | number | undefined): string {
     } catch (e) {
         return timestamp.toString();
     }
+}
+
+// 判断是否有 body 内容
+function hasBody(body: any): boolean {
+    return body !== null && body !== undefined && body !== '';
 }
 
 // 检测Body的语言类型
@@ -344,6 +350,17 @@ function formatHeaders(headers: any): string {
     border-bottom-right-radius: 4px;
     border-left: 2px solid #6f42c1;
     line-height: 1.6;
+}
+
+.empty-body {
+    padding: 40px 20px;
+    text-align: center;
+    color: #bbb;
+    font-size: 13px;
+    font-style: italic;
+    background: #fafafa;
+    border-radius: 4px;
+    border: 1px dashed #e0e0e0;
 }
 
 @keyframes dotPulse {
