@@ -1,493 +1,87 @@
 <template>
   <div style="width: 100%" v-show="show">
-    <div id="editor-placeholder" ref="editorContainer" class="editor-container">
-      <div class="edit-div" @click="show_edit_value">
-        <el-icon :size="18">
+    <CustomInputer v-model="internalValue" :allow-newline="props.enableNewLine"
+      :height="props.enableNewLine ? '200px' : '38px'" :show-clear="false" :paddingX="5" :paddingY="3" :fontSize="12"
+      style="border: 2px solid #f0f0f0; border-radius: 6px;background-color: white;">
+      <template #suffix>
+        <el-icon :size="18" @click="show_edit_value" style="cursor: pointer;">
           <FullScreen />
         </el-icon>
-      </div>
-    </div>
-    <el-tooltip ref="tooltipRef" effect="light" manual v-model:visible="visible" placement="top"
-      :virtual-ref="buttonRef" virtual-triggering trigger="click" popper-class="singleton-tooltip">
-      <template #content>
-        <div class="mirror-tooltip">
-          <div class="mirror-tooltip-header">
-            <span>变量视图</span>
-          </div>
-          <div class="mirror-tooltip-divider"></div>
-          <div style="
-              display: flex;
-              justify-content: start;
-              align-items: center;
-              width: calc(100% - 20px);
-              padding: 5px 10px;
-            ">
-            <div style="color: var(--el-text-color-secondary); font-size: 14px">
-              变量名：
-            </div>
-            <div>{{ variable_content.name }}</div>
-          </div>
-          <div style="
-              display: flex;
-              justify-content: start;
-              align-items: center;
-              width: calc(100% - 20px);
-              padding: 5px 10px;
-            ">
-            <div style="color: var(--el-text-color-secondary); font-size: 14px">
-              变量类型：
-            </div>
-            <div>{{ variable_type_mapping[variable_content.type][0] }}</div>
-          </div>
-          <div style="
-              display: flex;
-              justify-content: start;
-              align-items: center;
-              width: calc(100% - 20px);
-              padding: 5px 10px;
-            ">
-            <div style="color: var(--el-text-color-secondary); font-size: 14px">
-              变量来源：
-            </div>
-            <div>{{ variable_type_mapping[variable_content.type][1] }}</div>
-          </div>
-        </div>
       </template>
-    </el-tooltip>
+    </CustomInputer>
   </div>
-  <EditValue v-if="display === true" :displayParam="displayParam" :disableVar="props.disableVar" :canVar="canVar" :interface_id="interface_id"
-    :disable="props.disable" ref="editValueDialog" @add_code="add_code" :enableNewLine="props.enableNewLine">
-  </EditValue>
+
+  <EditValue v-if="display === true" ref="editValueDialog" :displayParam="displayParam" :disableVar="props.disableVar"
+    :canVar="canVar" :interface_id="interface_id" :disable="props.disable" @add_code="add_code"
+    :enableNewLine="props.enableNewLine" />
 </template>
 
 <script setup lang="ts">
-import {
-  onMounted,
-  ref,
-  onBeforeUnmount,
-  createApp,
-  h,
-  watch,
-  toRefs,
-  getCurrentInstance,
-} from "vue";
-import Params from "./widget_cpm/param.vue";
-import ParamsFixed from "./widget_cpm/param_fixed.vue";
+import { ref, watch, onMounted } from "vue";
 import EditValue from "@/views/api/child_component/edit_value.vue";
 import tools from "@/utils/tools";
-const emit = defineEmits(["update:modelValue"]);
-const { proxy }: any = getCurrentInstance();
-const show = ref(false);
-const editValueDialog: any = ref(null);
-const editorContainer = ref(null);
-const buttonRef = ref();
-const variable_content: any = ref(null);
+import CustomInputer from '@/components/common/input/CustomInput.vue'
 
-const visible = ref(false);
+const props = defineProps({
+  modelValue: { type: String, default: "" },
+  enableNewLine: { type: Boolean, default: true },
+  display: { type: Boolean, default: true },
+  displayParam: { type: Boolean, default: true },
+  disable: { type: Boolean, default: false },
+  disableVar: { type: Boolean, default: false },
+  canVar: { type: Boolean, default: true },
+  interface_id: { type: Number, default: -1 },
+});
+
+const emit = defineEmits(["update:modelValue"]);
+
+// 1. 使用 internalValue 来承接 v-model，避免直接修改 props
+const internalValue = ref(props.modelValue);
+const show = ref(true);
+const editValueDialog: any = ref(null);
+
+// 同步 props 到 internalValue
+watch(() => props.modelValue, (newVal) => {
+  if (newVal !== internalValue.value) {
+    internalValue.value = newVal;
+  }
+});
+
+// 当 internalValue 变化时通知父组件
+watch(internalValue, (newVal) => {
+  emit("update:modelValue", newVal);
+});
+
+// 2. 暴露给外部调用的方法，直接操作字符串
 defineExpose({
   add_content,
   set_content,
 });
 
-const variable_type_mapping: any = {
-  static: ["固定值", "即时演算"],
-  mock: ["生成值", "即时演算"],
-  variable: ["动态值", "动态生成"],
-};
+function add_content(content: string) {
+  internalValue.value = (internalValue.value || '') + content;
+}
 
-const props = defineProps({
-  modelValue: {
-    type: String,
-    default: "",
-  },
-  enableDecoration: {
-    type: Boolean,
-    default: true,
-  },
-  enableNewLine: {
-    type: Boolean,
-    default: true,
-  },
-  disable: {
-    type: Boolean,
-    default: false,
-  },
-  canVar: {
-    type: Boolean,
-    default: true,
-  },
-  disableVar: {
-    type: Boolean,
-    default: false,
-  },
-  interface_id: {
-    type: Number,
-    default: -1,
-  },
-  display: {
-    type: Boolean,
-    default: true
-  },
-  displayParam: {
-    type: Boolean,
-    default: true
-  }
-});
+function set_content(content: string) {
+  internalValue.value = content || '';
+}
 
-let editorView: any;
-
-const { modelValue } = toRefs(props);
-watch(
-  modelValue,
-  (newVal) => {
-    if (editorView) {
-      if (newVal !== editorView.state.doc.toString()) {
-        set_content(newVal);
-      }
-    }
-  },
-  { immediate: true } // 初始化时同步一次
-);
-
+// 修改弹窗回调
 function add_code(content: any) {
   set_content(content);
 }
 
 function show_edit_value() {
   if (props.display === false) {
-    tools.message("您无法在只读状态下编辑内容", proxy);
-    return
-  };
+    tools.message("您无法在只读状态下编辑内容", null); // getCurrentInstance 代理有时不可靠，传 null 或直接引用
+    return;
+  }
   editValueDialog.value.open_dialog();
-  editValueDialog.value.set_code(editorView.state.doc.toString());
+  // 直接传递当前的值给弹窗
+  editValueDialog.value.set_code(internalValue.value);
 }
 
-// 暴露更新内容的方法
-function add_content(content: any) {
-  if (editorView) {
-    // 创建事务更新文档
-    editorView.dispatch({
-      changes: {
-        from: 0,
-        to: editorView.state.doc.length,
-        insert: editorView.state.doc + content,
-      },
-    });
-  }
-}
-
-function set_content(content: any) {
-  if (editorView) {
-    content = content || ""; // 处理 undefined/null
-    const current = editorView.state.doc.toString();
-    if (content !== current) {
-      editorView.dispatch({
-        changes: {
-          from: 0,
-          to: editorView.state.doc.length,
-          insert: content,
-        },
-      });
-    }
-  }
-}
-
-function parseExpression(str: string) {
-  // 1. 匹配 mock 类型表达式：{% mock 'name', ... %}
-  const mockRegex = /{%\s*mock\s*'([^']+)'/;
-  let match = str.match(mockRegex);
-  if (match) return { name: match[1], type: "mock" };
-
-  // 2. 匹配 static 类型表达式：{{'name'...}}
-  const staticRegex = /{{\s*'([^']+)'/;
-  match = str.match(staticRegex);
-  if (match) return { name: match[1], type: "static" };
-
-  // 3. 匹配 variable 类型表达式：{{name...}}
-  const variableRegex = /{{\s*([^{}\|]+?)\s*[|}]/;
-  match = str.match(variableRegex);
-  if (match) return { name: match[1].trim(), type: "variable" };
-
-  return null; // 未匹配到任何类型
-}
-
-function initCodeMirror() {
-  // _optionalChain 实现
-  function _optionalChain(ops: any) {
-    let lastAccessLHS: any = undefined;
-    let value = ops[0];
-    let i = 1;
-    while (i < ops.length) {
-      const op = ops[i];
-      const fn = ops[i + 1];
-      i += 2;
-      if ((op === "optionalAccess" || op === "optionalCall") && value == null) {
-        return undefined;
-      }
-      if (op === "access" || op === "optionalAccess") {
-        lastAccessLHS = value;
-        value = fn(value);
-      } else if (op === "call" || op === "optionalCall") {
-        value = fn((...args: any) => value.call(lastAccessLHS, ...args));
-        lastAccessLHS = undefined;
-      }
-    }
-    return value;
-  }
-  const { WidgetType } = _window.CM["@codemirror/view"];
-  // 创建 PlaceholderWidget 类
-  class PlaceholderWidget extends WidgetType {
-    constructor(name: any) {
-      super();
-      this.name = name;
-    }
-    eq(other: any) {
-      return this.name == other.name;
-    }
-    toDOM() {
-      const _name = this.name;
-      const container = document.createElement("div");
-      const app = createApp({
-        render() {
-          return h(Params, {
-            text: "{{" + _name + "}}",
-            onClick: this.handleClick,
-            onMouseenter: this.handleMouseenter,
-            onMouseleave: this.handleMouseleave,
-          });
-        },
-        methods: {
-          handleClick(event: any) { },
-          handleMouseenter(event: any) {
-            this.$nextTick(() => {
-              variable_content.value = parseExpression(
-                event.target.textContent.trim()
-              );
-              buttonRef.value = event.currentTarget.$el || event.currentTarget;
-            });
-          },
-          handleMouseleave(event: any) { },
-        },
-      });
-      app.mount(container);
-      return container.firstElementChild;
-    }
-    ignoreEvent() {
-      return false;
-    }
-  }
-
-  // 创建 FixedWidget 类
-  class FixedWidget extends WidgetType {
-    constructor(name: any) {
-      super();
-      this.name = name;
-    }
-    eq(other: any) {
-      return this.name == other.name;
-    }
-    toDOM() {
-      const _name = this.name;
-      const container = document.createElement("div");
-      const app = createApp({
-        render() {
-          return h(ParamsFixed, {
-            text: "{%" + _name + "%}",
-            onClick: this.handleClick,
-            onMouseenter: this.handleMouseenter,
-            onMouseleave: this.handleMouseleave,
-          });
-        },
-        methods: {
-          handleClick(event: any) { },
-          handleMouseenter(event: any) {
-            this.$nextTick(() => {
-              variable_content.value = parseExpression(
-                event.target.textContent.trim()
-              );
-              buttonRef.value = event.currentTarget.$el || event.currentTarget;
-            });
-          },
-          handleMouseleave(event: any) { },
-        },
-      });
-      app.mount(container);
-      return container.firstElementChild;
-    }
-    ignoreEvent() {
-      return false;
-    }
-  }
-
-  const { MatchDecorator } = _window.CM["@codemirror/view"];
-  const { Decoration, EditorView, ViewPlugin } = _window.CM["@codemirror/view"];
-  // 创建 MatchDecorator 实例
-  let placeholderMatcher: any;
-  if (props.enableDecoration) {
-    placeholderMatcher = new MatchDecorator({
-      regexp: /\{\{([^}]+)\}\}/g,
-      decoration: (match: any) =>
-        Decoration.replace({
-          widget: new PlaceholderWidget(match[1]),
-        }),
-    });
-  }
-
-  let fixedMatcher: any;
-  if (props.enableDecoration) {
-    fixedMatcher = new MatchDecorator({
-      regexp: /\{\%([^%]+)\%\}/g,
-      decoration: (match: any) =>
-        Decoration.replace({
-          widget: new FixedWidget(match[1]),
-        }),
-    });
-  }
-
-  // 创建 ViewPlugin 实例
-  const placeholders = ViewPlugin.fromClass(
-    class {
-      placeholders: any;
-      constructor(view: any) {
-        if (props.enableDecoration) {
-          this.placeholders = placeholderMatcher.createDeco(view);
-        } else {
-          this.placeholders = Decoration.none;
-        }
-      }
-      update(update: any) {
-        if (update.docChanged) {
-          emit("update:modelValue", editorView.state.doc.toString());
-        }
-        if (props.enableDecoration) {
-          this.placeholders = placeholderMatcher.updateDeco(
-            update,
-            this.placeholders
-          );
-        }
-      }
-    },
-    {
-      decorations: (instance: any) => instance.placeholders,
-      provide: (plugin: any) =>
-        EditorView.atomicRanges.of((view: any) => {
-          return (
-            _optionalChain([
-              view,
-              "access",
-              (_: any) => _.plugin,
-              "call",
-              (_2: any) => _2(plugin),
-              "optionalAccess",
-              (_3: any) => _3.placeholders,
-            ]) || Decoration.none
-          );
-        }),
-    }
-  );
-
-  const fixedPlaceholders = ViewPlugin.fromClass(
-    class {
-      fixedPlaceholders: any;
-      constructor(view: any) {
-        if (props.enableDecoration) {
-          this.fixedPlaceholders = fixedMatcher.createDeco(view);
-        } else {
-          this.fixedPlaceholders = Decoration.none;
-        }
-      }
-      update(update: any) {
-        if (update.docChanged) {
-          emit("update:modelValue", editorView.state.doc.toString());
-        }
-        if (props.enableDecoration) {
-          this.fixedPlaceholders = fixedMatcher.updateDeco(
-            update,
-            this.fixedPlaceholders
-          );
-        }
-      }
-    },
-    {
-      decorations: (instance: any) => instance.fixedPlaceholders,
-      provide: (plugin: any) =>
-        EditorView.atomicRanges.of((view: any) => {
-          return (
-            _optionalChain([
-              view,
-              "access",
-              (_: any) => _.plugin,
-              "call",
-              (_2: any) => _2(plugin),
-              "optionalAccess",
-              (_3: any) => _3.fixedPlaceholders,
-            ]) || Decoration.none
-          );
-        }),
-    }
-  );
-
-  return [placeholders, fixedPlaceholders];
-}
-// 全局加载控制
-let _window: any = window;
-onMounted(async () => {
-  // 1. 立即显示容器但显示加载状态
-  show.value = true;
-
-  // 3. 空闲期初始化
-  const init = () => {
-    if (!editorContainer.value) return;
-
-    const [placeholders, fixedPlaceholders] = initCodeMirror();
-    const { EditorView } = _window.CM["@codemirror/view"];
-    const { EditorState } = _window.CM["@codemirror/state"];
-    let extensions_list = [
-      _window.CM.codemirror.minimalSetup,
-      placeholders,
-      fixedPlaceholders,
-      EditorState.transactionFilter.of((tr: any) => {
-        if (props.disable) return [];
-        if (props.enableNewLine === false) {
-          // 检查变更中是否包含换行符
-          let hasNewline = false;
-          tr.changes.iterChanges(
-            (fromA: any, toA: any, fromB: any, toB: any, inserted: any) => {
-              if (inserted.text.length > 1) {
-                hasNewline = true;
-              }
-            }
-          );
-
-          // 如果包含换行符，阻止事务
-          return hasNewline ? [] : tr;
-        }
-        return tr;
-      }),
-    ];
-    editorView = new EditorView({
-      state: EditorState.create({
-        doc: props.modelValue,
-        extensions: extensions_list,
-      }),
-      parent: editorContainer.value,
-      editable: () => !props.disable,
-    });
-  };
-
-  // 优先使用 requestIdleCallback
-  if ("requestIdleCallback" in window) {
-    requestIdleCallback(init, { timeout: 2000 });
-  } else {
-    setTimeout(init, 50);
-  }
-});
-
-onBeforeUnmount(() => {
-  if (editorView) {
-    editorView.destroy();
-  }
-});
+// 删除了所有 initCodeMirror 相关的逻辑，因为它现在不再需要操作 DOM 插件
 </script>
 
 <style>

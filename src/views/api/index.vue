@@ -186,7 +186,7 @@ const props = defineProps({
 });
 
 onMounted(() => {
-  loadScript("/libs/codemirror.js");
+  // loadScript("/libs/codemirror.js");
   get_env_list_and_user_env();
 });
 

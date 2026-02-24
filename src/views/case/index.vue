@@ -153,16 +153,6 @@ const props = defineProps({
 });
 
 onMounted(() => {
-  loadScript("/libs/codemirror.js");
-  const handleActiveTab = (tabs: any, event: any, className: any) => {
-    tabs.forEach((tab: any) => {
-      tab.classList.remove(className);
-    });
-
-    if (!event.target.classList.contains(className)) {
-      event.target.classList.add(className);
-    }
-  };
   get_env_list_and_user_env();
 });
 // t的映射：0：get，1：post，2：put，3：delete，4：目录，5：新建内容

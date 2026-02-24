@@ -1,4 +1,5 @@
 <template>
+
   <div class="audit-container">
     <Input placeholder="搜索数据 范围：用户昵称、接口名" title="监听接口列表" :handlerFunction="getAuditInterfaceList">
       <template #headers>
@@ -30,6 +31,10 @@
 <script lang="ts" setup>
 import Input from "@/components/common/input/search.vue";
 import { getAuditInterfaceList } from "@/api/audit";
+import { ref } from 'vue'
+
+const data = ref("")
+
 </script>
 
 <style lang="scss" scoped>
@@ -40,6 +45,7 @@ import { getAuditInterfaceList } from "@/api/audit";
 
 /* 使用 :deep() 穿透到子组件的表格样式 */
 :deep(.styled-table) {
+
   /* 列宽设置 - 核心内容占最大比例 */
   .col-method {
     width: 8%;

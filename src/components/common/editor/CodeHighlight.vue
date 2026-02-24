@@ -3,7 +3,7 @@
         <div v-if="isEmpty" class="empty-state">
             <span class="empty-text">{{ emptyText }}</span>
         </div>
-        <div v-else class="editor-container" ref="editorDom"></div>
+        <div v-else class="editor-container-record" ref="editorDom"></div>
     </div>
 </template>
 
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
     background: #fff;
 }
 
-.editor-container {
+.editor-container-record {
     width: 100%;
     height: v-bind(height);
     min-height: 80px;

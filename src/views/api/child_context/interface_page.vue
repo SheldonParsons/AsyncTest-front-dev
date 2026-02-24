@@ -15,9 +15,11 @@
             </template>
           </el-dropdown></el-col>
         <el-col :span="14">
-          <SpecialInput height="40px" radius="0px 0px 0px 0px" v-model="data.value.path" placeholder="Enter Request URL"
-            @clearData="clearUrl" :cleanTips="'清空请求路径'" :max="600" :isTransColor="false" :disableParams="true">
-          </SpecialInput>
+          <div style="border: 2px solid black; display: flex;align-items: center;justify-content: center;height: 36px;">
+            <CustomInput v-model="data.value.path" :allow-newline="false" :placeholder="'Enter Request Path'"
+              :show-clear="true" :paddingX="5" :paddingY="0" :fontSize="15" />
+          </div>
+
         </el-col>
         <el-col :span="3">
           <el-button class="send-btn" type="primary" @click="send">发送请求</el-button>
@@ -226,11 +228,9 @@ import {
   computed,
   onBeforeUnmount,
   onMounted,
-  getCurrentInstance,
   watch,
   reactive,
   toRaw,
-  nextTick
 } from "vue";
 import { motion } from "motion-v"
 import SpecialInput from "@/components/common/input/specialInput.vue";
@@ -256,6 +256,7 @@ import ResponseTabs from '@/views/api/child_context/widget_cpm/response_tabs.vue
 import TempLogDialog from '@/views/api/child_context/widget_cpm/temp_log_dialog.vue'
 import NormalDialog from '@/views/case/components/dialog.vue'
 import RequestRecord from '@/views/api/child_context/request_record/index.vue'
+import CustomInput from '@/components/common/input/CustomInput.vue'
 import _ from "lodash";
 //debounce
 
@@ -272,7 +273,6 @@ import {
   ApiPostTag,
   ApiRunInterface
 } from "@/api/interface/index";
-import { StreamPostApi } from "@/api/sse/index";
 import { ApiGetProjectServerParameters } from "@/api/interface/env";
 import { useRoute } from "vue-router";
 import { GlobalState, bus } from "@/state/index";
@@ -287,9 +287,6 @@ const methodMapping: any = {
   patch: "PATCH"
 };
 const loading = ref(true);
-const auth_ref: any = ref(null);
-const pre_action_ref: any = ref(null);
-const after_action_ref: any = ref(null);
 const show_has_change_dialog = ref(false)
 const show_has_change_dialog_on_tab = ref(false)
 const activeTab = ref<"A" | "B">("B");
@@ -583,7 +580,6 @@ function toggleCollapse() {
       behavior: 'smooth'
     });
   }
-  show_markdown.value = true
 }
 
 function send() {
