@@ -14,13 +14,13 @@
                         @change="changeErrorStraegy"></Select>
                 </div>
             </div>
-            <div class="step-item">
+            <!-- <div class="step-item">
                 <div>运行时是否覆盖变量</div>
                 <div>
                     <Select :current="data.runtime_parameters_strategy" :items="errorParamsCoverStrategy"
                         @change="changeParamStraegy"></Select>
                 </div>
-            </div>
+            </div> -->
             <div class="step-item" style="width: 100%;">
                 <GlobalDatasource v-model="data.global_datasource"/>
             </div>

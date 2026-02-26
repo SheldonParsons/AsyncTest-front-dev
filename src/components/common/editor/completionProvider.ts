@@ -104,7 +104,7 @@ const atSuggestions: any = (monaco: any) => [
     {
         label: "get_main_case_index",
         kind: monaco.languages.CompletionItemKind.Property,
-        insertText: "get_main_case_index",
+        insertText: "get_main_case_index()",
         detail: "获取主用例位置下标"
     }
 ];

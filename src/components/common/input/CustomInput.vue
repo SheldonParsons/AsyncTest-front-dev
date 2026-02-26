@@ -128,7 +128,7 @@ const handleKeyDown = (e: any) => {
 const handlePaste = (e: any) => {
     if (!props.allowNewline) {
         e.preventDefault();
-        const text = (e.clipboardData || window.clipboardData).getData('text');
+        const text = (e.clipboardData).getData('text');
         document.execCommand('insertText', false, text.replace(/[\n\r]+/g, ''));
     }
 };
@@ -239,7 +239,7 @@ onMounted(() => {
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    /* height: 100%; */
     z-index: 1;
     color: #333;
     pointer-events: none;
