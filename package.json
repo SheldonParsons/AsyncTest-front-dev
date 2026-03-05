@@ -1,18 +1,137 @@
 {
   "name": "async-test",
+  "description": "AsyncTest Platform",
+  "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "bin": "server.js",
+  "main": "electron/main.js",
+  "fileAssociations": [
+    {
+      "ext": "amind",
+      "name": "AsyncTest Mind",
+      "role": "Editor",
+      "icon": "build/icon"
+    }
+  ],
+  "build": {
+    "appId": "com.sheldon.asynctest",
+    "productName": "AsyncTest",
+    "directories": {
+      "output": "dist_electron/${env.APP_ENV}"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "${env.VITE_UPDATE_URL}"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}_Setup_${version}_${arch}_${env.APP_ENV}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "shortcutName": "AsyncTest"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "src-rust/**/*.node",
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "src-rust/*.node",
+      "src-rust/index.js",
+      "!src-rust/src/**/*",
+      "!src-rust/target/**/*",
+      "!src-rust/Cargo.*",
+      "!node_modules/monaco-editor/**/*",
+      "!node_modules/element-plus/**/*",
+      "!node_modules/ag-grid-community/**/*",
+      "!node_modules/@ag-grid-community/**/*",
+      "!node_modules/vue/**/*",
+      "!node_modules/@vue/**/*",
+      "!node_modules/lodash/**/*",
+      "!node_modules/xlsx/**/*",
+      "!node_modules/highlight.js/**/*",
+      "!node_modules/@babel/**/*",
+      "!node_modules/typescript/**/*",
+      "!node_modules/postcss/**/*",
+      "!node_modules/@napi-rs/cli/**/*",
+      "!node_modules/.bin/**/*",
+      "!**/node_modules/*/{test,tests,example,examples,docs,doc}/**/*"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    }
+  },
   "scripts": {
     "dev": "vite",
-    "preview": "vite preview",
-    "dev:ssr": "cross-env NODE_ENV=development node server",
-    "prod:ssr": "cross-env NODE_ENV=production node server",
-    "build": "vue-tsc && vite build",
-    "build:client": "vite build --outDir dist/client --ssrManifest",
-    "build:server": "vite build --outDir dist/server --ssr src/entry-server.ts",
-    "build:ssr": "npm run build:client && npm run build:server"
+    "build": "vite build",
+    "build:mac:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --mac",
+    "build:mac:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --mac",
+    "build:win:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --win",
+    "build:win:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --win",
+    "electron:dev": "cross-env VITE_IS_ELECTRON=true concurrently \"npm run dev\" \"wait-on http://localhost:3333 && electron .\"",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@ag-grid-community/locale": "^34.0.2",
@@ -21,14 +140,18 @@
     "ag-grid-community": "^34.0.2",
     "ag-grid-vue3": "^34.0.2",
     "axios": "^1.1.3",
+    "better-sqlite3": "^12.6.2",
     "body-parser": "^1.20.1",
     "crypto-js": "^4.2.0",
     "deep-diff": "^1.0.2",
     "dompurify": "^3.2.6",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "element-plus": "^2.9.11",
     "express": "^4.18.2",
     "highlight.js": "^11.10.0",
     "highlightjs-copy": "^1.0.6",
+    "konva": "^10.2.0",
     "lodash": "^4.17.21",
     "marked": "^15.0.8",
     "marked-highlight": "^2.2.1",
@@ -37,6 +160,7 @@
     "motion-plus-vue": "^1.3.0",
     "motion-v": "^1.5.0",
     "reka-ui": "^2.3.2",
+    "roughjs": "^4.6.6",
     "vue": "3.5.12",
     "vue-clipboard3": "^2.0.0",
     "vue-i18n": "^9.2.2",
@@ -47,12 +171,16 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@napi-rs/cli": "^3.5.1",
     "@types/deep-diff": "^1.0.5",
     "@types/node": "^18.11.9",
     "@typescript-eslint/eslint-plugin": "^5.42.0",
     "@typescript-eslint/parser": "^5.42.0",
     "@vitejs/plugin-vue": "^5.0.4",
+    "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^8.26.0",
     "eslint-config-standard-with-typescript": "^23.0.0",
     "eslint-plugin-import": "^2.26.0",
@@ -64,6 +192,8 @@
     "typescript": "^5.8.3",
     "vite": "^5.2.0",
     "vite-plugin-compression": "^0.5.1",
-    "vite-plugin-monaco-editor": "^1.1.0"
+    "vite-plugin-monaco-editor": "^1.1.0",
+    "vue-tsc": "^3.2.5",
+    "wait-on": "^9.0.4"
   }
 }

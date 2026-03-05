@@ -4,11 +4,17 @@ import path from "path";
 import config from "./app.config.js";
 import vitePluginCompression from "vite-plugin-compression";
 import monacoEditorPlugin from "vite-plugin-monaco-editor";
+console.log('--- 当前编译变量 VITE_IS_ELECTRON:', process.env.VITE_IS_ELECTRON);
+console.log(process.env.VITE_IS_ELECTRON === 'true');
+const isElectron = process.env.VITE_IS_ELECTRON === 'true';
+
 export default defineConfig({
+  base: process.env.VITE_IS_ELECTRON === 'true' ? './' : '/',
   define: {
     __VUE_I18N_FULL_INSTALL__: true,
     __VUE_I18N_LEGACY_API__: false,
     __INTLIFY_PROD_DEVTOOLS__: false,
+    'process.env.VITE_IS_ELECTRON': JSON.stringify(process.env.VITE_IS_ELECTRON)
   },
   server: {
     host: "0.0.0.0",
@@ -43,6 +49,14 @@ export default defineConfig({
   css: {
     preprocessorOptions: {
       scss: {
+        api: 'modern-compiler',
+        silenceDeprecations: [
+          'import',
+          'global-builtin',
+          'color-functions',
+        ],
+        quietDeps: true,
+        verbose: false,
         additionalData:
           '@import "@/assets/scss/variable.scss";@import "@/assets/scss/main.scss";',
       },
@@ -76,33 +90,20 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['deep-diff'],
-    exclude: ["fsevents"],
+    exclude: ["fsevents", ...(isElectron ? [] : ["electron-updater", "electron"])],
   },
   build: {
-    outDir: "dist/client",
+    outDir: "dist", // 统一输出到 dist，不再区分 client
     target: 'es2020',
-    // 必须启用 SSR manifest
-    ssrManifest: true,
+    ssrManifest: false, // 关掉
     manifest: true,
     sourcemap: false,
     minify: 'esbuild',
-    // 确保输入路径正确
     rollupOptions: {
-      output: {
-        // 强制所有依赖使用 ES 模块
-        format: 'esm'
-      },
       input: {
-        // 主入口必须指向 HTML 文件
         main: path.resolve(__dirname, "index.html")
-      }
+      },
+      external: isElectron ? [] : ['/src/src-rust/']
     }
-  },
-  ssr: {
-    target: "node",
-    noExternal: [
-      /vue-i18n/, // 明确指定需要内联的依赖
-      /@vue\/.*/
-    ]
   }
 });

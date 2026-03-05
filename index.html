@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="tag.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AsyncTest</title>
-    <!--preload-links-->
-  </head>
 
-  <body>
-    <!--app-teleports-->
-    <div id="app"><!--ssr-outlet--></div>
-    <script type="module" src="/src/entry-client.ts"></script>
-    <script>
-      window.__INITIAL_STATE__ = '<!--vuex-state-->';
-    </script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="tag.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; 
+               script-src 'self' 'unsafe-eval'; 
+               style-src 'self' 'unsafe-inline'; 
+               img-src 'self' data: https: http://10.23.224.40; 
+               connect-src 'self' 
+                           http://localhost:* ws://localhost:* https://www.asynctest.com 
+                           http://10.23.224.40;">
+  <title>AsyncTest</title>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/init-process.js"></script>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+
 </html>

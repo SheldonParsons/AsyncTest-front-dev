@@ -1,10 +1,24 @@
-import { createRouter, createWebHistory, createMemoryHistory } from 'vue-router'
+import { createRouter, createWebHistory, createMemoryHistory, createWebHashHistory } from 'vue-router'
 
+
+///Users/sheldon/Documents/GithubProject/AsyncTest-front-dev/src/views/electron_views/dashboard.vue
+
+const isElectronRouter = import.meta.env.VITE_IS_ELECTRON === 'true';
 const routes = [
   {
     path: '/',
-    redirect: '/login'
+    redirect: isElectronRouter ? '/dashboard' : '/login'
   },
+  {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('@/views/electron_views/dashboard.vue')
+  },...
+  (isElectronRouter ? [{
+    path: '/mind',
+    name: 'mind',
+    component: () => import('@/views/electron_views/mind/index.vue')
+  }] : []),
   {
     path: '/login',
     name: 'login',
@@ -160,10 +174,19 @@ const routes = [
     ]
   }
 ]
+// src/router/index.ts
+console.log("Router module loading..."); // 放在文件最顶行
 
-export function createSSRrouter() {
-  return createRouter({
-    history: import.meta.env.SSR ? createMemoryHistory() : createWebHistory(),
-    routes
-  })
-}
+// 使用更稳健的方式判断 Electron 环境
+const isElectron = typeof window !== 'undefined' &&
+  window.navigator.userAgent.toLowerCase().includes('electron');
+
+console.log("Is Electron:", isElectron);
+
+const router = createRouter({
+  history: import.meta.env.SSR
+    ? createMemoryHistory()
+    : (isElectron ? createWebHashHistory() : createWebHistory()),
+  routes
+})
+export default router;

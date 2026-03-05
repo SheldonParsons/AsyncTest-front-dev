@@ -212,7 +212,7 @@
           </el-col>
         </el-row>
       </div>
-      <RequestRecord ref="requestRecordRef" :interface="props.interface_id" />
+      <RequestRecord v-if="has_record" ref="requestRecordRef" :interface="props.interface_id" />
     </div>
   </div>
   <TempLogDialog v-model="show_send_response_dialog" :log-data="send_response" />
@@ -233,7 +233,6 @@ import {
   toRaw,
 } from "vue";
 import { motion } from "motion-v"
-import SpecialInput from "@/components/common/input/specialInput.vue";
 import ParamsTool from "@/views/api/child_component/params.vue";
 import RegularInput from "../child_component/ragular_input.vue";
 import RegularSelect from "../child_component/regular_select.vue";
@@ -299,6 +298,7 @@ const serverOptions: any = ref([]);
 const responseOptions: any = ref([]);
 const collapseStatement = ref(true)
 const requestRecordRef: any = ref(null)
+const has_record = ref(false)
 const isChange = ref(false)
 const interfaceInfoRef: any = ref(null)
 const current_response: any = ref({
@@ -352,6 +352,8 @@ onMounted(async () => {
     }
     try_paste_interface_info()
   }
+  hasRecord()
+  
   // const handler = (e: Event) => {
   //   console.log("in handler");
 
@@ -579,6 +581,14 @@ function toggleCollapse() {
       top: 0, // 滚动到内容的总高度，即最底部
       behavior: 'smooth'
     });
+  }
+}
+
+function hasRecord() {
+  if (is_outer_read_mode.value) {
+    has_record.value = false
+  } else {
+    has_record.value = true
   }
 }
 

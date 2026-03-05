@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, defineProps, defineEmits } from 'vue'
+import { watch } from 'vue'
 
 // 接收 node 和 data
 const props = defineProps({

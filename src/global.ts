@@ -5,6 +5,7 @@ const GlobalStatus = {
   product_docs_host: "https://www.docs.asynctest.com",
   cookieTag: "DjangoToken",
   anonymousPage: "login",
+  anonymousElectronPage: "dashboard",
   anonymousPath: "anonymous",
   projectAuthAbandonPath: "project",
   serverPath: "/test/",

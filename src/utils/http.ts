@@ -2,9 +2,38 @@ import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import GlobalStatus from "@/global";
 import asyncTest from "@/db";
 
+
+// 1. 定义环境判断
+const isElectron = typeof window !== 'undefined' &&
+  window.navigator.userAgent.toLowerCase().includes('electron');
+
+const getBaseURL = () => {
+  // 情况 A：开发环境下 (npm run dev)
+  // 不管是 Web 还是 Electron，都直接连你本地的 6001
+  if (import.meta.env.DEV) {
+    if (isElectron) {
+      return "http://localhost:6001";
+    }
+    // 普通浏览器开发，走 Vite 代理防止跨域
+    return "/api";
+  }
+
+  // 情况 B：正式环境下 (npm run build)
+  if (import.meta.env.PROD) {
+    if (isElectron) {
+      // Electron 生产环境：必须使用绝对地址，否则会变成 file:///
+      return import.meta.env.VITE_API_URL;
+    }
+    // Web 生产环境：使用相对地址，配合你服务器上的 Nginx 代理
+    return "/server";
+  }
+
+  return "/api"; // 兜底路径
+};
+
 const defaultConfig = {
   timeout: 60000,
-  baseURL: import.meta.env.PROD ? "/server" : GlobalStatus.localhost + "/api",
+  baseURL: getBaseURL(),
   headers: {
     "Content-Type": "application/json",
   },
@@ -58,7 +87,12 @@ class Http {
         if (err.response.status === 403) {
           // token鉴权失败
           if (err.response.data.detail) {
-            asyncTest.router.router.push({ name: GlobalStatus.anonymousPage });
+            if (import.meta.env.VITE_IS_ELECTRON === 'true') {
+              asyncTest.router.router.push({ name: GlobalStatus.anonymousElectronPage });
+            } else {
+              asyncTest.router.router.push({ name: GlobalStatus.anonymousPage });
+            }
+            
           } else {
             // 非项目成员鉴权
             if (

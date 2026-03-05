@@ -1,25 +1,27 @@
 <template>
   <div style="height: 100%;display: flex;flex-direction: column;">
-    <el-config-provider :locale="store.state.locale">
-      <div class="header-affix" v-if="route.path !== '/login'">
-        <commonHeader style="height: inherit;" @up="upZIndex" />
-      </div>
-    </el-config-provider>
+    <div class="header-affix" v-if="route.path !== '/login'" @mouseenter="switchWindowBtn(true)"
+      @mouseleave="switchWindowBtn(false)">
+      <div class="drag-layer"></div>
+      <commonHeader ref="commonHeaderRef" style="height: inherit;" @up="upZIndex" class="ui-layer" />
+    </div>
     <router-view v-if="flag" class="main-router" />
     <ToastView ref="toastRef" />
+    <UpdateDialog></UpdateDialog>
   </div>
 </template>
 <script setup lang="ts">
 import commonHeader from "./components/layout/headers/commonHeader.vue";
-import { useStore } from "@/store";
 import { useRoute } from 'vue-router'
 import { onMounted, ref } from "vue";
 import ToastView from '@/views/api/public_dialog/motion_dev_component/toast_animation.vue'
+import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
 
 const upHeaderZIndex = ref(false);
+const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
 
 const toastRef = ref()
-const store = useStore();
+const commonHeaderRef = ref()
 const route = useRoute()
 const flag = ref(false);
 
@@ -31,7 +33,18 @@ onMounted(() => {
     // @ts-ignore
     window.$toast = toastRef.value.showToast
   }
+  // 全局挂载 commonHeader 更新登录状态的方法
+  // @ts-ignore
+  window.$updateHeaderLoginStatus = () => {
+    commonHeaderRef.value?.updateLoginStatus()
+  }
 });
+
+function switchWindowBtn(open: boolean) {
+  if (window.electronAPI && isElectron) {
+    window.electronAPI.toggleTrafficLights(open);
+  }
+}
 
 function upZIndex(flag: boolean) {
   upHeaderZIndex.value = flag;
@@ -44,9 +57,21 @@ function upZIndex(flag: boolean) {
   -moz-osx-font-smoothing: grayscale;
 }
 
+// .header-affix {
+//   width: 100%;
+//   border-bottom: 1px solid #dcdfe6;
+//   -webkit-app-region: no-drag;
+// }
+
 .header-affix {
-  height: 55px;
   width: 100%;
+  height: 55px;
+  /* 【必须】：显式给一个高度，否则内部 inherit 会失效 */
+  position: relative;
+  background-color: transparent;
+  /* 这一层必须是 no-drag，否则 mouseenter 会被拦截 */
+  -webkit-app-region: no-drag;
   border-bottom: 1px solid #dcdfe6;
+  z-index: 100;
 }
 </style>

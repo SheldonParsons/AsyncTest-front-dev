@@ -30,8 +30,26 @@
         <div class="header-right">
           <!-- Quick Actions Group -->
           <div class="action-group">
+            <!-- Dashboard -->
+            <div v-if="isElectron" class="action-item">
+              <AstTooltip :isOpen="tooltipStates.dashboard" side="bottom">
+                <template #trigger>
+                  <div class="action-btn" @mouseenter="tooltipStates.dashboard = true"
+                    @mouseleave="tooltipStates.dashboard = false" @click="toDashboard">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path
+                        d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                      <path d="m3.3 7 8.7 5 8.7-5" />
+                      <path d="M12 22V12" />
+                    </svg>
+                  </div>
+                </template>
+                <span>Dashboard</span>
+              </AstTooltip>
+            </div>
             <!-- Dashboard/Projects -->
-            <div class="action-item">
+            <div v-if="isLoggedIn" class="action-item">
               <AstTooltip :isOpen="tooltipStates.project" side="bottom">
                 <template #trigger>
                   <div class="action-btn" @mouseenter="tooltipStates.project = true"
@@ -67,10 +85,14 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.docs" side="bottom">
                 <template #trigger>
-                  <a :href="GlobalStatus.product_docs_host" target="_blank" rel="noopener noreferrer" class="action-btn"
-                    @mouseenter="tooltipStates.docs = true" @mouseleave="tooltipStates.docs = false">
+                  <a v-if="!isElectron" :href="GlobalStatus.product_docs_host" target="_blank" rel="noopener noreferrer"
+                    class="action-btn" @mouseenter="tooltipStates.docs = true" @mouseleave="tooltipStates.docs = false">
                     <AnimatedDocIcon :size="20" />
                   </a>
+                  <div v-else class="action-btn" @mouseenter="tooltipStates.docs = true"
+                    @mouseleave="tooltipStates.docs = false" @click="openDocsInBrowser">
+                    <AnimatedDocIcon :size="20" />
+                  </div>
                 </template>
                 <span>文档</span>
               </AstTooltip>
@@ -114,7 +136,7 @@
               <AstTooltip :isOpen="tooltipStates.profile" side="bottom">
                 <template #trigger>
                   <div class="avatar-container" @mouseenter="tooltipStates.profile = true"
-                    @mouseleave="tooltipStates.profile = false" @click="openUserProfile">
+                    @mouseleave="tooltipStates.profile = false" @click="handleAvatarClick">
                     <el-avatar :size="36" :src="userImage" class="user-avatar" />
                     <div class="online-indicator"></div>
                   </div>
@@ -124,7 +146,7 @@
             </div>
 
             <!-- Logout -->
-            <div class="action-item">
+            <div v-if="isLoggedIn" class="action-item">
               <AstTooltip :isOpen="tooltipStates.logout" side="bottom">
                 <template #trigger>
                   <div class="action-btn logout-btn" @mouseenter="tooltipStates.logout = true"
@@ -143,6 +165,11 @@
 
   <!-- User Profile Dialog -->
   <UserProfileDialog ref="userProfileDialogRef" />
+
+  <!-- 登录弹窗 -->
+  <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
+    <LoginComponent @loginSuccess="handleLoginSuccess" />
+  </DialogAnimation>
 </template>
 
 <script setup lang="ts">
@@ -157,6 +184,7 @@ import { useRouter, useRoute } from "vue-router"
 import { ClearServerCookie } from "@/api/layout/cookies"
 import { ApiGetSingleProjects } from "@/api/project/index"
 import AstTooltip from "@/components/common/general/tooltip.vue"
+import asyncTest from '@/db'
 
 // Animated Icons
 import AnimatedLanguageIcon from "@/assets/svg/header/AnimatedLanguageIcon.vue"
@@ -165,6 +193,8 @@ import AnimatedDocIcon from "@/assets/svg/header/AnimatedDocIcon.vue"
 import AnimatedHomeIcon from "@/assets/svg/header/AnimatedHomeIcon.vue"
 import GlobalStatus from "@/global";
 import UserProfileDialog from "@/components/layout/dialogs/UserProfileDialog.vue"
+import DialogAnimation from '@/components/common/general/dialog.vue'
+import LoginComponent from '@/views/electron_views/login.vue'
 
 const store: any = useStore()
 const router: any = useRouter()
@@ -178,8 +208,20 @@ const userImage = ref(
   "https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png"
 )
 
+const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
+
+// 检查登录状态
+const checkLoginStatus = () => {
+  const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag)
+  return currentCookie !== false
+}
+
+// 登录状态（响应式）
+const isLoggedIn = ref(checkLoginStatus())
+
 // Tooltip states
 const tooltipStates = reactive({
+  dashboard: false,
   project: false,
   plugin: false,
   docs: false,
@@ -193,6 +235,7 @@ const ideaIconUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/In
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null)
+const loginDialogRef = ref<any>(null)
 
 const emit = defineEmits(["up"])
 
@@ -200,6 +243,9 @@ onMounted(async () => {
   getLanguage()
   getHeader(router.currentRoute.value)
   getUserImage()
+
+  // 初始化登录状态
+  isLoggedIn.value = checkLoginStatus()
 
   // Wait for next tick then show content
   await nextTick()
@@ -298,7 +344,14 @@ function langHandleSelect(e: any) {
 
 function logout() {
   ClearServerCookie().then(() => {
-    router.push({ name: "login" })
+    window.$toast({ title: '退出登录' })
+    // 更新登录状态
+    isLoggedIn.value = false
+    if (import.meta.env.VITE_IS_ELECTRON === 'true') {
+      router.push({ name: "dashboard" })
+    } else {
+      router.push({ name: "login" })
+    }
   })
 }
 
@@ -307,15 +360,57 @@ function toProject() {
   inProject.value = false
 }
 
+function toDashboard() {
+  router.push({ name: "dashboard" })
+}
+
 function openUserProfile() {
   userProfileDialogRef.value?.open()
 }
+
+// 处理头像点击
+function handleAvatarClick() {
+  if (checkLoginStatus()) {
+    openUserProfile()
+  } else {
+    loginDialogRef.value?.open()
+  }
+}
+
+// 登录成功回调
+function handleLoginSuccess() {
+  loginDialogRef.value?.close()
+  // 更新登录状态
+  isLoggedIn.value = true
+  getUserImage()
+}
+
+// 在桌面端打开文档
+function openDocsInBrowser() {
+  if (isElectron && window.electronAPI) {
+    window.electronAPI.openExternal(GlobalStatus.product_docs_host);
+  }
+}
+
+// 更新登录状态（暴露给外部调用）
+function updateLoginStatus() {
+  isLoggedIn.value = checkLoginStatus()
+  if (isLoggedIn.value) {
+    getUserImage()
+  }
+}
+
+// 暴露方法给父组件
+defineExpose({
+  updateLoginStatus
+})
 </script>
 
 <style lang="scss" scoped>
 .header-wrapper {
   height: 100%;
   width: 100%;
+  -webkit-app-region: drag;
 }
 
 .header-modern {
@@ -332,6 +427,7 @@ function openUserProfile() {
   overflow: hidden;
   opacity: 0;
   transition: opacity 0.3s ease;
+  pointer-events: auto;
 
   &.header-ready {
     opacity: 1;
@@ -463,6 +559,8 @@ function openUserProfile() {
   opacity: 0;
   transform: translateY(-5px);
   transition: opacity 0.4s ease, transform 0.4s ease;
+  padding-top: 5px;
+  padding-bottom: 5px;
 
   &.content-visible {
     opacity: 1;
@@ -476,6 +574,18 @@ function openUserProfile() {
   align-items: center;
   gap: 16px;
   z-index: 1;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+}
+
+// Right section
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
 }
 
 .logo-section {
@@ -598,13 +708,7 @@ function openUserProfile() {
   opacity: 0;
 }
 
-// Right section
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 1;
-}
+
 
 .action-group {
   display: flex;

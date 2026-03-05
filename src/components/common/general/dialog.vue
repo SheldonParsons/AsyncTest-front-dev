@@ -7,7 +7,7 @@
                         <motion.div class="overlay" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                             :exit="{ opacity: 0 }" />
                     </Dialog.Overlay>
-                    <Dialog.Content as-child @escape-key-down="cancelAction">
+                    <Dialog.Content as-child @escape-key-down="handleEscapeKeyDown">
                         <motion.div class="input-modal-container" :initial="dialogInitialState"
                             :animate="dialogOpenState" :exit="dialogInitialState" style="top: -50%;"
                             :style="{ transformPerspective: 200, top: topMove }">
@@ -64,9 +64,18 @@ const props = defineProps({
     topMove: { type: String, default: '-20% !important' },
     showCancel: { type: Boolean, default: true },
     showComfirm: { type: Boolean, default: true },
+    closeOnPressEscape: { type: Boolean, default: true },
 })
 
 const visible = ref(false)
+
+function handleEscapeKeyDown(event: Event) {
+    if (!props.closeOnPressEscape) {
+        event.preventDefault()
+        return
+    }
+    cancelAction()
+}
 
 async function cancelAction() {
     emit('cancel')

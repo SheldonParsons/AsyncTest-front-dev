@@ -35,9 +35,16 @@ export default class DB {
     })
   }
 
+  private getDb() {
+    if (!this.db) {
+      throw new Error("数据库尚未初始化，请确保在 main.ts 中已执行 openStore")
+    }
+    return this.db
+  }
+
   // 新增
   updateItem(storeName: string, data: any) {
-    const store = this.db.transaction([storeName], 'readwrite').objectStore(storeName)
+    const store = this.getDb().transaction([storeName], 'readwrite').objectStore(storeName)
     const request = store.put({
       ...data,
       updateTIme: new Date().getTime()
@@ -53,7 +60,7 @@ export default class DB {
   }
 
   deleteItem(storeName: string, key: number | string) {
-    const store = this.db.transaction([storeName], 'readwrite').objectStore(storeName)
+    const store = this.getDb().transaction([storeName], 'readwrite').objectStore(storeName)
     const request = store.delete(key)
     return new Promise((resolve, reject) => {
       request.onsuccess = (event: any) => {
@@ -67,7 +74,7 @@ export default class DB {
 
   // 查询所有数据
   getList(storeName: string) {
-    const store = this.db.transaction(storeName).objectStore(storeName)
+    const store = this.getDb().transaction(storeName).objectStore(storeName)
     const request = store.getAll()
     return new Promise((resolve, reject) => {
       request.onsuccess = (event: any) => {
@@ -80,7 +87,7 @@ export default class DB {
   }
 
   getItem(storeName: string, key: number | string) {
-    const store = this.db.transaction([storeName], 'readwrite').objectStore(storeName)
+    const store = this.getDb().transaction([storeName], 'readwrite').objectStore(storeName)
     const request = store.get(key)
     return new Promise((resolve, reject) => {
       request.onsuccess = (event: any) => {
@@ -92,3 +99,6 @@ export default class DB {
     })
   }
 }
+
+
+export const airDB = new DB('autoDB')

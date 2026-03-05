@@ -21,3 +21,20 @@ declare module 'monaco-editor/esm/vs/language/json/monaco.contribution';
 declare module 'monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution'
 
 declare module 'monaco-editor/esm/vs/editor/editor.main'
+
+
+
+export interface IElectronAPI {
+  toggleTrafficLights: (visible: boolean) => void;
+  openExternal: (url: string) => void;
+  on: (event: any, params: any) => void;
+  send: (event: any) => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI: IElectronAPI;
+    $toast: (options: { title: string; type?: string }) => void;
+    $updateHeaderLoginStatus: () => void;
+  }
+}

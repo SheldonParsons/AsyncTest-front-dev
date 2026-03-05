@@ -1,0 +1,297 @@
+name: Build (mac/win) + notarize (mac) + upload to OSS
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UPDATE_BASE_PUBLIC: https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/
+  UPDATE_BASE_INTERNAL: https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/
+
+jobs:
+  mac:
+    name: mac (${{ matrix.variant }} / ${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      # notarize 并行太高可能更慢/不稳定，先保守（你之后可改 1 或 4）
+      max-parallel: 2
+      matrix:
+        variant: [public, internal]
+        arch: [x64, arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Enable Corepack
+        shell: bash
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Import macOS signing certificate (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MAC_CERTS: ${{ secrets.MAC_CERTS }}
+          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+        run: |
+          echo "$MAC_CERTS" | base64 --decode > /tmp/mac.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/mac.p12 -k build.keychain -P "$MAC_CERTS_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+      - name: Compute build env
+        id: env
+        shell: bash
+        run: |
+          if [ "${{ matrix.variant }}" = "public" ]; then
+            echo "APP_ENV=public" >> $GITHUB_OUTPUT
+            echo "VITE_UPDATE_URL=${UPDATE_BASE_PUBLIC}" >> $GITHUB_OUTPUT
+            echo "VITE_MODE=production" >> $GITHUB_OUTPUT
+          else
+            echo "APP_ENV=internal" >> $GITHUB_OUTPUT
+            echo "VITE_UPDATE_URL=${UPDATE_BASE_INTERNAL}" >> $GITHUB_OUTPUT
+            echo "VITE_MODE=internal" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Rust (mac)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+
+      - name: Rust cache (mac)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-rust -> target
+          key: mac-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('src-rust/Cargo.lock') }}
+
+      - name: Build napi-rs addon (mac)
+        shell: bash
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+        run: |
+          cd src-rust
+          yarn install --immutable
+          yarn build -- --release --target ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+          strip -x *.node
+          ls -lh *.node || true
+          find . -maxdepth 4 -name "*.node" -print || true
+
+      - name: Vite build
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+          VITE_IS_ELECTRON: "true"
+        run: |
+          yarn vite build --mode ${{ steps.env.outputs.VITE_MODE }}
+
+      - name: Write Apple API key to file (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          mkdir -p /tmp/apple
+          echo "${{ secrets.APPLE_API_KEY }}" | base64 --decode > /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          chmod 600 /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+
+      - name: electron-builder (mac, no notarize)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+          VITE_UPDATE_URL: ${{ steps.env.outputs.VITE_UPDATE_URL }}
+        run: |
+          yarn electron-builder --mac --${{ matrix.arch }}
+
+      - name: electron-builder (mac, notarize)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+          VITE_UPDATE_URL: ${{ steps.env.outputs.VITE_UPDATE_URL }}
+          APPLE_API_KEY: /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          yarn electron-builder --mac --${{ matrix.arch }}
+
+      - name: Upload artifacts (mac)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.variant }}-${{ matrix.arch }}
+          path: dist_electron/${{ matrix.variant }}/
+          if-no-files-found: error
+
+      - name: Install ossutil (mac)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.19/ossutilmac64.zip
+          unzip -q ossutil.zip
+          sudo mv ossutilmac64/ossutil /usr/local/bin/ossutil
+          ossutil -v
+
+      - name: Upload to OSS (mac, tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+        run: |
+          set -euo pipefail
+
+          DIST_DIR="dist_electron/${APP_ENV}"
+          if [ "$APP_ENV" = "public" ]; then
+            OSS_PREFIX="oss://${OSS_BUCKET}/core/updates/public/"
+          else
+            OSS_PREFIX="oss://${OSS_BUCKET}/core/updates/internal/"
+          fi
+
+          echo "Uploading ${DIST_DIR} -> ${OSS_PREFIX}"
+
+          # 1) 上传所有文件（版本化文件不会重名；即使覆盖也无妨）
+          ossutil cp -rf "${DIST_DIR}/" "${OSS_PREFIX}" \
+            -e "${OSS_ENDPOINT}" \
+            -i "${OSS_ACCESS_KEY_ID}" \
+            -k "${OSS_ACCESS_KEY_SECRET}"
+
+          # 2) latest*.yml 必须覆盖且不要缓存，否则客户端可能拿不到最新
+          shopt -s nullglob
+          for f in "${DIST_DIR}"/latest*.yml; do
+            echo "Overwrite no-cache: $(basename "$f")"
+            ossutil cp -f "$f" "${OSS_PREFIX}" \
+              -e "${OSS_ENDPOINT}" \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              --meta "Cache-Control:no-cache"
+          done
+
+  win:
+    name: win (${{ matrix.variant }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [public, internal]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Enable Corepack
+        shell: bash
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Setup Rust (win)
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Rust cache (win)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-rust -> target
+          key: win-${{ runner.os }}-x64-${{ hashFiles('src-rust/Cargo.lock') }}
+          
+      - name: Build napi-rs addon (win)
+        shell: bash
+        run: |
+          cd src-rust
+          yarn install --immutable
+          yarn build --release
+          strip -x *.node
+          ls -lh *.node || true
+
+      - name: Compute build env
+        id: env
+        shell: bash
+        run: |
+          if [ "${{ matrix.variant }}" = "public" ]; then
+            echo "APP_ENV=public" >> $GITHUB_OUTPUT
+            echo "VITE_UPDATE_URL=${UPDATE_BASE_PUBLIC}" >> $GITHUB_OUTPUT
+            echo "VITE_MODE=production" >> $GITHUB_OUTPUT
+          else
+            echo "APP_ENV=internal" >> $GITHUB_OUTPUT
+            echo "VITE_UPDATE_URL=${UPDATE_BASE_INTERNAL}" >> $GITHUB_OUTPUT
+            echo "VITE_MODE=internal" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Vite build
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+          VITE_IS_ELECTRON: "true"
+        run: |
+          yarn vite build --mode ${{ steps.env.outputs.VITE_MODE }}
+
+      - name: electron-builder (win)
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+          VITE_UPDATE_URL: ${{ steps.env.outputs.VITE_UPDATE_URL }}
+        run: |
+          yarn electron-builder --win --x64
+
+      - name: Upload artifacts (win)
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-${{ matrix.variant }}-x64
+          path: dist_electron/${{ matrix.variant }}/
+          if-no-files-found: error
+
+      - name: Install ossutil (win)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://gosspublic.alicdn.com/ossutil/1.7.19/ossutilwindows64.zip" -OutFile "$env:RUNNER_TEMP\ossutil.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ossutil.zip" -DestinationPath "$env:RUNNER_TEMP\ossutil" -Force
+          # zip 里通常有 ossutil64.exe
+          Get-ChildItem "$env:RUNNER_TEMP\ossutil" -Recurse
+
+      - name: Upload to OSS (win, tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+        run: |
+          $distDir = "dist_electron/$env:APP_ENV"
+          $ossPrefix = if ($env:APP_ENV -eq "public") { "oss://$env:OSS_BUCKET/core/updates/public/" } else { "oss://$env:OSS_BUCKET/core/updates/internal/" }
+
+          $ossutil = Get-ChildItem "$env:RUNNER_TEMP\ossutil" -Recurse -Filter "ossutil*.exe" | Select-Object -First 1
+          if (-not $ossutil) { throw "ossutil exe not found" }
+
+          & $ossutil.FullName cp -rf "$distDir/" "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET"
+
+          Get-ChildItem "$distDir" -Filter "latest*.yml" | ForEach-Object {
+            & $ossutil.FullName cp -f $_.FullName "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET" --meta "Cache-Control:no-cache"
+          }

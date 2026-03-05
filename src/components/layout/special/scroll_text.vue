@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Ticker } from 'motion-plus-vue'
 import {
-    defineProps,
     ref,
     onMounted,
     onUnmounted,

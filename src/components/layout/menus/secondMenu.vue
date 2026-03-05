@@ -11,7 +11,7 @@
         ">
         {{ $t("menu.news") }}
       </div>
-      <div style="width: 100%; height: 80px; margin-bottom: 25px;min-width: 290px;">
+      <div style="width: 100%; height: 80px; margin-bottom: 25px;">
         <MockBox @changeMenu="changeSubMenu" :fixSize="true" :shouldTurn="true"></MockBox>
       </div>
       <div class="sidebar-groups">
