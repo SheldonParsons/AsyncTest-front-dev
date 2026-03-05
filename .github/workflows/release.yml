@@ -142,10 +142,20 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.19/ossutilmac64.zip
-          unzip -q ossutil.zip
-          sudo mv ossutilmac64/ossutil /usr/local/bin/ossutil
-          ossutil -v
+          set -euo pipefail
+
+          # 官方一键安装脚本
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+
+          # 验证可执行是否可用
+          if command -v ossutil >/dev/null 2>&1; then
+            ossutil -v
+          else
+            echo "ossutil not found in PATH, debug paths:"
+            ls -lh /usr/local/bin || true
+            ls -lh /usr/bin || true
+            /usr/local/bin/ossutil -v || /usr/bin/ossutil -v
+          fi
 
       - name: Upload to OSS (mac, tags only)
         if: startsWith(github.ref, 'refs/tags/')
@@ -269,10 +279,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://gosspublic.alicdn.com/ossutil/1.7.19/ossutilwindows64.zip" -OutFile "$env:RUNNER_TEMP\ossutil.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\ossutil.zip" -DestinationPath "$env:RUNNER_TEMP\ossutil" -Force
-          # zip 里通常有 ossutil64.exe
-          Get-ChildItem "$env:RUNNER_TEMP\ossutil" -Recurse
+          $ossutilPath = "$env:RUNNER_TEMP\ossutil.exe"
+          Invoke-WebRequest -Uri "https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64.exe" -OutFile $ossutilPath
+          & $ossutilPath -v
 
       - name: Upload to OSS (win, tags only)
         if: startsWith(github.ref, 'refs/tags/')
@@ -284,14 +293,14 @@ jobs:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           APP_ENV: ${{ steps.env.outputs.APP_ENV }}
         run: |
+          $ossutil = "$env:RUNNER_TEMP\ossutil.exe"
+          if (-not (Test-Path $ossutil)) { throw "ossutil not found at $ossutil" }
+
           $distDir = "dist_electron/$env:APP_ENV"
           $ossPrefix = if ($env:APP_ENV -eq "public") { "oss://$env:OSS_BUCKET/core/updates/public/" } else { "oss://$env:OSS_BUCKET/core/updates/internal/" }
 
-          $ossutil = Get-ChildItem "$env:RUNNER_TEMP\ossutil" -Recurse -Filter "ossutil*.exe" | Select-Object -First 1
-          if (-not $ossutil) { throw "ossutil exe not found" }
-
-          & $ossutil.FullName cp -rf "$distDir/" "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET"
+          & $ossutil cp -rf "$distDir/" "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET"
 
           Get-ChildItem "$distDir" -Filter "latest*.yml" | ForEach-Object {
-            & $ossutil.FullName cp -f $_.FullName "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET" --meta "Cache-Control:no-cache"
+            & $ossutil cp -f $_.FullName "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET" --meta "Cache-Control:no-cache"
           }
