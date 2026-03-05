@@ -14,7 +14,10 @@ export default defineConfig({
     __VUE_I18N_FULL_INSTALL__: true,
     __VUE_I18N_LEGACY_API__: false,
     __INTLIFY_PROD_DEVTOOLS__: false,
-    'process.env.VITE_IS_ELECTRON': JSON.stringify(process.env.VITE_IS_ELECTRON)
+    'process.env.VITE_IS_ELECTRON': JSON.stringify(process.env.VITE_IS_ELECTRON),
+    'process.env': {},
+    'process.version': '"v22.0.0"', // 给一个虚拟版本号即可
+    'process.platform': '"darwin"',
   },
   server: {
     host: "0.0.0.0",

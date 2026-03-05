@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "0.0.14",
+  "version": "0.0.20",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,6 +20,9 @@
     "productName": "AsyncTest",
     "directories": {
       "output": "dist_electron/${env.APP_ENV}"
+    },
+    "releaseInfo": {
+      "releaseNotes": "{\"isForce\": true, \"notes\": \"### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。### 🚀 New Features\n- **Rust Core**: 接入高性能计算模块，处理速度提升 40%。\n- **UI 优化**: 全新的深色模式适配。\n\n### 🐞 Bug Fixes\n- 修复了在部分 macOS 设备上无法自动连接的问题。\n- 优化了内存占用。\", \"publishDate\": \"2026-03-05\"}"
     },
     "publish": [
       {

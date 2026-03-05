@@ -1,11 +1,13 @@
 <template>
     <DialogAnimation ref="dialogRef" title="软件更新" bgtype="white" :showCancel="!updateInfo.isForce && !downloading"
-        :showComfirm="false" :closeOnClickModal="false" :closeOnPressEscape="!updateInfo.isForce && !downloading" cancel_title="暂不更新">
+        :showComfirm="false" topMove="0px important" :closeOnClickModal="false"
+        :closeOnPressEscape="!updateInfo.isForce && !downloading" cancel_title="暂不更新" @cancel="visible = false">
         <div class="update-dialog-content">
             <!-- 发现新版本 -->
             <div v-if="!downloading && !downloadComplete" class="update-section">
                 <div class="update-icon">
-                    <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/app_logo/LOGO_DARK.png" alt="AsyncTest Logo" />
+                    <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/app_logo/LOGO_DARK.png"
+                        alt="AsyncTest Logo" />
                 </div>
                 <h3 class="update-title">发现新版本 v{{ updateInfo.version }}</h3>
                 <div v-if="updateInfo.notes" class="update-notes">
@@ -105,9 +107,7 @@ const progressColor = computed(() => {
 
 // 监听 visible 变化，控制 dialog 显示/隐藏
 watch(visible, (newVal) => {
-    if (newVal) {
-        dialogRef.value?.open();
-    } else {
+    if (!newVal) {
         dialogRef.value?.close();
     }
 });
@@ -133,11 +133,24 @@ let removeUpdateListener: any = null;
 let removeProgressListener: any = null;
 let removeDownloadedListener: any = null;
 
+let readyTimer: NodeJS.Timeout | null = null;
+
+const stopPinging = () => {
+    if (readyTimer) {
+        clearInterval(readyTimer);
+        readyTimer = null;
+        console.log('--- 握手成功或已超时，停止呼叫主进程 ---');
+    }
+};
+
 onMounted(() => {
     if (window.electronAPI) {
+        console.log("window.electronAPI");
         // 1. 监听更新可用
         removeUpdateListener = window.electronAPI.on('update-available', (event: any, info: any) => {
             console.log('监听到更新信号:', info);
+            dialogRef.value?.open();
+            stopPinging()
             visible.value = true;
             updateInfo.value = info;
             downloading.value = false;
@@ -150,6 +163,16 @@ onMounted(() => {
             percentage.value = Math.floor(percent);
         });
 
+        removeProgressListener = window.electronAPI.on('update-not-available', (event: any,info: string) => {
+            if (readyTimer) {
+                stopPinging()
+            } else {
+                console.log(info);
+                
+                window.$toast({ title: '已经是最新版:' + info })
+            }
+        });
+
         // 3. 监听下载完成
         removeDownloadedListener = window.electronAPI.on('update-downloaded', () => {
             console.log('下载完成');
@@ -157,6 +180,14 @@ onMounted(() => {
             downloadComplete.value = true;
             percentage.value = 100;
         });
+
+        // 2. 开启轮询呼叫：每 500ms 喊一次“我准备好了”
+        readyTimer = setInterval(() => {
+            console.log('正在呼叫主进程 (Ready Check)...');
+            window.electronAPI.send('renderer-ready-for-update');
+        }, 500);
+
+        setTimeout(stopPinging, 10000);
     }
 });
 
@@ -165,6 +196,7 @@ onUnmounted(() => {
     if (removeUpdateListener) removeUpdateListener();
     if (removeProgressListener) removeProgressListener();
     if (removeDownloadedListener) removeDownloadedListener();
+    stopPinging();
 });
 </script>
 
@@ -172,10 +204,12 @@ onUnmounted(() => {
 .update-dialog-content {
     padding: 20px;
     min-height: 280px;
+    max-height: 600px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    overflow-y: auto;
 }
 
 // 发现新版本样式
@@ -229,6 +263,28 @@ onUnmounted(() => {
             color: #6b7280;
             line-height: 1.6;
             white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+            padding-right: 4px;
+
+            // 自定义滚动条样式
+            &::-webkit-scrollbar {
+                width: 6px;
+            }
+
+            &::-webkit-scrollbar-track {
+                background: #e5e7eb;
+                border-radius: 3px;
+            }
+
+            &::-webkit-scrollbar-thumb {
+                background: #9ca3af;
+                border-radius: 3px;
+
+                &:hover {
+                    background: #6b7280;
+                }
+            }
         }
     }
 
@@ -494,5 +550,32 @@ onUnmounted(() => {
     font-size: 14px;
     font-weight: 600;
     color: #1f2937;
+}
+
+// 覆盖 DialogAnimation 的 modal 样式，限制高度并启用滚动
+:deep(.modal) {
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+
+    // 自定义滚动条样式
+    &::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: rgba(229, 231, 235, 0.3);
+        border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: rgba(156, 163, 175, 0.5);
+        border-radius: 4px;
+
+        &:hover {
+            background: rgba(107, 114, 128, 0.7);
+        }
+    }
 }
 </style>

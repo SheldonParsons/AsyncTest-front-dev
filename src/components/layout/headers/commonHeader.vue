@@ -30,6 +30,23 @@
         <div class="header-right">
           <!-- Quick Actions Group -->
           <div class="action-group">
+            <!-- Check for Update -->
+            <div v-if="isElectron" class="action-item">
+              <AstTooltip :isOpen="tooltipStates.update" side="bottom">
+                <template #trigger>
+                  <div class="action-btn" @mouseenter="tooltipStates.update = true"
+                    @mouseleave="tooltipStates.update = false" @click="checkForUpdate">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 13V7"/>
+                      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+                      <path d="m9 10 3 3 3-3"/>
+                    </svg>
+                  </div>
+                </template>
+                <span>检查更新</span>
+              </AstTooltip>
+            </div>
             <!-- Dashboard -->
             <div v-if="isElectron" class="action-item">
               <AstTooltip :isOpen="tooltipStates.dashboard" side="bottom">
@@ -221,6 +238,7 @@ const isLoggedIn = ref(checkLoginStatus())
 
 // Tooltip states
 const tooltipStates = reactive({
+  update: false,
   dashboard: false,
   project: false,
   plugin: false,
@@ -362,6 +380,12 @@ function toProject() {
 
 function toDashboard() {
   router.push({ name: "dashboard" })
+}
+
+function checkForUpdate() {
+  if (isElectron && window.electronAPI) {
+    window.electronAPI.send('check-for-update');
+  }
 }
 
 function openUserProfile() {
