@@ -84,15 +84,30 @@ jobs:
 
       - name: Build napi-rs addon (mac)
         shell: bash
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
         run: |
+          set -euo pipefail
           cd src-rust
           yarn install --immutable
-          yarn build --release --target ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
-          strip -x *.node
+
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            TARGET="aarch64-apple-darwin"
+            EXPECT="arm64"
+          else
+            TARGET="x86_64-apple-darwin"
+            EXPECT="x86_64"
+          fi
+
+          # 关键：显式指定 target
+          npx napi build --platform --release --target "${TARGET}"
+
+          echo "Built .node files:"
           ls -lh *.node || true
-          find . -maxdepth 4 -name "*.node" -print || true
+
+          echo "Arch check:"
+          file *.node || true
+          file *.node | grep -q "${EXPECT}" || (echo "Wrong arch .node built" && exit 1)
+
+          strip -x *.node || true
 
       - name: Vite build
         shell: bash
