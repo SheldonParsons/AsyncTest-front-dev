@@ -39,4 +39,6 @@ ui-style-guide.md
 
 # pack
 linux_build.zip
-mac_pack.shupload-server.sh
+mac_pack.sh
+upload-server.sh
+
