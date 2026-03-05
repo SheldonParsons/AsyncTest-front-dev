@@ -128,15 +128,16 @@ jobs:
           APPLE_API_KEY: /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          DEBUG: electron-builder,electron-notarize
         run: |
           yarn electron-builder --mac --${{ matrix.arch }}
 
-      - name: Upload artifacts (mac)
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-${{ matrix.variant }}-${{ matrix.arch }}
-          path: dist_electron/${{ matrix.variant }}/
-          if-no-files-found: error
+      # - name: Upload artifacts (mac)
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: mac-${{ matrix.variant }}-${{ matrix.arch }}
+      #     path: dist_electron/${{ matrix.variant }}/
+      #     if-no-files-found: error
 
       - name: Install ossutil (mac)
         if: startsWith(github.ref, 'refs/tags/')
@@ -270,12 +271,12 @@ jobs:
         run: |
           yarn electron-builder --win --x64
 
-      - name: Upload artifacts (win)
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-${{ matrix.variant }}-x64
-          path: dist_electron/${{ matrix.variant }}/
-          if-no-files-found: error
+      # - name: Upload artifacts (win)
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: win-${{ matrix.variant }}-x64
+      #     path: dist_electron/${{ matrix.variant }}/
+      #     if-no-files-found: error
 
       - name: Install ossutil (win)
         if: startsWith(github.ref, 'refs/tags/')

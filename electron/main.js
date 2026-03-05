@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 // 2. 加载更新器和 Rust 引擎（使用 require 绕过 ESM 导出陷阱）
 // 注意：即使源文件是 .ts，在运行时的 main.js 引用它通常不写后缀或由构建工具处理
 import { initUpdater } from './updater.ts'; 
-const rustEngine = require('../src-rust/index.js');
+const rustEngine = require('../src-rust/index.cjs');
 
 // 3. 全局变量声明
 let mainWindow = null;

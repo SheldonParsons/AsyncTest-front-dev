@@ -91,7 +91,7 @@ import DialogAnimation from '@/components/common/general/dialog.vue';
 
 const dialogRef = ref<any>(null);
 const visible = ref(false);
-const updateInfo = ref({ version: '1.0.1', notes: '', isForce: true });
+const updateInfo = ref({ version: '1.0.1', notes: '', isForce: false });
 const percentage = ref(0);
 const downloading = ref(false);
 const downloadComplete = ref(false);
@@ -157,7 +157,6 @@ onMounted(() => {
             downloadComplete.value = true;
             percentage.value = 100;
         });
-        dialogRef.value?.open();
     }
 });
 

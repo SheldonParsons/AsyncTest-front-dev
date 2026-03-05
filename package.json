@@ -48,35 +48,15 @@
       "shortcutName": "AsyncTest"
     },
     "asar": true,
-    "asarUnpack": [
-      "src-rust/**/*.node",
-      "node_modules/better-sqlite3/**/*"
-    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "node_modules/**/*",
-      "src-rust/*.node",
-      "src-rust/index.js",
-      "!src-rust/src/**/*",
-      "!src-rust/target/**/*",
-      "!src-rust/Cargo.*",
-      "!node_modules/monaco-editor/**/*",
-      "!node_modules/element-plus/**/*",
-      "!node_modules/ag-grid-community/**/*",
-      "!node_modules/@ag-grid-community/**/*",
-      "!node_modules/vue/**/*",
-      "!node_modules/@vue/**/*",
-      "!node_modules/lodash/**/*",
-      "!node_modules/xlsx/**/*",
-      "!node_modules/highlight.js/**/*",
-      "!node_modules/@babel/**/*",
-      "!node_modules/typescript/**/*",
-      "!node_modules/postcss/**/*",
-      "!node_modules/@napi-rs/cli/**/*",
-      "!node_modules/.bin/**/*",
-      "!**/node_modules/*/{test,tests,example,examples,docs,doc}/**/*"
+      "src-rust/index.cjs",
+      "src-rust/*.node"
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "mac": {
       "icon": "build/icon.icns",
@@ -126,7 +106,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:mac:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --mac",
+    "build:mac:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --mac --arm64 --config.mac.identity=null",
     "build:mac:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --mac",
     "build:win:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --win",
     "build:win:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --win",
