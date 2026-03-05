@@ -89,7 +89,7 @@ jobs:
         run: |
           cd src-rust
           yarn install --immutable
-          yarn build -- --release --target ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+          yarn build --release --target ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
           strip -x *.node
           ls -lh *.node || true
           find . -maxdepth 4 -name "*.node" -print || true
