@@ -2,7 +2,7 @@ name: Build (mac/win) + notarize (mac) + upload to OSS
 
 on:
   push:
-    branches: [ main ]
+    # branches: [ main ]
     tags:
       - "v*"
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       # notarize 并行太高可能更慢/不稳定，先保守（你之后可改 1 或 4）
-      max-parallel: 2
+      max-parallel: 4
       matrix:
         variant: [public, internal]
         arch: [x64, arm64]
@@ -170,6 +170,8 @@ jobs:
           set -euo pipefail
 
           DIST_DIR="dist_electron/${APP_ENV}"
+          echo "Cleaning up intermediate folders..."
+          rm -rf "${DIST_DIR}/mac" "${DIST_DIR}/mac-arm64"
           if [ "$APP_ENV" = "public" ]; then
             OSS_PREFIX="oss://${OSS_BUCKET}/core/updates/public/"
           else
@@ -297,6 +299,8 @@ jobs:
           if (-not (Test-Path $ossutil)) { throw "ossutil not found at $ossutil" }
 
           $distDir = "dist_electron/$env:APP_ENV"
+          Write-Host "Cleaning up intermediate folders..."
+          Remove-Item -Path "$distDir/win-unpacked" -Recurse -Force -ErrorAction SilentlyContinue
           $ossPrefix = if ($env:APP_ENV -eq "public") { "oss://$env:OSS_BUCKET/core/updates/public/" } else { "oss://$env:OSS_BUCKET/core/updates/internal/" }
 
           & $ossutil cp -rf "$distDir/" "$ossPrefix" -e "$env:OSS_ENDPOINT" -i "$env:OSS_ACCESS_KEY_ID" -k "$env:OSS_ACCESS_KEY_SECRET"
