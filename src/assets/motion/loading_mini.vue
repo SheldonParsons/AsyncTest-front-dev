@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { motion } from "motion-v"
 
 const props = defineProps({

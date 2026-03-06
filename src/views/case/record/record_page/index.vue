@@ -257,6 +257,8 @@ async function get_record() {
     const res = await tools.send(ApiGetRecordList, _data)
     data.value = res.data
     total_count.value = res.total
+    console.log(data.value);
+    
     if (data.value.length > 0) {
         if (!poller.value) {
             createPolling(refresh_data)

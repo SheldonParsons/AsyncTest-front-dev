@@ -17,13 +17,14 @@
                     :padding_height="100" :interface_callback="interface_detail_record"
                     :force_check_ending="stopRecordChecking" @showStepDetail=showStepDetailAction>
                 </ProcessRecord>
-                <div class="step-tips" v-if="show_step_detail && current_step_data && current_step_data.type === 'interface'">
+                <div class="step-tips"
+                    v-if="show_step_detail && current_step_data && current_step_data.type === 'interface'">
                     <div>
                         需要提醒您，您现在看到的接口信息是最新的，而不是您运行任务时的接口信息。
                     </div>
                 </div>
                 <div style="overflow-y: auto;flex: 1;" class="no-scroll" v-if="show_step_detail">
-                    <StepDetail :case_id="case_id" :data="current_step_data" :show_save="false" @save="saveStep">
+                    <StepDetail :case_id="case_id" :data="current_step_data" :show_save="true" @save="saveStep">
                     </StepDetail>
                 </div>
             </SplitterPanel>
@@ -44,6 +45,9 @@ import { onMounted, ref, computed, onUnmounted, nextTick } from 'vue'
 import { PollingUtil } from '@/views/case/record/utils/PollingUtil'
 import ProcessRecord from '@/views/case/record/comp/process_record.vue'
 import StepDetail from '@/views/case/content/case_content/runner/detail/step_detail.vue'
+import { send_case_action } from '@/views/case/utils'
+import { ApiRunCase } from '@/api/case/case/index'
+import _ from 'lodash'
 
 
 const data = ref(null)
@@ -56,6 +60,7 @@ const show_step_process = ref(false)
 const current_step_info = ref()
 const show_step_detail = ref(false)
 const current_step_data = ref()
+const current_step_origin_detail: any = ref(null)
 const isCollapsed = computed(() => {
     try {
         return panelRef.value?.getSize() === 0
@@ -91,12 +96,42 @@ function showStepDetailAction() {
     show_step_detail.value = true
 }
 
-function saveStep() {
-    window.$toast({ title: '您无法在日志处修改步骤信息', type: 'info' })
+// function saveStep() {
+//     window.$toast({ title: '您无法在日志处修改步骤信息', type: 'info' })
+// }
+
+async function saveStep() {
+    console.log(current_step_data.value);
+    let has_change = false
+    for (let variable in current_step_data.value) {
+        if (variable !== 'id' && variable !== 'children') {
+            if (JSON.stringify(current_step_origin_detail.value[variable]) !== JSON.stringify(current_step_data.value[variable])) {
+                current_step_origin_detail.value[variable] = current_step_data.value[variable]
+                has_change = true
+            }
+        }
+    }
+    if (has_change === true) {
+        const _data = {
+            type: 0,
+            child_action_type: 'update_node',
+            content: {
+                case_id: props.case_id,
+                node_content: current_step_data.value
+            }
+        }
+        await send_case_action(_data)
+        current_step_origin_detail.value = _.cloneDeep(current_step_data.value)
+        window.$toast({ title: '步骤修改已保存' })
+    } else {
+        window.$toast({ title: '步骤无变化', type: 'info' })
+    }
+
 }
 
 async function choice_step(data: any, node: any, tree_node: any, event: any) {
     current_step_data.value = data
+    current_step_origin_detail.value = _.cloneDeep(data)
     show_step_detail.value = false
     if (data.type === 'empty') {
         window.$toast({ title: '该步骤无法查看详情' })
@@ -272,6 +307,7 @@ const props = defineProps({
         background: linear-gradient(80deg, #ffd460 0%, #f8b98c 40%, #f07b3f 90%)
     }
 }
+
 .case-content {
     flex-grow: 1;
     min-height: 0;

@@ -1,31 +1,32 @@
 <template>
-  <div class="script-editor-container" :class="[{ maximized: isMaximized }]">
-    <div class="script-content">
-      <div style="height: 40px;">
-        <div class="editor-header">
-          <div>
-            {{ pythonVersion }}
-          </div>
-          <div class="max">
-            <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }" @click="toggleMaximize">
-              <MaxBtn></MaxBtn>
-            </motion.div>
+  <Teleport to="body" :disabled="!isMaximized">
+    <div class="script-editor-container" :class="[{ maximized: isMaximized }]">
+      <div class="script-content">
+        <div style="height: 40px;">
+          <div class="editor-header">
+            <div>
+              {{ pythonVersion }}
+            </div>
+            <div class="max">
+              <motion.div :while-hover="{ scale: 1.05 }" :while-press="{ scale: 0.9 }" @click="toggleMaximize">
+                <MaxBtn></MaxBtn>
+              </motion.div>
+            </div>
           </div>
         </div>
-      </div>
-      <div style="display: flex;height: calc(100% - 40px);overflow: hidden;">
-        <PythonEditor ref="editorRef" :code="code" :disable="disabled" @change="code_change" style="flex: 80;">
-        </PythonEditor>
-        <div class="script-code-shortcuts" style="flex: 20;">
-          <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
-            @click="insertCode(shortcut.code)">
-            {{ shortcut.label }}
+        <div style="display: flex;height: calc(100% - 40px);overflow: hidden;">
+          <PythonEditor ref="editorRef" :code="code" :disable="disabled" @change="code_change" style="flex: 80;">
+          </PythonEditor>
+          <div class="script-code-shortcuts" style="flex: 20;">
+            <div v-for="shortcut in shortcuts" :key="shortcut.label" class="shortcut-item"
+              @click="insertCode(shortcut.code)">
+              {{ shortcut.label }}
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-
+  </Teleport>
 </template>
 
 <script lang="ts" setup>
@@ -113,7 +114,7 @@ async function code_change(value: string) {
   left: 0;
   width: 100%;
   height: 100% !important;
-  z-index: 99;
+  z-index: 9999;
   background: white;
   display: flex;
   flex-direction: column;

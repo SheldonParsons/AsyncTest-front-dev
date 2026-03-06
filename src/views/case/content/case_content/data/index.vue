@@ -135,8 +135,8 @@ function toggleMaximize() {
 
 onMounted(() => {
     // 1. 创建临时数组，避免在循环中频繁触发 Vue 响应式更新
-    const tempCols = [] 
-    
+    const tempCols = []
+
     for (let i = 0; i < props.data.cols.length; i++) {
         if (i === 0) {
             tempCols.push({  // 修改：push 到 tempCols
@@ -202,11 +202,11 @@ onMounted(() => {
     })
 
     // 2. 一次性赋值给响应式对象
-    columnDefs.value = tempCols 
+    columnDefs.value = tempCols
     rowData.value = _.cloneDeep(props.data.rows)
-    
+
     // 3. 标记数据已准备好，允许渲染 Grid
-    isReady.value = true 
+    isReady.value = true
 })
 
 // 默认列配置：可过滤、可编辑、不允许调整宽度、自适应宽度
@@ -592,6 +592,8 @@ const gridOptions = {
     suppressMovableColumns: true,
     suppressHeaderKeyboardEvent: true,
     onRowDragEnd: onRowDragEnd,
+    alwaysShowHorizontalScroll: true,
+    alwaysShowVerticalScroll:true
 }
 
 function rowDragText(params: any, dragItemCount: any) {
@@ -605,7 +607,8 @@ function onGridReady(e: GridReadyEvent) {
 </script>
 
 
-<style lang="scss" scope>
+<style lang="scss">
+
 .data-container-case-ag-grid-tips {
     height: 46px;
     width: 80%;
@@ -740,6 +743,23 @@ function onGridReady(e: GridReadyEvent) {
 
 .ag-theme-quartz .ag-cell-value {
     cursor: pointer;
+}
+
+.ag-body-viewport-wrapper.ag-layout-normal {
+  overflow-x: scroll !important; /* Forces the horizontal scrollbar */
+}
+
+/* Optional: customize the appearance of the scrollbar across webkit browsers */
+::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 8px; /* height of horizontal scrollbar */
+  height: 8px; /* width of vertical scrollbar */
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 .ag-theme-quartz .ag-cell-focus {

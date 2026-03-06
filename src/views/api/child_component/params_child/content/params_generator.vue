@@ -1,33 +1,14 @@
 <template>
   <el-row style="width: 100%">
     <el-col :span="24">
-      <div
-        style="padding: 10px; background-color: #f9fafb; border-radius: 10px"
-      >
-      <div @click.stop>
-        <el-cascader
-          v-model="function_content"
-          @change="handleChange"
-          :options="generator_tree"
-          placeholder="选择一个动态值函数"
-          size="small"
-          style="width: 100%"
-          @click.stop
-        >
-          <template #default="{ node, data }" @click.stop>
-            <span v-if="!node.isLeaf">{{ data.label }}</span>
-            <span v-if="node.isLeaf"> {{ data.label }}({{ data.value }}) </span>
-          </template>
-        </el-cascader>
-      </div>
-        <div
-          v-if="current_function !== null"
-          v-for="(item, index) in get_content(
-            input_content_mapping[current_function]
-          )"
-          :key="index"
-          style="width: 100%"
-        >
+      <div style="padding: 10px; background-color: #f9fafb; border-radius: 10px">
+        <div @click.stop>
+          <CascadeMenu v-model="function_content" @change="handleChange" :options="generator_tree"
+            placeholder="选择一个动态值函数" size="small" style="width: 100%" @click.stop />
+        </div>
+        <div v-if="current_function !== null" v-for="(item, index) in get_content(
+          input_content_mapping[current_function]
+        )" :key="index" style="width: 100%">
           <el-row style="margin-top: 10px">
             <el-col :span="24">
               <div class="content-name">{{ item.name }}</div>
@@ -35,158 +16,111 @@
           </el-row>
           <el-row>
             <el-col :span="24">
-              <el-input-number
-                style="width: 100%"
-                @change="content_function"
-                v-if="item.type === 'number'"
-                v-model="item.value"
-                :min="item.min"
-                :max="item.max"
-                :step="item.step"
-                size="small"
-                :placeholder="item.placeholder"
-                controls-position="right"
-              />
-              <el-select
-                @change="content_function"
-                v-if="item.type === 'select'"
-                v-model="item.value"
-                :placeholder="item.placeholder"
-                size="small"
-              >
-                <el-option
-                  v-for="select_item in item.options"
-                  :key="select_item.value"
-                  :label="select_item"
-                  :value="select_item"
-                />
+              <el-input-number style="width: 100%" @change="content_function" v-if="item.type === 'number'"
+                v-model="item.value" :min="item.min" :max="item.max" :step="item.step" size="small"
+                :placeholder="item.placeholder" controls-position="right" />
+              <el-select @change="content_function" v-if="item.type === 'select'" v-model="item.value"
+                :placeholder="item.placeholder" size="small">
+                <el-option v-for="select_item in item.options" :key="select_item.value" :label="select_item"
+                  :value="select_item" />
               </el-select>
-              <el-input
-                @input="content_function"
-                v-if="item.type === 'input'"
-                v-model="item.value"
-                size="small"
-                :placeholder="item.placeholder"
-              />
+              <el-input @input="content_function" v-if="item.type === 'input'" v-model="item.value" size="small"
+                :placeholder="item.placeholder" />
             </el-col>
           </el-row>
         </div>
       </div>
     </el-col>
   </el-row>
-  <div
-    v-if="current_function === null"
-    style="
+  <div v-if="current_function === null" style="
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100px;
-    "
-  >
+    ">
     <Empty></Empty>
   </div>
   <div class="insert-main">
     <div class="process-func" v-if="can_insert">
       <div class="process-container" v-if="process_list.length > 0">
-        <div
-          v-for="(item, index) in process_list"
-          :key="index"
-          @mouseover="hover_process = index"
-          @mouseleave="hover_process = -1"
-          @click="eidt_process_function_dialog(item, index)"
-          class="process-item"
-        >
+        <div v-for="(item, index) in process_list" :key="index" @mouseover="hover_process = index"
+          @mouseleave="hover_process = -1" @click="eidt_process_function_dialog(item, index)" class="process-item">
           <el-row style="height: 100%">
-            <el-col
-              style="display: flex; justify-content: start; align-items: center"
-              :span="11"
-              ><span style="font-size: 12px; color: black">{{
-                item.function_sign
-              }}</span></el-col
-            >
-            <el-col
-              style="display: flex; justify-content: end; align-items: center"
-              :span="11"
-              ><span style="font-size: 12px; color: #667085">{{
-                item.desc
-              }}</span></el-col
-            >
-            <el-col
-              v-if="hover_process !== index"
-              :span="2"
-              style="display: flex; align-items: center; justify-content: end"
-              ><el-icon :size="12"><ArrowRight /></el-icon
-            ></el-col>
-            <el-col
-              v-if="hover_process === index"
-              :span="2"
-              style="display: flex; align-items: center; justify-content: end"
-            >
+            <el-col style="display: flex; justify-content: start; align-items: center" :span="11"><span
+                style="font-size: 12px; color: black">{{
+                  item.function_sign
+                }}</span></el-col>
+            <el-col style="display: flex; justify-content: end; align-items: center" :span="11"><span
+                style="font-size: 12px; color: #667085">{{
+                  item.desc
+                }}</span></el-col>
+            <el-col v-if="hover_process !== index" :span="2"
+              style="display: flex; align-items: center; justify-content: end"><el-icon :size="12">
+                <ArrowRight />
+              </el-icon></el-col>
+            <el-col v-if="hover_process === index" :span="2"
+              style="display: flex; align-items: center; justify-content: end">
               <div class="del-process" @click.stop="delete_process_item(index)">
-                <el-icon :size="12"><CloseBold /></el-icon>
+                <el-icon :size="12">
+                  <CloseBold />
+                </el-icon>
               </div>
             </el-col>
           </el-row>
         </div>
       </div>
       <button class="add-btn" @click="open_process_function_dialog">
-        <el-icon><Plus /></el-icon><span>添加处理函数</span>
+        <el-icon>
+          <Plus />
+        </el-icon><span>添加处理函数</span>
       </button>
     </div>
     <div class="expression" v-if="can_insert">
       <el-row style="width: 100%">
-        <el-col :span="24"
-          ><div class="exp-div">
+        <el-col :span="24">
+          <div class="exp-div">
             表达式:
             <el-tooltip placement="top" effect="light">
               <template #content>
-                <div
-                  style="
+                <div style="
                     max-width: 300px;
                     word-wrap: break-word;
                     overflow-wrap: break-word;
-                  "
-                >
+                  ">
                   {{ exp }}
                 </div>
               </template>
               <div class="exp-span" style="font-weight: 500" @click="copy(exp)">{{ exp }}</div>
             </el-tooltip>
-          </div></el-col
-        >
+          </div>
+        </el-col>
       </el-row>
       <el-row style="width: 100%; margin-top: 7px">
-        <el-col :span="24"
-          ><div class="exp-div">
+        <el-col :span="24">
+          <div class="exp-div">
             预览:
             <el-tooltip placement="top" effect="light">
               <template #content>
-                <div
-                
-                  style="
+                <div style="
                     max-width: 300px;
                     word-wrap: break-word;
                     overflow-wrap: break-word;
-                  "
-                >
+                  ">
                   {{ preview }}
                 </div>
               </template>
               <div class="exp-span" style="font-weight: 500" @click="copy(preview)">{{ preview }}</div>
             </el-tooltip>
-          </div></el-col
-        >
+          </div>
+        </el-col>
       </el-row>
     </div>
     <div class="process-btn">
       <button @click="insert"><span>插入</span></button>
     </div>
   </div>
-  <ProcessFunction
-    ref="process_function_component"
-    @add_process_function="add_process_function"
-    @edit_process_function="edit_process_function"
-  ></ProcessFunction>
+  <ProcessFunction ref="process_function_component" @add_process_function="add_process_function"
+    @edit_process_function="edit_process_function"></ProcessFunction>
 </template>
 
 <script setup lang="ts">
@@ -197,6 +131,7 @@ import * as GeneratorFunctions from "./generator_functions";
 import tools from "@/utils/tools";
 import Empty from "../comp/empty.vue";
 import useClipboard from 'vue-clipboard3/dist/esm/index.js'
+import CascadeMenu from "@/components/layout/menus/comps/cascade_menu.vue";
 const { proxy }: any = getCurrentInstance();
 const params = ref("");
 const hover_process: any = ref(-1);
@@ -205,7 +140,7 @@ const exp = ref("");
 const process_function_component: any = ref(null);
 const preview = ref("");
 const can_insert = ref(false);
-const content_value:any = ref(null)
+const content_value: any = ref(null)
 const emit = defineEmits(["reload_height", "insert_action"]);
 const cache_process_item_index: any = ref(null);
 const function_content: any = ref([]);
@@ -1240,7 +1175,7 @@ function content_function() {
   can_insert.value = false;
   const result = process_function();
   console.log(result);
-  
+
   if (result === "--ban--") {
     can_insert.value = false;
     emit("reload_height");
@@ -1373,7 +1308,7 @@ function open_process_function_dialog() {
   process_function_component.value?.open_dialog();
 }
 
-function eidt_process_function_dialog(item: any, index: number) {
+function eidt_process_function_dialog(item: any, index: any) {
   cache_process_item_index.value = index;
   process_function_component.value?.edit_dialog(item);
 }
@@ -1387,7 +1322,7 @@ function edit_process_function(data: any) {
   process_list.value[cache_process_item_index.value] = data;
 }
 
-function delete_process_item(index: number) {
+function delete_process_item(index: any) {
   process_list.value.splice(index, 1);
   emit("reload_height");
 }
@@ -1402,15 +1337,18 @@ function delete_process_item(index: number) {
   font-size: 12px;
   color: #344054;
 }
+
 .insert-main {
   display: flex;
   flex-direction: column;
   //   justify-content: end;
   //   height: 100%;
 }
+
 .process-btn {
   width: 100%;
   margin-top: 8px;
+
   button {
     border-radius: 8px;
     width: 100%;
@@ -1423,25 +1361,30 @@ function delete_process_item(index: number) {
     font-size: 14px;
     cursor: pointer;
   }
+
   button:hover {
     background-color: rgb(56, 56, 56);
   }
 }
+
 .exp-div {
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   display: flex;
 }
+
 .exp-span {
   cursor: pointer;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
+
 .exp-span:hover {
   text-decoration: underline dashed;
 }
+
 .expression {
   padding: 10px;
   background-color: #f2f2f2;
@@ -1449,6 +1392,7 @@ function delete_process_item(index: number) {
   border-radius: 8px;
   margin-top: 10px;
 }
+
 .del-process {
   padding: 3px;
   color: red;
@@ -1458,9 +1402,11 @@ function delete_process_item(index: number) {
   align-items: center;
   border-radius: 3px;
 }
+
 .del-process:hover {
   background-color: #e6e6e6;
 }
+
 .process-container {
   display: flex;
   flex-direction: column;
@@ -1478,7 +1424,7 @@ function delete_process_item(index: number) {
   cursor: pointer;
 }
 
-.process-container > .process-item:only-child {
+.process-container>.process-item:only-child {
   border-radius: 8px;
 }
 
@@ -1493,18 +1439,15 @@ function delete_process_item(index: number) {
 }
 
 /* 当有多个元素时 */
-.process-container:has(.process-item:nth-child(n + 3))
-  .process-item:first-child {
+.process-container:has(.process-item:nth-child(n + 3)) .process-item:first-child {
   border-radius: 8px 8px 0 0;
 }
 
-.process-container:has(.process-item:nth-child(n + 3))
-  .process-item:last-child {
+.process-container:has(.process-item:nth-child(n + 3)) .process-item:last-child {
   border-radius: 0 0 8px 8px;
 }
 
-.process-container:has(.process-item:nth-child(n + 3))
-  .process-item:not(:first-child):not(:last-child) {
+.process-container:has(.process-item:nth-child(n + 3)) .process-item:not(:first-child):not(:last-child) {
   border-radius: 0;
   border-bottom: 1px solid #f2f4f7;
 }
@@ -1514,6 +1457,7 @@ function delete_process_item(index: number) {
   background-color: #f9fafb;
   border-radius: 8px;
   margin-top: 10px;
+
   .add-btn {
     margin-top: 5px;
     background-color: #f9fafb;
@@ -1531,10 +1475,12 @@ function delete_process_item(index: number) {
     border: 0px;
     align-items: center;
   }
+
   .add-btn:hover {
     background-color: rgba(16, 24, 40, 0.04);
   }
 }
+
 .params-row {
   border: 1px solid #f2f4f7;
   border-radius: 5px;
@@ -1547,6 +1493,7 @@ function delete_process_item(index: number) {
   margin-top: 10px;
   cursor: pointer;
 }
+
 .show-content {
   margin-top: 10px;
   max-height: 200px;
@@ -1558,36 +1505,19 @@ function delete_process_item(index: number) {
 .el-input__wrapper {
   border-radius: 5px;
 }
+
 .el-input__wrapper.is-focus {
   box-shadow: 0 0 0 1px rgb(114, 114, 114);
 }
-.el-cascader-node.in-active-path,
-.el-cascader-node.is-active,
-.el-cascader-node.is-selectable.in-checked-path {
-  color: black;
-}
-.el-cascader-node__label {
-  font-size: 13px;
-  font-weight: 500;
-}
-.el-cascader-node {
-  height: 20px;
-}
-.el-cascader .el-input.is-focus .el-input__wrapper {
-  box-shadow: 0 0 0 1px black;
-}
+
 .el-select__wrapper.is-focused {
   box-shadow: 0 0 0 1px black;
 }
-.el-cascader-node {
-  margin-top: 10px;
-}
-.el-cascader-menu__wrap.el-scrollbar__wrap {
-  height: 300px;
-}
+
 .el-popper.is-pure {
   border-radius: 12px;
 }
+
 .el-select-dropdown__item.is-selected {
   color: black;
 }

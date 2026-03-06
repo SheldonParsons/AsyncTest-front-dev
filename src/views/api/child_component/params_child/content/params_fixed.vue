@@ -248,7 +248,7 @@ function open_process_function_dialog() {
   process_function_component.value?.open_dialog();
 }
 
-function eidt_process_function_dialog(item: any, index: number) {
+function eidt_process_function_dialog(item: any, index: any) {
   cache_process_item_index.value = index;
   process_function_component.value?.edit_dialog(item);
 }
@@ -262,7 +262,7 @@ function edit_process_function(data: any) {
   process_list.value[cache_process_item_index.value] = data;
 }
 
-function delete_process_item(index: number) {
+function delete_process_item(index: any) {
   process_list.value.splice(index, 1);
   emit("reload_height");
 }

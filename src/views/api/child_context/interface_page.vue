@@ -1,5 +1,5 @@
 <template>
-  <div style="display: flex;flex-direction: column;height: 100%;min-width: 775px;position: relative;">
+  <div style="display: flex;flex-direction: column;height: 100%;position: relative;">
     <div>
       <el-row v-if="loading === false" class="url-inputer">
         <el-col :offset="1" :span="3"><el-dropdown trigger="click" @command="handelMethod">
@@ -249,6 +249,7 @@ import Headers from "./req/headers.vue";
 import MotionButton from '@/assets/motion/button.vue'
 import ArrowDownIcon from '@/assets/logo/final/match_vue/arrow_down.vue'
 import ArrowUpIcon from '@/assets/logo/final/match_vue/arrow_up.vue'
+// @ts-ignore
 import MultiInput from '@/views/api/child_context/widget_cpm/multi_input.vue'
 import ResponseLine from '@/views/api/child_context/widget_cpm/response_line.vue'
 import ResponseTabs from '@/views/api/child_context/widget_cpm/response_tabs.vue'
