@@ -189,6 +189,26 @@ jobs:
           DEBUG: electron-builder,electron-notarize
         run: |
           yarn electron-builder --mac --${{ matrix.arch }}
+      - name: List dist before upload (mac)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          APP_ENV: ${{ steps.env.outputs.APP_ENV }}
+        run: |
+          set -euo pipefail
+          echo "=== dist_electron tree (top) ==="
+          find "dist_electron/${APP_ENV}" -maxdepth 4 -type f | sed -n '1,200p'
+
+          echo "=== files in arch dir ==="
+          DIST_DIR="dist_electron/${APP_ENV}/mac/${{ matrix.arch }}"
+          ls -lah "$DIST_DIR" || true
+
+          echo "=== grep other-arch artifacts ==="
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ls "$DIST_DIR" | grep -E "x64|mac\.zip$" | sed -n '1,80p' || true
+          else
+            ls "$DIST_DIR" | grep -E "arm64" | sed -n '1,80p' || true
+          fi
 
       # - name: Upload artifacts (mac)
       #   uses: actions/upload-artifact@v4
@@ -230,7 +250,6 @@ jobs:
 
           DIST_DIR="dist_electron/${APP_ENV}/mac/${{ matrix.arch }}/"
           echo "Cleaning up intermediate folders..."
-          rm -rf "${DIST_DIR}/mac" "${DIST_DIR}/mac-arm64"
           OSS_PREFIX="oss://${OSS_BUCKET}/core/updates/${APP_ENV}/mac/${{ matrix.arch }}/"
 
           echo "Uploading ${DIST_DIR} -> ${OSS_PREFIX}"
