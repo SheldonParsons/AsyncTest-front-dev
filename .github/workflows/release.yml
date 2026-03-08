@@ -90,8 +90,12 @@ jobs:
           path: |
             ~/Library/Caches/electron
             ~/Library/Caches/electron-builder
-          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('yarn.lock') }}
+            ~/Library/Caches/app-builder
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-${{ hashFiles('yarn.lock') }}
           restore-keys: |
+            ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-
             ${{ runner.os }}-electronbuilder-
 
       - name: Verify Electron caches (mac)
@@ -230,6 +234,28 @@ jobs:
           DEBUG: electron-builder,electron-notarize
         run: |
           yarn electron-builder --mac --${{ matrix.arch }}
+
+      - name: List Electron caches after build (mac)
+        if: always()
+        shell: bash
+        run: |
+          echo "HOME=$HOME"
+          for p in \
+            "$HOME/Library/Caches/electron" \
+            "$HOME/Library/Caches/electron-builder" \
+            "$HOME/Library/Caches/app-builder" \
+            "$HOME/.cache/electron" \
+            "$HOME/.cache/electron-builder"
+          do
+            echo "== $p =="
+            if [ -d "$p" ]; then
+              du -sh "$p" || true
+              find "$p" -maxdepth 2 -type f | head -n 40 || true
+            else
+              echo "NOT EXISTS"
+            fi
+          done
+
       - name: List dist before upload (mac)
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -339,10 +365,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~\AppData\Local\electron\Cache
-            ~\AppData\Local\electron-builder\Cache
-          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('yarn.lock') }}
+            %LOCALAPPDATA%\electron\Cache
+            %LOCALAPPDATA%\electron-builder\Cache
+          key: ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-${{ hashFiles('yarn.lock') }}
           restore-keys: |
+            ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-
             ${{ runner.os }}-electronbuilder-
       
       - name: Verify Electron caches (win)
