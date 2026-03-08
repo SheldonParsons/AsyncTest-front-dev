@@ -5,7 +5,6 @@ on:
     # branches: [ main ]
     tags:
       - "v*"
-      - "cachetest-*"
   workflow_dispatch:
 
 concurrency:
@@ -17,45 +16,6 @@ env:
   UPDATE_BASE_INTERNAL: https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/
 
 jobs:
-  debug-cache:
-    name: Debug cache visibility (win)
-    if: startsWith(github.ref, 'refs/tags/cachetest-')
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Print scope info
-        shell: bash
-        run: |
-          echo "event=${{ github.event_name }}"
-          echo "ref=${{ github.ref }}"
-          echo "ref_type=${{ github.ref_type }}"
-          echo "ref_name=${{ github.ref_name }}"
-          echo "repository=${{ github.repository }}"
-          echo "workflow=${{ github.workflow }}"
-          echo "run_id=${{ github.run_id }}"
-          echo "run_attempt=${{ github.run_attempt }}"
-
-      - name: Print yarn.lock hash
-        shell: bash
-        run: |
-          echo "yarnlock_hash=${{ hashFiles('yarn.lock') }}"
-
-      - name: Ensure cache dirs exist (win)
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\AppData\Local\electron\Cache" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\AppData\Local\electron-builder\Cache" | Out-Null
-
-      - name: Restore Electron caches (win) - DIAG
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\electron\Cache
-            ~\AppData\Local\electron-builder\Cache
-          key: Windows-electronbuilder-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            Windows-electronbuilder-
   mac:
     if: startsWith(github.ref, 'refs/tags/v')
     name: mac (${{ matrix.variant }} / ${{ matrix.arch }})
@@ -361,12 +321,24 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Ensure cache dirs exist (win)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\electron\Cache" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\electron-builder\Cache" | Out-Null
+
+      - name: Export cache paths (win)
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "ELECTRON_CACHE_DIR=$env:LOCALAPPDATA\electron\Cache"
+          Add-Content -Path $env:GITHUB_ENV -Value "ELECTRON_BUILDER_CACHE_DIR=$env:LOCALAPPDATA\electron-builder\Cache"
+
       - name: Cache Electron + electron-builder downloads (win)
         uses: actions/cache@v4
         with:
           path: |
-            %LOCALAPPDATA%\electron\Cache
-            %LOCALAPPDATA%\electron-builder\Cache
+            ${{ env.ELECTRON_CACHE_DIR }}
+            ${{ env.ELECTRON_BUILDER_CACHE_DIR }}
           key: ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-electronbuilder-${{ matrix.variant }}-
