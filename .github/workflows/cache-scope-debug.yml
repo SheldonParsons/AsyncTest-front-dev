@@ -1,0 +1,22 @@
+name: Cache scope debug (tags only)
+
+on:
+  push:
+    tags:
+      - "cachetest-*"
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print scope info
+        shell: bash
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_type=${{ github.ref_type }}"
+          echo "ref_name=${{ github.ref_name }}"
+          echo "repository=${{ github.repository }}"
+          echo "workflow=${{ github.workflow }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "run_attempt=${{ github.run_attempt }}"
