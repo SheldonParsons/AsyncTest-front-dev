@@ -427,6 +427,26 @@ jobs:
         run: |
           yarn electron-builder --win --x64
 
+      - name: List Electron caches after build (win)
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "LOCALAPPDATA=$env:LOCALAPPDATA"
+          $paths = @(
+            "$env:LOCALAPPDATA\electron\Cache",
+            "$env:LOCALAPPDATA\electron-builder\Cache"
+          )
+          foreach ($p in $paths) {
+            Write-Host "== $p =="
+            if (Test-Path $p) {
+              Get-ChildItem $p -Recurse -ErrorAction SilentlyContinue | Select-Object -First 40
+              $sum = (Get-ChildItem $p -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+              Write-Host "Bytes=$sum"
+            } else {
+              Write-Host "NOT EXISTS"
+            }
+          }
+
       # - name: Upload artifacts (win)
       #   uses: actions/upload-artifact@v4
       #   with:
