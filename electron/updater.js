@@ -2,9 +2,46 @@ import { createRequire } from "module";
 import { ipcMain, app } from "electron";
 import log from "electron-log";
 import path from "path";
+import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
 const { autoUpdater } = require("electron-updater");
+
+function normalizeBase(base) {
+  if (!base) return "";
+  return base.endsWith("/") ? base : base + "/";
+}
+
+function getUpdateBaseUrl() {
+  // 1) 生产：读 resources/update-config.json
+  try {
+    const cfgPath = path.join(process.resourcesPath, "update-config.json");
+    const raw = fs.readFileSync(cfgPath, "utf8");
+    const cfg = JSON.parse(raw);
+    if (cfg?.base && typeof cfg.base === "string") return normalizeBase(cfg.base);
+  } catch {
+    // ignore
+  }
+
+  // 2) 开发兜底：env
+  if (process.env.VITE_UPDATE_URL) return normalizeBase(process.env.VITE_UPDATE_URL);
+
+  return "";
+}
+
+function computeFeedUrl(base) {
+  if (!base) return "";
+
+  if (process.platform === "darwin") {
+    return `${base}mac/${process.arch}/`;
+  }
+
+  if (process.platform === "win32") {
+    return `${base}win/x64/`;
+  }
+
+  return "";
+}
 
 let checkInterval = null;
 let cachedUpdateInfo = null;
@@ -20,9 +57,15 @@ export function initUpdater(mainWindow) {
     log.info("开发模式配置路径已修正:", devConfigPath);
   }
 
-  const updateUrl = process.env.VITE_UPDATE_URL;
-  if (updateUrl) {
-    autoUpdater.setFeedURL(updateUrl);
+  const base = getUpdateBaseUrl();
+  const feed = computeFeedUrl(base);
+
+  if (feed) {
+    log.info("autoUpdater baseURL =", base);
+    log.info("autoUpdater feedURL =", feed);
+    autoUpdater.setFeedURL(feed);
+  } else {
+    log.warn("autoUpdater feedURL not set (missing update-config.json base?)");
   }
 
   const checkUpdate = () => {

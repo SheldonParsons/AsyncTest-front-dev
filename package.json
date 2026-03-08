@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "1.0.33",
+  "version": "1.0.34",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -21,13 +21,19 @@
     "directories": {
       "output": "dist_electron/${env.APP_ENV}"
     },
+    "extraResources": [
+      {
+        "from": "electron/update-config.json",
+        "to": "update-config.json"
+      }
+    ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### First Release\\n#### 1、更新 Mac desktop 更新过程\\n#### 2、更新Window桌面版下的后端服务地址\\n#### 3、修复数据集添加参数组件闪退的问题\\n#### 4、现在数据集支持添加工具函数\\n#### 5、现在Record处可以编辑当前步骤\\n#### 6、现在Record处可以重新运行任务\",\"publishDate\":\"2026-03-08\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 构建双系统双架构更新文件\\n#### 1、更新双系统下不同架构的不同网络环境的release.yml\",\"publishDate\":\"2026-03-08\"}"
     },
     "publish": [
       {
         "provider": "generic",
-        "url": "${env.VITE_UPDATE_URL}"
+        "url": "${env.UPDATE_PUBLISH_URL}"
       }
     ],
     "win": {
