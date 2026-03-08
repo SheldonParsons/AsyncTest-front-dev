@@ -9,12 +9,17 @@ const require = createRequire(import.meta.url);
 
 // 2. 加载更新器和 Rust 引擎（使用 require 绕过 ESM 导出陷阱）
 // 注意：即使源文件是 .ts，在运行时的 main.js 引用它通常不写后缀或由构建工具处理
-import { initUpdater } from './updater.ts'; 
+import { initUpdater } from './updater.ts';
 const rustEngine = require('../src-rust/index.cjs');
 
 // 3. 全局变量声明
 let mainWindow = null;
 let isQuitting = false;
+
+// 新增：统一从 app 上读更新退出标记
+function isQuittingForUpdate() {
+  return (app as any).__isQuittingForUpdate === true;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -27,7 +32,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,    // 建议设为 false，通过 preload 暴露 API 更安全
-      contextIsolation: true,   
+      contextIsolation: true,
       webSecurity: false
     }
   });
@@ -39,9 +44,12 @@ function createWindow() {
 
   // 窗口关闭逻辑：macOS 默认隐藏而不是退出
   mainWindow.on('close', (event) => {
-    if (!isQuitting && process.platform === 'darwin') {
+    // 关键：如果是“正常退出”或“更新安装退出”，必须放行
+    if (isQuitting || isQuittingForUpdate()) return;
+
+    if (process.platform === 'darwin') {
       event.preventDefault();
-      mainWindow.hide();
+      mainWindow?.hide();
     }
   });
 

@@ -42,6 +42,12 @@ export function initUpdater(mainWindow: BrowserWindow) {
     if (checkInterval) clearInterval(checkInterval);
     checkInterval = setInterval(checkUpdate, 2 * 60 * 60 * 1000);
 
+    // 新增：确认是否真的进入“为更新退出”的流程
+    autoUpdater.on('before-quit-for-update', () => {
+        log.info('before-quit-for-update');
+        (app as any).__isQuittingForUpdate = true;
+    });
+
     // --- 2. 监听事件流 ---
     autoUpdater.on('update-available', (info: any) => {
         log.info('检测到更新，原始数据:', info.releaseNotes);
@@ -133,8 +139,12 @@ export function initUpdater(mainWindow: BrowserWindow) {
 
     ipcMain.on('install-now', () => {
         log.info('用户点击：立即重启安装');
-        // 在开发环境，这一步会由于没有安装包可替换而报错，这是正常的
-        autoUpdater.quitAndInstall(false, true);
+
+        // 关键：点击安装时就提前放行 close 拦截
+        (app as any).__isQuittingForUpdate = true;
+
+        // mac 上建议先用默认参数，避免“隐藏但不退出”等怪现象
+        autoUpdater.quitAndInstall();
     });
 }
 
