@@ -14,6 +14,8 @@ dist-ssr
 *.local
 .history
 uploads
+shell_scripts
+sync-release-notes.sh
 
 # Editor directories and files
 .vscode/*
