@@ -115,7 +115,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:mac:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --mac --arm64 --config.mac.identity=null",
+    "build:mac:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && node -e \"require('fs').mkdirSync('electron',{recursive:true}); require('fs').writeFileSync('electron/update-config.json', JSON.stringify({base:'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/'}, null, 2)); console.log('wrote electron/update-config.json');\" && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ UPDATE_PUBLISH_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/mac/arm64/ electron-builder --mac --arm64 --config.mac.identity=null",
     "build:mac:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --mac",
     "build:win:prod": "cross-env APP_ENV=public VITE_IS_ELECTRON=true vite build --mode production && cross-env APP_ENV=public VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/ electron-builder --win",
     "build:win:internal": "cross-env APP_ENV=internal VITE_IS_ELECTRON=true vite build --mode internal && cross-env APP_ENV=internal VITE_UPDATE_URL=https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/internal/ electron-builder --win",

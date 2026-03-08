@@ -1,4 +1,4 @@
 owner: SheldonParsons
 provider: generic
-url: https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/
+url: https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/updates/public/mac/arm64
 updaterCacheDirName: asynctest-updater-dev

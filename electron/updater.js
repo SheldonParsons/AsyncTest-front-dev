@@ -47,6 +47,7 @@ let checkInterval = null;
 let cachedUpdateInfo = null;
 
 export function initUpdater(mainWindow) {
+  log.info("electron-log file =", log.transports.file.getFile().path);
   autoUpdater.logger = log;
   autoUpdater.autoDownload = false;
 
@@ -63,7 +64,16 @@ export function initUpdater(mainWindow) {
   if (feed) {
     log.info("autoUpdater baseURL =", base);
     log.info("autoUpdater feedURL =", feed);
-    autoUpdater.setFeedURL(feed);
+    log.info("platform/arch =", process.platform, process.arch);
+    log.info("resourcesPath =", process.resourcesPath);
+    autoUpdater.setFeedURL({
+      provider: "generic",
+      url: feed,
+    });
+    log.info("platform/arch =", process.platform, process.arch);
+    log.info("resourcesPath =", process.resourcesPath);
+    log.info("update-config base =", base);
+    log.info("computed feed =", feed);
   } else {
     log.warn("autoUpdater feedURL not set (missing update-config.json base?)");
   }
