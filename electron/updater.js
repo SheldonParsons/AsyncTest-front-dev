@@ -62,24 +62,15 @@ export function initUpdater(mainWindow) {
   const feed = computeFeedUrl(base);
 
   if (feed) {
-    log.info("autoUpdater baseURL =", base);
-    log.info("autoUpdater feedURL =", feed);
-    log.info("platform/arch =", process.platform, process.arch);
-    log.info("resourcesPath =", process.resourcesPath);
     autoUpdater.setFeedURL({
       provider: "generic",
       url: feed,
     });
-    log.info("platform/arch =", process.platform, process.arch);
-    log.info("resourcesPath =", process.resourcesPath);
-    log.info("update-config base =", base);
-    log.info("computed feed =", feed);
   } else {
     log.warn("autoUpdater feedURL not set (missing update-config.json base?)");
   }
 
   const checkUpdate = () => {
-    log.info("正在执行例行版本检查...");
     autoUpdater.checkForUpdates().catch((err) => {
       log.error("例行检查失败:", err?.message ?? String(err));
     });
@@ -89,13 +80,10 @@ export function initUpdater(mainWindow) {
   checkInterval = setInterval(checkUpdate, 2 * 60 * 60 * 1000);
 
   autoUpdater.on("before-quit-for-update", () => {
-    log.info("before-quit-for-update");
     app["__isQuittingForUpdate"] = true;
   });
 
   autoUpdater.on("update-available", (info) => {
-    log.info("检测到更新，原始数据:", info.releaseNotes);
-
     let parsedNotes = {};
     const rawNotes = info.releaseNotes;
 
