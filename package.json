@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "1.0.37",
+  "version": "1.0.38",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -28,7 +28,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 构建双系统双架构更新文件\\n#### 1、更新双系统下不同架构的不同网络环境的release.yml\\n#### 2、添加无更新提示\\n#### 3、增加双系统上传路径区分\\n#### 4、新增CI打包缓存\\n#### 5、修复双系统上传OSS路径问题\",\"publishDate\":\"2026-03-08\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 构建双系统双架构更新文件\\n#### 1、更新双系统下不同架构的不同网络环境的release.yml\\n#### 2、添加无更新提示\\n#### 3、增加双系统上传路径区分\\n#### 4、新增CI打包缓存\\n#### 5、修复双系统上传OSS路径问题\\n#### 6、修复GitHub缓存\",\"publishDate\":\"2026-03-08\"}"
     },
     "publish": [
       {

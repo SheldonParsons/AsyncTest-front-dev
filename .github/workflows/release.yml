@@ -49,7 +49,7 @@ jobs:
           path: |
             ~/Library/Caches/electron
             ~/Library/Caches/electron-builder
-          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('package.json') }}-${{ hashFiles('yarn.lock') }}
+          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-electronbuilder-
 
@@ -299,7 +299,7 @@ jobs:
           path: |
             ~\AppData\Local\electron\Cache
             ~\AppData\Local\electron-builder\Cache
-          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('package.json') }}-${{ hashFiles('yarn.lock') }}
+          key: ${{ runner.os }}-electronbuilder-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-electronbuilder-
       
