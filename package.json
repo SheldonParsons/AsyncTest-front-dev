@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "1.0.32",
+  "version": "1.0.33",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -22,7 +22,7 @@
       "output": "dist_electron/${env.APP_ENV}"
     },
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### First Release\\n#### 更新 Mac desktop 更新过程\\n#### 更新Window桌面版下的后端服务地址\\n#### 修复数据集添加参数组件闪退的问题\\n#### 现在数据集支持添加工具函数\\n#### 现在Record处可以编辑当前步骤\\n#### 现在Record处可以重新运行任务\",\"publishDate\":\"2026-03-08\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### First Release\\n#### 1、更新 Mac desktop 更新过程\\n#### 2、更新Window桌面版下的后端服务地址\\n#### 3、修复数据集添加参数组件闪退的问题\\n#### 4、现在数据集支持添加工具函数\\n#### 5、现在Record处可以编辑当前步骤\\n#### 6、现在Record处可以重新运行任务\",\"publishDate\":\"2026-03-08\"}"
     },
     "publish": [
       {
