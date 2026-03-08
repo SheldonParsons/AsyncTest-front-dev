@@ -94,6 +94,10 @@ const handleEnterAsyncTest = () => {
 
 // 进入 AsyncTest Mind
 const handleEnterMind = () => {
+  if (!import.meta.env.DEV) {
+    window.$toast({title:"该功仍在开发中，正式版暂不支持，敬请期待。"});
+    return;
+  }
   router.push({ name: "mind" })
 }
 
