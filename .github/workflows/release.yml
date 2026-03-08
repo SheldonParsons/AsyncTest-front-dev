@@ -22,6 +22,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/cachetest-')
     runs-on: windows-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Print scope info
         shell: bash
         run: |
@@ -33,6 +35,17 @@ jobs:
           echo "workflow=${{ github.workflow }}"
           echo "run_id=${{ github.run_id }}"
           echo "run_attempt=${{ github.run_attempt }}"
+
+      - name: Print yarn.lock hash
+        shell: bash
+        run: |
+          echo "yarnlock_hash=${{ hashFiles('yarn.lock') }}"
+
+      - name: Ensure cache dirs exist (win)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\AppData\Local\electron\Cache" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\AppData\Local\electron-builder\Cache" | Out-Null
 
       - name: Restore Electron caches (win) - DIAG
         uses: actions/cache@v4
