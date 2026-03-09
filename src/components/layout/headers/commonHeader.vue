@@ -38,9 +38,10 @@
                     @mouseleave="tooltipStates.update = false" @click="checkForUpdate">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 13V7"/>
-                      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
-                      <path d="m9 10 3 3 3-3"/>
+                      <path d="M12 13V7" />
+                      <path
+                        d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
+                      <path d="m9 10 3 3 3-3" />
                     </svg>
                   </div>
                 </template>
@@ -177,6 +178,7 @@
           </div>
         </div>
       </div>
+      <WinWindowControls v-if="!isMac" class="action-item windows-action" @minimize="minimize" @maximizeToggle="maximize" @close="close" />
     </div>
   </div>
 
@@ -190,11 +192,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from "vue"
+import { ref, reactive, onMounted, nextTick, computed } from "vue"
 import { motion, animate, stagger } from "motion-v"
 import { splitText } from "motion-plus"
 import zhCn from "element-plus/es/locale/lang/zh-cn"
 import en from "element-plus/es/locale/lang/en"
+import WinWindowControls from '@/components/layout/headers/WinWindowControls.vue'
 import { useI18n } from "vue-i18n"
 import { useStore } from "@/store"
 import { useRouter, useRoute } from "vue-router"
@@ -221,9 +224,20 @@ const inProject = ref(false)
 const project_name = ref("loading...")
 const isReady = ref(false)
 const { locale: localeLang } = useI18n()
+const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const userImage = ref(
   "https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png"
 )
+
+function minimize() {
+  window.electronAPI?.wm?.control('main', 'minimize');
+}
+function maximize() {
+  window.electronAPI?.wm?.control('main', 'maximizeToggle');
+}
+function close() {
+  window.electronAPI?.wm?.control('main', 'close');
+}
 
 const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
 

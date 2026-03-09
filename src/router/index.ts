@@ -13,11 +13,16 @@ const routes = [
     path: '/dashboard',
     name: 'dashboard',
     component: () => import('@/views/electron_views/dashboard.vue')
-  },...
+  }, ...
   (isElectronRouter ? [{
+    path: '/mindDashboard',
+    name: 'mindDashboard',
+    component: () => import('@/views/electron_views/mind/index.vue')
+  },
+  {
     path: '/mind',
     name: 'mind',
-    component: () => import('@/views/electron_views/mind/index.vue')
+    component: () => import('@/mind/vue_views/index.vue')
   }] : []),
   {
     path: '/login',

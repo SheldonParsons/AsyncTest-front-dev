@@ -1,25 +1,25 @@
 <template>
   <div style="height: 100%;display: flex;flex-direction: column;">
-    <div class="header-affix" v-if="route.path !== '/login'" @mouseenter="switchWindowBtn(true)"
+    <div class="header-affix" v-if="route.path !== '/login' && isMainWindow" @mouseenter="switchWindowBtn(true)"
       @mouseleave="switchWindowBtn(false)">
       <div class="drag-layer"></div>
       <commonHeader ref="commonHeaderRef" style="height: inherit;" @up="upZIndex" class="ui-layer" />
     </div>
     <router-view v-if="flag" class="main-router" />
     <ToastView ref="toastRef" />
-    <UpdateDialog></UpdateDialog>
+    <UpdateDialog v-if="isMainWindow"></UpdateDialog>
   </div>
 </template>
 <script setup lang="ts">
 import commonHeader from "./components/layout/headers/commonHeader.vue";
 import { useRoute } from 'vue-router'
-import { onMounted, ref } from "vue";
+import { onMounted, ref, computed } from "vue";
 import ToastView from '@/views/api/public_dialog/motion_dev_component/toast_animation.vue'
 import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
 
 const upHeaderZIndex = ref(false);
 const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
-
+const isMainWindow = computed(() => (route.query.windowKey || 'main') === 'main');
 const toastRef = ref()
 const commonHeaderRef = ref()
 const route = useRoute()

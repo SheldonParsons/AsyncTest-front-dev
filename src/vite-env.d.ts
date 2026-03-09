@@ -29,6 +29,9 @@ export interface IElectronAPI {
   openExternal: (url: string) => void;
   on: (event: any, params: any) => void;
   send: (event: any) => void;
+  invoke: (event: any) => void;
+  wm: any,
+  platform: any
 }
 
 declare global {
