@@ -178,7 +178,7 @@
           </div>
         </div>
       </div>
-      <WinWindowControls v-if="!isMac" class="action-item windows-action" @minimize="minimize" @maximizeToggle="maximize" @close="close" />
+      <WinWindowControls v-if="!isMac && isElectron" class="action-item windows-action" @minimize="minimize" @maximizeToggle="maximize" @close="close" />
     </div>
   </div>
 

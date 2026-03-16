@@ -42,6 +42,8 @@ onMounted(() => {
 
 function switchWindowBtn(open: boolean) {
   if (window.electronAPI && isElectron) {
+    console.log("!23123123");
+    
     window.electronAPI.toggleTrafficLights(open);
   }
 }

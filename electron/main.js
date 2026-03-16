@@ -1,40 +1,119 @@
-// electron/main.js
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
+import { app, ipcMain, shell } from 'electron';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
-// 1. 解决 ESM 环境下的路径问题
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
-
-// 2. 加载更新器和 Rust 引擎（使用 require 绕过 ESM 导出陷阱）
-// 注意：即使源文件是 .ts，在运行时的 main.js 引用它通常不写后缀或由构建工具处理
 import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
+import { initAmindMain } from './amind/ipcMain.node.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 const rustEngine = require('../src-rust/index.cjs');
 
-// 3. 全局变量声明
 let mainWindow = null;
 let windowManager = null;
 let isQuitting = false;
 
-// 新增：统一从 app 上读更新退出标记
-function isQuittingForUpdate() {
-  return app["__isQuittingForUpdate"] === true;
+// amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
+let amindMain = null;
+
+// ===== 单实例锁（Windows 必需）=====
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
 }
 
+// ===== 打开文件：多入口统一调度（pending + 去重，避免兜底重复触发）=====
+const pendingOpenQueue = []; // { abs, source }
+const scheduledAbsSet = new Set(); // 同一�� abs 只 schedule 一次（open-file/argv/second-instance）
+let gotMacOpenFileEventThisLaunch = false;
 
+function isQuittingForUpdate() {
+  return app['__isQuittingForUpdate'] === true;
+}
 
+function extractAmindPathsFromArgv(argv) {
+  if (!Array.isArray(argv)) return [];
+  // 支持一次传多个文件
+  return argv.filter(a => typeof a === 'string' && a.toLowerCase().endsWith('.amind'));
+}
+
+function extractAmindPathsFromEnv() {
+  const raw = process.env.AMIND_OPEN;
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+
+  // 允许 AMIND_OPEN="/a.amind:/b.amind"
+  const parts = raw.split(':').map(s => s.trim()).filter(Boolean);
+  return parts.filter(p => p.toLowerCase().endsWith('.amind'));
+}
+
+function scheduleOpenAmind(filePath, source) {
+  if (!filePath) return;
+
+  const abs = path.resolve(filePath);
+
+  // 兜底不重复触发：同一个 abs 生命周期只 schedule 一次
+  if (scheduledAbsSet.has(abs)) return;
+  scheduledAbsSet.add(abs);
+
+  pendingOpenQueue.push({ abs, source });
+
+  if (app.isReady() && windowManager && amindMain) {
+    flushPendingOpenQueue().catch(console.error);
+  }
+}
+
+async function flushPendingOpenQueue() {
+  if (!windowManager || !amindMain) return;
+
+  while (pendingOpenQueue.length) {
+    const { abs } = pendingOpenQueue.shift();
+
+    // 处理前先移除 scheduled 标记：保证同一文件以后还能再次 schedule（例如窗口关闭后重新双击）
+    scheduledAbsSet.delete(abs);
+
+    await amindMain.openFileInWindow(abs);
+  }
+}
+
+// ===== 平台入口事件 =====
+
+// mac：Finder 双击 / Dock Recent / 打开方式
+if (process.platform === 'darwin') {
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    gotMacOpenFileEventThisLaunch = true;
+    scheduleOpenAmind(filePath, 'mac:open-file');
+  });
+}
+
+// win/linux：第二实例（已打开时再次双击文件）
+// mac 也可能触发（比如命令行重复启动）
+app.on('second-instance', async (event, argv) => {
+  const files = extractAmindPathsFromArgv(argv);
+  if (files.length) {
+    for (const f of files) scheduleOpenAmind(f, 'second-instance');
+  } else {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }
+});
+
+// ===== 创建主窗口 =====
 async function createMainWindow() {
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
-  // 统一窗口管理器：主进程唯一实例
+
   windowManager = new WindowManager({
     preloadPath: path.join(__dirname, 'preload.js'),
     isDev,
     devBaseURL: 'http://localhost:3333',
     prodIndexHTML: path.join(__dirname, '../dist/index.html'),
   });
+
   mainWindow = await windowManager.createOrFocus('main', {
     width: 1600,
     height: 820,
@@ -44,45 +123,34 @@ async function createMainWindow() {
     openDevTools: false,
     title: 'AsyncTest',
     frameless: true,
+    nativeHeaderless: true,
     query: { windowKey: 'main' },
-    route: '/', // 你的主页面路由（hash路由为 '#/'）
+    route: '/',
     onReadyToShow: (win) => {
       if (process.platform === 'darwin') {
         win.setWindowButtonVisibility(false);
       }
-    }
+    },
+    closeBehavior: 'platform',
   });
 
-  // macOS 特有的红绿灯控制
-  if (process.platform === 'darwin') {
-    mainWindow.setWindowButtonVisibility(false);
-  }
-
-  // 窗口关闭逻辑：macOS 默认隐藏而不是退出
+  // 主窗口关闭策略：mac 默认 hide 而不是退出
   mainWindow.on('close', (event) => {
-    // 关键：如果是“正常退出”或“更新安装退出”，必须放行
     if (isQuitting || isQuittingForUpdate()) return;
-
     if (process.platform === 'darwin') {
       event.preventDefault();
       mainWindow?.hide();
     }
   });
 
-
-
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:3333').catch(() => {
-      console.error('无法连接到开发服务器，请检查 npm run dev 是否启动');
-    });
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
-
   return mainWindow;
 }
 
-// --- IPC 监听器：务必放在 createWindow 之外，防止重复绑定 ---
+// ===== 通用 IPC（放 createMainWindow 外，防重复绑定）=====
+ipcMain.on('open-url', (event, url) => {
+  shell.openExternal(url);
+});
+ipcMain.handle('ping', async () => 'pong');
 
 ipcMain.on('set-traffic-lights', (event, visible) => {
   if (mainWindow && process.platform === 'darwin') {
@@ -90,27 +158,14 @@ ipcMain.on('set-traffic-lights', (event, visible) => {
   }
 });
 
-ipcMain.on('open-url', (event, url) => {
-  shell.openExternal(url);
-});
-ipcMain.handle('ping', async () => 'pong');
-// 2) 新增：主窗口请求打开“新窗口”
-// 渲染进程用 ipcRenderer.invoke('wm:open', {...}) 调用
 ipcMain.handle('wm:open', async (event, options) => {
   const opts = options || {};
   const { key } = opts;
-
   if (!key) throw new Error('wm:open 缺少 key（窗口唯一标识）');
 
-  // 透传：只做 query 合并和默认值（可选）
   const config = {
     ...opts,
-
-    // 建议默认不绑定 parent，避免 mac 上各种“附属窗口”行为
-    parentKey: Object.prototype.hasOwnProperty.call(opts, 'parentKey')
-      ? opts.parentKey
-      : null,
-
+    parentKey: Object.prototype.hasOwnProperty.call(opts, 'parentKey') ? opts.parentKey : null,
     query: {
       ...(opts.query || {}),
       windowKey: key,
@@ -118,7 +173,6 @@ ipcMain.handle('wm:open', async (event, options) => {
   };
 
   const win = await windowManager.createOrFocus(key, config);
-
   return { key, id: win.id };
 });
 
@@ -143,71 +197,74 @@ ipcMain.handle('wm:control', async (event, { key, action }) => {
   }
 });
 
-ipcMain.handle('wm:change_title', async (event, key, title) => {
-  if (!key) return false
-  const win = windowManager.get(key)
-  win.setTitle(config.title);
-})
+ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
+  return windowManager.resolveCloseRequest(key, !!allow);
+});
 
-// 3) 新增：关闭窗口
 ipcMain.handle('wm:close', async (event, key) => {
   if (!key) return false;
   windowManager.close(key);
   return true;
 });
 
-// 4) 新增：聚焦窗口
 ipcMain.handle('wm:focus', async (event, key) => {
   if (!key) return false;
   windowManager.focus(key);
   return true;
 });
 
-// 5) 新增：列出所有窗口 keys（调试/管理用）
 ipcMain.handle('wm:list', async () => {
   return windowManager.listKeys();
 });
 
-// 6) 新增：窗口之间通信（主进程转发）
-// from renderer: invoke('wm:sendTo', { targetKey, channel, payload })
 ipcMain.handle('wm:sendTo', async (event, { targetKey, channel, payload }) => {
   if (!targetKey || !channel) return false;
   windowManager.sendTo(targetKey, channel, payload);
   return true;
 });
 
-// 7) 新增：广播
 ipcMain.handle('wm:broadcast', async (event, { channel, payload }) => {
   if (!channel) return false;
   windowManager.broadcast(channel, payload);
   return true;
 });
 
-// --- App 生命周期管理 ---
-
+// ===== App 生命周期 =====
 app.whenReady().then(async () => {
   const win = await createMainWindow();
 
-  // 初始化 Rust 引擎测试（已验证通过）
-  try {
-    console.log('🧪 Rust Engine Test (plus100):', rustEngine.plus100(42));
-  } catch (e) {
-    console.error('Rust 引擎加载失败:', e);
+  amindMain = initAmindMain({
+    userDataPath: app.getPath('userData'),
+    windowManager,
+  });
+
+  await flushPendingOpenQueue();
+
+  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
+
+  const argvFiles = extractAmindPathsFromArgv(process.argv);
+  const envFiles = isDev && argvFiles.length === 0 ? extractAmindPathsFromEnv() : [];
+
+  const files = argvFiles.length ? argvFiles : envFiles;
+
+  // mac：收到 open-file 就不处理 argv/env（避免重复）
+  const shouldHandleCli = process.platform !== 'darwin' || gotMacOpenFileEventThisLaunch === false;
+
+  if (shouldHandleCli && files.length) {
+    for (const f of files) scheduleOpenAmind(f, argvFiles.length ? 'argv' : 'env');
+    await flushPendingOpenQueue();
   }
 
-  // 初始化更新器
   initUpdater(win);
-
-  // 启动时立即执行第一次检查
   ipcMain.emit('check-for-update');
 });
 
-// 核心修复：防止多窗口被重复创建
 app.on('activate', () => {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
+    mainWindow.focus();
   } else {
-    createWindow();
+    createMainWindow();
   }
 });
 

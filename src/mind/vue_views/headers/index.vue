@@ -7,7 +7,7 @@
     </div>
 
     <div class="drag-spacer"></div>
-
+    
     <WinWindowControls
       v-if="isMac"
       @minimize="minimize"
@@ -40,6 +40,7 @@ function close() {
 <style scoped>
 .window-header {
   height: 55px;
+  flex: 0 0 55px;
   position: relative;
   display: flex;
   align-items: stretch;

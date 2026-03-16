@@ -1,18 +1,17 @@
-// electron/preload.js
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    // 定义一个发送消息的方法
     toggleTrafficLights: (visible) => ipcRenderer.send('set-traffic-lights', visible),
     openExternal: (url) => ipcRenderer.send('open-url', url),
-    // 发送消息：从 Vue 到 Main
     send: (channel, data) => ipcRenderer.send(channel, data),
     invoke: (channel, data) => ipcRenderer.invoke(channel, data),
+
     on: (channel, callback) => {
         const subscription = (event, ...args) => callback(event, ...args);
         ipcRenderer.on(channel, subscription);
         return () => ipcRenderer.removeListener(channel, subscription);
     },
+
     wm: {
         open: (options) => ipcRenderer.invoke('wm:open', options),
         close: (key) => ipcRenderer.invoke('wm:close', key),
@@ -22,7 +21,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.invoke('wm:sendTo', { targetKey, channel, payload }),
         broadcast: (channel, payload) =>
             ipcRenderer.invoke('wm:broadcast', { channel, payload }),
-        control: (key, action) => ipcRenderer.invoke('wm:control', { key, action })
+        control: (key, action) => ipcRenderer.invoke('wm:control', { key, action }),
+
+        // 新增：renderer 回应“是否允许关闭”
+        closeResponse: ({ key, allow }) => ipcRenderer.invoke('wm:closeResponse', { key, allow }),
     },
-    platform: process.platform
+
+    platform: process.platform,
+
+    amind: {
+        new: () => ipcRenderer.invoke('amind:new'),
+        newAndOpenWindow: () => ipcRenderer.invoke('amind:newAndOpenWindow'),
+        openFileInWindow: (payload) => ipcRenderer.invoke('amind:openFileInWindow', payload),
+
+        recents: () => ipcRenderer.invoke('amind:recents'),
+        openDialog: () => ipcRenderer.invoke('amind:openDialog'),
+        read: (payload) => ipcRenderer.invoke('amind:read', payload),
+
+        docGet: (payload) => ipcRenderer.invoke('amind:docGet', payload),
+        docUpdate: (payload) => ipcRenderer.invoke('amind:docUpdate', payload),
+
+        save: (payload) => ipcRenderer.invoke('amind:save', payload),
+        saveAsDialog: (payload) => ipcRenderer.invoke('amind:saveAsDialog', payload),
+
+        assetAddFromFile: (payload) => ipcRenderer.invoke('amind:assetAddFromFile', payload),
+        assetAddFromBytes: (payload) => ipcRenderer.invoke('amind:assetAddFromBytes', payload),
+        assetGetBytes: (payload) => ipcRenderer.invoke('amind:assetGetBytes', payload),
+    },
 });

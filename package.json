@@ -7,14 +7,6 @@
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
-  "fileAssociations": [
-    {
-      "ext": "amind",
-      "name": "AsyncTest Mind",
-      "role": "Editor",
-      "icon": "build/icon"
-    }
-  ],
   "build": {
     "appId": "com.sheldon.asynctest",
     "productName": "AsyncTest",
@@ -46,7 +38,15 @@
           ]
         }
       ],
-      "artifactName": "${productName}_Setup_${version}_${arch}_${env.APP_ENV}.${ext}"
+      "artifactName": "${productName}_Setup_${version}_${arch}_${env.APP_ENV}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": "amind",
+          "name": "AsyncTest Mind",
+          "role": "Editor",
+          "icon": "build/amind.ico"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -72,6 +72,15 @@
       "target": [
         "dmg",
         "zip"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "amind",
+          "name": "AsyncTest Mind",
+          "description": "AsyncTest Mind Document",
+          "role": "Editor",
+          "icon": "build/amind.icns"
+        }
       ],
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
@@ -128,6 +137,7 @@
     "express": "^4.18.2",
     "highlight.js": "^11.10.0",
     "highlightjs-copy": "^1.0.6",
+    "jszip": "^3.10.1",
     "konva": "^10.2.0",
     "lodash": "^4.17.21",
     "marked": "^15.0.8",
