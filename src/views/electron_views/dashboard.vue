@@ -78,7 +78,7 @@ const router = useRouter()
 const loginDialogRef = ref<any>(null)
 
 onMounted(() => {
-  handleEnterMind()
+  // handleEnterMind()
 })
 
 // 检查登录状态

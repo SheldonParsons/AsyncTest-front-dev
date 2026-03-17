@@ -1,3 +1,4 @@
+import { ensureNodeContent } from '@/mind/core/nodeContent';
 import { toRaw } from 'vue';
 
 /**
@@ -32,11 +33,13 @@ export function ensureMindRoots(doc: any): void {
     if (!doc.mind.nodes[rootId]) {
         doc.mind.nodes[rootId] = {
             id: rootId,
-            text: doc?.manifest?.title || '中心主题',
+            text: { plain: doc?.manifest?.title || '中心主题' },
             children: [],
             images: [],
+            image: null,
         };
     }
+    ensureNodeContent(doc.mind.nodes[rootId], doc?.manifest?.title || '中心主题');
 
     doc.mind.roots = [
         {
@@ -45,4 +48,8 @@ export function ensureMindRoots(doc: any): void {
             layout: { direction: 'right', hGap: 60, vGap: 18 },
         },
     ];
+
+    for (const node of Object.values(doc.mind.nodes)) {
+        ensureNodeContent(node as any);
+    }
 }

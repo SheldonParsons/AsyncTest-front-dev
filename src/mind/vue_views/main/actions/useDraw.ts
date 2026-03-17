@@ -1,6 +1,7 @@
 import type { Ref } from 'vue';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { InternalClipboardState } from '@/mind/core/clipboard';
+import { getNodePlainText } from '@/mind/core/nodeContent';
 import type { DragDropState } from '@/mind/core/drag/types';
 import { buildPreviewGeometry } from '@/mind/core/dragDrop/previewGeometry';
 import rough from 'roughjs';
@@ -36,12 +37,27 @@ import type { WorldBoxes } from '../geom/worldBoxes';
 import type { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import type { ScreenRect } from './useMarquee';
 import {
+  getNodeTextStyle,
+  NODE_DEFAULT_FONT_FAMILY,
+  NODE_DEFAULT_FONT_SIZE,
   NODE_FONT,
+  NODE_IMAGE_TEXT_GAP,
   NODE_LINE_HEIGHT,
   NODE_TEXT_INSET_X,
   NODE_TEXT_INSET_Y,
+  measureNodeVisualLayout,
   measureNodeTextLayout,
 } from '../textLayout';
+import {
+  getImageHandleWorldRects,
+  IMAGE_OUTLINE_GAP_PX,
+  IMAGE_OUTLINE_RADIUS_PX,
+  inflateImageWorldRect,
+  getNodeImageWorldRect,
+  type ImageInteractionState,
+  type ImageWorldRect,
+} from '../imageInteraction';
+import { getInlineFont } from '@/mind/core/richText';
 const DEBUG_VIEWPORT = '#f97316';
 const DEBUG_GRID = 'rgba(148, 163, 184, 0.28)';
 const DEBUG_WORLD_BOX = 'rgba(59, 130, 246, 0.92)';
@@ -60,6 +76,10 @@ const ROUGH_SEAM_CAP_LINEWIDTH_FACTOR = 1.1;
 const NODE_CORNER_RADIUS = 10;
 const HOVER_OUTLINE_OFFSET_PX = 3;
 const SELECTED_OUTLINE_OFFSET_PX = 4;
+const DRAG_OVERLAY_MAX_WIDTH_PX = 500;
+const DRAG_OVERLAY_ROOT_GAP_PX = 12;
+const DRAG_OVERLAY_OFFSET_X_PX = 12;
+const DRAG_OVERLAY_OFFSET_Y_PX = 12;
 
 type RoughRuntime = {
   canvas: HTMLCanvasElement | null;
@@ -77,6 +97,11 @@ type RoughRuntime = {
   sampledEdgeHits: number;
   sampledEdgeMisses: number;
   lastSampleAt: number;
+};
+
+type ImageRuntime = {
+  loadedImages: Map<string, HTMLImageElement>;
+  pendingSources: Set<string>;
 };
 
 type DrawStats = {
@@ -172,6 +197,28 @@ function rectCenter(rect: WorldRect) {
   };
 }
 
+function getCanvasDevicePixelRatio(canvas: HTMLCanvasElement) {
+  const cssWidth = Math.max(1, canvas.clientWidth || canvas.width || 1);
+  return Math.max(1, canvas.width / cssWidth);
+}
+
+function applyScreenTransform(ctx: CanvasRenderingContext2D, dpr: number) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function applyWorldTransform(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
+  ctx.setTransform(cam.scale * dpr, 0, 0, cam.scale * dpr, cam.tx * dpr, cam.ty * dpr);
+}
+
+function snapToDevicePixel(value: number, dpr: number) {
+  return Math.round(value * dpr) / dpr;
+}
+
+function snapWorldToDevicePixel(value: number, scale: number, translate: number, dpr: number) {
+  const screenValue = value * scale + translate;
+  return (snapToDevicePixel(screenValue, dpr) - translate) / Math.max(scale, 0.0001);
+}
+
 function drawRectOutline(
   ctx: CanvasRenderingContext2D,
   rect: WorldRect,
@@ -181,6 +228,40 @@ function drawRectOutline(
   ctx.strokeStyle = strokeStyle;
   ctx.lineWidth = lineWidth;
   ctx.strokeRect(rect.x1, rect.y1, rectWidth(rect), rectHeight(rect));
+}
+
+function drawImageRectOutline(
+  ctx: CanvasRenderingContext2D,
+  rect: ImageWorldRect,
+  radius: number,
+  fillStyle: string,
+  strokeStyle: string,
+  lineWidth: number
+) {
+  drawRoundedRectShape(
+    ctx,
+    { x1: rect.x, y1: rect.y, x2: rect.x + rect.width, y2: rect.y + rect.height },
+    radius,
+    fillStyle,
+    strokeStyle,
+    lineWidth
+  );
+}
+
+function drawImageHandles(
+  ctx: CanvasRenderingContext2D,
+  rect: ImageWorldRect,
+  cam: Camera,
+  strokeStyle: string
+) {
+  const handleRects = getImageHandleWorldRects(rect, cam.scale);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 1.5 / Math.max(cam.scale, 0.0001);
+  (Object.values(handleRects) as ImageWorldRect[]).forEach((handleRect) => {
+    ctx.fillRect(handleRect.x, handleRect.y, handleRect.width, handleRect.height);
+    ctx.strokeRect(handleRect.x, handleRect.y, handleRect.width, handleRect.height);
+  });
 }
 
 function getNodeCornerRadius(rect: WorldRect) {
@@ -261,13 +342,14 @@ function drawRoundedRectOutline(
 function drawMarqueeOverlay(
   ctx: CanvasRenderingContext2D,
   rectScreen: ScreenRect | null,
+  dpr: number,
   strokeStyle = DEFAULT_MARQUEE_STROKE,
   fillStyle = DEFAULT_MARQUEE_FILL
 ) {
   if (!rectScreen) return;
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  applyScreenTransform(ctx, dpr);
   ctx.fillStyle = fillStyle;
   ctx.strokeStyle = strokeStyle;
   ctx.lineWidth = 1;
@@ -296,7 +378,8 @@ function drawDebugHud(
   ctx: CanvasRenderingContext2D,
   cam: Camera,
   spatialIndex: UniformGridSpatialIndex,
-  stats: DrawStats
+  stats: DrawStats,
+  dpr: number
 ) {
   if (!DEBUG_RENDER_DIAGNOSTICS) return;
 
@@ -327,7 +410,7 @@ function drawDebugHud(
   ];
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  applyScreenTransform(ctx, dpr);
   ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textBaseline = 'top';
 
@@ -483,6 +566,7 @@ function drawSpatialDebug(
   cam: Camera,
   canvasW: number,
   canvasH: number,
+  dpr: number,
   worldViewportRect: WorldRect,
   spatialIndex: UniformGridSpatialIndex,
   worldBoxes: WorldBoxes,
@@ -495,7 +579,7 @@ function drawSpatialDebug(
   const cellRange = spatialIndex.getCellRange(worldViewportRect);
 
   ctx.save();
-  ctx.setTransform(cam.scale, 0, 0, cam.scale, cam.tx, cam.ty);
+  applyWorldTransform(ctx, cam, dpr);
 
   const lineWidth = 1 / cam.scale;
   ctx.strokeStyle = DEBUG_GRID;
@@ -534,7 +618,7 @@ function drawSpatialDebug(
   if (!DEBUG_SPATIAL_SHOW_CELL_COUNTS) return;
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  applyScreenTransform(ctx, dpr);
   ctx.fillStyle = 'rgba(51, 65, 85, 0.75)';
   ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.textAlign = 'center';
@@ -570,6 +654,8 @@ export function useDraw(
   marqueeRectScreen: Ref<ScreenRect | null>,
   marqueeWorldRect: Ref<WorldRect | null>,
   dragState?: Ref<DragDropState>,
+  editingNodeId?: Ref<string | null>,
+  imageInteraction?: Ref<ImageInteractionState | null>,
   primarySelectedNodeId?: Ref<string | null>,
   historyStats?: Ref<{
     canUndo: boolean;
@@ -664,6 +750,10 @@ export function useDraw(
   let fpsFrameCount = 0;
   let currentFps = 0;
   const drawTextCache = new Map<string, ReturnType<typeof measureNodeTextLayout>>();
+  const imageRuntime: ImageRuntime = {
+    loadedImages: new Map(),
+    pendingSources: new Set(),
+  };
   const roughRuntime: RoughRuntime = {
     canvas: null,
     rc: null,
@@ -686,6 +776,24 @@ export function useDraw(
 
   function redrawFromRoughUi() {
     draw();
+  }
+
+  function getLoadedNodeImage(src: string) {
+    const cached = imageRuntime.loadedImages.get(src);
+    if (cached) return cached;
+    if (imageRuntime.pendingSources.has(src)) return null;
+    imageRuntime.pendingSources.add(src);
+    const image = new Image();
+    image.onload = () => {
+      imageRuntime.pendingSources.delete(src);
+      imageRuntime.loadedImages.set(src, image);
+      draw();
+    };
+    image.onerror = () => {
+      imageRuntime.pendingSources.delete(src);
+    };
+    image.src = src;
+    return null;
   }
 
   function getHistorySnapshot() {
@@ -753,6 +861,9 @@ export function useDraw(
 
     const ctx = c.getContext('2d');
     if (!ctx) return;
+    const dpr = getCanvasDevicePixelRatio(c);
+    const viewportW = Math.max(1, c.clientWidth || Math.round(c.width / dpr));
+    const viewportH = Math.max(1, c.clientHeight || Math.round(c.height / dpr));
 
     ensureMindRoots(d);
     const historySnapshot = getHistorySnapshot();
@@ -766,10 +877,10 @@ export function useDraw(
     }
     lastRoughStyleSignature = roughStyle.themeSignature;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, c.width, c.height);
+    applyScreenTransform(ctx, dpr);
+    ctx.clearRect(0, 0, viewportW, viewportH);
     ctx.fillStyle = roughStyle.colors.background;
-    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillRect(0, 0, viewportW, viewportH);
 
     const cam = camera.value;
     const nodeWorldBoxes = worldBoxes.value;
@@ -849,14 +960,15 @@ export function useDraw(
       drawMarqueeOverlay(
         ctx,
         marqueeRectScreen.value,
+        dpr,
         roughStyle.colors.marquee.stroke,
         roughStyle.colors.marquee.fill
       );
-      drawDebugHud(ctx, cam, spatialIndex, drawStats.value);
+      drawDebugHud(ctx, cam, spatialIndex, drawStats.value, dpr);
       return;
     }
 
-    const worldViewportRect = getWorldViewportRect(cam, c.width, c.height);
+    const worldViewportRect = getWorldViewportRect(cam, viewportW, viewportH);
     const cellRange = spatialIndex.getCellRange(worldViewportRect);
     const candidateIds = spatialIndex.queryRect(worldViewportRect);
     const visibleIds: string[] = [];
@@ -1007,8 +1119,9 @@ export function useDraw(
       drawSpatialDebug(
         ctx,
         cam,
-        c.width,
-        c.height,
+        viewportW,
+        viewportH,
+        dpr,
         worldViewportRect,
         spatialIndex,
         nodeWorldBoxes,
@@ -1030,7 +1143,7 @@ export function useDraw(
     let maxBranchLen = Number.NEGATIVE_INFINITY;
 
     ctx.save();
-    ctx.setTransform(cam.scale, 0, 0, cam.scale, cam.tx, cam.ty);
+    applyWorldTransform(ctx, cam, dpr);
     const edgeLineWidth = roughStyle.strokeWidthPx / cam.scale;
     const trunkLineWidth = roughStyle.strokeWidthPx / cam.scale;
     const nodeLineWidth = roughStyle.strokeWidthPx / cam.scale;
@@ -1088,22 +1201,26 @@ export function useDraw(
     }
 
     ctx.font = NODE_FONT;
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
 
     if (DEBUG_RENDER_DIAGNOSTICS) {
       drawEdgeDebugOverlay(ctx, cam, visibleEdgeGroups, roughEnabled, overlapWorld);
     }
 
     ctx.font = NODE_FONT;
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
 
     for (const id of visibleIds) {
       const rect = nodeWorldBoxes.get(id);
       if (!rect) continue;
+      const node = nodes[id];
+      if (!node) continue;
 
       const isHover = id === hoverNodeId.value;
       const isSelected = selectedIds.value.has(id);
       const isDraggedGhost = currentDragState?.isDragging && currentDragState.draggedSubtreeNodeIds.has(id);
+      const imageState = imageInteraction?.value?.nodeId === id ? imageInteraction.value : null;
+      const showImageAffordance = !editingNodeId?.value && !!imageState && primarySelectedNodeId?.value === id && isSelected;
 
       const nodeFill = roughStyle.colors.node.fill;
       const nodeStroke = roughStyle.colors.node.stroke;
@@ -1145,14 +1262,98 @@ export function useDraw(
         );
       }
 
-      ctx.fillStyle = roughStyle.colors.node.text ?? DEFAULT_TEXT;
-      const label = nodes[id]?.text ?? '';
-      const textLayout = measureNodeTextLayout(ctx, label, drawTextCache);
-      ctx.textBaseline = 'middle';
-      textLayout.lines.forEach((line, index) => {
-        const lineY = rect.y1 + NODE_TEXT_INSET_Y + NODE_LINE_HEIGHT / 2 + index * NODE_LINE_HEIGHT;
-        ctx.fillText(line, rect.x1 + NODE_TEXT_INSET_X, lineY);
-      });
+      const visualLayout = measureNodeVisualLayout(ctx, node, drawTextCache);
+      const textStyle = getNodeTextStyle(node);
+      if (visualLayout.image?.src) {
+        const loadedImage = getLoadedNodeImage(visualLayout.image.src);
+        if (loadedImage) {
+          const imageSize =
+            imageState?.previewSize ?? {
+              w: visualLayout.image.width,
+              h: visualLayout.image.height,
+            };
+          const imageRect = getNodeImageWorldRect(rect, imageSize);
+          if (imageRect) {
+            ctx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+            const imageOutlineGapWorld = IMAGE_OUTLINE_GAP_PX / Math.max(cam.scale, 0.0001);
+            const imageOutlineRadiusWorld = IMAGE_OUTLINE_RADIUS_PX / Math.max(cam.scale, 0.0001);
+            const overlayRect = inflateImageWorldRect(imageRect, imageOutlineGapWorld);
+            const overlayFill = 'rgba(96, 165, 250, 0.12)';
+            if (showImageAffordance && imageState.selected) {
+              drawImageRectOutline(
+                ctx,
+                overlayRect,
+                imageOutlineRadiusWorld,
+                overlayFill,
+                roughStyle.colors.selection.stroke,
+                2 / cam.scale
+              );
+              drawImageHandles(ctx, overlayRect, cam, roughStyle.colors.selection.stroke);
+            } else if (showImageAffordance && imageState.hovered && !imageState.resizing) {
+              drawImageRectOutline(
+                ctx,
+                overlayRect,
+                imageOutlineRadiusWorld,
+                overlayFill,
+                roughStyle.colors.hover.stroke,
+                2 / cam.scale
+              );
+            }
+          }
+        }
+      }
+      if (editingNodeId?.value !== id) {
+        ctx.textBaseline = 'top';
+        let lineY = rect.y1 + visualLayout.textGeometry.textGlyphTop;
+        const textRegionWidth = rectWidth(rect) - NODE_TEXT_INSET_X * 2;
+        visualLayout.textLayout.richLines.forEach((line) => {
+          const snappedLineY = snapWorldToDevicePixel(lineY, cam.scale, cam.ty, dpr);
+          const effectiveAlign = line.align ?? textStyle.textAlign;
+          const baseX =
+            effectiveAlign === 'center'
+              ? rect.x1 + NODE_TEXT_INSET_X + Math.max(0, (textRegionWidth - line.width) / 2)
+              : effectiveAlign === 'right'
+                ? rect.x2 - NODE_TEXT_INSET_X - line.width
+                : rect.x1 + NODE_TEXT_INSET_X;
+          let cursorX = baseX;
+          for (const segment of line.segments) {
+            ctx.font = segment.font || getInlineFont(segment.marks, NODE_DEFAULT_FONT_FAMILY, NODE_DEFAULT_FONT_SIZE);
+            ctx.fillStyle = segment.color ?? textStyle.color;
+            ctx.fillText(segment.text, cursorX, snappedLineY);
+            if (segment.marks?.underline || segment.marks?.strike) {
+              const width = ctx.measureText(segment.text).width;
+              ctx.strokeStyle = segment.color ?? textStyle.color;
+              ctx.lineWidth = 1;
+              if (segment.marks.underline) {
+                const underlineY = snapWorldToDevicePixel(
+                  snappedLineY + segment.fontSize + 2,
+                  cam.scale,
+                  cam.ty,
+                  dpr
+                );
+                ctx.beginPath();
+                ctx.moveTo(cursorX, underlineY);
+                ctx.lineTo(cursorX + width, underlineY);
+                ctx.stroke();
+              }
+              if (segment.marks.strike) {
+                const strikeY = snapWorldToDevicePixel(
+                  snappedLineY + segment.fontSize * 0.58,
+                  cam.scale,
+                  cam.ty,
+                  dpr
+                );
+                ctx.beginPath();
+                ctx.moveTo(cursorX, strikeY);
+                ctx.lineTo(cursorX + width, strikeY);
+                ctx.stroke();
+              }
+            }
+            cursorX += segment.width;
+          }
+          lineY += line.height;
+        });
+      }
       ctx.restore();
     }
 
@@ -1160,6 +1361,7 @@ export function useDraw(
     drawMarqueeOverlay(
       ctx,
       marqueeRectScreen.value,
+      dpr,
       roughStyle.colors.marquee.stroke,
       roughStyle.colors.marquee.fill
     );
@@ -1253,7 +1455,7 @@ export function useDraw(
       }
     }
 
-    drawDebugHud(ctx, cam, spatialIndex, drawStats.value);
+    drawDebugHud(ctx, cam, spatialIndex, drawStats.value, dpr);
   }
 
   return { draw, drawStats };
@@ -1287,7 +1489,7 @@ function drawDragOverlay(
     });
     if (previewGeometry) {
       ctx.save();
-      ctx.setTransform(cam.scale, 0, 0, cam.scale, cam.tx, cam.ty);
+      applyWorldTransform(ctx, cam, getCanvasDevicePixelRatio(ctx.canvas));
       ctx.strokeStyle = '#16a34a';
       ctx.fillStyle = '#22c55e';
       ctx.lineWidth = 2 / Math.max(cam.scale, 0.0001);
@@ -1310,25 +1512,30 @@ function drawDragOverlay(
   }
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, sans-serif';
+  const dpr = getCanvasDevicePixelRatio(ctx.canvas);
+  applyScreenTransform(ctx, dpr);
+  ctx.font = NODE_FONT;
   ctx.textBaseline = 'top';
-  const lines = dragState.dragRootTexts.length ? dragState.dragRootTexts : [nodes[dragState.primaryDragRootId ?? '']?.text ?? ''];
-  const filteredLines = lines.filter(Boolean);
-  const maxWidth = filteredLines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0);
-  const lineHeight = 16;
-  const boxX = dragState.cursorScreenX + 10;
-  const boxY = dragState.cursorScreenY + 10;
-  const boxWidth = maxWidth + 16;
-  const boxHeight = filteredLines.length * lineHeight + 12;
-  ctx.fillStyle = 'rgba(255,255,255,0.94)';
-  ctx.strokeStyle = 'rgba(15, 23, 42, 0.18)';
-  ctx.lineWidth = 1;
-  ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-  ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-  filteredLines.forEach((line, index) => {
-    ctx.fillStyle = '#0f172a';
-    ctx.fillText(line, boxX + 8, boxY + 6 + index * lineHeight);
-  });
+  ctx.fillStyle = '#111827';
+  const layouts =
+    dragState.dragRootTextLayouts.length
+      ? dragState.dragRootTextLayouts
+      : [
+          {
+            nodeId: dragState.primaryDragRootId ?? '',
+            text: getNodePlainText(nodes[dragState.primaryDragRootId ?? '']),
+            lines: [getNodePlainText(nodes[dragState.primaryDragRootId ?? ''])],
+            lineHeightPx: 18,
+          },
+        ];
+  const startX = dragState.cursorScreenX + DRAG_OVERLAY_OFFSET_X_PX;
+  let currentY = dragState.cursorScreenY + DRAG_OVERLAY_OFFSET_Y_PX;
+  for (const layout of layouts) {
+    for (const line of layout.lines) {
+      ctx.fillText(line, startX, snapToDevicePixel(currentY, dpr), DRAG_OVERLAY_MAX_WIDTH_PX);
+      currentY += layout.lineHeightPx;
+    }
+    currentY += DRAG_OVERLAY_ROOT_GAP_PX;
+  }
   ctx.restore();
 }

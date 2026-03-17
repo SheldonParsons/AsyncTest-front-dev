@@ -43,6 +43,19 @@ export function initAmindMain({ userDataPath, windowManager }) {
     return filePath || docId;
   }
 
+  function buildMindWindowTitle(filePath) {
+    return filePath ? `AsyncTest Mind - ${path.basename(filePath)}` : 'AsyncTest Mind';
+  }
+
+  function refreshWindowTitle(docId) {
+    if (!windowManager) return;
+    const entry = docStore.get(docId);
+    if (!entry?.windowKey) return;
+    const win = windowManager.get(entry.windowKey);
+    if (!win) return;
+    win.setTitle(buildMindWindowTitle(entry.filePath));
+  }
+
   async function openMindWindow({ docId, filePath, title }) {
     if (!windowManager) throw new Error('initAmindMain requires windowManager');
 
@@ -119,7 +132,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     docStore.create(docId, { doc, filePath: realAbs, windowKey: null });
     fileIndex.set(fkReal, docId);
 
-    await openMindWindow({ docId, filePath: realAbs, title: `AsyncTest Mind - ${path.basename(realAbs)}` });
+    await openMindWindow({ docId, filePath: realAbs, title: buildMindWindowTitle(realAbs) });
 
     return { reused: false, docId, filePath: realAbs };
   }
@@ -183,11 +196,18 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
     docStore.setFilePath(docId, abs);
     docStore.setDoc(docId, saved);
+    refreshWindowTitle(docId);
 
     await recentStore.add(abs);
     addRecentForMac(abs);
 
-    return { needSaveAs: false, docId, filePath: abs };
+    return {
+      needSaveAs: false,
+      docId,
+      filePath: abs,
+      savedAt: saved?.manifest?.updatedAt ?? null,
+      title: saved?.manifest?.title ?? null,
+    };
   });
 
   /**
@@ -232,6 +252,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     // 更新 docStore
     docStore.setFilePath(docId, abs);
     docStore.setDoc(docId, saved);
+    refreshWindowTitle(docId);
 
     // 更新 fileIndex：解绑旧，绑定新
     if (oldFk && fileIndex.get(oldFk) === docId) fileIndex.delete(oldFk);
@@ -241,7 +262,12 @@ export function initAmindMain({ userDataPath, windowManager }) {
     await recentStore.add(abs);
     addRecentForMac(abs);
 
-    return { docId, filePath: abs };
+    return {
+      docId,
+      filePath: abs,
+      savedAt: saved?.manifest?.updatedAt ?? null,
+      title: saved?.manifest?.title ?? null,
+    };
   });
 
   // assets（保持不变）

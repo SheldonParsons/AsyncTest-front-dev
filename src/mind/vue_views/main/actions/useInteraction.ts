@@ -18,8 +18,8 @@ export function useInteraction(
   clampScale: (v: number, min: number, max: number) => number,
   zoomAtViewportPoint: (vx: number, vy: number, nextScale: number) => void,
   panByPixels: (dx: number, dy: number) => void,
-  MIN_SCALE: number,
-  MAX_SCALE: number,
+  getMinScale: () => number,
+  getMaxScale: () => number,
   requestRender: () => void,
   schedulePersistViewport: () => void
 ) {
@@ -55,7 +55,7 @@ export function useInteraction(
     if (pendingZoomDeltaY !== 0 && lastZoomEvent) {
       const factor = Math.exp(-pendingZoomDeltaY * ZOOM_K);
       const old = camera.value.scale;
-      const next = clampScale(old * factor, MIN_SCALE, MAX_SCALE);
+      const next = clampScale(old * factor, getMinScale(), getMaxScale());
       if (next !== old) {
         const rect = el.getBoundingClientRect();
         const vx = lastZoomEvent.clientX - rect.left;

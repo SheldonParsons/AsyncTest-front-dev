@@ -1,7 +1,7 @@
 import type { Ref } from 'vue';
 import { ref } from 'vue';
 import { ensureMindRoots } from './useDocUtils';
-import { NODE_FONT, measureNodeTextLayout } from '../textLayout';
+import { measureNodeVisualLayout, type NodeTextLayout } from '../textLayout';
 
 /** 节点在 world 坐标系中的包围盒 */
 export type Box = { x: number; y: number; w: number; h: number };
@@ -16,9 +16,6 @@ export type LayoutBounds = {
     centerY: number;
 };
 
-// ===== 布局常量 =====
-/** 测量与绘制时使用同一套字体，保证宽度一致 */
-const NODE_FONT = '14px system-ui, -apple-system, Segoe UI, sans-serif';
 /**
  * 布局 Composable
  *
@@ -30,14 +27,15 @@ const NODE_FONT = '14px system-ui, -apple-system, Segoe UI, sans-serif';
  */
 export function useLayout(
     props: { doc?: any },
-    canvasRef: Ref<HTMLCanvasElement | null>
+    canvasRef: Ref<HTMLCanvasElement | null>,
+    getNodeMeasureOverride?: (nodeId: string) => { w: number; h: number } | null
 ) {
     /** 当前布局结果：nodeId -> Box（坐标相对于 root.pos 的偏移） */
     const layoutLocal = new Map<string, Box>();
     const layoutBounds = ref<LayoutBounds | null>(null);
 
     /** 文字宽度测量缓存，避免同一文本重复测量 */
-    const measureCache = new Map<string, { w: number; h: number }>();
+    const measureCache = new Map<string, NodeTextLayout>();
     const subtreeHeightCache = new Map<string, number>();
 
     /**
@@ -50,9 +48,13 @@ export function useLayout(
      */
     function measureNode(
         ctx: CanvasRenderingContext2D,
-        text: string
+        node: any,
+        nodeId?: string
     ): { w: number; h: number } {
-        return measureNodeTextLayout(ctx, text || '', measureCache);
+        const override = nodeId ? getNodeMeasureOverride?.(nodeId) : null;
+        if (override) return override;
+        const layout = measureNodeVisualLayout(ctx, node, measureCache);
+        return { w: layout.width, h: layout.height };
     }
 
     /**
@@ -77,7 +79,7 @@ export function useLayout(
         const n = doc.mind.nodes?.[nodeId];
         if (!n) return 0;
 
-        const { h } = measureNode(ctx, n.text);
+        const { h } = measureNode(ctx, n, nodeId);
         const children: string[] = n.children || [];
         if (!children.length) {
             subtreeHeightCache.set(nodeId, h);
@@ -146,7 +148,7 @@ export function useLayout(
         const n = doc.mind.nodes?.[nodeId];
         if (!n) return;
 
-        const m = measureNode(ctx, n.text);
+        const m = measureNode(ctx, n, nodeId);
         const sh = subtreeHeight(doc, nodeId, ctx, vGap);
 
         // 在子树区域内垂直居中

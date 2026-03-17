@@ -6,7 +6,6 @@ export type BatchPasteSubtreesCommandContext = {
   getNodes: () => MindNodes | null;
   createNodeId: () => string;
   setSelection: (nodeIds: Iterable<string>, primaryId?: string | null) => void;
-  startEditing: (nodeId: string) => void;
   applyMutation: (reason: string, options?: { ensureVisibleNodeIds?: string[] }) => Promise<void> | void;
   setLastPastedRootId?: (nodeId: string | null) => void;
 };
@@ -58,8 +57,6 @@ export function createBatchPasteSubtreesCommand(
       insert(nodes);
       context.setLastPastedRootId?.(pastedRootIds[pastedRootIds.length - 1] ?? null);
       context.setSelection(pastedRootIds, pastedRootIds[pastedRootIds.length - 1] ?? null);
-      const lastRootId = pastedRootIds[pastedRootIds.length - 1];
-      if (lastRootId) context.startEditing(lastRootId);
       void context.applyMutation('history:batch-paste-subtrees', { ensureVisibleNodeIds: pastedRootIds });
     },
     undo: () => {
@@ -77,8 +74,6 @@ export function createBatchPasteSubtreesCommand(
       insert(nodes);
       context.setLastPastedRootId?.(pastedRootIds[pastedRootIds.length - 1] ?? null);
       context.setSelection(pastedRootIds, pastedRootIds[pastedRootIds.length - 1] ?? null);
-      const lastRootId = pastedRootIds[pastedRootIds.length - 1];
-      if (lastRootId) context.startEditing(lastRootId);
       void context.applyMutation('history:redo-batch-paste-subtrees', { ensureVisibleNodeIds: pastedRootIds });
     },
   };

@@ -12,7 +12,6 @@ export type PasteSubtreeCommandContext = {
   createNodeId: () => string;
   setSingleSelected: (nodeId: string | null) => void;
   resolveFallbackSelection: (preferredId: string | null, parentId?: string | null) => string | null;
-  startEditing: (nodeId: string) => void;
   applyMutation: (
     reason: string,
     options?: { ensureVisibleNodeId?: string | null; ensureVisibleNodeIds?: string[] }
@@ -65,7 +64,6 @@ export function createPasteSubtreeCommand(
       insertIntoParent(nodes);
       context.setLastPastedRootId?.(newSelectionId);
       context.setSingleSelected(newSelectionId);
-      context.startEditing(newSelectionId);
       if (context.debugEnabled) {
         console.debug('[mind-paste-subtree]', {
           parentId: targetParentId,
@@ -95,7 +93,6 @@ export function createPasteSubtreeCommand(
       insertIntoParent(nodes);
       context.setLastPastedRootId?.(newSelectionId);
       context.setSingleSelected(newSelectionId);
-      context.startEditing(newSelectionId);
       void context.applyMutation('history:redo-paste-subtree', { ensureVisibleNodeId: newSelectionId });
     },
   };

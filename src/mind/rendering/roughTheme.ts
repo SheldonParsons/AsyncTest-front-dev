@@ -81,7 +81,7 @@ const DEFAULT_MARQUEE_FILL = 'rgba(147, 197, 253, 0.18)';
 export const defaultTheme: RoughTheme = {
   presetName: 'clean',
   strokeWidthPx: 2,
-  roughness: 0.7,
+  roughness: 0.5,
   bowing: 0.7,
   overlapPx: 6,
   seedMode: 'stable',

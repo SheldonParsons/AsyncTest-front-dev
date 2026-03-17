@@ -1,9 +1,13 @@
 import type { Ref } from 'vue';
 import { ref } from 'vue';
+import {
+  computeFitScaleWithCanvasPadding,
+  getPaddedBounds,
+} from '@/mind/core/view/canvasPadding';
 import type { LayoutBounds } from './useLayout';
 
 export type Camera = { scale: number; tx: number; ty: number };
-export const MIN_CAMERA_SCALE = 0.2;
+export const MIN_CAMERA_SCALE = 0.05;
 export const MAX_CAMERA_SCALE = 4;
 
 const FIT_PADDING = 200;
@@ -73,6 +77,20 @@ export function useCamera(
     return Math.min(max, Math.max(min, v));
   }
 
+  function getMinCameraScale(bounds = layoutBounds.value) {
+    const vp = viewportRef.value;
+    if (!vp || !bounds) return MIN_CAMERA_SCALE;
+    return Math.min(
+      MIN_CAMERA_SCALE,
+      computeFitScaleWithCanvasPadding(bounds, vp.clientWidth, vp.clientHeight, MIN_CAMERA_SCALE, 1, FIT_PADDING)
+    );
+  }
+
+  function getPaddedLayoutBounds(bounds = layoutBounds.value, scale = camera.value.scale) {
+    if (!bounds) return null;
+    return getPaddedBounds(bounds, scale);
+  }
+
   function clampOffset(
     minWorld: number,
     maxWorld: number,
@@ -86,7 +104,7 @@ export function useCamera(
 
   function constrainCamera(next: Camera) {
     const vp = viewportRef.value;
-    const bounds = layoutBounds.value;
+    const bounds = getPaddedLayoutBounds(layoutBounds.value, next.scale);
     if (!vp || !bounds) return next;
 
     return {
@@ -126,9 +144,11 @@ export function useCamera(
     const vp = viewportRef.value;
     if (!vp || !bounds) return;
 
-    const nextScale = clampScale(scale, MIN_CAMERA_SCALE, MAX_CAMERA_SCALE);
-    const xConstraint = getAxisConstraint(bounds.minX, bounds.maxX, vp.clientWidth, nextScale);
-    const yConstraint = getAxisConstraint(bounds.minY, bounds.maxY, vp.clientHeight, nextScale);
+    const nextScale = clampScale(scale, getMinCameraScale(bounds), MAX_CAMERA_SCALE);
+    const paddedBounds = getPaddedLayoutBounds(bounds, nextScale);
+    if (!paddedBounds) return;
+    const xConstraint = getAxisConstraint(paddedBounds.minX, paddedBounds.maxX, vp.clientWidth, nextScale);
+    const yConstraint = getAxisConstraint(paddedBounds.minY, paddedBounds.maxY, vp.clientHeight, nextScale);
     setCamera({
       scale: nextScale,
       tx: xConstraint.centeredOffset,
@@ -140,9 +160,8 @@ export function useCamera(
     const vp = viewportRef.value;
     if (!vp) return 1;
 
-    const fitX = (vp.clientWidth - FIT_PADDING * 2) / Math.max(bounds.width, 1);
-    const fitY = (vp.clientHeight - FIT_PADDING * 2) / Math.max(bounds.height, 1);
-    return clampScale(Math.min(1, fitX, fitY), MIN_CAMERA_SCALE, 1);
+    const minScale = getMinCameraScale(bounds);
+    return computeFitScaleWithCanvasPadding(bounds, vp.clientWidth, vp.clientHeight, minScale, 1, FIT_PADDING);
   }
 
   function fitAndCenterCamera(bounds = layoutBounds.value) {
@@ -185,5 +204,8 @@ export function useCamera(
     resetToCenterIfNeeded,
     constrainToBounds,
     centerCamera,
+    fitScaleToViewport,
+    getPaddedLayoutBounds,
+    getMinCameraScale,
   };
 }

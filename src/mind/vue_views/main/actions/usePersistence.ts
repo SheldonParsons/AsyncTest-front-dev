@@ -9,6 +9,19 @@ export function usePersistence(
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
+  function writeViewportToDoc() {
+    if (!props.doc) return null;
+
+    ensureMindRoots(props.doc);
+
+    props.doc.mind.view = props.doc.mind.view || {};
+    props.doc.mind.view.viewport = {
+      camera: { ...camera.value },
+    };
+
+    return props.doc.mind.view.viewport;
+  }
+
   function clearPersistTimer() {
     if (timer) clearTimeout(timer);
     timer = null;
@@ -20,13 +33,7 @@ export function usePersistence(
     timer = setTimeout(async () => {
       if (!props.doc || !props.docId) return;
 
-      ensureMindRoots(props.doc);
-
-      props.doc.mind.view = props.doc.mind.view || {};
-      props.doc.mind.view.viewport = {
-        camera: { ...camera.value },
-      };
-
+      writeViewportToDoc();
       const plain = toPlainDoc(props.doc);
       await (window as any).electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
     }, 600);
@@ -57,5 +64,5 @@ export function usePersistence(
     return false;
   }
 
-  return { schedulePersistViewport, restoreViewportFromDoc, clearPersistTimer };
+  return { schedulePersistViewport, restoreViewportFromDoc, clearPersistTimer, writeViewportToDoc };
 }

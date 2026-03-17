@@ -11,6 +11,7 @@ export type DragDropState = {
   isDragging: boolean;
   dragRoots: string[];
   dragRootTexts: string[];
+  dragRootTextLayouts: Array<{ nodeId: string; text: string; lines: string[]; lineHeightPx: number }>;
   primaryDragRootId: string | null;
   rootId: string | null;
   draggedSubtreeNodeIds: Set<string>;
