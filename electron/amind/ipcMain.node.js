@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, dialog, ipcMain } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import { AMIND_EXT } from './constants.js';
 import { createEmptyDoc, readAmindAsset, readAmindFile, writeAmindFile } from './amindFileService.node.js';
 import { createAmindAssetCache } from './amindAssetCache.node.js';
@@ -139,16 +139,16 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   // ===== IPC =====
 
-  ipcMain.handle('amind:new', async () => {
+  ipcMain.handle('amind:new', async (event, payload = {}) => {
     const docId = newDocId();
-    const doc = createEmptyDoc();
+    const doc = createEmptyDoc(undefined, payload);
     docStore.create(docId, { doc, filePath: null, windowKey: null });
     return { docId, filePath: null };
   });
 
-  ipcMain.handle('amind:newAndOpenWindow', async () => {
+  ipcMain.handle('amind:newAndOpenWindow', async (event, payload = {}) => {
     const docId = newDocId();
-    const doc = createEmptyDoc();
+    const doc = createEmptyDoc(undefined, payload);
     docStore.create(docId, { doc, filePath: null, windowKey: null });
 
     await openMindWindow({ docId, filePath: null, title: 'AsyncTest Mind' });
@@ -157,6 +157,15 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   ipcMain.handle('amind:openFileInWindow', async (event, { filePath }) => {
     return await openFileInWindow(filePath);
+  });
+
+  ipcMain.handle('amind:openFolder', async (event, { filePath }) => {
+    if (!filePath) return { ok: false, error: '当前文件尚未保存，无法打开文件目录' };
+    const dirPath = path.dirname(path.resolve(filePath));
+    if (!fs.existsSync(dirPath)) return { ok: false, error: '当前文件目录不存在' };
+    const error = await shell.openPath(dirPath);
+    if (error) return { ok: false, error };
+    return { ok: true, dirPath };
   });
 
   ipcMain.handle('amind:docGet', async (event, { docId }) => {
@@ -170,6 +179,11 @@ export function initAmindMain({ userDataPath, windowManager }) {
   });
 
   ipcMain.handle('amind:recents', async () => recentStore.load());
+
+  ipcMain.handle('amind:removeRecent', async (event, { filePath }) => {
+    if (!filePath) return recentStore.load();
+    return await recentStore.remove(filePath);
+  });
 
   ipcMain.handle('amind:openDialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({

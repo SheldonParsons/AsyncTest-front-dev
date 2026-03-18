@@ -16,6 +16,7 @@ dist-ssr
 uploads
 shell_scripts
 sync-release-notes.sh
+copilot*.md
 
 # Editor directories and files
 .vscode/*

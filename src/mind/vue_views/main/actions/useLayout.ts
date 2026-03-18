@@ -53,7 +53,7 @@ export function useLayout(
     ): { w: number; h: number } {
         const override = nodeId ? getNodeMeasureOverride?.(nodeId) : null;
         if (override) return override;
-        const layout = measureNodeVisualLayout(ctx, node, measureCache);
+        const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId });
         return { w: layout.width, h: layout.height };
     }
 
@@ -80,7 +80,7 @@ export function useLayout(
         if (!n) return 0;
 
         const { h } = measureNode(ctx, n, nodeId);
-        const children: string[] = n.children || [];
+        const children: string[] = n.collapsed ? [] : (n.children || []);
         if (!children.length) {
             subtreeHeightCache.set(nodeId, h);
             return h;
@@ -155,7 +155,7 @@ export function useLayout(
         const y = topY + (sh - m.h) / 2;
         layoutLocal.set(nodeId, { x: nodeX, y, w: m.w, h: m.h });
 
-        const children: string[] = n.children || [];
+        const children: string[] = n.collapsed ? [] : (n.children || []);
         if (!children.length) return;
 
         let childrenTotalHeight = 0;

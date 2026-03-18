@@ -25,6 +25,28 @@ export type TextRun = {
     fontSize?: number;
 };
 
+export type NodeShapeStyle = {
+    fill?: string;
+    stroke?: string;
+    fillPreset?: 'rough-hachure' | 'rough-cross' | 'rough-dots' | 'solid' | 'none';
+    borderPreset?: 'clean' | 'rough-solid' | 'rough-dashed' | 'none';
+    strokeWidthPx?: number;
+};
+
+export type NodeTextStyleOverrides = {
+    fontFamily?: string;
+    fontSizePx?: number;
+    fontWeight?: number;
+    fontStyle?: 'normal' | 'italic';
+    color?: string;
+    textAlign?: 'left' | 'center' | 'right';
+};
+
+export type NodeStyle = {
+    shape?: NodeShapeStyle | null;
+    text?: NodeTextStyleOverrides | null;
+};
+
 export type Node = {
     id: NodeId;
     parentId: NodeId | null;
@@ -40,6 +62,7 @@ export type Node = {
     image?: { assetId: string; ext: string; w?: number; h?: number } | null;
 
     collapsed?: boolean;
+    style?: NodeStyle | null;
 };
 
 export type AmindDoc = {

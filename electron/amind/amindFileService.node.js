@@ -31,6 +31,19 @@ function readPositiveIntEnv(name, fallbackValue) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
 }
 
+function normalizePositiveInt(value, fallbackValue = 0) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+function resolveSeedCount(seedCountOverride) {
+    if (seedCountOverride !== undefined) {
+        const parsed = Number.parseInt(String(seedCountOverride), 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+    return DEV_SEED_ENABLED ? readPositiveIntEnv('AMIND_DEV_SEED_NODE_COUNT', 300) : 0;
+}
+
 function createSeedNodeText(index) {
     const a = SEED_WORDS[index % SEED_WORDS.length];
     const b = SEED_WORDS[(index * 5 + 3) % SEED_WORDS.length];
@@ -73,10 +86,10 @@ function countTreeEdges(nodes) {
     return totalEdges;
 }
 
-function appendDevSeedNodes(doc, rootId) {
-    if (!DEV_SEED_ENABLED) return;
+function appendDevSeedNodes(doc, rootId, seedCountOverride) {
+    const seedCount = resolveSeedCount(seedCountOverride);
+    if (seedCount <= 0) return;
 
-    const seedCount = readPositiveIntEnv('AMIND_DEV_SEED_NODE_COUNT', 300);
     const queue = [rootId];
     let parentCursor = 0;
     let created = 0;
@@ -105,7 +118,7 @@ function appendDevSeedNodes(doc, rootId) {
     }
 }
 
-export function createEmptyDoc(title = '中心主题') {
+export function createEmptyDoc(title = '思维导图', options = {}) {
     const now = new Date().toISOString();
 
     const rootId = 'root';
@@ -145,10 +158,12 @@ export function createEmptyDoc(title = '中心主题') {
         },
     };
 
-    appendDevSeedNodes(doc, rootId);
+    appendDevSeedNodes(doc, rootId, options.seedNodeCount);
+    const resolvedSeedCount = resolveSeedCount(options.seedNodeCount);
 
     console.info('[amind-seed]', {
-        enabled: DEV_SEED_ENABLED,
+        enabled: resolvedSeedCount > 0,
+        requestedSeedNodeCount: resolvedSeedCount,
         seededNodeCount: Object.keys(doc.mind.nodes).length,
         rootChildrenCount: doc.mind.nodes[rootId]?.children?.length ?? 0,
         totalEdges: countTreeEdges(doc.mind.nodes),

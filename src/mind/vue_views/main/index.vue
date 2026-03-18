@@ -1,68 +1,365 @@
 <template>
-  <div class="main-container" ref="viewportRef">
-    <canvas
-      ref="canvasRef"
-      class="mind-canvas"
-      :width="canvasPixelW"
-      :height="canvasPixelH"
-      :style="canvasStyle"
-      @dblclick="onCanvasDoubleClick"
-      @pointerdown="onCanvasPointerDown"
-      @pointermove="onCanvasPointerMove"
-      @pointerleave="onCanvasPointerLeave"
-      @pointerup="onCanvasPointerUp"
-      @pointercancel="onCanvasPointerCancel"
-      @lostpointercapture="onCanvasLostPointerCapture"
-    />
-    <LexicalNodeEditorOverlay
-      v-if="editingSession"
-      :visible="!!editingSession"
-      :overlay-root-style="editingOverlayRootStyle"
-      :text-box-rect="editingTextBoxRect"
-      :editor-shell-style="editingEditorShellStyle"
-      :calibration-style="editingCalibrationStyle"
-      :inner-translate-ypx="editingOverlayInnerTranslateYPx"
-      :node-id="editingSession.nodeId"
-      :initial-state="editingDraftLexicalState"
-      :mode="editingSession.mode"
-      :caret-placement="editingSession.caretPlacement"
-      @change="onLexicalEditorChange"
-      @commit="commitEditingSession"
-      @cancel="cancelEditingSession"
-    />
+  <div class="main-layout">
+    <div class="main-container" ref="viewportRef">
+      <canvas ref="canvasRef" class="mind-canvas" :width="canvasPixelW" :height="canvasPixelH" :style="canvasStyle"
+        @dblclick="onCanvasDoubleClick" @pointerdown="onCanvasPointerDown" @pointermove="onCanvasPointerMove"
+        @pointerleave="onCanvasPointerLeave" @pointerup="onCanvasPointerUp" @pointercancel="onCanvasPointerCancel"
+        @lostpointercapture="onCanvasLostPointerCapture" />
+      <LexicalNodeEditorOverlay v-if="editingSession" :visible="!!editingSession"
+        :overlay-root-style="editingOverlayRootStyle" :text-box-rect="editingScreenTextBoxRect"
+        :editor-shell-style="editingEditorShellStyle" :calibration-style="editingCalibrationStyle"
+        :inner-translate-ypx="editingOverlayInnerTranslateYPx" :node-id="editingSession.nodeId"
+        :initial-state="editingDisplayLexicalState" :mode="editingSession.mode"
+        :caret-placement="editingSession.caretPlacement" @change="onLexicalEditorChange" @commit="commitEditingSession"
+        @cancel="cancelEditingSession" />
 
-    <div v-if="horizontalScrollbar.visible" class="mind-scrollbar mind-scrollbar-x">
-      <div class="mind-scrollbar-track">
-        <div
-          class="mind-scrollbar-thumb"
-          :class="{ 'is-active': isScrollbarDragging }"
-          :style="{
+      <div v-if="horizontalScrollbar.visible" class="mind-scrollbar mind-scrollbar-x">
+        <div class="mind-scrollbar-track">
+          <div class="mind-scrollbar-thumb" :class="{ 'is-active': isScrollbarDragging }" :style="{
             width: `${horizontalScrollbar.thumbSize}px`,
             transform: `translateX(${horizontalScrollbar.thumbOffset}px)`,
-          }"
-          @mousedown.stop.prevent="onScrollbarMouseDown('x', $event)"
-        />
+          }" @mousedown.stop.prevent="onScrollbarMouseDown('x', $event)" />
+        </div>
+      </div>
+
+      <div v-if="verticalScrollbar.visible" class="mind-scrollbar mind-scrollbar-y">
+        <div class="mind-scrollbar-track">
+          <div class="mind-scrollbar-thumb" :class="{ 'is-active': isScrollbarDragging }" :style="{
+            height: `${verticalScrollbar.thumbSize}px`,
+            transform: `translateY(${verticalScrollbar.thumbOffset}px)`,
+          }" @mousedown.stop.prevent="onScrollbarMouseDown('y', $event)" />
+        </div>
       </div>
     </div>
 
-    <div v-if="verticalScrollbar.visible" class="mind-scrollbar mind-scrollbar-y">
-      <div class="mind-scrollbar-track">
+    <div v-if="showFormatPanel" class="format-panel-shell" @pointerdown.stop @mousedown.stop @click.stop>
+      <aside class="format-panel">
+        <div class="format-panel-header">
+          <button class="format-panel-tab" :class="{ 'is-active': formatPanelTab === 'style' }" type="button"
+            @click="formatPanelTab = 'style'">
+            样式
+          </button>
+          <button class="format-panel-tab" :class="{ 'is-active': formatPanelTab === 'mark' }" type="button"
+            @click="formatPanelTab = 'mark'">
+            标记
+          </button>
+        </div>
         <div
-          class="mind-scrollbar-thumb"
-          :class="{ 'is-active': isScrollbarDragging }"
-          :style="{
-            height: `${verticalScrollbar.thumbSize}px`,
-            transform: `translateY(${verticalScrollbar.thumbOffset}px)`,
-          }"
-          @mousedown.stop.prevent="onScrollbarMouseDown('y', $event)"
-        />
-      </div>
+          class="format-panel-body"
+          :class="{ 'is-disabled': !hasSelectedNodes }"
+        >
+          <div
+            v-if="formatPanelTab === 'style'"
+            class="style-panel"
+          >
+            <section class="style-section">
+              <div class="style-section-header">
+                <h3 class="style-section-title">形状</h3>
+              </div>
+
+              <div class="style-control-block">
+                <div class="style-control-labels">
+                  <span class="style-control-title">填充</span>
+                </div>
+                <div class="style-preview-grid style-preview-grid--fill">
+                  <button
+                    v-for="option in styleFillOptions"
+                    :key="option.key"
+                    class="style-preview-card"
+                    :class="{ 'is-selected': selectedFillPresetKey === option.key }"
+                    type="button"
+                    :title="option.label"
+                    @click="onFillPresetSelect(option.key)"
+                  >
+                    <span class="style-preview-card-art" v-html="option.previewSvg" />
+                    <span class="style-preview-card-copy">
+                      <span class="style-preview-card-title">{{ option.label }}</span>
+                      <span class="style-preview-card-subtitle">{{ option.caption }}</span>
+                    </span>
+                  </button>
+                </div>
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">填充颜色</span>
+                  <ColorSwatchPickerRoot
+                    :model-value="selectedFillColor"
+                    as-child
+                    orientation="horizontal"
+                    :highlight-on-hover="true"
+                    @update:model-value="onFillColorSelect"
+                  >
+                    <div class="style-color-picker">
+                      <ColorSwatchPickerItem
+                        v-for="color in styleFillColorSwatches"
+                        :key="`fill-${color}`"
+                        :value="color"
+                        as-child
+                      >
+                        <button class="style-color-item" type="button">
+                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <ColorSwatchPickerItemIndicator as-child>
+                            <span class="style-color-indicator">✓</span>
+                          </ColorSwatchPickerItemIndicator>
+                        </button>
+                      </ColorSwatchPickerItem>
+                    </div>
+                  </ColorSwatchPickerRoot>
+                </div>
+              </div>
+
+              <div class="style-control-block">
+                <div class="style-control-labels">
+                  <span class="style-control-title">边框</span>
+                </div>
+                <div class="style-preview-grid style-preview-grid--border">
+                  <button
+                    v-for="option in styleBorderOptions"
+                    :key="option.key"
+                    class="style-preview-card"
+                    :class="{ 'is-selected': selectedBorderPresetKey === option.key }"
+                    type="button"
+                    :title="option.label"
+                    @click="onBorderPresetSelect(option.key)"
+                  >
+                    <span class="style-preview-card-art" v-html="option.previewSvg" />
+                    <span class="style-preview-card-copy">
+                      <span class="style-preview-card-title">{{ option.label }}</span>
+                      <span class="style-preview-card-subtitle">{{ option.caption }}</span>
+                    </span>
+                  </button>
+                </div>
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">边框颜色</span>
+                  <ColorSwatchPickerRoot
+                    :model-value="selectedBorderColor"
+                    as-child
+                    orientation="horizontal"
+                    :highlight-on-hover="true"
+                    @update:model-value="onBorderColorSelect"
+                  >
+                    <div class="style-color-picker">
+                      <ColorSwatchPickerItem
+                        v-for="color in styleOutlineColorSwatches"
+                        :key="`border-${color}`"
+                        :value="color"
+                        as-child
+                      >
+                        <button class="style-color-item" type="button">
+                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <ColorSwatchPickerItemIndicator as-child>
+                            <span class="style-color-indicator">✓</span>
+                          </ColorSwatchPickerItemIndicator>
+                        </button>
+                      </ColorSwatchPickerItem>
+                    </div>
+                  </ColorSwatchPickerRoot>
+                </div>
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">线条粗细</span>
+                  <div class="style-weight-grid">
+                    <button
+                      v-for="option in styleStrokeWidthOptions"
+                      :key="option.key"
+                      class="style-weight-card"
+                      :class="{ 'is-selected': selectedBorderWidthKey === option.key }"
+                      type="button"
+                      :title="option.label"
+                      @click="onBorderWidthSelect(option.key)"
+                    >
+                      <span class="style-weight-line" :style="{ height: `${option.previewPx}px` }" />
+                      <span class="style-weight-label">{{ option.label }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="style-section">
+              <div class="style-section-header">
+                <h3 class="style-section-title">文本</h3>
+              </div>
+
+              <div class="style-control-block">
+                <div class="style-control-labels">
+                  <span class="style-control-title">字体</span>
+                </div>
+                <div class="style-font-grid">
+                  <button
+                    v-for="option in styleFontOptions"
+                    :key="option.key"
+                    class="style-font-card"
+                    :class="{ 'is-selected': selectedFontKey === option.key }"
+                    type="button"
+                    @click="onFontFamilySelect(option.key)"
+                  >
+                    <span class="style-font-sample" :style="{ fontFamily: option.fontFamily }">Aa</span>
+                    <span class="style-font-copy">
+                      <span class="style-font-title">{{ option.label }}</span>
+                      <span class="style-font-stack">{{ option.sample }}</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="style-control-block">
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">字号</span>
+                  <div class="style-size-grid">
+                    <button
+                      v-for="size in styleFontSizes"
+                      :key="size"
+                      class="style-size-chip"
+                      :class="{ 'is-selected': selectedFontSize === size }"
+                      type="button"
+                      @click="onFontSizeSelect(size)"
+                    >
+                      {{ size }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">字体颜色</span>
+                  <ColorSwatchPickerRoot
+                    :model-value="selectedTextColor"
+                    as-child
+                    orientation="horizontal"
+                    :highlight-on-hover="true"
+                    @update:model-value="onTextColorSelect"
+                  >
+                    <div class="style-color-picker">
+                      <ColorSwatchPickerItem
+                        v-for="color in styleOutlineColorSwatches"
+                        :key="`text-${color}`"
+                        :value="color"
+                        as-child
+                      >
+                        <button class="style-color-item" type="button">
+                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <ColorSwatchPickerItemIndicator as-child>
+                            <span class="style-color-indicator">✓</span>
+                          </ColorSwatchPickerItemIndicator>
+                        </button>
+                      </ColorSwatchPickerItem>
+                    </div>
+                  </ColorSwatchPickerRoot>
+                </div>
+
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">字形</span>
+                  <div class="style-toggle-grid">
+                    <button
+                      v-for="option in styleTextToggleOptions"
+                      :key="option.key"
+                      class="style-toggle-button"
+                      :class="[
+                        option.previewClass,
+                        { 'is-selected': textToggleState[option.key] },
+                      ]"
+                      type="button"
+                      :title="option.label"
+                      @click="onTextToggleClick(option.key)"
+                    >
+                      {{ option.glyph }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="style-inline-field">
+                  <span class="style-inline-field-label">对齐</span>
+                  <div class="style-align-grid">
+                    <button
+                      v-for="option in styleTextAlignOptions"
+                      :key="option.key"
+                      class="style-align-button"
+                      :class="{ 'is-selected': selectedTextAlign === option.key }"
+                      type="button"
+                      :title="option.label"
+                      @click="onTextAlignSelect(option.key)"
+                    >
+                      <span class="style-align-preview" :class="`is-${option.key}`">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div
+            v-if="formatPanelTab === 'mark'"
+            class="marker-panel"
+            :class="{ 'is-disabled': !hasSelectedNodes }"
+          >
+            <section v-for="group in markerPanelGroups" :key="group.key" class="marker-group">
+              <h3 class="marker-group-title">{{ group.label }}</h3>
+              <div class="marker-grid">
+                <button
+                  v-for="marker in group.items"
+                  :key="marker.key"
+                  class="marker-tile"
+                  type="button"
+                  :title="marker.name"
+                  @click="onMarkerTileClick(marker.key)"
+                >
+                  <img class="marker-tile-icon" :src="marker.src" :alt="marker.name" />
+                </button>
+              </div>
+            </section>
+
+            <div class="marker-mode-panel">
+              <div class="marker-mode-row">
+                <span class="marker-mode-label">{{ isMarkerDeleteMode ? '删除模式' : '添加模式' }}</span>
+                <button
+                  class="marker-mode-switch"
+                  :class="{ 'is-on': isMarkerDeleteMode }"
+                  type="button"
+                  role="switch"
+                  :aria-checked="isMarkerDeleteMode ? 'true' : 'false'"
+                  @click="isMarkerDeleteMode = !isMarkerDeleteMode"
+                >
+                  <span class="marker-mode-switch-thumb" />
+                </button>
+              </div>
+
+              <button
+                v-if="isMarkerDeleteMode"
+                class="marker-clear-button"
+                type="button"
+                @click="clearSelectedNodeMarkers"
+              >
+                清除所有
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="formatPanelTab === 'mark' && !hasSelectedNodes"
+            class="format-panel-body-mask"
+            aria-hidden="true"
+          />
+          <div
+            v-if="formatPanelTab === 'style' && !hasSelectedNodes"
+            class="format-panel-body-mask"
+            aria-hidden="true"
+          />
+        </div>
+      </aside>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
+import {
+  ColorSwatchPickerItem,
+  ColorSwatchPickerItemIndicator,
+  ColorSwatchPickerRoot,
+} from 'reka-ui';
+import rough from 'roughjs';
+import type { Options } from 'roughjs/bin/core';
+import { $patchStyleText } from '@lexical/selection';
+import { $getSelection, $isRangeSelection, FORMAT_ELEMENT_COMMAND } from 'lexical';
 import { getInternalClipboard, internalClipboardState, setInternalClipboard, type InternalClipboardState } from '@/mind/core/clipboard';
 import { createBatchAddChildCommand, type SelectionSnapshot } from '@/mind/core/commands/BatchAddChildCommand';
 import { createBatchAddSiblingCommand } from '@/mind/core/commands/BatchAddSiblingCommand';
@@ -77,7 +374,7 @@ import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageComm
 import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImageSizeCommand';
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
 import { collectSubtreeNodeIds, createSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
-import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, type MindNodeImage } from '@/mind/core/nodeContent';
+import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeRichText, type MindNodeImage } from '@/mind/core/nodeContent';
 import { layoutOverlayTextLines } from '@/mind/core/dragDrop/overlayTextLayout';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
 import { createHistory, type Command, type HistorySnapshot } from '@/mind/core/history';
@@ -86,6 +383,7 @@ import {
   cloneLexicalState,
   lexicalStateFromPlainText,
   richTextFromLexicalState,
+  scaleLexicalStateFontSizes,
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, normalizeSelectionTargets } from '@/mind/core/selection/normalizeSelection';
@@ -97,11 +395,20 @@ import { useEdges } from './actions/useEdges';
 import { useInteraction } from './actions/useInteraction';
 import { useMarquee } from './actions/useMarquee';
 import { usePersistence } from './actions/usePersistence';
-import { SPATIAL_GRID_CELL_SIZE } from './constants';
-import { DEBUG_RENDER_DIAGNOSTICS, logCameraReset, logRendererDebugInstructions } from './diagnostics';
+import { DEBUG_CANVAS_OVERLAY, SPATIAL_GRID_CELL_SIZE } from './constants';
+import { buildCollapseTagScreenMap, hitTestCollapseTag } from './collapseTags';
+import { logCameraReset, logRendererDebugInstructions } from './diagnostics';
 import { getWorldViewportRect, pointInRect, rectContains, screenToWorld, worldToScreen } from './geom/rect';
 import { buildWorldBoxes, type WorldBoxes } from './geom/worldBoxes';
 import { UniformGridSpatialIndex } from './grid/spatialIndex';
+import {
+  clearNodeMarkers,
+  getNodeBodyWorldRect,
+  measureNodeMarkerRow,
+  nodeMarkerGroups,
+  removeNodeMarker,
+  upsertNodeMarker,
+} from './nodeMarkers';
 import {
   clampImageSize,
   computeImagePreviewSize,
@@ -116,11 +423,17 @@ import {
   type ImageSize,
 } from './imageInteraction';
 import {
+  cloneRichText,
+  type RichTextAlign,
+  type RichTextDocument,
+  type RichTextInline,
+  type RichTextMarks,
+} from '@/mind/core/richText';
+import {
   computeNodeTextGeometry,
   getNodeTextStyle,
   measureTextVerticalMetrics,
   NODE_CONTENT_MAX_W,
-  NODE_MAX_W,
   NODE_MIN_W,
   NODE_LINE_HEIGHT,
   NODE_PADDING_X,
@@ -131,15 +444,443 @@ import {
 import { getDomTextTopOffset } from '@/mind/core/text/domTextCalibration';
 import { NODE_H_HARD_MAX, NODE_TEXT_MAX_WIDTH_PX, NODE_W_HARD_MAX } from '@/mind/core/text/measureNodeText';
 import LexicalNodeEditorOverlay from './components/LexicalNodeEditorOverlay.vue';
+import type { MindNodeBorderPreset, MindNodeFillPreset } from './nodeStyles';
+import { getMindNodeDefaultVisualStyle } from './nodeStyles';
+import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
 
-const props = defineProps<{ doc?: any; filePath?: any; docId?: string; windowKey?: any }>();
+const props = defineProps<{ doc?: any; filePath?: any; docId?: string; windowKey?: any; showFormatPanel?: boolean }>();
 const emit = defineEmits<{
   (event: 'filePathChange', value: string | null): void;
   (event: 'saveStateChange', value: { isDirty: boolean; isSaving: boolean; displayName: string }): void;
+  (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number }): void;
+  (event: 'toggleFormatPanel'): void;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const formatPanelTab = ref<'style' | 'mark'>('style');
+const isMarkerDeleteMode = ref(false);
+const markerPanelGroups = nodeMarkerGroups;
+const hasSelectedNodes = computed(() => selectedIds.value.size > 0);
+const styleColorSwatches = [
+  '#ffffff',
+  '#EEEEEE',
+  '#111111',
+  '#eab308',
+  '#f97316',
+  '#ef4444',
+  '#D02F48',
+  '#8b5cf6',
+  '#3b82f6',
+  '#14b8a6',
+  '#22c55e',
+  '#D0D0D0',
+] as const;
+const styleFillColorSwatches = styleColorSwatches;
+const styleOutlineColorSwatches = styleColorSwatches;
+const styleFillOptions = [
+  {
+    key: 'rough-hachure',
+    label: '手绘斜线',
+    caption: 'Hachure',
+    previewSvg: buildFillPreviewSvg({
+      fillStyle: 'hachure',
+      fillColor: '#f4b740',
+      strokeColor: '#0f172a',
+      roughness: 0.92,
+      hachureGap: 2.2,
+      fillWeight: 3.8,
+    }),
+  },
+  {
+    key: 'rough-cross',
+    label: '交叉排线',
+    caption: 'Cross-hatch',
+    previewSvg: buildFillPreviewSvg({
+      fillStyle: 'cross-hatch',
+      fillColor: '#e879f9',
+      strokeColor: '#0f172a',
+      roughness: 1.1,
+      hachureGap: 5,
+      fillWeight: 1.7,
+    }),
+  },
+  {
+    key: 'rough-dots',
+    label: '点状填充',
+    caption: 'Dots',
+    previewSvg: buildFillPreviewSvg({
+      fillStyle: 'dots',
+      fillColor: '#38bdf8',
+      strokeColor: '#0f172a',
+      roughness: 0.95,
+      hachureGap: 7,
+      fillWeight: 1.4,
+    }),
+  },
+  {
+    key: 'solid',
+    label: '纯色填充',
+    caption: 'Solid',
+    previewSvg: buildFillPreviewSvg({
+      fillStyle: 'solid',
+      fillColor: '#111827',
+      strokeColor: '#0f172a',
+      roughness: 0.2,
+      fillWeight: 0.8,
+    }),
+  },
+  {
+    key: 'none',
+    label: '无填充',
+    caption: 'None',
+    previewSvg: buildNoneFillPreviewSvg(),
+  },
+] as const;
+const styleBorderOptions = [
+  {
+    key: 'clean',
+    label: '无风格线条',
+    caption: 'Clean',
+    previewSvg: buildCleanBorderPreviewSvg(),
+  },
+  {
+    key: 'rough-solid',
+    label: '手绘实线',
+    caption: 'Rough solid',
+    previewSvg: buildRoughBorderPreviewSvg({
+      strokeColor: '#111827',
+      strokeWidth: 1.8,
+      roughness: 1.05,
+      bowing: 1,
+    }),
+  },
+  {
+    key: 'rough-dashed',
+    label: '手绘虚线',
+    caption: 'Rough dashed',
+    previewSvg: buildRoughDashedBorderPreviewSvg({
+      strokeColor: '#111827',
+      strokeWidth: 1.8,
+      roughness: 1.1,
+      bowing: 1.1,
+    }),
+  },
+  {
+    key: 'none',
+    label: '无边框',
+    caption: 'None',
+    previewSvg: buildNoBorderPreviewSvg(),
+  },
+] as const;
+const styleStrokeWidthOptions = [
+  { key: 'hairline', label: '极细', previewPx: 1 },
+  { key: 'thin', label: '细', previewPx: 2 },
+  { key: 'medium', label: '中等', previewPx: 3 },
+  { key: 'thick', label: '粗', previewPx: 4 },
+  { key: 'heavy', label: '极粗', previewPx: 6 },
+] as const;
+const styleFontOptions = [
+  {
+    key: 'modern-sans',
+    label: 'Microsoft YaHei',
+    sample: 'YaHei',
+    fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+  },
+  {
+    key: 'humanist',
+    label: 'Humanist',
+    sample: 'Trebuchet',
+    fontFamily: '"Trebuchet MS", Verdana, sans-serif',
+  },
+  {
+    key: 'classic-serif',
+    label: 'Classic Serif',
+    sample: 'Georgia',
+    fontFamily: 'Georgia, "Times New Roman", serif',
+  },
+  {
+    key: 'mono',
+    label: 'Mono',
+    sample: 'SF Mono',
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+  },
+] as const;
+const styleFontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48] as const;
+const styleTextToggleOptions = [
+  { key: 'bold', label: '粗体', glyph: 'B', previewClass: 'is-bold' },
+  { key: 'italic', label: '斜体', glyph: 'I', previewClass: 'is-italic' },
+  { key: 'underline', label: '下划线', glyph: 'U', previewClass: 'is-underline' },
+  { key: 'strike', label: '删除线', glyph: 'S', previewClass: 'is-strike' },
+] as const;
+const styleTextAlignOptions = [
+  { key: 'left', label: '左对齐' },
+  { key: 'center', label: '居中对齐' },
+  { key: 'right', label: '右对齐' },
+] as const;
+type StyleFillPresetKey = (typeof styleFillOptions)[number]['key'];
+type StyleBorderPresetKey = (typeof styleBorderOptions)[number]['key'];
+type StyleBorderWidthKey = (typeof styleStrokeWidthOptions)[number]['key'];
+type StyleFontKey = (typeof styleFontOptions)[number]['key'];
+type StyleTextToggleKey = (typeof styleTextToggleOptions)[number]['key'];
+type StyleTextAlignKey = (typeof styleTextAlignOptions)[number]['key'];
+const selectedFillPresetKey = ref<(typeof styleFillOptions)[number]['key']>('rough-hachure');
+const selectedFillColor = ref<string>('#ffffff');
+const selectedBorderPresetKey = ref<(typeof styleBorderOptions)[number]['key']>('rough-solid');
+const selectedBorderColor = ref<string>('#111111');
+const selectedBorderWidthKey = ref<(typeof styleStrokeWidthOptions)[number]['key']>('medium');
+const selectedFontKey = ref<(typeof styleFontOptions)[number]['key']>('modern-sans');
+const selectedFontSize = ref<(typeof styleFontSizes)[number]>(18);
+const selectedTextColor = ref<string>('#111111');
+const selectedTextAlign = ref<(typeof styleTextAlignOptions)[number]['key']>('left');
+const textToggleState = ref<Record<(typeof styleTextToggleOptions)[number]['key'], boolean>>({
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+});
+
+function setTextToggleLocally(key: StyleTextToggleKey, enabled: boolean) {
+  textToggleState.value[key] = enabled;
+}
+
+function normalizeColorToken(value: string | null | undefined) {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function getPanelSourceSelectedNodeId() {
+  return selectedIds.value.values().next().value ?? getPrimarySelectedId();
+}
+
+function resolveFillPresetKey(visualStyle: ReturnType<typeof getMindNodeDefaultVisualStyle>) {
+  return mapNodeFillPresetToPanelKey(visualStyle.fillPreset);
+}
+
+function resolveBorderPresetKey(visualStyle: ReturnType<typeof getMindNodeDefaultVisualStyle>) {
+  return mapNodeBorderPresetToPanelKey(visualStyle.borderPreset);
+}
+
+function resolveStrokeWidthKey(strokeWidthPx: number) {
+  return styleStrokeWidthOptions.reduce((closest, option) => {
+    const closestDistance = Math.abs(closest.previewPx - strokeWidthPx);
+    const nextDistance = Math.abs(option.previewPx - strokeWidthPx);
+    return nextDistance < closestDistance ? option : closest;
+  }).key;
+}
+
+function mapFillPresetKeyToNodePreset(key: StyleFillPresetKey): MindNodeFillPreset {
+  if (key === 'rough-cross') return 'rough-cross';
+  if (key === 'rough-dots') return 'rough-dots';
+  if (key === 'solid') return 'solid';
+  if (key === 'none') return 'none';
+  return 'rough-hachure';
+}
+
+function mapNodeFillPresetToPanelKey(preset: MindNodeFillPreset): StyleFillPresetKey {
+  return preset;
+}
+
+function mapBorderPresetKeyToNodePreset(key: StyleBorderPresetKey): MindNodeBorderPreset {
+  if (key === 'clean') return 'clean';
+  if (key === 'rough-dashed') return 'rough-dashed';
+  if (key === 'none') return 'none';
+  return 'rough-solid';
+}
+
+function mapNodeBorderPresetToPanelKey(preset: MindNodeBorderPreset): StyleBorderPresetKey {
+  return preset;
+}
+
+function mapBorderWidthKeyToStrokeWidth(key: StyleBorderWidthKey) {
+  return styleStrokeWidthOptions.find((option) => option.key === key)?.previewPx ?? 3;
+}
+
+function resolveFontOptionKey(fontFamily: string) {
+  const normalizedFontFamily = normalizeColorToken(fontFamily);
+  const matched = styleFontOptions.find((option) => {
+    const candidates = [
+      option.fontFamily,
+      option.label,
+      option.sample,
+      option.key === 'modern-sans' ? 'pingfang sc' : '',
+      option.key === 'modern-sans' ? 'helvetica neue' : '',
+      option.key === 'modern-sans' ? 'microsoft yahei' : '',
+      option.key === 'humanist' ? 'trebuchet ms' : '',
+      option.key === 'humanist' ? 'verdana' : '',
+      option.key === 'classic-serif' ? 'times new roman' : '',
+      option.key === 'classic-serif' ? 'georgia' : '',
+      option.key === 'mono' ? 'sfmono' : '',
+      option.key === 'mono' ? 'consolas' : '',
+    ].map((value) => normalizeColorToken(value));
+    return candidates.some((candidate) => candidate && normalizedFontFamily.includes(candidate));
+  });
+  return matched?.key ?? 'modern-sans';
+}
+
+function resolveFontSizeValue(fontSizePx: number) {
+  return styleFontSizes.reduce((closest, option) => {
+    const closestDistance = Math.abs(closest - fontSizePx);
+    const nextDistance = Math.abs(option - fontSizePx);
+    return nextDistance < closestDistance ? option : closest;
+  });
+}
+
+function syncStylePanelFromSelection() {
+  const nodeId = getPanelSourceSelectedNodeId();
+  const node = getNodeById(nodeId);
+  if (!node || !nodeId) return;
+
+  const visualStyle = getMindNodeDefaultVisualStyle(props.doc, nodeId);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
+  const richText = getNodeRichText(node);
+  const firstBlock = richText.blocks[0];
+  const firstInline = firstBlock?.inlines.find((inline) => inline.text.length || inline.marks) ?? firstBlock?.inlines[0];
+  const marks = firstInline?.marks;
+  const roughTheme = getCurrentRoughTheme();
+  const shapeStyle = node.style?.shape ?? null;
+
+  selectedFillPresetKey.value = resolveFillPresetKey(visualStyle);
+  selectedFillColor.value = visualStyle.fill;
+  selectedBorderPresetKey.value = resolveBorderPresetKey(visualStyle);
+  selectedBorderColor.value = visualStyle.stroke;
+  selectedBorderWidthKey.value = resolveStrokeWidthKey(shapeStyle?.strokeWidthPx ?? roughTheme.strokeWidthPx);
+  selectedFontKey.value = resolveFontOptionKey(textStyle.fontFamily);
+  selectedFontSize.value = resolveFontSizeValue(textStyle.fontSizePx);
+  selectedTextColor.value = textStyle.color;
+  selectedTextAlign.value = textStyle.textAlign;
+  textToggleState.value = {
+    bold: textStyle.fontWeight >= 700,
+    italic: textStyle.fontStyle === 'italic',
+    underline: !!marks?.underline,
+    strike: !!marks?.strike,
+  };
+}
+
+function buildPreviewSvgFrame(inner: string) {
+  return [
+    '<svg viewBox="0 0 84 56" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">',
+    '<rect x="0.75" y="0.75" width="82.5" height="54.5" rx="14" fill="#ffffff" stroke="rgba(148, 163, 184, 0.24)" />',
+    inner,
+    '</svg>',
+  ].join('');
+}
+
+function createPreviewRoundedRectPathData(x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  if (r <= 0) {
+    return `M ${x} ${y} L ${x + width} ${y} L ${x + width} ${y + height} L ${x} ${y + height} Z`;
+  }
+  return [
+    `M ${x + r} ${y}`,
+    `L ${x + width - r} ${y}`,
+    `Q ${x + width} ${y} ${x + width} ${y + r}`,
+    `L ${x + width} ${y + height - r}`,
+    `Q ${x + width} ${y + height} ${x + width - r} ${y + height}`,
+    `L ${x + r} ${y + height}`,
+    `Q ${x} ${y + height} ${x} ${y + height - r}`,
+    `L ${x} ${y + r}`,
+    `Q ${x} ${y} ${x + r} ${y}`,
+    'Z',
+  ].join(' ');
+}
+
+function renderRoughPathToSvg(pathData: string, options: Options) {
+  const generator = rough.generator();
+  const drawable = generator.path(pathData, {
+    seed: 19,
+    preserveVertices: false,
+    ...options,
+  });
+
+  return generator.toPaths(drawable).map((path) => [
+    `<path d="${path.d}"`,
+    `fill="${path.fill ?? 'none'}"`,
+    `stroke="${path.stroke ?? 'none'}"`,
+    `stroke-width="${path.strokeWidth ?? 1}"`,
+    options.strokeLineDash?.length ? `stroke-dasharray="${options.strokeLineDash.join(' ')}"` : '',
+    'stroke-linecap="round"',
+    'stroke-linejoin="round"',
+    '/>',
+  ].filter(Boolean).join(' ')).join('');
+}
+
+function buildFillPreviewSvg(options: {
+  fillStyle: NonNullable<Options['fillStyle']>;
+  fillColor: string;
+  strokeColor: string;
+  roughness: number;
+  hachureGap?: number;
+  fillWeight: number;
+}) {
+  const roundedPath = createPreviewRoundedRectPathData(18, 12, 48, 30, 10);
+  return buildPreviewSvgFrame(renderRoughPathToSvg(roundedPath, {
+    fill: options.fillColor,
+    fillStyle: options.fillStyle,
+    fillWeight: options.fillWeight,
+    hachureGap: options.hachureGap,
+    hachureAngle: 58,
+    stroke: options.strokeColor,
+    strokeWidth: 1.35,
+    roughness: options.roughness,
+    bowing: 0.92,
+    disableMultiStrokeFill: options.fillStyle === 'solid',
+  }));
+}
+
+function buildNoneFillPreviewSvg() {
+  return buildPreviewSvgFrame([
+    '<rect x="18" y="12" width="48" height="30" rx="10" fill="rgba(255,255,255,0.01)" stroke="rgba(148, 163, 184, 0.95)" stroke-dasharray="4 4" stroke-width="1.2" />',
+    '<path d="M24 36 L60 18" stroke="rgba(148, 163, 184, 0.9)" stroke-width="2" stroke-linecap="round" />',
+  ].join(''));
+}
+
+function buildCleanBorderPreviewSvg() {
+  return buildPreviewSvgFrame([
+    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#f8fafc" stroke="#111827" stroke-width="1.6" />',
+  ].join(''));
+}
+
+function buildRoughBorderPreviewSvg(options: {
+  strokeColor: string;
+  strokeWidth: number;
+  roughness: number;
+  bowing: number;
+  strokeLineDash?: number[];
+}) {
+  const roundedPath = createPreviewRoundedRectPathData(18, 12, 48, 30, 10);
+  return buildPreviewSvgFrame([
+    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#f8fafc" stroke="none" />',
+    renderRoughPathToSvg(roundedPath, {
+      fill: 'transparent',
+      stroke: options.strokeColor,
+      strokeWidth: options.strokeWidth,
+      roughness: options.roughness,
+      bowing: options.bowing,
+      strokeLineDash: options.strokeLineDash,
+      fillStyle: 'solid',
+      disableMultiStrokeFill: true,
+    }),
+  ].join(''));
+}
+
+function buildRoughDashedBorderPreviewSvg(options: {
+  strokeColor: string;
+  strokeWidth: number;
+  roughness: number;
+  bowing: number;
+}) {
+  return buildRoughBorderPreviewSvg({
+    ...options,
+    strokeLineDash: [6, 5],
+  });
+}
+
+function buildNoBorderPreviewSvg() {
+  return buildPreviewSvgFrame([
+    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#e2e8f0" stroke="none" />',
+    '<path d="M24 36 L60 18" stroke="rgba(100, 116, 139, 0.78)" stroke-width="2" stroke-linecap="round" />',
+  ].join(''));
+}
 
 const viewportW = ref(1200);
 const viewportH = ref(800);
@@ -148,14 +889,20 @@ const canvasPixelW = ref(1200);
 const canvasPixelH = ref(800);
 const worldBoxes = ref<WorldBoxes>(new Map());
 const hoverNodeId = ref<string | null>(null);
+const collapseTagHoverNodeId = ref<string | null>(null);
+const collapseTagStickyNodeId = ref<string | null>(null);
 const editingNodeId = ref<string | null>(null);
 const editingSession = ref<null | {
   nodeId: string;
   initialLexicalState: SerializedLexicalEditorState;
   mode: 'append' | 'replace';
   caretPlacement: 'start' | 'end' | 'none';
-}> (null);
+}>(null);
 const editingDraftLexicalState = ref<SerializedLexicalEditorState>(getNodeLexicalState(null));
+const editingDisplayLexicalState = computed(() => {
+  const scale = Math.max(camera.value.scale, 0.0001);
+  return scaleLexicalStateFontSizes(editingDraftLexicalState.value, scale);
+});
 const editingPreview = ref<null | {
   nodeId: string;
   liveLexicalState: SerializedLexicalEditorState;
@@ -163,7 +910,7 @@ const editingPreview = ref<null | {
   measuredTextH: number;
   computedNodeW: number;
   computedNodeH: number;
-}> (null);
+}>(null);
 const isComposing = ref(false);
 const primarySelectedNodeId = ref<string | null>(null);
 const selectionAnchorNodeId = ref<string | null>(null);
@@ -250,7 +997,18 @@ const {
   finishSelection: finishMarqueeSelection,
   cancelSelection: cancelMarqueeSelection,
   cleanup: cleanupMarquee,
- } = useMarquee(camera, spatialIndex, worldBoxes, requestRender);
+} = useMarquee(camera, spatialIndex, worldBoxes, requestRender);
+const collapseTagScreenMap = computed(() =>
+  buildCollapseTagScreenMap(
+    props.doc,
+    worldBoxes.value,
+    camera.value,
+    hoverNodeId.value,
+    collapseTagHoverNodeId.value,
+    selectedIds.value,
+    collapseTagStickyNodeId.value
+  )
+);
 
 const history = createHistory((nextSnapshot) => {
   historySnapshot.value = nextSnapshot;
@@ -263,6 +1021,7 @@ const { draw } = useDraw(
   canvasRef,
   camera,
   worldBoxes,
+  collapseTagScreenMap,
   parentEdgeGeoms,
   edgeStats,
   spatialIndex,
@@ -399,6 +1158,7 @@ let localDocWatchSuppressionHolds = 0;
 let globalDragListenersActive = false;
 let isFinalizingInteraction = false;
 let removeBeforeCloseListener: null | (() => void) = null;
+let collapseTagHideTimer: number | null = null;
 
 const isDirty = computed(() => contentRevision.value !== lastSavedContentRevision.value);
 
@@ -412,6 +1172,13 @@ function emitSaveState(filePath: string | null | undefined = props.filePath ?? n
     isDirty: isDirty.value,
     isSaving: isSaving.value,
     displayName: getFileDisplayName(filePath),
+  });
+}
+
+function emitNodeCountState() {
+  emit('nodeCountChange', {
+    totalNodes: Object.keys(getMindNodes() ?? {}).length,
+    selectedNodes: getVisibleSelectedNodeCount(),
   });
 }
 
@@ -493,6 +1260,33 @@ function getNodeById(nodeId: string | null | undefined) {
   if (!nodeId) return null;
   const nodes = getMindNodes();
   return nodes?.[nodeId] ?? null;
+}
+
+function getVisibleSelectedNodeCount() {
+  const nodes = getMindNodes();
+  if (!nodes) return 0;
+
+  let count = 0;
+  for (const nodeId of selectedIds.value) {
+    if (!nodes[nodeId]) continue;
+
+    let currentId = nodeId;
+    let hiddenByCollapsedAncestor = false;
+    while (true) {
+      const parentInfo = findParentAndIndex(currentId);
+      if (!parentInfo) break;
+      const parentNode = nodes[parentInfo.parentId];
+      if (parentNode?.collapsed) {
+        hiddenByCollapsedAncestor = true;
+        break;
+      }
+      currentId = parentInfo.parentId;
+    }
+
+    if (!hiddenByCollapsedAncestor) count += 1;
+  }
+
+  return count;
 }
 
 function getPrimarySelectedId() {
@@ -641,7 +1435,7 @@ function extendSelectionFromAnchor(targetNodeId: string) {
     const targetIndex = siblings.indexOf(targetNodeId);
     const startIndex = Math.min(anchorIndex, targetIndex);
     const endIndex = Math.max(anchorIndex, targetIndex);
-    siblings.slice(startIndex, endIndex + 1).forEach((nodeId) => nextSelection.add(nodeId));
+    siblings.slice(startIndex, endIndex + 1).forEach((nodeId: any) => nextSelection.add(nodeId));
   }
   setSelection(nextSelection, targetNodeId, { anchorId, preserveAnchor: true });
   if (targetGroupKey && targetGroupKey !== anchorGroupKey) {
@@ -678,13 +1472,320 @@ function getNodeImageRect(nodeId: string) {
   const nodeRect = worldBoxes.value.get(nodeId);
   const imageSize = getNodeImageDisplaySize(nodeId);
   if (!nodeRect || !imageSize) return null;
-  return getNodeImageWorldRect(nodeRect, imageSize);
+  return getNodeImageWorldRect(getNodeBodyWorldRect(getNodeById(nodeId), nodeRect), imageSize);
+}
+
+function collectMarkerTargetNodeIds() {
+  const nodes = props.doc?.mind?.nodes;
+  const targetIds = new Set<string>();
+  if (!nodes) return targetIds;
+
+  for (const nodeId of selectedIds.value) {
+    const node = nodes[nodeId];
+    if (!node) continue;
+    targetIds.add(nodeId);
+    if (node.collapsed) {
+      for (const descendantId of collectSubtreeNodeIds(nodes, nodeId)) {
+        targetIds.add(descendantId);
+      }
+    }
+  }
+
+  return targetIds;
+}
+
+function ensureNodeStyleContainers(node: any) {
+  if (!node.style) node.style = {};
+  if (!node.style.shape) node.style.shape = {};
+  if (!node.style.text) node.style.text = {};
+  return node.style as NonNullable<typeof node.style>;
+}
+
+function normalizeInlineMarks(marks: RichTextMarks | undefined) {
+  if (!marks) return undefined;
+  const nextMarks = { ...marks };
+  for (const key of Object.keys(nextMarks) as Array<keyof RichTextMarks>) {
+    if (nextMarks[key] == null || nextMarks[key] === false) delete nextMarks[key];
+  }
+  return Object.keys(nextMarks).length ? nextMarks : undefined;
+}
+
+function applyMarksToAllInlines(doc: RichTextDocument, updater: (marks: RichTextMarks) => void) {
+  for (const block of doc.blocks) {
+    for (const inline of block.inlines) {
+      const marks = { ...(inline.marks ?? {}) };
+      updater(marks);
+      inline.marks = normalizeInlineMarks(marks);
+    }
+  }
+}
+
+function applyBooleanMarkToAllInlines(doc: RichTextDocument, key: 'bold' | 'italic' | 'underline' | 'strike', enabled: boolean) {
+  applyMarksToAllInlines(doc, (marks) => {
+    if (enabled) marks[key] = true;
+    else delete marks[key];
+  });
+}
+
+function applyValueMarkToAllInlines<K extends 'fontFamily' | 'fontSize' | 'color'>(
+  doc: RichTextDocument,
+  key: K,
+  value: NonNullable<RichTextMarks[K]>
+) {
+  applyMarksToAllInlines(doc, (marks) => {
+    marks[key] = value;
+  });
+}
+
+async function applyShapeStyleToSelectedNodes(
+  reason: string,
+  updater: (shape: Record<string, any>, nodeId: string) => void
+) {
+  if (editingSession.value || !hasSelectedNodes.value) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+
+  const targetIds = collectMarkerTargetNodeIds();
+  for (const nodeId of targetIds) {
+    const node = nodes[nodeId];
+    if (!node) continue;
+    const style = ensureNodeStyleContainers(node);
+    const shape = { ...(style.shape ?? {}) };
+    updater(shape, nodeId);
+    style.shape = shape;
+  }
+
+  await applyDocumentMutation(reason, {
+    ensureVisibleNodeIds: Array.from(selectedIds.value),
+  });
+}
+
+function withActiveLexicalRangeSelection(mutator: (selection: ReturnType<typeof $getSelection>) => void) {
+  if (!editingSession.value) return false;
+  let applied = false;
+  lexicalEditorManager.getActiveEditor().update(() => {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+    applied = true;
+    mutator(selection);
+  });
+  return applied;
+}
+
+async function applyTextStyleToSelectedNodes(
+  reason: string,
+  nonEditingUpdater: (doc: RichTextDocument, node: any) => void,
+  editingUpdater?: (selection: NonNullable<ReturnType<typeof $getSelection>>) => void
+) {
+  if (editingSession.value) {
+    if (!editingUpdater) return;
+    withActiveLexicalRangeSelection(editingUpdater);
+    return;
+  }
+  if (!hasSelectedNodes.value) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+
+  const targetIds = collectMarkerTargetNodeIds();
+  for (const nodeId of targetIds) {
+    const node = nodes[nodeId];
+    if (!node) continue;
+    const style = ensureNodeStyleContainers(node);
+    const richText = cloneRichText(getNodeRichText(node));
+    const textStyle = { ...(style.text ?? {}) };
+    nonEditingUpdater(richText, textStyle);
+    setNodeRichText(node, richText);
+    style.text = textStyle;
+  }
+
+  await applyDocumentMutation(reason, {
+    ensureVisibleNodeIds: Array.from(selectedIds.value),
+  });
+}
+
+async function onFillPresetSelect(key: StyleFillPresetKey) {
+  await applyShapeStyleToSelectedNodes('node-style-fill-preset', (shape) => {
+    shape.fillPreset = mapFillPresetKeyToNodePreset(key);
+  });
+}
+
+async function onFillColorSelect(value: string | string[]) {
+  const color = Array.isArray(value) ? value[0] : value;
+  if (!color) return;
+  await applyShapeStyleToSelectedNodes('node-style-fill-color', (shape) => {
+    shape.fill = color;
+  });
+}
+
+async function onBorderPresetSelect(key: StyleBorderPresetKey) {
+  await applyShapeStyleToSelectedNodes('node-style-border-preset', (shape) => {
+    shape.borderPreset = mapBorderPresetKeyToNodePreset(key);
+  });
+}
+
+async function onBorderColorSelect(value: string | string[]) {
+  const color = Array.isArray(value) ? value[0] : value;
+  if (!color) return;
+  await applyShapeStyleToSelectedNodes('node-style-border-color', (shape) => {
+    shape.stroke = color;
+  });
+}
+
+async function onBorderWidthSelect(key: StyleBorderWidthKey) {
+  await applyShapeStyleToSelectedNodes('node-style-border-width', (shape) => {
+    shape.strokeWidthPx = mapBorderWidthKeyToStrokeWidth(key);
+  });
+}
+
+async function onFontFamilySelect(key: StyleFontKey) {
+  const option = styleFontOptions.find((item) => item.key === key);
+  if (!option) return;
+  await applyTextStyleToSelectedNodes(
+    'node-style-font-family',
+    (doc, textStyle) => {
+      textStyle.fontFamily = option.fontFamily;
+      applyValueMarkToAllInlines(doc, 'fontFamily', option.fontFamily);
+    },
+    (selection) => {
+      $patchStyleText(selection, { 'font-family': option.fontFamily });
+      selectedFontKey.value = key;
+    }
+  );
+}
+
+async function onFontSizeSelect(size: number) {
+  await applyTextStyleToSelectedNodes(
+    'node-style-font-size',
+    (doc, textStyle) => {
+      textStyle.fontSizePx = size;
+      applyValueMarkToAllInlines(doc, 'fontSize', size);
+    },
+    (selection) => {
+      const displaySize = Math.max(1, Number((size * Math.max(camera.value.scale, 0.0001)).toFixed(3)));
+      $patchStyleText(selection, { 'font-size': `${displaySize}px` });
+      selectedFontSize.value = resolveFontSizeValue(size);
+    }
+  );
+}
+
+async function onTextColorSelect(value: string | string[]) {
+  const color = Array.isArray(value) ? value[0] : value;
+  if (!color) return;
+  await applyTextStyleToSelectedNodes(
+    'node-style-text-color',
+    (doc, textStyle) => {
+      textStyle.color = color;
+      applyValueMarkToAllInlines(doc, 'color', color);
+    },
+    (selection) => {
+      $patchStyleText(selection, { color });
+      selectedTextColor.value = color;
+    }
+  );
+}
+
+async function onTextToggleClick(key: StyleTextToggleKey) {
+  const nextValue = !textToggleState.value[key];
+  await applyTextStyleToSelectedNodes(
+    `node-style-text-${key}`,
+    (doc, textStyle) => {
+      if (key === 'bold') textStyle.fontWeight = nextValue ? 700 : 400;
+      if (key === 'italic') textStyle.fontStyle = nextValue ? 'italic' : 'normal';
+      applyBooleanMarkToAllInlines(doc, key, nextValue);
+    },
+    (selection) => {
+      selection.formatText(key === 'strike' ? 'strikethrough' : key);
+      setTextToggleLocally(key, nextValue);
+    }
+  );
+}
+
+async function onTextAlignSelect(key: StyleTextAlignKey) {
+  await applyTextStyleToSelectedNodes(
+    'node-style-text-align',
+    (doc, textStyle) => {
+      textStyle.textAlign = key;
+      for (const block of doc.blocks) {
+        block.align = key;
+      }
+    },
+    () => {
+      lexicalEditorManager.getActiveEditor().dispatchCommand(FORMAT_ELEMENT_COMMAND, key);
+      selectedTextAlign.value = key;
+    }
+  );
+}
+
+async function applyMarkerToSelectedNodes(markerKey: string) {
+  if (!hasSelectedNodes.value) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+
+  const targetIds = collectMarkerTargetNodeIds();
+  for (const nodeId of targetIds) {
+    upsertNodeMarker(nodes[nodeId], markerKey);
+  }
+
+  await applyDocumentMutation('node-apply-marker', {
+    ensureVisibleNodeIds: Array.from(selectedIds.value),
+  });
+}
+
+async function onMarkerTileClick(markerKey: string) {
+  if (!hasSelectedNodes.value) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+  const targetIds = collectMarkerTargetNodeIds();
+
+  for (const nodeId of targetIds) {
+    if (isMarkerDeleteMode.value) removeNodeMarker(nodes[nodeId], markerKey);
+    else upsertNodeMarker(nodes[nodeId], markerKey);
+  }
+
+  await applyDocumentMutation(isMarkerDeleteMode.value ? 'node-remove-marker' : 'node-apply-marker', {
+    ensureVisibleNodeIds: Array.from(selectedIds.value),
+  });
+}
+
+async function clearSelectedNodeMarkers() {
+  if (!hasSelectedNodes.value) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+
+  const targetIds = collectMarkerTargetNodeIds();
+  for (const nodeId of targetIds) {
+    clearNodeMarkers(nodes[nodeId]);
+  }
+
+  await applyDocumentMutation('node-clear-markers', {
+    ensureVisibleNodeIds: Array.from(selectedIds.value),
+  });
 }
 
 function setCanvasCursor(cursor: string) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   canvas.style.cursor = cursor;
+}
+
+function clearCollapseTagHideTimer() {
+  if (collapseTagHideTimer != null) window.clearTimeout(collapseTagHideTimer);
+  collapseTagHideTimer = null;
+}
+
+function keepCollapseTagVisible(nodeId: string | null) {
+  clearCollapseTagHideTimer();
+  collapseTagStickyNodeId.value = nodeId;
+}
+
+function scheduleCollapseTagHide() {
+  clearCollapseTagHideTimer();
+  if (!collapseTagStickyNodeId.value) return;
+  collapseTagHideTimer = window.setTimeout(() => {
+    collapseTagHideTimer = null;
+    collapseTagStickyNodeId.value = null;
+    requestRender();
+  }, 140);
 }
 
 function updateImageCursor(screenX: number, screenY: number) {
@@ -718,16 +1819,16 @@ function upsertImageInteraction(patch: Partial<ImageInteractionState> & Pick<Ima
   const base = current?.nodeId === patch.nodeId
     ? current
     : {
-        nodeId: patch.nodeId,
-        hovered: false,
-        selected: false,
-        resizing: false,
-        handle: null,
-        pointerId: null,
-        startPointer: { xScreen: 0, yScreen: 0 },
-        startSize: { w: 0, h: 0 },
-        previewSize: null,
-      } satisfies ImageInteractionState;
+      nodeId: patch.nodeId,
+      hovered: false,
+      selected: false,
+      resizing: false,
+      handle: null,
+      pointerId: null,
+      startPointer: { xScreen: 0, yScreen: 0 },
+      startSize: { w: 0, h: 0 },
+      previewSize: null,
+    } satisfies ImageInteractionState;
   imageInteraction.value = { ...base, ...patch };
 }
 
@@ -754,6 +1855,15 @@ function getPrimarySelectedImageTarget(screenX: number, screenY: number) {
 }
 
 function updateImageHover(screenX: number, screenY: number) {
+  if (collapseTagHoverNodeId.value) {
+    setCanvasCursor('pointer');
+    const current = imageInteraction.value;
+    if (current?.hovered && !current.resizing) {
+      imageInteraction.value = { ...current, hovered: false };
+      requestRender();
+    }
+    return;
+  }
   if (editingSession.value) {
     setCanvasCursor('');
     return;
@@ -906,10 +2016,7 @@ function resolveFallbackSelection(preferredId: string | null, parentId?: string 
 
 const editingOverlayRootStyle = computed<CSSProperties>(() => {
   if (!editingSession.value) return { display: 'none' };
-  return {
-    transform: `translate(${camera.value.tx}px, ${camera.value.ty}px) scale(${camera.value.scale})`,
-    transformOrigin: '0 0',
-  };
+  return {};
 });
 
 const editingCanvasTopLeadingPx = computed(() => {
@@ -919,7 +2026,7 @@ const editingCanvasTopLeadingPx = computed(() => {
   if (!session || !node || !canvas) return 0;
   const ctx = canvas.getContext('2d');
   if (!ctx) return 0;
-  const textStyle = getNodeTextStyle(node);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session.nodeId });
   return measureTextVerticalMetrics(ctx, {
     font: textStyle.canvasFontString,
     fontSizePx: textStyle.fontSizePx,
@@ -933,12 +2040,13 @@ function getEditingTextBoxRectForNode(
   preview = editingPreview.value
 ) {
   const node = getNodeById(nodeId);
-  const rect = nodeId ? worldBoxes.value.get(nodeId) : null;
+  const worldRect = nodeId ? worldBoxes.value.get(nodeId) : null;
   const canvas = canvasRef.value;
-  if (!nodeId || !node || !rect || !canvas) return null;
+  if (!nodeId || !node || !worldRect || !canvas) return null;
+  const rect = getNodeBodyWorldRect(node, worldRect);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  const textStyle = getNodeTextStyle(node);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
   const previewRichText = richTextFromLexicalState(lexicalState);
   const textLayout = measureNodeTextLayout(ctx, previewRichText, new Map(), {
     maxWidth: preview?.nodeId === nodeId
@@ -992,14 +2100,26 @@ const editingTextBoxRect = computed(() => {
   return getEditingTextBoxRectForNode(session?.nodeId, editingDraftLexicalState.value);
 });
 
+const editingScreenTextBoxRect = computed(() => {
+  const textBoxRect = editingTextBoxRect.value;
+  if (!textBoxRect) return null;
+  return {
+    x: textBoxRect.x * camera.value.scale + camera.value.tx,
+    y: textBoxRect.y * camera.value.scale + camera.value.ty,
+    width: Math.max(1, textBoxRect.width * camera.value.scale),
+    height: Math.max(1, textBoxRect.height * camera.value.scale),
+  };
+});
+
 const editingEditorShellStyle = computed<CSSProperties>(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
-  const textBoxRect = editingTextBoxRect.value;
+  const textBoxRect = editingScreenTextBoxRect.value;
   if (!session || !node || !textBoxRect) {
     return { display: 'none' };
   }
-  const textStyle = getNodeTextStyle(node);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
+  const scale = camera.value.scale;
 
   return {
     position: 'absolute',
@@ -1008,11 +2128,11 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     width: `${textBoxRect.width}px`,
     height: `${textBoxRect.height}px`,
     fontFamily: textStyle.fontFamily,
-    fontSize: `${textStyle.fontSizePx}px`,
+    fontSize: `${textStyle.fontSizePx * scale}px`,
     fontWeight: `${textStyle.fontWeight}`,
     fontStyle: textStyle.fontStyle,
-    lineHeight: `${textStyle.lineHeightPx}px`,
-    letterSpacing: `${textStyle.letterSpacingPx}px`,
+    lineHeight: `${textStyle.lineHeightPx * scale}px`,
+    letterSpacing: `${textStyle.letterSpacingPx * scale}px`,
     padding: '0',
     margin: '0',
     border: '0',
@@ -1035,21 +2155,22 @@ const editingCalibrationStyle = computed(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
   if (!session || !node) return null;
-  const textStyle = getNodeTextStyle(node);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
+  const scale = camera.value.scale;
   return {
     fontFamily: textStyle.fontFamily,
-    fontSizePx: textStyle.fontSizePx,
+    fontSizePx: textStyle.fontSizePx * scale,
     fontWeight: textStyle.fontWeight,
     fontStyle: textStyle.fontStyle,
-    lineHeightPx: textStyle.lineHeightPx,
-    letterSpacingPx: textStyle.letterSpacingPx,
+    lineHeightPx: textStyle.lineHeightPx * scale,
+    letterSpacingPx: textStyle.letterSpacingPx * scale,
   };
 });
 
 const editingOverlayInnerTranslateYPx = computed(() => {
   const style = editingCalibrationStyle.value;
   if (!style) return 0;
-  return editingCanvasTopLeadingPx.value - getDomTextTopOffset(style);
+  return Math.max(0, editingCanvasTopLeadingPx.value * camera.value.scale - getDomTextTopOffset(style));
 });
 
 let editingRelayoutRafId: number | null = null;
@@ -1067,19 +2188,20 @@ function relayoutEditingPreviewNow() {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const image = getNodeImage(node);
-  const textStyle = getNodeTextStyle(node);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
   const liveRichText = richTextFromLexicalState(editingDraftLexicalState.value);
   const measuredLayout = measureNodeTextLayout(ctx, liveRichText, new Map(), {
     maxWidth: NODE_TEXT_MAX_WIDTH_PX,
     baseStyle: textStyle,
   });
   const textGeometry = computeNodeTextGeometry(ctx, measuredLayout, textStyle, image);
+  const markerRow = measureNodeMarkerRow(node);
   let computedNodeW = clampNodeDimension(
-    Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X,
-    NODE_MIN_W,
-    Math.min(NODE_MAX_W, NODE_W_HARD_MAX)
+    Math.max(Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X, markerRow.width),
+    Math.max(NODE_MIN_W, markerRow.width),
+    NODE_W_HARD_MAX
   );
-  let computedNodeH = textGeometry.contentBoxTop + textGeometry.contentBoxHeight;
+  let computedNodeH = textGeometry.contentBoxTop + textGeometry.contentBoxHeight + markerRow.bandHeight;
   if (computedNodeW > NODE_W_HARD_MAX || computedNodeH > NODE_H_HARD_MAX) {
     console.warn('node size clamped', { nodeId: session.nodeId, computedNodeW, computedNodeH });
     computedNodeW = Math.min(computedNodeW, NODE_W_HARD_MAX);
@@ -1098,7 +2220,7 @@ function relayoutEditingPreviewNow() {
   rebuildSpatialCaches();
   editingRelayoutCount += 1;
   requestRender();
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-edit-input]', {
       nodeId: session.nodeId,
       textLen: getNodePlainText({ textLexical: editingDraftLexicalState.value }).length,
@@ -1155,32 +2277,32 @@ function startEditing(
   const currentRect = worldBoxes.value.get(nodeId);
   editingPreview.value = currentRect
     ? {
-        nodeId,
-        liveLexicalState: cloneLexicalState(nextLexicalState),
-        measuredTextW: Math.max(1, currentRect.x2 - currentRect.x1 - NODE_PADDING_X),
-        measuredTextH: Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
-        computedNodeW: Math.ceil(currentRect.x2 - currentRect.x1),
-        computedNodeH: Math.ceil(currentRect.y2 - currentRect.y1),
-      }
+      nodeId,
+      liveLexicalState: cloneLexicalState(nextLexicalState),
+      measuredTextW: Math.max(1, currentRect.x2 - currentRect.x1 - NODE_PADDING_X),
+      measuredTextH: Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
+      computedNodeW: Math.ceil(currentRect.x2 - currentRect.x1),
+      computedNodeH: Math.ceil(currentRect.y2 - currentRect.y1),
+    }
     : null;
-  if (DEBUG_RENDER_DIAGNOSTICS) console.debug('[mind-start-editing]', { nodeId, mode });
+  if (DEBUG_CANVAS_OVERLAY) console.debug('[mind-start-editing]', { nodeId, mode });
   void nextTick().then(() => {
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       const overlayRoot = document.querySelector('.lexical-editor-root');
       const overlayStyle = overlayRoot instanceof HTMLElement ? window.getComputedStyle(overlayRoot) : null;
       console.debug('[mind-enter-editing]', {
         nodeId,
         mode,
         initialTextLen: getNodePlainText(node).length,
-        appliedFont: getNodeTextStyle(node),
-        canvasFontString: getNodeTextStyle(node).canvasFontString,
+        appliedFont: getNodeTextStyle(node, { doc: props.doc, nodeId }),
+        canvasFontString: getNodeTextStyle(node, { doc: props.doc, nodeId }).canvasFontString,
         overlayComputedStyle: overlayStyle
           ? {
-              fontSize: overlayStyle.fontSize,
-              fontWeight: overlayStyle.fontWeight,
-              fontFamily: overlayStyle.fontFamily,
-              lineHeight: overlayStyle.lineHeight,
-            }
+            fontSize: overlayStyle.fontSize,
+            fontWeight: overlayStyle.fontWeight,
+            fontFamily: overlayStyle.fontFamily,
+            lineHeight: overlayStyle.lineHeight,
+          }
           : null,
       });
     }
@@ -1239,7 +2361,8 @@ function cancelEditingSession() {
 }
 
 function onLexicalEditorChange(state: SerializedLexicalEditorState) {
-  editingDraftLexicalState.value = cloneLexicalState(state);
+  const scale = Math.max(camera.value.scale, 0.0001);
+  editingDraftLexicalState.value = scaleLexicalStateFontSizes(state, 1 / scale);
   scheduleEditingPreviewRelayout();
 }
 
@@ -1298,7 +2421,7 @@ async function flushScheduledDocumentMutation() {
   if (ensureVisibleNodeIds.length) ensureNodesVisible(ensureVisibleNodeIds);
   if (shouldMarkDirty) markContentDirty();
 
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-rebuild-flush]', {
       reason,
       layoutRebuildMs: Number(metrics.layoutRebuildMs.toFixed(2)),
@@ -1349,6 +2472,7 @@ function createNodeRecord(nodeId: string, initialText = NEW_NODE_TEXT) {
     text: { plain: initialText },
     richText: richTextFromLexicalState(lexicalState),
     textLexical: lexicalState,
+    style: null,
     children: [],
     images: [],
     image: null,
@@ -1599,7 +2723,7 @@ function hashChildrenMap(childrenByParent: Record<string, string[]>) {
 }
 
 function logInteractionTransition(reason: string, nextMode: InteractionMode, details?: Record<string, unknown>) {
-  if (!DEBUG_RENDER_DIAGNOSTICS) return;
+  if (!DEBUG_CANVAS_OVERLAY) return;
   console.debug('[mind-interaction]', {
     reason,
     from: interactionState.value.mode,
@@ -1877,21 +3001,21 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
 
   return {
     command: createMoveSubtreesCommand(
-    {
-      getNodes: getMindNodes,
-      setSelection,
-      applyMutation: applyDocumentMutation,
-    },
-    {
-      movingRootIds,
-      beforeChildrenByParent,
-      afterChildrenByParent,
-      previousSelection: snapshotSelection(),
-      nextSelection: {
-        ids: movingRootIds,
-        primaryId: dragState.value.primaryDragRootId ?? movingRootIds[movingRootIds.length - 1] ?? null,
+      {
+        getNodes: getMindNodes,
+        setSelection,
+        applyMutation: applyDocumentMutation,
       },
-    }
+      {
+        movingRootIds,
+        beforeChildrenByParent,
+        afterChildrenByParent,
+        previousSelection: snapshotSelection(),
+        nextSelection: {
+          ids: movingRootIds,
+          primaryId: dragState.value.primaryDragRootId ?? movingRootIds[movingRootIds.length - 1] ?? null,
+        },
+      }
     ),
     reason: null,
     changed: true,
@@ -1917,7 +3041,7 @@ function capturePointer(pointerId: number, reason: string) {
     canvas.setPointerCapture(pointerId);
     return true;
   } catch (error) {
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       console.debug('[mind-pointer-capture-failed]', { reason, pointerId, error });
     }
     return false;
@@ -1932,7 +3056,7 @@ function releasePointer(pointerId: number | null, reason: string) {
       canvas.releasePointerCapture(pointerId);
     }
   } catch (error) {
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       console.debug('[mind-pointer-release-failed]', { reason, pointerId, error });
     }
   }
@@ -1942,7 +3066,7 @@ function clearDragTransient(reason?: string) {
   stopAutoPanLoop();
   const ghostCleared = dragState.value.draggedSubtreeNodeIds.size > 0;
   resetDragState();
-  if (DEBUG_RENDER_DIAGNOSTICS && reason) {
+  if (DEBUG_CANVAS_OVERLAY && reason) {
     console.debug('[mind-drag-clear]', { reason, ghostCleared });
   }
   requestRender();
@@ -2021,7 +3145,7 @@ function beginDragging(screenX: number, screenY: number) {
     lastScreenY: screenY,
   });
   addGlobalDragListeners();
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-drag-start]', {
       pointerId,
       captureSuccess,
@@ -2060,16 +3184,16 @@ function finalizeDrop(reason = 'pointerup') {
     stableTarget && !effectiveInvalidReason
       ? buildMoveCommand(stableTarget)
       : {
-          command: null,
-          reason: effectiveInvalidReason,
-          changed: false,
-          beforeHash: null,
-          afterHash: null,
-        };
+        command: null,
+        reason: effectiveInvalidReason,
+        changed: false,
+        beforeHash: null,
+        afterHash: null,
+      };
   const isNoOp = !result.command;
   const rebuildScheduled = !isNoOp;
 
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-drag-pointerup]', {
       reason,
       hasPreview:
@@ -2109,7 +3233,7 @@ function finalizeInteraction(
 
   isFinalizingInteraction = true;
   try {
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       console.debug('[mind-finalize-interaction]', {
         reason,
         mode,
@@ -2221,7 +3345,7 @@ function normalizeSelectedTargets(options?: { allowRoot?: boolean; collapseToRoo
     collapseToRootIfSelected: options?.collapseToRootIfSelected,
   });
   setFilteredOutDescendantsCount(result.filteredOutDescendantsCount);
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-normalize-selection]', {
       before: getSelectedNodeIds(),
       after: result.finalTargets.map((target) => ({
@@ -2242,7 +3366,7 @@ function performCopy(nodeIds?: string[]) {
   const snapshots = targetIds.map((nodeId) => createSubtreeSnapshot(nodes, nodeId));
   const clipboardState = createClipboardStateFromSnapshots(snapshots, targetIds);
   setInternalClipboard(clipboardState);
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-copy-subtree]', {
       nodeIds: targetIds,
       itemCount: clipboardState.itemCount,
@@ -2293,7 +3417,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       setSingleSelected,
       applyMutation: applyDocumentMutation,
       setLastDeletedNodeId,
-      debugEnabled: DEBUG_RENDER_DIAGNOSTICS,
+      debugEnabled: DEBUG_CANVAS_OVERLAY,
     },
     {
       targetNodeId,
@@ -2348,7 +3472,7 @@ function createBatchAddSiblingSelectionCommand(targetNodeIds: string[]): Command
   const newNodeIdsByTargetId = Object.fromEntries(targetInfos.map((target) => [target.nodeId, createNodeId()]));
   const selectionOrder = targetNodeIds.map((nodeId) => newNodeIdsByTargetId[nodeId]).filter(Boolean);
 
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug(
       '[mind-batch-add-sibling-order]',
       targetInfos.map((target) => ({
@@ -2437,7 +3561,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       ? computeSelectionAfterDelete(primaryDeleteTarget.parentId, siblingIds, primaryDeleteTarget.indexInParent)
       : resolveFallbackSelection(getPrimarySelectedId());
 
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug(
       '[mind-batch-delete-order]',
       targetsForMutation.map((target) => ({
@@ -2519,7 +3643,7 @@ function createCutCommand(targetNodeId: string): Command | null {
   return createCutSubtreeCommand(
     {
       setClipboard: setInternalClipboard,
-      debugEnabled: DEBUG_RENDER_DIAGNOSTICS,
+      debugEnabled: DEBUG_CANVAS_OVERLAY,
     },
     {
       targetNodeId,
@@ -2556,7 +3680,7 @@ function createPasteCommand(targetParentId: string): Command | null {
       resolveFallbackSelection,
       applyMutation: applyDocumentMutation,
       setLastPastedRootId,
-      debugEnabled: DEBUG_RENDER_DIAGNOSTICS,
+      debugEnabled: DEBUG_CANVAS_OVERLAY,
     },
     {
       targetParentId,
@@ -2820,12 +3944,45 @@ function hitTest(screenX: number, screenY: number): string | null {
   return hitId;
 }
 
+async function toggleNodeCollapsed(nodeId: string) {
+  const nodes = props.doc?.mind?.nodes;
+  const node = nodes?.[nodeId];
+  const children = Array.isArray(node?.children) ? node.children : [];
+  if (!node || !children.length) return;
+
+  if (editingSession.value) {
+    const editingSubtreeIds = new Set(collectSubtreeNodeIds(nodes, nodeId));
+    if (editingSubtreeIds.has(editingSession.value.nodeId)) {
+      commitEditingSession();
+    }
+  }
+
+  const nextCollapsed = !node.collapsed;
+  node.collapsed = nextCollapsed;
+
+  if (nextCollapsed) {
+    const subtreeIds = collectSubtreeNodeIds(nodes, nodeId);
+    const hidesSelection = subtreeIds.some((id) => id !== nodeId && selectedIds.value.has(id));
+    if (hidesSelection) setSingleSelected(nodeId);
+  }
+
+  collapseTagHoverNodeId.value = nodeId;
+  hoverNodeId.value = nodeId;
+  keepCollapseTagVisible(nodeId);
+  await applyDocumentMutation('node-toggle-collapsed', { ensureVisibleNodeId: nodeId });
+}
+
 function updateHoverFromScreenPoint(screenX: number, screenY: number) {
   if (isMarquee.value || interactionState.value.mode === 'draggingNodes') return;
-  const nextHoverId = hitTest(screenX, screenY);
-  if (nextHoverId === hoverNodeId.value) return;
+  const nextCollapseTagHoverId = hitTestCollapseTag(collapseTagScreenMap.value, screenX, screenY);
+  const nextHoverId = nextCollapseTagHoverId ?? hitTest(screenX, screenY);
+  if (nextHoverId === hoverNodeId.value && nextCollapseTagHoverId === collapseTagHoverNodeId.value) return;
   hoverNodeId.value = nextHoverId;
-  if (nextHoverId && DEBUG_RENDER_DIAGNOSTICS) console.debug('[mind-hit-test]', { hoverId: nextHoverId });
+  collapseTagHoverNodeId.value = nextCollapseTagHoverId;
+  const nextActiveTagNodeId = nextCollapseTagHoverId ?? nextHoverId;
+  if (nextActiveTagNodeId) keepCollapseTagVisible(nextActiveTagNodeId);
+  else scheduleCollapseTagHide();
+  if (nextHoverId && DEBUG_CANVAS_OVERLAY) console.debug('[mind-hit-test]', { hoverId: nextHoverId });
   requestRender();
 }
 
@@ -2840,6 +3997,7 @@ function onCanvasPointerDown(event: PointerEvent) {
   const screenPoint = getPointerScreenPoint(event);
   if (!screenPoint) return;
   const downWorld = screenToWorld(camera.value, screenPoint.x, screenPoint.y);
+  const collapseTagNodeId = hitTestCollapseTag(collapseTagScreenMap.value, screenPoint.x, screenPoint.y);
   const hitId = hitTest(screenPoint.x, screenPoint.y);
   const imageTarget = getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
 
@@ -2872,6 +4030,14 @@ function onCanvasPointerDown(event: PointerEvent) {
 
   if (imageInteraction.value) {
     clearImageInteraction('pointerdown-outside-image');
+  }
+
+  if (collapseTagNodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    editingNodeId.value = null;
+    void toggleNodeCollapsed(collapseTagNodeId);
+    return;
   }
 
   capturePointer(event.pointerId, 'pointerdown');
@@ -2953,12 +4119,20 @@ function onCanvasDoubleClick(event: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
+  const collapseTagNodeId = hitTestCollapseTag(
+    collapseTagScreenMap.value,
+    event.clientX - rect.left,
+    event.clientY - rect.top
+  );
+  if (collapseTagNodeId) return;
   const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
   if (!hitId) return;
   event.preventDefault();
   event.stopPropagation();
   setSingleSelected(hitId);
-  startEditing(hitId, { mode: 'append', caretPlacement: 'end' });
+  requestAnimationFrame(() => {
+    startEditing(hitId, { mode: 'append', caretPlacement: 'end' });
+  });
 }
 
 function onCanvasPointerMove(event: PointerEvent) {
@@ -2973,7 +4147,8 @@ function onCanvasPointerMove(event: PointerEvent) {
 
   if (interactionState.value.pointerId == null || event.pointerId !== interactionState.value.pointerId) {
     updateHoverFromScreenPoint(screenPoint.x, screenPoint.y);
-    updateImageHover(screenPoint.x, screenPoint.y);
+    if (collapseTagHoverNodeId.value) setCanvasCursor('pointer');
+    else updateImageHover(screenPoint.x, screenPoint.y);
     return;
   }
 
@@ -3023,11 +4198,13 @@ function onCanvasPointerMove(event: PointerEvent) {
   }
 
   updateHoverFromScreenPoint(screenPoint.x, screenPoint.y);
-  updateImageHover(screenPoint.x, screenPoint.y);
+  if (collapseTagHoverNodeId.value) setCanvasCursor('pointer');
+  else updateImageHover(screenPoint.x, screenPoint.y);
 }
 
 function onCanvasPointerLeave() {
   let imageHoverChanged = false;
+  scheduleCollapseTagHide();
   setCanvasCursor('');
   if (imageInteraction.value?.hovered && !imageInteraction.value.resizing) {
     imageInteraction.value = { ...imageInteraction.value, hovered: false };
@@ -3043,6 +4220,12 @@ function onCanvasPointerLeave() {
   }
   if (hoverNodeId.value) {
     hoverNodeId.value = null;
+    collapseTagHoverNodeId.value = null;
+    requestRender();
+    return;
+  }
+  if (collapseTagHoverNodeId.value) {
+    collapseTagHoverNodeId.value = null;
     requestRender();
     return;
   }
@@ -3055,7 +4238,7 @@ function onCanvasPointerUp(event: PointerEvent) {
     return;
   }
   if (interactionState.value.pointerId == null || event.pointerId !== interactionState.value.pointerId) return;
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-pointerup-canvas]', {
       pointerId: event.pointerId,
       mode: interactionState.value.mode,
@@ -3090,7 +4273,7 @@ function onGlobalPointerUp(event: PointerEvent) {
     return;
   }
   if (interactionState.value.pointerId == null || event.pointerId !== interactionState.value.pointerId) return;
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-pointerup-global]', {
       pointerId: event.pointerId,
       mode: interactionState.value.mode,
@@ -3105,7 +4288,7 @@ function onGlobalPointerCancel(event: PointerEvent) {
     return;
   }
   if (interactionState.value.pointerId == null || event.pointerId !== interactionState.value.pointerId) return;
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-pointercancel-global]', {
       pointerId: event.pointerId,
       mode: interactionState.value.mode,
@@ -3120,7 +4303,7 @@ function onGlobalMouseUp(event: MouseEvent) {
     return;
   }
   if (interactionState.value.mode !== 'draggingNodes') return;
-  if (DEBUG_RENDER_DIAGNOSTICS) {
+  if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-mouseup-global-fallback]', {
       button: event.button,
       mode: interactionState.value.mode,
@@ -3279,6 +4462,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isModifierPressed = event.metaKey || event.ctrlKey;
   const isSaveShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 's';
   const isSaveAsShortcut = isModifierPressed && !event.altKey && event.shiftKey && lowerKey === 's';
+  const isToggleFormatPanelShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'w';
   if (isSaveShortcut) {
     event.preventDefault();
     event.stopPropagation();
@@ -3291,6 +4475,12 @@ function onWindowKeyDown(event: KeyboardEvent) {
     void saveDocumentAs();
     return;
   }
+  if (isToggleFormatPanelShortcut) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('toggleFormatPanel');
+    return;
+  }
   if (editingSession.value && !isTextEditingActive(event.target)) return;
   if (event.isComposing || isTextEditingActive(event.target)) return;
 
@@ -3300,6 +4490,13 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isSelectAllShortcut = isModifierPressed && !event.altKey && lowerKey === 'a';
   const isCopyShortcut = isModifierPressed && !event.altKey && lowerKey === 'c';
   const isCutShortcut = isModifierPressed && !event.altKey && lowerKey === 'x';
+  const isLevelMarkerShortcut =
+    isModifierPressed &&
+    !event.altKey &&
+    !event.shiftKey &&
+    ['1', '2', '3', '4', '5', '6', '7'].includes(event.key);
+  const isErrorMarkerShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'e';
+  const isTaskDoneMarkerShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'r';
   const isDeleteShortcut = event.key === 'Backspace' || event.key === 'Delete';
   const isEnterShortcut = event.key === 'Enter';
   const isTabShortcut = event.key === 'Tab';
@@ -3317,6 +4514,9 @@ function onWindowKeyDown(event: KeyboardEvent) {
     isDeleteShortcut ||
     isSelectAllShortcut ||
     isCutShortcut ||
+    isLevelMarkerShortcut ||
+    isErrorMarkerShortcut ||
+    isTaskDoneMarkerShortcut ||
     isUndoShortcut ||
     isRedoShortcut ||
     isSpaceShortcut ||
@@ -3361,6 +4561,21 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isCopyShortcut) {
+    return;
+  }
+
+  if (isLevelMarkerShortcut) {
+    void applyMarkerToSelectedNodes(`level:level${event.key}`);
+    return;
+  }
+
+  if (isErrorMarkerShortcut) {
+    void applyMarkerToSelectedNodes('other:error');
+    return;
+  }
+
+  if (isTaskDoneMarkerShortcut) {
+    void applyMarkerToSelectedNodes('task:100');
     return;
   }
 
@@ -3549,6 +4764,22 @@ watch(
 );
 
 watch(
+  [selectedIds, () => props.doc],
+  () => {
+    emitNodeCountState();
+  },
+  { immediate: true, deep: true }
+);
+
+watch(
+  [selectedIds, contentRevision, () => props.doc],
+  () => {
+    syncStylePanelFromSelection();
+  },
+  { immediate: true, deep: false }
+);
+
+watch(
   selectedIds,
   (nextSelection) => {
     if (!nextSelection.size) {
@@ -3598,6 +4829,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  clearCollapseTagHideTimer();
   removeBeforeCloseListener?.();
   removeBeforeCloseListener = null;
   clearImageInteraction('beforeUnmount');
@@ -3626,7 +4858,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+.main-layout {
+  height: 100%;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
 .main-container {
+  flex: 1 1 auto;
   height: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -3637,6 +4877,641 @@ onBeforeUnmount(() => {
   /* 类似 XMind：禁止浏览器触控默认行为（可选） */
   touch-action: none;
   cursor: default;
+}
+
+.format-panel-shell {
+  flex: 0 0 15%;
+  width: 15%;
+  min-width: 270px;
+  max-width: 15%;
+  height: 100%;
+  display: flex;
+  justify-content: flex-start;
+  // padding-right: 10px;
+}
+
+.format-panel {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(245, 247, 250, 0.92)),
+    #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  box-shadow:
+    0 12px 24px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.format-panel-header {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.format-panel-tab {
+  min-width: 66px;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.format-panel-tab:hover {
+  background: rgba(148, 163, 184, 0.14);
+  color: #0f172a;
+}
+
+.format-panel-tab.is-active {
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+}
+
+.format-panel-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px 18px;
+}
+
+.style-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.style-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+.style-section + .style-section {
+  margin-top: 2px;
+}
+
+.style-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 2px;
+}
+
+.style-section-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.style-control-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.style-control-labels {
+  display: flex;
+  align-items: center;
+}
+
+.style-control-title,
+.style-inline-field-label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.style-preview-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.style-preview-grid--fill {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.style-preview-grid--border {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.style-preview-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(203, 213, 225, 0.86);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.style-preview-card:hover,
+.style-font-card:hover,
+.style-weight-card:hover,
+.style-size-chip:hover,
+.style-toggle-button:hover,
+.style-align-button:hover {
+  transform: translateY(-1px);
+}
+
+.style-preview-card:hover,
+.style-font-card:hover,
+.style-weight-card:hover {
+  border-color: rgba(15, 23, 42, 0.26);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.style-preview-card.is-selected,
+.style-font-card.is-selected,
+.style-weight-card.is-selected,
+.style-size-chip.is-selected,
+.style-toggle-button.is-selected,
+.style-align-button.is-selected {
+  border-color: rgba(15, 23, 42, 0.82);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.12);
+}
+
+.style-preview-card-art {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.style-preview-card-art :deep(svg) {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.style-preview-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.style-preview-card-title,
+.style-font-title {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.style-preview-card-subtitle,
+.style-font-stack {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.style-inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.style-color-picker {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.style-color-item {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.style-color-item:hover {
+  border-color: rgba(15, 23, 42, 0.3);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.style-color-item[data-state='checked'] {
+  border-color: rgba(15, 23, 42, 0.82);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.12);
+}
+
+.style-color-swatch {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.style-color-indicator {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+
+.style-weight-grid,
+.style-size-grid,
+.style-toggle-grid,
+.style-align-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.style-weight-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.style-size-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.style-toggle-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.style-align-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.style-weight-card,
+.style-size-chip,
+.style-toggle-button,
+.style-align-button {
+  min-width: 0;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.style-weight-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 6px 8px;
+  border-radius: 12px;
+}
+
+.style-weight-line {
+  width: 100%;
+  max-width: 30px;
+  border-radius: 999px;
+  background: #0f172a;
+}
+
+.style-weight-label {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.style-font-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.style-font-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.style-font-sample {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  color: #0f172a;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.style-font-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.style-font-title,
+.style-font-stack {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.style-size-chip,
+.style-toggle-button,
+.style-align-button {
+  height: 34px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.style-size-chip {
+  padding: 0;
+}
+
+.style-toggle-button.is-bold {
+  font-weight: 800;
+}
+
+.style-toggle-button.is-italic {
+  font-style: italic;
+}
+
+.style-toggle-button.is-underline {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.style-toggle-button.is-strike {
+  text-decoration: line-through;
+}
+
+.style-align-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.style-align-preview {
+  width: 18px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.style-align-preview span {
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.style-align-preview.is-left span:nth-child(1) {
+  width: 100%;
+}
+
+.style-align-preview.is-left span:nth-child(2) {
+  width: 70%;
+}
+
+.style-align-preview.is-left span:nth-child(3) {
+  width: 86%;
+}
+
+.style-align-preview.is-center {
+  align-items: center;
+}
+
+.style-align-preview.is-center span:nth-child(1) {
+  width: 100%;
+}
+
+.style-align-preview.is-center span:nth-child(2) {
+  width: 74%;
+}
+
+.style-align-preview.is-center span:nth-child(3) {
+  width: 88%;
+}
+
+.style-align-preview.is-right {
+  align-items: flex-end;
+}
+
+.style-align-preview.is-right span:nth-child(1) {
+  width: 100%;
+}
+
+.style-align-preview.is-right span:nth-child(2) {
+  width: 70%;
+}
+
+.style-align-preview.is-right span:nth-child(3) {
+  width: 86%;
+}
+
+.marker-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.marker-panel.is-disabled {
+  user-select: none;
+}
+
+.marker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.marker-group-title {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.marker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.marker-tile {
+  aspect-ratio: 1;
+  width: 100%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: default;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.marker-panel.is-disabled .marker-tile {
+  pointer-events: none;
+}
+
+.marker-tile:hover {
+  background: rgba(15, 23, 42, 0.07);
+  border-color: rgba(148, 163, 184, 0.28);
+  cursor: pointer;
+  transform: translateY(-1px);
+}
+
+.marker-tile-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.marker-mode-panel {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(226, 232, 240, 0.92);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.marker-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.marker-mode-label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.marker-mode-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.38);
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.marker-mode-switch.is-on {
+  background: rgba(208, 47, 72, 0.9);
+}
+
+.marker-mode-switch-thumb {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+  transition: transform 0.18s ease;
+}
+
+.marker-mode-switch.is-on .marker-mode-switch-thumb {
+  transform: translateX(16px);
+}
+
+.marker-clear-button {
+  height: 32px;
+  border: 1px solid rgba(208, 47, 72, 0.2);
+  border-radius: 10px;
+  background: rgba(208, 47, 72, 0.08);
+  color: #9f1239;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.marker-clear-button:hover {
+  background: rgba(208, 47, 72, 0.14);
+  border-color: rgba(208, 47, 72, 0.3);
+  transform: translateY(-1px);
+}
+
+.marker-panel.is-disabled .marker-mode-switch,
+.marker-panel.is-disabled .marker-clear-button {
+  pointer-events: none;
+}
+
+.format-panel-body-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 0 0 10px 10px;
+  background: rgba(241, 245, 249, 0.56);
+  backdrop-filter: saturate(0.85);
+  pointer-events: auto;
 }
 
 .mind-canvas {

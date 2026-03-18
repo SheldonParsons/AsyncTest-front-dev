@@ -28,5 +28,13 @@ export function createRecentStore({ userDataPath }) {
         return next;
     }
 
-    return { load, add, storePath };
+    async function remove(filePath) {
+        const abs = path.resolve(filePath);
+        const prev = await load();
+        const next = prev.filter(p => p !== abs);
+        await save(next);
+        return next;
+    }
+
+    return { load, add, remove, storePath };
 }

@@ -5,8 +5,8 @@ import type { WorldRect } from '../geom/rect';
 import { rectIntersects, screenToWorld } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
 import type { UniformGridSpatialIndex } from '../grid/spatialIndex';
-import { DEBUG_MARQUEE_LOG } from '../constants';
-import { DEBUG_RENDER_DIAGNOSTICS, MARQUEE_LOG_SAMPLE_MS } from '../diagnostics';
+import { DEBUG_CANVAS_OVERLAY, DEBUG_MARQUEE_LOG } from '../constants';
+import { MARQUEE_LOG_SAMPLE_MS } from '../diagnostics';
 
 type ScreenPoint = { x: number; y: number };
 export type ScreenRect = { x1: number; y1: number; x2: number; y2: number };
@@ -57,7 +57,7 @@ export function useMarquee(
   }
 
   function maybeLogProgress() {
-    if (!DEBUG_RENDER_DIAGNOSTICS) return;
+    if (!DEBUG_CANVAS_OVERLAY) return;
     const now = performance.now();
     if (now - lastProgressLogAt < MARQUEE_LOG_SAMPLE_MS) return;
     lastProgressLogAt = now;
@@ -159,7 +159,7 @@ export function useMarquee(
     startScreen = null;
     endScreen = null;
     clearMarqueeOverlay();
-    if (DEBUG_RENDER_DIAGNOSTICS && reason) {
+    if (DEBUG_CANVAS_OVERLAY && reason) {
       console.debug('[mind-marquee-cancel]', { reason });
     }
     requestRender();

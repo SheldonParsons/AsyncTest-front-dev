@@ -3,6 +3,7 @@
 </template>
 
 <script lang="ts" setup>
+import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants';
 import { onMounted } from 'vue';
 
 onMounted(() => {
@@ -11,7 +12,7 @@ onMounted(() => {
 
 async function openMindNewInstance() {
     // 主进程负责：new doc + open mind window（统一窗口配置）
-    await window.electronAPI.amind.newAndOpenWindow();
+    await window.electronAPI.amind.newAndOpenWindow({ seedNodeCount: DEBUG_NEW_MIND_SEED_NODE_COUNT });
 }
 </script>
 

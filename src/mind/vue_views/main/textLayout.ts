@@ -1,6 +1,8 @@
-import { getNodeImage, getNodePlainText, getNodeRichText, type MindNodeImage, type MindNodeLike } from '@/mind/core/nodeContent';
-import type { RichTextAlign, RichTextDocument } from '@/mind/core/richText';
+import { getNodeImage, getNodeRichText, type MindNodeImage, type MindNodeLike } from '@/mind/core/nodeContent';
+import { getInlineFont, type RichTextAlign, type RichTextDocument, type RichTextInline, type RichTextMarks } from '@/mind/core/richText';
 import { buildCanvasFont } from '@/mind/core/text/font';
+import { buildDefaultNodeTextStyle } from './nodeStyles';
+import { measureNodeMarkerRow } from './nodeMarkers';
 import {
   measureNodeTextPlain,
   NODE_H_HARD_MAX,
@@ -19,7 +21,7 @@ export const NODE_FONT = buildCanvasFont({
 });
 export const NODE_MIN_W = 20;
 export const NODE_MAX_W = NODE_TEXT_MAX_WIDTH_PX + 16;
-export const NODE_TEXT_INSET_X = 8;
+export const NODE_TEXT_INSET_X = 6;
 export const NODE_TEXT_INSET_Y = 6;
 export const NODE_LINE_HEIGHT = 20;
 export const NODE_IMAGE_TEXT_GAP = 8;
@@ -55,6 +57,7 @@ export type RichTextLineSegment = {
   font: string;
   fontSize: number;
   color: string;
+  marks?: RichTextMarks;
 };
 
 export type RichTextLine = {
@@ -92,6 +95,7 @@ export type NodeVisualLayout = {
   image: MindNodeImage;
   width: number;
   height: number;
+  bodyHeight: number;
   textGeometry: NodeTextGeometry;
   textOffsetY: number;
   textHeight: number;
@@ -188,15 +192,19 @@ export function measureDomTextTopOffset(options: {
   return topOffset;
 }
 
-export function getNodeTextStyle(node: MindNodeLike | null | undefined): NodeTextStyle {
+export function getNodeTextStyle(
+  node: MindNodeLike | null | undefined,
+  options?: { doc?: any; nodeId?: string | null }
+): NodeTextStyle {
   const richText = getNodeRichText(node);
   const firstBlock = richText.blocks[0];
   const firstInline = firstBlock?.inlines.find((inline) => inline.text.length || inline.marks) ?? firstBlock?.inlines[0];
   const marks = firstInline?.marks;
-  const fontFamily = marks?.fontFamily ?? NODE_DEFAULT_FONT_FAMILY;
-  const fontSizePx = marks?.fontSize ?? NODE_DEFAULT_FONT_SIZE;
-  const fontWeight = marks?.bold ? 700 : 400;
-  const fontStyle = marks?.italic ? 'italic' : 'normal';
+  const defaults = buildDefaultNodeTextStyle(options?.doc, options?.nodeId);
+  const fontFamily = marks?.fontFamily ?? defaults.fontFamily;
+  const fontSizePx = marks?.fontSize ?? defaults.fontSizePx;
+  const fontWeight = marks?.bold ? 700 : defaults.fontWeight;
+  const fontStyle = marks?.italic ? 'italic' : defaults.fontStyle;
   const lineHeightPx = Math.max(NODE_LINE_HEIGHT, Math.ceil(fontSizePx * 1.3));
   return {
     fontFamily,
@@ -204,8 +212,8 @@ export function getNodeTextStyle(node: MindNodeLike | null | undefined): NodeTex
     fontWeight,
     fontStyle,
     lineHeightPx,
-    color: marks?.color ?? '#1f2937',
-    textAlign: firstBlock?.align ?? 'left',
+    color: marks?.color ?? defaults.color,
+    textAlign: firstBlock?.align ?? defaults.textAlign,
     letterSpacingPx: 0,
     canvasFontString: buildCanvasFont({ fontFamily, fontSizePx, fontWeight, fontStyle }),
   };
@@ -217,7 +225,7 @@ export function measureNodeTextLayout(
   cache?: Map<string, NodeTextLayout>,
   options?: { maxWidth?: number; baseStyle?: NodeTextStyle }
 ): NodeTextLayout {
-  const richText = typeof input === 'string' ? input : getNodePlainText({ richText: input });
+  const richText = typeof input === 'string' ? { blocks: [{ align: 'left', inlines: [{ text: input }] }] } : input;
   const baseStyle =
     options?.baseStyle ??
     ({
@@ -236,48 +244,50 @@ export function measureNodeTextLayout(
   const cached = cache?.get(key);
   if (cached) return cached;
 
-  const measured = measureNodeTextPlain({
-    ctx,
-    text: richText,
-    fontFamily: baseStyle.fontFamily,
-    fontSizePx: baseStyle.fontSizePx,
-    fontWeight: baseStyle.fontWeight,
-    fontStyle: baseStyle.fontStyle,
-    maxWidthPx: maxWidth,
-    minWidthPx: NODE_TEXT_MIN_WIDTH_PX,
-    lineHeightPx: baseStyle.lineHeightPx,
+  const tokens = richText.blocks.flatMap((block, blockIndex) => {
+    const blockTokens = block.inlines.flatMap((inline) => splitInlineToTokens(inline));
+    if (!blockTokens.length) blockTokens.push(createInlineToken('', inlineMarksWithDefaults(undefined, baseStyle)));
+    if (blockIndex < richText.blocks.length - 1) {
+      blockTokens.push({ text: '\n', marks: inlineMarksWithDefaults(undefined, baseStyle), isNewline: true });
+    }
+    return blockTokens.map((token) => ({ ...token, align: block.align ?? baseStyle.textAlign }));
   });
 
-  const richLines = measured.textLines.map((line) => {
-    ctx.save();
-    ctx.font = baseStyle.canvasFontString;
-    const width = ctx.measureText(line).width;
-    ctx.restore();
-    return {
-      align: baseStyle.textAlign,
-      segments: [
-        {
-          text: line,
-          width,
-          font: baseStyle.canvasFontString,
-          fontSize: baseStyle.fontSizePx,
-          color: baseStyle.color,
-        },
-      ],
-      width,
-      height: baseStyle.lineHeightPx,
-    } satisfies RichTextLine;
-  });
+  const richLines: RichTextLine[] = [];
+  let currentLine = createEmptyRichLine(baseStyle.textAlign, baseStyle.lineHeightPx);
+
+  for (const token of tokens) {
+    if (token.isNewline) {
+      currentLine.align = token.align;
+      finalizeRichLine(currentLine, richLines, baseStyle.lineHeightPx);
+      currentLine = createEmptyRichLine(token.align, baseStyle.lineHeightPx);
+      continue;
+    }
+    const segment = createMeasuredSegment(ctx, token.text, token.marks, baseStyle);
+    if (currentLine.segments.length > 0 && currentLine.width + segment.width > maxWidth) {
+      finalizeRichLine(currentLine, richLines, baseStyle.lineHeightPx);
+      currentLine = createEmptyRichLine(token.align, baseStyle.lineHeightPx);
+    }
+    currentLine.align = token.align;
+    currentLine.segments.push(segment);
+    currentLine.width += segment.width;
+    currentLine.height = Math.max(currentLine.height, Math.max(baseStyle.lineHeightPx, Math.ceil(segment.fontSize * 1.3)));
+  }
+  finalizeRichLine(currentLine, richLines, baseStyle.lineHeightPx);
+
+  const lines = richLines.map((line) => line.segments.map((segment) => segment.text).join(''));
+  const contentWidth = richLines.reduce((max, line) => Math.max(max, line.width), 0);
+  const lineHeight = richLines.reduce((max, line) => Math.max(max, line.height), baseStyle.lineHeightPx);
 
   const layout = {
-    lines: measured.textLines,
+    lines,
     richLines,
-    w: clamp(measured.textWidth + NODE_PADDING_X, NODE_MIN_W, NODE_W_HARD_MAX),
-    h: clamp(measured.textHeight + NODE_PADDING_Y, NODE_LINE_HEIGHT + NODE_PADDING_Y, NODE_H_HARD_MAX),
-    contentWidth: measured.textWidth,
-    contentHeight: measured.textHeight,
-    lineCount: measured.textLines.length,
-    lineHeight: measured.lineHeight,
+    w: clamp(Math.max(NODE_TEXT_MIN_WIDTH_PX, contentWidth) + NODE_PADDING_X, NODE_MIN_W, NODE_W_HARD_MAX),
+    h: clamp(Math.max(lineHeight, richLines.length * lineHeight) + NODE_PADDING_Y, NODE_LINE_HEIGHT + NODE_PADDING_Y, NODE_H_HARD_MAX),
+    contentWidth: Math.min(maxWidth, Math.max(NODE_TEXT_MIN_WIDTH_PX, Math.ceil(contentWidth))),
+    contentHeight: Math.min(NODE_H_HARD_MAX, Math.max(lineHeight, richLines.length * lineHeight)),
+    lineCount: richLines.length,
+    lineHeight,
     wrapMode: 'anywhere' as const,
   } satisfies NodeTextLayout;
 
@@ -317,31 +327,141 @@ export function measureNodeVisualLayout(
   ctx: CanvasRenderingContext2D,
   node: MindNodeLike,
   cache?: Map<string, NodeTextLayout>,
-  options?: { richText?: RichTextDocument; maxTextWidth?: number }
+  options?: { richText?: RichTextDocument; maxTextWidth?: number; doc?: any; nodeId?: string | null }
 ): NodeVisualLayout {
   const richText = options?.richText ?? getNodeRichText(node);
-  const baseStyle = getNodeTextStyle(node);
-  const textLayout = measureNodeTextLayout(ctx, getNodePlainText({ richText }), cache, {
+  const baseStyle = getNodeTextStyle(node, options);
+  const textLayout = measureNodeTextLayout(ctx, richText, cache, {
     maxWidth: options?.maxTextWidth ?? NODE_CONTENT_MAX_W,
     baseStyle,
   });
   const image = getNodeImage(node);
   const textGeometry = computeNodeTextGeometry(ctx, textLayout, baseStyle, image);
-  const width = clamp(Math.max(textLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X, NODE_MIN_W, NODE_W_HARD_MAX);
+  const markerRow = measureNodeMarkerRow(node);
+  const width = clamp(
+    Math.max(textLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X,
+    Math.max(NODE_MIN_W, markerRow.width),
+    NODE_W_HARD_MAX
+  );
   const textOffsetY = textGeometry.textLineBoxTop;
   const textHeight = textGeometry.textLineBoxHeight;
-  const height = clamp(
+  const bodyHeight = clamp(
     textGeometry.contentBoxTop + textGeometry.contentBoxHeight,
     baseStyle.lineHeightPx + NODE_PADDING_Y,
     NODE_H_HARD_MAX
   );
+  const height = clamp(bodyHeight + markerRow.bandHeight, baseStyle.lineHeightPx + NODE_PADDING_Y, NODE_H_HARD_MAX);
   return {
     textLayout,
     image,
     width,
     height,
+    bodyHeight,
     textGeometry,
     textOffsetY,
     textHeight,
   };
+}
+
+type InlineToken = {
+  text: string;
+  marks: RichTextMarks;
+  isNewline?: boolean;
+};
+
+function inlineMarksWithDefaults(marks: RichTextMarks | undefined, baseStyle: NodeTextStyle): RichTextMarks {
+  return {
+    ...marks,
+    color: marks?.color ?? baseStyle.color,
+    fontFamily: marks?.fontFamily ?? baseStyle.fontFamily,
+    fontSize: marks?.fontSize ?? baseStyle.fontSizePx,
+  };
+}
+
+function createInlineToken(text: string, marks: RichTextMarks): InlineToken {
+  return { text, marks };
+}
+
+function splitInlineToTokens(inline: RichTextInline): InlineToken[] {
+  const chars = Array.from(inline.text ?? '');
+  if (!chars.length) return [];
+  return chars.map((char) =>
+    char === '\n'
+      ? { text: '\n', marks: { ...(inline.marks ?? {}) }, isNewline: true }
+      : createInlineToken(char, { ...(inline.marks ?? {}) })
+  );
+}
+
+function createMeasuredSegment(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  marks: RichTextMarks,
+  baseStyle: NodeTextStyle
+): RichTextLineSegment {
+  const fontFamily = marks.fontFamily ?? baseStyle.fontFamily;
+  const fontSize = marks.fontSize ?? baseStyle.fontSizePx;
+  const font = getInlineFont(marks, fontFamily, fontSize);
+  ctx.save();
+  ctx.font = font;
+  const width = ctx.measureText(text).width;
+  ctx.restore();
+  return {
+    text,
+    width,
+    font,
+    fontSize,
+    color: marks.color ?? baseStyle.color,
+    marks,
+  };
+}
+
+function createEmptyRichLine(align: RichTextAlign, height: number): RichTextLine {
+  return {
+    align,
+    segments: [],
+    width: 0,
+    height,
+  };
+}
+
+function finalizeRichLine(line: RichTextLine, lines: RichTextLine[], fallbackHeight: number) {
+  if (line.segments.length === 0) {
+    lines.push({
+      align: line.align,
+      segments: [
+        {
+          text: '',
+          width: 0,
+          font: NODE_FONT,
+          fontSize: NODE_DEFAULT_FONT_SIZE,
+          color: '#1f2937',
+          marks: undefined,
+        },
+      ],
+      width: 0,
+      height: fallbackHeight,
+    });
+    return;
+  }
+  const mergedSegments: RichTextLineSegment[] = [];
+  for (const segment of line.segments) {
+    const previous = mergedSegments[mergedSegments.length - 1];
+    if (
+      previous &&
+      previous.font === segment.font &&
+      previous.color === segment.color &&
+      JSON.stringify(previous.marks ?? {}) === JSON.stringify(segment.marks ?? {})
+    ) {
+      previous.text += segment.text;
+      previous.width += segment.width;
+    } else {
+      mergedSegments.push({ ...segment });
+    }
+  }
+  lines.push({
+    align: line.align,
+    segments: mergedSegments,
+    width: line.width,
+    height: Math.max(fallbackHeight, line.height),
+  });
 }

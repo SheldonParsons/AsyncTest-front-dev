@@ -3,11 +3,21 @@
     <div
       ref="editorShellRef"
       class="lexical-editor-shell"
-      :style="editorShellStyle"
+      :style="resolvedEditorShellStyle"
       @pointerdown.stop
       @mousedown.stop
       @click.stop
     >
+      <div
+        v-if="DEBUG_TEXT_ALIGNMENT"
+        class="alignment-guide alignment-guide-expected"
+        :style="{ top: `${expectedGuideTopPx}px` }"
+      />
+      <div
+        v-if="DEBUG_TEXT_ALIGNMENT && measuredGlyphTopPx != null"
+        class="alignment-guide alignment-guide-actual"
+        :style="{ top: `${measuredGlyphTopPx}px` }"
+      />
       <div ref="editorInnerRef" class="lexical-editor-inner" :style="editorInnerStyle">
         <div ref="editorRootRef" class="lexical-editor-root" />
       </div>
@@ -42,19 +52,20 @@ const emit = defineEmits<{
 
 const editorRootRef = ref<HTMLDivElement | null>(null);
 const editorInnerRef = ref<HTMLDivElement | null>(null);
-const editorShellRef = ref<HTMLDivElement | null>(null);
-const residualOffsetPx = ref(0);
-let measureRafId: number | null = null;
-let alignmentPasses = 0;
+const DEBUG_TEXT_ALIGNMENT = false;
 
-const calibrationOffsetPx = computed(() => (props.calibrationStyle ? getDomTextTopOffset(props.calibrationStyle) : 0));
+const resolvedEditorShellStyle = computed<CSSProperties>(() => {
+  return {
+    ...props.editorShellStyle,
+    top:
+      typeof props.editorShellStyle.top === 'string'
+        ? `calc(${props.editorShellStyle.top} + ${props.innerTranslateYpx}px)`
+        : props.editorShellStyle.top,
+    overflow: 'visible',
+  };
+});
 
-const editorInnerStyle = computed<CSSProperties>(() => ({
-  transform:
-    props.innerTranslateYpx || residualOffsetPx.value
-      ? `translateY(${props.innerTranslateYpx + residualOffsetPx.value}px)`
-      : undefined,
-}));
+const editorInnerStyle = computed<CSSProperties>(() => ({}));
 
 function mountEditor() {
   lexicalEditorManager.setRootElement(editorRootRef.value);
@@ -69,71 +80,10 @@ function mountEditor() {
   });
 }
 
-function findFirstTextNode(node: Node | null): Text | null {
-  if (!node) return null;
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = node.textContent ?? '';
-    return text.length > 0 ? (node as Text) : null;
-  }
-  for (const child of Array.from(node.childNodes)) {
-    const textNode = findFirstTextNode(child);
-    if (textNode) return textNode;
-  }
-  return null;
-}
-
-function measureFirstGlyphTopPx() {
-  const root = editorRootRef.value;
-  const shell = editorShellRef.value;
-  if (!root || !shell) return 0;
-  const shellRect = shell.getBoundingClientRect();
-  const firstTextNode = findFirstTextNode(root);
-  if (firstTextNode) {
-    const range = document.createRange();
-    range.setStart(firstTextNode, 0);
-    range.setEnd(firstTextNode, Math.min(1, firstTextNode.length));
-    const rect = range.getBoundingClientRect();
-    return rect.top - shellRect.top;
-  }
-  const firstBlock = root.querySelector('p, div, span, br');
-  if (firstBlock instanceof HTMLElement) {
-    const rect = firstBlock.getBoundingClientRect();
-    return rect.top - shellRect.top;
-  }
-  return 0;
-}
-
-function logAlignment(reason: string) {
-  if (!props.textBoxRect) return;
-  const actualGlyphTopPx = measureFirstGlyphTopPx();
-  console.log(JSON.stringify({
-    tag: 'mind-text-align',
-    reason,
-    canvasTextBaseline: 'top',
-    textBoxRectTop: props.textBoxRect.y,
-    computedOffset: calibrationOffsetPx.value,
-    residualOffsetPx: residualOffsetPx.value,
-    actualGlyphTopPx,
-    overlayInnerTranslateY: props.innerTranslateYpx + residualOffsetPx.value,
-  }));
-}
-
-function scheduleBlockAlignment(reason: string) {
-  if (measureRafId != null) cancelAnimationFrame(measureRafId);
-  measureRafId = requestAnimationFrame(() => {
-    measureRafId = null;
-    logAlignment(reason);
-    alignmentPasses = 0;
-  });
-}
-
 onMounted(() => {
   void nextTick().then(() => {
     if (!props.visible) return;
-    residualOffsetPx.value = 0;
-    alignmentPasses = 0;
     mountEditor();
-    scheduleBlockAlignment('mounted');
   });
 });
 
@@ -142,26 +92,12 @@ watch(
   async ([visible]) => {
     if (!visible) return;
     await nextTick();
-    residualOffsetPx.value = 0;
-    alignmentPasses = 0;
     mountEditor();
-    scheduleBlockAlignment('session-change');
   },
   { deep: false }
 );
 
-watch(
-  () => [props.calibrationStyle, props.textBoxRect, props.initialState] as const,
-  async () => {
-    if (!props.visible) return;
-    await nextTick();
-    alignmentPasses = 0;
-    scheduleBlockAlignment('props-change');
-  }
-);
-
 onBeforeUnmount(() => {
-  if (measureRafId != null) cancelAnimationFrame(measureRafId);
   lexicalEditorManager.setRootElement(null);
 });
 </script>
@@ -182,6 +118,24 @@ onBeforeUnmount(() => {
   font: inherit;
   line-height: inherit;
   text-align: inherit;
+}
+
+.alignment-guide {
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  height: 0;
+  border-top: 1px dashed;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.alignment-guide-expected {
+  border-color: rgba(34, 197, 94, 0.95);
+}
+
+.alignment-guide-actual {
+  border-color: rgba(239, 68, 68, 0.95);
 }
 
 .lexical-editor-inner {
@@ -245,5 +199,27 @@ onBeforeUnmount(() => {
   word-break: break-all;
   line-break: anywhere;
   hyphens: none;
+}
+
+.lexical-editor-root :deep(.lexical-text-bold) {
+  font-weight: 700;
+}
+
+.lexical-editor-root :deep(.lexical-text-italic) {
+  font-style: italic;
+}
+
+.lexical-editor-root :deep(.lexical-text-underline) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lexical-editor-root :deep(.lexical-text-strikethrough) {
+  text-decoration: line-through;
+}
+
+.lexical-editor-root :deep(.lexical-text-underline-strikethrough) {
+  text-decoration: underline line-through;
+  text-underline-offset: 2px;
 }
 </style>

@@ -3,6 +3,9 @@ import { registerList, ListItemNode, ListNode } from '@lexical/list';
 import { registerRichText, HeadingNode, QuoteNode } from '@lexical/rich-text';
 import {
   $getRoot,
+  $createTextNode,
+  $isElementNode,
+  $isTextNode,
   COMMAND_PRIORITY_HIGH,
   createEditor,
   KEY_ENTER_COMMAND,
@@ -11,7 +14,12 @@ import {
   type LexicalEditor,
 } from 'lexical';
 import { computed, reactive, shallowRef } from 'vue';
-import { cloneLexicalState, richTextFromLexicalState, type SerializedLexicalEditorState } from './lexicalState';
+import {
+  cloneLexicalState,
+  plainTextFromLexicalState,
+  richTextFromLexicalState,
+  type SerializedLexicalEditorState,
+} from './lexicalState';
 
 type StartSessionOptions = {
   nodeId: string;
@@ -42,6 +50,7 @@ const sessionCallbacks = reactive<{
 let unregisterEditor: (() => void) | null = null;
 let rootElement: HTMLElement | null = null;
 let pendingSession: StartSessionOptions | null = null;
+let pendingCaretTimeoutIds: number[] = [];
 
 function isScrollableElement(element: HTMLElement) {
   const style = window.getComputedStyle(element);
@@ -118,9 +127,43 @@ function applyCaretPlacement(caretPlacement: 'start' | 'end' | 'none') {
   const editor = createSingletonEditor();
   editor.update(() => {
     const root = $getRoot();
+    const block = caretPlacement === 'end' ? (root.getLastChild() ?? root) : (root.getFirstChild() ?? root);
+    if (block !== root && $isElementNode(block) && block.getChildrenSize() === 0) {
+      const anchor = $createTextNode('');
+      block.append(anchor);
+      anchor.select(0, 0);
+      return;
+    }
+    const textTarget =
+      block !== root
+        ? (caretPlacement === 'end' ? block.getLastDescendant() : block.getFirstDescendant())
+        : null;
+    if (textTarget && $isTextNode(textTarget)) {
+      if (textTarget.getTextContentSize() === 0) {
+        const parent = textTarget.getParent();
+        if (parent && $isElementNode(parent)) {
+          if (caretPlacement === 'end') parent.selectEnd();
+          else parent.selectStart();
+          return;
+        }
+      }
+      if (caretPlacement === 'end') textTarget.select(textTarget.getTextContentSize(), textTarget.getTextContentSize());
+      else textTarget.select(0, 0);
+      return;
+    }
+    if (block !== root) {
+      if (caretPlacement === 'end') block.selectEnd();
+      else block.selectStart();
+      return;
+    }
     if (caretPlacement === 'end') root.selectEnd();
     else root.selectStart();
   });
+}
+
+function clearPendingCaretRetry() {
+  pendingCaretTimeoutIds.forEach((id) => window.clearTimeout(id));
+  pendingCaretTimeoutIds = [];
 }
 
 function focusEditor(caretPlacement: 'start' | 'end' | 'none' = 'end') {
@@ -128,12 +171,30 @@ function focusEditor(caretPlacement: 'start' | 'end' | 'none' = 'end') {
   const scrollTargets = captureScrollTargets(rootElement);
   focusRootWithoutScroll(rootElement);
   restoreScrollTargets(scrollTargets);
-  editor.focus(undefined, { defaultSelection: 'rootStart' });
+  editor.focus(() => {
+    applyCaretPlacement(caretPlacement);
+    restoreScrollTargets(scrollTargets);
+  }, { defaultSelection: 'rootStart' });
   restoreScrollTargets(scrollTargets);
   lockScrollTargets(scrollTargets);
   requestAnimationFrame(() => {
     applyCaretPlacement(caretPlacement);
     restoreScrollTargets(scrollTargets);
+    requestAnimationFrame(() => {
+      applyCaretPlacement(caretPlacement);
+      restoreScrollTargets(scrollTargets);
+    });
+  });
+}
+
+function scheduleEmptyCaretRetry(caretPlacement: 'start' | 'end' | 'none' = 'end') {
+  clearPendingCaretRetry();
+  [40, 120, 260].forEach((delay) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingCaretTimeoutIds = pendingCaretTimeoutIds.filter((id) => id !== timeoutId);
+      focusEditor(caretPlacement);
+    }, delay);
+    pendingCaretTimeoutIds.push(timeoutId);
   });
 }
 
@@ -142,6 +203,16 @@ function createSingletonEditor() {
   const editor = createEditor({
     namespace: 'amind-node-editor',
     editable: true,
+    theme: {
+      paragraph: 'lexical-paragraph',
+      text: {
+        bold: 'lexical-text-bold',
+        italic: 'lexical-text-italic',
+        underline: 'lexical-text-underline',
+        strikethrough: 'lexical-text-strikethrough',
+        underlineStrikethrough: 'lexical-text-underline-strikethrough',
+      },
+    },
     nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode],
     onError: (error) => {
       throw error;
@@ -159,8 +230,8 @@ function createSingletonEditor() {
     editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
-        if (event?.shiftKey) return false;
         if (event?.isComposing) return false;
+        if (event?.altKey) return false;
         event?.preventDefault();
         sessionCallbacks.onCommit?.();
         return true;
@@ -197,6 +268,7 @@ function createSingletonEditor() {
 
 function loadSession(options: StartSessionOptions) {
   const editor = createSingletonEditor();
+  clearPendingCaretRetry();
   pendingSession = options;
   activeNodeId.value = options.nodeId;
   sessionCallbacks.onChange = options.onChange;
@@ -207,6 +279,9 @@ function loadSession(options: StartSessionOptions) {
   latestState.value = cloneLexicalState(options.initialState);
   requestAnimationFrame(() => {
     focusEditor(options.caretPlacement ?? 'end');
+    if (plainTextFromLexicalState(options.initialState).length === 0) {
+      scheduleEmptyCaretRetry(options.caretPlacement ?? 'end');
+    }
   });
 }
 
@@ -230,6 +305,7 @@ export const lexicalEditorManager = {
     loadSession(options);
   },
   stopSession() {
+    clearPendingCaretRetry();
     activeNodeId.value = null;
     pendingSession = null;
     sessionCallbacks.onChange = undefined;
@@ -242,6 +318,7 @@ export const lexicalEditorManager = {
     return createSingletonEditor();
   },
   destroy() {
+    clearPendingCaretRetry();
     editorRef.value?.setRootElement(null);
     unregisterEditor?.();
     unregisterEditor = null;
@@ -253,4 +330,3 @@ export const lexicalEditorManager = {
     return latestState.value ? richTextFromLexicalState(latestState.value) : null;
   },
 };
-

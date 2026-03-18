@@ -1,19 +1,16 @@
 <template>
-  <div class="window-header">
+  <div class="window-header" :class="{ 'has-win-controls': !isMac }">
     <div v-if="isMac" class="mac-traffic-hole"></div>
 
-    <div class="header-content no-drag">
+    <div class="header-content">
       <slot />
     </div>
 
+    <div v-if="!isMac" class="win-controls-reserve"></div>
+
     <div class="drag-spacer"></div>
-    
-    <WinWindowControls
-      v-if="isMac"
-      @minimize="minimize"
-      @maximizeToggle="maximize"
-      @close="close"
-    />
+
+    <WinWindowControls v-if="!isMac" @minimize="minimize" @maximizeToggle="maximize" @close="close" />
   </div>
 </template>
 
@@ -47,17 +44,30 @@ function close() {
   /* border-bottom: 1px solid rgba(0,0,0,0.08); */
 }
 
-.no-drag { -webkit-app-region: no-drag; }
+.no-drag {
+  -webkit-app-region: no-drag;
+}
 
 .header-content {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-app-region: drag;
 }
 
 .drag-spacer {
-  flex: 1 1 auto;
+  flex: 0 0 0;
   -webkit-app-region: drag;
+}
+
+.win-controls-reserve {
+  flex: 0 0 135px;
+}
+
+.window-header.has-win-controls .drag-spacer {
+  flex-basis: 6px;
 }
 
 .mac-traffic-hole {

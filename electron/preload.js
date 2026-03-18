@@ -30,11 +30,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     platform: process.platform,
 
     amind: {
-        new: () => ipcRenderer.invoke('amind:new'),
-        newAndOpenWindow: () => ipcRenderer.invoke('amind:newAndOpenWindow'),
+        new: (payload) => ipcRenderer.invoke('amind:new', payload),
+        newAndOpenWindow: (payload) => ipcRenderer.invoke('amind:newAndOpenWindow', payload),
         openFileInWindow: (payload) => ipcRenderer.invoke('amind:openFileInWindow', payload),
+        openFolder: (payload) => ipcRenderer.invoke('amind:openFolder', payload),
 
         recents: () => ipcRenderer.invoke('amind:recents'),
+        removeRecent: (payload) => ipcRenderer.invoke('amind:removeRecent', payload),
         openDialog: () => ipcRenderer.invoke('amind:openDialog'),
         read: (payload) => ipcRenderer.invoke('amind:read', payload),
 

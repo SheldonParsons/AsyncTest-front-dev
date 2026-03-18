@@ -11,13 +11,21 @@ import type { RoughGenerator } from 'roughjs/bin/generator';
 import { ensureMindRoots } from './useDocUtils';
 import type { Camera } from './useCamera';
 import type { BranchMeta, ParentEdgeCacheStats, ParentEdgeGeom } from './useEdges';
-import { DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS } from '../constants';
+import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS } from '../constants';
 import {
-  DEBUG_RENDER_DIAGNOSTICS,
   formatCamera,
   formatWorldRect,
   readRoughRenderFlag,
 } from '../diagnostics';
+import { getMindNodeDefaultVisualStyle } from '../nodeStyles';
+import type { CollapseTagInfo } from '../collapseTags';
+import {
+  getNodeBodyWorldRect,
+  NODE_MARKER_BODY_GAP_PX,
+  NODE_MARKER_GAP_PX,
+  NODE_MARKER_ICON_SIZE_PX,
+  resolveNodeMarkers,
+} from '../nodeMarkers';
 import {
   ensureRoughThemeDebugApi,
   getCurrentRoughTheme,
@@ -80,6 +88,11 @@ const DRAG_OVERLAY_MAX_WIDTH_PX = 500;
 const DRAG_OVERLAY_ROOT_GAP_PX = 12;
 const DRAG_OVERLAY_OFFSET_X_PX = 12;
 const DRAG_OVERLAY_OFFSET_Y_PX = 12;
+const COLLAPSE_TAG_FILL = '#D02F48';
+const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
+const COLLAPSE_TAG_STROKE = '#111111';
+const COLLAPSE_TAG_TEXT = '#FFFFFF';
+const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
 
 type RoughRuntime = {
   canvas: HTMLCanvasElement | null;
@@ -210,6 +223,88 @@ function applyWorldTransform(ctx: CanvasRenderingContext2D, cam: Camera, dpr: nu
   ctx.setTransform(cam.scale * dpr, 0, 0, cam.scale * dpr, cam.tx * dpr, cam.ty * dpr);
 }
 
+function drawScreenRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const clampedRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + clampedRadius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, clampedRadius);
+  ctx.arcTo(x + width, y + height, x, y + height, clampedRadius);
+  ctx.arcTo(x, y + height, x, y, clampedRadius);
+  ctx.arcTo(x, y, x + width, y, clampedRadius);
+  ctx.closePath();
+}
+
+function drawCollapseTags(ctx: CanvasRenderingContext2D, collapseTags: Map<string, CollapseTagInfo>) {
+  ctx.font = COLLAPSE_TAG_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const tag of collapseTags.values()) {
+    if (!tag.visible) continue;
+    if (tag.isCollapsed) {
+      ctx.strokeStyle = COLLAPSE_TAG_STROKE;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(tag.connectorFromX, tag.connectorY);
+      ctx.lineTo(tag.connectorToX, tag.connectorY);
+      ctx.stroke();
+    }
+    drawScreenRoundedRect(ctx, tag.x, tag.y, tag.width, tag.height, tag.radius);
+    ctx.fillStyle = tag.hovered ? COLLAPSE_TAG_FILL_HOVER : COLLAPSE_TAG_FILL;
+    ctx.fill();
+    ctx.strokeStyle = COLLAPSE_TAG_STROKE;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (tag.isCollapsed) {
+      ctx.fillStyle = COLLAPSE_TAG_TEXT;
+      ctx.fillText(tag.label, tag.x + tag.width / 2, tag.y + tag.height / 2 + 0.5);
+      continue;
+    }
+
+    const centerY = tag.y + tag.height / 2;
+    const lineInset = 7;
+    ctx.strokeStyle = COLLAPSE_TAG_TEXT;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(tag.x + lineInset, centerY);
+    ctx.lineTo(tag.x + tag.width - lineInset, centerY);
+    ctx.stroke();
+  }
+}
+
+function drawNodeMarkers(
+  ctx: CanvasRenderingContext2D,
+  node: any,
+  bodyRect: WorldRect,
+  getLoadedImage: (src: string) => HTMLImageElement | null
+) {
+  const markers = resolveNodeMarkers(node);
+  if (!markers.length) return;
+
+  const rowWidth =
+    markers.length * NODE_MARKER_ICON_SIZE_PX + Math.max(0, markers.length - 1) * NODE_MARKER_GAP_PX;
+  let cursorX = bodyRect.x1;
+  const markerY = bodyRect.y2 + NODE_MARKER_BODY_GAP_PX;
+
+  for (const marker of markers) {
+    const image = getLoadedImage(marker.src);
+    if (image) {
+      ctx.drawImage(image, cursorX, markerY, NODE_MARKER_ICON_SIZE_PX, NODE_MARKER_ICON_SIZE_PX);
+    }
+    cursorX += NODE_MARKER_ICON_SIZE_PX + NODE_MARKER_GAP_PX;
+  }
+}
+
 function snapToDevicePixel(value: number, dpr: number) {
   return Math.round(value * dpr) / dpr;
 }
@@ -277,6 +372,63 @@ function expandRect(rect: WorldRect, padding: number): WorldRect {
   };
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeRange(value: number, min: number, max: number) {
+  if (max <= min) return 1;
+  return clamp((value - min) / (max - min), 0, 1);
+}
+
+function lerp(start: number, end: number, t: number) {
+  return start + (end - start) * t;
+}
+
+function getStrokeScreenWidthFactor(scale: number) {
+  if (scale <= 0.35) return 0.38;
+  if (scale <= 0.6) return lerp(0.38, 0.58, normalizeRange(scale, 0.35, 0.6));
+  if (scale <= 1.0) return lerp(0.58, 1.0, normalizeRange(scale, 0.6, 1.0));
+  if (scale <= 2.0) return lerp(1.0, 1.18, normalizeRange(scale, 1.0, 2.0));
+  return 1.18;
+}
+
+function getStrokeScreenWidthPx(scale: number, baseStrokePx: number) {
+  return baseStrokePx * getStrokeScreenWidthFactor(scale);
+}
+
+function getStrokeAlphaFactor(scale: number) {
+  if (scale <= 0.35) return 0.52;
+  if (scale <= 0.6) return lerp(0.52, 0.72, normalizeRange(scale, 0.35, 0.6));
+  if (scale <= 1.0) return lerp(0.72, 1.0, normalizeRange(scale, 0.6, 1.0));
+  return 1;
+}
+
+function multiplyColorAlpha(color: string, alphaFactor: number) {
+  const resolvedFactor = clamp(alphaFactor, 0, 1);
+  const normalized = color.trim();
+
+  const rgbaMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgbaMatch) {
+    const [r = '0', g = '0', b = '0', a = '1'] = rgbaMatch[1].split(',').map((part) => part.trim());
+    const nextAlpha = clamp(Number.parseFloat(a) * resolvedFactor, 0, 1);
+    return `rgba(${r}, ${g}, ${b}, ${nextAlpha})`;
+  }
+
+  const hex = normalized.replace('#', '');
+  if (hex.length === 3 || hex.length === 6) {
+    const expanded = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
+    const r = Number.parseInt(expanded.slice(0, 2), 16);
+    const g = Number.parseInt(expanded.slice(2, 4), 16);
+    const b = Number.parseInt(expanded.slice(4, 6), 16);
+    if ([r, g, b].every((value) => Number.isFinite(value))) {
+      return `rgba(${r}, ${g}, ${b}, ${resolvedFactor})`;
+    }
+  }
+
+  return normalized;
+}
+
 function createRoundedRectPathData(rect: WorldRect, radius: number) {
   const r = Math.max(0, radius);
   if (r <= 0) {
@@ -339,6 +491,20 @@ function drawRoundedRectOutline(
   drawRoundedRectShape(ctx, rect, radius, 'rgba(0,0,0,0)', strokeStyle, lineWidth);
 }
 
+function drawRoundedRectDashedOutline(
+  ctx: CanvasRenderingContext2D,
+  rect: WorldRect,
+  radius: number,
+  strokeStyle: string,
+  lineWidth: number,
+  dash: number[]
+) {
+  ctx.save();
+  ctx.setLineDash(dash);
+  drawRoundedRectShape(ctx, rect, radius, 'rgba(0,0,0,0)', strokeStyle, lineWidth);
+  ctx.restore();
+}
+
 function drawMarqueeOverlay(
   ctx: CanvasRenderingContext2D,
   rectScreen: ScreenRect | null,
@@ -366,7 +532,7 @@ function drawEdgeDebugOverlay(
   roughEnabled: boolean,
   overlapWorld: number
 ) {
-  if (!DEBUG_RENDER_DIAGNOSTICS) return;
+  if (!DEBUG_CANVAS_OVERLAY) return;
   void ctx;
   void cam;
   void visibleEdgeGroups;
@@ -381,7 +547,7 @@ function drawDebugHud(
   stats: DrawStats,
   dpr: number
 ) {
-  if (!DEBUG_RENDER_DIAGNOSTICS) return;
+  if (!DEBUG_CANVAS_OVERLAY) return;
 
   const rows = [
     'DEBUG ON',
@@ -477,11 +643,13 @@ function getOrCreateNodeDrawable(
   gen: RoughGenerator,
   style: ResolvedRoughTheme,
   nodeId: string,
-  rect: WorldRect
+  rect: WorldRect,
+  styleKey: string,
+  optionOverrides?: Partial<ResolvedRoughTheme['nodeOptions']>
 ) {
   const radius = getNodeCornerRadius(rect);
   const pathData = createRoundedRectPathData(rect, radius);
-  const cacheKey = `${nodeId}|style:base|box:${formatRectSignature(rect)}|r:${radius.toFixed(2)}|${style.themeSignature}|node-rough-v4`;
+  const cacheKey = `${nodeId}|style:${styleKey}|box:${formatRectSignature(rect)}|r:${radius.toFixed(2)}|${style.themeSignature}|node-rough-v5`;
   const cached = runtime.nodeDrawables.get(cacheKey);
   if (cached) {
     runtime.nodeHits += 1;
@@ -490,6 +658,7 @@ function getOrCreateNodeDrawable(
   runtime.nodeMisses += 1;
   const drawable = gen.path(pathData, {
     ...style.nodeOptions,
+    ...optionOverrides,
     seed: stableHash(`node:${nodeId}`),
   });
   runtime.nodeDrawables.set(cacheKey, drawable);
@@ -646,6 +815,7 @@ export function useDraw(
   canvasRef: Ref<HTMLCanvasElement | null>,
   camera: Ref<Camera>,
   worldBoxes: Ref<WorldBoxes>,
+  collapseTags: Ref<Map<string, CollapseTagInfo>>,
   parentEdgeGeoms: Ref<ParentEdgeGeom[]>,
   edgeStats: Ref<ParentEdgeCacheStats>,
   spatialIndex: UniformGridSpatialIndex,
@@ -826,7 +996,7 @@ export function useDraw(
     setupRoughThemeBrowserSync();
     ensureRoughThemeDebugApi();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!DEBUG_RENDER_DIAGNOSTICS) return;
+      if (!DEBUG_CANVAS_OVERLAY) return;
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
       if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) return;
@@ -1144,18 +1314,20 @@ export function useDraw(
 
     ctx.save();
     applyWorldTransform(ctx, cam, dpr);
-    const edgeLineWidth = roughStyle.strokeWidthPx / cam.scale;
-    const trunkLineWidth = roughStyle.strokeWidthPx / cam.scale;
-    const nodeLineWidth = roughStyle.strokeWidthPx / cam.scale;
+    const strokeAlphaFactor = getStrokeAlphaFactor(cam.scale);
+    const strokeScreenWidthPx = getStrokeScreenWidthPx(cam.scale, roughStyle.strokeWidthPx);
+    const edgeLineWidth = strokeScreenWidthPx / cam.scale;
+    const trunkLineWidth = strokeScreenWidthPx / cam.scale;
+    const nodeLineWidth = strokeScreenWidthPx / cam.scale;
     const overlapWorld = roughStyle.overlapPx / Math.max(cam.scale, 0.0001);
-    ctx.strokeStyle = roughStyle.colors.edges.branchStroke;
+    ctx.strokeStyle = multiplyColorAlpha(roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
     ctx.lineWidth = edgeLineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     for (const { geom, branchEntries } of visibleEdgeGroups) {
-      const branchStroke = roughStyle.colors.edges.branchStroke;
-      const trunkStroke = roughStyle.colors.edges.trunkStroke;
+      const branchStroke = multiplyColorAlpha(roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
+      const trunkStroke = multiplyColorAlpha(roughStyle.colors.edges.trunkStroke, strokeAlphaFactor);
       ctx.strokeStyle = branchStroke;
 
       if (roughEnabled) {
@@ -1203,7 +1375,7 @@ export function useDraw(
     ctx.font = NODE_FONT;
     ctx.textBaseline = 'top';
 
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       drawEdgeDebugOverlay(ctx, cam, visibleEdgeGroups, roughEnabled, overlapWorld);
     }
 
@@ -1215,6 +1387,7 @@ export function useDraw(
       if (!rect) continue;
       const node = nodes[id];
       if (!node) continue;
+      const bodyRect = getNodeBodyWorldRect(node, rect);
 
       const isHover = id === hoverNodeId.value;
       const isSelected = selectedIds.value.has(id);
@@ -1222,24 +1395,87 @@ export function useDraw(
       const imageState = imageInteraction?.value?.nodeId === id ? imageInteraction.value : null;
       const showImageAffordance = !editingNodeId?.value && !!imageState && primarySelectedNodeId?.value === id && isSelected;
 
-      const nodeFill = roughStyle.colors.node.fill;
-      const nodeStroke = roughStyle.colors.node.stroke;
-      const nodeCornerRadius = getNodeCornerRadius(rect);
-      const hoverOutlineRect = expandRect(rect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
-      const selectedOutlineRect = expandRect(rect, SELECTED_OUTLINE_OFFSET_PX / cam.scale);
+      const nodeDefaults = getMindNodeDefaultVisualStyle(props.doc, id);
+      const nodeShapeStyle = node?.style?.shape ?? null;
+      const nodeFill = nodeDefaults.fillPreset === 'none' ? 'rgba(0, 0, 0, 0)' : nodeDefaults.fill;
+      const nodeStroke = nodeDefaults.borderPreset !== 'none'
+        ? multiplyColorAlpha(nodeDefaults.stroke, strokeAlphaFactor)
+        : 'rgba(0, 0, 0, 0)';
+      const nodeCornerRadius = getNodeCornerRadius(bodyRect);
+      const hoverOutlineRect = expandRect(bodyRect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
+      const selectedOutlineRect = expandRect(bodyRect, SELECTED_OUTLINE_OFFSET_PX / cam.scale);
+      const nodeBorderLineWidth =
+        getStrokeScreenWidthPx(cam.scale, nodeShapeStyle?.strokeWidthPx ?? roughStyle.strokeWidthPx) / cam.scale;
+      const shouldUseRoughFill = roughEnabled && nodeDefaults.fillPreset !== 'solid' && nodeDefaults.fillPreset !== 'none';
+      const shouldUseRoughBorder =
+        roughEnabled && (nodeDefaults.borderPreset === 'rough-solid' || nodeDefaults.borderPreset === 'rough-dashed');
       ctx.save();
       if (isDraggedGhost) ctx.globalAlpha *= 0.35;
-      ctx.fillStyle = nodeFill;
-      ctx.strokeStyle = nodeStroke;
-      ctx.lineWidth = nodeLineWidth;
-      if (roughEnabled && roughRuntime.rc && roughRuntime.gen) {
-        const nodeDrawable = getOrCreateNodeDrawable(roughRuntime, roughRuntime.gen, roughStyle, id, rect);
-        nodeDrawable.options.fill = nodeFill;
-        nodeDrawable.options.stroke = nodeStroke;
-        nodeDrawable.options.strokeWidth = nodeLineWidth;
-        roughRuntime.rc.draw(nodeDrawable);
+      if (shouldUseRoughFill && roughRuntime.rc && roughRuntime.gen) {
+        const fillDrawable = getOrCreateNodeDrawable(
+          roughRuntime,
+          roughRuntime.gen,
+          roughStyle,
+          `${id}:fill`,
+          bodyRect,
+          `${nodeDefaults.cacheKey}|fill`,
+          {
+            fill: nodeFill,
+            stroke: 'rgba(0, 0, 0, 0)',
+            strokeWidth: 0,
+            fillStyle: nodeDefaults.roughNodeOptions.fillStyle,
+            fillWeight: nodeDefaults.roughNodeOptions.fillWeight,
+            hachureGap: nodeDefaults.roughNodeOptions.hachureGap,
+            hachureAngle: nodeDefaults.roughNodeOptions.hachureAngle,
+          }
+        );
+        fillDrawable.options.fill = nodeFill;
+        fillDrawable.options.stroke = 'rgba(0, 0, 0, 0)';
+        fillDrawable.options.strokeWidth = 0;
+        fillDrawable.options.fillStyle = nodeDefaults.roughNodeOptions.fillStyle;
+        fillDrawable.options.fillWeight = nodeDefaults.roughNodeOptions.fillWeight;
+        fillDrawable.options.hachureGap = nodeDefaults.roughNodeOptions.hachureGap;
+        fillDrawable.options.hachureAngle = nodeDefaults.roughNodeOptions.hachureAngle;
+        roughRuntime.rc.draw(fillDrawable);
       } else {
-        drawRoundedRectShape(ctx, rect, nodeCornerRadius, nodeFill, nodeStroke, nodeLineWidth);
+        drawRoundedRectShape(ctx, bodyRect, nodeCornerRadius, nodeFill, 'rgba(0,0,0,0)', 0);
+      }
+
+      if (shouldUseRoughBorder && roughRuntime.rc && roughRuntime.gen) {
+        const borderDrawable = getOrCreateNodeDrawable(
+          roughRuntime,
+          roughRuntime.gen,
+          roughStyle,
+          `${id}:border`,
+          bodyRect,
+          `${nodeDefaults.cacheKey}|border`,
+          {
+            fill: 'rgba(0, 0, 0, 0)',
+            stroke: nodeStroke,
+            strokeWidth: nodeDefaults.hasBorder ? nodeBorderLineWidth : 0,
+            strokeLineDash: nodeDefaults.borderPreset === 'rough-dashed' ? [6, 5] : undefined,
+            fillStyle: 'solid',
+          }
+        );
+        borderDrawable.options.fill = 'rgba(0, 0, 0, 0)';
+        borderDrawable.options.stroke = nodeStroke;
+        borderDrawable.options.strokeWidth = nodeDefaults.hasBorder ? nodeBorderLineWidth : 0;
+        borderDrawable.options.strokeLineDash = nodeDefaults.borderPreset === 'rough-dashed' ? [6, 5] : undefined;
+        borderDrawable.options.fillStyle = 'solid';
+        roughRuntime.rc.draw(borderDrawable);
+      } else if (nodeDefaults.borderPreset === 'clean') {
+        drawRoundedRectOutline(ctx, bodyRect, nodeCornerRadius, nodeStroke, nodeBorderLineWidth);
+      } else if (nodeDefaults.borderPreset === 'rough-dashed') {
+        drawRoundedRectDashedOutline(ctx, bodyRect, nodeCornerRadius, nodeStroke, nodeBorderLineWidth, [6 / cam.scale, 5 / cam.scale]);
+      } else {
+        drawRoundedRectShape(
+          ctx,
+          bodyRect,
+          nodeCornerRadius,
+          'rgba(0,0,0,0)',
+          'rgba(0,0,0,0)',
+          0
+        );
       }
 
       if (isSelected) {
@@ -1262,8 +1498,8 @@ export function useDraw(
         );
       }
 
-      const visualLayout = measureNodeVisualLayout(ctx, node, drawTextCache);
-      const textStyle = getNodeTextStyle(node);
+      const visualLayout = measureNodeVisualLayout(ctx, node, drawTextCache, { doc: props.doc, nodeId: id });
+      const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
       if (visualLayout.image?.src) {
         const loadedImage = getLoadedNodeImage(visualLayout.image.src);
         if (loadedImage) {
@@ -1272,7 +1508,7 @@ export function useDraw(
               w: visualLayout.image.width,
               h: visualLayout.image.height,
             };
-          const imageRect = getNodeImageWorldRect(rect, imageSize);
+          const imageRect = getNodeImageWorldRect(bodyRect, imageSize);
           if (imageRect) {
             ctx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
             const imageOutlineGapWorld = IMAGE_OUTLINE_GAP_PX / Math.max(cam.scale, 0.0001);
@@ -1304,17 +1540,17 @@ export function useDraw(
       }
       if (editingNodeId?.value !== id) {
         ctx.textBaseline = 'top';
-        let lineY = rect.y1 + visualLayout.textGeometry.textGlyphTop;
-        const textRegionWidth = rectWidth(rect) - NODE_TEXT_INSET_X * 2;
+        let lineY = bodyRect.y1 + visualLayout.textGeometry.textGlyphTop;
+        const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2;
         visualLayout.textLayout.richLines.forEach((line) => {
           const snappedLineY = snapWorldToDevicePixel(lineY, cam.scale, cam.ty, dpr);
           const effectiveAlign = line.align ?? textStyle.textAlign;
           const baseX =
             effectiveAlign === 'center'
-              ? rect.x1 + NODE_TEXT_INSET_X + Math.max(0, (textRegionWidth - line.width) / 2)
+              ? bodyRect.x1 + NODE_TEXT_INSET_X + Math.max(0, (textRegionWidth - line.width) / 2)
               : effectiveAlign === 'right'
-                ? rect.x2 - NODE_TEXT_INSET_X - line.width
-                : rect.x1 + NODE_TEXT_INSET_X;
+                ? bodyRect.x2 - NODE_TEXT_INSET_X - line.width
+                : bodyRect.x1 + NODE_TEXT_INSET_X;
           let cursorX = baseX;
           for (const segment of line.segments) {
             ctx.font = segment.font || getInlineFont(segment.marks, NODE_DEFAULT_FONT_FAMILY, NODE_DEFAULT_FONT_SIZE);
@@ -1354,9 +1590,11 @@ export function useDraw(
           lineY += line.height;
         });
       }
+      drawNodeMarkers(ctx, node, bodyRect, getLoadedNodeImage);
       ctx.restore();
     }
 
+    drawCollapseTags(ctx, collapseTags.value);
     ctx.restore();
     drawMarqueeOverlay(
       ctx,
@@ -1397,7 +1635,7 @@ export function useDraw(
       fps: currentFps,
     };
 
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       const nextEdgeSignature = [
         drawStats.value.parentsWithEdges,
         drawStats.value.totalChildrenEdges,

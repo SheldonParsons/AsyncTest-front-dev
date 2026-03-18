@@ -1,3 +1,5 @@
+import { buildCanvasFont } from './font';
+
 export type DomTextCalibrationStyle = {
   fontFamily: string;
   fontSizePx: number;
@@ -8,11 +10,11 @@ export type DomTextCalibrationStyle = {
 };
 
 const calibrationCache = new Map<string, number>();
+const FONT_TOP_GAP_WEIGHT = 0.575;
+let measurementCanvas: HTMLCanvasElement | null = null;
 
-export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
-  if (typeof document === 'undefined') return 0;
-
-  const cacheKey = [
+function getCacheKey(style: DomTextCalibrationStyle) {
+  return [
     style.fontFamily,
     style.fontSizePx,
     style.fontWeight,
@@ -20,6 +22,18 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
     style.lineHeightPx,
     style.letterSpacingPx ?? 0,
   ].join('|');
+}
+
+function getMeasurementContext() {
+  if (typeof document === 'undefined') return null;
+  measurementCanvas ??= document.createElement('canvas');
+  return measurementCanvas.getContext('2d');
+}
+
+export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
+  if (typeof document === 'undefined') return 0;
+
+  const cacheKey = getCacheKey(style);
   const cached = calibrationCache.get(cacheKey);
   if (cached != null) return cached;
 
@@ -82,7 +96,24 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
   range.setStart(textNode, 0);
   range.setEnd(textNode, Math.min(1, textNode.length));
   const rangeRect = range.getBoundingClientRect();
-  const offset = Math.max(0, rangeRect.top - wrapperRect.top);
+  let offset = Math.max(0, rangeRect.top - wrapperRect.top);
+
+  const ctx = getMeasurementContext();
+  if (ctx) {
+    ctx.save();
+    ctx.font = buildCanvasFont({
+      fontStyle: style.fontStyle,
+      fontWeight: style.fontWeight,
+      fontSizePx: style.fontSizePx,
+      fontFamily: style.fontFamily,
+    });
+    const metrics = ctx.measureText('Hg');
+    ctx.restore();
+    const actualAscent = metrics.actualBoundingBoxAscent || 0;
+    const fontAscent = metrics.fontBoundingBoxAscent || actualAscent;
+    const topGapPx = Math.max(0, fontAscent - actualAscent);
+    offset += topGapPx * FONT_TOP_GAP_WEIGHT;
+  }
 
   document.body.removeChild(wrapper);
   calibrationCache.set(cacheKey, offset);

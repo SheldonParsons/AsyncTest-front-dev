@@ -1,7 +1,8 @@
 import { ref } from 'vue';
-import { DEBUG_RENDER_DIAGNOSTICS } from '../diagnostics';
+import { DEBUG_CANVAS_OVERLAY } from '../constants';
 import type { WorldRect } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
+import { getNodeBodyWorldRect } from '../nodeMarkers';
 
 export type ParentEdgeKey = `parent:${string}`;
 export type EdgePoint = { x: number; y: number };
@@ -220,10 +221,12 @@ export function buildParentGeom(
   rootId: string,
   parentId: string,
   childIds: string[],
+  nodes: Record<string, any>,
   worldBoxes: WorldBoxes,
   hGap: number
 ): ParentEdgeGeom | null {
-  const parentRect = worldBoxes.get(parentId);
+  const parentWorldRect = worldBoxes.get(parentId);
+  const parentRect = parentWorldRect ? getNodeBodyWorldRect(nodes[parentId], parentWorldRect) : null;
   if (!parentRect) return null;
 
   const parentAnchor = {
@@ -235,12 +238,13 @@ export function buildParentGeom(
     .map((childId, originalIndex) => {
       const childRect = worldBoxes.get(childId);
       if (!childRect) return null;
+      const childBodyRect = getNodeBodyWorldRect(nodes[childId], childRect);
       return {
         childId,
         originalIndex,
         point: {
-          x: childRect.x1,
-          y: (childRect.y1 + childRect.y2) / 2,
+          x: childBodyRect.x1,
+          y: (childBodyRect.y1 + childBodyRect.y2) / 2,
         },
       };
     })
@@ -475,7 +479,7 @@ export function useEdges() {
         if (!childIds.length) continue;
 
         totalChildrenEdges += childIds.length;
-        const geom = buildParentGeom(rootId, parentId, childIds, worldBoxes, hGap);
+        const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGap);
         if (geom) {
           parentEdgeGeoms.value.push(geom);
           trunkPathCount += 1;
@@ -562,7 +566,7 @@ export function useEdges() {
       trunkOverhangDetectedCount,
     };
 
-    if (DEBUG_RENDER_DIAGNOSTICS) {
+    if (DEBUG_CANVAS_OVERLAY) {
       if (branchPathCount !== totalChildrenEdges) {
         console.debug('[mind-edge-cache-isolation]', {
           message: 'branchPathCount mismatch',

@@ -27,7 +27,7 @@ declare module 'monaco-editor/esm/vs/editor/editor.main'
 export interface IElectronAPI {
   toggleTrafficLights: (visible: boolean) => void;
   openExternal: (url: string) => void;
-  on: (event: any, params: any) => void;
+  on: (event: any, params: any) => (() => void);
   send: (event: any) => void;
   invoke: (event: any) => void;
   wm: any,

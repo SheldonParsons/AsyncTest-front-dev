@@ -43,6 +43,28 @@ function parseStyleString(style: string | undefined): Partial<RichTextMarks> {
   };
 }
 
+function updateStyleStringFontSize(style: string | undefined, transform: (size: number) => number) {
+  if (!style) return style;
+  const pairs = style
+    .split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => item.split(':').map((part) => part.trim()))
+    .filter((entry): entry is [string, string] => entry.length === 2);
+  if (!pairs.length) return style;
+  let changed = false;
+  const nextPairs = pairs.map(([key, value]) => {
+    if (key !== 'font-size') return [key, value] as [string, string];
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed)) return [key, value] as [string, string];
+    changed = true;
+    const nextValue = `${Number(transform(parsed).toFixed(3))}px`;
+    return [key, nextValue] as [string, string];
+  });
+  if (!changed) return style;
+  return nextPairs.map(([key, value]) => `${key}: ${value}`).join('; ');
+}
+
 function textNodeToInline(node: SerializedLexicalNode): RichTextInline {
   const format = typeof node.format === 'number' ? node.format : 0;
   const styleMarks = parseStyleString(node.style);
@@ -143,4 +165,20 @@ export function richTextFromLexicalState(state: SerializedLexicalEditorState | n
 
 export function plainTextFromLexicalState(state: SerializedLexicalEditorState | null | undefined) {
   return richTextToPlain(richTextFromLexicalState(state));
+}
+
+export function scaleLexicalStateFontSizes(
+  state: SerializedLexicalEditorState | null | undefined,
+  factor: number
+): SerializedLexicalEditorState {
+  const safeState = cloneLexicalState(state);
+  if (!safeState.root?.children || !Number.isFinite(factor) || Math.abs(factor - 1) < 0.0001) return safeState;
+  const visit = (node: SerializedLexicalNode) => {
+    if (typeof node.style === 'string' && node.style) {
+      node.style = updateStyleStringFontSize(node.style, (size) => Math.max(1, size * factor));
+    }
+    node.children?.forEach(visit);
+  };
+  safeState.root.children.forEach(visit);
+  return safeState;
 }

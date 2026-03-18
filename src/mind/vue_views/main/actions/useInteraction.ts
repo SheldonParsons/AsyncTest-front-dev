@@ -1,6 +1,7 @@
 import type { Ref } from 'vue';
 import type { Camera } from './useCamera';
-import { DEBUG_RENDER_DIAGNOSTICS, WHEEL_LOG_SAMPLE_MS } from '../diagnostics';
+import { DEBUG_CANVAS_OVERLAY } from '../constants';
+import { WHEEL_LOG_SAMPLE_MS } from '../diagnostics';
 
 const ZOOM_K = 0.0065;
 const PAN_K = 0.48;
@@ -86,7 +87,7 @@ export function useInteraction(
   }
 
   function maybeLogWheel(payload: Record<string, unknown>) {
-    if (!DEBUG_RENDER_DIAGNOSTICS) return;
+    if (!DEBUG_CANVAS_OVERLAY) return;
     const now = performance.now();
     if (now - lastWheelLogAt < WHEEL_LOG_SAMPLE_MS) return;
     lastWheelLogAt = now;

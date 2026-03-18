@@ -1,22 +1,9 @@
 import type { Camera } from './actions/useCamera';
 import type { WorldRect } from './geom/rect';
+import { DEBUG_CANVAS_OVERLAY } from './constants';
 
-export const RENDER_DEBUG_STORAGE_KEY = 'amind:debug-render-diagnostics';
-export const RENDER_DEBUG_QUERY_KEY = 'amindDebugRender';
 export const ROUGH_RENDER_STORAGE_KEY = 'amind:rough-render';
 export const ROUGH_RENDER_QUERY_KEY = 'amindRoughRender';
-
-function readDebugFlag() {
-  if (typeof window === 'undefined') return false;
-
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(RENDER_DEBUG_QUERY_KEY) === '1') return true;
-    return window.localStorage.getItem(RENDER_DEBUG_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 export function readRoughRenderFlag() {
   if (typeof window === 'undefined') return false;
@@ -29,8 +16,6 @@ export function readRoughRenderFlag() {
     return false;
   }
 }
-
-export const DEBUG_RENDER_DIAGNOSTICS = readDebugFlag();
 export const WHEEL_LOG_SAMPLE_MS = 300;
 export const MARQUEE_LOG_SAMPLE_MS = 1000;
 
@@ -65,9 +50,8 @@ export function logRendererDebugInstructions() {
   console.log(
     [
       '[mind-debug] Dev toggles',
-      '- Seed new docs: AMIND_DEV_SEED_NODES=1 AMIND_DEV_SEED_NODE_COUNT=300 npm run electron:dev',
-      `- Renderer diagnostics HUD: localStorage.setItem('${RENDER_DEBUG_STORAGE_KEY}', '1'); location.reload()`,
-      `- Or use query flag: ?${RENDER_DEBUG_QUERY_KEY}=1`,
+      `- Canvas debug overlay: set DEBUG_CANVAS_OVERLAY in src/mind/vue_views/main/constants.ts`,
+      `- Seed new docs count: set DEBUG_NEW_MIND_SEED_NODE_COUNT in src/mind/vue_views/main/constants.ts`,
       `- Rough renderer: localStorage.setItem('${ROUGH_RENDER_STORAGE_KEY}', '1'); location.reload()`,
       `- Or use query flag: ?${ROUGH_RENDER_QUERY_KEY}=1`,
       "- Rough preset: localStorage.setItem('mind.roughThemePreset', 'clean'|'warm-paper'|'mono'|'accent-blue')",
@@ -75,7 +59,7 @@ export function logRendererDebugInstructions() {
       "- Rough debug API: window.setRoughThemePreset('mono') / window.setRoughThemeOverrides({...}) / window.resetRoughThemeOverrides() / window.getRoughThemeDebug()",
       '- HUD fields: camera / viewport / grid range / node counts / parent-edge counts / cache ms / draw ms / FPS',
       '- Edge debug: HUD + [mind-edge-cache] + [mind-edges] + parent edge bbox / trunk key-point overlay',
-      `- Diagnostics active: ${DEBUG_RENDER_DIAGNOSTICS ? 'YES' : 'NO'}`,
+      `- Diagnostics active: ${DEBUG_CANVAS_OVERLAY ? 'YES' : 'NO'}`,
     ].join('\n')
   );
 }
@@ -86,7 +70,7 @@ export function logCameraReset(
   after: Camera,
   extra: Record<string, unknown> = {}
 ) {
-  if (!DEBUG_RENDER_DIAGNOSTICS) return;
+  if (!DEBUG_CANVAS_OVERLAY) return;
 
   console.debug('[mind-camera-reset]', {
     reason,

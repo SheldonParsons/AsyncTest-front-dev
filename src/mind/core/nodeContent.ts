@@ -25,8 +25,26 @@ export type MindNodeLike = {
   textPlain?: string;
   richText?: RichTextDocument;
   textLexical?: SerializedLexicalEditorState | null;
+  style?: {
+    shape?: {
+      fill?: string;
+      stroke?: string;
+      fillPreset?: 'rough-hachure' | 'rough-cross' | 'rough-dots' | 'solid' | 'none';
+      borderPreset?: 'clean' | 'rough-solid' | 'rough-dashed' | 'none';
+      strokeWidthPx?: number;
+    } | null;
+    text?: {
+      fontFamily?: string;
+      fontSizePx?: number;
+      fontWeight?: number;
+      fontStyle?: 'normal' | 'italic';
+      color?: string;
+      textAlign?: 'left' | 'center' | 'right';
+    } | null;
+  } | null;
   image?: MindNodeImage;
   images?: unknown[];
+  markers?: string[];
 };
 
 export function getNodeRichText(node: MindNodeLike | null | undefined): RichTextDocument {

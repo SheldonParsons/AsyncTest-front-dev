@@ -1,7 +1,7 @@
 import { buildCanvasFont } from './font';
 
 export const NODE_TEXT_MAX_WIDTH_PX = 500;
-export const NODE_TEXT_MIN_WIDTH_PX = 80;
+export const NODE_TEXT_MIN_WIDTH_PX = 36;
 export const NODE_W_HARD_MAX = 2000;
 export const NODE_H_HARD_MAX = 2000;
 export const NODE_TEXT_WRAP_MODE = 'anywhere';
