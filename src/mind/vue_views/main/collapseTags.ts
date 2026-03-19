@@ -1,4 +1,3 @@
-import { collectSubtreeNodeIds } from '@/mind/core/commands/subtreeSnapshot';
 import type { Camera } from './actions/useCamera';
 import { getActiveMind } from './actions/useDocUtils';
 import type { WorldBoxes } from './geom/worldBoxes';
@@ -12,8 +11,6 @@ export type CollapseTagInfo = {
   height: number;
   radius: number;
   label: string;
-  visible: boolean;
-  hovered: boolean;
   isCollapsed: boolean;
   descendantCount: number;
   screenX: number;
@@ -38,6 +35,26 @@ function getNodeChildren(doc: any, nodeId: string) {
   return Array.isArray(children) ? children : [];
 }
 
+export function buildDescendantCountMap(doc: any) {
+  const nodes = getActiveMind(doc)?.nodes ?? {};
+  const result = new Map<string, number>();
+
+  function count(nodeId: string) {
+    const cached = result.get(nodeId);
+    if (cached != null) return cached;
+    const children = Array.isArray(nodes[nodeId]?.children) ? nodes[nodeId].children : [];
+    let total = children.length;
+    for (const childId of children) {
+      total += count(childId);
+    }
+    result.set(nodeId, total);
+    return total;
+  }
+
+  for (const nodeId of Object.keys(nodes)) count(nodeId);
+  return result;
+}
+
 function measureCollapseTagWidth(label: string) {
   if (label.length <= 1) return COLLAPSE_TAG_MIN_WIDTH_PX;
   if (label.length === 2) return COLLAPSE_TAG_TWO_DIGIT_WIDTH_PX;
@@ -51,29 +68,19 @@ export function buildCollapseTagScreenMap(
   doc: any,
   worldBoxes: WorldBoxes,
   camera: Camera,
-  hoverNodeId: string | null,
-  hoverTagNodeId: string | null,
-  selectedIds: ReadonlySet<string>,
-  stickyNodeId: string | null
+  visibleNodeIds: Iterable<string>,
+  descendantCounts?: ReadonlyMap<string, number>
 ) {
   const result = new Map<string, CollapseTagInfo>();
   const nodes = getActiveMind(doc)?.nodes ?? {};
-  const descendantCountCache = new Map<string, number>();
-
-  function getDescendantCount(nodeId: string) {
-    const cached = descendantCountCache.get(nodeId);
-    if (cached != null) return cached;
-    const count = Math.max(0, collectSubtreeNodeIds(nodes, nodeId).length - 1);
-    descendantCountCache.set(nodeId, count);
-    return count;
-  }
-
-  for (const [nodeId, rect] of worldBoxes.entries()) {
+  for (const nodeId of visibleNodeIds) {
+    const rect = worldBoxes.get(nodeId);
+    if (!rect) continue;
     const children = getNodeChildren(doc, nodeId);
     if (!children.length) continue;
     const bodyRect = getNodeBodyWorldRect(nodes[nodeId], rect);
     const isCollapsed = !!nodes[nodeId]?.collapsed;
-    const descendantCount = getDescendantCount(nodeId);
+    const descendantCount = descendantCounts?.get(nodeId) ?? children.length;
     const label = isCollapsed ? String(descendantCount) : '-';
     const width = measureCollapseTagWidth(label);
     const height = COLLAPSE_TAG_HEIGHT_PX;
@@ -92,13 +99,6 @@ export function buildCollapseTagScreenMap(
       height,
       radius: height / 2,
       label,
-      visible:
-        isCollapsed ||
-        selectedIds.has(nodeId) ||
-        hoverNodeId === nodeId ||
-        hoverTagNodeId === nodeId ||
-        stickyNodeId === nodeId,
-      hovered: hoverTagNodeId === nodeId,
       isCollapsed,
       descendantCount,
       screenX,
@@ -116,10 +116,13 @@ export function buildCollapseTagScreenMap(
 
 export function hitTestCollapseTag(
   collapseTags: Map<string, CollapseTagInfo>,
+  activeNodeIds: ReadonlySet<string>,
   screenX: number,
   screenY: number
 ) {
   for (const [nodeId, tag] of collapseTags.entries()) {
+    const visible = tag.isCollapsed || activeNodeIds.has(nodeId);
+    if (!visible) continue;
     if (
       screenX >= tag.screenX - COLLAPSE_TAG_HIT_SLOP_PX &&
       screenX <= tag.screenX + tag.screenWidth + COLLAPSE_TAG_HIT_SLOP_PX &&

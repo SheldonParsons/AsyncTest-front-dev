@@ -12,7 +12,25 @@ export type NormalizedSelectionResult = {
   filteredOutDescendantsCount: number;
 };
 
-function findParentAndIndex(nodes: MindNodes, nodeId: string) {
+type ParentIndexEntry = {
+  parentId: string;
+  indexInParent: number;
+};
+
+function buildParentIndex(nodes: MindNodes) {
+  const parentIndex = new Map<string, ParentIndexEntry>();
+  for (const [parentId, parentNode] of Object.entries(nodes)) {
+    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    children.forEach((childId, indexInParent) => {
+      if (typeof childId === 'string') parentIndex.set(childId, { parentId, indexInParent });
+    });
+  }
+  return parentIndex;
+}
+
+function findParentAndIndex(nodes: MindNodes, nodeId: string, parentIndex?: ReadonlyMap<string, ParentIndexEntry>) {
+  const cached = parentIndex?.get(nodeId);
+  if (cached) return cached;
   for (const [parentId, parentNode] of Object.entries(nodes)) {
     const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
     const indexInParent = children.indexOf(nodeId);
@@ -21,11 +39,11 @@ function findParentAndIndex(nodes: MindNodes, nodeId: string) {
   return null;
 }
 
-function buildPath(nodes: MindNodes, nodeId: string) {
+function buildPath(nodes: MindNodes, nodeId: string, parentIndex?: ReadonlyMap<string, ParentIndexEntry>) {
   const path: number[] = [];
   let currentNodeId: string | null = nodeId;
   while (currentNodeId) {
-    const parentInfo = findParentAndIndex(nodes, currentNodeId);
+    const parentInfo = findParentAndIndex(nodes, currentNodeId, parentIndex);
     if (!parentInfo) break;
     path.unshift(parentInfo.indexInParent);
     currentNodeId = parentInfo.parentId;
@@ -49,14 +67,18 @@ export function compareSelectionTargetInfo(a: SelectionTargetInfo, b: SelectionT
   return comparePath(a.path, b.path);
 }
 
-export function getSelectionTargetInfo(nodes: MindNodes, nodeId: string): SelectionTargetInfo | null {
+export function getSelectionTargetInfo(
+  nodes: MindNodes,
+  nodeId: string,
+  parentIndex?: ReadonlyMap<string, ParentIndexEntry>
+): SelectionTargetInfo | null {
   if (!nodes[nodeId]) return null;
-  const parentInfo = findParentAndIndex(nodes, nodeId);
+  const parentInfo = findParentAndIndex(nodes, nodeId, parentIndex);
   return {
     nodeId,
     parentId: parentInfo?.parentId ?? null,
     indexInParent: parentInfo?.indexInParent ?? -1,
-    path: buildPath(nodes, nodeId),
+    path: buildPath(nodes, nodeId, parentIndex),
   };
 }
 
@@ -69,6 +91,7 @@ export function normalizeSelectionTargets(
     collapseToRootIfSelected?: boolean;
   }
 ): NormalizedSelectionResult {
+  const parentIndex = buildParentIndex(nodes);
   const uniqueIds = Array.from(new Set(selectedNodeIds)).filter((nodeId) => !!nodes[nodeId]);
   const rootNodeId = options?.rootNodeId ?? null;
   const allowRoot = options?.allowRoot ?? true;
@@ -85,14 +108,14 @@ export function normalizeSelectionTargets(
   let filteredOutDescendantsCount = 0;
 
   for (const nodeId of candidateIds) {
-    let current = getSelectionTargetInfo(nodes, nodeId)?.parentId ?? null;
+    let current = getSelectionTargetInfo(nodes, nodeId, parentIndex)?.parentId ?? null;
     let shouldFilterOut = false;
     while (current) {
       if (candidateSet.has(current)) {
         shouldFilterOut = true;
         break;
       }
-      current = getSelectionTargetInfo(nodes, current)?.parentId ?? null;
+      current = getSelectionTargetInfo(nodes, current, parentIndex)?.parentId ?? null;
     }
     if (shouldFilterOut) {
       filteredOutDescendantsCount += 1;
@@ -102,7 +125,7 @@ export function normalizeSelectionTargets(
   }
 
   const finalTargets = filteredIds
-    .map((nodeId) => getSelectionTargetInfo(nodes, nodeId))
+    .map((nodeId) => getSelectionTargetInfo(nodes, nodeId, parentIndex))
     .filter((value): value is SelectionTargetInfo => !!value)
     .sort(compareSelectionTargetInfo);
 

@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.0.2",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 全新功能\\n#### AsyncTest Mind 思维导图上线\\n##### 全局数据源和数据集table升级，升级交互\\n##### 全局数据源列表新增直接进入table的按钮\\n##### bugfix：radio组件切换红点偏移的问题\",\"publishDate\":\"2026-03-19\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 全新功能\\n#### AsyncTest Mind 思维导图上线\\n##### 全局数据源和数据集table升级，升级交互\\n##### 全局数据源列表新增直接进入table的按钮\\n##### bugfix：radio组件切换红点偏移的问题\\n##### 思维导图多节点下的性能优化（持续提升中）\",\"publishDate\":\"2026-03-19\"}"
     },
     "publish": [
       {

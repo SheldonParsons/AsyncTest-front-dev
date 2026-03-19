@@ -57,6 +57,7 @@ const resolvedEditorShellStyle = computed<CSSProperties>(() => {
 const editorInnerStyle = computed<CSSProperties>(() => ({}));
 
 function mountEditor() {
+  if (!props.visible || !editorRootRef.value || !props.nodeId) return;
   lexicalEditorManager.setRootElement(editorRootRef.value);
   lexicalEditorManager.startSession({
     nodeId: props.nodeId,
@@ -70,16 +71,18 @@ function mountEditor() {
 }
 
 onMounted(() => {
-  void nextTick().then(() => {
-    if (!props.visible) return;
-    mountEditor();
-  });
+  lexicalEditorManager.setRootElement(editorRootRef.value);
+  if (props.visible) mountEditor();
 });
 
 watch(
-  () => [props.visible, props.nodeId, props.mode] as const,
+  () => [props.visible, props.nodeId, props.mode, props.caretPlacement] as const,
   async ([visible]) => {
     if (!visible) return;
+    if (editorRootRef.value) {
+      mountEditor();
+      return;
+    }
     await nextTick();
     mountEditor();
   },
@@ -107,6 +110,7 @@ onBeforeUnmount(() => {
   font: inherit;
   line-height: inherit;
   text-align: inherit;
+  background: transparent;
 }
 
 .alignment-guide {
@@ -130,6 +134,7 @@ onBeforeUnmount(() => {
 .lexical-editor-inner {
   width: 100%;
   height: 100%;
+  background: transparent;
 }
 
 .lexical-editor-root {

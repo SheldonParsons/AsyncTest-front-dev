@@ -1,7 +1,8 @@
 import { ref } from 'vue';
 import { DEBUG_CANVAS_OVERLAY } from '../constants';
-import type { WorldRect } from '../geom/rect';
+import { rectIntersects, type WorldRect } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
+import { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import { getNodeBodyWorldRect } from '../nodeMarkers';
 import { getActiveMind } from './useDocUtils';
 
@@ -406,6 +407,8 @@ export function buildParentGeom(
 
 export function useEdges() {
   const parentEdgeGeoms = ref<ParentEdgeGeom[]>([]);
+  const parentEdgeGeomByKey = new Map<ParentEdgeKey, ParentEdgeGeom>();
+  const edgeSpatialIndex = new UniformGridSpatialIndex(512);
   const edgeStats = ref<ParentEdgeCacheStats>({
     parentsWithEdges: 0,
     totalChildrenEdges: 0,
@@ -433,13 +436,7 @@ export function useEdges() {
     trunkOverhangDetectedCount: 0,
   });
 
-  function rebuildEdgeCache(doc: any, worldBoxes: WorldBoxes) {
-    const rebuildStart = performance.now();
-    parentEdgeGeoms.value = [];
-
-    const activeMind = getActiveMind(doc);
-    const nodes = activeMind?.nodes || {};
-    const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+  function finalizeEdgeCacheStats(rebuildStart: number) {
     let totalChildrenEdges = 0;
     let trunkPathCount = 0;
     let branchPathCount = 0;
@@ -461,86 +458,47 @@ export function useEdges() {
     let trunkShrinkAppliedCount = 0;
     let trunkOverhangDetectedCount = 0;
     const overhangEpsilon = 0.5;
+    const edgeBoxes = new Map<ParentEdgeKey, WorldRect>();
 
-    for (const root of roots) {
-      const rootId = root?.rootId;
-      if (!rootId) continue;
-
-      const hGap = root.layout?.hGap ?? 60;
-      const queue: string[] = [rootId];
-      let cursor = 0;
-
-      while (cursor < queue.length) {
-        const parentId = queue[cursor];
-        cursor += 1;
-        const parentNode = nodes[parentId];
-        if (!parentNode) continue;
-
-        const childIds: string[] = Array.isArray(parentNode.children) ? parentNode.children : [];
-        for (const childId of childIds) queue.push(childId);
-        if (!childIds.length) continue;
-
-        totalChildrenEdges += childIds.length;
-        const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGap);
-        if (geom) {
-          parentEdgeGeoms.value.push(geom);
-          trunkPathCount += 1;
-          branchPathCount += geom.childBranchPaths.size;
-          for (const meta of geom.branchMeta.values()) {
-            if (meta.rounded) roundedBranches += 1;
-            else straightBranches += 1;
-            if (meta.degenerated) degeneratedBranches += 1;
-            minBranchLen = Math.min(minBranchLen, meta.branchLen);
-            maxBranchLen = Math.max(maxBranchLen, meta.branchLen);
-
-            if (meta.position === 'aligned') {
-              alignedStraightCount += meta.branchType === 'straight' ? 1 : 0;
-              if (geom.totalChildren >= 2) alignedMultiCount += 1;
-            }
-            if (meta.position === 'up' && meta.rounded) upRoundedCount += 1;
-            if (meta.position === 'down' && meta.rounded) downRoundedCount += 1;
-            if ((meta.position === 'up' || meta.position === 'down') && meta.rounded) {
-              nonAlignedRoundedCount += 1;
-            }
-            if ((meta.position === 'up' || meta.position === 'down') && meta.degenerated) {
-              nonAlignedDegeneratedCount += 1;
-            }
-          }
-          if (
-            geom.trunkTop &&
-            geom.yMin != null &&
-            Math.abs(geom.trunkTop.y - geom.yMin) > overhangEpsilon
-          ) {
-            trunkShrinkAppliedCount += 1;
-          } else if (
-            geom.trunkBottom &&
-            geom.yMax != null &&
-            Math.abs(geom.trunkBottom.y - geom.yMax) > overhangEpsilon
-          ) {
-            trunkShrinkAppliedCount += 1;
-          }
-          if (
-            geom.trunkTop &&
-            geom.yMin != null &&
-            geom.trunkTop.y < geom.yMin - overhangEpsilon
-          ) {
-            trunkOverhangDetectedCount += 1;
-          }
-          if (
-            geom.trunkBottom &&
-            geom.yMax != null &&
-            geom.trunkBottom.y > geom.yMax + overhangEpsilon
-          ) {
-            trunkOverhangDetectedCount += 1;
-          }
-          trunkStubMin = Math.min(trunkStubMin, geom.trunkStub);
-          trunkStubMax = Math.max(trunkStubMax, geom.trunkStub);
-          roundRadiusMin = Math.min(roundRadiusMin, geom.roundRadius);
-          roundRadiusMax = Math.max(roundRadiusMax, geom.roundRadius);
+    parentEdgeGeoms.value = Array.from(parentEdgeGeomByKey.values());
+    for (const geom of parentEdgeGeoms.value) {
+      edgeBoxes.set(geom.key, geom.bbox);
+      totalChildrenEdges += geom.totalChildren;
+      trunkPathCount += 1;
+      branchPathCount += geom.childBranchPaths.size;
+      for (const meta of geom.branchMeta.values()) {
+        if (meta.rounded) roundedBranches += 1;
+        else straightBranches += 1;
+        if (meta.degenerated) degeneratedBranches += 1;
+        minBranchLen = Math.min(minBranchLen, meta.branchLen);
+        maxBranchLen = Math.max(maxBranchLen, meta.branchLen);
+        if (meta.position === 'aligned') {
+          alignedStraightCount += meta.branchType === 'straight' ? 1 : 0;
+          if (geom.totalChildren >= 2) alignedMultiCount += 1;
         }
+        if (meta.position === 'up' && meta.rounded) upRoundedCount += 1;
+        if (meta.position === 'down' && meta.rounded) downRoundedCount += 1;
+        if ((meta.position === 'up' || meta.position === 'down') && meta.rounded) nonAlignedRoundedCount += 1;
+        if ((meta.position === 'up' || meta.position === 'down') && meta.degenerated) nonAlignedDegeneratedCount += 1;
       }
+      if (geom.trunkTop && geom.yMin != null && Math.abs(geom.trunkTop.y - geom.yMin) > overhangEpsilon) {
+        trunkShrinkAppliedCount += 1;
+      } else if (geom.trunkBottom && geom.yMax != null && Math.abs(geom.trunkBottom.y - geom.yMax) > overhangEpsilon) {
+        trunkShrinkAppliedCount += 1;
+      }
+      if (geom.trunkTop && geom.yMin != null && geom.trunkTop.y < geom.yMin - overhangEpsilon) {
+        trunkOverhangDetectedCount += 1;
+      }
+      if (geom.trunkBottom && geom.yMax != null && geom.trunkBottom.y > geom.yMax + overhangEpsilon) {
+        trunkOverhangDetectedCount += 1;
+      }
+      trunkStubMin = Math.min(trunkStubMin, geom.trunkStub);
+      trunkStubMax = Math.max(trunkStubMax, geom.trunkStub);
+      roundRadiusMin = Math.min(roundRadiusMin, geom.roundRadius);
+      roundRadiusMax = Math.max(roundRadiusMax, geom.roundRadius);
     }
 
+    edgeSpatialIndex.rebuild(edgeBoxes);
     edgeStats.value = {
       parentsWithEdges: parentEdgeGeoms.value.length,
       totalChildrenEdges,
@@ -606,9 +564,80 @@ export function useEdges() {
     }
   }
 
+  function rebuildEdgeCache(
+    doc: any,
+    worldBoxes: WorldBoxes,
+    options?: { affectedParents?: Array<{ parentId: string; rootId: string }> }
+  ) {
+    const rebuildStart = performance.now();
+    const activeMind = getActiveMind(doc);
+    const nodes = activeMind?.nodes || {};
+    const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+    const hGapByRootId = new Map<string, number>();
+    roots.forEach((root) => {
+      if (root?.rootId) hGapByRootId.set(root.rootId, root.layout?.hGap ?? 60);
+    });
+
+    if (!options?.affectedParents?.length) {
+      parentEdgeGeomByKey.clear();
+      for (const root of roots) {
+        const rootId = root?.rootId;
+        if (!rootId) continue;
+        const hGap = hGapByRootId.get(rootId) ?? 60;
+        const queue: string[] = [rootId];
+        let cursor = 0;
+
+        while (cursor < queue.length) {
+          const parentId = queue[cursor];
+          cursor += 1;
+          const parentNode = nodes[parentId];
+          if (!parentNode) continue;
+
+          const childIds: string[] = Array.isArray(parentNode.children) ? parentNode.children : [];
+          for (const childId of childIds) queue.push(childId);
+          if (!childIds.length) continue;
+
+          const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGap);
+          if (geom) parentEdgeGeomByKey.set(geom.key, geom);
+        }
+      }
+      finalizeEdgeCacheStats(rebuildStart);
+      return;
+    }
+
+    const nextAffectedParents = new Map<string, string>();
+    options.affectedParents.forEach(({ parentId, rootId }) => {
+      if (parentId && rootId) nextAffectedParents.set(parentId, rootId);
+    });
+    nextAffectedParents.forEach((_rootId, parentId) => {
+      parentEdgeGeomByKey.delete(`parent:${parentId}`);
+    });
+    nextAffectedParents.forEach((rootId, parentId) => {
+      const parentNode = nodes[parentId];
+      if (!parentNode) return;
+      const childIds: string[] = Array.isArray(parentNode.children) ? parentNode.children : [];
+      if (!childIds.length) return;
+      const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGapByRootId.get(rootId) ?? 60);
+      if (geom) parentEdgeGeomByKey.set(geom.key, geom);
+    });
+    finalizeEdgeCacheStats(rebuildStart);
+  }
+
+  function queryVisibleParentEdgeGeoms(rect: WorldRect) {
+    const candidateKeys = edgeSpatialIndex.queryRect(rect) as ParentEdgeKey[];
+    const result: ParentEdgeGeom[] = [];
+    for (const key of candidateKeys) {
+      const geom = parentEdgeGeomByKey.get(key);
+      if (!geom || !rectIntersects(geom.bbox, rect)) continue;
+      result.push(geom);
+    }
+    return result;
+  }
+
   return {
     parentEdgeGeoms,
     edgeStats,
     rebuildEdgeCache,
+    queryVisibleParentEdgeGeoms,
   };
 }

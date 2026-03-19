@@ -5,6 +5,7 @@ export type CellRange = { cx1: number; cx2: number; cy1: number; cy2: number };
 export class UniformGridSpatialIndex {
   readonly cellSize: number;
   private readonly buckets = new Map<string, Set<string>>();
+  private readonly nodeCellKeys = new Map<string, string[]>();
 
   constructor(cellSize = 256) {
     this.cellSize = cellSize;
@@ -18,6 +19,54 @@ export class UniformGridSpatialIndex {
     return Math.floor(value / this.cellSize);
   }
 
+  private rectCellKeys(rect: WorldRect) {
+    const range = this.getCellRange(rect);
+    const keys: string[] = [];
+    for (let cy = range.cy1; cy <= range.cy2; cy += 1) {
+      for (let cx = range.cx1; cx <= range.cx2; cx += 1) {
+        keys.push(this.cellKey(cx, cy));
+      }
+    }
+    return keys;
+  }
+
+  private removeNodeFromBuckets(nodeId: string) {
+    const previousKeys = this.nodeCellKeys.get(nodeId);
+    if (!previousKeys?.length) return;
+    for (const key of previousKeys) {
+      const bucket = this.buckets.get(key);
+      if (!bucket) continue;
+      bucket.delete(nodeId);
+      if (bucket.size === 0) this.buckets.delete(key);
+    }
+    this.nodeCellKeys.delete(nodeId);
+  }
+
+  upsert(nodeId: string, rect: WorldRect) {
+    this.removeNodeFromBuckets(nodeId);
+    const nextKeys = this.rectCellKeys(rect);
+    this.nodeCellKeys.set(nodeId, nextKeys);
+    for (const key of nextKeys) {
+      let bucket = this.buckets.get(key);
+      if (!bucket) {
+        bucket = new Set();
+        this.buckets.set(key, bucket);
+      }
+      bucket.add(nodeId);
+    }
+  }
+
+  updateMany(worldBoxes: Map<string, WorldRect>, nodeIds: Iterable<string>) {
+    for (const nodeId of nodeIds) {
+      const rect = worldBoxes.get(nodeId);
+      if (!rect) {
+        this.removeNodeFromBuckets(nodeId);
+        continue;
+      }
+      this.upsert(nodeId, rect);
+    }
+  }
+
   getCellRange(rect: WorldRect): CellRange {
     return {
       cx1: this.cellCoord(rect.x1),
@@ -29,20 +78,9 @@ export class UniformGridSpatialIndex {
 
   rebuild(worldBoxes: Map<string, WorldRect>) {
     this.buckets.clear();
-
+    this.nodeCellKeys.clear();
     for (const [nodeId, rect] of worldBoxes.entries()) {
-      const range = this.getCellRange(rect);
-      for (let cy = range.cy1; cy <= range.cy2; cy += 1) {
-        for (let cx = range.cx1; cx <= range.cx2; cx += 1) {
-          const key = this.cellKey(cx, cy);
-          let bucket = this.buckets.get(key);
-          if (!bucket) {
-            bucket = new Set();
-            this.buckets.set(key, bucket);
-          }
-          bucket.add(nodeId);
-        }
-      }
+      this.upsert(nodeId, rect);
     }
   }
 

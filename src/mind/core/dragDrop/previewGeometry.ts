@@ -98,10 +98,10 @@ export function buildPreviewGeometry(params: BuildPreviewGeometryParams): Previe
   const tempWorldBoxes = new Map(worldBoxes);
   tempWorldBoxes.set(PREVIEW_NODE_ID, previewRect);
 
-  const previewGeom = buildParentGeom(rootId, parentId, previewChildIds, tempWorldBoxes, hGap);
+  const previewGeom = buildParentGeom(rootId, parentId, previewChildIds, nodes, tempWorldBoxes, hGap);
   if (!previewGeom) return null;
   const currentGeom = existingChildIds.length
-    ? buildParentGeom(rootId, parentId, existingChildIds, worldBoxes, hGap)
+    ? buildParentGeom(rootId, parentId, existingChildIds, nodes, worldBoxes, hGap)
     : null;
 
   const previewBranchPathData = previewGeom.childBranchPathData.get(PREVIEW_NODE_ID) ?? null;

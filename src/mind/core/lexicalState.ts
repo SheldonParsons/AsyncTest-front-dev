@@ -220,6 +220,11 @@ export function cloneLexicalState(
   return JSON.parse(JSON.stringify(state)) as SerializedLexicalEditorState;
 }
 
+function lexicalNodeHasFontSizeStyle(node: SerializedLexicalNode): boolean {
+  if (typeof node.style === 'string' && node.style.includes('font-size')) return true;
+  return node.children?.some((child) => lexicalNodeHasFontSizeStyle(child)) ?? false;
+}
+
 export function lexicalStateFromRichText(richText: RichTextDocument): SerializedLexicalEditorState {
   const normalized = normalizeRichText(richText);
   return {
@@ -256,8 +261,9 @@ export function convertLexicalStateFontSizesToRelativeEm(
   state: SerializedLexicalEditorState | null | undefined,
   baseFontSizePx: number
 ): SerializedLexicalEditorState {
+  if (!state?.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return cloneLexicalState(state);
+  if (!state.root.children.some((child) => lexicalNodeHasFontSizeStyle(child))) return state;
   const safeState = cloneLexicalState(state);
-  if (!safeState.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return safeState;
   const visit = (node: SerializedLexicalNode) => {
     if (typeof node.style === 'string' && node.style) {
       node.style = updateStyleStringFontSize(node.style, (size, unit) => {
@@ -275,8 +281,9 @@ export function convertLexicalStateRelativeEmToPx(
   state: SerializedLexicalEditorState | null | undefined,
   baseFontSizePx: number
 ): SerializedLexicalEditorState {
+  if (!state?.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return cloneLexicalState(state);
+  if (!state.root.children.some((child) => lexicalNodeHasFontSizeStyle(child))) return state;
   const safeState = cloneLexicalState(state);
-  if (!safeState.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return safeState;
   const visit = (node: SerializedLexicalNode) => {
     if (typeof node.style === 'string' && node.style) {
       node.style = updateStyleStringFontSize(node.style, (size, unit) => {

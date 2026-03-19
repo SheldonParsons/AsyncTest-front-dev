@@ -7,6 +7,9 @@ const ZOOM_K = 0.0065;
 const PAN_K = 0.48;
 
 function isMacPlatform() {
+  if (typeof window !== 'undefined' && window.electronAPI?.platform) {
+    return window.electronAPI.platform === 'darwin';
+  }
   if (typeof navigator === 'undefined') return false;
   const platform = navigator.platform || '';
   const userAgent = navigator.userAgent || '';
@@ -137,7 +140,13 @@ export function useInteraction(
       return;
     }
 
-    if (event.shiftKey) {
+    const hasNativeHorizontalDelta = Math.abs(deltaX) > 0.01;
+    const windowsPanX = event.shiftKey
+      ? (hasNativeHorizontalDelta ? deltaX : deltaY)
+      : deltaX;
+    const windowsPanY = event.shiftKey ? 0 : deltaY;
+
+    if (windowsPanX !== 0 || windowsPanY !== 0) {
       maybeLogWheel({
         platform,
         mode: 'pan',
@@ -146,10 +155,11 @@ export function useInteraction(
         shiftKey: event.shiftKey,
         deltaX: Number(deltaX.toFixed(1)),
         deltaY: Number(deltaY.toFixed(1)),
-        panDx: 0,
-        panDy: Number((-deltaY * PAN_K).toFixed(1)),
+        panDx: Number((-windowsPanX * PAN_K).toFixed(1)),
+        panDy: Number((-windowsPanY * PAN_K).toFixed(1)),
       });
-      pendingPanY += deltaY;
+      pendingPanX += windowsPanX;
+      pendingPanY += windowsPanY;
       requestWheelFlush();
       return;
     }

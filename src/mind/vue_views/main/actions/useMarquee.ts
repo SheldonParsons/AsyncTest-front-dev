@@ -42,6 +42,7 @@ export function useMarquee(
   const rectScreen = ref<ScreenRect | null>(null);
   const worldRect = ref<WorldRect | null>(null);
   const selectedIds = ref<Set<string>>(new Set());
+  const previewSelectedIds = ref<Set<string>>(new Set());
   const marqueeStats = ref<MarqueeStats>({ mousemoveCount: 0, tickCount: 0 });
 
   let startScreen: ScreenPoint | null = null;
@@ -64,7 +65,7 @@ export function useMarquee(
     console.debug('[mind-marquee-progress]', {
       mousemoveCount: marqueeStats.value.mousemoveCount,
       marqueeTickCount: marqueeStats.value.tickCount,
-      selectedCount: selectedIds.value.size,
+      selectedCount: previewSelectedIds.value.size,
     });
   }
 
@@ -92,7 +93,7 @@ export function useMarquee(
 
     rectScreen.value = nextScreenRect;
     worldRect.value = nextWorldRect;
-    selectedIds.value = additiveSelection
+    previewSelectedIds.value = additiveSelection
       ? new Set([...baseSelection, ...filteredIds])
       : new Set(filteredIds);
 
@@ -110,6 +111,7 @@ export function useMarquee(
     endScreen = { ...current };
     additiveSelection = !!options?.additiveSelection;
     baseSelection = new Set(options?.baseSelectionIds ?? []);
+    previewSelectedIds.value = new Set(baseSelection);
     marqueeStats.value = { mousemoveCount: 0, tickCount: 0 };
     lastProgressLogAt = 0;
     scheduleTick();
@@ -136,6 +138,7 @@ export function useMarquee(
     isMarquee.value = false;
     startScreen = null;
     endScreen = null;
+    selectedIds.value = new Set(previewSelectedIds.value);
     baseSelection = new Set(selectedIds.value);
     clearMarqueeOverlay();
     requestRender();
@@ -158,6 +161,7 @@ export function useMarquee(
     isMarquee.value = false;
     startScreen = null;
     endScreen = null;
+    previewSelectedIds.value = new Set(selectedIds.value);
     clearMarqueeOverlay();
     if (DEBUG_CANVAS_OVERLAY && reason) {
       console.debug('[mind-marquee-cancel]', { reason });
@@ -174,6 +178,7 @@ export function useMarquee(
     rectScreen,
     worldRect,
     selectedIds,
+    previewSelectedIds,
     marqueeStats,
     startSelection,
     updateSelection,

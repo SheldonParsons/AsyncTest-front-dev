@@ -125,6 +125,14 @@ export function useLayout(
         };
     }
 
+    function invalidateSubtreeHeightCache(nodeIds?: Iterable<string> | null) {
+        if (!nodeIds) return;
+        for (const nodeId of nodeIds) {
+            if (!nodeId) continue;
+            subtreeHeightCache.delete(nodeId);
+        }
+    }
+
     /**
      * 递归放置节点位置，结果写入 `layoutLocal`。
      * 节点在其子树可用区域内**垂直居中**。
@@ -178,7 +186,7 @@ export function useLayout(
      * 清空 `layoutLocal` 后，从第一个 root 开始递归放置所有节点。
      * 需在每次文档变更或画布尺寸变更后调用。
      */
-    function rebuildLayout(): void {
+    function rebuildLayout(options?: { preserveSubtreeHeightCache?: boolean }): void {
         const d = props.doc;
         const c = canvasRef.value;
         if (!d || !c) return;
@@ -191,7 +199,7 @@ export function useLayout(
         if (!activeMind) return;
 
         layoutLocal.clear();
-        subtreeHeightCache.clear();
+        if (!options?.preserveSubtreeHeightCache) subtreeHeightCache.clear();
         const roots = Array.isArray(activeMind.roots) ? activeMind.roots : [];
 
         for (const root of roots) {
@@ -206,5 +214,5 @@ export function useLayout(
         rebuildBounds();
     }
 
-    return { layoutLocal, layoutBounds, measureCache, rebuildLayout };
+    return { layoutLocal, layoutBounds, measureCache, rebuildLayout, invalidateSubtreeHeightCache };
 }
