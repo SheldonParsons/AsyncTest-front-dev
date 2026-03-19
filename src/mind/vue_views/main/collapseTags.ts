@@ -1,5 +1,6 @@
 import { collectSubtreeNodeIds } from '@/mind/core/commands/subtreeSnapshot';
 import type { Camera } from './actions/useCamera';
+import { getActiveMind } from './actions/useDocUtils';
 import type { WorldBoxes } from './geom/worldBoxes';
 import { getNodeBodyWorldRect } from './nodeMarkers';
 
@@ -33,7 +34,7 @@ const COLLAPSE_TAG_CHAR_WIDTH_PX = 7;
 const COLLAPSE_TAG_HIT_SLOP_PX = 8;
 
 function getNodeChildren(doc: any, nodeId: string) {
-  const children = doc?.mind?.nodes?.[nodeId]?.children;
+  const children = getActiveMind(doc)?.nodes?.[nodeId]?.children;
   return Array.isArray(children) ? children : [];
 }
 
@@ -56,7 +57,7 @@ export function buildCollapseTagScreenMap(
   stickyNodeId: string | null
 ) {
   const result = new Map<string, CollapseTagInfo>();
-  const nodes = doc?.mind?.nodes ?? {};
+  const nodes = getActiveMind(doc)?.nodes ?? {};
   const descendantCountCache = new Map<string, number>();
 
   function getDescendantCount(nodeId: string) {

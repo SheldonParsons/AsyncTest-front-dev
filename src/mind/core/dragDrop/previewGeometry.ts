@@ -1,4 +1,5 @@
 import { buildParentGeom, CHILD_INSET, MIN_BRANCH_STRAIGHT, MIN_EFFECTIVE_RADIUS, getRoundRadius, getTrunkStub } from '@/mind/vue_views/main/actions/useEdges';
+import { getActiveMind } from '@/mind/vue_views/main/actions/useDocUtils';
 import type { DragDropTarget } from '@/mind/core/drag/types';
 import type { WorldRect } from '@/mind/vue_views/main/geom/rect';
 import type { WorldBoxes } from '@/mind/vue_views/main/geom/worldBoxes';
@@ -39,8 +40,9 @@ function createLinePathData(start: { x: number; y: number }, end: { x: number; y
 }
 
 function getRootLayout(doc: any, rootId: string) {
-  const root = Array.isArray(doc?.mind?.roots)
-    ? doc.mind.roots.find((entry: any) => entry?.rootId === rootId)
+  const activeMind = getActiveMind(doc);
+  const root = Array.isArray(activeMind?.roots)
+    ? activeMind.roots.find((entry: any) => entry?.rootId === rootId)
     : null;
   return {
     hGap: root?.layout?.hGap ?? 60,
@@ -57,7 +59,7 @@ function buildPreviewRect(
   previewHeight: number
 ) {
   const { hGap, vGap } = getRootLayout(doc, rootId);
-  const nodes = doc?.mind?.nodes || {};
+  const nodes = getActiveMind(doc)?.nodes || {};
   const targetRect = worldBoxes.get(dropTarget.targetNodeId);
   if (!targetRect) return null;
 
@@ -87,7 +89,7 @@ export function buildPreviewGeometry(params: BuildPreviewGeometryParams): Previe
   if (!previewRect) return null;
 
   const { hGap } = getRootLayout(doc, rootId);
-  const nodes = doc?.mind?.nodes || {};
+  const nodes = getActiveMind(doc)?.nodes || {};
   const parentId = dropTarget.toParentId;
   const existingChildIds: string[] = Array.isArray(nodes[parentId]?.children) ? [...nodes[parentId].children] : [];
   const previewChildIds = [...existingChildIds];

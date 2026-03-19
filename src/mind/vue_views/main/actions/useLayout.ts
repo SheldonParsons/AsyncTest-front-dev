@@ -1,6 +1,6 @@
 import type { Ref } from 'vue';
 import { ref } from 'vue';
-import { ensureMindRoots } from './useDocUtils';
+import { ensureMindRoots, getActiveMind } from './useDocUtils';
 import { measureNodeVisualLayout, type NodeTextLayout } from '../textLayout';
 
 /** 节点在 world 坐标系中的包围盒 */
@@ -76,7 +76,8 @@ export function useLayout(
         const cached = subtreeHeightCache.get(nodeId);
         if (cached != null) return cached;
 
-        const n = doc.mind.nodes?.[nodeId];
+        const activeMind = getActiveMind(doc);
+        const n = activeMind?.nodes?.[nodeId];
         if (!n) return 0;
 
         const { h } = measureNode(ctx, n, nodeId);
@@ -145,7 +146,8 @@ export function useLayout(
         hGap: number,
         vGap: number
     ): void {
-        const n = doc.mind.nodes?.[nodeId];
+        const activeMind = getActiveMind(doc);
+        const n = activeMind?.nodes?.[nodeId];
         if (!n) return;
 
         const m = measureNode(ctx, n, nodeId);
@@ -185,10 +187,12 @@ export function useLayout(
         if (!ctx) return;
 
         ensureMindRoots(d);
+        const activeMind = getActiveMind(d);
+        if (!activeMind) return;
 
         layoutLocal.clear();
         subtreeHeightCache.clear();
-        const roots = Array.isArray(d.mind.roots) ? d.mind.roots : [];
+        const roots = Array.isArray(activeMind.roots) ? activeMind.roots : [];
 
         for (const root of roots) {
             const rootId = root?.rootId;

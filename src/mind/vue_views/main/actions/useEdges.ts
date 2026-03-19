@@ -3,6 +3,7 @@ import { DEBUG_CANVAS_OVERLAY } from '../constants';
 import type { WorldRect } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
 import { getNodeBodyWorldRect } from '../nodeMarkers';
+import { getActiveMind } from './useDocUtils';
 
 export type ParentEdgeKey = `parent:${string}`;
 export type EdgePoint = { x: number; y: number };
@@ -436,8 +437,9 @@ export function useEdges() {
     const rebuildStart = performance.now();
     parentEdgeGeoms.value = [];
 
-    const nodes = doc?.mind?.nodes || {};
-    const roots = Array.isArray(doc?.mind?.roots) ? doc.mind.roots : [];
+    const activeMind = getActiveMind(doc);
+    const nodes = activeMind?.nodes || {};
+    const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
     let totalChildrenEdges = 0;
     let trunkPathCount = 0;
     let branchPathCount = 0;

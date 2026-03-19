@@ -1,5 +1,5 @@
 import type { Ref } from 'vue';
-import { ensureMindRoots, toPlainDoc } from './useDocUtils';
+import { ensureMindRoots, getActiveMind, toPlainDoc } from './useDocUtils';
 import type { Camera } from './useCamera';
 import { logCameraReset } from '../diagnostics';
 
@@ -13,13 +13,15 @@ export function usePersistence(
     if (!props.doc) return null;
 
     ensureMindRoots(props.doc);
+    const activeMind = getActiveMind(props.doc);
+    if (!activeMind) return null;
 
-    props.doc.mind.view = props.doc.mind.view || {};
-    props.doc.mind.view.viewport = {
+    activeMind.view = activeMind.view || {};
+    activeMind.view.viewport = {
       camera: { ...camera.value },
     };
 
-    return props.doc.mind.view.viewport;
+    return activeMind.view.viewport;
   }
 
   function clearPersistTimer() {
@@ -44,8 +46,10 @@ export function usePersistence(
     if (!d) return false;
 
     ensureMindRoots(d);
+    const activeMind = getActiveMind(d);
+    if (!activeMind) return false;
 
-    const vp = d.mind.view?.viewport;
+    const vp = activeMind.view?.viewport;
     if (!vp?.camera) return false;
 
     if (typeof vp.camera.scale === 'number') {

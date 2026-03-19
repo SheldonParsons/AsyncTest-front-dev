@@ -29,7 +29,8 @@
             @toggleFormatPanel="toggleFormatPanel">
         </MindMain>
         <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
-            :selected-nodes="nodeCountState.selectedNodes"></MindFooter>
+            :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
+            @switch-board="onSwitchBoard" @rename-board="onRenameBoard"></MindFooter>
     </div>
 </template>
 
@@ -41,6 +42,7 @@ import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
 import homeIcon from '@/mind/core/action_icon/home.svg'
 import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants'
+import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
 import { onMounted, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -49,6 +51,8 @@ const route = useRoute();
 type MindMainExpose = {
     saveDocument: () => Promise<boolean>;
     saveDocumentAs: () => Promise<boolean>;
+    switchMindBoard: (boardId: string) => Promise<boolean>;
+    renameMindBoard: (boardId: string, title: string) => Promise<boolean>;
 };
 
 const docId = ref<string>('');
@@ -68,6 +72,8 @@ const nodeCountState = ref({
     selectedNodes: 0,
 });
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
+const mindBoards = computed(() => listMindBoards(doc.value));
+const activeBoardId = computed(() => getActiveMindId(doc.value));
 onMounted(async () => {
     const qDocId = route.query.docId;
     windowKey.value = route.query.windowKey
@@ -79,6 +85,7 @@ onMounted(async () => {
 
     const res = await window.electronAPI.amind.docGet({ docId: docId.value });
     filePath.value = res.filePath;
+    ensureMultiMindDoc(res.doc);
     doc.value = res.doc;
     await loadRecentPaths();
 });
@@ -158,6 +165,14 @@ async function onOpenLocalClick() {
     } catch {
         toast('打开本地文件失败');
     }
+}
+
+function onSwitchBoard(boardId: string) {
+    void mindMainRef.value?.switchMindBoard(boardId);
+}
+
+function onRenameBoard(payload: { boardId: string; title: string }) {
+    void mindMainRef.value?.renameMindBoard(payload.boardId, payload.title);
 }
 </script>
 

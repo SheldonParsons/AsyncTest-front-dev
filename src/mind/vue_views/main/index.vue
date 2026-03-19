@@ -4,22 +4,21 @@
       <canvas ref="canvasRef" class="mind-canvas" :width="canvasPixelW" :height="canvasPixelH" :style="canvasStyle"
         @dblclick="onCanvasDoubleClick" @pointerdown="onCanvasPointerDown" @pointermove="onCanvasPointerMove"
         @pointerleave="onCanvasPointerLeave" @pointerup="onCanvasPointerUp" @pointercancel="onCanvasPointerCancel"
-        @contextmenu="onCanvasContextMenu"
-        @lostpointercapture="onCanvasLostPointerCapture" />
+        @contextmenu="onCanvasContextMenu" @lostpointercapture="onCanvasLostPointerCapture" />
       <LexicalNodeEditorOverlay v-if="editingSession" :visible="!!editingSession"
         :overlay-root-style="editingOverlayRootStyle" :text-box-rect="editingScreenTextBoxRect"
         :editor-shell-style="editingEditorShellStyle" :calibration-style="editingCalibrationStyle"
         :inner-translate-ypx="editingOverlayInnerTranslateYPx" :node-id="editingSession.nodeId"
         :initial-state="editingDisplayLexicalState" :mode="editingSession.mode"
         :caret-placement="editingSession.caretPlacement" @change="onLexicalEditorChange" @commit="commitEditingSession"
-        @cancel="cancelEditingSession" />
+        @cancel="cancelEditingSession"></LexicalNodeEditorOverlay>
 
       <div v-if="horizontalScrollbar.visible" class="mind-scrollbar mind-scrollbar-x">
         <div class="mind-scrollbar-track">
           <div class="mind-scrollbar-thumb" :class="{ 'is-active': isScrollbarDragging }" :style="{
             width: `${horizontalScrollbar.thumbSize}px`,
             transform: `translateX(${horizontalScrollbar.thumbOffset}px)`,
-          }" @mousedown.stop.prevent="onScrollbarMouseDown('x', $event)" />
+          }" @mousedown.stop.prevent="onScrollbarMouseDown('x', $event)"></div>
         </div>
       </div>
 
@@ -45,16 +44,8 @@
             标记
           </button>
         </div>
-        <div
-          class="format-panel-body"
-          :class="{ 'is-disabled': !hasSelectedNodes }"
-        >
-          <div
-            v-if="formatPanelTab === 'style'"
-            class="style-panel"
-            @pointerdown.prevent
-            @mousedown.prevent
-          >
+        <div class="format-panel-body" :class="{ 'is-disabled': !hasSelectedNodes }">
+          <div v-if="formatPanelTab === 'style'" class="style-panel" @pointerdown.prevent @mousedown.prevent>
             <section class="style-section">
               <div class="style-section-header">
                 <h3 class="style-section-title">形状</h3>
@@ -65,15 +56,9 @@
                   <span class="style-control-title">填充</span>
                 </div>
                 <div class="style-preview-grid style-preview-grid--fill">
-                  <button
-                    v-for="option in styleFillOptions"
-                    :key="option.key"
-                    class="style-preview-card"
-                    :class="{ 'is-selected': selectedFillPresetKey === option.key }"
-                    type="button"
-                    :title="option.label"
-                    @click="onFillPresetSelect(option.key)"
-                  >
+                  <button v-for="option in styleFillOptions" :key="option.key" class="style-preview-card"
+                    :class="{ 'is-selected': selectedFillPresetKey === option.key }" type="button" :title="option.label"
+                    @click="onFillPresetSelect(option.key)">
                     <span class="style-preview-card-art" v-html="option.previewSvg" />
                     <span class="style-preview-card-copy">
                       <span class="style-preview-card-title">{{ option.label }}</span>
@@ -83,20 +68,11 @@
                 </div>
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">填充颜色</span>
-                  <ColorSwatchPickerRoot
-                    :model-value="selectedFillColor"
-                    as-child
-                    orientation="horizontal"
-                    :highlight-on-hover="true"
-                    @update:model-value="onFillColorSelect"
-                  >
+                  <ColorSwatchPickerRoot :model-value="selectedFillColor" as-child orientation="horizontal"
+                    :highlight-on-hover="true" @update:model-value="onFillColorSelect">
                     <div class="style-color-picker">
-                      <ColorSwatchPickerItem
-                        v-for="color in styleFillColorSwatches"
-                        :key="`fill-${color}`"
-                        :value="color"
-                        as-child
-                      >
+                      <ColorSwatchPickerItem v-for="color in styleFillColorSwatches" :key="`fill-${color}`"
+                        :value="color" as-child>
                         <button class="style-color-item" type="button">
                           <span class="style-color-swatch" :style="{ backgroundColor: color }" />
                           <ColorSwatchPickerItemIndicator as-child>
@@ -114,15 +90,9 @@
                   <span class="style-control-title">边框</span>
                 </div>
                 <div class="style-preview-grid style-preview-grid--border">
-                  <button
-                    v-for="option in styleBorderOptions"
-                    :key="option.key"
-                    class="style-preview-card"
-                    :class="{ 'is-selected': selectedBorderPresetKey === option.key }"
-                    type="button"
-                    :title="option.label"
-                    @click="onBorderPresetSelect(option.key)"
-                  >
+                  <button v-for="option in styleBorderOptions" :key="option.key" class="style-preview-card"
+                    :class="{ 'is-selected': selectedBorderPresetKey === option.key }" type="button"
+                    :title="option.label" @click="onBorderPresetSelect(option.key)">
                     <span class="style-preview-card-art" v-html="option.previewSvg" />
                     <span class="style-preview-card-copy">
                       <span class="style-preview-card-title">{{ option.label }}</span>
@@ -132,20 +102,11 @@
                 </div>
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">边框颜色</span>
-                  <ColorSwatchPickerRoot
-                    :model-value="selectedBorderColor"
-                    as-child
-                    orientation="horizontal"
-                    :highlight-on-hover="true"
-                    @update:model-value="onBorderColorSelect"
-                  >
+                  <ColorSwatchPickerRoot :model-value="selectedBorderColor" as-child orientation="horizontal"
+                    :highlight-on-hover="true" @update:model-value="onBorderColorSelect">
                     <div class="style-color-picker">
-                      <ColorSwatchPickerItem
-                        v-for="color in styleOutlineColorSwatches"
-                        :key="`border-${color}`"
-                        :value="color"
-                        as-child
-                      >
+                      <ColorSwatchPickerItem v-for="color in styleOutlineColorSwatches" :key="`border-${color}`"
+                        :value="color" as-child>
                         <button class="style-color-item" type="button">
                           <span class="style-color-swatch" :style="{ backgroundColor: color }" />
                           <ColorSwatchPickerItemIndicator as-child>
@@ -159,15 +120,9 @@
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">线条粗细</span>
                   <div class="style-weight-grid">
-                    <button
-                      v-for="option in styleStrokeWidthOptions"
-                      :key="option.key"
-                      class="style-weight-card"
-                      :class="{ 'is-selected': selectedBorderWidthKey === option.key }"
-                      type="button"
-                      :title="option.label"
-                      @click="onBorderWidthSelect(option.key)"
-                    >
+                    <button v-for="option in styleStrokeWidthOptions" :key="option.key" class="style-weight-card"
+                      :class="{ 'is-selected': selectedBorderWidthKey === option.key }" type="button"
+                      :title="option.label" @click="onBorderWidthSelect(option.key)">
                       <span class="style-weight-line" :style="{ height: `${option.previewPx}px` }" />
                       <span class="style-weight-label">{{ option.label }}</span>
                     </button>
@@ -187,14 +142,9 @@
                 </div>
                 <div class="style-control-mask-shell">
                   <div class="style-font-grid" :class="{ 'is-editing-locked': !!editingSession }">
-                    <button
-                      v-for="option in styleFontOptions"
-                      :key="option.key"
-                      class="style-font-card"
-                      :class="{ 'is-selected': selectedFontKey === option.key }"
-                      type="button"
-                      @click="onFontFamilySelect(option.key)"
-                    >
+                    <button v-for="option in styleFontOptions" :key="option.key" class="style-font-card"
+                      :class="{ 'is-selected': selectedFontKey === option.key }" type="button"
+                      @click="onFontFamilySelect(option.key)">
                       <span class="style-font-sample" :style="{ fontFamily: option.fontFamily }">Aa</span>
                       <span class="style-font-copy">
                         <span class="style-font-title">{{ option.label }}</span>
@@ -211,14 +161,9 @@
                   <span class="style-inline-field-label">字号</span>
                   <div class="style-control-mask-shell">
                     <div class="style-size-grid" :class="{ 'is-editing-locked': !!editingSession }">
-                      <button
-                        v-for="size in styleFontSizes"
-                        :key="size"
-                        class="style-size-chip"
-                        :class="{ 'is-selected': selectedFontSize === size }"
-                        type="button"
-                        @click="onFontSizeSelect(size)"
-                      >
+                      <button v-for="size in styleFontSizes" :key="size" class="style-size-chip"
+                        :class="{ 'is-selected': selectedFontSize === size }" type="button"
+                        @click="onFontSizeSelect(size)">
                         {{ size }}
                       </button>
                     </div>
@@ -228,20 +173,11 @@
 
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">字体颜色</span>
-                  <ColorSwatchPickerRoot
-                    :model-value="selectedTextColor"
-                    as-child
-                    orientation="horizontal"
-                    :highlight-on-hover="true"
-                    @update:model-value="onTextColorSelect"
-                  >
+                  <ColorSwatchPickerRoot :model-value="selectedTextColor" as-child orientation="horizontal"
+                    :highlight-on-hover="true" @update:model-value="onTextColorSelect">
                     <div class="style-color-picker">
-                      <ColorSwatchPickerItem
-                        v-for="color in styleOutlineColorSwatches"
-                        :key="`text-${color}`"
-                        :value="color"
-                        as-child
-                      >
+                      <ColorSwatchPickerItem v-for="color in styleOutlineColorSwatches" :key="`text-${color}`"
+                        :value="color" as-child>
                         <button class="style-color-item" type="button">
                           <span class="style-color-swatch" :style="{ backgroundColor: color }" />
                           <ColorSwatchPickerItemIndicator as-child>
@@ -256,18 +192,11 @@
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">字形</span>
                   <div class="style-toggle-grid">
-                    <button
-                      v-for="option in styleTextToggleOptions"
-                      :key="option.key"
-                      class="style-toggle-button"
+                    <button v-for="option in styleTextToggleOptions" :key="option.key" class="style-toggle-button"
                       :class="[
                         option.previewClass,
                         { 'is-selected': textToggleState[option.key] },
-                      ]"
-                      type="button"
-                      :title="option.label"
-                      @click="onTextToggleClick(option.key)"
-                    >
+                      ]" type="button" :title="option.label" @click="onTextToggleClick(option.key)">
                       {{ option.glyph }}
                     </button>
                   </div>
@@ -276,15 +205,9 @@
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">对齐</span>
                   <div class="style-align-grid">
-                    <button
-                      v-for="option in styleTextAlignOptions"
-                      :key="option.key"
-                      class="style-align-button"
-                      :class="{ 'is-selected': selectedTextAlign === option.key }"
-                      type="button"
-                      :title="option.label"
-                      @click="onTextAlignSelect(option.key)"
-                    >
+                    <button v-for="option in styleTextAlignOptions" :key="option.key" class="style-align-button"
+                      :class="{ 'is-selected': selectedTextAlign === option.key }" type="button" :title="option.label"
+                      @click="onTextAlignSelect(option.key)">
                       <span class="style-align-preview" :class="`is-${option.key}`">
                         <span />
                         <span />
@@ -296,22 +219,12 @@
               </div>
             </section>
           </div>
-          <div
-            v-if="formatPanelTab === 'mark'"
-            class="marker-panel"
-            :class="{ 'is-disabled': !hasSelectedNodes }"
-          >
+          <div v-if="formatPanelTab === 'mark'" class="marker-panel" :class="{ 'is-disabled': !hasSelectedNodes }">
             <section v-for="group in markerPanelGroups" :key="group.key" class="marker-group">
               <h3 class="marker-group-title">{{ group.label }}</h3>
               <div class="marker-grid">
-                <button
-                  v-for="marker in group.items"
-                  :key="marker.key"
-                  class="marker-tile"
-                  type="button"
-                  :title="marker.name"
-                  @click="onMarkerTileClick(marker.key)"
-                >
+                <button v-for="marker in group.items" :key="marker.key" class="marker-tile" type="button"
+                  :title="marker.name" @click="onMarkerTileClick(marker.key)">
                   <img class="marker-tile-icon" :src="marker.src" :alt="marker.name" />
                 </button>
               </div>
@@ -320,38 +233,23 @@
             <div class="marker-mode-panel">
               <div class="marker-mode-row">
                 <span class="marker-mode-label">{{ isMarkerDeleteMode ? '删除模式' : '添加模式' }}</span>
-                <button
-                  class="marker-mode-switch"
-                  :class="{ 'is-on': isMarkerDeleteMode }"
-                  type="button"
-                  role="switch"
+                <button class="marker-mode-switch" :class="{ 'is-on': isMarkerDeleteMode }" type="button" role="switch"
                   :aria-checked="isMarkerDeleteMode ? 'true' : 'false'"
-                  @click="isMarkerDeleteMode = !isMarkerDeleteMode"
-                >
+                  @click="isMarkerDeleteMode = !isMarkerDeleteMode">
                   <span class="marker-mode-switch-thumb" />
                 </button>
               </div>
 
-              <button
-                v-if="isMarkerDeleteMode"
-                class="marker-clear-button"
-                type="button"
-                @click="clearSelectedNodeMarkers"
-              >
+              <button v-if="isMarkerDeleteMode" class="marker-clear-button" type="button"
+                @click="clearSelectedNodeMarkers">
                 清除所有
               </button>
             </div>
           </div>
-          <div
-            v-if="formatPanelTab === 'mark' && !hasSelectedNodes"
-            class="format-panel-body-mask"
-            aria-hidden="true"
-          />
-          <div
-            v-if="formatPanelTab === 'style' && !hasSelectedNodes"
-            class="format-panel-body-mask"
-            aria-hidden="true"
-          />
+          <div v-if="formatPanelTab === 'mark' && !hasSelectedNodes" class="format-panel-body-mask"
+            aria-hidden="true" />
+          <div v-if="formatPanelTab === 'style' && !hasSelectedNodes" class="format-panel-body-mask"
+            aria-hidden="true" />
         </div>
       </aside>
     </div>
@@ -361,6 +259,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import {
+  type AcceptableValue,
   ColorSwatchPickerItem,
   ColorSwatchPickerItemIndicator,
   ColorSwatchPickerRoot,
@@ -397,7 +296,7 @@ import {
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, normalizeSelectionTargets } from '@/mind/core/selection/normalizeSelection';
-import { ensureMindRoots } from './actions/useDocUtils';
+import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
 import { useDraw } from './actions/useDraw';
@@ -946,7 +845,7 @@ const interactionState = ref<InteractionState>(createIdleInteractionState());
 function getMindNodes() {
   if (!props.doc) return null;
   ensureMindRoots(props.doc);
-  return props.doc.mind.nodes as Record<string, any>;
+  return getActiveMind(props.doc)?.nodes as Record<string, any> | null;
 }
 
 function createNodeId() {
@@ -956,7 +855,7 @@ function createNodeId() {
 }
 
 function getRootNodeId() {
-  return props.doc?.mind?.roots?.[0]?.rootId ?? props.doc?.mind?.rootId ?? null;
+  return getActiveMind(props.doc)?.roots?.[0]?.rootId ?? null;
 }
 
 function getNodeById(nodeId: string | null | undefined) {
@@ -1010,8 +909,9 @@ function getSelectedNodeIds() {
 const ROOT_SELECTION_GROUP_KEY = '__sheet-root__';
 
 function getRootSelectionIds() {
-  return Array.isArray(props.doc?.mind?.roots)
-    ? props.doc.mind.roots.map((root: any) => root?.rootId).filter((value: unknown): value is string => typeof value === 'string' && value.length > 0)
+  const roots = getActiveMind(props.doc)?.roots;
+  return Array.isArray(roots)
+    ? roots.map((root: any) => root?.rootId).filter((value: unknown): value is string => typeof value === 'string' && value.length > 0)
     : [];
 }
 
@@ -1180,7 +1080,7 @@ function getNodeImageRect(nodeId: string) {
 }
 
 function collectMarkerTargetNodeIds() {
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   const targetIds = new Set<string>();
   if (!nodes) return targetIds;
 
@@ -1209,7 +1109,7 @@ function resolveContextMenuTargetNodeIds(clickedNodeId: string) {
 
 async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: boolean) {
   if (!targetNodeIds.length) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
 
   if (editingSession.value) {
@@ -1284,7 +1184,7 @@ async function applyShapeStyleToSelectedNodes(
   updater: (shape: Record<string, any>, nodeId: string) => void
 ) {
   if (editingSession.value || !hasSelectedNodes.value) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
 
   const targetIds = collectMarkerTargetNodeIds();
@@ -1301,7 +1201,7 @@ async function applyShapeStyleToSelectedNodes(
 }
 
 function withActiveLexicalRangeSelection(
-  mutator: (selection: ReturnType<typeof $getSelection>) => void,
+  mutator: (selection: NonNullable<ReturnType<typeof $getSelection>>) => void,
   options?: { allowCollapsed?: boolean }
 ) {
   if (!editingSession.value) return false;
@@ -1314,6 +1214,10 @@ function withActiveLexicalRangeSelection(
     mutator(selection);
   });
   return applied;
+}
+
+function normalizePickerColorValue(value: AcceptableValue | undefined) {
+  return typeof value === 'string' ? value : null;
 }
 
 function getActiveLexicalToggleState(key: StyleTextToggleKey) {
@@ -1339,7 +1243,7 @@ async function applyTextStyleToSelectedNodes(
     return;
   }
   if (!hasSelectedNodes.value) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
 
   const targetIds = collectMarkerTargetNodeIds();
@@ -1363,8 +1267,8 @@ async function onFillPresetSelect(key: StyleFillPresetKey) {
   });
 }
 
-async function onFillColorSelect(value: string | string[]) {
-  const color = Array.isArray(value) ? value[0] : value;
+async function onFillColorSelect(value: AcceptableValue) {
+  const color = normalizePickerColorValue(value);
   if (!color) return;
   await applyShapeStyleToSelectedNodes('node-style-fill-color', (shape) => {
     shape.fill = color;
@@ -1377,8 +1281,8 @@ async function onBorderPresetSelect(key: StyleBorderPresetKey) {
   });
 }
 
-async function onBorderColorSelect(value: string | string[]) {
-  const color = Array.isArray(value) ? value[0] : value;
+async function onBorderColorSelect(value: AcceptableValue) {
+  const color = normalizePickerColorValue(value);
   if (!color) return;
   await applyShapeStyleToSelectedNodes('node-style-border-color', (shape) => {
     shape.stroke = color;
@@ -1428,8 +1332,8 @@ async function onFontSizeSelect(size: number) {
   );
 }
 
-async function onTextColorSelect(value: string | string[]) {
-  const color = Array.isArray(value) ? value[0] : value;
+async function onTextColorSelect(value: AcceptableValue) {
+  const color = normalizePickerColorValue(value);
   if (!color) return;
   await applyTextStyleToSelectedNodes(
     'node-style-text-color',
@@ -1502,7 +1406,7 @@ async function onTextAlignSelect(key: StyleTextAlignKey) {
 
 async function applyMarkerToSelectedNodes(markerKey: string) {
   if (!hasSelectedNodes.value) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
 
   const targetIds = collectMarkerTargetNodeIds();
@@ -1517,7 +1421,7 @@ async function applyMarkerToSelectedNodes(markerKey: string) {
 
 async function onMarkerTileClick(markerKey: string) {
   if (!hasSelectedNodes.value) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
   const targetIds = collectMarkerTargetNodeIds();
 
@@ -1533,7 +1437,7 @@ async function onMarkerTileClick(markerKey: string) {
 
 async function clearSelectedNodeMarkers() {
   if (!hasSelectedNodes.value) return;
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   if (!nodes) return;
 
   const targetIds = collectMarkerTargetNodeIds();
@@ -1794,7 +1698,7 @@ function resolveFallbackSelection(preferredId: string | null, parentId?: string 
   if (!nodes) return null;
   if (preferredId && nodes[preferredId]) return preferredId;
   if (parentId && nodes[parentId]) return parentId;
-  const rootId = props.doc?.mind?.roots?.[0]?.rootId ?? props.doc?.mind?.rootId ?? null;
+  const rootId = getRootNodeId();
   return rootId && nodes[rootId] ? rootId : null;
 }
 
@@ -2464,9 +2368,60 @@ const { saveDocument, saveDocumentAs } = useSaveFlow({
   lastSavedContentRevision,
 });
 
+async function switchMindBoard(boardId: string) {
+  if (!props.doc) return false;
+  const activeBoardId = getActiveMind(props.doc)?.id ?? null;
+  if (!boardId || boardId === activeBoardId) return true;
+
+  if (editingSession.value) commitEditingSession();
+  clearPersistTimer();
+  writeViewportToDoc();
+  clearImageInteraction('switch-mind-board');
+  clearDragTransient('switch-mind-board');
+  clearMarqueeTransient('switch-mind-board');
+  resetInteractionToIdle('switch-mind-board');
+  hoverNodeId.value = null;
+  collapseTagHoverNodeId.value = null;
+  collapseTagStickyNodeId.value = null;
+  setSelection([], null);
+
+  const releaseDocWatchSuppression = holdLocalDocWatchSuppression();
+  const switched = setActiveMindId(props.doc, boardId);
+  if (!switched) {
+    releaseDocWatchSuppression();
+    return false;
+  }
+
+  markContentDirty();
+  emitSaveState();
+  try {
+    await redrawAllInternal('switch-mind-board', { restoreViewport: true });
+  } finally {
+    releaseDocWatchSuppression();
+  }
+  emitNodeCountState();
+  syncStylePanelFromSelection();
+  requestRender();
+  return true;
+}
+
+async function renameMindBoard(boardId: string, title: string) {
+  if (!props.doc) return false;
+  ensureMultiMindDoc(props.doc);
+  const board = props.doc?.mind?.minds?.[boardId];
+  const normalizedTitle = title.trim();
+  if (!board || !normalizedTitle) return false;
+  if (board.title === normalizedTitle) return true;
+  board.title = normalizedTitle;
+  await applyDocumentMutation('mind-board-rename');
+  return await saveDocument();
+}
+
 defineExpose({
   saveDocument,
   saveDocumentAs,
+  switchMindBoard,
+  renameMindBoard,
 });
 
 function findParentAndIndex(nodeId: string) {
@@ -3822,7 +3777,7 @@ function hitTest(screenX: number, screenY: number): string | null {
 }
 
 async function toggleNodeCollapsed(nodeId: string) {
-  const nodes = props.doc?.mind?.nodes;
+  const nodes = getMindNodes();
   const node = nodes?.[nodeId];
   const children = Array.isArray(node?.children) ? node.children : [];
   if (!node || !children.length) return;
@@ -4880,7 +4835,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
 }
 
-.style-section + .style-section {
+.style-section+.style-section {
   margin-top: 2px;
 }
 
@@ -5448,8 +5403,8 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
-.format-panel-body.is-disabled > .style-panel,
-.format-panel-body.is-disabled > .marker-panel {
+.format-panel-body.is-disabled>.style-panel,
+.format-panel-body.is-disabled>.marker-panel {
   opacity: 0.45;
   filter: saturate(0.75);
 }

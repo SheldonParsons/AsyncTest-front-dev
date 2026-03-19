@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import { getInlineFont } from '@/mind/core/richText';
-import { ensureMindRoots } from './actions/useDocUtils';
+import { ensureMindRoots, getActiveMind } from './actions/useDocUtils';
 import { useEdges } from './actions/useEdges';
 import { useLayout, type Box, type LayoutBounds } from './actions/useLayout';
 import { getNodeImageWorldRect } from './imageInteraction';
@@ -131,7 +131,7 @@ async function loadImage(src: string) {
 }
 
 async function loadPreviewImages(doc: any) {
-  const nodes = doc?.mind?.nodes ?? {};
+  const nodes = getActiveMind(doc)?.nodes ?? {};
   const sources = Array.from(
     new Set(
       Object.values(nodes)
@@ -154,7 +154,7 @@ async function exportCanvasToPngBytes(canvas: HTMLCanvasElement) {
 }
 
 export async function exportMindPreviewPng(doc: any) {
-  if (typeof document === 'undefined' || !doc?.mind?.nodes) return null;
+  if (typeof document === 'undefined' || !getActiveMind(doc)?.nodes) return null;
   ensureMindRoots(doc);
 
   const canvas = document.createElement('canvas');
@@ -209,7 +209,7 @@ export async function exportMindPreviewPng(doc: any) {
     }
   }
 
-  const nodes = doc.mind.nodes ?? {};
+  const nodes = getActiveMind(doc)?.nodes ?? {};
   const textCache = new Map();
   for (const [nodeId, rect] of worldBoxes.entries()) {
     const node = nodes[nodeId];

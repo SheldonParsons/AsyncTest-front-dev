@@ -86,7 +86,7 @@ function countTreeEdges(nodes) {
     return totalEdges;
 }
 
-function appendDevSeedNodes(doc, rootId, seedCountOverride) {
+function appendDevSeedNodes(board, rootId, seedCountOverride) {
     const seedCount = resolveSeedCount(seedCountOverride);
     if (seedCount <= 0) return;
 
@@ -98,14 +98,14 @@ function appendDevSeedNodes(doc, rootId, seedCountOverride) {
         const parentId = queue[parentCursor];
         parentCursor += 1;
 
-        const parentNode = doc.mind.nodes[parentId];
+        const parentNode = board.nodes[parentId];
         if (!parentNode) continue;
         parentNode.children = Array.isArray(parentNode.children) ? parentNode.children : [];
 
         const branchCount = Math.min(getSeedBranchCount(parentCursor - 1), seedCount - created);
         for (let branchIndex = 0; branchIndex < branchCount; branchIndex += 1) {
             const childId = `seed-${created + 1}-${randomUUID().slice(0, 8)}`;
-            doc.mind.nodes[childId] = {
+            board.nodes[childId] = {
                 id: childId,
                 text: createSeedNodeText(created),
                 children: [],
@@ -118,10 +118,47 @@ function appendDevSeedNodes(doc, rootId, seedCountOverride) {
     }
 }
 
+function createEmptyMindBoard(title, { id, seedNodeCount } = {}) {
+    const rootId = 'root';
+    const board = {
+        id,
+        title,
+        roots: [
+            {
+                rootId,
+                pos: { x: 200, y: 140 },
+                layout: {
+                    direction: 'right',
+                    hGap: 60,
+                    vGap: 18,
+                },
+            },
+        ],
+        nodes: {
+            [rootId]: { id: rootId, text: title, children: [], images: [] },
+        },
+        view: {
+            viewport: {},
+        },
+    };
+
+    appendDevSeedNodes(board, rootId, seedNodeCount);
+    return board;
+}
+
 export function createEmptyDoc(title = '思维导图', options = {}) {
     const now = new Date().toISOString();
-
-    const rootId = 'root';
+    const boardDefinitions = [
+        { id: 'mind-1', title, seedNodeCount: options.seedNodeCount },
+        { id: 'mind-2', title: '画板 2', seedNodeCount: 0 },
+        { id: 'mind-3', title: '画板 3', seedNodeCount: 0 },
+    ];
+    const minds = Object.fromEntries(
+        boardDefinitions.map((definition) => [
+            definition.id,
+            createEmptyMindBoard(definition.title, definition),
+        ])
+    );
     const doc = {
         manifest: {
             schemaVersion: AMIND_SCHEMA_VERSION,
@@ -132,44 +169,38 @@ export function createEmptyDoc(title = '思维导图', options = {}) {
         },
 
         mind: {
-            // 多根自由节点（第一期先默认一个 root）
-            roots: [
-                {
-                    rootId,
-                    // 世界坐标：决定整棵树初始出现在画布哪里
-                    pos: { x: 200, y: 140 },
-                    layout: {
-                        direction: 'right',
-                        hGap: 60,
-                        vGap: 18,
-                    },
-                },
-            ],
-
-            // 节点数据（树结构）
-            nodes: {
-                [rootId]: { id: rootId, text: title, children: [], images: [] },
-            },
-
-            // 视口（缩放/平移）持久化
-            view: {
-                viewport: {},
-            },
+            version: 1,
+            activeMindId: 'mind-1',
+            order: boardDefinitions.map((definition) => definition.id),
+            minds,
         },
     };
-
-    appendDevSeedNodes(doc, rootId, options.seedNodeCount);
     const resolvedSeedCount = resolveSeedCount(options.seedNodeCount);
+    const firstBoard = minds['mind-1'];
 
     console.info('[amind-seed]', {
         enabled: resolvedSeedCount > 0,
         requestedSeedNodeCount: resolvedSeedCount,
-        seededNodeCount: Object.keys(doc.mind.nodes).length,
-        rootChildrenCount: doc.mind.nodes[rootId]?.children?.length ?? 0,
-        totalEdges: countTreeEdges(doc.mind.nodes),
+        seededNodeCount: Object.keys(firstBoard.nodes).length,
+        rootChildrenCount: firstBoard.nodes.root?.children?.length ?? 0,
+        totalEdges: countTreeEdges(firstBoard.nodes),
     });
 
     return doc;
+}
+
+function validateMindBoard(board, boardId) {
+    if (!board || typeof board !== 'object') {
+        throw new Error(`Invalid .amind doc: missing board ${boardId}`);
+    }
+    if (!board.nodes || typeof board.nodes !== 'object') {
+        throw new Error(`Invalid .amind doc: missing board nodes for ${boardId}`);
+    }
+    if (!Array.isArray(board.roots) || !board.roots.length) {
+        throw new Error(`Invalid .amind doc: missing board roots for ${boardId}`);
+    }
+    board.view = board.view || {};
+    board.view.viewport = board.view.viewport || {};
 }
 
 export function validateDoc(doc) {
@@ -177,7 +208,18 @@ export function validateDoc(doc) {
     if (doc.manifest.schemaVersion !== AMIND_SCHEMA_VERSION) {
         throw new Error(`Unsupported schemaVersion: ${doc.manifest.schemaVersion}`);
     }
-    if (!doc?.mind?.nodes) throw new Error('Invalid .amind doc: missing mind.nodes');
+    if (!doc?.mind || typeof doc.mind !== 'object') throw new Error('Invalid .amind doc: missing mind');
+    if (!doc.mind.minds || typeof doc.mind.minds !== 'object') throw new Error('Invalid .amind doc: missing mind.minds');
+    if (!Array.isArray(doc.mind.order) || !doc.mind.order.length) throw new Error('Invalid .amind doc: missing mind.order');
+    if (typeof doc.mind.activeMindId !== 'string' || !doc.mind.activeMindId) {
+        throw new Error('Invalid .amind doc: missing mind.activeMindId');
+    }
+    if (!doc.mind.minds[doc.mind.activeMindId]) {
+        throw new Error(`Invalid .amind doc: active mind not found: ${doc.mind.activeMindId}`);
+    }
+    for (const boardId of doc.mind.order) {
+        validateMindBoard(doc.mind.minds[boardId], boardId);
+    }
 }
 
 async function buildAssetIndexFromZip(zip) {

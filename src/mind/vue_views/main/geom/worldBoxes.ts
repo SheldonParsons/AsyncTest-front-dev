@@ -1,4 +1,5 @@
 import type { Box } from '../actions/useLayout';
+import { getActiveMind } from '../actions/useDocUtils';
 import { DEBUG_SPATIAL_STRESS_BOX_COUNT } from '../constants';
 import { boxToRect, type WorldRect } from './rect';
 
@@ -32,7 +33,7 @@ function appendStressBoxes(worldBoxes: WorldBoxes, anchor: { x: number; y: numbe
 
 export function buildWorldBoxes(doc: any, layoutLocal: Map<string, Box>): WorldBoxes {
   const worldBoxes: WorldBoxes = new Map();
-  const root = doc?.mind?.roots?.[0];
+  const root = getActiveMind(doc)?.roots?.[0];
   const rootPos = root?.pos || { x: 0, y: 0 };
 
   for (const [nodeId, box] of layoutLocal.entries()) {

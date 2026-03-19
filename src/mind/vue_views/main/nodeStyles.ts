@@ -4,6 +4,7 @@ import type { NodeStyle } from '@/mind/model/amindDoc';
 import type { NodeTextStyle } from './textLayout';
 import { buildCanvasFont } from '@/mind/core/text/font';
 import type { RichTextAlign } from '@/mind/core/richText';
+import { getActiveMind } from './actions/useDocUtils';
 
 const DEFAULT_FONT_FAMILY = '"Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
 const DEFAULT_LINE_HEIGHT = 20;
@@ -140,8 +141,9 @@ const ROUGH_FILL_OPTIONS_BY_PRESET: Record<MindNodeFillPreset, Pick<Options, 'fi
 
 function buildRoleMap(doc: any) {
   const map = new Map<string, MindNodeRole>();
-  const roots = Array.isArray(doc?.mind?.roots) ? doc.mind.roots : [];
-  const nodes = doc?.mind?.nodes ?? {};
+  const activeMind = getActiveMind(doc);
+  const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+  const nodes = activeMind?.nodes ?? {};
 
   for (const root of roots) {
     const rootId = root?.rootId;
@@ -163,7 +165,7 @@ export function getMindNodeRole(doc: any, nodeId: string | null | undefined): Mi
 
 export function getNodeStyleOverrides(doc: any, nodeId: string | null | undefined): MindNodeStyle | null {
   if (!doc || !nodeId) return null;
-  return doc?.mind?.nodes?.[nodeId]?.style ?? null;
+  return getActiveMind(doc)?.nodes?.[nodeId]?.style ?? null;
 }
 
 export function getMindNodeDefaultVisualStyle(doc: any, nodeId: string | null | undefined): MindNodeDefaultVisualStyle {

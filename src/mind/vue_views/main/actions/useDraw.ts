@@ -8,7 +8,7 @@ import rough from 'roughjs';
 import type { Drawable } from 'roughjs/bin/core';
 import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { RoughGenerator } from 'roughjs/bin/generator';
-import { ensureMindRoots } from './useDocUtils';
+import { ensureMindRoots, getActiveMind } from './useDocUtils';
 import type { Camera } from './useCamera';
 import type { BranchMeta, ParentEdgeCacheStats, ParentEdgeGeom } from './useEdges';
 import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS } from '../constants';
@@ -1350,7 +1350,7 @@ export function useDraw(
       );
     }
 
-    const nodes = d.mind.nodes || {};
+    const nodes = getActiveMind(d)?.nodes || {};
     let edgesDrawnParents = 0;
     let branchesDrawn = 0;
     let roundedBranchesCount = 0;
