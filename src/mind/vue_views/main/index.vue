@@ -253,6 +253,84 @@
         </div>
       </aside>
     </div>
+
+    <Teleport to="body">
+      <transition name="mind-close-dialog-fade">
+        <div
+          v-if="closeDialogState.visible"
+          class="mind-close-dialog-overlay"
+          @click="onCloseDialogCancel"
+        >
+          <div class="mind-close-dialog" @click.stop>
+            <div class="mind-close-dialog-ornament" aria-hidden="true"></div>
+            <div class="mind-close-dialog-brand">
+              <div class="mind-close-dialog-logo-shell">
+                <img class="mind-close-dialog-logo" :src="mindLogo" alt="" />
+              </div>
+              <div class="mind-close-dialog-copy">
+                <p class="mind-close-dialog-title">你需要保存当前修改吗？</p>
+                <p class="mind-close-dialog-subtitle">如果不保存，你当前所有做的修改将会丢失</p>
+              </div>
+            </div>
+            <div class="mind-close-dialog-actions">
+              <button
+                class="mind-close-dialog-button mind-close-dialog-button--save"
+                type="button"
+                :disabled="closeDialogState.submitting || isSaving"
+                @click="onCloseDialogSave"
+              >
+                {{ closeDialogState.submitting || isSaving ? '保存中...' : '保存' }}
+              </button>
+              <button
+                class="mind-close-dialog-button mind-close-dialog-button--ghost"
+                type="button"
+                :disabled="closeDialogState.submitting || isSaving"
+                @click="onCloseDialogDiscard"
+              >
+                不保存
+              </button>
+              <button
+                class="mind-close-dialog-button mind-close-dialog-button--neutral"
+                type="button"
+                :disabled="closeDialogState.submitting || isSaving"
+                @click="onCloseDialogCancel"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <transition name="mind-image-preview-fade">
+        <div
+          v-if="imagePreviewState.visible"
+          class="mind-image-preview-overlay"
+          @click="closeImagePreview"
+        >
+          <div class="mind-image-preview-shell" @click.stop>
+            <button
+              class="mind-image-preview-close"
+              type="button"
+              aria-label="关闭图片预览"
+              @click="closeImagePreview"
+            >
+              ×
+            </button>
+            <img
+              class="mind-image-preview-image"
+              :src="imagePreviewState.src"
+              :alt="imagePreviewState.title || '图片预览'"
+            />
+            <div v-if="imagePreviewState.title" class="mind-image-preview-caption">
+              {{ imagePreviewState.title }}
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
@@ -296,7 +374,7 @@ import {
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, normalizeSelectionTargets } from '@/mind/core/selection/normalizeSelection';
-import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId } from './actions/useDocUtils';
+import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
 import { useDraw } from './actions/useDraw';
@@ -384,6 +462,8 @@ import {
   type StyleTextToggleKey,
 } from './indexChild/stylePanelConfig';
 import { useSaveFlow } from './indexChild/useSaveFlow';
+import { exportMindPreviewPng } from './exportPreview';
+import mindLogo from '@/mind/core/action_icon/mind.svg';
 import type { MindNodeRole } from './nodeStyles';
 import { createInitialNodeStyleForRole, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
@@ -761,8 +841,19 @@ let globalDragListenersActive = false;
 let isFinalizingInteraction = false;
 let removeBeforeCloseListener: null | (() => void) = null;
 let collapseTagHideTimer: number | null = null;
+const closeDialogState = ref({
+  visible: false,
+  key: null as string | null,
+  submitting: false,
+});
+const imagePreviewState = ref({
+  visible: false,
+  src: '',
+  title: '',
+});
 
 const isDirty = computed(() => contentRevision.value !== lastSavedContentRevision.value);
+const shouldConfirmClose = computed(() => isDirty.value || !props.filePath);
 
 function getFileDisplayName(filePath: string | null | undefined = props.filePath ?? null) {
   if (!filePath) return '思维导图';
@@ -1077,6 +1168,39 @@ function getNodeImageRect(nodeId: string) {
   const imageSize = getNodeImageDisplaySize(nodeId);
   if (!nodeRect || !imageSize) return null;
   return getNodeImageWorldRect(getNodeBodyWorldRect(getNodeById(nodeId), nodeRect), imageSize);
+}
+
+function getImageTargetAtScreenPoint(screenX: number, screenY: number) {
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  const candidates = spatialIndex.queryPoint(worldPoint);
+  let bestTarget: { nodeId: string; area: number } | null = null;
+  for (const nodeId of candidates) {
+    const imageRect = getNodeImageRect(nodeId);
+    if (!pointInImageWorldRect(worldPoint.x, worldPoint.y, imageRect)) continue;
+    const area = imageRect.width * imageRect.height;
+    if (!bestTarget || area < bestTarget.area) {
+      bestTarget = { nodeId, area };
+    }
+  }
+  return bestTarget?.nodeId ?? null;
+}
+
+function openImagePreview(nodeId: string) {
+  const image = getNodeImage(getNodeById(nodeId));
+  if (!image?.src) return;
+  imagePreviewState.value = {
+    visible: true,
+    src: image.src,
+    title: getNodePlainText(getNodeById(nodeId)).trim(),
+  };
+}
+
+function closeImagePreview() {
+  imagePreviewState.value = {
+    visible: false,
+    src: '',
+    title: '',
+  };
 }
 
 function collectMarkerTargetNodeIds() {
@@ -2368,6 +2492,44 @@ const { saveDocument, saveDocumentAs } = useSaveFlow({
   lastSavedContentRevision,
 });
 
+function getDocumentTitleForExport() {
+  const manifestTitle = typeof props.doc?.manifest?.title === 'string' ? props.doc.manifest.title.trim() : '';
+  return manifestTitle || getDocumentTitleForSave() || '思维导图';
+}
+
+function getExportXmindBaseName() {
+  return getDocumentTitleForExport()
+    .replace(/\s+/g, '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .trim() || '思维导图';
+}
+
+async function exportXmind() {
+  if (!props.doc || !props.docId || isSaving.value) return false;
+  try {
+    clearPersistTimer();
+    if (editingSession.value) commitEditingSession();
+    await flushPendingDocumentMutation();
+    ensureMultiMindDoc(props.doc);
+    writeViewportToDoc();
+    const plain = toPlainDoc(props.doc);
+    await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+    const defaultPath = `${getExportXmindBaseName()}.xmind`;
+    const thumbnailBytes = await exportMindPreviewPng(plain).catch(() => null);
+    const result = await window.electronAPI.amind.exportXmindDialog({
+      docId: props.docId,
+      defaultPath,
+      thumbnailBytes: thumbnailBytes ?? undefined,
+    });
+    return !!result?.filePath;
+  } catch (error) {
+    console.error('[mind-export-xmind]', error);
+    const title = error instanceof Error ? error.message : '导出 XMind 失败';
+    window.$toast({ title, type: 'error' });
+    return false;
+  }
+}
+
 async function switchMindBoard(boardId: string) {
   if (!props.doc) return false;
   const activeBoardId = getActiveMind(props.doc)?.id ?? null;
@@ -2420,6 +2582,7 @@ async function renameMindBoard(boardId: string, title: string) {
 defineExpose({
   saveDocument,
   saveDocumentAs,
+  exportXmind,
   switchMindBoard,
   renameMindBoard,
 });
@@ -3952,13 +4115,23 @@ function onCanvasDoubleClick(event: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+  const imageNodeId = getImageTargetAtScreenPoint(screenX, screenY);
+  if (imageNodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    setSingleSelected(imageNodeId);
+    openImagePreview(imageNodeId);
+    return;
+  }
   const collapseTagNodeId = hitTestCollapseTag(
     collapseTagScreenMap.value,
-    event.clientX - rect.left,
-    event.clientY - rect.top
+    screenX,
+    screenY
   );
   if (collapseTagNodeId) return;
-  const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
+  const hitId = hitTest(screenX, screenY);
   if (!hitId) return;
   event.preventDefault();
   event.stopPropagation();
@@ -4292,15 +4465,67 @@ async function handleBeforeCloseRequest(key: string) {
     await window.electronAPI.wm.closeResponse({ key, allow: false });
     return;
   }
-  if (!isDirty.value) {
+  if (!shouldConfirmClose.value) {
     await window.electronAPI.wm.closeResponse({ key, allow: true });
     return;
   }
-  const shouldClose = window.confirm('当前思维导图尚未保存，确定直接关闭吗？');
-  await window.electronAPI.wm.closeResponse({ key, allow: shouldClose });
+  closeDialogState.value = {
+    visible: true,
+    key,
+    submitting: false,
+  };
+}
+
+async function resolveCloseDialog(allow: boolean) {
+  const key = closeDialogState.value.key;
+  closeDialogState.value = {
+    visible: false,
+    key: null,
+    submitting: false,
+  };
+  if (!key) return;
+  await window.electronAPI.wm.closeResponse({ key, allow });
+}
+
+async function onCloseDialogCancel() {
+  await resolveCloseDialog(false);
+}
+
+async function onCloseDialogDiscard() {
+  await resolveCloseDialog(true);
+}
+
+async function onCloseDialogSave() {
+  const key = closeDialogState.value.key;
+  if (!key || closeDialogState.value.submitting || isSaving.value) return;
+  closeDialogState.value = {
+    ...closeDialogState.value,
+    submitting: true,
+  };
+  const saved = await saveDocument();
+  if (saved) {
+    await resolveCloseDialog(true);
+    return;
+  }
+  closeDialogState.value = {
+    ...closeDialogState.value,
+    submitting: false,
+  };
 }
 
 function onWindowKeyDown(event: KeyboardEvent) {
+  if (imagePreviewState.value.visible && event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeImagePreview();
+    return;
+  }
+  if (closeDialogState.value.visible && event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    void onCloseDialogCancel();
+    return;
+  }
   if (imageInteraction.value?.resizing && event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
@@ -5470,5 +5695,276 @@ onBeforeUnmount(() => {
 .main-container:hover .mind-scrollbar-thumb,
 .mind-scrollbar-thumb.is-active {
   background: rgba(60, 60, 67, 0.42);
+}
+
+.mind-close-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(34, 197, 94, 0.1), transparent 32%),
+    rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(10px) saturate(1.08);
+  -webkit-backdrop-filter: blur(10px) saturate(1.08);
+}
+
+.mind-close-dialog {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  overflow: hidden;
+  border-radius: 24px;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.96));
+  box-shadow:
+    0 28px 72px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+}
+
+.mind-close-dialog-ornament {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 110px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(34, 197, 94, 0.14), transparent 34%),
+    radial-gradient(circle at 82% 0%, rgba(16, 185, 129, 0.1), transparent 26%);
+}
+
+.mind-close-dialog-brand {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.mind-close-dialog-logo-shell {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 253, 244, 0.92));
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.mind-close-dialog-logo {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+.mind-close-dialog-copy {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.mind-close-dialog-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 21px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.mind-close-dialog-subtitle {
+  margin: 10px 0 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.mind-close-dialog-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.mind-close-dialog-button {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.mind-close-dialog-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.mind-close-dialog-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.mind-close-dialog-button--save {
+  color: #ffffff;
+  background: linear-gradient(135deg, #111827, #0f172a);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.mind-close-dialog-button--save:not(:disabled):hover {
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.22);
+}
+
+.mind-close-dialog-button--ghost {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.38);
+}
+
+.mind-close-dialog-button--ghost:not(:disabled):hover {
+  border-color: rgba(100, 116, 139, 0.5);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.mind-close-dialog-button--neutral {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.9);
+  border-color: rgba(226, 232, 240, 0.95);
+}
+
+.mind-close-dialog-button--neutral:not(:disabled):hover {
+  color: #334155;
+  border-color: rgba(203, 213, 225, 0.98);
+}
+
+.mind-close-dialog-fade-enter-active,
+.mind-close-dialog-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.mind-close-dialog-fade-enter-active .mind-close-dialog,
+.mind-close-dialog-fade-leave-active .mind-close-dialog {
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
+}
+
+.mind-close-dialog-fade-enter-from,
+.mind-close-dialog-fade-leave-to {
+  opacity: 0;
+}
+
+.mind-close-dialog-fade-enter-from .mind-close-dialog,
+.mind-close-dialog-fade-leave-to .mind-close-dialog {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+}
+
+.mind-image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(10px) saturate(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
+}
+
+.mind-image-preview-shell {
+  position: relative;
+  max-width: min(92vw, 1400px);
+  max-height: min(90vh, 980px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.mind-image-preview-close {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+}
+
+.mind-image-preview-image {
+  display: block;
+  max-width: min(92vw, 1400px);
+  max-height: min(84vh, 920px);
+  object-fit: contain;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.mind-image-preview-caption {
+  max-width: min(80vw, 960px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.58);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mind-image-preview-fade-enter-active,
+.mind-image-preview-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.mind-image-preview-fade-enter-active .mind-image-preview-shell,
+.mind-image-preview-fade-leave-active .mind-image-preview-shell {
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.mind-image-preview-fade-enter-from,
+.mind-image-preview-fade-leave-to {
+  opacity: 0;
+}
+
+.mind-image-preview-fade-enter-from .mind-image-preview-shell,
+.mind-image-preview-fade-leave-to .mind-image-preview-shell {
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
 }
 </style>

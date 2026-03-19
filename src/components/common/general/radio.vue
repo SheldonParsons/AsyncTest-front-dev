@@ -96,6 +96,7 @@ const uniqueId = (key: string) => {
     }
 
     .radio-item {
+        position: relative;
         background-color: #0b1011;
         border: 1px solid #1d2628;
         width: 20px;
@@ -110,9 +111,8 @@ const uniqueId = (key: string) => {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 100%;
-        height: 100%;
-        position: relative;
+        position: absolute;
+        inset: 0;
     }
 
     .border {

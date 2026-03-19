@@ -10,9 +10,10 @@
                     <span v-if="saveState.isDirty" class="mind-header-dirty-dot"></span>
                     <SaveActionsMenu :can-save="!!docId && !saveState.isSaving"
                         :can-save-as="!!docId && !saveState.isSaving" :can-open-folder="!!filePath"
+                        :can-export-xmind="!!docId && !saveState.isSaving"
                         :recent-paths="recentPaths" @save="onSaveClick" @saveAs="onSaveAsClick"
                         @openFolder="onOpenFolderClick" @quickNew="onQuickNewClick" @openLocal="onOpenLocalClick"
-                        @openRecent="onOpenRecentClick" @menuOpen="loadRecentPaths" />
+                        @exportXmind="onExportXmindClick" @openRecent="onOpenRecentClick" @menuOpen="loadRecentPaths" />
                     <span v-if="saveState.isSaving" class="mind-header-saving-indicator">保存中...</span>
                 </div>
             </div>
@@ -51,6 +52,7 @@ const route = useRoute();
 type MindMainExpose = {
     saveDocument: () => Promise<boolean>;
     saveDocumentAs: () => Promise<boolean>;
+    exportXmind: () => Promise<boolean>;
     switchMindBoard: (boardId: string) => Promise<boolean>;
     renameMindBoard: (boardId: string, title: string) => Promise<boolean>;
 };
@@ -117,6 +119,10 @@ function onSaveClick() {
 
 function onSaveAsClick() {
     void mindMainRef.value?.saveDocumentAs();
+}
+
+function onExportXmindClick() {
+    void mindMainRef.value?.exportXmind();
 }
 
 async function loadRecentPaths() {

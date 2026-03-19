@@ -129,7 +129,10 @@
 
             <!-- 数据视图 -->
             <div v-if="currentView === 'data'" class="data-view-container">
-                <DataCore v-if="tableData" :data="tableData" :global="true" :can_edit="props.initialData.can_edit"
+                <div v-if="tableDataLoading" class="table-loading-wrapper">
+                    <AstLoading />
+                </div>
+                <DataCore v-else-if="tableData" :data="tableData" :global="true" :can_edit="props.initialData.can_edit"
                     :env="{ name: 'ignore', table_id: props.initialData.table }" />
             </div>
         </div>
@@ -195,6 +198,10 @@ const props = defineProps({
         type: Boolean,
         default: false
     },
+    initialView: {
+        type: String as () => 'info' | 'data',
+        default: 'info'
+    },
     initialData: {
         type: Object,
         default: () => ({
@@ -220,12 +227,13 @@ const emit = defineEmits(['back', 'save'])
 
 // ========== 状态管理 ==========
 const loading = ref(false)
+const tableDataLoading = ref(false)
 const saveSuccess = ref(false)
 const datasourceData = ref<any>(null)
 const projectList = ref<any[]>([])
 const userList = ref<any[]>([])
 const userSearchLoading = ref(false)
-const currentView = ref<'info' | 'data'>('info')
+const currentView = ref<'info' | 'data'>(props.initialView)
 const tableData = ref<any>(null)
 
 const editableData = reactive({
@@ -377,7 +385,7 @@ async function getTableData() {
         return
     }
 
-    loading.value = true
+    tableDataLoading.value = true
     try {
         const _data = {
             type: 1,
@@ -393,7 +401,7 @@ async function getTableData() {
         window.$toast({ title: error.message || '加载表格数据失败', type: 'error' })
         currentView.value = 'info'
     } finally {
-        loading.value = false
+        tableDataLoading.value = false
     }
 }
 
@@ -460,6 +468,9 @@ async function handleSaveWithAnimation() {
 onMounted(async () => {
     await Promise.all([loadProjects(), loadUsers()])
     await loadDatasource()
+    if (props.initialView === 'data') {
+        await getTableData()
+    }
 })
 </script>
 
@@ -968,6 +979,14 @@ onMounted(async () => {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+.table-loading-wrapper {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .data-loading {

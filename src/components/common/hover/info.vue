@@ -18,12 +18,12 @@
             </Tooltip.Trigger>
 
             <Tooltip.Portal>
-                <Tooltip.Content force-mount v-if="openItem" as-child :side-offset="10">
-                    <motion.div class="tooltip-content" :initial="{ opacity: 0, y: 20, scale: 0.8 }"
+                <Tooltip.Content v-if="openItem" :side-offset="10" :style="{ zIndex: 9999 }">
+                    <motion.div class="tooltip-content" :initial="{ opacity: 0, y: 12, scale: 0.96 }"
                         :animate="{ opacity: 1, y: 0, scale: 1 }" :exit="{
                             opacity: 0,
-                            y: 20,
-                            scale: 0.8,
+                            y: 12,
+                            scale: 0.96,
                             transition: { duration: 0.1 },
                         }" :transition="{
                             ...spring,
@@ -73,14 +73,16 @@ const openItem = ref(false)
     width: 1.4rem;
     height: 1.4rem;
     box-sizing: border-box;
-    padding: 2px;
-    border-radius: 4px;
+    padding: 3px;
+    border-radius: 8px;
     cursor: pointer;
-    background-color: black;
-    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.88);
     display: flex;
     justify-content: center;
     align-items: center;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 
     svg {
         height: 100%;
@@ -89,6 +91,20 @@ const openItem = ref(false)
 }
 
 .mini-btn-filter:hover {
-    background: rgba($color: #ffffff, $alpha: 0.2);
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.tooltip-content {
+    max-width: 260px;
+    padding: 12px 14px;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 32px rgba(15, 23, 42, 0.14);
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.6;
+    backdrop-filter: blur(10px);
 }
 </style>

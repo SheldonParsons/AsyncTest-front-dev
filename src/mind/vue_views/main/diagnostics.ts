@@ -1,21 +1,6 @@
 import type { Camera } from './actions/useCamera';
 import type { WorldRect } from './geom/rect';
-import { DEBUG_CANVAS_OVERLAY } from './constants';
-
-export const ROUGH_RENDER_STORAGE_KEY = 'amind:rough-render';
-export const ROUGH_RENDER_QUERY_KEY = 'amindRoughRender';
-
-export function readRoughRenderFlag() {
-  if (typeof window === 'undefined') return false;
-
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(ROUGH_RENDER_QUERY_KEY) === '1') return true;
-    return window.localStorage.getItem(ROUGH_RENDER_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
+import { DEBUG_CANVAS_OVERLAY, ROUGH_STYLE } from './constants';
 export const WHEEL_LOG_SAMPLE_MS = 300;
 export const MARQUEE_LOG_SAMPLE_MS = 1000;
 
@@ -52,8 +37,7 @@ export function logRendererDebugInstructions() {
       '[mind-debug] Dev toggles',
       `- Canvas debug overlay: set DEBUG_CANVAS_OVERLAY in src/mind/vue_views/main/constants.ts`,
       `- Seed new docs count: set DEBUG_NEW_MIND_SEED_NODE_COUNT in src/mind/vue_views/main/constants.ts`,
-      `- Rough renderer: localStorage.setItem('${ROUGH_RENDER_STORAGE_KEY}', '1'); location.reload()`,
-      `- Or use query flag: ?${ROUGH_RENDER_QUERY_KEY}=1`,
+      `- Rough renderer: set ROUGH_STYLE in src/mind/vue_views/main/constants.ts (current: ${ROUGH_STYLE ? 'ON' : 'OFF'})`,
       "- Rough preset: localStorage.setItem('mind.roughThemePreset', 'clean'|'warm-paper'|'mono'|'accent-blue')",
       "- Rough overrides: localStorage.setItem('mind.roughThemeOverrides', JSON.stringify({ roughness: 0.9, bowing: 0.7, strokeWidthPx: 2, overlapPx: 6 }))",
       "- Rough debug API: window.setRoughThemePreset('mono') / window.setRoughThemeOverrides({...}) / window.resetRoughThemeOverrides() / window.getRoughThemeDebug()",

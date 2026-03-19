@@ -109,8 +109,12 @@ export function ensureNodeRichText(node: MindNodeLike | null | undefined, fallba
 export function ensureNodeLexicalState(node: MindNodeLike | null | undefined, fallback = ''): SerializedLexicalEditorState {
   if (!node) return lexicalStateFromPlainText(fallback);
   if (!node.textLexical) {
-    const plain = getNodePlainText(node) || fallback;
-    node.textLexical = lexicalStateFromPlainText(plain);
+    if (node.richText) {
+      node.textLexical = lexicalStateFromRichText(node.richText);
+    } else {
+      const plain = getNodePlainText(node) || fallback;
+      node.textLexical = lexicalStateFromPlainText(plain);
+    }
   }
   setNodeLexicalState(node, node.textLexical);
   return getNodeLexicalState(node);

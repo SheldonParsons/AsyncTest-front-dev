@@ -3,6 +3,7 @@ import path from 'node:path';
 import { app, dialog, ipcMain, shell } from 'electron';
 import { AMIND_EXT } from './constants.js';
 import { createEmptyDoc, readAmindAsset, readAmindFile, writeAmindFile } from './amindFileService.node.js';
+import { readXmindAsAmindDoc, writeXmindFile } from './xmindFileService.node.js';
 import { createAmindAssetCache } from './amindAssetCache.node.js';
 import { createRecentStore } from './recentStore.js';
 import { createDocStore } from './docStore.node.js';
@@ -50,6 +51,10 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   function buildMindWindowTitle(filePath) {
     return filePath ? `AsyncTest Mind - ${path.basename(filePath)}` : 'AsyncTest Mind';
+  }
+
+  function buildImportWindowTitle(title) {
+    return title ? `AsyncTest Mind - ${title}` : 'AsyncTest Mind';
   }
 
   function refreshWindowTitle(docId) {
@@ -150,6 +155,23 @@ export function initAmindMain({ userDataPath, windowManager }) {
     return { reused: false, docId, filePath: realAbs };
   }
 
+  async function importXmindFileInWindow(filePath) {
+    const { path: abs, doc } = await readXmindAsAmindDoc(filePath);
+    const docId = newDocId();
+    docStore.create(docId, { doc, filePath: null, windowKey: null });
+    await openMindWindow({
+      docId,
+      filePath: null,
+      title: buildImportWindowTitle(doc?.manifest?.title || path.basename(abs, '.xmind')),
+    });
+    return {
+      reused: false,
+      docId,
+      filePath: null,
+      importedFrom: abs,
+    };
+  }
+
   // ===== IPC =====
 
   ipcMain.handle('amind:new', async (event, payload = {}) => {
@@ -205,11 +227,33 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:openDialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'AsyncTest Mind', extensions: [AMIND_EXT.slice(1)] }],
+      filters: [
+        { name: 'Mind Files', extensions: [AMIND_EXT.slice(1), 'xmind'] },
+        { name: 'AsyncTest Mind', extensions: [AMIND_EXT.slice(1)] },
+        { name: 'XMind', extensions: ['xmind'] },
+      ],
     });
     if (canceled || !filePaths?.[0]) return null;
+    const selectedPath = filePaths[0];
+    if (selectedPath.toLowerCase().endsWith('.xmind')) {
+      return await importXmindFileInWindow(selectedPath);
+    }
+    return await openFileInWindow(selectedPath);
+  });
 
-    return await openFileInWindow(filePaths[0]);
+  ipcMain.handle('amind:exportXmindDialog', async (event, { docId, defaultPath, thumbnailBytes }) => {
+    const entry = docStore.mustGet(docId);
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultPath || '思维导图.xmind',
+      filters: [{ name: 'XMind', extensions: ['xmind'] }],
+    });
+    if (canceled || !filePath) return null;
+    const thumbnail = thumbnailBytes ? Buffer.from(thumbnailBytes) : null;
+    const result = await writeXmindFile(filePath, entry.doc, thumbnail);
+    return {
+      docId,
+      filePath: result.path,
+    };
   });
 
   ipcMain.handle('amind:save', async (event, { docId }) => {
@@ -358,5 +402,6 @@ export function initAmindMain({ userDataPath, windowManager }) {
     docStore,
     fileIndex,
     openFileInWindow,
+    importXmindFileInWindow,
   };
 }

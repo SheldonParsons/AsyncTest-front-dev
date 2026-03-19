@@ -11,12 +11,8 @@ import type { RoughGenerator } from 'roughjs/bin/generator';
 import { ensureMindRoots, getActiveMind } from './useDocUtils';
 import type { Camera } from './useCamera';
 import type { BranchMeta, ParentEdgeCacheStats, ParentEdgeGeom } from './useEdges';
-import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS } from '../constants';
-import {
-  formatCamera,
-  formatWorldRect,
-  readRoughRenderFlag,
-} from '../diagnostics';
+import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS, ROUGH_STYLE } from '../constants';
+import { formatCamera, formatWorldRect } from '../diagnostics';
 import { getMindNodeDefaultVisualStyle } from '../nodeStyles';
 import type { CollapseTagInfo } from '../collapseTags';
 import {
@@ -1087,7 +1083,7 @@ export function useDraw(
     const clipboardDebug = getClipboardDebugSnapshot();
     const currentDragState = dragState?.value;
     const roughStyle = getCurrentRoughTheme();
-    const roughRequested = readRoughRenderFlag();
+    const roughRequested = ROUGH_STYLE;
     if (lastRoughStyleSignature && lastRoughStyleSignature !== roughStyle.themeSignature) {
       roughRuntime.nodeDrawables.clear();
       roughRuntime.edgeDrawables.clear();

@@ -14,7 +14,7 @@
                     </Tooltip.Trigger>
 
                     <Tooltip.Portal>
-                        <Tooltip.Content force-mount v-if="openItem === item" as-child :side-offset="10">
+                        <Tooltip.Content v-if="openItem === item" :side-offset="10" :style="{ zIndex: 9999 }">
                             <motion.div class="tooltip-content" :initial="{ opacity: 0, y: 20, scale: 0.8 }"
                                 :animate="{ opacity: 1, y: 0, scale: 1 }" :exit="{
                                     opacity: 0,
@@ -50,6 +50,7 @@ import DeleteIcon from '@/assets/logo/final/match_vue/delete.vue'
 import AddSiblingIcon from '@/assets/logo/final/match_vue/add_sibling.vue'
 import AddChildIcon from '@/assets/logo/final/match_vue/add_child.vue'
 import BatchIcon from '@/assets/logo/final/match_vue/edit.vue'
+import TableIcon from '@/assets/logo/final/match_vue/table.vue'
 
 // props & emits
 const props = defineProps({
@@ -92,7 +93,8 @@ const icons: Record<string, any> = {
     delete: DeleteIcon,
     addSiblingStep: AddSiblingIcon,
     addChildStep: AddChildIcon,
-    batchEdit: BatchIcon
+    batchEdit: BatchIcon,
+    openTable: TableIcon
 }
 
 
@@ -126,6 +128,8 @@ function onLeave(e: MouseEvent) {
 
 // 触发外部事件
 function action(t: string) {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+    openItem.value = null
     emit('action', t)
 }
 

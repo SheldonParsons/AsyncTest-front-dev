@@ -47,6 +47,33 @@
             <span class="save-actions-label">打开文件目录</span>
           </li>
 
+          <li
+            class="save-actions-item save-actions-item--submenu"
+            :class="{ 'is-disabled': !canExportXmind }"
+            @mouseenter="handleExportEnter"
+          >
+            <span class="save-actions-label">导出</span>
+            <el-icon class="save-actions-submenu-icon"><ArrowRight /></el-icon>
+
+            <transition name="save-actions-submenu-fade">
+              <div
+                v-if="activeSubmenu === 'export'"
+                class="save-actions-submenu"
+                @mouseenter="activeSubmenu = 'export'"
+                @mouseleave="activeSubmenu = null"
+              >
+                <ul class="save-actions-submenu-list">
+                  <li
+                    class="save-actions-submenu-item"
+                    @click.stop="handleAction('exportXmind')"
+                  >
+                    Xmind
+                  </li>
+                </ul>
+              </div>
+            </transition>
+          </li>
+
           <div class="save-actions-divider" />
 
           <li class="save-actions-item" @click="handleAction('quickNew')">
@@ -104,11 +131,13 @@ const props = withDefaults(defineProps<{
   canSave?: boolean;
   canSaveAs?: boolean;
   canOpenFolder?: boolean;
+  canExportXmind?: boolean;
   recentPaths?: string[];
 }>(), {
   canSave: true,
   canSaveAs: true,
   canOpenFolder: false,
+  canExportXmind: true,
   recentPaths: () => [],
 });
 
@@ -118,13 +147,14 @@ const emit = defineEmits<{
   (event: 'openFolder'): void;
   (event: 'quickNew'): void;
   (event: 'openLocal'): void;
+  (event: 'exportXmind'): void;
   (event: 'openRecent', filePath: string): void;
   (event: 'menuOpen'): void;
 }>();
 
 const open = ref(false);
 const rootRef = ref<HTMLElement | null>(null);
-const activeSubmenu = ref<'recent' | null>(null);
+const activeSubmenu = ref<'recent' | 'export' | null>(null);
 const dropdownPosition = ref({ top: 0, left: 0 });
 
 const dropdownStyle = computed(() => ({
@@ -157,11 +187,20 @@ async function toggleMenu() {
   }
 }
 
-function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal') {
+function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal' | 'exportXmind') {
   if ((action === 'save' && !props.canSave) || (action === 'saveAs' && !props.canSaveAs)) return;
   if (action === 'openFolder' && !props.canOpenFolder) return;
+  if (action === 'exportXmind' && !props.canExportXmind) return;
   closeMenu();
   emit(action);
+}
+
+function handleExportEnter() {
+  if (!props.canExportXmind) {
+    activeSubmenu.value = null;
+    return;
+  }
+  activeSubmenu.value = 'export';
 }
 
 function handleRecentEnter() {
@@ -263,7 +302,9 @@ onBeforeUnmount(() => {
 
 .save-actions-dropdown {
   position: fixed;
-  min-width: 210px;
+  width: max-content;
+  min-width: 0;
+  max-width: min(320px, calc(100vw - 24px));
   z-index: 2400;
   transform-origin: top left;
 }
@@ -271,6 +312,9 @@ onBeforeUnmount(() => {
 .save-actions-list,
 .save-actions-submenu-list {
   list-style: none;
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   padding: 6px;
   background:
@@ -352,11 +396,15 @@ onBeforeUnmount(() => {
   position: absolute;
   top: -6px;
   left: calc(100% + 8px);
-  width: min(560px, 58vw);
+  width: max-content;
+  max-width: min(560px, 58vw);
   z-index: 25;
 }
 
 .save-actions-submenu-list {
+  width: max-content;
+  min-width: 0;
+  max-width: min(560px, 58vw);
   max-height: 320px;
   overflow: auto;
   background: #f8fafc;

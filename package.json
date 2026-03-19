@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "1.0.45",
+  "version": "2.0.1",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 界面优化\\n#### 1、新增windows系统的窗口操作按钮\",\"publishDate\":\"2026-03-08\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 全新功能\\n#### AsyncTest Mind 思维导图上线\\n##### 全局数据源和数据集table升级，升级交互\\n##### 全局数据源列表新增直接进入table的按钮\\n##### bugfix：radio组件切换红点偏移的问题\",\"publishDate\":\"2026-03-19\"}"
     },
     "publish": [
       {
@@ -129,6 +129,7 @@
     "@lexical/selection": "^0.41.0",
     "@lexical/utils": "^0.41.0",
     "@prantlf/jsonlint": "^14.0.3",
+    "@tanstack/vue-table": "^8.21.3",
     "ag-grid-community": "^34.0.2",
     "ag-grid-vue3": "^34.0.2",
     "axios": "^1.1.3",

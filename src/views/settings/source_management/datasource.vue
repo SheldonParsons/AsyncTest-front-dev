@@ -96,9 +96,10 @@
                                     }}</span>
                             </td>
                             <td>
-                                <ActionGroup :group="['copy', 'batchEdit', 'delete']" :actionDesc="{
+                                <ActionGroup :group="['copy', 'batchEdit', 'openTable', 'delete']" :actionDesc="{
                                     copy: '复制',
                                     batchEdit: '编辑',
+                                    openTable: '打开表格',
                                     delete: '删除'
                                 }" :itemBackgroundColor="'rgba(0, 0, 0, 0.05)'" :itemColor="'#1a1a1a'"
                                     @action="(action) => handleAction(action, item)" />
@@ -124,8 +125,8 @@
             </div>
         </div>
 
-        <DatasourceEdit v-if="isEditMode" :initialData="currentEditData" :isEdit="isEditMode" @back="handleBack"
-            @save="handleSave" />
+        <DatasourceEdit v-if="isEditMode" :initialData="currentEditData" :isEdit="isEditMode"
+            :initialView="editInitialView" @back="handleBack" @save="handleSave" />
 
         <!-- 添加数据源对话框 -->
         <DialogAnimation ref="addDialogRef" title="添加数据源" cancel_title="取消" confirm_title="创建" :bgtype="'white'">
@@ -153,6 +154,7 @@ import { ApiGetGlobalDatasourceList, ApiGetGlobalDatasource, ApiDeleteGlobalData
 
 const isEditMode = ref(false)
 const currentEditData = ref<any>(null)
+const editInitialView = ref<'info' | 'data'>('info')
 
 // 添加数据源对话框
 const addDialogRef = ref<any>(null)
@@ -298,6 +300,15 @@ async function handleAction(action: string, item: any) {
             const datasource_detail = await tools.send(ApiGetGlobalDatasource, item.id, {})
             if (datasource_detail) {
                 currentEditData.value = datasource_detail
+                editInitialView.value = 'info'
+                isEditMode.value = true
+            }
+            break
+        case 'openTable':
+            const datasource_for_table = await tools.send(ApiGetGlobalDatasource, item.id, {})
+            if (datasource_for_table) {
+                currentEditData.value = datasource_for_table
+                editInitialView.value = 'data'
                 isEditMode.value = true
             }
             break
@@ -314,12 +325,14 @@ async function handleAction(action: string, item: any) {
 async function handleBack() {
     isEditMode.value = false
     currentEditData.value = null
+    editInitialView.value = 'info'
     await get_data()
 }
 
 async function handleSave() {
     isEditMode.value = false
     currentEditData.value = null
+    editInitialView.value = 'info'
     await get_data() // 重新获取数据列表
 }
 </script>

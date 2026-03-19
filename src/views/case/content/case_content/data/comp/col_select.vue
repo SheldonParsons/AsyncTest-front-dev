@@ -4,28 +4,20 @@
             <DropdownMenu.Trigger as-child>
                 <MoreBtn></MoreBtn>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Portal >
-                <AnimatePresence>
-                    <DropdownMenu.Content :side-offset="10" :style="{ zIndex: 200 }">
-                        <motion.div class="col-select-content" :initial="{ opacity: 0, scale: 0.85 }"
-                            :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.85 }"
-                            :transition="{ duration: 0.2 }" :style="{ willChange: 'transform, opacity' }">
-                            <DropdownMenu.Item as-child v-if="has_action.includes('edit')">
-                                <motion.button class="item" @click="edit_col" :while-hover="highlight"
-                                    :while-focus="highlight" :while-press="{ scale: 0.95 }">
-                                    <EditBtn></EditBtn>批量编辑此列
-                                </motion.button>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Separator class="separator" v-if="has_action.includes('delete')" />
-                            <DropdownMenu.Item as-child v-if="has_action.includes('delete')">
-                                <motion.button class="item" @click="delete_col" :while-hover="highlight"
-                                    :while-focus="highlight" :while-press="{ scale: 0.95 }">
-                                    <DeleteBtn></DeleteBtn>删除此列
-                                </motion.button>
-                            </DropdownMenu.Item>
-                        </motion.div>
-                    </DropdownMenu.Content>
-                </AnimatePresence>
+            <DropdownMenu.Portal>
+                <DropdownMenu.Content class="col-select-content" :side-offset="8" :style="{ zIndex: 200 }">
+                    <DropdownMenu.Item as-child v-if="has_action.includes('edit')">
+                        <button class="item" @click="edit_col">
+                            <EditBtn></EditBtn>批量编辑此列
+                        </button>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator class="separator" v-if="has_action.includes('delete')" />
+                    <DropdownMenu.Item as-child v-if="has_action.includes('delete')">
+                        <button class="item" @click="delete_col">
+                            <DeleteBtn></DeleteBtn>删除此列
+                        </button>
+                    </DropdownMenu.Item>
+                </DropdownMenu.Content>
             </DropdownMenu.Portal>
         </DropdownMenu.Root>
     </div>
@@ -35,15 +27,11 @@
 import { ref } from 'vue'
 // @ts-ignore
 import { DropdownMenu } from 'reka-ui/namespaced'
-import { motion, AnimatePresence } from 'motion-v'
 import DeleteBtn from '@/components/common/mini_btn/delete.vue'
 import MoreBtn from '@/components/common/mini_btn/more.vue'
 import EditBtn from '@/components/common/mini_btn/edit.vue'
 
 const open = ref(false)
-const highlight = {
-    backgroundColor: "rgba(0,0,0)",
-}
 
 const emit = defineEmits(['delete_col', 'edit_col'])
 
@@ -67,41 +55,44 @@ function edit_col() {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 200px;
 }
 
 .col-select-content {
     min-width: 160px;
-    background-color: white;
-    border: 1px solid #f0f0f0;
-    border-radius: 6px;
-    padding: 4px;
+    padding: 6px;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
     box-sizing: border-box;
     z-index: 100;
 
     .item {
         width: 100%;
-        padding: 8px 12px;
+        padding: 9px 12px;
         border: none;
         background: none;
-        color: rbga(0, 0, 0);
+        color: #334155;
         text-align: left;
-        border-radius: 4px;
+        border-radius: 8px;
         cursor: pointer;
-        font-size: 14px;
+        font-size: 13px;
+        font-weight: 500;
         box-sizing: border-box;
         display: flex;
         align-items: center;
         justify-content: start;
+        gap: 8px;
     }
 
     .item:hover {
         color: white;
+        background: #111827;
     }
 
     .separator {
         height: 1px;
-        background-color: #f0f0f0;
+        background-color: #e2e8f0;
         margin: 4px 0;
     }
 }

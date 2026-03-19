@@ -1,6 +1,7 @@
 // 统一控制 canvas 上的调试可视化：HUD、视口红框、调试网格。
 export const DEBUG_CANVAS_OVERLAY = false;
 export const DEBUG_NEW_MIND_SEED_NODE_COUNT = DEBUG_CANVAS_OVERLAY ? 300 : 0;
+export const ROUGH_STYLE = true;
 
 export const DEBUG_SPATIAL = DEBUG_CANVAS_OVERLAY;
 export const DEBUG_SPATIAL_LOG = DEBUG_CANVAS_OVERLAY;
