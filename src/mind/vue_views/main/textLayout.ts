@@ -203,8 +203,8 @@ export function getNodeTextStyle(
   const defaults = buildDefaultNodeTextStyle(options?.doc, options?.nodeId);
   const fontFamily = marks?.fontFamily ?? defaults.fontFamily;
   const fontSizePx = marks?.fontSize ?? defaults.fontSizePx;
-  const fontWeight = marks?.bold ? 700 : defaults.fontWeight;
-  const fontStyle = marks?.italic ? 'italic' : defaults.fontStyle;
+  const fontWeight = marks?.bold === true ? 700 : marks?.bold === false ? 400 : defaults.fontWeight;
+  const fontStyle = marks?.italic === true ? 'italic' : marks?.italic === false ? 'normal' : defaults.fontStyle;
   const lineHeightPx = Math.max(NODE_LINE_HEIGHT, Math.ceil(fontSizePx * 1.3));
   return {
     fontFamily,
@@ -400,7 +400,7 @@ function createMeasuredSegment(
 ): RichTextLineSegment {
   const fontFamily = marks.fontFamily ?? baseStyle.fontFamily;
   const fontSize = marks.fontSize ?? baseStyle.fontSizePx;
-  const font = getInlineFont(marks, fontFamily, fontSize);
+  const font = getInlineFont(marks, fontFamily, fontSize, baseStyle.fontWeight, baseStyle.fontStyle);
   ctx.save();
   ctx.font = font;
   const width = ctx.measureText(text).width;

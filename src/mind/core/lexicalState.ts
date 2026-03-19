@@ -1,4 +1,4 @@
-import type { RichTextDocument, RichTextInline, RichTextMarks } from './richText';
+import type { RichTextAlign, RichTextDocument, RichTextInline, RichTextMarks } from './richText';
 import { normalizeRichText, richTextFromPlain, richTextToPlain } from './richText';
 
 export type SerializedLexicalNode = {
@@ -36,14 +36,26 @@ function parseStyleString(style: string | undefined): Partial<RichTextMarks> {
     .map((item) => item.split(':').map((part) => part.trim()));
   const entries = Object.fromEntries(pairs.filter((entry): entry is [string, string] => entry.length === 2));
   const fontSize = entries['font-size'] ? Number.parseFloat(entries['font-size']) : undefined;
+  const fontWeightValue = entries['font-weight']?.toLowerCase();
+  const parsedFontWeight = fontWeightValue ? Number.parseInt(fontWeightValue, 10) : Number.NaN;
+  const isBold =
+    fontWeightValue === 'bold' ||
+    fontWeightValue === 'bolder' ||
+    (Number.isFinite(parsedFontWeight) && parsedFontWeight >= 600);
+  const fontStyleValue = entries['font-style']?.toLowerCase();
   return {
     color: entries.color,
     fontFamily: entries['font-family'],
     fontSize: Number.isFinite(fontSize) ? fontSize : undefined,
+    bold: isBold || undefined,
+    italic: (fontStyleValue === 'italic' || fontStyleValue === 'oblique') || undefined,
   };
 }
 
-function updateStyleStringFontSize(style: string | undefined, transform: (size: number) => number) {
+function updateStyleStringFontSize(
+  style: string | undefined,
+  transform: (size: number, unit: string) => { size: number; unit?: string } | null
+) {
   if (!style) return style;
   const pairs = style
     .split(';')
@@ -55,10 +67,15 @@ function updateStyleStringFontSize(style: string | undefined, transform: (size: 
   let changed = false;
   const nextPairs = pairs.map(([key, value]) => {
     if (key !== 'font-size') return [key, value] as [string, string];
-    const parsed = Number.parseFloat(value);
+    const match = value.match(/^(-?\d*\.?\d+)([a-z%]*)$/i);
+    if (!match) return [key, value] as [string, string];
+    const parsed = Number.parseFloat(match[1]);
+    const unit = match[2] || 'px';
     if (!Number.isFinite(parsed)) return [key, value] as [string, string];
+    const next = transform(parsed, unit);
+    if (!next) return [key, value] as [string, string];
     changed = true;
-    const nextValue = `${Number(transform(parsed).toFixed(3))}px`;
+    const nextValue = `${Number(next.size.toFixed(4))}${next.unit ?? unit}`;
     return [key, nextValue] as [string, string];
   });
   if (!changed) return style;
@@ -108,6 +125,89 @@ function inlineStyleToString(marks?: RichTextMarks) {
   return styleEntries.join('; ');
 }
 
+function normalizeMarks(marks: RichTextMarks): RichTextMarks | undefined {
+  const next: RichTextMarks = {};
+  if (marks.bold) next.bold = true;
+  if (marks.italic) next.italic = true;
+  if (marks.underline) next.underline = true;
+  if (marks.strike) next.strike = true;
+  if (marks.color) next.color = marks.color;
+  if (marks.fontFamily) next.fontFamily = marks.fontFamily;
+  if (Number.isFinite(marks.fontSize)) next.fontSize = marks.fontSize;
+  return Object.keys(next).length ? next : undefined;
+}
+
+function applyMarksToTextNode(node: SerializedLexicalNode, updater: (marks: RichTextMarks) => void) {
+  if (node.type !== 'text') return;
+  const marks = { ...(textNodeToInline(node).marks ?? {}) };
+  updater(marks);
+  const normalizedMarks = normalizeMarks(marks);
+  let format = 0;
+  if (normalizedMarks?.bold) format |= TEXT_FORMAT.bold;
+  if (normalizedMarks?.italic) format |= TEXT_FORMAT.italic;
+  if (normalizedMarks?.strike) format |= TEXT_FORMAT.strikethrough;
+  if (normalizedMarks?.underline) format |= TEXT_FORMAT.underline;
+  node.format = format;
+  node.style = inlineStyleToString(normalizedMarks);
+}
+
+export function updateLexicalStateTextMarks(
+  state: SerializedLexicalEditorState | null | undefined,
+  updater: (marks: RichTextMarks) => void
+): SerializedLexicalEditorState {
+  const safeState = cloneLexicalState(state);
+  if (!safeState.root?.children) return safeState;
+  const visit = (node: SerializedLexicalNode) => {
+    applyMarksToTextNode(node, updater);
+    node.children?.forEach(visit);
+  };
+  safeState.root.children.forEach(visit);
+  return safeState;
+}
+
+export function updateLexicalStateBlockAlign(
+  state: SerializedLexicalEditorState | null | undefined,
+  align: RichTextAlign
+): SerializedLexicalEditorState {
+  const safeState = cloneLexicalState(state);
+  if (!safeState.root?.children) return safeState;
+  safeState.root.children.forEach((node) => {
+    if (node.type === 'paragraph') node.format = align;
+  });
+  return safeState;
+}
+
+function inlineToLexicalChildren(inline: RichTextInline): SerializedLexicalNode[] {
+  let format = 0;
+  if (inline.marks?.bold) format |= TEXT_FORMAT.bold;
+  if (inline.marks?.italic) format |= TEXT_FORMAT.italic;
+  if (inline.marks?.strike) format |= TEXT_FORMAT.strikethrough;
+  if (inline.marks?.underline) format |= TEXT_FORMAT.underline;
+  const style = inlineStyleToString(inline.marks);
+  const parts = String(inline.text ?? '').split('\n');
+  const children: SerializedLexicalNode[] = [];
+
+  parts.forEach((part, index) => {
+    children.push({
+      type: 'text',
+      version: 1,
+      text: part,
+      detail: 0,
+      format,
+      mode: 'normal',
+      style,
+    });
+    if (index < parts.length - 1) {
+      children.push({
+        type: 'linebreak',
+        version: 1,
+      });
+    }
+  });
+
+  return children;
+}
+
 export function lexicalStateFromPlainText(text: string): SerializedLexicalEditorState {
   const richText = richTextFromPlain(text);
   return lexicalStateFromRichText(richText);
@@ -137,22 +237,7 @@ export function lexicalStateFromRichText(richText: RichTextDocument): Serialized
         indent: 0,
         textFormat: 0,
         textStyle: '',
-        children: block.inlines.map((inline) => {
-          let format = 0;
-          if (inline.marks?.bold) format |= TEXT_FORMAT.bold;
-          if (inline.marks?.italic) format |= TEXT_FORMAT.italic;
-          if (inline.marks?.strike) format |= TEXT_FORMAT.strikethrough;
-          if (inline.marks?.underline) format |= TEXT_FORMAT.underline;
-          return {
-            type: 'text',
-            version: 1,
-            text: inline.text,
-            detail: 0,
-            format,
-            mode: 'normal',
-            style: inlineStyleToString(inline.marks),
-          };
-        }),
+        children: block.inlines.flatMap((inline) => inlineToLexicalChildren(inline)),
       })),
     },
   };
@@ -167,15 +252,37 @@ export function plainTextFromLexicalState(state: SerializedLexicalEditorState | 
   return richTextToPlain(richTextFromLexicalState(state));
 }
 
-export function scaleLexicalStateFontSizes(
+export function convertLexicalStateFontSizesToRelativeEm(
   state: SerializedLexicalEditorState | null | undefined,
-  factor: number
+  baseFontSizePx: number
 ): SerializedLexicalEditorState {
   const safeState = cloneLexicalState(state);
-  if (!safeState.root?.children || !Number.isFinite(factor) || Math.abs(factor - 1) < 0.0001) return safeState;
+  if (!safeState.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return safeState;
   const visit = (node: SerializedLexicalNode) => {
     if (typeof node.style === 'string' && node.style) {
-      node.style = updateStyleStringFontSize(node.style, (size) => Math.max(1, size * factor));
+      node.style = updateStyleStringFontSize(node.style, (size, unit) => {
+        if (unit === 'em') return { size, unit: 'em' };
+        return { size: Math.max(0.0001, size / baseFontSizePx), unit: 'em' };
+      });
+    }
+    node.children?.forEach(visit);
+  };
+  safeState.root.children.forEach(visit);
+  return safeState;
+}
+
+export function convertLexicalStateRelativeEmToPx(
+  state: SerializedLexicalEditorState | null | undefined,
+  baseFontSizePx: number
+): SerializedLexicalEditorState {
+  const safeState = cloneLexicalState(state);
+  if (!safeState.root?.children || !Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) return safeState;
+  const visit = (node: SerializedLexicalNode) => {
+    if (typeof node.style === 'string' && node.style) {
+      node.style = updateStyleStringFontSize(node.style, (size, unit) => {
+        if (unit === 'em') return { size: Math.max(1, size * baseFontSizePx), unit: 'px' };
+        return { size, unit: 'px' };
+      });
     }
     node.children?.forEach(visit);
   };

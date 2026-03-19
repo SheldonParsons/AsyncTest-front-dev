@@ -11,6 +11,8 @@ function readBooleanStyle(value: string) {
 
 function parseFontSize(value: string) {
   if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized.endsWith('em') || normalized.endsWith('rem') || normalized.endsWith('%')) return undefined;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -22,18 +24,40 @@ function readMarksFromElement(element: HTMLElement, inherited: RichTextMarks): R
   if (tag === 'em' || tag === 'i') next.italic = true;
   if (tag === 'u') next.underline = true;
   if (tag === 's' || tag === 'strike') next.strike = true;
+  if (element.classList.contains('lexical-text-bold')) next.bold = true;
+  if (element.classList.contains('lexical-text-italic')) next.italic = true;
+  if (element.classList.contains('lexical-text-underline')) next.underline = true;
+  if (element.classList.contains('lexical-text-strikethrough')) next.strike = true;
+  if (element.classList.contains('lexical-text-underline-strikethrough')) {
+    next.underline = true;
+    next.strike = true;
+  }
 
   const style = element.style;
   if (style.fontWeight && Number.parseInt(style.fontWeight, 10) >= 600) next.bold = true;
   if (style.fontStyle === 'italic') next.italic = true;
   if (style.textDecorationLine.includes('underline')) next.underline = true;
   if (style.textDecorationLine.includes('line-through')) next.strike = true;
-  if (style.color) next.color = style.color;
-  if (style.fontFamily) next.fontFamily = style.fontFamily;
-  if (style.fontSize) next.fontSize = parseFontSize(style.fontSize);
+  const computedStyle = typeof window !== 'undefined' ? window.getComputedStyle(element) : null;
+  if (computedStyle) {
+    const computedFontWeight = Number.parseInt(computedStyle.fontWeight, 10);
+    if (
+      computedStyle.fontWeight === 'bold' ||
+      computedStyle.fontWeight === 'bolder' ||
+      (Number.isFinite(computedFontWeight) && computedFontWeight >= 600)
+    ) {
+      next.bold = true;
+    }
+    if (computedStyle.fontStyle === 'italic' || computedStyle.fontStyle === 'oblique') next.italic = true;
+    if (computedStyle.textDecorationLine.includes('underline')) next.underline = true;
+    if (computedStyle.textDecorationLine.includes('line-through')) next.strike = true;
+  }
   const attrColor = element.getAttribute('color');
   const attrFace = element.getAttribute('face');
   const attrSize = element.getAttribute('size');
+  if (style.color) next.color = style.color;
+  if (style.fontFamily) next.fontFamily = style.fontFamily;
+  if (style.fontSize) next.fontSize = parseFontSize(style.fontSize);
   if (attrColor) next.color = attrColor;
   if (attrFace) next.fontFamily = attrFace;
   if (attrSize) {
@@ -79,7 +103,7 @@ function collectInlineNodes(node: Node, inherited: RichTextMarks, target: RichTe
   Array.from(node.childNodes).forEach((child) => collectInlineNodes(child, marks, target));
 }
 
-function parseBlock(element: HTMLElement): RichTextBlock {
+function parseBlocks(element: HTMLElement): RichTextBlock[] {
   const align = (element.dataset.align || element.style.textAlign || 'left') as RichTextAlign;
   const inlines: RichTextInline[] = [];
   Array.from(element.childNodes).forEach((child) => collectInlineNodes(child, {}, inlines));
@@ -93,10 +117,9 @@ function parseBlock(element: HTMLElement): RichTextBlock {
       if (index < parts.length - 1) splitLines.push([]);
     });
   }
-  const merged = splitLines
+  return splitLines
     .map((line) => normalizeRichText({ blocks: [{ align, inlines: line.length ? line : [{ text: '' }] }] }).blocks[0])
     .filter(Boolean);
-  return merged[0] ?? { align, inlines: [{ text: '' }] };
 }
 
 export function parseEditableDom(root: HTMLElement): RichTextDocument {
@@ -110,14 +133,14 @@ export function parseEditableDom(root: HTMLElement): RichTextDocument {
     const wrapper = document.createElement('div');
     wrapper.dataset.block = '1';
     inlineBuffer.forEach((node) => wrapper.appendChild(node.cloneNode(true)));
-    blocks.push(parseBlock(wrapper));
+    blocks.push(...parseBlocks(wrapper));
     inlineBuffer = [];
   };
 
   children.forEach((child) => {
     if (child instanceof HTMLElement && (child.dataset.block === '1' || child.tagName === 'DIV' || child.tagName === 'P')) {
       flushInlineBuffer();
-      blocks.push(parseBlock(child));
+      blocks.push(...parseBlocks(child));
       return;
     }
     inlineBuffer.push(child);

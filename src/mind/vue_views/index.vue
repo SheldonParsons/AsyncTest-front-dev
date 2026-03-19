@@ -3,6 +3,9 @@
         <MindHeader>
             <div class="mind-header-meta">
                 <div class="mind-header-title">
+                    <button class="mind-header-home-button" type="button" aria-label="显示主窗口" @click="showMainWindow">
+                        <img class="mind-header-home-icon" :src="homeIcon" alt="" />
+                    </button>
                     <span class="mind-header-name">{{ saveState.displayName }}</span>
                     <span v-if="saveState.isDirty" class="mind-header-dirty-dot"></span>
                     <SaveActionsMenu :can-save="!!docId && !saveState.isSaving"
@@ -36,6 +39,7 @@ import MindMain from '@/mind/vue_views/main/index.vue'
 import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
+import homeIcon from '@/mind/core/action_icon/home.svg'
 import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants'
 import { onMounted, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
@@ -93,6 +97,11 @@ function updateNodeCountState(value: { totalNodes: number; selectedNodes: number
 
 function toggleFormatPanel() {
     showFormatPanel.value = !showFormatPanel.value;
+}
+
+async function showMainWindow() {
+    await window.electronAPI?.wm?.open({ key: 'main' });
+    await window.electronAPI?.wm?.focus('main');
 }
 
 function onSaveClick() {
@@ -164,6 +173,7 @@ async function onOpenLocalClick() {
 
 .mind-container :deep(.save-actions-menu),
 .mind-container :deep(.save-actions-trigger),
+.mind-container :deep(.mind-header-home-button),
 .mind-container :deep(.mind-header-format-entry),
 .mind-container :deep(.mind-header-format-button) {
     -webkit-app-region: no-drag;
@@ -218,6 +228,31 @@ async function onOpenLocalClick() {
         overflow: hidden;
         text-overflow: ellipsis;
         letter-spacing: 0.01em;
+    }
+
+    .mind-header-home-button {
+        flex: 0 0 auto;
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        transition: background-color 0.16s ease;
+    }
+
+    .mind-header-home-button:hover {
+        background: rgba(148, 163, 184, 0.18);
+    }
+
+    .mind-header-home-icon {
+        width: 18px;
+        height: 18px;
+        display: block;
     }
 
     .mind-header-dirty-dot {

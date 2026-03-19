@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -120,7 +120,7 @@ async function createMainWindow() {
     minWidth: 1300,
     minHeight: 820,
     trafficLightPosition: { x: 12, y: 12 },
-    openDevTools: false,
+    openDevTools: true,
     title: 'AsyncTest',
     frameless: true,
     nativeHeaderless: true,
@@ -162,6 +162,7 @@ ipcMain.handle('wm:open', async (event, options) => {
   const opts = options || {};
   const { key } = opts;
   if (!key) throw new Error('wm:open 缺少 key（窗口唯一标识）');
+  const existedBefore = windowManager.has(key);
 
   const config = {
     ...opts,
@@ -173,6 +174,9 @@ ipcMain.handle('wm:open', async (event, options) => {
   };
 
   const win = await windowManager.createOrFocus(key, config);
+  if (!existedBefore) {
+    windowManager.hide('main');
+  }
   return { key, id: win.id };
 });
 
@@ -227,6 +231,32 @@ ipcMain.handle('wm:broadcast', async (event, { channel, payload }) => {
   if (!channel) return false;
   windowManager.broadcast(channel, payload);
   return true;
+});
+
+ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!browserWindow) return null;
+  const items = Array.isArray(options.items) ? options.items : [];
+  if (!items.length) return null;
+
+  return await new Promise((resolve) => {
+    let chosenId = null;
+    const menu = Menu.buildFromTemplate(
+      items.map((item) => ({
+        label: item.label,
+        enabled: item.enabled !== false,
+        click: () => {
+          chosenId = item.id ?? null;
+        },
+      }))
+    );
+    menu.popup({
+      window: browserWindow,
+      x: Number.isFinite(options.x) ? Math.round(options.x) : undefined,
+      y: Number.isFinite(options.y) ? Math.round(options.y) : undefined,
+      callback: () => resolve(chosenId),
+    });
+  });
 });
 
 // ===== App 生命周期 =====

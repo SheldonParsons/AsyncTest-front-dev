@@ -80,10 +80,19 @@ export function normalizeRichText(doc: RichTextDocument | null | undefined): Ric
   };
 }
 
-export function getInlineFont(marks: RichTextMarks | undefined, defaultFontFamily: string, defaultFontSize: number) {
+export function getInlineFont(
+  marks: RichTextMarks | undefined,
+  defaultFontFamily: string,
+  defaultFontSize: number,
+  defaultFontWeight = 400,
+  defaultFontStyle: 'normal' | 'italic' = 'normal'
+) {
   const fontSize = marks?.fontSize ?? defaultFontSize;
   const fontFamily = marks?.fontFamily ?? defaultFontFamily;
-  const fontStyle = marks?.italic ? 'italic ' : '';
-  const fontWeight = marks?.bold ? '700 ' : '';
+  const resolvedFontStyle =
+    marks?.italic === true ? 'italic' : marks?.italic === false ? 'normal' : defaultFontStyle;
+  const resolvedFontWeight = marks?.bold === true ? 700 : marks?.bold === false ? 400 : defaultFontWeight;
+  const fontStyle = resolvedFontStyle === 'italic' ? 'italic ' : '';
+  const fontWeight = resolvedFontWeight >= 700 ? '700 ' : '';
   return `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
 }

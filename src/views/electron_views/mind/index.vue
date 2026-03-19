@@ -1,30 +1,402 @@
 <template>
-    <div class="create-mind-div" @click="openMindNewInstance">创建 AsyncTest Mind</div>
+    <div class="mind-dashboard-page">
+        <section class="mind-hero">
+            <div class="mind-hero-main">
+                <div class="mind-hero-logo-shell" aria-hidden="true">
+                    <img class="mind-hero-logo" :src="mindLogo" alt="" />
+                </div>
+                <div class="mind-hero-copy">
+                    <p class="mind-hero-eyebrow">AsyncTest Mind</p>
+                    <h1 class="mind-hero-title">最近打开</h1>
+                    <p class="mind-hero-description">
+                        在这里继续你最近编辑过的思维导图，或者快速新建一张新的图。
+                    </p>
+                </div>
+            </div>
+
+            <div class="mind-hero-actions">
+                <button class="mind-hero-button mind-hero-button--primary" type="button" @click="openMindNewInstance">
+                    新建思维导图
+                </button>
+                <button class="mind-hero-button" type="button" @click="openLocalMindFile">
+                    打开本地文件
+                </button>
+            </div>
+        </section>
+
+        <section v-if="recentMindEntries.length" class="mind-recents-grid">
+            <article
+                v-for="entry in recentMindEntries"
+                :key="entry.filePath"
+                class="mind-recent-card"
+                @click="openRecentMind(entry.filePath)"
+            >
+                <div class="mind-recent-preview">
+                    <img
+                        v-if="entry.previewUrl"
+                        class="mind-recent-preview-image"
+                        :src="entry.previewUrl"
+                        :alt="entry.title || getRecentLabel(entry.filePath)"
+                        @error="handlePreviewError(entry.filePath)"
+                    />
+                    <div v-else class="mind-recent-preview-placeholder">
+                        <div class="mind-recent-placeholder-header">
+                            <img class="mind-recent-placeholder-logo" :src="mindLogo" alt="" />
+                            <span class="mind-recent-placeholder-label">Mind</span>
+                        </div>
+                        <span class="mind-recent-placeholder-name">{{ getRecentLabel(entry.filePath) }}</span>
+                    </div>
+                </div>
+
+                <div class="mind-recent-meta">
+                    <h3 class="mind-recent-name">{{ entry.title || getRecentLabel(entry.filePath) }}</h3>
+                    <p class="mind-recent-time">{{ formatUpdatedAt(entry.updatedAt) }}</p>
+                </div>
+            </article>
+        </section>
+
+        <section v-else class="mind-recents-empty">
+            <p class="mind-recents-empty-title">还没有最近打开的思维导图</p>
+            <p class="mind-recents-empty-description">保存一次文件后，这里会显示自动生成的预览图片。</p>
+        </section>
+    </div>
 </template>
 
 <script lang="ts" setup>
+import mindLogo from '@/mind/core/action_icon/mind.svg';
 import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants';
-import { onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+
+type RecentMindEntry = {
+    filePath: string;
+    title?: string | null;
+    updatedAt?: string | null;
+    previewUrl?: string | null;
+};
+
+const recentMindEntries = ref<RecentMindEntry[]>([]);
+let removeRecentUpdateListener: (() => void) | null = null;
 
 onMounted(() => {
-    openMindNewInstance()
-})
+    void loadRecentMindEntries();
+    removeRecentUpdateListener = window.electronAPI.on('amind:recents-updated', () => {
+        void loadRecentMindEntries();
+    });
+    window.addEventListener('focus', handleWindowFocus);
+});
+
+onBeforeUnmount(() => {
+    removeRecentUpdateListener?.();
+    removeRecentUpdateListener = null;
+    window.removeEventListener('focus', handleWindowFocus);
+});
+
+function handleWindowFocus() {
+    void loadRecentMindEntries();
+}
+
+async function loadRecentMindEntries() {
+    try {
+        const entries = await window.electronAPI.amind.recentEntries();
+        recentMindEntries.value = Array.isArray(entries) ? entries : [];
+    } catch {
+        recentMindEntries.value = [];
+    }
+}
 
 async function openMindNewInstance() {
-    // 主进程负责：new doc + open mind window（统一窗口配置）
-    await window.electronAPI.amind.newAndOpenWindow({ seedNodeCount: DEBUG_NEW_MIND_SEED_NODE_COUNT });
+    try {
+        await window.electronAPI.amind.newAndOpenWindow({ seedNodeCount: DEBUG_NEW_MIND_SEED_NODE_COUNT });
+    } catch {
+        window.$toast({ title: '新建思维导图失败', type: 'error' });
+    }
+}
+
+async function openLocalMindFile() {
+    try {
+        await window.electronAPI.amind.openDialog();
+        await loadRecentMindEntries();
+    } catch {
+        window.$toast({ title: '打开本地文件失败', type: 'error' });
+    }
+}
+
+async function openRecentMind(filePath: string) {
+    try {
+        await window.electronAPI.amind.openFileInWindow({ filePath });
+    } catch {
+        window.$toast({ title: '找不到该最近文件', type: 'error' });
+        await window.electronAPI.amind.removeRecent({ filePath });
+        await loadRecentMindEntries();
+    }
+}
+
+function handlePreviewError(filePath: string) {
+    const target = recentMindEntries.value.find((entry) => entry.filePath === filePath);
+    if (target) target.previewUrl = null;
+}
+
+function getRecentLabel(filePath: string) {
+    const parts = String(filePath ?? '').split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || filePath;
+}
+
+function formatUpdatedAt(value?: string | null) {
+    if (!value) return '尚无保存时间';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '尚无保存时间';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 </script>
 
 <style lang="scss" scoped>
-.create-mind-div {
-    width: 100px;
-    height: 100px;
-    margin: 20px;
-    background-color: #f0f0f0;
+.mind-dashboard-page {
+    min-height: 100vh;
+    padding: 24px;
+    background: #ffffff;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    gap: 18px;
+    overflow: auto;
+}
+
+.mind-hero {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 24px;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 30%),
+        linear-gradient(180deg, #ffffff, #f8fafc);
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+}
+
+.mind-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.mind-hero-logo-shell {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 253, 244, 0.96)),
+        rgba(16, 185, 129, 0.04);
+    border: 1px solid rgba(16, 185, 129, 0.18);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.mind-hero-logo {
+    width: 34px;
+    height: 34px;
+    display: block;
+}
+
+.mind-hero-copy {
+    max-width: 720px;
+}
+
+.mind-hero-eyebrow {
+    margin: 0 0 6px 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #34d399;
+}
+
+.mind-hero-title {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.1;
+    font-weight: 800;
+    color: #111827;
+}
+
+.mind-hero-description {
+    margin: 10px 0 0 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #6b7280;
+}
+
+.mind-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.mind-hero-button {
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 11px 16px;
+    background: #ffffff;
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.mind-hero-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.mind-hero-button--primary {
+    background: linear-gradient(135deg, #ffffff, #f9fafb);
+    color: #ffffff;
+    border-color: rgba(16, 185, 129, 0.28);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+    color: #065f46;
+}
+
+.mind-recents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.mind-recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff, #fbfbfc);
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.mind-recent-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(16, 185, 129, 0.34);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+}
+
+.mind-recent-preview {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ffffff, #f3f4f6);
+    border: 1px solid #e5e7eb;
+}
+
+.mind-recent-preview-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.mind-recent-preview-placeholder {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 10px;
+    background:
+        radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 42%),
+        linear-gradient(160deg, #ffffff, #f3f4f6);
+}
+
+.mind-recent-placeholder-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mind-recent-placeholder-logo {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.mind-recent-placeholder-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #34d399;
+}
+
+.mind-recent-placeholder-name {
+    display: block;
+    width: 100%;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #111827;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    -webkit-box-orient: vertical;
+    word-break: break-all;
+    overflow-wrap: break-word;
+}
+
+.mind-recent-meta {
+    min-width: 0;
+}
+
+.mind-recent-name {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #111827;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mind-recent-time {
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.mind-recents-empty {
+    padding: 28px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #ffffff, #fbfbfc);
+    border: 1px solid #e5e7eb;
+    text-align: center;
+    color: #6b7280;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.mind-recents-empty-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.mind-recents-empty-description {
+    margin: 8px 0 0 0;
+    font-size: 13px;
 }
 </style>

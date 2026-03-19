@@ -49,8 +49,8 @@ export type MindNodeLike = {
 
 export function getNodeRichText(node: MindNodeLike | null | undefined): RichTextDocument {
   if (!node) return richTextFromPlain('');
-  if (node.textLexical) return richTextFromLexicalState(node.textLexical);
   if (node.richText) return normalizeRichText(cloneRichText(node.richText));
+  if (node.textLexical) return richTextFromLexicalState(node.textLexical);
   if (typeof node.text === 'string') return richTextFromPlain(node.text);
   if (node.text && typeof node.text === 'object' && typeof node.text.plain === 'string') {
     return richTextFromPlain(node.text.plain);
@@ -61,7 +61,6 @@ export function getNodeRichText(node: MindNodeLike | null | undefined): RichText
 }
 
 export function getNodePlainText(node: MindNodeLike | null | undefined) {
-  if (node?.textLexical) return plainTextFromLexicalState(node.textLexical);
   return richTextToPlain(getNodeRichText(node));
 }
 
@@ -77,14 +76,19 @@ export function setNodeRichText(node: MindNodeLike | null | undefined, richText:
 
 export function getNodeLexicalState(node: MindNodeLike | null | undefined): SerializedLexicalEditorState {
   if (!node) return lexicalStateFromPlainText('');
+  if (node.richText) return lexicalStateFromRichText(node.richText);
   if (node.textLexical) return cloneLexicalState(node.textLexical);
   return lexicalStateFromRichText(getNodeRichText(node));
 }
 
-export function setNodeLexicalState(node: MindNodeLike | null | undefined, lexicalState: SerializedLexicalEditorState) {
+export function setNodeLexicalState(
+  node: MindNodeLike | null | undefined,
+  lexicalState: SerializedLexicalEditorState,
+  richTextOverride?: RichTextDocument
+) {
   if (!node) return;
   node.textLexical = cloneLexicalState(lexicalState);
-  const richText = richTextFromLexicalState(lexicalState);
+  const richText = richTextOverride ? normalizeRichText(cloneRichText(richTextOverride)) : richTextFromLexicalState(lexicalState);
   node.richText = richText;
   node.text = { plain: richTextToPlain(richText) };
   if ('textPlain' in node) delete node.textPlain;

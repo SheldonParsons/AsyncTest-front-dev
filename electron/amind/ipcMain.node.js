@@ -25,6 +25,11 @@ export function initAmindMain({ userDataPath, windowManager }) {
     try { app.addRecentDocument(filePath); } catch { }
   }
 
+  function notifyRecentEntriesChanged() {
+    if (!windowManager) return;
+    windowManager.sendTo('main', 'amind:recents-updated', {});
+  }
+
   function normalizeFileKey(filePath) {
     const abs = path.resolve(filePath);
     let real = abs;
@@ -60,6 +65,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     if (!windowManager) throw new Error('initAmindMain requires windowManager');
 
     const windowKey = `mind:${docId}`;
+    const existedBefore = windowManager.has(windowKey);
 
     const win = await windowManager.createOrFocus(windowKey, {
       key: windowKey,
@@ -101,6 +107,9 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
     win.show();
     win.focus();
+    if (!existedBefore) {
+      windowManager.hide('main');
+    }
     return { windowKey };
   }
 
@@ -125,8 +134,12 @@ export function initAmindMain({ userDataPath, windowManager }) {
       return { reused: true, docId: existingDocId2, filePath: entry.filePath };
     }
 
-    await recentStore.add(realAbs);
+    await recentStore.add(realAbs, {
+      title: doc?.manifest?.title ?? undefined,
+      updatedAt: doc?.manifest?.updatedAt ?? undefined,
+    });
     addRecentForMac(realAbs);
+    notifyRecentEntriesChanged();
 
     const docId = newDocId();
     docStore.create(docId, { doc, filePath: realAbs, windowKey: null });
@@ -180,9 +193,13 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   ipcMain.handle('amind:recents', async () => recentStore.load());
 
+  ipcMain.handle('amind:recentEntries', async () => recentStore.loadRendererEntries());
+
   ipcMain.handle('amind:removeRecent', async (event, { filePath }) => {
     if (!filePath) return recentStore.load();
-    return await recentStore.remove(filePath);
+    const next = await recentStore.remove(filePath);
+    notifyRecentEntriesChanged();
+    return next;
   });
 
   ipcMain.handle('amind:openDialog', async () => {
@@ -212,8 +229,12 @@ export function initAmindMain({ userDataPath, windowManager }) {
     docStore.setDoc(docId, saved);
     refreshWindowTitle(docId);
 
-    await recentStore.add(abs);
+    await recentStore.add(abs, {
+      title: saved?.manifest?.title ?? undefined,
+      updatedAt: saved?.manifest?.updatedAt ?? undefined,
+    });
     addRecentForMac(abs);
+    notifyRecentEntriesChanged();
 
     return {
       needSaveAs: false,
@@ -273,8 +294,12 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const newFk = normalizeFileKey(abs);
     fileIndex.set(newFk, docId);
 
-    await recentStore.add(abs);
+    await recentStore.add(abs, {
+      title: saved?.manifest?.title ?? undefined,
+      updatedAt: saved?.manifest?.updatedAt ?? undefined,
+    });
     addRecentForMac(abs);
+    notifyRecentEntriesChanged();
 
     return {
       docId,
@@ -282,6 +307,22 @@ export function initAmindMain({ userDataPath, windowManager }) {
       savedAt: saved?.manifest?.updatedAt ?? null,
       title: saved?.manifest?.title ?? null,
     };
+  });
+
+  ipcMain.handle('amind:saveRecentPreview', async (event, { filePath, bytes, title, updatedAt }) => {
+    if (!filePath) throw new Error('saveRecentPreview requires filePath');
+    const previewBytes =
+      bytes instanceof Uint8Array
+        ? bytes
+        : Array.isArray(bytes)
+          ? Uint8Array.from(bytes)
+          : new Uint8Array(bytes ?? []);
+    const entry = await recentStore.savePreview(filePath, previewBytes, {
+      title: typeof title === 'string' && title ? title : undefined,
+      updatedAt: typeof updatedAt === 'string' && updatedAt ? updatedAt : undefined,
+    });
+    notifyRecentEntriesChanged();
+    return entry;
   });
 
   // assets（保持不变）

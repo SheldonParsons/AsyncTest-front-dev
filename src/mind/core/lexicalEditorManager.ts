@@ -8,6 +8,7 @@ import {
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
   createEditor,
+  INSERT_LINE_BREAK_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
@@ -20,6 +21,7 @@ import {
   richTextFromLexicalState,
   type SerializedLexicalEditorState,
 } from './lexicalState';
+import { parseEditableDom } from './richTextDom';
 
 type StartSessionOptions = {
   nodeId: string;
@@ -231,8 +233,11 @@ function createSingletonEditor() {
       KEY_ENTER_COMMAND,
       (event) => {
         if (event?.isComposing) return false;
-        if (event?.altKey) return false;
         event?.preventDefault();
+        if (event?.altKey) {
+          editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
+          return true;
+        }
         sessionCallbacks.onCommit?.();
         return true;
       },
@@ -306,6 +311,16 @@ export const lexicalEditorManager = {
   },
   stopSession() {
     clearPendingCaretRetry();
+    if (rootElement && typeof rootElement.blur === 'function') {
+      rootElement.blur();
+    }
+    if (
+      typeof document !== 'undefined' &&
+      document.activeElement instanceof HTMLElement &&
+      rootElement?.contains(document.activeElement)
+    ) {
+      document.activeElement.blur();
+    }
     activeNodeId.value = null;
     pendingSession = null;
     sessionCallbacks.onChange = undefined;
@@ -327,6 +342,7 @@ export const lexicalEditorManager = {
     pendingSession = null;
   },
   getRichTextSnapshot() {
+    if (rootElement) return parseEditableDom(rootElement);
     return latestState.value ? richTextFromLexicalState(latestState.value) : null;
   },
 };

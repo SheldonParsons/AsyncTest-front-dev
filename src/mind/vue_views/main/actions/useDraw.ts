@@ -46,6 +46,7 @@ import type { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import type { ScreenRect } from './useMarquee';
 import {
   getNodeTextStyle,
+  measureTextVerticalMetrics,
   NODE_DEFAULT_FONT_FAMILY,
   NODE_DEFAULT_FONT_SIZE,
   NODE_FONT,
@@ -93,6 +94,52 @@ const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
 const COLLAPSE_TAG_STROKE = '#111111';
 const COLLAPSE_TAG_TEXT = '#FFFFFF';
 const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
+const TEXT_DECORATION_OFFSET_MAP = [
+  { fontSize: 12, underlineFromBaseline: 10, strikeFromContentTop: 2.5 },
+  { fontSize: 14, underlineFromBaseline: 11.7, strikeFromContentTop: 3.6 },
+  { fontSize: 16, underlineFromBaseline: 13.3, strikeFromContentTop: 5.0 },
+  { fontSize: 18, underlineFromBaseline: 15, strikeFromContentTop: 5.6 },
+  { fontSize: 20, underlineFromBaseline: 16.7, strikeFromContentTop: 6.3 },
+  { fontSize: 24, underlineFromBaseline: 20, strikeFromContentTop: 7.6 },
+  { fontSize: 28, underlineFromBaseline: 23.3, strikeFromContentTop: 8.8 },
+  { fontSize: 32, underlineFromBaseline: 26.7, strikeFromContentTop: 10.1 },
+  { fontSize: 36, underlineFromBaseline: 30, strikeFromContentTop: 11.3 },
+  { fontSize: 48, underlineFromBaseline: 40, strikeFromContentTop: 15 },
+] as const;
+
+function resolveMappedDecorationOffsets(fontSize: number) {
+  const safeFontSize = Math.max(1, fontSize);
+  const points = TEXT_DECORATION_OFFSET_MAP;
+  if (safeFontSize <= points[0].fontSize) {
+    return {
+      underlineFromBaseline: points[0].underlineFromBaseline,
+      strikeFromContentTop: points[0].strikeFromContentTop,
+    };
+  }
+  const last = points[points.length - 1];
+  if (safeFontSize >= last.fontSize) {
+    return {
+      underlineFromBaseline: last.underlineFromBaseline,
+      strikeFromContentTop: last.strikeFromContentTop,
+    };
+  }
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    if (safeFontSize < current.fontSize || safeFontSize > next.fontSize) continue;
+    const ratio = (safeFontSize - current.fontSize) / (next.fontSize - current.fontSize);
+    return {
+      underlineFromBaseline:
+        current.underlineFromBaseline + (next.underlineFromBaseline - current.underlineFromBaseline) * ratio,
+      strikeFromContentTop:
+        current.strikeFromContentTop + (next.strikeFromContentTop - current.strikeFromContentTop) * ratio,
+    };
+  }
+  return {
+    underlineFromBaseline: last.underlineFromBaseline,
+    strikeFromContentTop: last.strikeFromContentTop,
+  };
+}
 
 type RoughRuntime = {
   canvas: HTMLCanvasElement | null;
@@ -1553,16 +1600,34 @@ export function useDraw(
                 : bodyRect.x1 + NODE_TEXT_INSET_X;
           let cursorX = baseX;
           for (const segment of line.segments) {
-            ctx.font = segment.font || getInlineFont(segment.marks, NODE_DEFAULT_FONT_FAMILY, NODE_DEFAULT_FONT_SIZE);
+            ctx.font =
+              segment.font ||
+              getInlineFont(
+                segment.marks,
+                NODE_DEFAULT_FONT_FAMILY,
+                NODE_DEFAULT_FONT_SIZE,
+                textStyle.fontWeight,
+                textStyle.fontStyle
+              );
             ctx.fillStyle = segment.color ?? textStyle.color;
             ctx.fillText(segment.text, cursorX, snappedLineY);
             if (segment.marks?.underline || segment.marks?.strike) {
-              const width = ctx.measureText(segment.text).width;
+              const metrics = ctx.measureText(segment.text);
+              const width = metrics.width;
+              const verticalMetrics = measureTextVerticalMetrics(ctx, {
+                font: ctx.font,
+                fontSizePx: segment.fontSize,
+                lineHeightPx: Math.max(line.height, Math.ceil(segment.fontSize * 1.3)),
+              });
+              const baselineY = snappedLineY + verticalMetrics.baselineOffsetPx;
+              const decorationOffsets = resolveMappedDecorationOffsets(segment.fontSize);
               ctx.strokeStyle = segment.color ?? textStyle.color;
-              ctx.lineWidth = 1;
               if (segment.marks.underline) {
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.lineWidth = Math.max(1.05, segment.fontSize * 0.07);
                 const underlineY = snapWorldToDevicePixel(
-                  snappedLineY + segment.fontSize + 2,
+                  baselineY + decorationOffsets.underlineFromBaseline,
                   cam.scale,
                   cam.ty,
                   dpr
@@ -1573,8 +1638,11 @@ export function useDraw(
                 ctx.stroke();
               }
               if (segment.marks.strike) {
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'miter';
+                ctx.lineWidth = Math.max(1.05, segment.fontSize * 0.07) + 1;
                 const strikeY = snapWorldToDevicePixel(
-                  snappedLineY + segment.fontSize * 0.58,
+                  snappedLineY + verticalMetrics.topLeadingPx + decorationOffsets.strikeFromContentTop,
                   cam.scale,
                   cam.ty,
                   dpr

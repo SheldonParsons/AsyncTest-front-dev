@@ -51,6 +51,7 @@
           <p class="card-description">敬请期待</p>
         </div>
       </div>
+
     </div>
 
     <!-- 登录弹窗 -->
@@ -67,7 +68,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref,onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
@@ -76,10 +77,6 @@ import LoginComponent from './login.vue'
 
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
-
-onMounted(() => {
-  // handleEnterMind()
-})
 
 // 检查登录状态
 const checkLoginStatus = () => {

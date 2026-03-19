@@ -8,16 +8,6 @@
       @mousedown.stop
       @click.stop
     >
-      <div
-        v-if="DEBUG_TEXT_ALIGNMENT"
-        class="alignment-guide alignment-guide-expected"
-        :style="{ top: `${expectedGuideTopPx}px` }"
-      />
-      <div
-        v-if="DEBUG_TEXT_ALIGNMENT && measuredGlyphTopPx != null"
-        class="alignment-guide alignment-guide-actual"
-        :style="{ top: `${measuredGlyphTopPx}px` }"
-      />
       <div ref="editorInnerRef" class="lexical-editor-inner" :style="editorInnerStyle">
         <div ref="editorRootRef" class="lexical-editor-root" />
       </div>
@@ -52,7 +42,6 @@ const emit = defineEmits<{
 
 const editorRootRef = ref<HTMLDivElement | null>(null);
 const editorInnerRef = ref<HTMLDivElement | null>(null);
-const DEBUG_TEXT_ALIGNMENT = false;
 
 const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   return {

@@ -1,9 +1,10 @@
 <template>
   <div class="main-layout">
-    <div class="main-container" ref="viewportRef">
+    <div class="main-container" ref="viewportRef" tabindex="0">
       <canvas ref="canvasRef" class="mind-canvas" :width="canvasPixelW" :height="canvasPixelH" :style="canvasStyle"
         @dblclick="onCanvasDoubleClick" @pointerdown="onCanvasPointerDown" @pointermove="onCanvasPointerMove"
         @pointerleave="onCanvasPointerLeave" @pointerup="onCanvasPointerUp" @pointercancel="onCanvasPointerCancel"
+        @contextmenu="onCanvasContextMenu"
         @lostpointercapture="onCanvasLostPointerCapture" />
       <LexicalNodeEditorOverlay v-if="editingSession" :visible="!!editingSession"
         :overlay-root-style="editingOverlayRootStyle" :text-box-rect="editingScreenTextBoxRect"
@@ -51,6 +52,8 @@
           <div
             v-if="formatPanelTab === 'style'"
             class="style-panel"
+            @pointerdown.prevent
+            @mousedown.prevent
           >
             <section class="style-section">
               <div class="style-section-header">
@@ -182,38 +185,44 @@
                 <div class="style-control-labels">
                   <span class="style-control-title">字体</span>
                 </div>
-                <div class="style-font-grid">
-                  <button
-                    v-for="option in styleFontOptions"
-                    :key="option.key"
-                    class="style-font-card"
-                    :class="{ 'is-selected': selectedFontKey === option.key }"
-                    type="button"
-                    @click="onFontFamilySelect(option.key)"
-                  >
-                    <span class="style-font-sample" :style="{ fontFamily: option.fontFamily }">Aa</span>
-                    <span class="style-font-copy">
-                      <span class="style-font-title">{{ option.label }}</span>
-                      <span class="style-font-stack">{{ option.sample }}</span>
-                    </span>
-                  </button>
+                <div class="style-control-mask-shell">
+                  <div class="style-font-grid" :class="{ 'is-editing-locked': !!editingSession }">
+                    <button
+                      v-for="option in styleFontOptions"
+                      :key="option.key"
+                      class="style-font-card"
+                      :class="{ 'is-selected': selectedFontKey === option.key }"
+                      type="button"
+                      @click="onFontFamilySelect(option.key)"
+                    >
+                      <span class="style-font-sample" :style="{ fontFamily: option.fontFamily }">Aa</span>
+                      <span class="style-font-copy">
+                        <span class="style-font-title">{{ option.label }}</span>
+                        <span class="style-font-stack">{{ option.sample }}</span>
+                      </span>
+                    </button>
+                  </div>
+                  <div v-if="editingSession" class="style-control-mask" aria-hidden="true" />
                 </div>
               </div>
 
               <div class="style-control-block">
                 <div class="style-inline-field">
                   <span class="style-inline-field-label">字号</span>
-                  <div class="style-size-grid">
-                    <button
-                      v-for="size in styleFontSizes"
-                      :key="size"
-                      class="style-size-chip"
-                      :class="{ 'is-selected': selectedFontSize === size }"
-                      type="button"
-                      @click="onFontSizeSelect(size)"
-                    >
-                      {{ size }}
-                    </button>
+                  <div class="style-control-mask-shell">
+                    <div class="style-size-grid" :class="{ 'is-editing-locked': !!editingSession }">
+                      <button
+                        v-for="size in styleFontSizes"
+                        :key="size"
+                        class="style-size-chip"
+                        :class="{ 'is-selected': selectedFontSize === size }"
+                        type="button"
+                        @click="onFontSizeSelect(size)"
+                      >
+                        {{ size }}
+                      </button>
+                    </div>
+                    <div v-if="editingSession" class="style-control-mask" aria-hidden="true" />
                   </div>
                 </div>
 
@@ -356,10 +365,8 @@ import {
   ColorSwatchPickerItemIndicator,
   ColorSwatchPickerRoot,
 } from 'reka-ui';
-import rough from 'roughjs';
-import type { Options } from 'roughjs/bin/core';
-import { $patchStyleText } from '@lexical/selection';
-import { $getSelection, $isRangeSelection, FORMAT_ELEMENT_COMMAND } from 'lexical';
+import { $forEachSelectedTextNode, $patchStyleText } from '@lexical/selection';
+import { $getSelection, $isRangeSelection, FORMAT_ELEMENT_COMMAND, FORMAT_TEXT_COMMAND } from 'lexical';
 import { getInternalClipboard, internalClipboardState, setInternalClipboard, type InternalClipboardState } from '@/mind/core/clipboard';
 import { createBatchAddChildCommand, type SelectionSnapshot } from '@/mind/core/commands/BatchAddChildCommand';
 import { createBatchAddSiblingCommand } from '@/mind/core/commands/BatchAddSiblingCommand';
@@ -374,20 +381,23 @@ import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageComm
 import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImageSizeCommand';
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
 import { collectSubtreeNodeIds, createSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
-import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeRichText, type MindNodeImage } from '@/mind/core/nodeContent';
+import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeLexicalState, type MindNodeImage } from '@/mind/core/nodeContent';
 import { layoutOverlayTextLines } from '@/mind/core/dragDrop/overlayTextLayout';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
 import { createHistory, type Command, type HistorySnapshot } from '@/mind/core/history';
 import { lexicalEditorManager } from '@/mind/core/lexicalEditorManager';
 import {
   cloneLexicalState,
+  convertLexicalStateFontSizesToRelativeEm,
+  convertLexicalStateRelativeEmToPx,
   lexicalStateFromPlainText,
   richTextFromLexicalState,
-  scaleLexicalStateFontSizes,
+  updateLexicalStateBlockAlign,
+  updateLexicalStateTextMarks,
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, normalizeSelectionTargets } from '@/mind/core/selection/normalizeSelection';
-import { ensureMindRoots, toPlainDoc } from './actions/useDocUtils';
+import { ensureMindRoots } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
 import { useDraw } from './actions/useDraw';
@@ -444,8 +454,39 @@ import {
 import { getDomTextTopOffset } from '@/mind/core/text/domTextCalibration';
 import { NODE_H_HARD_MAX, NODE_TEXT_MAX_WIDTH_PX, NODE_W_HARD_MAX } from '@/mind/core/text/measureNodeText';
 import LexicalNodeEditorOverlay from './components/LexicalNodeEditorOverlay.vue';
-import type { MindNodeBorderPreset, MindNodeFillPreset } from './nodeStyles';
-import { getMindNodeDefaultVisualStyle } from './nodeStyles';
+import {
+  createEditingLexicalStateForNode,
+  createPersistedRichTextForNode,
+  isRichTextEqual,
+} from './indexChild/nodeRichTextEditing';
+import {
+  mapBorderPresetKeyToNodePreset,
+  mapBorderWidthKeyToStrokeWidth,
+  mapFillPresetKeyToNodePreset,
+  mapNodeBorderPresetToPanelKey,
+  mapNodeFillPresetToPanelKey,
+  resolveFontOptionKey,
+  resolveFontSizeValue,
+  resolveStrokeWidthKey,
+  styleBorderOptions,
+  styleFillColorSwatches,
+  styleFillOptions,
+  styleFontOptions,
+  styleFontSizes,
+  styleOutlineColorSwatches,
+  styleStrokeWidthOptions,
+  styleTextAlignOptions,
+  styleTextToggleOptions,
+  type StyleBorderPresetKey,
+  type StyleBorderWidthKey,
+  type StyleFillPresetKey,
+  type StyleFontKey,
+  type StyleTextAlignKey,
+  type StyleTextToggleKey,
+} from './indexChild/stylePanelConfig';
+import { useSaveFlow } from './indexChild/useSaveFlow';
+import type { MindNodeRole } from './nodeStyles';
+import { createInitialNodeStyleForRole, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
 
 const props = defineProps<{ doc?: any; filePath?: any; docId?: string; windowKey?: any; showFormatPanel?: boolean }>();
@@ -462,168 +503,6 @@ const formatPanelTab = ref<'style' | 'mark'>('style');
 const isMarkerDeleteMode = ref(false);
 const markerPanelGroups = nodeMarkerGroups;
 const hasSelectedNodes = computed(() => selectedIds.value.size > 0);
-const styleColorSwatches = [
-  '#ffffff',
-  '#EEEEEE',
-  '#111111',
-  '#eab308',
-  '#f97316',
-  '#ef4444',
-  '#D02F48',
-  '#8b5cf6',
-  '#3b82f6',
-  '#14b8a6',
-  '#22c55e',
-  '#D0D0D0',
-] as const;
-const styleFillColorSwatches = styleColorSwatches;
-const styleOutlineColorSwatches = styleColorSwatches;
-const styleFillOptions = [
-  {
-    key: 'rough-hachure',
-    label: '手绘斜线',
-    caption: 'Hachure',
-    previewSvg: buildFillPreviewSvg({
-      fillStyle: 'hachure',
-      fillColor: '#f4b740',
-      strokeColor: '#0f172a',
-      roughness: 0.92,
-      hachureGap: 2.2,
-      fillWeight: 3.8,
-    }),
-  },
-  {
-    key: 'rough-cross',
-    label: '交叉排线',
-    caption: 'Cross-hatch',
-    previewSvg: buildFillPreviewSvg({
-      fillStyle: 'cross-hatch',
-      fillColor: '#e879f9',
-      strokeColor: '#0f172a',
-      roughness: 1.1,
-      hachureGap: 5,
-      fillWeight: 1.7,
-    }),
-  },
-  {
-    key: 'rough-dots',
-    label: '点状填充',
-    caption: 'Dots',
-    previewSvg: buildFillPreviewSvg({
-      fillStyle: 'dots',
-      fillColor: '#38bdf8',
-      strokeColor: '#0f172a',
-      roughness: 0.95,
-      hachureGap: 7,
-      fillWeight: 1.4,
-    }),
-  },
-  {
-    key: 'solid',
-    label: '纯色填充',
-    caption: 'Solid',
-    previewSvg: buildFillPreviewSvg({
-      fillStyle: 'solid',
-      fillColor: '#111827',
-      strokeColor: '#0f172a',
-      roughness: 0.2,
-      fillWeight: 0.8,
-    }),
-  },
-  {
-    key: 'none',
-    label: '无填充',
-    caption: 'None',
-    previewSvg: buildNoneFillPreviewSvg(),
-  },
-] as const;
-const styleBorderOptions = [
-  {
-    key: 'clean',
-    label: '无风格线条',
-    caption: 'Clean',
-    previewSvg: buildCleanBorderPreviewSvg(),
-  },
-  {
-    key: 'rough-solid',
-    label: '手绘实线',
-    caption: 'Rough solid',
-    previewSvg: buildRoughBorderPreviewSvg({
-      strokeColor: '#111827',
-      strokeWidth: 1.8,
-      roughness: 1.05,
-      bowing: 1,
-    }),
-  },
-  {
-    key: 'rough-dashed',
-    label: '手绘虚线',
-    caption: 'Rough dashed',
-    previewSvg: buildRoughDashedBorderPreviewSvg({
-      strokeColor: '#111827',
-      strokeWidth: 1.8,
-      roughness: 1.1,
-      bowing: 1.1,
-    }),
-  },
-  {
-    key: 'none',
-    label: '无边框',
-    caption: 'None',
-    previewSvg: buildNoBorderPreviewSvg(),
-  },
-] as const;
-const styleStrokeWidthOptions = [
-  { key: 'hairline', label: '极细', previewPx: 1 },
-  { key: 'thin', label: '细', previewPx: 2 },
-  { key: 'medium', label: '中等', previewPx: 3 },
-  { key: 'thick', label: '粗', previewPx: 4 },
-  { key: 'heavy', label: '极粗', previewPx: 6 },
-] as const;
-const styleFontOptions = [
-  {
-    key: 'modern-sans',
-    label: 'Microsoft YaHei',
-    sample: 'YaHei',
-    fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
-  },
-  {
-    key: 'humanist',
-    label: 'Humanist',
-    sample: 'Trebuchet',
-    fontFamily: '"Trebuchet MS", Verdana, sans-serif',
-  },
-  {
-    key: 'classic-serif',
-    label: 'Classic Serif',
-    sample: 'Georgia',
-    fontFamily: 'Georgia, "Times New Roman", serif',
-  },
-  {
-    key: 'mono',
-    label: 'Mono',
-    sample: 'SF Mono',
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-  },
-] as const;
-const styleFontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48] as const;
-const styleTextToggleOptions = [
-  { key: 'bold', label: '粗体', glyph: 'B', previewClass: 'is-bold' },
-  { key: 'italic', label: '斜体', glyph: 'I', previewClass: 'is-italic' },
-  { key: 'underline', label: '下划线', glyph: 'U', previewClass: 'is-underline' },
-  { key: 'strike', label: '删除线', glyph: 'S', previewClass: 'is-strike' },
-] as const;
-const styleTextAlignOptions = [
-  { key: 'left', label: '左对齐' },
-  { key: 'center', label: '居中对齐' },
-  { key: 'right', label: '右对齐' },
-] as const;
-type StyleFillPresetKey = (typeof styleFillOptions)[number]['key'];
-type StyleBorderPresetKey = (typeof styleBorderOptions)[number]['key'];
-type StyleBorderWidthKey = (typeof styleStrokeWidthOptions)[number]['key'];
-type StyleFontKey = (typeof styleFontOptions)[number]['key'];
-type StyleTextToggleKey = (typeof styleTextToggleOptions)[number]['key'];
-type StyleTextAlignKey = (typeof styleTextAlignOptions)[number]['key'];
 const selectedFillPresetKey = ref<(typeof styleFillOptions)[number]['key']>('rough-hachure');
 const selectedFillColor = ref<string>('#ffffff');
 const selectedBorderPresetKey = ref<(typeof styleBorderOptions)[number]['key']>('rough-solid');
@@ -644,85 +523,27 @@ function setTextToggleLocally(key: StyleTextToggleKey, enabled: boolean) {
   textToggleState.value[key] = enabled;
 }
 
-function normalizeColorToken(value: string | null | undefined) {
-  return (value ?? '').trim().toLowerCase();
+function resetTextToggleState() {
+  textToggleState.value = {
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+  };
+}
+
+function focusViewportWithoutScroll() {
+  const element = viewportRef.value;
+  if (!element) return;
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
 }
 
 function getPanelSourceSelectedNodeId() {
   return selectedIds.value.values().next().value ?? getPrimarySelectedId();
-}
-
-function resolveFillPresetKey(visualStyle: ReturnType<typeof getMindNodeDefaultVisualStyle>) {
-  return mapNodeFillPresetToPanelKey(visualStyle.fillPreset);
-}
-
-function resolveBorderPresetKey(visualStyle: ReturnType<typeof getMindNodeDefaultVisualStyle>) {
-  return mapNodeBorderPresetToPanelKey(visualStyle.borderPreset);
-}
-
-function resolveStrokeWidthKey(strokeWidthPx: number) {
-  return styleStrokeWidthOptions.reduce((closest, option) => {
-    const closestDistance = Math.abs(closest.previewPx - strokeWidthPx);
-    const nextDistance = Math.abs(option.previewPx - strokeWidthPx);
-    return nextDistance < closestDistance ? option : closest;
-  }).key;
-}
-
-function mapFillPresetKeyToNodePreset(key: StyleFillPresetKey): MindNodeFillPreset {
-  if (key === 'rough-cross') return 'rough-cross';
-  if (key === 'rough-dots') return 'rough-dots';
-  if (key === 'solid') return 'solid';
-  if (key === 'none') return 'none';
-  return 'rough-hachure';
-}
-
-function mapNodeFillPresetToPanelKey(preset: MindNodeFillPreset): StyleFillPresetKey {
-  return preset;
-}
-
-function mapBorderPresetKeyToNodePreset(key: StyleBorderPresetKey): MindNodeBorderPreset {
-  if (key === 'clean') return 'clean';
-  if (key === 'rough-dashed') return 'rough-dashed';
-  if (key === 'none') return 'none';
-  return 'rough-solid';
-}
-
-function mapNodeBorderPresetToPanelKey(preset: MindNodeBorderPreset): StyleBorderPresetKey {
-  return preset;
-}
-
-function mapBorderWidthKeyToStrokeWidth(key: StyleBorderWidthKey) {
-  return styleStrokeWidthOptions.find((option) => option.key === key)?.previewPx ?? 3;
-}
-
-function resolveFontOptionKey(fontFamily: string) {
-  const normalizedFontFamily = normalizeColorToken(fontFamily);
-  const matched = styleFontOptions.find((option) => {
-    const candidates = [
-      option.fontFamily,
-      option.label,
-      option.sample,
-      option.key === 'modern-sans' ? 'pingfang sc' : '',
-      option.key === 'modern-sans' ? 'helvetica neue' : '',
-      option.key === 'modern-sans' ? 'microsoft yahei' : '',
-      option.key === 'humanist' ? 'trebuchet ms' : '',
-      option.key === 'humanist' ? 'verdana' : '',
-      option.key === 'classic-serif' ? 'times new roman' : '',
-      option.key === 'classic-serif' ? 'georgia' : '',
-      option.key === 'mono' ? 'sfmono' : '',
-      option.key === 'mono' ? 'consolas' : '',
-    ].map((value) => normalizeColorToken(value));
-    return candidates.some((candidate) => candidate && normalizedFontFamily.includes(candidate));
-  });
-  return matched?.key ?? 'modern-sans';
-}
-
-function resolveFontSizeValue(fontSizePx: number) {
-  return styleFontSizes.reduce((closest, option) => {
-    const closestDistance = Math.abs(closest - fontSizePx);
-    const nextDistance = Math.abs(option - fontSizePx);
-    return nextDistance < closestDistance ? option : closest;
-  });
 }
 
 function syncStylePanelFromSelection() {
@@ -739,9 +560,9 @@ function syncStylePanelFromSelection() {
   const roughTheme = getCurrentRoughTheme();
   const shapeStyle = node.style?.shape ?? null;
 
-  selectedFillPresetKey.value = resolveFillPresetKey(visualStyle);
+  selectedFillPresetKey.value = mapNodeFillPresetToPanelKey(visualStyle.fillPreset);
   selectedFillColor.value = visualStyle.fill;
-  selectedBorderPresetKey.value = resolveBorderPresetKey(visualStyle);
+  selectedBorderPresetKey.value = mapNodeBorderPresetToPanelKey(visualStyle.borderPreset);
   selectedBorderColor.value = visualStyle.stroke;
   selectedBorderWidthKey.value = resolveStrokeWidthKey(shapeStyle?.strokeWidthPx ?? roughTheme.strokeWidthPx);
   selectedFontKey.value = resolveFontOptionKey(textStyle.fontFamily);
@@ -754,132 +575,6 @@ function syncStylePanelFromSelection() {
     underline: !!marks?.underline,
     strike: !!marks?.strike,
   };
-}
-
-function buildPreviewSvgFrame(inner: string) {
-  return [
-    '<svg viewBox="0 0 84 56" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">',
-    '<rect x="0.75" y="0.75" width="82.5" height="54.5" rx="14" fill="#ffffff" stroke="rgba(148, 163, 184, 0.24)" />',
-    inner,
-    '</svg>',
-  ].join('');
-}
-
-function createPreviewRoundedRectPathData(x: number, y: number, width: number, height: number, radius: number) {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  if (r <= 0) {
-    return `M ${x} ${y} L ${x + width} ${y} L ${x + width} ${y + height} L ${x} ${y + height} Z`;
-  }
-  return [
-    `M ${x + r} ${y}`,
-    `L ${x + width - r} ${y}`,
-    `Q ${x + width} ${y} ${x + width} ${y + r}`,
-    `L ${x + width} ${y + height - r}`,
-    `Q ${x + width} ${y + height} ${x + width - r} ${y + height}`,
-    `L ${x + r} ${y + height}`,
-    `Q ${x} ${y + height} ${x} ${y + height - r}`,
-    `L ${x} ${y + r}`,
-    `Q ${x} ${y} ${x + r} ${y}`,
-    'Z',
-  ].join(' ');
-}
-
-function renderRoughPathToSvg(pathData: string, options: Options) {
-  const generator = rough.generator();
-  const drawable = generator.path(pathData, {
-    seed: 19,
-    preserveVertices: false,
-    ...options,
-  });
-
-  return generator.toPaths(drawable).map((path) => [
-    `<path d="${path.d}"`,
-    `fill="${path.fill ?? 'none'}"`,
-    `stroke="${path.stroke ?? 'none'}"`,
-    `stroke-width="${path.strokeWidth ?? 1}"`,
-    options.strokeLineDash?.length ? `stroke-dasharray="${options.strokeLineDash.join(' ')}"` : '',
-    'stroke-linecap="round"',
-    'stroke-linejoin="round"',
-    '/>',
-  ].filter(Boolean).join(' ')).join('');
-}
-
-function buildFillPreviewSvg(options: {
-  fillStyle: NonNullable<Options['fillStyle']>;
-  fillColor: string;
-  strokeColor: string;
-  roughness: number;
-  hachureGap?: number;
-  fillWeight: number;
-}) {
-  const roundedPath = createPreviewRoundedRectPathData(18, 12, 48, 30, 10);
-  return buildPreviewSvgFrame(renderRoughPathToSvg(roundedPath, {
-    fill: options.fillColor,
-    fillStyle: options.fillStyle,
-    fillWeight: options.fillWeight,
-    hachureGap: options.hachureGap,
-    hachureAngle: 58,
-    stroke: options.strokeColor,
-    strokeWidth: 1.35,
-    roughness: options.roughness,
-    bowing: 0.92,
-    disableMultiStrokeFill: options.fillStyle === 'solid',
-  }));
-}
-
-function buildNoneFillPreviewSvg() {
-  return buildPreviewSvgFrame([
-    '<rect x="18" y="12" width="48" height="30" rx="10" fill="rgba(255,255,255,0.01)" stroke="rgba(148, 163, 184, 0.95)" stroke-dasharray="4 4" stroke-width="1.2" />',
-    '<path d="M24 36 L60 18" stroke="rgba(148, 163, 184, 0.9)" stroke-width="2" stroke-linecap="round" />',
-  ].join(''));
-}
-
-function buildCleanBorderPreviewSvg() {
-  return buildPreviewSvgFrame([
-    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#f8fafc" stroke="#111827" stroke-width="1.6" />',
-  ].join(''));
-}
-
-function buildRoughBorderPreviewSvg(options: {
-  strokeColor: string;
-  strokeWidth: number;
-  roughness: number;
-  bowing: number;
-  strokeLineDash?: number[];
-}) {
-  const roundedPath = createPreviewRoundedRectPathData(18, 12, 48, 30, 10);
-  return buildPreviewSvgFrame([
-    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#f8fafc" stroke="none" />',
-    renderRoughPathToSvg(roundedPath, {
-      fill: 'transparent',
-      stroke: options.strokeColor,
-      strokeWidth: options.strokeWidth,
-      roughness: options.roughness,
-      bowing: options.bowing,
-      strokeLineDash: options.strokeLineDash,
-      fillStyle: 'solid',
-      disableMultiStrokeFill: true,
-    }),
-  ].join(''));
-}
-
-function buildRoughDashedBorderPreviewSvg(options: {
-  strokeColor: string;
-  strokeWidth: number;
-  roughness: number;
-  bowing: number;
-}) {
-  return buildRoughBorderPreviewSvg({
-    ...options,
-    strokeLineDash: [6, 5],
-  });
-}
-
-function buildNoBorderPreviewSvg() {
-  return buildPreviewSvgFrame([
-    '<rect x="18" y="12" width="48" height="30" rx="10" fill="#e2e8f0" stroke="none" />',
-    '<path d="M24 36 L60 18" stroke="rgba(100, 116, 139, 0.78)" stroke-width="2" stroke-linecap="round" />',
-  ].join(''));
 }
 
 const viewportW = ref(1200);
@@ -895,13 +590,20 @@ const editingNodeId = ref<string | null>(null);
 const editingSession = ref<null | {
   nodeId: string;
   initialLexicalState: SerializedLexicalEditorState;
+  initialRichText: RichTextDocument;
   mode: 'append' | 'replace';
   caretPlacement: 'start' | 'end' | 'none';
 }>(null);
 const editingDraftLexicalState = ref<SerializedLexicalEditorState>(getNodeLexicalState(null));
+const editingDraftRichText = ref<RichTextDocument>(getNodeRichText(null));
+const editingBaseFontSizePx = computed(() => {
+  const session = editingSession.value;
+  const node = getNodeById(session?.nodeId);
+  if (!session || !node) return 14;
+  return Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId: session.nodeId }).fontSizePx);
+});
 const editingDisplayLexicalState = computed(() => {
-  const scale = Math.max(camera.value.scale, 0.0001);
-  return scaleLexicalStateFontSizes(editingDraftLexicalState.value, scale);
+  return convertLexicalStateFontSizesToRelativeEm(editingDraftLexicalState.value, editingBaseFontSizePx.value);
 });
 const editingPreview = ref<null | {
   nodeId: string;
@@ -910,6 +612,7 @@ const editingPreview = ref<null | {
   measuredTextH: number;
   computedNodeW: number;
   computedNodeH: number;
+  lineCount: number;
 }>(null);
 const isComposing = ref(false);
 const primarySelectedNodeId = ref<string | null>(null);
@@ -1362,6 +1065,7 @@ function setSelection(
 
   selectedIds.value = nextIdsSet;
   primarySelectedNodeId.value = nextPrimaryId;
+  focusViewportWithoutScroll();
   pruneSelectionAnchors(nextIdsSet);
   if (!nextIds.length) {
     selectionAnchorNodeId.value = null;
@@ -1494,6 +1198,44 @@ function collectMarkerTargetNodeIds() {
   return targetIds;
 }
 
+function resolveContextMenuTargetNodeIds(clickedNodeId: string) {
+  if (!selectedIds.value.has(clickedNodeId)) return [clickedNodeId];
+  const normalized = normalizeSelectedTargets({
+    allowRoot: true,
+    collapseToRootIfSelected: true,
+  });
+  return normalized.finalTargets.map((target) => target.nodeId);
+}
+
+async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: boolean) {
+  if (!targetNodeIds.length) return;
+  const nodes = props.doc?.mind?.nodes;
+  if (!nodes) return;
+
+  if (editingSession.value) {
+    const editingNodeId = editingSession.value.nodeId;
+    const editingInsideTargets = targetNodeIds.some((targetNodeId) => collectSubtreeNodeIds(nodes, targetNodeId).includes(editingNodeId));
+    if (editingInsideTargets) commitEditingSession();
+  }
+
+  let changed = false;
+  for (const targetNodeId of targetNodeIds) {
+    for (const nodeId of collectSubtreeNodeIds(nodes, targetNodeId)) {
+      const node = nodes[nodeId];
+      const children = Array.isArray(node?.children) ? node.children : [];
+      if (!node || !children.length) continue;
+      if (!!node.collapsed === collapsed) continue;
+      node.collapsed = collapsed;
+      changed = true;
+    }
+  }
+
+  if (!changed) return;
+  await applyDocumentMutation(collapsed ? 'node-collapse-subtrees' : 'node-expand-subtrees', {
+    ensureVisibleNodeIds: targetNodeIds,
+  });
+}
+
 function ensureNodeStyleContainers(node: any) {
   if (!node.style) node.style = {};
   if (!node.style.shape) node.style.shape = {};
@@ -1555,31 +1297,45 @@ async function applyShapeStyleToSelectedNodes(
     style.shape = shape;
   }
 
-  await applyDocumentMutation(reason, {
-    ensureVisibleNodeIds: Array.from(selectedIds.value),
-  });
+  await applyDocumentMutation(reason);
 }
 
-function withActiveLexicalRangeSelection(mutator: (selection: ReturnType<typeof $getSelection>) => void) {
+function withActiveLexicalRangeSelection(
+  mutator: (selection: ReturnType<typeof $getSelection>) => void,
+  options?: { allowCollapsed?: boolean }
+) {
   if (!editingSession.value) return false;
   let applied = false;
   lexicalEditorManager.getActiveEditor().update(() => {
     const selection = $getSelection();
-    if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+    if (!$isRangeSelection(selection)) return;
+    if (!options?.allowCollapsed && selection.isCollapsed()) return;
     applied = true;
     mutator(selection);
   });
   return applied;
 }
 
+function getActiveLexicalToggleState(key: StyleTextToggleKey) {
+  if (!editingSession.value) return textToggleState.value[key];
+  let enabled = textToggleState.value[key];
+  lexicalEditorManager.getActiveEditor().getEditorState().read(() => {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection)) return;
+    enabled = selection.hasFormat(key === 'strike' ? 'strikethrough' : key);
+  });
+  return enabled;
+}
+
 async function applyTextStyleToSelectedNodes(
   reason: string,
-  nonEditingUpdater: (doc: RichTextDocument, node: any) => void,
-  editingUpdater?: (selection: NonNullable<ReturnType<typeof $getSelection>>) => void
+  nonEditingUpdater: (lexicalState: SerializedLexicalEditorState, node: any) => SerializedLexicalEditorState,
+  editingUpdater?: (selection: NonNullable<ReturnType<typeof $getSelection>>) => void,
+  editingOptions?: { allowCollapsed?: boolean }
 ) {
   if (editingSession.value) {
     if (!editingUpdater) return;
-    withActiveLexicalRangeSelection(editingUpdater);
+    withActiveLexicalRangeSelection(editingUpdater, editingOptions);
     return;
   }
   if (!hasSelectedNodes.value) return;
@@ -1591,16 +1347,14 @@ async function applyTextStyleToSelectedNodes(
     const node = nodes[nodeId];
     if (!node) continue;
     const style = ensureNodeStyleContainers(node);
-    const richText = cloneRichText(getNodeRichText(node));
+    const lexicalState = getNodeLexicalState(node);
     const textStyle = { ...(style.text ?? {}) };
-    nonEditingUpdater(richText, textStyle);
-    setNodeRichText(node, richText);
+    const nextLexicalState = nonEditingUpdater(lexicalState, textStyle);
+    setNodeLexicalState(node, nextLexicalState);
     style.text = textStyle;
   }
 
-  await applyDocumentMutation(reason, {
-    ensureVisibleNodeIds: Array.from(selectedIds.value),
-  });
+  await applyDocumentMutation(reason);
 }
 
 async function onFillPresetSelect(key: StyleFillPresetKey) {
@@ -1638,13 +1392,16 @@ async function onBorderWidthSelect(key: StyleBorderWidthKey) {
 }
 
 async function onFontFamilySelect(key: StyleFontKey) {
+  if (editingSession.value) return;
   const option = styleFontOptions.find((item) => item.key === key);
   if (!option) return;
   await applyTextStyleToSelectedNodes(
     'node-style-font-family',
-    (doc, textStyle) => {
+    (lexicalState, textStyle) => {
       textStyle.fontFamily = option.fontFamily;
-      applyValueMarkToAllInlines(doc, 'fontFamily', option.fontFamily);
+      return updateLexicalStateTextMarks(lexicalState, (marks) => {
+        marks.fontFamily = option.fontFamily;
+      });
     },
     (selection) => {
       $patchStyleText(selection, { 'font-family': option.fontFamily });
@@ -1654,15 +1411,18 @@ async function onFontFamilySelect(key: StyleFontKey) {
 }
 
 async function onFontSizeSelect(size: number) {
+  if (editingSession.value) return;
   await applyTextStyleToSelectedNodes(
     'node-style-font-size',
-    (doc, textStyle) => {
+    (lexicalState, textStyle) => {
       textStyle.fontSizePx = size;
-      applyValueMarkToAllInlines(doc, 'fontSize', size);
+      return updateLexicalStateTextMarks(lexicalState, (marks) => {
+        marks.fontSize = size;
+      });
     },
     (selection) => {
-      const displaySize = Math.max(1, Number((size * Math.max(camera.value.scale, 0.0001)).toFixed(3)));
-      $patchStyleText(selection, { 'font-size': `${displaySize}px` });
+      const displaySize = Math.max(0.0001, Number((size / editingBaseFontSizePx.value).toFixed(4)));
+      $patchStyleText(selection, { 'font-size': `${displaySize}em` });
       selectedFontSize.value = resolveFontSizeValue(size);
     }
   );
@@ -1673,9 +1433,11 @@ async function onTextColorSelect(value: string | string[]) {
   if (!color) return;
   await applyTextStyleToSelectedNodes(
     'node-style-text-color',
-    (doc, textStyle) => {
+    (lexicalState, textStyle) => {
       textStyle.color = color;
-      applyValueMarkToAllInlines(doc, 'color', color);
+      return updateLexicalStateTextMarks(lexicalState, (marks) => {
+        marks.color = color;
+      });
     },
     (selection) => {
       $patchStyleText(selection, { color });
@@ -1685,17 +1447,41 @@ async function onTextColorSelect(value: string | string[]) {
 }
 
 async function onTextToggleClick(key: StyleTextToggleKey) {
-  const nextValue = !textToggleState.value[key];
+  const currentValue = textToggleState.value[key];
+  const nextValue = !currentValue;
+  if (editingSession.value) {
+    if (key === 'bold' || key === 'italic') {
+      lexicalEditorManager.getActiveEditor().update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return;
+        if (selection.isCollapsed()) {
+          const hasFormat = selection.hasFormat(key);
+          if (hasFormat !== nextValue) selection.formatText(key);
+          return;
+        }
+        $forEachSelectedTextNode((node) => {
+          const hasFormat = node.hasFormat(key);
+          if (nextValue && !hasFormat) node.toggleFormat(key);
+          if (!nextValue && hasFormat) node.toggleFormat(key);
+        });
+      });
+    } else {
+      lexicalEditorManager
+        .getActiveEditor()
+        .dispatchCommand(FORMAT_TEXT_COMMAND, key === 'strike' ? 'strikethrough' : key);
+    }
+    setTextToggleLocally(key, nextValue);
+    return;
+  }
   await applyTextStyleToSelectedNodes(
     `node-style-text-${key}`,
-    (doc, textStyle) => {
+    (lexicalState, textStyle) => {
       if (key === 'bold') textStyle.fontWeight = nextValue ? 700 : 400;
       if (key === 'italic') textStyle.fontStyle = nextValue ? 'italic' : 'normal';
-      applyBooleanMarkToAllInlines(doc, key, nextValue);
-    },
-    (selection) => {
-      selection.formatText(key === 'strike' ? 'strikethrough' : key);
-      setTextToggleLocally(key, nextValue);
+      return updateLexicalStateTextMarks(lexicalState, (marks) => {
+        if (nextValue) marks[key] = true;
+        else delete marks[key];
+      });
     }
   );
 }
@@ -1703,11 +1489,9 @@ async function onTextToggleClick(key: StyleTextToggleKey) {
 async function onTextAlignSelect(key: StyleTextAlignKey) {
   await applyTextStyleToSelectedNodes(
     'node-style-text-align',
-    (doc, textStyle) => {
+    (lexicalState, textStyle) => {
       textStyle.textAlign = key;
-      for (const block of doc.blocks) {
-        block.align = key;
-      }
+      return updateLexicalStateBlockAlign(lexicalState, key);
     },
     () => {
       lexicalEditorManager.getActiveEditor().dispatchCommand(FORMAT_ELEMENT_COMMAND, key);
@@ -2037,6 +1821,7 @@ const editingCanvasTopLeadingPx = computed(() => {
 function getEditingTextBoxRectForNode(
   nodeId: string | null | undefined,
   lexicalState: SerializedLexicalEditorState,
+  richText: RichTextDocument = editingDraftRichText.value,
   preview = editingPreview.value
 ) {
   const node = getNodeById(nodeId);
@@ -2047,7 +1832,7 @@ function getEditingTextBoxRectForNode(
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
-  const previewRichText = richTextFromLexicalState(lexicalState);
+  const previewRichText = richText;
   const textLayout = measureNodeTextLayout(ctx, previewRichText, new Map(), {
     maxWidth: preview?.nodeId === nodeId
       ? Math.max(1, preview.computedNodeW - NODE_PADDING_X)
@@ -2085,7 +1870,9 @@ function ensureWorldBoxVisible(box: { x: number; y: number; width: number; heigh
   if (boxHeight <= viewportH.value - paddingPx * 2) {
     if (topLeft.y < paddingPx) dy = paddingPx - topLeft.y;
     else if (bottomRight.y > viewportBottom) dy = viewportBottom - bottomRight.y;
-  } else if (topLeft.y !== paddingPx) {
+  } else if (bottomRight.y > viewportBottom) {
+    dy = viewportBottom - bottomRight.y;
+  } else if (topLeft.y < paddingPx) {
     dy = paddingPx - topLeft.y;
   }
 
@@ -2095,9 +1882,106 @@ function ensureWorldBoxVisible(box: { x: number; y: number; width: number; heigh
   requestRender();
 }
 
+function ensureWorldBoxEndVisible(box: { x: number; y: number; width: number; height: number }, paddingPx = 32) {
+  const topLeft = worldToScreen(camera.value, box.x, box.y);
+  const bottomRight = worldToScreen(camera.value, box.x + box.width, box.y + box.height);
+  const viewportRight = viewportW.value - paddingPx;
+  const viewportBottom = viewportH.value - paddingPx;
+  const boxWidth = bottomRight.x - topLeft.x;
+
+  let dx = 0;
+  if (boxWidth <= viewportW.value - paddingPx * 2) {
+    if (topLeft.x < paddingPx) dx = paddingPx - topLeft.x;
+    else if (bottomRight.x > viewportRight) dx = viewportRight - bottomRight.x;
+  } else if (topLeft.x !== paddingPx) {
+    dx = paddingPx - topLeft.x;
+  }
+
+  let dy = 0;
+  if (bottomRight.y > viewportBottom) {
+    dy = viewportBottom - bottomRight.y;
+  }
+
+  if (dx === 0 && dy === 0) return;
+  panByPixels(dx, dy);
+  constrainToBounds();
+  requestRender();
+}
+
+function getEditingCaretViewportRect() {
+  const viewportEl = viewportRef.value;
+  if (!viewportEl || !editingSession.value) return null;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  const editorRoot = document.querySelector('.lexical-editor-root');
+  const commonAncestor = range.commonAncestorContainer;
+  const anchorNode = commonAncestor instanceof Element ? commonAncestor : commonAncestor.parentElement;
+  if (!(editorRoot instanceof HTMLElement) || !anchorNode || !editorRoot.contains(anchorNode)) return null;
+
+  let rect = range.getBoundingClientRect();
+  if ((rect.width === 0 && rect.height === 0) || !Number.isFinite(rect.top)) {
+    const fallbackRect = range.getClientRects()[0];
+    if (fallbackRect) {
+      rect = fallbackRect;
+    } else {
+      const selectionAnchor = selection.anchorNode instanceof Element
+        ? selection.anchorNode
+        : selection.anchorNode?.parentElement ?? null;
+      const anchorRect = selectionAnchor instanceof HTMLElement
+        ? selectionAnchor.getBoundingClientRect()
+        : null;
+      if (!anchorRect || !Number.isFinite(anchorRect.top)) return null;
+      rect = anchorRect;
+    }
+  }
+
+  const viewportRect = viewportEl.getBoundingClientRect();
+  return {
+    localLeft: rect.left - viewportRect.left,
+    localRight: rect.right - viewportRect.left,
+    localTop: rect.top - viewportRect.top,
+    localBottom: rect.bottom - viewportRect.top,
+  };
+}
+
+function isEditingCaretOutsideViewport(paddingPx = 32) {
+  const rect = getEditingCaretViewportRect();
+  if (!rect) return false;
+  const viewportRight = viewportW.value - paddingPx;
+  const viewportBottom = viewportH.value - paddingPx;
+  return (
+    rect.localLeft < paddingPx ||
+    rect.localRight > viewportRight ||
+    rect.localTop < paddingPx ||
+    rect.localBottom > viewportBottom
+  );
+}
+
+function ensureEditingCaretVisible(paddingPx = 32) {
+  const rect = getEditingCaretViewportRect();
+  if (!rect) return false;
+  const viewportRight = viewportW.value - paddingPx;
+  const viewportBottom = viewportH.value - paddingPx;
+
+  let dx = 0;
+  if (rect.localLeft < paddingPx) dx = paddingPx - rect.localLeft;
+  else if (rect.localRight > viewportRight) dx = viewportRight - rect.localRight;
+
+  let dy = 0;
+  if (rect.localTop < paddingPx) dy = paddingPx - rect.localTop;
+  else if (rect.localBottom > viewportBottom) dy = viewportBottom - rect.localBottom;
+
+  if (dx === 0 && dy === 0) return false;
+  panByPixels(dx, dy);
+  constrainToBounds();
+  requestRender();
+  return true;
+}
+
 const editingTextBoxRect = computed(() => {
   const session = editingSession.value;
-  return getEditingTextBoxRectForNode(session?.nodeId, editingDraftLexicalState.value);
+  return getEditingTextBoxRectForNode(session?.nodeId, editingDraftLexicalState.value, editingDraftRichText.value);
 });
 
 const editingScreenTextBoxRect = computed(() => {
@@ -2129,8 +2013,8 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     height: `${textBoxRect.height}px`,
     fontFamily: textStyle.fontFamily,
     fontSize: `${textStyle.fontSizePx * scale}px`,
-    fontWeight: `${textStyle.fontWeight}`,
-    fontStyle: textStyle.fontStyle,
+    fontWeight: '400',
+    fontStyle: 'normal',
     lineHeight: `${textStyle.lineHeightPx * scale}px`,
     letterSpacing: `${textStyle.letterSpacingPx * scale}px`,
     padding: '0',
@@ -2170,11 +2054,34 @@ const editingCalibrationStyle = computed(() => {
 const editingOverlayInnerTranslateYPx = computed(() => {
   const style = editingCalibrationStyle.value;
   if (!style) return 0;
-  return Math.max(0, editingCanvasTopLeadingPx.value * camera.value.scale - getDomTextTopOffset(style));
+  return Math.max(0, editingCanvasTopLeadingPx.value * camera.value.scale - getDomTextTopOffset(style) - 1);
 });
 
 let editingRelayoutRafId: number | null = null;
+let editingCaretFollowRafId: number | null = null;
 let editingRelayoutCount = 0;
+
+function clearEditingCaretFollow() {
+  if (editingCaretFollowRafId != null) cancelAnimationFrame(editingCaretFollowRafId);
+  editingCaretFollowRafId = null;
+}
+
+function scheduleEditingCaretFollow(paddingPx = 40, remainingAttempts = 3) {
+  clearEditingCaretFollow();
+  const run = () => {
+    editingCaretFollowRafId = requestAnimationFrame(() => {
+      editingCaretFollowRafId = null;
+      void nextTick().then(() => {
+        if (!editingSession.value) return;
+        ensureEditingCaretVisible(paddingPx);
+        if (remainingAttempts <= 1 || !isEditingCaretOutsideViewport(paddingPx)) return;
+        remainingAttempts -= 1;
+        run();
+      });
+    });
+  };
+  run();
+}
 
 function clampNodeDimension(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -2189,13 +2096,14 @@ function relayoutEditingPreviewNow() {
   if (!ctx) return;
   const image = getNodeImage(node);
   const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
-  const liveRichText = richTextFromLexicalState(editingDraftLexicalState.value);
+  const liveRichText = editingDraftRichText.value;
   const measuredLayout = measureNodeTextLayout(ctx, liveRichText, new Map(), {
     maxWidth: NODE_TEXT_MAX_WIDTH_PX,
     baseStyle: textStyle,
   });
   const textGeometry = computeNodeTextGeometry(ctx, measuredLayout, textStyle, image);
   const markerRow = measureNodeMarkerRow(node);
+  const previousPreview = editingPreview.value?.nodeId === session.nodeId ? editingPreview.value : null;
   let computedNodeW = clampNodeDimension(
     Math.max(Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X, markerRow.width),
     Math.max(NODE_MIN_W, markerRow.width),
@@ -2215,11 +2123,16 @@ function relayoutEditingPreviewNow() {
     measuredTextH: measuredLayout.contentHeight,
     computedNodeW,
     computedNodeH,
+    lineCount: measuredLayout.lineCount,
   };
   rebuildLayout();
   rebuildSpatialCaches();
   editingRelayoutCount += 1;
   requestRender();
+  const lineCountChanged = !!previousPreview && previousPreview.lineCount !== measuredLayout.lineCount;
+  if (lineCountChanged) {
+    scheduleEditingCaretFollow(40);
+  }
   if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-edit-input]', {
       nodeId: session.nodeId,
@@ -2244,6 +2157,7 @@ function scheduleEditingPreviewRelayout() {
 function clearEditingPreviewLayout() {
   if (editingRelayoutRafId != null) cancelAnimationFrame(editingRelayoutRafId);
   editingRelayoutRafId = null;
+  clearEditingCaretFollow();
   if (!editingPreview.value) return;
   editingPreview.value = null;
   rebuildLayout();
@@ -2258,21 +2172,28 @@ function startEditing(
   clearImageInteraction('start-text-editing');
   const node = getNodeById(nodeId);
   if (!node) return;
-  const initialLexicalState = getNodeLexicalState(node);
   const mode = options?.mode ?? 'append';
   const insertedText = options?.insertedText ?? '';
   const caretPlacement = options?.caretPlacement ?? 'end';
-  const nextLexicalState =
-    mode === 'replace' ? lexicalStateFromPlainText(insertedText) : cloneLexicalState(initialLexicalState);
-  const initialTextBoxRect = getEditingTextBoxRectForNode(nodeId, nextLexicalState, null);
-  if (initialTextBoxRect) ensureWorldBoxVisible(initialTextBoxRect);
+  const initialRichText =
+    mode === 'replace'
+      ? richTextFromLexicalState(lexicalStateFromPlainText(insertedText))
+      : cloneRichText(getNodeRichText(node));
+  const nextLexicalState = createEditingLexicalStateForNode(props.doc, node, nodeId, initialRichText);
+  const initialTextBoxRect = getEditingTextBoxRectForNode(nodeId, nextLexicalState, initialRichText, null);
+  if (initialTextBoxRect) {
+    if (caretPlacement === 'end') ensureWorldBoxEndVisible(initialTextBoxRect);
+    else ensureWorldBoxVisible(initialTextBoxRect);
+  }
   editingSession.value = {
     nodeId,
-    initialLexicalState: cloneLexicalState(initialLexicalState),
+    initialLexicalState: cloneLexicalState(nextLexicalState),
+    initialRichText: cloneRichText(initialRichText),
     mode,
     caretPlacement,
   };
   editingDraftLexicalState.value = nextLexicalState;
+  editingDraftRichText.value = initialRichText;
   editingNodeId.value = nodeId;
   const currentRect = worldBoxes.value.get(nodeId);
   editingPreview.value = currentRect
@@ -2283,10 +2204,12 @@ function startEditing(
       measuredTextH: Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
       computedNodeW: Math.ceil(currentRect.x2 - currentRect.x1),
       computedNodeH: Math.ceil(currentRect.y2 - currentRect.y1),
+      lineCount: 1,
     }
     : null;
   if (DEBUG_CANVAS_OVERLAY) console.debug('[mind-start-editing]', { nodeId, mode });
   void nextTick().then(() => {
+    if (caretPlacement !== 'none') scheduleEditingCaretFollow(40, 5);
     if (DEBUG_CANVAS_OVERLAY) {
       const overlayRoot = document.querySelector('.lexical-editor-root');
       const overlayStyle = overlayRoot instanceof HTMLElement ? window.getComputedStyle(overlayRoot) : null;
@@ -2311,23 +2234,36 @@ function startEditing(
 
 function stopEditingSession() {
   clearImageInteraction('stop-text-editing');
+  isComposing.value = false;
   editingSession.value = null;
   editingDraftLexicalState.value = getNodeLexicalState(null);
+  editingDraftRichText.value = getNodeRichText(null);
   editingNodeId.value = null;
   lexicalEditorManager.stopSession();
   clearEditingPreviewLayout();
+  if (hasSelectedNodes.value) syncStylePanelFromSelection();
+  else resetTextToggleState();
+  focusViewportWithoutScroll();
+  void nextTick().then(() => focusViewportWithoutScroll());
 }
 
 function commitEditingSession() {
   const session = editingSession.value;
   if (!session) return;
-  const afterLexicalState = cloneLexicalState(editingDraftLexicalState.value);
   const node = getNodeById(session.nodeId);
   if (!node) {
     stopEditingSession();
     return;
   }
-  if (isLexicalStateEqual(afterLexicalState, session.initialLexicalState)) {
+  const freshestLexicalState = lexicalEditorManager.latestState.value ?? editingDraftLexicalState.value;
+  const afterLexicalState = convertLexicalStateRelativeEmToPx(freshestLexicalState, editingBaseFontSizePx.value);
+  const afterRichText = createPersistedRichTextForNode(
+    props.doc,
+    node,
+    session.nodeId,
+    richTextFromLexicalState(afterLexicalState)
+  );
+  if (isRichTextEqual(afterRichText, session.initialRichText)) {
     stopEditingSession();
     setSingleSelected(session.nodeId);
     requestRender();
@@ -2344,6 +2280,8 @@ function commitEditingSession() {
         nodeId: session.nodeId,
         beforeLexicalStateJSON: session.initialLexicalState,
         afterLexicalStateJSON: afterLexicalState,
+        beforeRichText: getNodeRichText(node),
+        afterRichText,
         previousSelection: snapshotSelection(),
         nextSelection: { ids: [session.nodeId], primaryId: session.nodeId },
       }
@@ -2361,8 +2299,25 @@ function cancelEditingSession() {
 }
 
 function onLexicalEditorChange(state: SerializedLexicalEditorState) {
-  const scale = Math.max(camera.value.scale, 0.0001);
-  editingDraftLexicalState.value = scaleLexicalStateFontSizes(state, 1 / scale);
+  const nextState = convertLexicalStateRelativeEmToPx(state, editingBaseFontSizePx.value);
+  const session = editingSession.value;
+  const node = getNodeById(session?.nodeId);
+  editingDraftRichText.value = cloneRichText(
+    createPersistedRichTextForNode(
+      props.doc,
+      node,
+      session?.nodeId ?? null,
+      richTextFromLexicalState(nextState)
+    )
+  );
+  textToggleState.value = {
+    bold: getActiveLexicalToggleState('bold'),
+    italic: getActiveLexicalToggleState('italic'),
+    underline: getActiveLexicalToggleState('underline'),
+    strike: getActiveLexicalToggleState('strike'),
+  };
+  if (isLexicalStateEqual(nextState, editingDraftLexicalState.value)) return;
+  editingDraftLexicalState.value = nextState;
   scheduleEditingPreviewRelayout();
 }
 
@@ -2465,14 +2420,19 @@ async function flushPendingDocumentMutation() {
   await flushScheduledDocumentMutation();
 }
 
-function createNodeRecord(nodeId: string, initialText = NEW_NODE_TEXT) {
+function resolveNewChildRole(parentId: string | null | undefined): MindNodeRole {
+  if (!parentId) return 'default';
+  return getMindNodeRole(props.doc, parentId) === 'root' ? 'secondary' : 'default';
+}
+
+function createNodeRecord(nodeId: string, initialText = NEW_NODE_TEXT, role: MindNodeRole = 'default') {
   const lexicalState = lexicalStateFromPlainText(initialText);
   return {
     id: nodeId,
     text: { plain: initialText },
     richText: richTextFromLexicalState(lexicalState),
     textLexical: lexicalState,
-    style: null,
+    style: createInitialNodeStyleForRole(role),
     children: [],
     images: [],
     image: null,
@@ -2486,123 +2446,23 @@ function getDocumentTitleForSave() {
   return rootTitle || props.doc?.manifest?.title || '中心主题';
 }
 
-function getSaveAsBaseName() {
-  const normalizedRootText = getDocumentTitleForSave()
-    .replace(/\s+/g, '')
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
-    .trim();
-  return normalizedRootText || '思维导图';
-}
-
-async function syncDocumentToMainProcess() {
-  if (!props.doc || !props.docId) return null;
-  ensureMindRoots(props.doc);
-  props.doc.manifest = props.doc.manifest || {};
-  props.doc.manifest.title = getDocumentTitleForSave();
-  writeViewportToDoc();
-  const plain = toPlainDoc(props.doc);
-  await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
-  return plain;
-}
-
-async function flushForSave() {
-  if (!props.doc || !props.docId) return null;
-  clearPersistTimer();
-  if (editingSession.value) commitEditingSession();
-  await flushPendingDocumentMutation();
-  return await syncDocumentToMainProcess();
-}
-
-function applySaveResult(result: { filePath?: string | null; savedAt?: string | null; title?: string | null } | null | undefined) {
-  if (!result) return props.filePath ?? null;
-  if (props.doc?.manifest) {
-    if (typeof result.savedAt === 'string' && result.savedAt) {
-      props.doc.manifest.updatedAt = result.savedAt;
-    }
-    if (typeof result.title === 'string' && result.title) {
-      props.doc.manifest.title = result.title;
-    }
-  }
-  lastSavedContentRevision.value = contentRevision.value;
-  saveError.value = null;
-  if (typeof result.filePath === 'string') {
-    emit('filePathChange', result.filePath);
-    return result.filePath;
-  }
-  return props.filePath ?? null;
-}
-
-function notifySaveFailure(error: unknown) {
-  const message = error instanceof Error ? error.message : '保存失败';
-  saveError.value = message;
-  console.error('[mind-save]', error);
-  window.alert(message);
-}
-
-function waitForMinimumDuration(startedAt: number, minimumMs: number) {
-  const elapsed = Date.now() - startedAt;
-  if (elapsed >= minimumMs) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, minimumMs - elapsed);
-  });
-}
-
-async function saveDocumentAs(options?: { skipPrepare?: boolean }) {
-  if (!props.docId || isSaving.value) return false;
-  let nextFilePath = props.filePath ?? null;
-  const startedAt = Date.now();
-  isSaving.value = true;
-  emitSaveState(nextFilePath);
-  try {
-    if (!options?.skipPrepare) {
-      const prepared = await flushForSave();
-      if (!prepared) return false;
-    }
-    const defaultPath = props.filePath ?? `${getSaveAsBaseName()}.amind`;
-    const result = await window.electronAPI.amind.saveAsDialog({
-      docId: props.docId,
-      defaultPath,
-    });
-    if (!result) return false;
-    nextFilePath = applySaveResult(result);
-    return true;
-  } catch (error) {
-    notifySaveFailure(error);
-    return false;
-  } finally {
-    await waitForMinimumDuration(startedAt, 1000);
-    isSaving.value = false;
-    emitSaveState(nextFilePath);
-  }
-}
-
-async function saveDocument() {
-  if (!props.docId || isSaving.value) return false;
-  if (!props.filePath) {
-    return await saveDocumentAs();
-  }
-  let nextFilePath = props.filePath ?? null;
-  const startedAt = Date.now();
-  isSaving.value = true;
-  emitSaveState(nextFilePath);
-  try {
-    const prepared = await flushForSave();
-    if (!prepared) return false;
-    const result = await window.electronAPI.amind.save({ docId: props.docId });
-    if (result?.needSaveAs) {
-      return await saveDocumentAs({ skipPrepare: true });
-    }
-    nextFilePath = applySaveResult(result);
-    return true;
-  } catch (error) {
-    notifySaveFailure(error);
-    return false;
-  } finally {
-    await waitForMinimumDuration(startedAt, 1000);
-    isSaving.value = false;
-    emitSaveState(nextFilePath);
-  }
-}
+const { saveDocument, saveDocumentAs } = useSaveFlow({
+  getDoc: () => props.doc,
+  getDocId: () => props.docId,
+  getFilePath: () => props.filePath ?? null,
+  getDocumentTitleForSave,
+  clearPersistTimer,
+  hasEditingSession: () => !!editingSession.value,
+  commitEditingSession,
+  flushPendingDocumentMutation,
+  writeViewportToDoc,
+  emitFilePathChange: (value) => emit('filePathChange', value),
+  emitSaveState,
+  isSaving,
+  saveError,
+  contentRevision,
+  lastSavedContentRevision,
+});
 
 defineExpose({
   saveDocument,
@@ -3256,6 +3116,7 @@ function finalizeInteraction(
         finalizeDrop(reason);
       }
     } else if (mode === 'pointerDownOnNode') {
+      focusViewportWithoutScroll();
       requestRender();
     }
 
@@ -3433,13 +3294,16 @@ function createDeleteCommand(targetNodeId: string): Command | null {
 function createBatchAddChildSelectionCommand(targetNodeIds: string[]): Command | null {
   if (!targetNodeIds.length) return null;
   const newNodeIds = targetNodeIds.map(() => createNodeId());
+  const roleByNodeId = Object.fromEntries(
+    newNodeIds.map((nodeId, index) => [nodeId, resolveNewChildRole(targetNodeIds[index])])
+  );
   return createBatchAddChildCommand(
     {
       getNodes: getMindNodes,
       setSelection,
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
-      createNodeRecord,
+      createNodeRecord: (nodeId: string) => createNodeRecord(nodeId, NEW_NODE_TEXT, roleByNodeId[nodeId] ?? 'default'),
     },
     {
       parentIds: targetNodeIds,
@@ -3470,6 +3334,12 @@ function createBatchAddSiblingSelectionCommand(targetNodeIds: string[]): Command
 
   if (!targetInfos.length) return null;
   const newNodeIdsByTargetId = Object.fromEntries(targetInfos.map((target) => [target.nodeId, createNodeId()]));
+  const roleByNewNodeId = Object.fromEntries(
+    targetInfos.map((target) => [
+      newNodeIdsByTargetId[target.nodeId],
+      getMindNodeRole(props.doc, target.nodeId),
+    ])
+  );
   const selectionOrder = targetNodeIds.map((nodeId) => newNodeIdsByTargetId[nodeId]).filter(Boolean);
 
   if (DEBUG_CANVAS_OVERLAY) {
@@ -3489,7 +3359,7 @@ function createBatchAddSiblingSelectionCommand(targetNodeIds: string[]): Command
       setSelection,
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
-      createNodeRecord,
+      createNodeRecord: (nodeId: string) => createNodeRecord(nodeId, NEW_NODE_TEXT, roleByNewNodeId[nodeId] ?? 'default'),
     },
     {
       targetsForMutation: targetInfos,
@@ -3510,7 +3380,8 @@ function createPasteTextLinesCommand(targetParentId: string, lines: string[]): C
       setSelection,
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
-      createNodeRecord: (nodeId: string) => createNodeRecord(nodeId, lineByNodeId[nodeId] ?? NEW_NODE_TEXT),
+      createNodeRecord: (nodeId: string) =>
+        createNodeRecord(nodeId, lineByNodeId[nodeId] ?? NEW_NODE_TEXT, resolveNewChildRole(targetParentId)),
     },
     {
       parentIds: Array.from({ length: lines.length }, () => targetParentId),
@@ -3699,6 +3570,8 @@ function createAddChildCommand(parentId: string): Command | null {
   const previousSelectionId = getPrimarySelectedId();
   const newNodeId = createNodeId();
   const insertIndex = Array.isArray(parentNode.children) ? parentNode.children.length : 0;
+  const previousCollapsed = !!parentNode.collapsed;
+  const newNodeRole = resolveNewChildRole(parentId);
 
   return {
     name: 'AddChildCommand',
@@ -3707,7 +3580,8 @@ function createAddChildCommand(parentId: string): Command | null {
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId);
+      currentParent.collapsed = false;
+      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
       currentParent.children.splice(insertIndex, 0, newNodeId);
       setSingleSelected(newNodeId);
       void applyDocumentMutation('history:add-child', { ensureVisibleNodeId: newNodeId });
@@ -3719,6 +3593,7 @@ function createAddChildCommand(parentId: string): Command | null {
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
       const nextIndex = currentParent.children.indexOf(newNodeId);
       if (nextIndex >= 0) currentParent.children.splice(nextIndex, 1);
+      currentParent.collapsed = previousCollapsed;
       delete currentNodes[newNodeId];
       const restoredSelectionId = resolveFallbackSelection(previousSelectionId, parentId);
       setSingleSelected(restoredSelectionId);
@@ -3730,7 +3605,8 @@ function createAddChildCommand(parentId: string): Command | null {
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId);
+      currentParent.collapsed = false;
+      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
       setSingleSelected(newNodeId);
@@ -3751,6 +3627,7 @@ function createAddSiblingCommand(nodeId: string): Command | null {
   const previousSelectionId = getPrimarySelectedId();
   const newNodeId = createNodeId();
   const insertIndex = index + 1;
+  const siblingRole = getMindNodeRole(props.doc, nodeId);
 
   return {
     name: 'AddSiblingCommand',
@@ -3759,7 +3636,7 @@ function createAddSiblingCommand(nodeId: string): Command | null {
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId);
+      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
       currentParent.children.splice(Math.min(insertIndex, currentParent.children.length), 0, newNodeId);
       setSingleSelected(newNodeId);
       void applyDocumentMutation('history:add-sibling', { ensureVisibleNodeId: newNodeId });
@@ -3782,7 +3659,7 @@ function createAddSiblingCommand(nodeId: string): Command | null {
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId);
+      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
       setSingleSelected(newNodeId);
@@ -3812,7 +3689,7 @@ function isEditableTarget(target: EventTarget | null) {
 function isTextEditingActive(target: EventTarget | null) {
   if (isComposing.value) return true;
   if (isEditableTarget(target)) return true;
-  if (typeof document !== 'undefined' && isEditableTarget(document.activeElement)) return true;
+  if (editingSession.value && typeof document !== 'undefined' && isEditableTarget(document.activeElement)) return true;
   return false;
 }
 
@@ -3988,6 +3865,7 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
 
 function onCanvasPointerDown(event: PointerEvent) {
   if (event.button !== 0) return;
+  focusViewportWithoutScroll();
   if (editingSession.value) {
     commitEditingSession();
   }
@@ -4133,6 +4011,36 @@ function onCanvasDoubleClick(event: MouseEvent) {
   requestAnimationFrame(() => {
     startEditing(hitId, { mode: 'append', caretPlacement: 'end' });
   });
+}
+
+async function onCanvasContextMenu(event: MouseEvent) {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
+  if (!hitId) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  focusViewportWithoutScroll();
+
+  const targetNodeIds = resolveContextMenuTargetNodeIds(hitId);
+  const action = await window.electronAPI.wm.popupMenu({
+    x: event.clientX,
+    y: event.clientY,
+    items: [
+      { id: 'expand-all', label: '全部展开' },
+      { id: 'collapse-all', label: '全部收起' },
+    ],
+  });
+
+  if (action === 'expand-all') {
+    await setCollapsedStateForSubtrees(targetNodeIds, false);
+    return;
+  }
+  if (action === 'collapse-all') {
+    await setCollapsedStateForSubtrees(targetNodeIds, true);
+  }
 }
 
 function onCanvasPointerMove(event: PointerEvent) {
@@ -4433,16 +4341,8 @@ async function handleBeforeCloseRequest(key: string) {
     await window.electronAPI.wm.closeResponse({ key, allow: true });
     return;
   }
-
-  const shouldSave = window.confirm('窗口有未保存内容，是否先保存？');
-  if (shouldSave) {
-    const saved = await saveDocument();
-    await window.electronAPI.wm.closeResponse({ key, allow: saved });
-    return;
-  }
-
-  const shouldDiscard = window.confirm('确定不保存并关闭窗口吗？');
-  await window.electronAPI.wm.closeResponse({ key, allow: shouldDiscard });
+  const shouldClose = window.confirm('当前思维导图尚未保存，确定直接关闭吗？');
+  await window.electronAPI.wm.closeResponse({ key, allow: shouldClose });
 }
 
 function onWindowKeyDown(event: KeyboardEvent) {
@@ -4482,6 +4382,9 @@ function onWindowKeyDown(event: KeyboardEvent) {
     return;
   }
   if (editingSession.value && !isTextEditingActive(event.target)) return;
+  if (interactionState.value.mode === 'pointerDownOnNode') {
+    finalizeInteraction('keyboard-settle-before-shortcut', { commitDrag: false, eventSource: 'system' });
+  }
   if (event.isComposing || isTextEditingActive(event.target)) return;
 
   const isUndoShortcut = isModifierPressed && !event.altKey && lowerKey === 'z' && !event.shiftKey;
@@ -4873,10 +4776,19 @@ onBeforeUnmount(() => {
   overflow: hidden;
   position: relative;
   background: #ffffff;
+  border: none;
   border-radius: 10px;
+  outline: none;
+  box-shadow: none;
   /* 类似 XMind：禁止浏览器触控默认行为（可选） */
   touch-action: none;
   cursor: default;
+}
+
+.main-container:focus,
+.main-container:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .format-panel-shell {
@@ -4951,6 +4863,7 @@ onBeforeUnmount(() => {
 }
 
 .style-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -5100,6 +5013,26 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.style-control-mask-shell {
+  position: relative;
+}
+
+.style-control-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.68);
+  backdrop-filter: saturate(0.85);
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.style-font-grid.is-editing-locked,
+.style-size-grid.is-editing-locked {
+  opacity: 0.45;
+  filter: saturate(0.75);
 }
 
 .style-color-picker {
@@ -5509,9 +5442,16 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: 0 0 10px 10px;
-  background: rgba(241, 245, 249, 0.56);
+  z-index: 4;
+  background: rgba(241, 245, 249, 0.7);
   backdrop-filter: saturate(0.85);
   pointer-events: auto;
+}
+
+.format-panel-body.is-disabled > .style-panel,
+.format-panel-body.is-disabled > .marker-panel {
+  opacity: 0.45;
+  filter: saturate(0.75);
 }
 
 .mind-canvas {

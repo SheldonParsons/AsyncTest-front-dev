@@ -1,5 +1,6 @@
 import type { Options } from 'roughjs/bin/core';
 import type { MindNodeLike } from '@/mind/core/nodeContent';
+import type { NodeStyle } from '@/mind/model/amindDoc';
 import type { NodeTextStyle } from './textLayout';
 import { buildCanvasFont } from '@/mind/core/text/font';
 import type { RichTextAlign } from '@/mind/core/richText';
@@ -109,8 +110,6 @@ const DEFAULT_STYLE = {
   cacheKey: 'default',
 } satisfies MindNodeDefaultVisualStyle;
 
-const roleCache = new WeakMap<object, Map<string, MindNodeRole>>();
-
 const ROUGH_FILL_OPTIONS_BY_PRESET: Record<MindNodeFillPreset, Pick<Options, 'fillStyle' | 'fillWeight' | 'hachureGap' | 'hachureAngle'>> = {
   'rough-hachure': DENSE_HAND_DRAWN_FILL,
   'rough-cross': {
@@ -159,12 +158,7 @@ function buildRoleMap(doc: any) {
 
 export function getMindNodeRole(doc: any, nodeId: string | null | undefined): MindNodeRole {
   if (!doc || !nodeId) return 'default';
-  let cached = roleCache.get(doc);
-  if (!cached) {
-    cached = buildRoleMap(doc);
-    roleCache.set(doc, cached);
-  }
-  return cached.get(nodeId) ?? 'default';
+  return buildRoleMap(doc).get(nodeId) ?? 'default';
 }
 
 export function getNodeStyleOverrides(doc: any, nodeId: string | null | undefined): MindNodeStyle | null {
@@ -232,5 +226,25 @@ export function resolveNodeStyleContext(node: MindNodeLike | null | undefined, o
     nodeId: options?.nodeId ?? null,
     defaults: buildDefaultNodeTextStyle(options?.doc, options?.nodeId),
     visual: getMindNodeDefaultVisualStyle(options?.doc, options?.nodeId),
+  };
+}
+
+export function createInitialNodeStyleForRole(role: MindNodeRole): NodeStyle {
+  const visual = role === 'root' ? ROOT_STYLE : role === 'secondary' ? SECONDARY_STYLE : DEFAULT_STYLE;
+  return {
+    shape: {
+      fill: visual.fill,
+      stroke: visual.stroke,
+      fillPreset: visual.fillPreset,
+      borderPreset: visual.borderPreset,
+    },
+    text: {
+      fontFamily: DEFAULT_FONT_FAMILY,
+      fontSizePx: visual.fontSizePx,
+      fontWeight: visual.fontWeight,
+      fontStyle: visual.fontStyle,
+      color: visual.textColor,
+      textAlign: visual.textAlign,
+    },
   };
 }

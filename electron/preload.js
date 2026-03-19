@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         close: (key) => ipcRenderer.invoke('wm:close', key),
         focus: (key) => ipcRenderer.invoke('wm:focus', key),
         list: () => ipcRenderer.invoke('wm:list'),
+        popupMenu: (options) => ipcRenderer.invoke('wm:popupMenu', options),
         sendTo: (targetKey, channel, payload) =>
             ipcRenderer.invoke('wm:sendTo', { targetKey, channel, payload }),
         broadcast: (channel, payload) =>
@@ -36,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         openFolder: (payload) => ipcRenderer.invoke('amind:openFolder', payload),
 
         recents: () => ipcRenderer.invoke('amind:recents'),
+        recentEntries: () => ipcRenderer.invoke('amind:recentEntries'),
         removeRecent: (payload) => ipcRenderer.invoke('amind:removeRecent', payload),
         openDialog: () => ipcRenderer.invoke('amind:openDialog'),
         read: (payload) => ipcRenderer.invoke('amind:read', payload),
@@ -45,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
         save: (payload) => ipcRenderer.invoke('amind:save', payload),
         saveAsDialog: (payload) => ipcRenderer.invoke('amind:saveAsDialog', payload),
+        saveRecentPreview: (payload) => ipcRenderer.invoke('amind:saveRecentPreview', payload),
 
         assetAddFromFile: (payload) => ipcRenderer.invoke('amind:assetAddFromFile', payload),
         assetAddFromBytes: (payload) => ipcRenderer.invoke('amind:assetAddFromBytes', payload),
