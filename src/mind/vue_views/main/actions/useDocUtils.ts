@@ -1,8 +1,28 @@
 import { ensureNodeContent, getNodePlainText } from '@/mind/core/nodeContent';
 import { toRaw } from 'vue';
 
-const DEFAULT_ROOT_LAYOUT = { direction: 'right', hGap: 60, vGap: 18 } as const;
+export const DEFAULT_ROOT_H_GAP = 44;
+const LEGACY_DEFAULT_ROOT_H_GAPS = new Set([60, 52]);
+export const DEFAULT_ROOT_V_GAP = 16;
+export const LEGACY_DEFAULT_ROOT_V_GAP = 18;
+
+export function resolveRootHorizontalGap(hGap: unknown) {
+    if (typeof hGap === 'number' && Number.isFinite(hGap)) {
+        return LEGACY_DEFAULT_ROOT_H_GAPS.has(hGap) ? DEFAULT_ROOT_H_GAP : hGap;
+    }
+    return DEFAULT_ROOT_H_GAP;
+}
+
+export function resolveRootVerticalGap(vGap: unknown) {
+    if (typeof vGap === 'number' && Number.isFinite(vGap)) {
+        return vGap === LEGACY_DEFAULT_ROOT_V_GAP ? DEFAULT_ROOT_V_GAP : vGap;
+    }
+    return DEFAULT_ROOT_V_GAP;
+}
+
+const DEFAULT_ROOT_LAYOUT = { direction: 'right', hGap: DEFAULT_ROOT_H_GAP, vGap: DEFAULT_ROOT_V_GAP } as const;
 const DEFAULT_BOARD_ORDER = ['mind-1', 'mind-2', 'mind-3'] as const;
+const BOARD_NODE_CONTENT_NORMALIZED = Symbol('board-node-content-normalized');
 
 function createBoardRootNode(title: string, rootId = 'root') {
     return {
@@ -69,10 +89,13 @@ function ensureMindBoardShape(board: any, fallbackTitle: string, boardId: string
         board.nodes[rootId] = createBoardRootNode(board.title, rootId);
     }
 
-    for (const node of Object.values(board.nodes)) {
-        if (shouldNormalizeNodeContent(node)) {
-            ensureNodeContent(node as any);
+    if (board[BOARD_NODE_CONTENT_NORMALIZED] !== true) {
+        for (const node of Object.values(board.nodes)) {
+            if (shouldNormalizeNodeContent(node)) {
+                ensureNodeContent(node as any);
+            }
         }
+        board[BOARD_NODE_CONTENT_NORMALIZED] = true;
     }
 
     if (shouldNormalizeNodeContent(board.nodes[rootId], board.title)) {

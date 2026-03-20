@@ -28,6 +28,8 @@ const props = defineProps<{
   editorShellStyle: CSSProperties;
   calibrationStyle: DomTextCalibrationStyle | null;
   innerTranslateYpx: number;
+  expectedGlyphTopPx: number;
+  expectedGlyphCenterPx: number;
   nodeId: string;
   initialState: SerializedLexicalEditorState;
   mode: 'append' | 'replace';
@@ -40,8 +42,19 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
+const editorShellRef = ref<HTMLDivElement | null>(null);
 const editorRootRef = ref<HTMLDivElement | null>(null);
 const editorInnerRef = ref<HTMLDivElement | null>(null);
+const dynamicGlyphTranslateYPx = ref(0);
+let glyphAlignRafId: number | null = null;
+let glyphAlignTimeoutIds: number[] = [];
+let glyphAlignmentSettled = false;
+const OPTICAL_GLYPH_Y_NUDGE_PX = -0.25;
+
+const estimatedGlyphTranslateYPx = computed(() => {
+  if (!props.calibrationStyle) return 0;
+  return props.expectedGlyphTopPx - props.innerTranslateYpx - getDomTextTopOffset(props.calibrationStyle);
+});
 
 const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   return {
@@ -54,7 +67,73 @@ const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   };
 });
 
-const editorInnerStyle = computed<CSSProperties>(() => ({}));
+const editorInnerStyle = computed<CSSProperties>(() =>
+  dynamicGlyphTranslateYPx.value !== 0
+    ? {
+      transform: `translateY(${dynamicGlyphTranslateYPx.value}px)`,
+    }
+    : {}
+);
+
+function clearGlyphAlignTimers() {
+  if (glyphAlignRafId != null) cancelAnimationFrame(glyphAlignRafId);
+  glyphAlignRafId = null;
+  glyphAlignTimeoutIds.forEach((id) => window.clearTimeout(id));
+  glyphAlignTimeoutIds = [];
+  glyphAlignmentSettled = false;
+}
+
+function settleGlyphAlignment() {
+  glyphAlignmentSettled = true;
+  glyphAlignTimeoutIds.forEach((id) => window.clearTimeout(id));
+  glyphAlignTimeoutIds = [];
+}
+
+function findFirstTextNode(node: Node | null | undefined): Text | null {
+  if (!node) return null;
+  if (node instanceof Text) return node;
+  for (const child of Array.from(node.childNodes ?? [])) {
+    const found = findFirstTextNode(child);
+    if (found && (found.textContent?.length ?? 0) > 0) return found;
+  }
+  return null;
+}
+
+function measureGlyphMetricsFromShell() {
+  const shell = editorShellRef.value;
+  const root = editorRootRef.value;
+  if (!shell || !root || !props.visible) return null;
+  const textNode = findFirstTextNode(root);
+  const textLength = textNode?.textContent?.length ?? 0;
+  if (!textNode || textLength <= 0) return null;
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, Math.min(1, textLength));
+  const rangeRect = range.getBoundingClientRect();
+  const shellRect = shell.getBoundingClientRect();
+  if (!Number.isFinite(rangeRect.top) || !Number.isFinite(shellRect.top) || !Number.isFinite(rangeRect.height)) return null;
+  const top = rangeRect.top - shellRect.top;
+  const height = rangeRect.height;
+  return {
+    top,
+    height,
+    center: top + height / 2,
+  };
+}
+
+function alignEditorGlyphTop() {
+  const actualGlyphMetrics = measureGlyphMetricsFromShell();
+  if (!actualGlyphMetrics) return false;
+  const targetGlyphCenterPx = props.expectedGlyphCenterPx - props.innerTranslateYpx;
+  dynamicGlyphTranslateYPx.value = targetGlyphCenterPx - actualGlyphMetrics.center + OPTICAL_GLYPH_Y_NUDGE_PX;
+  return true;
+}
+
+function scheduleGlyphAlignment() {
+  clearGlyphAlignTimers();
+  dynamicGlyphTranslateYPx.value = estimatedGlyphTranslateYPx.value + OPTICAL_GLYPH_Y_NUDGE_PX;
+  settleGlyphAlignment();
+}
 
 function mountEditor() {
   if (!props.visible || !editorRootRef.value || !props.nodeId) return;
@@ -68,6 +147,7 @@ function mountEditor() {
     onCommit: () => emit('commit'),
     onCancel: () => emit('cancel'),
   });
+  scheduleGlyphAlignment();
 }
 
 onMounted(() => {
@@ -78,7 +158,11 @@ onMounted(() => {
 watch(
   () => [props.visible, props.nodeId, props.mode, props.caretPlacement] as const,
   async ([visible]) => {
-    if (!visible) return;
+    if (!visible) {
+      clearGlyphAlignTimers();
+      dynamicGlyphTranslateYPx.value = 0;
+      return;
+    }
     if (editorRootRef.value) {
       mountEditor();
       return;
@@ -89,7 +173,37 @@ watch(
   { deep: false }
 );
 
+watch(
+  () => [
+    props.visible,
+    props.calibrationStyle?.fontFamily ?? '',
+    props.calibrationStyle?.fontSizePx ?? 0,
+    props.calibrationStyle?.fontWeight ?? 0,
+    props.calibrationStyle?.fontStyle ?? 'normal',
+    props.calibrationStyle?.lineHeightPx ?? 0,
+    props.calibrationStyle?.letterSpacingPx ?? 0,
+    props.expectedGlyphTopPx,
+    props.expectedGlyphCenterPx,
+    props.innerTranslateYpx,
+    props.editorShellStyle.fontFamily,
+    props.editorShellStyle.fontSize,
+    props.editorShellStyle.fontWeight,
+    props.editorShellStyle.fontStyle,
+    props.editorShellStyle.lineHeight,
+  ] as const,
+  ([visible]) => {
+    if (!visible) {
+      clearGlyphAlignTimers();
+      dynamicGlyphTranslateYPx.value = 0;
+      return;
+    }
+    scheduleGlyphAlignment();
+  },
+  { deep: false }
+);
+
 onBeforeUnmount(() => {
+  clearGlyphAlignTimers();
   lexicalEditorManager.setRootElement(null);
 });
 </script>
@@ -111,6 +225,8 @@ onBeforeUnmount(() => {
   line-height: inherit;
   text-align: inherit;
   background: transparent;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .alignment-guide {
@@ -135,6 +251,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   background: transparent;
+  overflow: visible;
 }
 
 .lexical-editor-root {
@@ -161,6 +278,8 @@ onBeforeUnmount(() => {
   text-align: inherit;
   caret-color: currentColor;
   cursor: text;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .lexical-editor-root:focus {
@@ -183,6 +302,8 @@ onBeforeUnmount(() => {
   word-break: break-all;
   line-break: anywhere;
   hyphens: none;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .lexical-editor-root :deep(span) {
@@ -193,6 +314,8 @@ onBeforeUnmount(() => {
   word-break: break-all;
   line-break: anywhere;
   hyphens: none;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .lexical-editor-root :deep(.lexical-text-bold) {

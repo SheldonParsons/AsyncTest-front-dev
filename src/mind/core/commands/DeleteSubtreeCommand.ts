@@ -11,7 +11,15 @@ export type DeleteSubtreeCommandContext = {
   setSingleSelected: (nodeId: string | null) => void;
   applyMutation: (
     reason: string,
-    options?: { ensureVisibleNodeId?: string | null; ensureVisibleNodeIds?: string[] }
+    options?: {
+      ensureVisibleNodeId?: string | null;
+      ensureVisibleNodeIds?: string[];
+      invalidateSubtreeHeightNodeIds?: string[];
+      removedNodeIds?: string[];
+      touchedParentIds?: string[];
+      trustExistingNodeMeasureCache?: boolean;
+      useLayoutChangedNodeIds?: boolean;
+    }
   ) => Promise<void> | void;
   setLastDeletedNodeId?: (nodeId: string | null) => void;
   debugEnabled?: boolean;
@@ -24,6 +32,13 @@ export type DeleteSubtreeCommandOptions = {
   deletedSnapshot: MindSubtreeSnapshot;
   previousSelectionId: string | null;
   nextSelectionId: string | null;
+  deleteMutationOptions?: {
+    invalidateSubtreeHeightNodeIds?: string[];
+    removedNodeIds?: string[];
+    touchedParentIds?: string[];
+    trustExistingNodeMeasureCache?: boolean;
+    useLayoutChangedNodeIds?: boolean;
+  };
 };
 
 export function createDeleteSubtreeCommand(
@@ -37,6 +52,7 @@ export function createDeleteSubtreeCommand(
     deletedSnapshot,
     previousSelectionId,
     nextSelectionId,
+    deleteMutationOptions,
   } = options;
 
   function removeFromParent(nodes: MindNodes) {
@@ -74,7 +90,14 @@ export function createDeleteSubtreeCommand(
           nextSelectionId,
         });
       }
-      void context.applyMutation('history:delete-subtree', { ensureVisibleNodeId: nextSelectionId });
+      void context.applyMutation('history:delete-subtree', {
+        ensureVisibleNodeId: nextSelectionId,
+        invalidateSubtreeHeightNodeIds: deleteMutationOptions?.invalidateSubtreeHeightNodeIds,
+        removedNodeIds: deleteMutationOptions?.removedNodeIds,
+        touchedParentIds: deleteMutationOptions?.touchedParentIds,
+        trustExistingNodeMeasureCache: deleteMutationOptions?.trustExistingNodeMeasureCache,
+        useLayoutChangedNodeIds: deleteMutationOptions?.useLayoutChangedNodeIds,
+      });
     },
     undo: () => {
       const nodes = context.getNodes();

@@ -490,16 +490,10 @@ function rememberCheck() {
     // 如果res为false表示从来没有插入过remember状态，则现场插入一个当前的remember状态
     if (res !== null) {
       // 同步当前checked状态\
-      console.log(res);
-
       loginForm.value.checked = res.remember;
-      console.log(res.remember);
-      console.log("----");
-
-
       if (res.remember === true) {
         // 如果记住密码，将账号密码填充至登陆输入框
-        store.dispatch("getUser").then((res) => {
+        store.dispatch("getUser").then((res:any) => {
           if (res && res.username && res.password) {
             loginForm.value.username = res.username;
             loginForm.value.password = res.password;
@@ -560,7 +554,6 @@ function validateUser() {
     password: loginForm.value.password,
   };
   ApiLogin(data).then((res: any) => {
-    console.log(res);
     if (res.result === 1) {
       window.$toast({ title: '登录成功！', type: 'success' })
       const userStatus = {
@@ -577,7 +570,7 @@ function validateUser() {
       };
       console.log(userStatus);
 
-      store.dispatch("saveUser", userStatus).then((userRes) => {
+      store.dispatch("saveUser", userStatus).then((userRes:any) => {
         console.log(res.data.default_project_id);
         const projectId = res.data.default_project_id;
         if (projectId === null) {

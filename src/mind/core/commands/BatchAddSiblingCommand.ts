@@ -6,6 +6,7 @@ export type BatchAddSiblingTarget = {
   nodeId: string;
   parentId: string;
   indexInParent: number;
+  insertIndex: number;
 };
 
 export type BatchAddSiblingCommandContext = {
@@ -37,7 +38,7 @@ export function createBatchAddSiblingCommand(
       const newNodeId = newNodeIdsByTargetId[target.nodeId];
       if (!nodes[newNodeId]) nodes[newNodeId] = context.createNodeRecord(newNodeId);
       if (!parent.children.includes(newNodeId)) {
-        parent.children.splice(Math.min(target.indexInParent + 1, parent.children.length), 0, newNodeId);
+        parent.children.splice(Math.min(target.insertIndex, parent.children.length), 0, newNodeId);
       }
     });
   }

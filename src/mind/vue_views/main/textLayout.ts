@@ -264,13 +264,14 @@ export function measureNodeTextLayout(
       continue;
     }
     const segment = createMeasuredSegment(ctx, token.text, token.marks, baseStyle);
-    if (currentLine.segments.length > 0 && currentLine.width + segment.width > maxWidth) {
+    let appendPreview = previewRichLineAppend(ctx, currentLine, segment);
+    if (currentLine.segments.length > 0 && currentLine.width + appendPreview.addedWidth > maxWidth) {
       finalizeRichLine(currentLine, richLines, baseStyle.lineHeightPx);
       currentLine = createEmptyRichLine(token.align, baseStyle.lineHeightPx);
+      appendPreview = previewRichLineAppend(ctx, currentLine, segment);
     }
     currentLine.align = token.align;
-    currentLine.segments.push(segment);
-    currentLine.width += segment.width;
+    applyRichLineAppend(currentLine, segment, appendPreview);
     currentLine.height = Math.max(currentLine.height, Math.max(baseStyle.lineHeightPx, Math.ceil(segment.fontSize * 1.3)));
   }
   finalizeRichLine(currentLine, richLines, baseStyle.lineHeightPx);
@@ -413,6 +414,65 @@ function createMeasuredSegment(
     color: marks.color ?? baseStyle.color,
     marks,
   };
+}
+
+function areRichLineSegmentStylesEqual(a: RichTextLineSegment | undefined, b: RichTextLineSegment) {
+  if (!a) return false;
+  return (
+    a.font === b.font &&
+    a.color === b.color &&
+    JSON.stringify(a.marks ?? {}) === JSON.stringify(b.marks ?? {})
+  );
+}
+
+function measureRichSegmentTextWidth(ctx: CanvasRenderingContext2D, font: string, text: string) {
+  ctx.save();
+  ctx.font = font;
+  const width = ctx.measureText(text).width;
+  ctx.restore();
+  return width;
+}
+
+function previewRichLineAppend(
+  ctx: CanvasRenderingContext2D,
+  line: RichTextLine,
+  segment: RichTextLineSegment
+) {
+  const previous = line.segments[line.segments.length - 1];
+  if (!areRichLineSegmentStylesEqual(previous, segment)) {
+    return {
+      mergeWithPrevious: false,
+      addedWidth: segment.width,
+      mergedWidth: segment.width,
+    };
+  }
+  const mergedWidth = measureRichSegmentTextWidth(ctx, previous.font, previous.text + segment.text);
+  return {
+    mergeWithPrevious: true,
+    addedWidth: mergedWidth - previous.width,
+    mergedWidth,
+  };
+}
+
+function applyRichLineAppend(
+  line: RichTextLine,
+  segment: RichTextLineSegment,
+  preview: { mergeWithPrevious: boolean; addedWidth: number; mergedWidth: number }
+) {
+  if (!preview.mergeWithPrevious) {
+    line.segments.push(segment);
+    line.width += segment.width;
+    return;
+  }
+  const previous = line.segments[line.segments.length - 1];
+  if (!previous) {
+    line.segments.push(segment);
+    line.width += segment.width;
+    return;
+  }
+  previous.text += segment.text;
+  previous.width = preview.mergedWidth;
+  line.width += preview.addedWidth;
 }
 
 function createEmptyRichLine(align: RichTextAlign, height: number): RichTextLine {

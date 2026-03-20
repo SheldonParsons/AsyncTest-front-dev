@@ -12,7 +12,17 @@ export type BatchDeleteTarget = {
 export type BatchDeleteSubtreesCommandContext = {
   getNodes: () => MindNodes | null;
   setSelection: (nodeIds: Iterable<string>, primaryId?: string | null) => void;
-  applyMutation: (reason: string, options?: { ensureVisibleNodeIds?: string[] }) => Promise<void> | void;
+  applyMutation: (
+    reason: string,
+    options?: {
+      ensureVisibleNodeIds?: string[];
+      invalidateSubtreeHeightNodeIds?: string[];
+      removedNodeIds?: string[];
+      touchedParentIds?: string[];
+      trustExistingNodeMeasureCache?: boolean;
+      useLayoutChangedNodeIds?: boolean;
+    }
+  ) => Promise<void> | void;
   setLastDeletedNodeId?: (nodeId: string | null) => void;
 };
 
@@ -21,13 +31,20 @@ export type BatchDeleteSubtreesCommandOptions = {
   previousSelection: SelectionSnapshot;
   nextSelectionId: string | null;
   lastDeletedNodeId: string | null;
+  deleteMutationOptions?: {
+    invalidateSubtreeHeightNodeIds?: string[];
+    removedNodeIds?: string[];
+    touchedParentIds?: string[];
+    trustExistingNodeMeasureCache?: boolean;
+    useLayoutChangedNodeIds?: boolean;
+  };
 };
 
 export function createBatchDeleteSubtreesCommand(
   context: BatchDeleteSubtreesCommandContext,
   options: BatchDeleteSubtreesCommandOptions
 ): Command {
-  const { targetsForMutation, previousSelection, nextSelectionId, lastDeletedNodeId } = options;
+  const { targetsForMutation, previousSelection, nextSelectionId, lastDeletedNodeId, deleteMutationOptions } = options;
 
   function remove(nodes: MindNodes) {
     targetsForMutation.forEach((target) => {
@@ -66,6 +83,11 @@ export function createBatchDeleteSubtreesCommand(
       context.setSelection(nextSelectionId ? [nextSelectionId] : [], nextSelectionId);
       void context.applyMutation('history:batch-delete-subtrees', {
         ensureVisibleNodeIds: nextSelectionId ? [nextSelectionId] : [],
+        invalidateSubtreeHeightNodeIds: deleteMutationOptions?.invalidateSubtreeHeightNodeIds,
+        removedNodeIds: deleteMutationOptions?.removedNodeIds,
+        touchedParentIds: deleteMutationOptions?.touchedParentIds,
+        trustExistingNodeMeasureCache: deleteMutationOptions?.trustExistingNodeMeasureCache,
+        useLayoutChangedNodeIds: deleteMutationOptions?.useLayoutChangedNodeIds,
       });
     },
     undo: () => {
@@ -85,6 +107,11 @@ export function createBatchDeleteSubtreesCommand(
       context.setSelection(nextSelectionId ? [nextSelectionId] : [], nextSelectionId);
       void context.applyMutation('history:redo-batch-delete-subtrees', {
         ensureVisibleNodeIds: nextSelectionId ? [nextSelectionId] : [],
+        invalidateSubtreeHeightNodeIds: deleteMutationOptions?.invalidateSubtreeHeightNodeIds,
+        removedNodeIds: deleteMutationOptions?.removedNodeIds,
+        touchedParentIds: deleteMutationOptions?.touchedParentIds,
+        trustExistingNodeMeasureCache: deleteMutationOptions?.trustExistingNodeMeasureCache,
+        useLayoutChangedNodeIds: deleteMutationOptions?.useLayoutChangedNodeIds,
       });
     },
   };

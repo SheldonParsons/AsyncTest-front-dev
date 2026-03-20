@@ -1,7 +1,14 @@
 import type { Ref } from 'vue';
 import { ref } from 'vue';
-import { ensureMindRoots, getActiveMind } from './useDocUtils';
+import {
+    DEFAULT_ROOT_H_GAP,
+    resolveRootHorizontalGap,
+    resolveRootVerticalGap,
+    ensureMindRoots,
+    getActiveMind
+} from './useDocUtils';
 import { measureNodeVisualLayout, type NodeTextLayout } from '../textLayout';
+import { DEBUG_MIND_PERF_PROBE } from '../constants';
 
 /** 节点在 world 坐标系中的包围盒 */
 export type Box = { x: number; y: number; w: number; h: number };
@@ -14,6 +21,25 @@ export type LayoutBounds = {
     height: number;
     centerX: number;
     centerY: number;
+};
+
+export type LayoutPerfMetrics = {
+    totalMs: number;
+    measureNodeMs: number;
+    measureNodeCalls: number;
+    measureNodeCacheHits: number;
+    subtreeHeightMs: number;
+    subtreeHeightCalls: number;
+    subtreeHeightCacheHits: number;
+    placeMs: number;
+    placeCalls: number;
+};
+
+export type LayoutTranslationOp = {
+    rootId: string;
+    dx: number;
+    dy: number;
+    translatedParentIds: string[];
 };
 
 /**
@@ -37,6 +63,41 @@ export function useLayout(
     /** 文字宽度测量缓存，避免同一文本重复测量 */
     const measureCache = new Map<string, NodeTextLayout>();
     const subtreeHeightCache = new Map<string, number>();
+    let lastLayoutPerfMetrics: LayoutPerfMetrics | null = null;
+    let currentLayoutPerfMetrics: LayoutPerfMetrics | null = null;
+    let trustExistingNodeMeasureCache = false;
+    let previousLayoutSnapshot: Map<string, Box> | null = null;
+    let translationBlockedNodeIds: Set<string> | null = null;
+    let lastLayoutTranslationOps: LayoutTranslationOp[] = [];
+    let currentLayoutTranslationOps: LayoutTranslationOp[] = [];
+    let lastLayoutChangedNodeIds: string[] = [];
+    let currentLayoutChangedNodeIds = new Set<string>();
+    type CachedNodeMeasure = {
+        nodeId: string | null;
+        richTextRef: unknown;
+        textLexicalRef: unknown;
+        textValue: string;
+        shapeStyleRef: unknown;
+        textStyleRef: unknown;
+        imageRef: unknown;
+        markersRef: unknown;
+        result: { w: number; h: number; bodyH: number; markerBandH: number; subtreeH: number };
+    };
+    let nodeMeasureCache = new WeakMap<object, CachedNodeMeasure>();
+
+    function createLayoutPerfMetrics(): LayoutPerfMetrics {
+        return {
+            totalMs: 0,
+            measureNodeMs: 0,
+            measureNodeCalls: 0,
+            measureNodeCacheHits: 0,
+            subtreeHeightMs: 0,
+            subtreeHeightCalls: 0,
+            subtreeHeightCacheHits: 0,
+            placeMs: 0,
+            placeCalls: 0,
+        };
+    }
 
     /**
      * 测量文字对应节点的包围盒尺寸。
@@ -50,11 +111,92 @@ export function useLayout(
         ctx: CanvasRenderingContext2D,
         node: any,
         nodeId?: string
-    ): { w: number; h: number } {
+    ): { w: number; h: number; bodyH: number; markerBandH: number; subtreeH: number } {
+        const perfMetrics = currentLayoutPerfMetrics;
+        const startedAt = perfMetrics ? performance.now() : 0;
+        if (perfMetrics) perfMetrics.measureNodeCalls += 1;
         const override = nodeId ? getNodeMeasureOverride?.(nodeId) : null;
-        if (override) return override;
+        if (override) {
+            const result = { ...override, bodyH: override.h, markerBandH: 0, subtreeH: override.h };
+            if (perfMetrics) perfMetrics.measureNodeMs += performance.now() - startedAt;
+            return result;
+        }
+        if (node && typeof node === 'object') {
+            const rawText =
+                typeof node.text === 'string'
+                    ? node.text
+                    : typeof node.text?.plain === 'string'
+                        ? node.text.plain
+                        : typeof node.textPlain === 'string'
+                            ? node.textPlain
+                            : typeof node.title === 'string'
+                                ? node.title
+                                : '';
+            const shapeStyleRef = node.style?.shape ?? null;
+            const textStyleRef = node.style?.text ?? null;
+            const cached = nodeMeasureCache.get(node);
+            if (trustExistingNodeMeasureCache && cached && cached.nodeId === (nodeId ?? null)) {
+                if (perfMetrics) {
+                    perfMetrics.measureNodeCacheHits += 1;
+                    perfMetrics.measureNodeMs += performance.now() - startedAt;
+                }
+                return cached.result;
+            }
+            if (
+                cached &&
+                cached.nodeId === (nodeId ?? null) &&
+                cached.richTextRef === node.richText &&
+                cached.textLexicalRef === node.textLexical &&
+                cached.textValue === rawText &&
+                cached.shapeStyleRef === shapeStyleRef &&
+                cached.textStyleRef === textStyleRef &&
+                cached.imageRef === node.image &&
+                cached.markersRef === node.markers
+            ) {
+                if (perfMetrics) {
+                    perfMetrics.measureNodeCacheHits += 1;
+                    perfMetrics.measureNodeMs += performance.now() - startedAt;
+                }
+                return cached.result;
+            }
+            const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId });
+            const markerBandH = Math.max(0, layout.height - layout.bodyHeight);
+            const result = {
+                w: layout.width,
+                h: layout.height,
+                bodyH: layout.bodyHeight,
+                markerBandH,
+                // marker band 只在 body 下方绘制；为了让 body center 继续作为布局与连线锚点，
+                // 需要在子树高度里额外给 marker band 预留同等的上侧空间。
+                subtreeH: layout.height + markerBandH,
+            };
+            nodeMeasureCache.set(node, {
+                nodeId: nodeId ?? null,
+                richTextRef: node.richText,
+                textLexicalRef: node.textLexical,
+                textValue: rawText,
+                shapeStyleRef,
+                textStyleRef,
+                imageRef: node.image,
+                markersRef: node.markers,
+                result,
+            });
+            if (perfMetrics) perfMetrics.measureNodeMs += performance.now() - startedAt;
+            return result;
+        }
         const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId });
-        return { w: layout.width, h: layout.height };
+        const markerBandH = Math.max(0, layout.height - layout.bodyHeight);
+        const result = {
+            w: layout.width,
+            h: layout.height,
+            bodyH: layout.bodyHeight,
+            markerBandH,
+            // marker band 只在 body 下方绘制；为了让 body center 继续作为布局与连线锚点，
+            // 需要在子树高度里额外给 marker band 预留同等的上侧空间。
+            subtreeH: layout.height + markerBandH,
+        };
+        if (perfMetrics) perfMetrics.measureNodeMs += performance.now() - startedAt;
+        return result;
     }
 
     /**
@@ -68,30 +210,43 @@ export function useLayout(
      * @param vGap    子节点之间的垂直间距
      */
     function subtreeHeight(
-        doc: any,
+        nodes: Record<string, any> | null | undefined,
         nodeId: string,
         ctx: CanvasRenderingContext2D,
         vGap: number
     ): number {
+        const perfMetrics = currentLayoutPerfMetrics;
+        const startedAt = perfMetrics ? performance.now() : 0;
+        if (perfMetrics) perfMetrics.subtreeHeightCalls += 1;
         const cached = subtreeHeightCache.get(nodeId);
-        if (cached != null) return cached;
+        if (cached != null) {
+            if (perfMetrics) {
+                perfMetrics.subtreeHeightCacheHits += 1;
+                perfMetrics.subtreeHeightMs += performance.now() - startedAt;
+            }
+            return cached;
+        }
 
-        const activeMind = getActiveMind(doc);
-        const n = activeMind?.nodes?.[nodeId];
-        if (!n) return 0;
+        const n = nodes?.[nodeId];
+        if (!n) {
+            if (perfMetrics) perfMetrics.subtreeHeightMs += performance.now() - startedAt;
+            return 0;
+        }
 
-        const { h } = measureNode(ctx, n, nodeId);
+        const { subtreeH } = measureNode(ctx, n, nodeId);
         const children: string[] = n.collapsed ? [] : (n.children || []);
         if (!children.length) {
-            subtreeHeightCache.set(nodeId, h);
-            return h;
+            subtreeHeightCache.set(nodeId, subtreeH);
+            if (perfMetrics) perfMetrics.subtreeHeightMs += performance.now() - startedAt;
+            return subtreeH;
         }
 
         let sum = 0;
-        for (const cid of children) sum += subtreeHeight(doc, cid, ctx, vGap);
+        for (const cid of children) sum += subtreeHeight(nodes, cid, ctx, vGap);
         sum += vGap * (children.length - 1);
-        const height = Math.max(h, sum);
+        const height = Math.max(subtreeH, sum);
         subtreeHeightCache.set(nodeId, height);
+        if (perfMetrics) perfMetrics.subtreeHeightMs += performance.now() - startedAt;
         return height;
     }
 
@@ -133,6 +288,63 @@ export function useLayout(
         }
     }
 
+    function markNodeLayoutChanged(nodeId: string, box: Box) {
+        const previousBox = previousLayoutSnapshot?.get(nodeId);
+        if (
+            !previousBox ||
+            previousBox.x !== box.x ||
+            previousBox.y !== box.y ||
+            previousBox.w !== box.w ||
+            previousBox.h !== box.h
+        ) {
+            currentLayoutChangedNodeIds.add(nodeId);
+        }
+    }
+
+    function translateSubtreeLayout(
+        nodes: Record<string, any> | null | undefined,
+        nodeId: string,
+        dx: number,
+        dy: number
+    ) {
+        const previousLayout = previousLayoutSnapshot;
+        if (!previousLayout) return false;
+        const queue = [nodeId];
+        const translatedBoxes: Array<{ nodeId: string; box: Box }> = [];
+        const translatedParentIds: string[] = [];
+        while (queue.length) {
+            const currentId = queue.pop()!;
+            const node = nodes?.[currentId];
+            const previousBox = previousLayout.get(currentId);
+            if (!node || !previousBox) return false;
+            translatedBoxes.push({
+                nodeId: currentId,
+                box: {
+                    x: previousBox.x + dx,
+                    y: previousBox.y + dy,
+                    w: previousBox.w,
+                    h: previousBox.h,
+                },
+            });
+            const children: string[] = node.collapsed ? [] : (node.children || []);
+            if (children.length) translatedParentIds.push(currentId);
+            for (const childId of children) queue.push(childId);
+        }
+        translatedBoxes.forEach(({ nodeId: currentId, box }) => {
+            layoutLocal.set(currentId, box);
+            if (dx !== 0 || dy !== 0) currentLayoutChangedNodeIds.add(currentId);
+        });
+        if ((dx !== 0 || dy !== 0) && translatedParentIds.length) {
+            currentLayoutTranslationOps.push({
+                rootId: nodeId,
+                dx,
+                dy,
+                translatedParentIds,
+            });
+        }
+        return true;
+    }
+
     /**
      * 递归放置节点位置，结果写入 `layoutLocal`。
      * 节点在其子树可用区域内**垂直居中**。
@@ -146,7 +358,7 @@ export function useLayout(
      * @param vGap     子节点之间的垂直间距（px）
      */
     function place(
-        doc: any,
+        nodes: Record<string, any> | null | undefined,
         nodeId: string,
         ctx: CanvasRenderingContext2D,
         nodeX: number,
@@ -154,31 +366,70 @@ export function useLayout(
         hGap: number,
         vGap: number
     ): void {
-        const activeMind = getActiveMind(doc);
-        const n = activeMind?.nodes?.[nodeId];
-        if (!n) return;
+        const perfMetrics = currentLayoutPerfMetrics;
+        const startedAt = perfMetrics ? performance.now() : 0;
+        if (perfMetrics) perfMetrics.placeCalls += 1;
+        const n = nodes?.[nodeId];
+        if (!n) {
+            if (perfMetrics) perfMetrics.placeMs += performance.now() - startedAt;
+            return;
+        }
 
         const m = measureNode(ctx, n, nodeId);
-        const sh = subtreeHeight(doc, nodeId, ctx, vGap);
+        const sh = subtreeHeight(nodes, nodeId, ctx, vGap);
 
-        // 在子树区域内垂直居中
-        const y = topY + (sh - m.h) / 2;
-        layoutLocal.set(nodeId, { x: nodeX, y, w: m.w, h: m.h });
+        // 以 body center 作为布局对齐基准，marker band 只向下延伸。
+        const y = topY + (sh - m.bodyH) / 2;
+        const nextBox = { x: nodeX, y, w: m.w, h: m.h };
+        layoutLocal.set(nodeId, nextBox);
+        markNodeLayoutChanged(nodeId, nextBox);
 
         const children: string[] = n.collapsed ? [] : (n.children || []);
-        if (!children.length) return;
+        if (!children.length) {
+            if (perfMetrics) perfMetrics.placeMs += performance.now() - startedAt;
+            return;
+        }
 
+        const childHeights = children.map((cid) => ({
+            nodeId: cid,
+            height: subtreeHeight(nodes, cid, ctx, vGap),
+        }));
         let childrenTotalHeight = 0;
-        for (const cid of children) childrenTotalHeight += subtreeHeight(doc, cid, ctx, vGap);
+        for (const child of childHeights) childrenTotalHeight += child.height;
         childrenTotalHeight += vGap * (children.length - 1);
 
         // 当父节点自身比 children block 更高时，children block 也要在该子树区域内垂直居中。
         let cursorY = topY + (sh - childrenTotalHeight) / 2;
-        for (const cid of children) {
-            const ch = subtreeHeight(doc, cid, ctx, vGap);
-            place(doc, cid, ctx, nodeX + m.w + hGap, cursorY, hGap, vGap);
-            cursorY += ch + vGap;
+        for (const child of childHeights) {
+            const childNode = nodes?.[child.nodeId];
+            const childMeasure = childNode ? measureNode(ctx, childNode, child.nodeId) : null;
+            const childX = nodeX + m.w + hGap;
+            const childY = cursorY + (child.height - (childMeasure?.bodyH ?? 0)) / 2;
+            const previousChildBox = previousLayoutSnapshot?.get(child.nodeId);
+            const canTranslateSubtree =
+                !!childNode &&
+                !!childMeasure &&
+                trustExistingNodeMeasureCache &&
+                !translationBlockedNodeIds?.has(child.nodeId) &&
+                !!previousChildBox &&
+                previousChildBox.w === childMeasure.w &&
+                previousChildBox.h === childMeasure.h;
+            if (canTranslateSubtree) {
+                const translated = translateSubtreeLayout(
+                    nodes,
+                    child.nodeId,
+                    childX - previousChildBox.x,
+                    childY - previousChildBox.y
+                );
+                if (!translated) {
+                    place(nodes, child.nodeId, ctx, childX, cursorY, hGap, vGap);
+                }
+            } else {
+                place(nodes, child.nodeId, ctx, childX, cursorY, hGap, vGap);
+            }
+            cursorY += child.height + vGap;
         }
+        if (perfMetrics) perfMetrics.placeMs += performance.now() - startedAt;
     }
 
     /**
@@ -186,33 +437,93 @@ export function useLayout(
      * 清空 `layoutLocal` 后，从第一个 root 开始递归放置所有节点。
      * 需在每次文档变更或画布尺寸变更后调用。
      */
-    function rebuildLayout(options?: { preserveSubtreeHeightCache?: boolean }): void {
+    function rebuildLayout(options?: {
+        preserveSubtreeHeightCache?: boolean;
+        trustExistingNodeMeasureCache?: boolean;
+        translationBlockedNodeIds?: Iterable<string>;
+    }): void {
+        const perfMetrics = DEBUG_MIND_PERF_PROBE ? createLayoutPerfMetrics() : null;
+        currentLayoutPerfMetrics = perfMetrics;
+        currentLayoutTranslationOps = [];
+        currentLayoutChangedNodeIds = new Set<string>();
+        const startedAt = perfMetrics ? performance.now() : 0;
+        trustExistingNodeMeasureCache = !!options?.trustExistingNodeMeasureCache;
+        previousLayoutSnapshot = new Map(layoutLocal);
+        translationBlockedNodeIds = options?.translationBlockedNodeIds ? new Set(options.translationBlockedNodeIds) : null;
         const d = props.doc;
         const c = canvasRef.value;
-        if (!d || !c) return;
+        if (!d || !c) {
+            lastLayoutPerfMetrics = perfMetrics;
+            lastLayoutTranslationOps = currentLayoutTranslationOps;
+            lastLayoutChangedNodeIds = Array.from(currentLayoutChangedNodeIds);
+            currentLayoutPerfMetrics = null;
+            trustExistingNodeMeasureCache = false;
+            previousLayoutSnapshot = null;
+            translationBlockedNodeIds = null;
+            return;
+        }
 
         const ctx = c.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            lastLayoutPerfMetrics = perfMetrics;
+            lastLayoutTranslationOps = currentLayoutTranslationOps;
+            lastLayoutChangedNodeIds = Array.from(currentLayoutChangedNodeIds);
+            currentLayoutPerfMetrics = null;
+            trustExistingNodeMeasureCache = false;
+            previousLayoutSnapshot = null;
+            translationBlockedNodeIds = null;
+            return;
+        }
 
         ensureMindRoots(d);
         const activeMind = getActiveMind(d);
-        if (!activeMind) return;
+        if (!activeMind) {
+            lastLayoutPerfMetrics = perfMetrics;
+            lastLayoutTranslationOps = currentLayoutTranslationOps;
+            lastLayoutChangedNodeIds = Array.from(currentLayoutChangedNodeIds);
+            currentLayoutPerfMetrics = null;
+            trustExistingNodeMeasureCache = false;
+            previousLayoutSnapshot = null;
+            translationBlockedNodeIds = null;
+            return;
+        }
+        const nodes = activeMind.nodes ?? null;
 
         layoutLocal.clear();
-        if (!options?.preserveSubtreeHeightCache) subtreeHeightCache.clear();
+        if (!options?.preserveSubtreeHeightCache) {
+            subtreeHeightCache.clear();
+            nodeMeasureCache = new WeakMap<object, CachedNodeMeasure>();
+        }
         const roots = Array.isArray(activeMind.roots) ? activeMind.roots : [];
 
         for (const root of roots) {
             const rootId = root?.rootId;
             if (!rootId) continue;
             const rootPos = root.pos || { x: 0, y: 0 };
-            const hGap = root.layout?.hGap ?? 60;
-            const vGap = root.layout?.vGap ?? 18;
-            place(d, rootId, ctx, rootPos.x, rootPos.y, hGap, vGap);
+            const hGap = resolveRootHorizontalGap(root.layout?.hGap ?? DEFAULT_ROOT_H_GAP);
+            const vGap = resolveRootVerticalGap(root.layout?.vGap);
+            place(nodes, rootId, ctx, rootPos.x, rootPos.y, hGap, vGap);
         }
 
         rebuildBounds();
+        if (perfMetrics) perfMetrics.totalMs = performance.now() - startedAt;
+        lastLayoutPerfMetrics = perfMetrics;
+        lastLayoutTranslationOps = currentLayoutTranslationOps;
+        lastLayoutChangedNodeIds = Array.from(currentLayoutChangedNodeIds);
+        currentLayoutPerfMetrics = null;
+        trustExistingNodeMeasureCache = false;
+        previousLayoutSnapshot = null;
+        translationBlockedNodeIds = null;
     }
 
-    return { layoutLocal, layoutBounds, measureCache, rebuildLayout, invalidateSubtreeHeightCache };
+    return {
+        layoutLocal,
+        layoutBounds,
+        measureCache,
+        rebuildLayout,
+        invalidateSubtreeHeightCache,
+        getLastLayoutPerfMetrics: () => lastLayoutPerfMetrics,
+        getLastLayoutTranslationOps: () => lastLayoutTranslationOps,
+        getLastLayoutChangedNodeIds: () => lastLayoutChangedNodeIds,
+    };
 }

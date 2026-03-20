@@ -6,11 +6,50 @@ import { AMIND_SCHEMA_VERSION } from './constants.js';
 import { guessMimeFromPath } from '../shared/assetService.node.js';
 
 const XMIND_EXT = '.xmind';
+const MAX_XMIND_SHEETS = 3;
 const DEFAULT_ROOT_POS = { x: 200, y: 140 };
 const DEFAULT_LAYOUT = { direction: 'right', hGap: 60, vGap: 18 };
 const EMPTY_THUMBNAIL_PNG_BASE64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aW1QAAAAASUVORK5CYII=';
 const DEFAULT_THEME_COLOR_LIST = '#FF6B6B #FF9F69 #97D3B6 #88E2D7 #6FD0F9 #E18BEE';
+const XMIND_MARKER_COLOR_ORDER = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
+const XMIND_TASK_TO_AMIND_MARKER = {
+    'task-start': 'task:15',
+    'task-oct': 'task:15',
+    'task-3oct': 'task:40',
+    'task-half': 'task:50',
+    'task-5oct': 'task:65',
+    'task-7oct': 'task:90',
+    'task-done': 'task:100',
+};
+const AMIND_TASK_TO_XMIND_MARKER = {
+    'task:15': 'task-oct',
+    'task:40': 'task-3oct',
+    'task:50': 'task-half',
+    'task:65': 'task-5oct',
+    'task:90': 'task-7oct',
+    'task:100': 'task-done',
+};
+const XMIND_OTHER_TO_AMIND_MARKER = {
+    'symbol-idea': 'other:lightbulb',
+    'symbol-exclam': 'other:error',
+    'symbol-lightning': 'other:zap',
+    'symbol-question': 'other:question',
+    'symbol-run': 'other:exit',
+    'symbol-pin': 'other:tag',
+    'symbol-entertainment': 'other:game',
+    c_symbol_like: 'other:thumbs-up',
+    c_symbol_dislike: 'other:thumbs-down',
+    c_symbol_hourglass: 'other:time',
+    c_symbol_heart: 'other:heart',
+    c_symbol_flight: 'other:plane',
+    c_symbol_music: 'other:music',
+    c_symbol_pen: 'other:pen',
+    c_symbol_telephone: 'other:call',
+};
+const AMIND_OTHER_TO_XMIND_MARKER = Object.fromEntries(
+    Object.entries(XMIND_OTHER_TO_AMIND_MARKER).map(([xmindMarkerId, amindMarkerKey]) => [amindMarkerKey, xmindMarkerId])
+);
 
 function ensureXmindExt(filePath) {
     return filePath.toLowerCase().endsWith(XMIND_EXT) ? filePath : `${filePath}${XMIND_EXT}`;
@@ -276,6 +315,24 @@ function createNodeFromTopic(topic, fallbackTitle = '主题') {
     };
 }
 
+function mapXmindColorMarkerIdToAmind(markerId, xmindPrefix, amindGroup, amindItemPrefix) {
+    if (typeof markerId !== 'string') return null;
+    const match = markerId.match(new RegExp(`^${xmindPrefix}-(red|orange|yellow|green|blue|purple|gray)$`));
+    if (!match) return null;
+    const colorIndex = XMIND_MARKER_COLOR_ORDER.indexOf(match[1]);
+    if (colorIndex < 0) return null;
+    return `${amindGroup}:${amindItemPrefix}${colorIndex + 1}`;
+}
+
+function mapAmindColorMarkerKeyToXmind(markerKey, amindGroup, amindItemPrefix, xmindPrefix) {
+    if (typeof markerKey !== 'string') return null;
+    const match = markerKey.match(new RegExp(`^${amindGroup}:${amindItemPrefix}(\\d+)$`));
+    if (!match) return null;
+    const colorIndex = Number(match[1]) - 1;
+    if (colorIndex < 0 || colorIndex >= XMIND_MARKER_COLOR_ORDER.length) return null;
+    return `${xmindPrefix}-${XMIND_MARKER_COLOR_ORDER[colorIndex]}`;
+}
+
 function mapXmindMarkerIdToAmind(markerId) {
     if (typeof markerId !== 'string') return null;
     const priorityMatch = markerId.match(/^priority-(\d+)$/);
@@ -283,9 +340,16 @@ function mapXmindMarkerIdToAmind(markerId) {
         const level = Number(priorityMatch[1]);
         if (level >= 1 && level <= 7) return `level:level${level}`;
     }
-    if (markerId === 'task-done') return 'task:100';
-    if (markerId === 'symbol-idea') return 'other:lightbulb';
-    if (markerId === 'symbol-exclam') return 'other:error';
+    const taskMarker = XMIND_TASK_TO_AMIND_MARKER[markerId];
+    if (taskMarker) return taskMarker;
+    const flagMarker = mapXmindColorMarkerIdToAmind(markerId, 'flag', 'flag', 'flag');
+    if (flagMarker) return flagMarker;
+    const starMarker = mapXmindColorMarkerIdToAmind(markerId, 'star', 'star', 'star');
+    if (starMarker) return starMarker;
+    const userMarker = mapXmindColorMarkerIdToAmind(markerId, 'people', 'user', 'user');
+    if (userMarker) return userMarker;
+    const otherMarker = XMIND_OTHER_TO_AMIND_MARKER[markerId];
+    if (otherMarker) return otherMarker;
     return null;
 }
 
@@ -296,19 +360,38 @@ function mapAmindMarkerKeyToXmind(markerKey) {
         const level = Number(levelMatch[1]);
         if (level >= 1 && level <= 7) return `priority-${level}`;
     }
-    if (markerKey === 'task:100') return 'task-done';
-    if (markerKey === 'other:lightbulb') return 'symbol-idea';
-    if (markerKey === 'other:error') return 'symbol-exclam';
+    const taskMarker = AMIND_TASK_TO_XMIND_MARKER[markerKey];
+    if (taskMarker) return taskMarker;
+    const flagMarker = mapAmindColorMarkerKeyToXmind(markerKey, 'flag', 'flag', 'flag');
+    if (flagMarker) return flagMarker;
+    const starMarker = mapAmindColorMarkerKeyToXmind(markerKey, 'star', 'star', 'star');
+    if (starMarker) return starMarker;
+    const userMarker = mapAmindColorMarkerKeyToXmind(markerKey, 'user', 'user', 'people');
+    if (userMarker) return userMarker;
+    const otherMarker = AMIND_OTHER_TO_XMIND_MARKER[markerKey];
+    if (otherMarker) return otherMarker;
     return null;
 }
 
 function applyXmindMarkersToNode(topic, node) {
     const markerRefs = Array.isArray(topic?.markers) ? topic.markers : Array.isArray(topic?.markerRefs) ? topic.markerRefs : [];
-    const markers = markerRefs
-        .map((item) => mapXmindMarkerIdToAmind(item?.markerId))
+    const markerPairs = markerRefs
+        .map((item) => {
+            const markerId = typeof item?.markerId === 'string' ? item.markerId : null;
+            const markerKey = mapXmindMarkerIdToAmind(markerId);
+            return markerId && markerKey ? { markerId, markerKey } : null;
+        })
         .filter(Boolean);
-    if (markers.length) {
-        node.markers = Array.from(new Set(markers));
+    if (markerPairs.length) {
+        node.markers = Array.from(new Set(markerPairs.map((item) => item.markerKey)));
+        const markerIdsByKey = {};
+        markerPairs.forEach(({ markerId, markerKey }) => {
+            if (!markerIdsByKey[markerKey]) markerIdsByKey[markerKey] = markerId;
+        });
+        node.xmindMeta = {
+            ...(node?.xmindMeta && typeof node.xmindMeta === 'object' ? node.xmindMeta : {}),
+            markerIdsByKey,
+        };
     }
 }
 
@@ -461,12 +544,41 @@ function createNodeImageFromXmindTopic(topic, resourceBytesMap) {
     };
 }
 
+function createDefaultBoard(boardIndex, title) {
+    const boardTitle = sanitizeTitle(title, `画板 ${boardIndex + 1}`);
+    const rootNode = createNodeFromTopic(
+        {
+            id: 'root',
+            title: boardTitle,
+        },
+        boardTitle
+    );
+    return {
+        id: `mind-${boardIndex + 1}`,
+        title: boardTitle,
+        roots: [
+            {
+                rootId: rootNode.id,
+                pos: { ...DEFAULT_ROOT_POS },
+                layout: { ...DEFAULT_LAYOUT },
+            },
+        ],
+        nodes: {
+            [rootNode.id]: rootNode,
+        },
+        view: {
+            viewport: {},
+        },
+        xmindMeta: {},
+    };
+}
+
 function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
     const rootTopic = sheet?.rootTopic;
     if (!rootTopic || typeof rootTopic !== 'object') {
         throw new Error(`Invalid XMind sheet at index ${boardIndex}: missing rootTopic`);
     }
-    const boardId = `mind-${boardIndex + 1}-${randomUUID().slice(0, 8)}`;
+    const boardId = `mind-${boardIndex + 1}`;
     const rootNode = createNodeFromTopic(rootTopic, `画板 ${boardIndex + 1}`);
     applyXmindMarkersToNode(rootTopic, rootNode);
     rootNode.image = createNodeImageFromXmindTopic(rootTopic, resourceBytesMap);
@@ -696,9 +808,18 @@ function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEnt
     };
     if (textPayload.attributedTitle?.length) topic.attributedTitle = textPayload.attributedTitle;
     if (textPayload.style) topic.style = textPayload.style;
+    const markerIdsByKey =
+        node?.xmindMeta?.markerIdsByKey && typeof node.xmindMeta.markerIdsByKey === 'object'
+            ? node.xmindMeta.markerIdsByKey
+            : {};
     const markerRefs = Array.isArray(node?.markers)
         ? node.markers
-            .map((markerKey) => mapAmindMarkerKeyToXmind(markerKey))
+            .map((markerKey) => {
+                const xmindMarkerId = markerIdsByKey[markerKey];
+                return typeof xmindMarkerId === 'string' && xmindMarkerId
+                    ? xmindMarkerId
+                    : mapAmindMarkerKeyToXmind(markerKey);
+            })
             .filter(Boolean)
             .map((markerId) => ({ markerId }))
         : [];
@@ -792,7 +913,13 @@ export function convertXmindWorkbookToAmindDoc(workbook, options = {}) {
         throw new Error('Cannot import XMind: workbook is empty');
     }
     const resourceBytesMap = options.resourceBytesMap instanceof Map ? options.resourceBytesMap : new Map();
-    const boards = workbook.map((sheet, index) => buildBoardFromSheet(sheet, index, resourceBytesMap));
+    const importedBoards = workbook
+        .slice(0, MAX_XMIND_SHEETS)
+        .map((sheet, index) => buildBoardFromSheet(sheet, index, resourceBytesMap));
+    const boards = [...importedBoards];
+    while (boards.length < MAX_XMIND_SHEETS) {
+        boards.push(createDefaultBoard(boards.length, `画板 ${boards.length + 1}`));
+    }
     const order = boards.map((board) => board.id);
     const manifestTitle = sanitizeTitle(
         options.title,
@@ -829,6 +956,7 @@ export function convertAmindDocToXmindWorkbook(doc) {
     const sheets = order
         .map((boardId) => minds?.[boardId])
         .filter(Boolean)
+        .slice(0, MAX_XMIND_SHEETS)
         .map((board, index) => buildSheetFromBoard(board, index, resourceEntries));
     if (!sheets.length) {
         throw new Error('Cannot export XMind: no boards found');

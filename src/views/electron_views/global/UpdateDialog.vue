@@ -177,7 +177,6 @@ onMounted(() => {
 
         // 3. 已经是最新版 (修复了原代码变量覆盖问题)
         removeNotAvailableListener = window.electronAPI.on('update-not-available', (event: any, info: string) => {
-            console.log("123");
             stopPinging();
             window.$toast({ title: '已经是最新版:' + info })
         });

@@ -5,7 +5,7 @@
       <div class="drag-layer"></div>
       <commonHeader ref="commonHeaderRef" style="height: inherit;" @up="upZIndex" class="ui-layer" />
     </div>
-    <router-view v-if="flag" class="main-router" />
+    <router-view v-if="flag" class="main-router" @doubleCheckLoginStatus="check_login_status" />
     <ToastView ref="toastRef" />
     <UpdateDialog v-if="isMainWindow"></UpdateDialog>
   </div>
@@ -40,10 +40,12 @@ onMounted(() => {
   }
 });
 
+function check_login_status() {
+  commonHeaderRef.value?.updateLoginStatus()
+}
+
 function switchWindowBtn(open: boolean) {
   if (window.electronAPI && isElectron) {
-    console.log("!23123123");
-    
     window.electronAPI.toggleTrafficLights(open);
   }
 }

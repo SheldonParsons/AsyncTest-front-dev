@@ -4,7 +4,7 @@ import { rectIntersects, type WorldRect } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
 import { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import { getNodeBodyWorldRect } from '../nodeMarkers';
-import { getActiveMind } from './useDocUtils';
+import { DEFAULT_ROOT_H_GAP, getActiveMind, resolveRootHorizontalGap } from './useDocUtils';
 
 export type ParentEdgeKey = `parent:${string}`;
 export type EdgePoint = { x: number; y: number };
@@ -79,7 +79,7 @@ const TRUNK_STUB_MIN = 20;
 const TRUNK_STUB_MAX = 60;
 const ROUND_RADIUS_MIN = 6;
 const ROUND_RADIUS_MAX = 18;
-export const CHILD_INSET = 6;
+export const CHILD_INSET = 4;
 const BBOX_MARGIN = 6;
 export const MIN_BRANCH_STRAIGHT = 10;
 export const MIN_EFFECTIVE_RADIUS = 5;
@@ -217,6 +217,123 @@ function createBranchPath(
     `Q ${fmt(startPoint.x)} ${fmt(startPoint.y)} ${fmt(curveEndPoint.x)} ${fmt(curveEndPoint.y)} ` +
     `L ${fmt(endPoint.x)} ${fmt(endPoint.y)}`;
   return { path, rounded: true, degenerated: false, effectiveRadius, branchLen, pathStartPoint, pathData };
+}
+
+function translatePoint(point: EdgePoint | null, dx: number, dy: number) {
+  return point ? { x: point.x + dx, y: point.y + dy } : null;
+}
+
+function translateRect(rect: WorldRect, dx: number, dy: number): WorldRect {
+  return {
+    x1: rect.x1 + dx,
+    y1: rect.y1 + dy,
+    x2: rect.x2 + dx,
+    y2: rect.y2 + dy,
+  };
+}
+
+function translatePathData(pathData: string | null, dx: number, dy: number) {
+  if (!pathData) return null;
+  const tokens = pathData.trim().split(/\s+/);
+  const translated: string[] = [];
+  let isXCoord = false;
+  for (const token of tokens) {
+    if (/^[A-Za-z]$/.test(token)) {
+      translated.push(token);
+      isXCoord = true;
+      continue;
+    }
+    const value = Number(token);
+    if (!Number.isFinite(value)) {
+      translated.push(token);
+      continue;
+    }
+    translated.push(String(fmt(value + (isXCoord ? dx : dy))));
+    isXCoord = !isXCoord;
+  }
+  return translated.join(' ');
+}
+
+function translateParentGeom(geom: ParentEdgeGeom, dx: number, dy: number): ParentEdgeGeom {
+  const trunkPathData = translatePathData(geom.trunkPathData, dx, dy);
+  const childBranchPathData = new Map<string, string>();
+  const childBranchPaths = new Map<string, Path2D>();
+  geom.childBranchPathData.forEach((pathData, childId) => {
+    const translatedPathData = translatePathData(pathData, dx, dy);
+    if (!translatedPathData) return;
+    childBranchPathData.set(childId, translatedPathData);
+    childBranchPaths.set(childId, new Path2D(translatedPathData));
+  });
+  const branchBBoxes = new Map<string, WorldRect>();
+  geom.branchBBoxes.forEach((bbox, childId) => {
+    branchBBoxes.set(childId, translateRect(bbox, dx, dy));
+  });
+  const branchMeta = new Map<string, BranchMeta>();
+  geom.branchMeta.forEach((meta, childId) => {
+    branchMeta.set(childId, {
+      ...meta,
+      pathStartPoint: { x: meta.pathStartPoint.x + dx, y: meta.pathStartPoint.y + dy },
+      startPoint: { x: meta.startPoint.x + dx, y: meta.startPoint.y + dy },
+      endPoint: { x: meta.endPoint.x + dx, y: meta.endPoint.y + dy },
+    });
+  });
+  return {
+    ...geom,
+    trunkPath: trunkPathData ? new Path2D(trunkPathData) : null,
+    trunkPathData,
+    childBranchPaths,
+    childBranchPathData,
+    branchBBoxes,
+    bbox: translateRect(geom.bbox, dx, dy),
+    trunkX: geom.trunkX + dx,
+    parentAnchor: { x: geom.parentAnchor.x + dx, y: geom.parentAnchor.y + dy },
+    trunkJoin: translatePoint(geom.trunkJoin, dx, dy),
+    trunkTop: translatePoint(geom.trunkTop, dx, dy),
+    trunkBottom: translatePoint(geom.trunkBottom, dx, dy),
+    yMin: geom.yMin == null ? null : geom.yMin + dy,
+    yMax: geom.yMax == null ? null : geom.yMax + dy,
+    branchMeta,
+  };
+}
+
+function hasSameTranslation(
+  prevRect: WorldRect | null,
+  nextRect: WorldRect | null,
+  dx: number,
+  dy: number
+) {
+  if (!prevRect || !nextRect) return false;
+  const prevWidth = prevRect.x2 - prevRect.x1;
+  const nextWidth = nextRect.x2 - nextRect.x1;
+  const prevHeight = prevRect.y2 - prevRect.y1;
+  const nextHeight = nextRect.y2 - nextRect.y1;
+  if (prevWidth !== nextWidth || prevHeight !== nextHeight) return false;
+  return nextRect.x1 - prevRect.x1 === dx && nextRect.y1 - prevRect.y1 === dy;
+}
+
+function resolveParentGeomTranslation(
+  parentId: string,
+  childIds: string[],
+  nodes: Record<string, any>,
+  previousWorldBoxes: WorldBoxes,
+  nextWorldBoxes: WorldBoxes
+) {
+  const prevParentBox = previousWorldBoxes.get(parentId);
+  const nextParentBox = nextWorldBoxes.get(parentId);
+  const prevParentRect = prevParentBox ? getNodeBodyWorldRect(nodes[parentId], prevParentBox) : null;
+  const nextParentRect = nextParentBox ? getNodeBodyWorldRect(nodes[parentId], nextParentBox) : null;
+  if (!prevParentRect || !nextParentRect) return null;
+  const dx = nextParentRect.x1 - prevParentRect.x1;
+  const dy = nextParentRect.y1 - prevParentRect.y1;
+  if (!hasSameTranslation(prevParentRect, nextParentRect, dx, dy)) return null;
+  for (const childId of childIds) {
+    const prevChildBox = previousWorldBoxes.get(childId);
+    const nextChildBox = nextWorldBoxes.get(childId);
+    const prevChildRect = prevChildBox ? getNodeBodyWorldRect(nodes[childId], prevChildBox) : null;
+    const nextChildRect = nextChildBox ? getNodeBodyWorldRect(nodes[childId], nextChildBox) : null;
+    if (!hasSameTranslation(prevChildRect, nextChildRect, dx, dy)) return null;
+  }
+  return { dx, dy };
 }
 
 export function buildParentGeom(
@@ -436,7 +553,23 @@ export function useEdges() {
     trunkOverhangDetectedCount: 0,
   });
 
-  function finalizeEdgeCacheStats(rebuildStart: number) {
+  function finalizeEdgeCacheStats(rebuildStart: number, options?: { updatedKeys?: ParentEdgeKey[] }) {
+    if (options?.updatedKeys?.length && !DEBUG_CANVAS_OVERLAY) {
+      const updatedBoxes = new Map<ParentEdgeKey, WorldRect>();
+      options.updatedKeys.forEach((key) => {
+        const geom = parentEdgeGeomByKey.get(key);
+        if (geom) updatedBoxes.set(key, geom.bbox);
+      });
+      edgeSpatialIndex.updateMany(updatedBoxes, options.updatedKeys);
+      edgeStats.value = {
+        ...edgeStats.value,
+        parentsWithEdges: parentEdgeGeomByKey.size,
+        edgeCacheSize: parentEdgeGeomByKey.size,
+        edgeCacheBuildMs: performance.now() - rebuildStart,
+      };
+      return;
+    }
+
     let totalChildrenEdges = 0;
     let trunkPathCount = 0;
     let branchPathCount = 0;
@@ -567,7 +700,11 @@ export function useEdges() {
   function rebuildEdgeCache(
     doc: any,
     worldBoxes: WorldBoxes,
-    options?: { affectedParents?: Array<{ parentId: string; rootId: string }> }
+    options?: {
+      affectedParents?: Array<{ parentId: string; rootId: string }>;
+      previousWorldBoxes?: WorldBoxes;
+      translatedParentOffsets?: Map<string, { dx: number; dy: number }>;
+    }
   ) {
     const rebuildStart = performance.now();
     const activeMind = getActiveMind(doc);
@@ -575,7 +712,9 @@ export function useEdges() {
     const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
     const hGapByRootId = new Map<string, number>();
     roots.forEach((root) => {
-      if (root?.rootId) hGapByRootId.set(root.rootId, root.layout?.hGap ?? 60);
+      if (root?.rootId) {
+        hGapByRootId.set(root.rootId, resolveRootHorizontalGap(root.layout?.hGap ?? DEFAULT_ROOT_H_GAP));
+      }
     });
 
     if (!options?.affectedParents?.length) {
@@ -583,7 +722,7 @@ export function useEdges() {
       for (const root of roots) {
         const rootId = root?.rootId;
         if (!rootId) continue;
-        const hGap = hGapByRootId.get(rootId) ?? 60;
+        const hGap = hGapByRootId.get(rootId) ?? DEFAULT_ROOT_H_GAP;
         const queue: string[] = [rootId];
         let cursor = 0;
 
@@ -602,25 +741,50 @@ export function useEdges() {
         }
       }
       finalizeEdgeCacheStats(rebuildStart);
-      return;
+      return { translatedParentCount: 0 };
     }
 
     const nextAffectedParents = new Map<string, string>();
+    let translatedParentCount = 0;
     options.affectedParents.forEach(({ parentId, rootId }) => {
       if (parentId && rootId) nextAffectedParents.set(parentId, rootId);
     });
+    const previousAffectedGeoms = new Map<ParentEdgeKey, ParentEdgeGeom>();
     nextAffectedParents.forEach((_rootId, parentId) => {
-      parentEdgeGeomByKey.delete(`parent:${parentId}`);
+      const key = `parent:${parentId}` as ParentEdgeKey;
+      const previousGeom = parentEdgeGeomByKey.get(key);
+      if (previousGeom) previousAffectedGeoms.set(key, previousGeom);
+      parentEdgeGeomByKey.delete(key);
     });
     nextAffectedParents.forEach((rootId, parentId) => {
       const parentNode = nodes[parentId];
       if (!parentNode) return;
       const childIds: string[] = Array.isArray(parentNode.children) ? parentNode.children : [];
       if (!childIds.length) return;
-      const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGapByRootId.get(rootId) ?? 60);
+      const translatedOffset = options.translatedParentOffsets?.get(parentId);
+      const previousGeom = previousAffectedGeoms.get(`parent:${parentId}`);
+      if (previousGeom && translatedOffset) {
+        parentEdgeGeomByKey.set(
+          previousGeom.key,
+          translateParentGeom(previousGeom, translatedOffset.dx, translatedOffset.dy)
+        );
+        translatedParentCount += 1;
+        return;
+      }
+      const geom = buildParentGeom(
+        rootId,
+        parentId,
+        childIds,
+        nodes,
+        worldBoxes,
+        hGapByRootId.get(rootId) ?? DEFAULT_ROOT_H_GAP
+      );
       if (geom) parentEdgeGeomByKey.set(geom.key, geom);
     });
-    finalizeEdgeCacheStats(rebuildStart);
+    finalizeEdgeCacheStats(rebuildStart, {
+      updatedKeys: Array.from(nextAffectedParents.keys()).map((parentId) => `parent:${parentId}` as ParentEdgeKey),
+    });
+    return { translatedParentCount };
   }
 
   function queryVisibleParentEdgeGeoms(rect: WorldRect) {

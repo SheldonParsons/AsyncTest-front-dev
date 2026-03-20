@@ -23,6 +23,16 @@ const SEED_WORDS = [
     'focus',
     'cluster',
 ];
+const SEED_IMAGE_COLORS = [
+    '#2563eb',
+    '#7c3aed',
+    '#db2777',
+    '#ea580c',
+    '#ca8a04',
+    '#16a34a',
+    '#0891b2',
+    '#dc2626',
+];
 
 function readPositiveIntEnv(name, fallbackValue) {
     const raw = process.env[name];
@@ -42,6 +52,53 @@ function resolveSeedCount(seedCountOverride) {
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     }
     return DEV_SEED_ENABLED ? readPositiveIntEnv('AMIND_DEV_SEED_NODE_COUNT', 300) : 0;
+}
+
+function normalizeSeedConfig(seedConfig) {
+    if (!seedConfig || typeof seedConfig !== 'object') return null;
+    const totalNodeCount = normalizePositiveInt(
+        seedConfig.totalNodeCount ?? seedConfig.nodeCount,
+        0
+    );
+    const totalImageCount = normalizePositiveInt(
+        seedConfig.totalImageCount ?? seedConfig.imageCount,
+        0
+    );
+    if (totalNodeCount <= 0 && totalImageCount <= 0) return null;
+    return {
+        totalNodeCount,
+        totalImageCount,
+    };
+}
+
+function resolveSeedConfig(options = {}) {
+    if (Object.prototype.hasOwnProperty.call(options, 'seedConfig')) {
+        return normalizeSeedConfig(options.seedConfig);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, 'seedNodeCount')) {
+        const legacySeedCount = resolveSeedCount(options.seedNodeCount);
+        if (legacySeedCount > 0) {
+            return {
+                totalNodeCount: legacySeedCount + 1,
+                totalImageCount: 0,
+            };
+        }
+        return null;
+    }
+
+    if (!DEV_SEED_ENABLED) return null;
+    const envTotalNodeCount =
+        normalizePositiveInt(process.env.AMIND_DEV_SEED_TOTAL_NODE_COUNT, 0) ||
+        (readPositiveIntEnv('AMIND_DEV_SEED_NODE_COUNT', 0)
+            ? readPositiveIntEnv('AMIND_DEV_SEED_NODE_COUNT', 0) + 1
+            : 0);
+    const envTotalImageCount = normalizePositiveInt(process.env.AMIND_DEV_SEED_IMAGE_COUNT, 0);
+    if (envTotalNodeCount <= 0 && envTotalImageCount <= 0) return null;
+    return {
+        totalNodeCount: envTotalNodeCount,
+        totalImageCount: envTotalImageCount,
+    };
 }
 
 function createSeedNodeText(index) {
@@ -86,9 +143,92 @@ function countTreeEdges(nodes) {
     return totalEdges;
 }
 
-function appendDevSeedNodes(board, rootId, seedCountOverride) {
-    const seedCount = resolveSeedCount(seedCountOverride);
-    if (seedCount <= 0) return;
+function countNodesWithImages(nodes) {
+    let totalImages = 0;
+    for (const node of Object.values(nodes)) {
+        if (node?.image?.src) totalImages += 1;
+    }
+    return totalImages;
+}
+
+function createSeededRandom(seed) {
+    let state = seed >>> 0;
+    return () => {
+        state += 0x6D2B79F5;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function shuffleInPlace(list, nextRandom) {
+    for (let index = list.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(nextRandom() * (index + 1));
+        [list[index], list[swapIndex]] = [list[swapIndex], list[index]];
+    }
+    return list;
+}
+
+function createSeedImage(index) {
+    const naturalWidth = 480;
+    const naturalHeight = 320;
+    const width = 320;
+    const height = Math.round(naturalHeight * (width / naturalWidth));
+    const bg = SEED_IMAGE_COLORS[index % SEED_IMAGE_COLORS.length];
+    const accent = SEED_IMAGE_COLORS[(index * 3 + 2) % SEED_IMAGE_COLORS.length];
+    const accentAlt = SEED_IMAGE_COLORS[(index * 5 + 5) % SEED_IMAGE_COLORS.length];
+    const shapeX = 36 + (index * 29) % 220;
+    const shapeY = 34 + (index * 17) % 130;
+    const shapeR = 46 + (index * 7) % 40;
+    const stripeWidth = 140 + (index * 19) % 170;
+    const label = `IMG ${String(index + 1).padStart(3, '0')}`;
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${naturalWidth}" height="${naturalHeight}" viewBox="0 0 ${naturalWidth} ${naturalHeight}">
+  <rect width="${naturalWidth}" height="${naturalHeight}" rx="28" fill="${bg}"/>
+  <circle cx="${shapeX}" cy="${shapeY}" r="${shapeR}" fill="${accent}" opacity="0.86"/>
+  <circle cx="${naturalWidth - 88}" cy="${naturalHeight - 72}" r="${26 + (index % 24)}" fill="${accentAlt}" opacity="0.72"/>
+  <rect x="38" y="42" width="${stripeWidth}" height="62" rx="18" fill="rgba(255,255,255,0.22)"/>
+  <rect x="38" y="138" width="${naturalWidth - 76}" height="26" rx="13" fill="rgba(255,255,255,0.82)"/>
+  <rect x="38" y="180" width="${naturalWidth - 132}" height="20" rx="10" fill="rgba(255,255,255,0.56)"/>
+  <rect x="38" y="214" width="${naturalWidth - 178}" height="20" rx="10" fill="rgba(255,255,255,0.42)"/>
+  <text x="38" y="98" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#ffffff">${label}</text>
+</svg>`.trim();
+    return {
+        src: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        mime: 'image/svg+xml',
+        width,
+        height,
+        naturalWidth,
+        naturalHeight,
+    };
+}
+
+function appendDevSeedImages(board, rootId, totalImageCount) {
+    const imageCount = normalizePositiveInt(totalImageCount, 0);
+    if (imageCount <= 0) return;
+    const candidateNodeIds = Object.keys(board.nodes).filter((nodeId) => nodeId !== rootId);
+    if (!candidateNodeIds.length) return;
+
+    const nextRandom = createSeededRandom(candidateNodeIds.length * 17 + imageCount * 31);
+    shuffleInPlace(candidateNodeIds, nextRandom);
+    const appliedCount = Math.min(imageCount, candidateNodeIds.length);
+    for (let index = 0; index < appliedCount; index += 1) {
+        const nodeId = candidateNodeIds[index];
+        const node = board.nodes[nodeId];
+        if (!node) continue;
+        node.image = createSeedImage(index);
+    }
+}
+
+function appendDevSeedNodes(board, rootId, seedOptions = {}) {
+    const seedConfig = resolveSeedConfig(seedOptions);
+    const totalNodeCount = Math.max(1, seedConfig?.totalNodeCount ?? 0);
+    const seedCount = Math.max(0, totalNodeCount - 1);
+    if (seedCount <= 0) {
+        if (seedConfig?.totalImageCount) appendDevSeedImages(board, rootId, seedConfig.totalImageCount);
+        return;
+    }
 
     const queue = [rootId];
     let parentCursor = 0;
@@ -116,9 +256,13 @@ function appendDevSeedNodes(board, rootId, seedCountOverride) {
             created += 1;
         }
     }
+
+    if (seedConfig?.totalImageCount) {
+        appendDevSeedImages(board, rootId, seedConfig.totalImageCount);
+    }
 }
 
-function createEmptyMindBoard(title, { id, seedNodeCount } = {}) {
+function createEmptyMindBoard(title, { id, seedConfig, seedNodeCount } = {}) {
     const rootId = 'root';
     const board = {
         id,
@@ -142,14 +286,15 @@ function createEmptyMindBoard(title, { id, seedNodeCount } = {}) {
         },
     };
 
-    appendDevSeedNodes(board, rootId, seedNodeCount);
+    appendDevSeedNodes(board, rootId, { seedConfig, seedNodeCount });
     return board;
 }
 
 export function createEmptyDoc(title = '思维导图', options = {}) {
     const now = new Date().toISOString();
+    const resolvedSeedConfig = resolveSeedConfig(options);
     const boardDefinitions = [
-        { id: 'mind-1', title, seedNodeCount: options.seedNodeCount },
+        { id: 'mind-1', title, seedConfig: resolvedSeedConfig },
         { id: 'mind-2', title: '画板 2', seedNodeCount: 0 },
         { id: 'mind-3', title: '画板 3', seedNodeCount: 0 },
     ];
@@ -175,16 +320,19 @@ export function createEmptyDoc(title = '思维导图', options = {}) {
             minds,
         },
     };
-    const resolvedSeedCount = resolveSeedCount(options.seedNodeCount);
     const firstBoard = minds['mind-1'];
 
-    console.info('[amind-seed]', {
-        enabled: resolvedSeedCount > 0,
-        requestedSeedNodeCount: resolvedSeedCount,
-        seededNodeCount: Object.keys(firstBoard.nodes).length,
-        rootChildrenCount: firstBoard.nodes.root?.children?.length ?? 0,
-        totalEdges: countTreeEdges(firstBoard.nodes),
-    });
+    if (resolvedSeedConfig) {
+        console.info('[amind-seed]', {
+            enabled: true,
+            requestedTotalNodeCount: resolvedSeedConfig.totalNodeCount,
+            requestedTotalImageCount: resolvedSeedConfig.totalImageCount,
+            seededNodeCount: Object.keys(firstBoard.nodes).length,
+            seededImageCount: countNodesWithImages(firstBoard.nodes),
+            rootChildrenCount: firstBoard.nodes.root?.children?.length ?? 0,
+            totalEdges: countTreeEdges(firstBoard.nodes),
+        });
+    }
 
     return doc;
 }

@@ -8,7 +8,10 @@
       <LexicalNodeEditorOverlay :visible="!!editingSession"
         :overlay-root-style="editingOverlayRootStyle" :text-box-rect="editingScreenTextBoxRect"
         :editor-shell-style="editingEditorShellStyle" :calibration-style="editingCalibrationStyle"
-        :inner-translate-ypx="editingOverlayInnerTranslateYPx" :node-id="editingSession?.nodeId ?? ''"
+        :inner-translate-ypx="editingOverlayInnerTranslateYPx"
+        :expected-glyph-top-px="editingCanvasTopLeadingPx * camera.scale"
+        :expected-glyph-center-px="editingCanvasGlyphCenterYPx"
+        :node-id="editingSession?.nodeId ?? ''"
         :initial-state="editingDisplayLexicalState" :mode="editingSession?.mode ?? 'append'"
         :caret-placement="editingSession?.caretPlacement ?? 'end'" @change="onLexicalEditorChange" @commit="commitEditingSession"
         @cancel="cancelEditingSession"></LexicalNodeEditorOverlay>
@@ -346,7 +349,12 @@ import { $forEachSelectedTextNode, $patchStyleText } from '@lexical/selection';
 import { $getSelection, $isRangeSelection, FORMAT_ELEMENT_COMMAND, FORMAT_TEXT_COMMAND } from 'lexical';
 import { getInternalClipboard, internalClipboardState, setInternalClipboard, type InternalClipboardState } from '@/mind/core/clipboard';
 import { createBatchAddChildCommand, type SelectionSnapshot } from '@/mind/core/commands/BatchAddChildCommand';
+import { createBatchAddParentCommand } from '@/mind/core/commands/BatchAddParentCommand';
 import { createBatchAddSiblingCommand } from '@/mind/core/commands/BatchAddSiblingCommand';
+import {
+  createBatchUpdateNodePresentationCommand,
+  type NodePresentationSnapshot,
+} from '@/mind/core/commands/BatchUpdateNodePresentationCommand';
 import { createBatchCutSubtreesCommand } from '@/mind/core/commands/BatchCutSubtreesCommand';
 import { createBatchDeleteSubtreesCommand } from '@/mind/core/commands/BatchDeleteSubtreesCommand';
 import { createBatchPasteSubtreesCommand } from '@/mind/core/commands/BatchPasteSubtreesCommand';
@@ -357,7 +365,7 @@ import { createPasteSubtreeCommand } from '@/mind/core/commands/PasteSubtreeComm
 import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageCommand';
 import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImageSizeCommand';
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
-import { collectSubtreeNodeIds, createSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
+import { collectSubtreeNodeIds, createSubtreeSnapshot, type MindSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
 import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeLexicalState, type MindNodeImage } from '@/mind/core/nodeContent';
 import { layoutOverlayTextLines } from '@/mind/core/dragDrop/overlayTextLayout';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
@@ -373,7 +381,7 @@ import {
   updateLexicalStateTextMarks,
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
-import { compareSelectionTargetInfo, getSelectionTargetInfo, normalizeSelectionTargets } from '@/mind/core/selection/normalizeSelection';
+import { compareSelectionTargetInfo, getSelectionTargetInfo, type SelectionTargetInfo } from '@/mind/core/selection/normalizeSelection';
 import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
@@ -382,7 +390,13 @@ import { useEdges } from './actions/useEdges';
 import { useInteraction } from './actions/useInteraction';
 import { useMarquee } from './actions/useMarquee';
 import { usePersistence } from './actions/usePersistence';
-import { DEBUG_CANVAS_OVERLAY, SPATIAL_GRID_CELL_SIZE } from './constants';
+import {
+  DEBUG_CANVAS_OVERLAY,
+  DEBUG_MIND_PERF_CAMERA_FPS_SUMMARY,
+  DEBUG_MIND_PERF_OPERATION_SUMMARY,
+  DEBUG_MIND_PERF_PROBE,
+  SPATIAL_GRID_CELL_SIZE,
+} from './constants';
 import { buildCollapseTagScreenMap, buildDescendantCountMap, hitTestCollapseTag } from './collapseTags';
 import { logCameraReset, logRendererDebugInstructions } from './diagnostics';
 import { getWorldViewportRect, pointInRect, rectContains, rectIntersects, screenToWorld, worldToScreen } from './geom/rect';
@@ -514,6 +528,7 @@ function resetTextToggleState() {
 function focusViewportWithoutScroll() {
   const element = viewportRef.value;
   if (!element) return;
+  if (typeof document !== 'undefined' && document.activeElement === element) return;
   try {
     element.focus({ preventScroll: true });
   } catch {
@@ -578,6 +593,7 @@ const editingSession = ref<null | {
 const editingDraftLexicalState = ref<SerializedLexicalEditorState>(getNodeLexicalState(null));
 const editingDraftRichText = ref<RichTextDocument>(getNodeRichText(null));
 const editingDisplayLexicalState = ref<SerializedLexicalEditorState>(getNodeLexicalState(null));
+const ENABLE_TEXT_ALIGNMENT_DIAGNOSTICS = false;
 const editingBaseFontSizePx = computed(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
@@ -623,6 +639,7 @@ const editorDebugState = ref({
   rebuildCountInLastCommand: 0,
 });
 const imageInteraction = ref<ImageInteractionState | null>(null);
+const cameraInteractionPreview = ref<{ kind: 'zoom' } | null>(null);
 const dragState = ref<DragDropState>({
   isDragging: false,
   dragRoots: [],
@@ -659,7 +676,15 @@ const canvasStyle = computed<CSSProperties>(() => ({
 }));
 
 // camera（唯一真相）
-const { layoutLocal, layoutBounds, rebuildLayout, invalidateSubtreeHeightCache } = useLayout(props, canvasRef, (nodeId) => {
+const {
+  layoutLocal,
+  layoutBounds,
+  rebuildLayout,
+  invalidateSubtreeHeightCache,
+  getLastLayoutPerfMetrics,
+  getLastLayoutTranslationOps,
+  getLastLayoutChangedNodeIds,
+} = useLayout(props, canvasRef, (nodeId) => {
   const preview = editingPreview.value;
   if (!preview || preview.nodeId !== nodeId) return null;
   return { w: preview.computedNodeW, h: preview.computedNodeH };
@@ -764,7 +789,8 @@ const { draw } = useDraw(
   },
   historySnapshot,
   internalClipboardState,
-  editorDebugState
+  editorDebugState,
+  cameraInteractionPreview
 );
 
 // persistence（只存 camera）
@@ -775,6 +801,886 @@ let drawRafId: number | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let autoPanRafId: number | null = null;
 let autoPanLastAt = 0;
+type MindPerfProbeAnchor = {
+  name: string;
+  sinceStartMs: number;
+  data?: Record<string, unknown>;
+};
+
+type MindPerfProbe = {
+  id: number;
+  op: 'add-node-enter' | 'add-parent-shortcut' | 'drag-node';
+  commandKind: string | null;
+  commandName: string | null;
+  targetNodeId: string | null;
+  selectedCount: number;
+  startedAt: number;
+  nodeCountBefore: number;
+  nodeCountAfter: number | null;
+  mutationReason: string | null;
+  mutationQueuedAt: number | null;
+  flushStartedAt: number | null;
+  preFlushRequestRenderCount: number;
+  preFlushDrawCount: number;
+  preFlushDrawMs: number;
+  historyExecuteMs: number | null;
+  commandDoMs: number | null;
+  mutationQueueDelayMs: number | null;
+  flushTotalMs: number | null;
+  totalMs: number | null;
+  redrawTotalMs: number | null;
+  layoutRebuildMs: number | null;
+  layoutMeasureMs: number | null;
+  layoutMeasureCalls: number | null;
+  layoutMeasureCacheHits: number | null;
+  layoutSubtreeMs: number | null;
+  layoutSubtreeCalls: number | null;
+  layoutSubtreeCacheHits: number | null;
+  layoutPlaceMs: number | null;
+  layoutPlaceCalls: number | null;
+  worldBoxesBuildMs: number | null;
+  parentIndexBuildMs: number | null;
+  changedNodeScanMs: number | null;
+  changedNodeCount: number | null;
+  descendantCountsMs: number | null;
+  spatialIndexMs: number | null;
+  edgeCacheMs: number | null;
+  edgeAffectedParentCount: number | null;
+  edgeTranslatedParentCount: number | null;
+  edgesRebuildMs: number | null;
+  drawMs: number | null;
+  ensureVisibleMs: number | null;
+  dragRootCount: number | null;
+  pointerDownLeadMs: number | null;
+  normalizeDragRootsMs: number | null;
+  dragStartSetupMs: number | null;
+  bootstrapRafDelayMs: number | null;
+  bootstrapTextLayoutMs: number | null;
+  dragStartToFollowVisibleMs: number | null;
+  subtreeWarmupDelayMs: number | null;
+  subtreeWarmupMs: number | null;
+  dropResolveCount: number;
+  dropResolveTotalMs: number;
+  dropResolveMaxMs: number | null;
+  buildMoveCommandMs: number | null;
+  buildMoveSourceInfosMs: number | null;
+  buildMoveParentSnapshotMs: number | null;
+  buildMoveApplyMs: number | null;
+  buildMoveChangedCheckMs: number | null;
+  buildMoveHashMs: number | null;
+  buildMoveCreateCommandMs: number | null;
+  buildMoveAffectedParentCount: number | null;
+  buildMoveAffectedChildrenTotal: number | null;
+  buildMoveMaxChildrenCount: number | null;
+  finalizeDropMs: number | null;
+  releaseStartedAt: number | null;
+  releaseToDropRenderedMs: number | null;
+  finalDropTargetType: string | null;
+  finalDropToParentId: string | null;
+  finalDropToIndex: number | null;
+  finishedReason: string | null;
+  committed: boolean;
+  anchors: MindPerfProbeAnchor[];
+};
+
+type MindPerfOperationKey =
+  | 'click-select'
+  | 'double-click-edit'
+  | 'space-edit'
+  | 'type-to-edit'
+  | 'toggle-collapse'
+  | 'undo'
+  | 'redo'
+  | 'delete-node'
+  | 'add-child-tab'
+  | 'add-parent-shortcut'
+  | 'add-child-enter'
+  | 'add-sibling-enter'
+  | 'drag-node';
+
+type MindPerfOperationProbe = {
+  id: number;
+  op: MindPerfOperationKey;
+  label: string;
+  trigger: string;
+  finishMode: 'flush' | 'draw' | 'edit-ready';
+  startedAt: number;
+  targetNodeId: string | null;
+  selectedCount: number;
+  nodeCountBefore: number;
+  nodeCountAfter: number | null;
+  commandName: string | null;
+  mutationReason: string | null;
+};
+
+type MindPerfCameraFpsSession = {
+  id: number;
+  kind: 'pan' | 'zoom';
+  trigger: 'wheel';
+  startedAt: number;
+  lastActivityAt: number;
+  drawCount: number;
+  firstDrawAt: number | null;
+  lastDrawAt: number | null;
+  totalDrawMs: number;
+  maxDrawMs: number;
+  minFps: number | null;
+  maxFps: number | null;
+  maxFrameGapMs: number | null;
+  startScale: number;
+  endScale: number;
+  startTx: number;
+  startTy: number;
+  endTx: number;
+  endTy: number;
+  finishTimerId: number | null;
+};
+
+let mindPerfProbeSeq = 0;
+let activeMindPerfProbe: MindPerfProbe | null = null;
+let mindPerfOperationSeq = 0;
+let activeMindPerfOperationProbe: MindPerfOperationProbe | null = null;
+let mindPerfCameraFpsSeq = 0;
+let activeMindPerfCameraFpsSession: MindPerfCameraFpsSession | null = null;
+let pendingDragPerfStartContext: {
+  startedAt: number;
+  targetNodeId: string;
+  selectedCount: number;
+  pointerId: number | null;
+} | null = null;
+const MIND_PERF_CAMERA_FPS_IDLE_MS = 160;
+
+function roundPerfMs(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? null : Number(value.toFixed(2));
+}
+
+function roundPerfNumber(value: number | null | undefined, digits = 2) {
+  return value == null || !Number.isFinite(value) ? null : Number(value.toFixed(digits));
+}
+
+function compactPerfData(data: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+}
+
+function getMindPerfNodeCount() {
+  return worldBoxes.value.size || Object.keys(getMindNodes() ?? {}).length;
+}
+
+function getActiveMindPerfProbe() {
+  return DEBUG_MIND_PERF_PROBE ? activeMindPerfProbe : null;
+}
+
+function getActiveMindPerfOperationProbe() {
+  return DEBUG_MIND_PERF_OPERATION_SUMMARY ? activeMindPerfOperationProbe : null;
+}
+
+function scheduleMindPerfCameraFpsFinish(probe: MindPerfCameraFpsSession) {
+  if (probe.finishTimerId != null) window.clearTimeout(probe.finishTimerId);
+  probe.finishTimerId = window.setTimeout(() => {
+    if (!activeMindPerfCameraFpsSession || activeMindPerfCameraFpsSession.id !== probe.id) return;
+    finishMindPerfCameraFpsSession(probe, 'idle');
+  }, MIND_PERF_CAMERA_FPS_IDLE_MS);
+}
+
+function finishMindPerfCameraFpsSession(
+  probe: MindPerfCameraFpsSession,
+  completedBy: 'idle' | 'switch' | 'unmount'
+) {
+  if (probe.finishTimerId != null) {
+    window.clearTimeout(probe.finishTimerId);
+    probe.finishTimerId = null;
+  }
+  probe.endScale = camera.value.scale;
+  probe.endTx = camera.value.tx;
+  probe.endTy = camera.value.ty;
+  if (probe.kind === 'zoom' && cameraInteractionPreview.value?.kind === 'zoom') {
+    cameraInteractionPreview.value = null;
+    if (completedBy !== 'unmount') requestRender();
+  }
+  if (activeMindPerfCameraFpsSession?.id === probe.id) activeMindPerfCameraFpsSession = null;
+  const sampledFrameCount = Math.max(0, probe.drawCount - 1);
+  const activeDrawDurationMs = probe.firstDrawAt != null && probe.lastDrawAt != null
+    ? probe.lastDrawAt - probe.firstDrawAt
+    : null;
+  const avgFps = sampledFrameCount > 0 && activeDrawDurationMs != null && activeDrawDurationMs > 0
+    ? (sampledFrameCount * 1000) / activeDrawDurationMs
+    : null;
+  console.debug('[mind-perf][camera-fps]', compactPerfData({
+    probeId: probe.id,
+    op: probe.kind === 'pan' ? 'pan-fps' : 'zoom-fps',
+    label: probe.kind === 'pan' ? '滑动 FPS' : '缩放 FPS',
+    trigger: probe.trigger,
+    totalMs: roundPerfMs(performance.now() - probe.startedAt),
+    activeDrawDurationMs: roundPerfMs(activeDrawDurationMs),
+    drawCount: probe.drawCount,
+    sampledFrameCount,
+    avgFps: roundPerfNumber(avgFps),
+    minFps: roundPerfNumber(probe.minFps),
+    maxFps: roundPerfNumber(probe.maxFps),
+    avgDrawMs: roundPerfMs(probe.drawCount ? probe.totalDrawMs / probe.drawCount : null),
+    maxDrawMs: roundPerfMs(probe.maxDrawMs),
+    maxFrameGapMs: roundPerfMs(probe.maxFrameGapMs),
+    scaleFrom: roundPerfNumber(probe.startScale, 3),
+    scaleTo: roundPerfNumber(probe.endScale, 3),
+    txDelta: roundPerfNumber(probe.endTx - probe.startTx),
+    tyDelta: roundPerfNumber(probe.endTy - probe.startTy),
+    completedBy,
+  }));
+}
+
+function noteMindPerfCameraInteractionFrame(kind: 'pan' | 'zoom') {
+  if (!DEBUG_MIND_PERF_CAMERA_FPS_SUMMARY) return;
+  const now = performance.now();
+  if (kind === 'zoom') {
+    if (!cameraInteractionPreview.value) cameraInteractionPreview.value = { kind: 'zoom' };
+  } else if (cameraInteractionPreview.value) {
+    cameraInteractionPreview.value = null;
+  }
+  let probe = activeMindPerfCameraFpsSession;
+  if (probe && probe.kind !== kind) {
+    finishMindPerfCameraFpsSession(probe, 'switch');
+    probe = null;
+  }
+  if (!probe) {
+    probe = {
+      id: ++mindPerfCameraFpsSeq,
+      kind,
+      trigger: 'wheel',
+      startedAt: now,
+      lastActivityAt: now,
+      drawCount: 0,
+      firstDrawAt: null,
+      lastDrawAt: null,
+      totalDrawMs: 0,
+      maxDrawMs: 0,
+      minFps: null,
+      maxFps: null,
+      maxFrameGapMs: null,
+      startScale: camera.value.scale,
+      endScale: camera.value.scale,
+      startTx: camera.value.tx,
+      startTy: camera.value.ty,
+      endTx: camera.value.tx,
+      endTy: camera.value.ty,
+      finishTimerId: null,
+    };
+    activeMindPerfCameraFpsSession = probe;
+  }
+  probe.lastActivityAt = now;
+  probe.endScale = camera.value.scale;
+  probe.endTx = camera.value.tx;
+  probe.endTy = camera.value.ty;
+  scheduleMindPerfCameraFpsFinish(probe);
+}
+
+function noteMindPerfCameraDraw(drawMs: number) {
+  if (!DEBUG_MIND_PERF_CAMERA_FPS_SUMMARY) return;
+  const probe = activeMindPerfCameraFpsSession;
+  if (!probe) return;
+  const now = performance.now();
+  probe.drawCount += 1;
+  probe.totalDrawMs += drawMs;
+  probe.maxDrawMs = Math.max(probe.maxDrawMs, drawMs);
+  probe.endScale = camera.value.scale;
+  probe.endTx = camera.value.tx;
+  probe.endTy = camera.value.ty;
+  if (probe.lastDrawAt != null) {
+    const frameGapMs = now - probe.lastDrawAt;
+    probe.maxFrameGapMs = probe.maxFrameGapMs == null ? frameGapMs : Math.max(probe.maxFrameGapMs, frameGapMs);
+    if (frameGapMs > 0) {
+      const fps = 1000 / frameGapMs;
+      probe.minFps = probe.minFps == null ? fps : Math.min(probe.minFps, fps);
+      probe.maxFps = probe.maxFps == null ? fps : Math.max(probe.maxFps, fps);
+    }
+  } else {
+    probe.firstDrawAt = now;
+  }
+  probe.lastDrawAt = now;
+}
+
+function finishMindPerfOperationProbe(
+  probe: MindPerfOperationProbe,
+  completedBy: 'flush' | 'draw' | 'edit-ready' | 'fallback',
+  extra?: Record<string, unknown>
+) {
+  probe.nodeCountAfter = getMindPerfNodeCount();
+  if (activeMindPerfOperationProbe?.id === probe.id) activeMindPerfOperationProbe = null;
+  console.debug('[mind-perf][op-total]', compactPerfData({
+    probeId: probe.id,
+    op: probe.op,
+    label: probe.label,
+    trigger: probe.trigger,
+    totalMs: roundPerfMs(performance.now() - probe.startedAt),
+    targetNodeId: probe.targetNodeId,
+    selectedCount: probe.selectedCount,
+    nodeCountBefore: probe.nodeCountBefore,
+    nodeCountAfter: probe.nodeCountAfter,
+    commandName: probe.commandName,
+    mutationReason: probe.mutationReason,
+    completedBy,
+    ...extra,
+  }));
+}
+
+function scheduleMindPerfOperationFlushFallback(probe: MindPerfOperationProbe) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const activeProbe = getActiveMindPerfOperationProbe();
+      if (!activeProbe || activeProbe.id !== probe.id || activeProbe.finishMode !== 'flush' || activeProbe.mutationReason) return;
+      finishMindPerfOperationProbe(activeProbe, 'fallback', { fallbackReason: 'no-mutation-flush' });
+    });
+  });
+}
+
+function beginMindPerfOperationProbe(options: {
+  op: MindPerfOperationKey;
+  label: string;
+  trigger: string;
+  finishMode: 'flush' | 'draw' | 'edit-ready';
+  targetNodeId?: string | null;
+  selectedCount?: number;
+  commandName?: string | null;
+  startedAt?: number;
+}) {
+  if (!DEBUG_MIND_PERF_OPERATION_SUMMARY) return null;
+  activeMindPerfOperationProbe = {
+    id: ++mindPerfOperationSeq,
+    op: options.op,
+    label: options.label,
+    trigger: options.trigger,
+    finishMode: options.finishMode,
+    startedAt: options.startedAt ?? performance.now(),
+    targetNodeId: options.targetNodeId ?? null,
+    selectedCount: options.selectedCount ?? 0,
+    nodeCountBefore: getMindPerfNodeCount(),
+    nodeCountAfter: null,
+    commandName: options.commandName ?? null,
+    mutationReason: null,
+  };
+  if (options.finishMode === 'flush') scheduleMindPerfOperationFlushFallback(activeMindPerfOperationProbe);
+  return activeMindPerfOperationProbe;
+}
+
+function cancelMindPerfOperationProbe() {
+  activeMindPerfOperationProbe = null;
+}
+
+function setMindPerfOperationCommandName(commandName: string | null | undefined) {
+  const probe = getActiveMindPerfOperationProbe();
+  if (!probe) return;
+  probe.commandName = commandName ?? null;
+}
+
+function noteMindPerfOperationMutationQueued(reason: string) {
+  const probe = getActiveMindPerfOperationProbe();
+  if (!probe || probe.finishMode !== 'flush') return;
+  probe.mutationReason = reason;
+}
+
+function pushMindPerfAnchor(probe: MindPerfProbe, name: string, data?: Record<string, unknown>) {
+  const compacted = data ? compactPerfData(data) : undefined;
+  probe.anchors.push({
+    name,
+    sinceStartMs: roundPerfMs(performance.now() - probe.startedAt) ?? 0,
+    ...(compacted && Object.keys(compacted).length ? { data: compacted } : {}),
+  });
+}
+
+function beginAddNodePerfProbe(commandKind: string, targetNodeId: string | null, selectedCount: number) {
+  if (!DEBUG_MIND_PERF_PROBE) return;
+  const probe: MindPerfProbe = {
+    id: ++mindPerfProbeSeq,
+    op: 'add-node-enter',
+    commandKind,
+    commandName: null,
+    targetNodeId,
+    selectedCount,
+    startedAt: performance.now(),
+    nodeCountBefore: getMindPerfNodeCount(),
+    nodeCountAfter: null,
+    mutationReason: null,
+    mutationQueuedAt: null,
+    flushStartedAt: null,
+    preFlushRequestRenderCount: 0,
+    preFlushDrawCount: 0,
+    preFlushDrawMs: 0,
+    historyExecuteMs: null,
+    commandDoMs: null,
+    mutationQueueDelayMs: null,
+    flushTotalMs: null,
+    totalMs: null,
+    redrawTotalMs: null,
+    layoutRebuildMs: null,
+    layoutMeasureMs: null,
+    layoutMeasureCalls: null,
+    layoutMeasureCacheHits: null,
+    layoutSubtreeMs: null,
+    layoutSubtreeCalls: null,
+    layoutSubtreeCacheHits: null,
+    layoutPlaceMs: null,
+    layoutPlaceCalls: null,
+    worldBoxesBuildMs: null,
+    parentIndexBuildMs: null,
+    changedNodeScanMs: null,
+    changedNodeCount: null,
+    descendantCountsMs: null,
+    spatialIndexMs: null,
+    edgeCacheMs: null,
+    edgeAffectedParentCount: null,
+    edgeTranslatedParentCount: null,
+    edgesRebuildMs: null,
+    drawMs: null,
+    ensureVisibleMs: null,
+    dragRootCount: null,
+    pointerDownLeadMs: null,
+    normalizeDragRootsMs: null,
+    dragStartSetupMs: null,
+    bootstrapRafDelayMs: null,
+    bootstrapTextLayoutMs: null,
+    dragStartToFollowVisibleMs: null,
+    subtreeWarmupDelayMs: null,
+    subtreeWarmupMs: null,
+    dropResolveCount: 0,
+    dropResolveTotalMs: 0,
+    dropResolveMaxMs: null,
+    buildMoveCommandMs: null,
+    buildMoveSourceInfosMs: null,
+    buildMoveParentSnapshotMs: null,
+    buildMoveApplyMs: null,
+    buildMoveChangedCheckMs: null,
+    buildMoveHashMs: null,
+    buildMoveCreateCommandMs: null,
+    buildMoveAffectedParentCount: null,
+    buildMoveAffectedChildrenTotal: null,
+    buildMoveMaxChildrenCount: null,
+    finalizeDropMs: null,
+    releaseStartedAt: null,
+    releaseToDropRenderedMs: null,
+    finalDropTargetType: null,
+    finalDropToParentId: null,
+    finalDropToIndex: null,
+    finishedReason: null,
+    committed: false,
+    anchors: [],
+  };
+  activeMindPerfProbe = probe;
+  pushMindPerfAnchor(probe, 'keydown-enter', {
+    commandKind,
+    targetNodeId,
+    selectedCount,
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+  console.debug('[mind-perf][add-node][start]', {
+    probeId: probe.id,
+    commandKind,
+    targetNodeId,
+    selectedCount,
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+}
+
+function beginAddParentPerfProbe(commandKind: string, targetNodeId: string | null, selectedCount: number) {
+  if (!DEBUG_MIND_PERF_PROBE) return;
+  const probe: MindPerfProbe = {
+    id: ++mindPerfProbeSeq,
+    op: 'add-parent-shortcut',
+    commandKind,
+    commandName: null,
+    targetNodeId,
+    selectedCount,
+    startedAt: performance.now(),
+    nodeCountBefore: getMindPerfNodeCount(),
+    nodeCountAfter: null,
+    mutationReason: null,
+    mutationQueuedAt: null,
+    flushStartedAt: null,
+    preFlushRequestRenderCount: 0,
+    preFlushDrawCount: 0,
+    preFlushDrawMs: 0,
+    historyExecuteMs: null,
+    commandDoMs: null,
+    mutationQueueDelayMs: null,
+    flushTotalMs: null,
+    totalMs: null,
+    redrawTotalMs: null,
+    layoutRebuildMs: null,
+    layoutMeasureMs: null,
+    layoutMeasureCalls: null,
+    layoutMeasureCacheHits: null,
+    layoutSubtreeMs: null,
+    layoutSubtreeCalls: null,
+    layoutSubtreeCacheHits: null,
+    layoutPlaceMs: null,
+    layoutPlaceCalls: null,
+    worldBoxesBuildMs: null,
+    parentIndexBuildMs: null,
+    changedNodeScanMs: null,
+    changedNodeCount: null,
+    descendantCountsMs: null,
+    spatialIndexMs: null,
+    edgeCacheMs: null,
+    edgeAffectedParentCount: null,
+    edgeTranslatedParentCount: null,
+    edgesRebuildMs: null,
+    drawMs: null,
+    ensureVisibleMs: null,
+    dragRootCount: null,
+    pointerDownLeadMs: null,
+    normalizeDragRootsMs: null,
+    dragStartSetupMs: null,
+    bootstrapRafDelayMs: null,
+    bootstrapTextLayoutMs: null,
+    dragStartToFollowVisibleMs: null,
+    subtreeWarmupDelayMs: null,
+    subtreeWarmupMs: null,
+    dropResolveCount: 0,
+    dropResolveTotalMs: 0,
+    dropResolveMaxMs: null,
+    buildMoveCommandMs: null,
+    buildMoveSourceInfosMs: null,
+    buildMoveParentSnapshotMs: null,
+    buildMoveApplyMs: null,
+    buildMoveChangedCheckMs: null,
+    buildMoveHashMs: null,
+    buildMoveCreateCommandMs: null,
+    buildMoveAffectedParentCount: null,
+    buildMoveAffectedChildrenTotal: null,
+    buildMoveMaxChildrenCount: null,
+    finalizeDropMs: null,
+    releaseStartedAt: null,
+    releaseToDropRenderedMs: null,
+    finalDropTargetType: null,
+    finalDropToParentId: null,
+    finalDropToIndex: null,
+    finishedReason: null,
+    committed: false,
+    anchors: [],
+  };
+  activeMindPerfProbe = probe;
+  pushMindPerfAnchor(probe, 'keydown-add-parent', {
+    commandKind,
+    targetNodeId,
+    selectedCount,
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+  console.debug('[mind-perf][add-parent][start]', {
+    probeId: probe.id,
+    commandKind,
+    targetNodeId,
+    selectedCount,
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+}
+
+function cancelMindPerfProbe(reason: string) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe) return;
+  pushMindPerfAnchor(probe, 'probe-cancelled', { reason });
+  if (activeMindPerfProbe?.id === probe.id) activeMindPerfProbe = null;
+}
+
+function noteMindPerfMutationQueued(
+  reason: string,
+  options?: { ensureVisibleCount?: number; invalidateCount?: number; addedNodeCount?: number }
+) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe) return;
+  if (
+    probe.op === 'add-node-enter' &&
+    !['history:add-child', 'history:add-sibling', 'history:batch-add-child', 'history:batch-add-sibling'].includes(reason)
+  ) {
+    return;
+  }
+  if (
+    probe.op === 'add-parent-shortcut' &&
+    !['history:batch-add-parent', 'history:undo-batch-add-parent', 'history:redo-batch-add-parent'].includes(reason)
+  ) {
+    return;
+  }
+  if (
+    probe.op === 'drag-node' &&
+    !['history:move-subtrees', 'history:undo-move-subtrees', 'history:redo-move-subtrees'].includes(reason)
+  ) {
+    return;
+  }
+  probe.mutationReason = reason;
+  probe.mutationQueuedAt = performance.now();
+  pushMindPerfAnchor(probe, 'mutation-queued', {
+    reason,
+    ensureVisibleCount: options?.ensureVisibleCount,
+    invalidateCount: options?.invalidateCount,
+    addedNodeCount: options?.addedNodeCount,
+  });
+}
+
+function noteMindPerfStep(name: string, data?: Record<string, unknown>) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe) return;
+  pushMindPerfAnchor(probe, name, data);
+}
+
+function beginDragPerfProbe(options: {
+  targetNodeId: string | null;
+  selectedCount: number;
+  dragRootCount: number;
+  pointerDownLeadMs: number | null;
+}) {
+  if (!DEBUG_MIND_PERF_PROBE) return null;
+  const probe: MindPerfProbe = {
+    id: ++mindPerfProbeSeq,
+    op: 'drag-node',
+    commandKind: null,
+    commandName: null,
+    targetNodeId: options.targetNodeId,
+    selectedCount: options.selectedCount,
+    startedAt: performance.now(),
+    nodeCountBefore: getMindPerfNodeCount(),
+    nodeCountAfter: null,
+    mutationReason: null,
+    mutationQueuedAt: null,
+    flushStartedAt: null,
+    preFlushRequestRenderCount: 0,
+    preFlushDrawCount: 0,
+    preFlushDrawMs: 0,
+    historyExecuteMs: null,
+    commandDoMs: null,
+    mutationQueueDelayMs: null,
+    flushTotalMs: null,
+    totalMs: null,
+    redrawTotalMs: null,
+    layoutRebuildMs: null,
+    layoutMeasureMs: null,
+    layoutMeasureCalls: null,
+    layoutMeasureCacheHits: null,
+    layoutSubtreeMs: null,
+    layoutSubtreeCalls: null,
+    layoutSubtreeCacheHits: null,
+    layoutPlaceMs: null,
+    layoutPlaceCalls: null,
+    worldBoxesBuildMs: null,
+    parentIndexBuildMs: null,
+    changedNodeScanMs: null,
+    changedNodeCount: null,
+    descendantCountsMs: null,
+    spatialIndexMs: null,
+    edgeCacheMs: null,
+    edgeAffectedParentCount: null,
+    edgeTranslatedParentCount: null,
+    edgesRebuildMs: null,
+    drawMs: null,
+    ensureVisibleMs: null,
+    dragRootCount: options.dragRootCount,
+    pointerDownLeadMs: options.pointerDownLeadMs,
+    normalizeDragRootsMs: null,
+    dragStartSetupMs: null,
+    bootstrapRafDelayMs: null,
+    bootstrapTextLayoutMs: null,
+    dragStartToFollowVisibleMs: null,
+    subtreeWarmupDelayMs: null,
+    subtreeWarmupMs: null,
+    dropResolveCount: 0,
+    dropResolveTotalMs: 0,
+    dropResolveMaxMs: null,
+    buildMoveCommandMs: null,
+    buildMoveSourceInfosMs: null,
+    buildMoveParentSnapshotMs: null,
+    buildMoveApplyMs: null,
+    buildMoveChangedCheckMs: null,
+    buildMoveHashMs: null,
+    buildMoveCreateCommandMs: null,
+    buildMoveAffectedParentCount: null,
+    buildMoveAffectedChildrenTotal: null,
+    buildMoveMaxChildrenCount: null,
+    finalizeDropMs: null,
+    releaseStartedAt: null,
+    releaseToDropRenderedMs: null,
+    finalDropTargetType: null,
+    finalDropToParentId: null,
+    finalDropToIndex: null,
+    finishedReason: null,
+    committed: false,
+    anchors: [],
+  };
+  activeMindPerfProbe = probe;
+  pushMindPerfAnchor(probe, 'begin-dragging', {
+    targetNodeId: options.targetNodeId,
+    selectedCount: options.selectedCount,
+    dragRootCount: options.dragRootCount,
+    pointerDownLeadMs: roundPerfMs(options.pointerDownLeadMs),
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+  console.debug('[mind-perf][drag][start]', {
+    probeId: probe.id,
+    targetNodeId: options.targetNodeId,
+    selectedCount: options.selectedCount,
+    dragRootCount: options.dragRootCount,
+    pointerDownLeadMs: roundPerfMs(options.pointerDownLeadMs),
+    nodeCountBefore: probe.nodeCountBefore,
+  });
+  return probe;
+}
+
+function noteDragPerfStep(name: string, data?: Record<string, unknown>) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe || probe.op !== 'drag-node') return;
+  pushMindPerfAnchor(probe, name, data);
+}
+
+function noteDragDropResolve(resolveMs: number, data?: Record<string, unknown>) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe || probe.op !== 'drag-node') return;
+  probe.dropResolveCount += 1;
+  probe.dropResolveTotalMs += resolveMs;
+  probe.dropResolveMaxMs = probe.dropResolveMaxMs == null ? resolveMs : Math.max(probe.dropResolveMaxMs, resolveMs);
+  if (probe.dropResolveCount === 1) {
+    pushMindPerfAnchor(probe, 'drop-target-first-resolve', {
+      resolveMs: roundPerfMs(resolveMs),
+      ...data,
+    });
+  }
+}
+
+function finishPendingDragPerfProbe(reason: string, data?: Record<string, unknown>) {
+  const probe = getActiveMindPerfProbe();
+  if (!probe || probe.op !== 'drag-node') return;
+  if (probe.mutationReason || probe.committed) return;
+  probe.nodeCountAfter = getMindPerfNodeCount();
+  probe.totalMs = performance.now() - probe.startedAt;
+  probe.finishedReason = reason;
+  pushMindPerfAnchor(probe, 'drag-finished', {
+    reason,
+    totalMs: roundPerfMs(probe.totalMs),
+    ...data,
+  });
+  finishMindPerfProbe(probe);
+}
+
+function finishMindPerfProbe(probe: MindPerfProbe) {
+  if (probe.op === 'drag-node') {
+    console.debug('[mind-perf][drag][summary]', {
+      probeId: probe.id,
+      op: probe.op,
+      commandName: probe.commandName,
+      mutationReason: probe.mutationReason,
+      targetNodeId: probe.targetNodeId,
+      selectedCount: probe.selectedCount,
+      dragRootCount: probe.dragRootCount,
+      nodeCountBefore: probe.nodeCountBefore,
+      nodeCountAfter: probe.nodeCountAfter,
+      pointerDownLeadMs: roundPerfMs(probe.pointerDownLeadMs),
+      normalizeDragRootsMs: roundPerfMs(probe.normalizeDragRootsMs),
+      dragStartSetupMs: roundPerfMs(probe.dragStartSetupMs),
+      bootstrapRafDelayMs: roundPerfMs(probe.bootstrapRafDelayMs),
+      bootstrapTextLayoutMs: roundPerfMs(probe.bootstrapTextLayoutMs),
+      dragStartToFollowVisibleMs: roundPerfMs(probe.dragStartToFollowVisibleMs),
+      subtreeWarmupDelayMs: roundPerfMs(probe.subtreeWarmupDelayMs),
+      subtreeWarmupMs: roundPerfMs(probe.subtreeWarmupMs),
+      dropResolveCount: probe.dropResolveCount,
+      dropResolveAvgMs: roundPerfMs(
+        probe.dropResolveCount ? probe.dropResolveTotalMs / probe.dropResolveCount : null
+      ),
+      dropResolveMaxMs: roundPerfMs(probe.dropResolveMaxMs),
+      buildMoveCommandMs: roundPerfMs(probe.buildMoveCommandMs),
+      buildMoveSourceInfosMs: roundPerfMs(probe.buildMoveSourceInfosMs),
+      buildMoveParentSnapshotMs: roundPerfMs(probe.buildMoveParentSnapshotMs),
+      buildMoveApplyMs: roundPerfMs(probe.buildMoveApplyMs),
+      buildMoveChangedCheckMs: roundPerfMs(probe.buildMoveChangedCheckMs),
+      buildMoveHashMs: roundPerfMs(probe.buildMoveHashMs),
+      buildMoveCreateCommandMs: roundPerfMs(probe.buildMoveCreateCommandMs),
+      buildMoveAffectedParentCount: probe.buildMoveAffectedParentCount,
+      buildMoveAffectedChildrenTotal: probe.buildMoveAffectedChildrenTotal,
+      buildMoveMaxChildrenCount: probe.buildMoveMaxChildrenCount,
+      finalizeDropMs: roundPerfMs(probe.finalizeDropMs),
+      releaseToDropRenderedMs: roundPerfMs(probe.releaseToDropRenderedMs),
+      dragCriticalPathMs: roundPerfMs(
+        (probe.dragStartToFollowVisibleMs ?? 0) + (probe.releaseToDropRenderedMs ?? 0)
+      ),
+      finalDropTargetType: probe.finalDropTargetType,
+      finalDropToParentId: probe.finalDropToParentId,
+      finalDropToIndex: probe.finalDropToIndex,
+      committed: probe.committed,
+      finishedReason: probe.finishedReason,
+      historyExecuteMs: roundPerfMs(probe.historyExecuteMs),
+      commandDoMs: roundPerfMs(probe.commandDoMs),
+      mutationQueueDelayMs: roundPerfMs(probe.mutationQueueDelayMs),
+      preFlushRequestRenderCount: probe.preFlushRequestRenderCount,
+      preFlushDrawCount: probe.preFlushDrawCount,
+      preFlushDrawMs: roundPerfMs(probe.preFlushDrawMs),
+      flushTotalMs: roundPerfMs(probe.flushTotalMs),
+      totalMs: roundPerfMs(probe.totalMs),
+      redrawTotalMs: roundPerfMs(probe.redrawTotalMs),
+      layoutRebuildMs: roundPerfMs(probe.layoutRebuildMs),
+      layoutMeasureMs: roundPerfMs(probe.layoutMeasureMs),
+      layoutMeasureCalls: probe.layoutMeasureCalls,
+      layoutMeasureCacheHits: probe.layoutMeasureCacheHits,
+      layoutSubtreeMs: roundPerfMs(probe.layoutSubtreeMs),
+      layoutSubtreeCalls: probe.layoutSubtreeCalls,
+      layoutSubtreeCacheHits: probe.layoutSubtreeCacheHits,
+      layoutPlaceMs: roundPerfMs(probe.layoutPlaceMs),
+      layoutPlaceCalls: probe.layoutPlaceCalls,
+      worldBoxesBuildMs: roundPerfMs(probe.worldBoxesBuildMs),
+      parentIndexBuildMs: roundPerfMs(probe.parentIndexBuildMs),
+      changedNodeScanMs: roundPerfMs(probe.changedNodeScanMs),
+      changedNodeCount: probe.changedNodeCount,
+      descendantCountsMs: roundPerfMs(probe.descendantCountsMs),
+      spatialIndexMs: roundPerfMs(probe.spatialIndexMs),
+      edgeCacheMs: roundPerfMs(probe.edgeCacheMs),
+      edgeAffectedParentCount: probe.edgeAffectedParentCount,
+      edgeTranslatedParentCount: probe.edgeTranslatedParentCount,
+      edgesRebuildMs: roundPerfMs(probe.edgesRebuildMs),
+      drawMs: roundPerfMs(probe.drawMs),
+      ensureVisibleMs: roundPerfMs(probe.ensureVisibleMs),
+      anchors: probe.anchors,
+    });
+  } else {
+    const summaryLabel =
+      probe.op === 'add-parent-shortcut' ? '[mind-perf][add-parent][summary]' : '[mind-perf][add-node][summary]';
+    console.debug(summaryLabel, {
+      probeId: probe.id,
+      op: probe.op,
+      commandKind: probe.commandKind,
+      commandName: probe.commandName,
+      mutationReason: probe.mutationReason,
+      targetNodeId: probe.targetNodeId,
+      selectedCount: probe.selectedCount,
+      nodeCountBefore: probe.nodeCountBefore,
+      nodeCountAfter: probe.nodeCountAfter,
+      historyExecuteMs: roundPerfMs(probe.historyExecuteMs),
+      commandDoMs: roundPerfMs(probe.commandDoMs),
+      mutationQueueDelayMs: roundPerfMs(probe.mutationQueueDelayMs),
+      preFlushRequestRenderCount: probe.preFlushRequestRenderCount,
+      preFlushDrawCount: probe.preFlushDrawCount,
+      preFlushDrawMs: roundPerfMs(probe.preFlushDrawMs),
+      flushTotalMs: roundPerfMs(probe.flushTotalMs),
+      totalMs: roundPerfMs(probe.totalMs),
+      redrawTotalMs: roundPerfMs(probe.redrawTotalMs),
+      layoutRebuildMs: roundPerfMs(probe.layoutRebuildMs),
+      layoutMeasureMs: roundPerfMs(probe.layoutMeasureMs),
+      layoutMeasureCalls: probe.layoutMeasureCalls,
+      layoutMeasureCacheHits: probe.layoutMeasureCacheHits,
+      layoutSubtreeMs: roundPerfMs(probe.layoutSubtreeMs),
+      layoutSubtreeCalls: probe.layoutSubtreeCalls,
+      layoutSubtreeCacheHits: probe.layoutSubtreeCacheHits,
+      layoutPlaceMs: roundPerfMs(probe.layoutPlaceMs),
+      layoutPlaceCalls: probe.layoutPlaceCalls,
+      worldBoxesBuildMs: roundPerfMs(probe.worldBoxesBuildMs),
+      parentIndexBuildMs: roundPerfMs(probe.parentIndexBuildMs),
+      changedNodeScanMs: roundPerfMs(probe.changedNodeScanMs),
+      changedNodeCount: probe.changedNodeCount,
+      descendantCountsMs: roundPerfMs(probe.descendantCountsMs),
+      spatialIndexMs: roundPerfMs(probe.spatialIndexMs),
+      edgeCacheMs: roundPerfMs(probe.edgeCacheMs),
+      edgeAffectedParentCount: probe.edgeAffectedParentCount,
+      edgeTranslatedParentCount: probe.edgeTranslatedParentCount,
+      edgesRebuildMs: roundPerfMs(probe.edgesRebuildMs),
+      drawMs: roundPerfMs(probe.drawMs),
+      ensureVisibleMs: roundPerfMs(probe.ensureVisibleMs),
+      anchors: probe.anchors,
+    });
+  }
+  if (activeMindPerfProbe?.id === probe.id) activeMindPerfProbe = null;
+}
+
 const SCROLLBAR_TRACK_PADDING = 6;
 const SCROLLBAR_THUMB_MIN = 28;
 const isScrollbarDragging = ref(false);
@@ -919,7 +1825,7 @@ function emitSaveState(filePath: string | null | undefined = props.filePath ?? n
 
 function emitNodeCountState() {
   emit('nodeCountChange', {
-    totalNodes: Object.keys(getMindNodes() ?? {}).length,
+    totalNodes: getMindPerfNodeCount(),
     selectedNodes: getVisibleSelectedNodeCount(),
   });
 }
@@ -983,6 +1889,14 @@ function isSelectionWatchSuppressed() {
 
 let pendingLayoutInvalidationNodeIds = new Set<string>();
 let pendingAddedNodeInfos: Array<{ nodeId: string; parentId: string | null }> = [];
+let pendingRemovedNodeIds = new Set<string>();
+let pendingHiddenNodeIds = new Set<string>();
+let pendingTouchedParentIds = new Set<string>();
+let pendingReuseDescendantCounts = false;
+let pendingReuseParentIndex = false;
+let pendingForceFullEdgeRebuild = false;
+let pendingTrustExistingNodeMeasureCache = false;
+let pendingUseLayoutChangedNodeIds = false;
 let deferredSelectionUiSyncAfterDrag = false;
 
 function markContentDirty() {
@@ -1096,6 +2010,48 @@ function updateParentIndexForAddedNodes(
   return nextIndex;
 }
 
+function updateParentIndexForRemovedNodes(
+  nodes: Record<string, any> | null | undefined,
+  previousIndex: Map<string, { parentId: string; index: number }>,
+  touchedParentIds: Iterable<string>,
+  removedNodeIds: Iterable<string>
+) {
+  const nextIndex = new Map(previousIndex);
+  for (const nodeId of removedNodeIds) {
+    if (nodeId) nextIndex.delete(nodeId);
+  }
+  const uniqueParentIds = new Set<string>();
+  for (const parentId of touchedParentIds) {
+    if (parentId) uniqueParentIds.add(parentId);
+  }
+  uniqueParentIds.forEach((parentId) => {
+    const children = Array.isArray(nodes?.[parentId]?.children) ? nodes?.[parentId]?.children : [];
+    children.forEach((childId: string, index: number) => {
+      if (typeof childId === 'string' && childId) nextIndex.set(childId, { parentId, index });
+    });
+  });
+  return nextIndex;
+}
+
+function updateParentIndexForTouchedParents(
+  nodes: Record<string, any> | null | undefined,
+  previousIndex: Map<string, { parentId: string; index: number }>,
+  touchedParentIds: Iterable<string>
+) {
+  const nextIndex = new Map(previousIndex);
+  const uniqueParentIds = new Set<string>();
+  for (const parentId of touchedParentIds) {
+    if (parentId) uniqueParentIds.add(parentId);
+  }
+  uniqueParentIds.forEach((parentId) => {
+    const children = Array.isArray(nodes?.[parentId]?.children) ? nodes?.[parentId]?.children : [];
+    children.forEach((childId: string, index: number) => {
+      if (typeof childId === 'string' && childId) nextIndex.set(childId, { parentId, index });
+    });
+  });
+  return nextIndex;
+}
+
 function collectAncestorNodeIds(startNodeId: string | null | undefined) {
   const ids: string[] = [];
   let currentId = startNodeId ?? null;
@@ -1163,8 +2119,11 @@ function getPrimarySelectedId() {
   return selectedIds.value.values().next().value ?? null;
 }
 
-function setSingleSelected(nodeId: string | null) {
-  setSelection(nodeId ? [nodeId] : [], nodeId);
+function setSingleSelected(
+  nodeId: string | null,
+  options?: { anchorId?: string | null; preserveAnchor?: boolean; suppressRender?: boolean; suppressFocus?: boolean }
+) {
+  setSelection(nodeId ? [nodeId] : [], nodeId, options);
 }
 
 function getSelectedNodeIds() {
@@ -1199,6 +2158,53 @@ function getCachedSelectionTargetInfo(
     indexInParent: parentInfo?.index ?? -1,
     path: buildSelectionPathFromParentIndex(nodeId, nextParentIndex),
   };
+}
+
+function normalizeSelectionTargetsFromParentIndex(
+  selectedNodeIds: Iterable<string>,
+  options?: { allowRoot?: boolean; collapseToRootIfSelected?: boolean }
+) {
+  const nodes = getMindNodes();
+  if (!nodes) return { finalTargets: [], filteredOutDescendantsCount: 0 };
+  const nextParentIndex = parentIndexByNodeId.value;
+  const rootNodeId = getRootNodeId();
+  const allowRoot = options?.allowRoot ?? true;
+  const collapseToRootIfSelected = options?.collapseToRootIfSelected ?? false;
+
+  const uniqueIds = Array.from(new Set(selectedNodeIds)).filter((nodeId) => !!nodes[nodeId]);
+  let candidateIds = uniqueIds;
+  if (!allowRoot && rootNodeId) candidateIds = candidateIds.filter((nodeId) => nodeId !== rootNodeId);
+  if (collapseToRootIfSelected && rootNodeId && candidateIds.includes(rootNodeId)) {
+    candidateIds = [rootNodeId];
+  }
+
+  const candidateSet = new Set(candidateIds);
+  const filteredIds: string[] = [];
+  let filteredOutDescendantsCount = 0;
+
+  for (const nodeId of candidateIds) {
+    let currentId = nextParentIndex.get(nodeId)?.parentId ?? null;
+    let shouldFilterOut = false;
+    while (currentId) {
+      if (candidateSet.has(currentId)) {
+        shouldFilterOut = true;
+        break;
+      }
+      currentId = nextParentIndex.get(currentId)?.parentId ?? null;
+    }
+    if (shouldFilterOut) {
+      filteredOutDescendantsCount += 1;
+      continue;
+    }
+    filteredIds.push(nodeId);
+  }
+
+  const finalTargets = filteredIds
+    .map((nodeId) => getCachedSelectionTargetInfo(nodeId, nextParentIndex))
+    .filter((value): value is SelectionTargetInfo => !!value)
+    .sort(compareSelectionTargetInfo);
+
+  return { finalTargets, filteredOutDescendantsCount };
 }
 
 const ROOT_SELECTION_GROUP_KEY = '__sheet-root__';
@@ -1247,7 +2253,7 @@ function setGroupAnchor(nodeId: string | null | undefined) {
 function setSelection(
   nodeIds: Iterable<string>,
   primaryId?: string | null,
-  options?: { anchorId?: string | null; preserveAnchor?: boolean }
+  options?: { anchorId?: string | null; preserveAnchor?: boolean; suppressRender?: boolean; suppressFocus?: boolean }
 ) {
   const releaseSelectionWatchSuppression = holdSelectionWatchSuppression();
   const nextIds = Array.from(new Set(nodeIds));
@@ -1261,13 +2267,13 @@ function setSelection(
 
   selectedIds.value = nextIdsSet;
   primarySelectedNodeId.value = nextPrimaryId;
-  focusViewportWithoutScroll();
+  if (!options?.suppressFocus) focusViewportWithoutScroll();
   pruneSelectionAnchors(nextIdsSet);
   if (!nextIds.length) {
     selectionAnchorNodeId.value = null;
     selectionAnchorByGroup.value = {};
     releaseSelectionWatchSuppression();
-    if (selectionChanged || primaryChanged) requestRender();
+    if ((selectionChanged || primaryChanged) && !options?.suppressRender) requestRender();
     return;
   }
   const preservedAnchorId =
@@ -1287,7 +2293,10 @@ function setSelection(
     }
   }
   releaseSelectionWatchSuppression();
-  if (selectionChanged || primaryChanged) requestRender();
+  if ((selectionChanged || primaryChanged) && !options?.suppressRender) requestRender();
+  if (nextIds.length === 1 && nextPrimaryId) {
+    dumpCanvasTextDiagnostics(nextPrimaryId, 'set-selection');
+  }
 }
 
 function getSelectionAnchorId(targetNodeId?: string) {
@@ -1360,6 +2369,63 @@ function selectAllNodesInCurrentSheet() {
     if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
   });
   selectionAnchorByGroup.value = nextGroupAnchors;
+}
+
+function getKeyboardNavigationBaseNodeId() {
+  const nodes = getMindNodes();
+  const selectedNodeIds = getSelectedNodeIds();
+  if (!selectedNodeIds.length) return null;
+  if (!nodes) return selectedNodeIds[0] ?? null;
+  const sortedInfos = selectedNodeIds
+    .map((nodeId) => getSelectionTargetInfo(nodes, nodeId))
+    .filter((value): value is NonNullable<typeof value> => !!value)
+    .sort(compareSelectionTargetInfo);
+  return sortedInfos[0]?.nodeId ?? selectedNodeIds[0] ?? null;
+}
+
+function resolveKeyboardSiblingTarget(nodeId: string, delta: -1 | 1) {
+  const groupKey = getSelectionGroupKey(nodeId);
+  const siblingIds = getGroupNodeIds(groupKey);
+  const currentIndex = siblingIds.indexOf(nodeId);
+  if (currentIndex < 0) return null;
+  const targetId = siblingIds[currentIndex + delta];
+  return typeof targetId === 'string' && targetId.length > 0 ? targetId : null;
+}
+
+function resolveKeyboardParentTarget(nodeId: string) {
+  return findParentAndIndex(nodeId)?.parentId ?? null;
+}
+
+function resolveKeyboardFirstChildTarget(nodeId: string) {
+  const node = getNodeById(nodeId);
+  if (node?.collapsed) return null;
+  const childIds = Array.isArray(node?.children) ? node.children : [];
+  const targetId = childIds.find((childId: unknown): childId is string => typeof childId === 'string' && childId.length > 0);
+  return targetId ?? null;
+}
+
+function moveSelectionWithKeyboard(direction: 'up' | 'down' | 'left' | 'right') {
+  const baseNodeId = getKeyboardNavigationBaseNodeId();
+  if (!baseNodeId) return false;
+
+  const nextNodeId =
+    direction === 'up'
+      ? resolveKeyboardSiblingTarget(baseNodeId, -1)
+      : direction === 'down'
+        ? resolveKeyboardSiblingTarget(baseNodeId, 1)
+        : direction === 'left'
+          ? resolveKeyboardParentTarget(baseNodeId)
+          : resolveKeyboardFirstChildTarget(baseNodeId);
+
+  if (!nextNodeId || nextNodeId === baseNodeId) return false;
+  clearCollapseTagHideTimer();
+  hoverNodeId.value = null;
+  collapseTagHoverNodeId.value = null;
+  collapseTagStickyNodeId.value = null;
+  setSelection([], null);
+  setSingleSelected(nextNodeId);
+  ensureNodeVisible(nextNodeId);
+  return true;
 }
 
 function getNodeImageDisplaySize(nodeId: string): ImageSize | null {
@@ -1442,6 +2508,16 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
   if (!targetNodeIds.length) return;
   const nodes = getMindNodes();
   if (!nodes) return;
+  const invalidateSubtreeHeightNodeIds = Array.from(
+    new Set(targetNodeIds.flatMap((targetNodeId) => collectAncestorNodeIds(targetNodeId)).filter(Boolean))
+  );
+  const hiddenNodeIds = collapsed
+    ? Array.from(
+        new Set(
+          targetNodeIds.flatMap((targetNodeId) => collectSubtreeNodeIds(nodes, targetNodeId).filter((nodeId) => nodeId !== targetNodeId))
+        )
+      )
+    : [];
 
   if (editingSession.value) {
     const editingNodeId = editingSession.value.nodeId;
@@ -1464,6 +2540,13 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
   if (!changed) return;
   await applyDocumentMutation(collapsed ? 'node-collapse-subtrees' : 'node-expand-subtrees', {
     ensureVisibleNodeIds: targetNodeIds,
+    invalidateSubtreeHeightNodeIds,
+    hiddenNodeIds,
+    reuseDescendantCounts: true,
+    reuseParentIndex: true,
+    forceFullEdgeRebuild: true,
+    trustExistingNodeMeasureCache: true,
+    useLayoutChangedNodeIds: true,
   });
 }
 
@@ -1472,6 +2555,116 @@ function ensureNodeStyleContainers(node: any) {
   if (!node.style.shape) node.style.shape = {};
   if (!node.style.text) node.style.text = {};
   return node.style as NonNullable<typeof node.style>;
+}
+
+function cloneNodeStyleSnapshot(style: any) {
+  return style == null ? style : JSON.parse(JSON.stringify(style));
+}
+
+function cloneNodeMarkersSnapshot(node: any) {
+  if (!Object.prototype.hasOwnProperty.call(node ?? {}, 'markers')) return undefined;
+  return Array.isArray(node?.markers) ? [...node.markers] : [];
+}
+
+function createNodePresentationSnapshot(
+  nodeId: string,
+  node: any,
+  options: { includeStyle?: boolean; includeMarkers?: boolean; includeLexical?: boolean }
+) {
+  const snapshot: NodePresentationSnapshot = { nodeId };
+  if (options.includeStyle) snapshot.style = cloneNodeStyleSnapshot(node?.style);
+  if (options.includeMarkers) snapshot.markers = cloneNodeMarkersSnapshot(node);
+  if (options.includeLexical) {
+    snapshot.lexicalState = getNodeLexicalState(node);
+    snapshot.richText = cloneRichText(getNodeRichText(node));
+  }
+  return snapshot;
+}
+
+function createNodePresentationDraft(
+  node: any,
+  options: { includeStyle?: boolean; includeMarkers?: boolean; includeLexical?: boolean }
+) {
+  return {
+    ...node,
+    style: options.includeStyle ? cloneNodeStyleSnapshot(node?.style) : node?.style,
+    markers: options.includeMarkers ? cloneNodeMarkersSnapshot(node) : node?.markers,
+    text: node?.text ? JSON.parse(JSON.stringify(node.text)) : node?.text,
+    richText: options.includeLexical ? cloneRichText(getNodeRichText(node)) : node?.richText,
+    textLexical: options.includeLexical ? getNodeLexicalState(node) : node?.textLexical,
+  };
+}
+
+function isNodePresentationSnapshotEqual(a: NodePresentationSnapshot, b: NodePresentationSnapshot) {
+  if (Object.prototype.hasOwnProperty.call(a, 'style') || Object.prototype.hasOwnProperty.call(b, 'style')) {
+    if (JSON.stringify(a.style ?? null) !== JSON.stringify(b.style ?? null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(a, 'markers') || Object.prototype.hasOwnProperty.call(b, 'markers')) {
+    if (JSON.stringify(a.markers ?? null) !== JSON.stringify(b.markers ?? null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(a, 'lexicalState') || Object.prototype.hasOwnProperty.call(b, 'lexicalState')) {
+    if (!a.lexicalState || !b.lexicalState) return false;
+    if (!isLexicalStateEqual(a.lexicalState, b.lexicalState)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(a, 'richText') || Object.prototype.hasOwnProperty.call(b, 'richText')) {
+    if (!a.richText || !b.richText) return false;
+    if (!isRichTextEqual(a.richText, b.richText)) return false;
+  }
+  return true;
+}
+
+function createBatchNodePresentationCommand(
+  targetIds: Iterable<string>,
+  options: {
+    name: string;
+    mutationReason: string;
+    includeStyle?: boolean;
+    includeMarkers?: boolean;
+    includeLexical?: boolean;
+    updateDraftNode: (draftNode: any, nodeId: string) => void;
+  }
+): Command | null {
+  const nodes = getMindNodes();
+  if (!nodes) return null;
+  const uniqueTargetIds = Array.from(new Set(targetIds)).filter((nodeId) => !!nodes[nodeId]);
+  if (!uniqueTargetIds.length) return null;
+
+  const beforeSnapshots = uniqueTargetIds.map((nodeId) =>
+    createNodePresentationSnapshot(nodeId, nodes[nodeId], options)
+  );
+  const afterSnapshots = uniqueTargetIds.map((nodeId) => {
+    const draftNode = createNodePresentationDraft(nodes[nodeId], options);
+    options.updateDraftNode(draftNode, nodeId);
+    return createNodePresentationSnapshot(nodeId, draftNode, options);
+  });
+
+  const changedIndexes = beforeSnapshots.reduce<number[]>((indexes, snapshot, index) => {
+    if (!isNodePresentationSnapshotEqual(snapshot, afterSnapshots[index])) indexes.push(index);
+    return indexes;
+  }, []);
+  if (!changedIndexes.length) return null;
+
+  const filteredBeforeSnapshots = changedIndexes.map((index) => beforeSnapshots[index]);
+  const filteredAfterSnapshots = changedIndexes.map((index) => afterSnapshots[index]);
+  const changedNodeIds = changedIndexes.map((index) => uniqueTargetIds[index]);
+  const selection = snapshotSelection();
+
+  return createBatchUpdateNodePresentationCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      applyMutation: applyDocumentMutation,
+    },
+    {
+      name: options.name,
+      mutationReason: options.mutationReason,
+      beforeSnapshots: filteredBeforeSnapshots,
+      afterSnapshots: filteredAfterSnapshots,
+      previousSelection: selection,
+      nextSelection: selection,
+      ensureVisibleNodeIds: changedNodeIds,
+    }
+  );
 }
 
 function normalizeInlineMarks(marks: RichTextMarks | undefined) {
@@ -1515,20 +2708,19 @@ async function applyShapeStyleToSelectedNodes(
   updater: (shape: Record<string, any>, nodeId: string) => void
 ) {
   if (editingSession.value || !hasSelectedNodes.value) return;
-  const nodes = getMindNodes();
-  if (!nodes) return;
-
-  const targetIds = collectMarkerTargetNodeIds();
-  for (const nodeId of targetIds) {
-    const node = nodes[nodeId];
-    if (!node) continue;
-    const style = ensureNodeStyleContainers(node);
-    const shape = { ...(style.shape ?? {}) };
-    updater(shape, nodeId);
-    style.shape = shape;
-  }
-
-  await applyDocumentMutation(reason);
+  executeCommand(
+    createBatchNodePresentationCommand(collectMarkerTargetNodeIds(), {
+      name: 'BatchUpdateNodeShapeStyleCommand',
+      mutationReason: reason,
+      includeStyle: true,
+      updateDraftNode: (draftNode, nodeId) => {
+        const style = ensureNodeStyleContainers(draftNode);
+        const shape = { ...(style.shape ?? {}) };
+        updater(shape, nodeId);
+        style.shape = shape;
+      },
+    })
+  );
 }
 
 function withActiveLexicalRangeSelection(
@@ -1574,22 +2766,22 @@ async function applyTextStyleToSelectedNodes(
     return;
   }
   if (!hasSelectedNodes.value) return;
-  const nodes = getMindNodes();
-  if (!nodes) return;
-
-  const targetIds = collectMarkerTargetNodeIds();
-  for (const nodeId of targetIds) {
-    const node = nodes[nodeId];
-    if (!node) continue;
-    const style = ensureNodeStyleContainers(node);
-    const lexicalState = getNodeLexicalState(node);
-    const textStyle = { ...(style.text ?? {}) };
-    const nextLexicalState = nonEditingUpdater(lexicalState, textStyle);
-    setNodeLexicalState(node, nextLexicalState);
-    style.text = textStyle;
-  }
-
-  await applyDocumentMutation(reason);
+  executeCommand(
+    createBatchNodePresentationCommand(collectMarkerTargetNodeIds(), {
+      name: 'BatchUpdateNodeTextStyleCommand',
+      mutationReason: reason,
+      includeStyle: true,
+      includeLexical: true,
+      updateDraftNode: (draftNode) => {
+        const style = ensureNodeStyleContainers(draftNode);
+        const lexicalState = getNodeLexicalState(draftNode);
+        const textStyle = { ...(style.text ?? {}) };
+        const nextLexicalState = nonEditingUpdater(lexicalState, textStyle);
+        setNodeLexicalState(draftNode, nextLexicalState);
+        style.text = textStyle;
+      },
+    })
+  );
 }
 
 async function onFillPresetSelect(key: StyleFillPresetKey) {
@@ -1737,48 +2929,45 @@ async function onTextAlignSelect(key: StyleTextAlignKey) {
 
 async function applyMarkerToSelectedNodes(markerKey: string) {
   if (!hasSelectedNodes.value) return;
-  const nodes = getMindNodes();
-  if (!nodes) return;
-
-  const targetIds = collectMarkerTargetNodeIds();
-  for (const nodeId of targetIds) {
-    upsertNodeMarker(nodes[nodeId], markerKey);
-  }
-
-  await applyDocumentMutation('node-apply-marker', {
-    ensureVisibleNodeIds: Array.from(selectedIds.value),
-  });
+  executeCommand(
+    createBatchNodePresentationCommand(collectMarkerTargetNodeIds(), {
+      name: 'BatchApplyNodeMarkerCommand',
+      mutationReason: 'node-apply-marker',
+      includeMarkers: true,
+      updateDraftNode: (draftNode) => {
+        upsertNodeMarker(draftNode, markerKey);
+      },
+    })
+  );
 }
 
 async function onMarkerTileClick(markerKey: string) {
   if (!hasSelectedNodes.value) return;
-  const nodes = getMindNodes();
-  if (!nodes) return;
-  const targetIds = collectMarkerTargetNodeIds();
-
-  for (const nodeId of targetIds) {
-    if (isMarkerDeleteMode.value) removeNodeMarker(nodes[nodeId], markerKey);
-    else upsertNodeMarker(nodes[nodeId], markerKey);
-  }
-
-  await applyDocumentMutation(isMarkerDeleteMode.value ? 'node-remove-marker' : 'node-apply-marker', {
-    ensureVisibleNodeIds: Array.from(selectedIds.value),
-  });
+  executeCommand(
+    createBatchNodePresentationCommand(collectMarkerTargetNodeIds(), {
+      name: isMarkerDeleteMode.value ? 'BatchRemoveNodeMarkerCommand' : 'BatchApplyNodeMarkerCommand',
+      mutationReason: isMarkerDeleteMode.value ? 'node-remove-marker' : 'node-apply-marker',
+      includeMarkers: true,
+      updateDraftNode: (draftNode) => {
+        if (isMarkerDeleteMode.value) removeNodeMarker(draftNode, markerKey);
+        else upsertNodeMarker(draftNode, markerKey);
+      },
+    })
+  );
 }
 
 async function clearSelectedNodeMarkers() {
   if (!hasSelectedNodes.value) return;
-  const nodes = getMindNodes();
-  if (!nodes) return;
-
-  const targetIds = collectMarkerTargetNodeIds();
-  for (const nodeId of targetIds) {
-    clearNodeMarkers(nodes[nodeId]);
-  }
-
-  await applyDocumentMutation('node-clear-markers', {
-    ensureVisibleNodeIds: Array.from(selectedIds.value),
-  });
+  executeCommand(
+    createBatchNodePresentationCommand(collectMarkerTargetNodeIds(), {
+      name: 'BatchClearNodeMarkersCommand',
+      mutationReason: 'node-clear-markers',
+      includeMarkers: true,
+      updateDraftNode: (draftNode) => {
+        clearNodeMarkers(draftNode);
+      },
+    })
+  );
 }
 
 function setCanvasCursor(cursor: string) {
@@ -2075,6 +3264,22 @@ const editingCanvasTopLeadingPx = computed(() => {
   }).topLeadingPx;
 });
 
+const editingCanvasGlyphCenterYPx = computed(() => {
+  const session = editingSession.value;
+  const node = getNodeById(session?.nodeId);
+  const canvas = canvasRef.value;
+  if (!session || !node || !canvas) return 0;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 0;
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session.nodeId });
+  const verticalMetrics = measureTextVerticalMetrics(ctx, {
+    font: textStyle.canvasFontString,
+    fontSizePx: textStyle.fontSizePx,
+    lineHeightPx: textStyle.lineHeightPx,
+  });
+  return (verticalMetrics.topLeadingPx + verticalMetrics.contentHeightPx / 2) * camera.value.scale;
+});
+
 function getEditingTextBoxRectForNode(
   nodeId: string | null | undefined,
   preview = editingPreview.value
@@ -2282,8 +3487,8 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     height: `${textBoxRect.height}px`,
     fontFamily: textStyle.fontFamily,
     fontSize: `${textStyle.fontSizePx * scale}px`,
-    fontWeight: '400',
-    fontStyle: 'normal',
+    fontWeight: String(textStyle.fontWeight),
+    fontStyle: textStyle.fontStyle,
     lineHeight: `${textStyle.lineHeightPx * scale}px`,
     letterSpacing: `${textStyle.letterSpacingPx * scale}px`,
     padding: '0',
@@ -2325,6 +3530,344 @@ const editingOverlayInnerTranslateYPx = computed(() => {
   if (!style) return 0;
   return Math.max(0, editingCanvasTopLeadingPx.value * camera.value.scale - getDomTextTopOffset(style) - 1);
 });
+
+const TEXT_DIAGNOSTIC_STYLE_KEYS = [
+  'font',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'font-style',
+  'line-height',
+  'letter-spacing',
+  'color',
+  'opacity',
+  'text-align',
+  'text-rendering',
+  'font-kerning',
+  'font-synthesis',
+  'font-smooth',
+  '-webkit-font-smoothing',
+  '-moz-osx-font-smoothing',
+  'white-space',
+  'word-break',
+  'overflow-wrap',
+  'line-break',
+  'text-size-adjust',
+  '-webkit-text-size-adjust',
+  'transform',
+  'zoom',
+  'filter',
+] as const;
+
+function cloneDiagnosticValue<T>(value: T): T | null {
+  if (value == null) return value;
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return null;
+  }
+}
+
+function toPlainRect(
+  rect:
+    | DOMRect
+    | { x?: number; y?: number; left?: number; top?: number; width: number; height: number }
+    | null
+    | undefined
+) {
+  if (!rect) return null;
+  const x = typeof rect.x === 'number' ? rect.x : typeof rect.left === 'number' ? rect.left : 0;
+  const y = typeof rect.y === 'number' ? rect.y : typeof rect.top === 'number' ? rect.top : 0;
+  return {
+    x,
+    y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function serializeComputedStyle(style: CSSStyleDeclaration | null | undefined) {
+  if (!style) return null;
+  const textRelevant: Record<string, string> = {};
+  TEXT_DIAGNOSTIC_STYLE_KEYS.forEach((key) => {
+    textRelevant[key] = style.getPropertyValue(key);
+  });
+  return textRelevant;
+}
+
+function captureElementTextDiagnostics(element: Element | null | undefined) {
+  if (!(element instanceof HTMLElement)) return null;
+  return {
+    tagName: element.tagName.toLowerCase(),
+    className: element.className,
+    rect: toPlainRect(element.getBoundingClientRect()),
+    computedTextStyle: serializeComputedStyle(window.getComputedStyle(element)),
+  };
+}
+
+function findFirstTextNode(element: Node | null | undefined): Text | null {
+  if (!element) return null;
+  if (element instanceof Text) return element;
+  const childNodes = Array.from(element.childNodes ?? []);
+  for (const child of childNodes) {
+    const found = findFirstTextNode(child);
+    if (found && found.textContent && found.textContent.length > 0) return found;
+  }
+  return null;
+}
+
+function captureTextRangeDiagnostics(root: Element | null | undefined, reference: HTMLElement | null | undefined) {
+  if (!(root instanceof HTMLElement)) return null;
+  const textNode = findFirstTextNode(root);
+  if (!textNode) return null;
+  const range = document.createRange();
+  range.selectNodeContents(textNode);
+  const rangeRect = range.getBoundingClientRect();
+  const referenceRect = reference?.getBoundingClientRect() ?? null;
+  const rootRect = root.getBoundingClientRect();
+  return {
+    text: textNode.textContent ?? '',
+    rect: toPlainRect(rangeRect),
+    offsetFromReferenceTop: referenceRect ? rangeRect.top - referenceRect.top : null,
+    offsetFromRootTop: rangeRect.top - rootRect.top,
+  };
+}
+
+function parseFontFamilyStack(fontFamily: string | null | undefined) {
+  return String(fontFamily ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function captureFontAvailability(fontFamily: string | null | undefined, fontSizePx: number | null | undefined) {
+  if (typeof document === 'undefined' || !document.fonts || !fontFamily || !fontSizePx) return null;
+  const stack = parseFontFamilyStack(fontFamily);
+  const normalizedSize = Math.max(1, fontSizePx);
+  return {
+    stack,
+    stackCheck: document.fonts.check(`${normalizedSize}px ${fontFamily}`),
+    perFamily: stack.map((family) => ({
+      family,
+      available: document.fonts.check(`${normalizedSize}px ${family}`),
+    })),
+  };
+}
+
+function summarizeRichTextDiagnostics(doc: RichTextDocument) {
+  return {
+    blockCount: doc.blocks.length,
+    blocks: doc.blocks.map((block, blockIndex) => ({
+      blockIndex,
+      align: block.align,
+      inlineCount: block.inlines.length,
+      text: block.inlines.map((inline) => inline.text).join(''),
+      inlines: block.inlines.map((inline, inlineIndex) => ({
+        inlineIndex,
+        text: inline.text,
+        marks: cloneDiagnosticValue(inline.marks ?? null),
+      })),
+    })),
+  };
+}
+
+function summarizeLexicalStateDiagnostics(state: SerializedLexicalEditorState) {
+  return {
+    rootType: state.root?.type ?? null,
+    childCount: Array.isArray(state.root?.children) ? state.root.children.length : 0,
+    children: (state.root?.children ?? []).map((child, childIndex) => ({
+      childIndex,
+      type: child.type,
+      format: child.format ?? null,
+      textStyle: child.textStyle ?? null,
+      childCount: Array.isArray(child.children) ? child.children.length : 0,
+      textChildren: (child.children ?? [])
+        .filter((grandChild) => grandChild.type === 'text')
+        .map((grandChild, grandChildIndex) => ({
+          grandChildIndex,
+          text: grandChild.text ?? '',
+          format: grandChild.format ?? null,
+          style: grandChild.style ?? '',
+        })),
+    })),
+  };
+}
+
+function buildCanvasTextDiagnostics(nodeId: string) {
+  const node = getNodeById(nodeId);
+  const canvas = canvasRef.value;
+  const worldRect = worldBoxes.value.get(nodeId);
+  if (!node || !canvas || !worldRect) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const role = getMindNodeRole(props.doc, nodeId);
+  const defaultVisualStyle = getMindNodeDefaultVisualStyle(props.doc, nodeId);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
+  const richText = cloneRichText(getNodeRichText(node));
+  const lexicalState = getNodeLexicalState(node);
+  const textLayout = measureNodeTextLayout(ctx, richText, undefined, {
+    maxWidth: NODE_CONTENT_MAX_W,
+    baseStyle: textStyle,
+  });
+  const image = getNodeImage(node);
+  const textGeometry = computeNodeTextGeometry(ctx, textLayout, textStyle, image);
+  const bodyRect = getNodeBodyWorldRect(node, worldRect);
+  const textBoxRect = getEditingTextBoxRectForNode(nodeId);
+  const verticalMetrics = measureTextVerticalMetrics(ctx, {
+    font: textStyle.canvasFontString,
+    fontSizePx: textStyle.fontSizePx,
+    lineHeightPx: textStyle.lineHeightPx,
+  });
+
+  return {
+    nodeId,
+    role,
+    zoom: camera.value.scale,
+    canvasDpr: canvasDpr.value,
+    windowDevicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : null,
+    nodeTextState: {
+      plainText: getNodePlainText(node),
+      nodeStyleText: cloneDiagnosticValue(node.style?.text ?? null),
+      richText,
+      lexicalState,
+    },
+    defaultVisualStyle: cloneDiagnosticValue(defaultVisualStyle),
+    effectiveBaseTextStyle: cloneDiagnosticValue(textStyle),
+    worldRect: {
+      x1: worldRect.x1,
+      y1: worldRect.y1,
+      x2: worldRect.x2,
+      y2: worldRect.y2,
+      width: worldRect.x2 - worldRect.x1,
+      height: worldRect.y2 - worldRect.y1,
+    },
+    bodyRect: {
+      x1: bodyRect.x1,
+      y1: bodyRect.y1,
+      x2: bodyRect.x2,
+      y2: bodyRect.y2,
+      width: bodyRect.x2 - bodyRect.x1,
+      height: bodyRect.y2 - bodyRect.y1,
+    },
+    textBoxRect,
+    textLayout: {
+      lineCount: textLayout.lineCount,
+      contentWidth: textLayout.contentWidth,
+      contentHeight: textLayout.contentHeight,
+      lineHeight: textLayout.lineHeight,
+      lines: [...textLayout.lines],
+      richLines: textLayout.richLines.map((line, lineIndex) => ({
+        lineIndex,
+        align: line.align,
+        width: line.width,
+        height: line.height,
+        text: line.segments.map((segment) => segment.text).join(''),
+        segments: line.segments.map((segment, segmentIndex) => ({
+          segmentIndex,
+          text: segment.text,
+          width: segment.width,
+          font: segment.font,
+          fontSize: segment.fontSize,
+          color: segment.color,
+          marks: cloneDiagnosticValue(segment.marks ?? null),
+        })),
+      })),
+    },
+    textGeometry: cloneDiagnosticValue(textGeometry),
+    verticalMetrics: cloneDiagnosticValue(verticalMetrics),
+  };
+}
+
+function buildEditorTextDiagnostics(nodeId: string) {
+  const shellEl = document.querySelector('.lexical-editor-shell');
+  const rootEl = document.querySelector('.lexical-editor-root');
+  const paragraphEl = rootEl instanceof HTMLElement ? rootEl.querySelector('p') : null;
+  const spanEl = rootEl instanceof HTMLElement ? rootEl.querySelector('span') : null;
+  const scaledCanvasTopLeadingPx = editingCanvasTopLeadingPx.value * camera.value.scale;
+  const domTextTopOffsetPx = editingCalibrationStyle.value ? getDomTextTopOffset(editingCalibrationStyle.value) : null;
+  const shellStyle = shellEl instanceof HTMLElement ? window.getComputedStyle(shellEl) : null;
+  const shellFontSizePx = shellStyle ? Number.parseFloat(shellStyle.fontSize) : Number.NaN;
+  const viewportRect = viewportRef.value?.getBoundingClientRect() ?? null;
+  const canvasTextBoxPageTop =
+    viewportRect && editingScreenTextBoxRect.value
+      ? viewportRect.top + editingScreenTextBoxRect.value.y
+      : null;
+  const canvasGlyphPageTop =
+    canvasTextBoxPageTop == null ? null : canvasTextBoxPageTop + scaledCanvasTopLeadingPx;
+  const shellRangeProbe = captureTextRangeDiagnostics(shellEl, shellEl instanceof HTMLElement ? shellEl : null);
+  return {
+    nodeId,
+    zoom: camera.value.scale,
+    canvasDpr: canvasDpr.value,
+    windowDevicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : null,
+    editingSession: cloneDiagnosticValue(editingSession.value),
+    editingOverlayRootStyle: cloneDiagnosticValue(editingOverlayRootStyle.value),
+    editingEditorShellStyle: cloneDiagnosticValue(editingEditorShellStyle.value),
+    editingCalibrationStyle: cloneDiagnosticValue(editingCalibrationStyle.value),
+    editingOverlayInnerTranslateYPx: editingOverlayInnerTranslateYPx.value,
+    editingCanvasTopLeadingPx: editingCanvasTopLeadingPx.value,
+    editingScreenTextBoxRect: cloneDiagnosticValue(editingScreenTextBoxRect.value),
+    alignmentProbe: {
+      scaledCanvasTopLeadingPx,
+      domTextTopOffsetPx,
+      topLeadingDeltaPx:
+        domTextTopOffsetPx == null ? null : scaledCanvasTopLeadingPx - domTextTopOffsetPx,
+      overlayInnerTranslateYPx: editingOverlayInnerTranslateYPx.value,
+      canMoveUpWithCurrentLogic:
+        domTextTopOffsetPx == null ? null : scaledCanvasTopLeadingPx - domTextTopOffsetPx - 1 >= 0,
+      actualDomGlyphOffsetFromShellTop: shellRangeProbe?.offsetFromReferenceTop ?? null,
+      estimatedVsActualDomOffsetDeltaPx:
+        domTextTopOffsetPx == null || shellRangeProbe?.offsetFromReferenceTop == null
+          ? null
+          : domTextTopOffsetPx - shellRangeProbe.offsetFromReferenceTop,
+      canvasTextBoxPageTop,
+      canvasGlyphPageTop,
+    },
+    fontAvailability: captureFontAvailability(
+      shellStyle?.fontFamily ?? null,
+      Number.isFinite(shellFontSizePx) ? shellFontSizePx : null
+    ),
+    editingStateSummary: {
+      displayPlainText: getNodePlainText({ textLexical: editingDisplayLexicalState.value }),
+      draftPlainText: getNodePlainText({ textLexical: editingDraftLexicalState.value }),
+      displayLexical: summarizeLexicalStateDiagnostics(editingDisplayLexicalState.value),
+      draftLexical: summarizeLexicalStateDiagnostics(editingDraftLexicalState.value),
+      draftRichText: summarizeRichTextDiagnostics(editingDraftRichText.value),
+    },
+    styleProbes: {
+      shell: captureElementTextDiagnostics(shellEl),
+      root: captureElementTextDiagnostics(rootEl),
+      firstParagraph: captureElementTextDiagnostics(paragraphEl),
+      firstSpan: captureElementTextDiagnostics(spanEl),
+    },
+    textRangeProbe: {
+      shell: shellRangeProbe,
+      root: captureTextRangeDiagnostics(rootEl, shellEl instanceof HTMLElement ? shellEl : null),
+      firstParagraph: captureTextRangeDiagnostics(paragraphEl, shellEl instanceof HTMLElement ? shellEl : null),
+      firstSpan: captureTextRangeDiagnostics(spanEl, shellEl instanceof HTMLElement ? shellEl : null),
+    },
+  };
+}
+
+function logTextDiagnostics(label: string, snapshot: unknown) {
+  console.groupCollapsed(label);
+  console.log('snapshot', snapshot);
+  console.log('json', JSON.stringify(snapshot, null, 2));
+  console.groupEnd();
+}
+
+function dumpCanvasTextDiagnostics(nodeId: string, reason: string) {
+  if (!ENABLE_TEXT_ALIGNMENT_DIAGNOSTICS) return;
+  const snapshot = buildCanvasTextDiagnostics(nodeId);
+  if (!snapshot) return;
+  logTextDiagnostics(`[mind-text-diagnostics][canvas][${reason}] ${nodeId}`, snapshot);
+}
+
+function dumpEditorTextDiagnostics(nodeId: string, reason: string) {
+  if (!ENABLE_TEXT_ALIGNMENT_DIAGNOSTICS || typeof document === 'undefined') return;
+  logTextDiagnostics(`[mind-text-diagnostics][editor][${reason}] ${nodeId}`, buildEditorTextDiagnostics(nodeId));
+}
 
 let editingRelayoutRafId: number | null = null;
 let editingCaretFollowRafId: number | null = null;
@@ -2384,6 +3927,7 @@ function scheduleEditingLayoutSync() {
         if (rootId) affectedParents.set(parentInfo.parentId, rootId);
       });
       rebuildEdgeCache(props.doc, nextWorldBoxes, {
+        previousWorldBoxes,
         affectedParents: Array.from(affectedParents.entries()).map(([parentId, rootId]) => ({ parentId, rootId })),
       });
     }
@@ -2458,7 +4002,8 @@ function relayoutEditingPreviewNow() {
   const lineCountChanged = !!previousPreview && previousPreview.lineCount !== measuredLayout.lineCount;
   const widthChanged = !previousPreview || previousPreview.computedNodeW !== computedNodeW;
   const heightChanged = !previousPreview || previousPreview.computedNodeH !== computedNodeH;
-  if (widthChanged && !heightChanged && previousPreview) {
+  const canUseWidthOnlyPreview = !Array.isArray(node.children) || node.children.length === 0;
+  if (widthChanged && !heightChanged && previousPreview && canUseWidthOnlyPreview) {
     syncEditingPreviewWidthOnly(session.nodeId, previousPreview.computedNodeW, computedNodeW);
   } else if (widthChanged || heightChanged) {
     scheduleEditingLayoutSync();
@@ -2532,6 +4077,7 @@ function startEditing(
     })()
     : null;
   if (currentRect) ensureNodeVisible(nodeId);
+  dumpCanvasTextDiagnostics(nodeId, 'start-editing-before-dom');
   editingSession.value = {
     nodeId,
     initialLexicalState: cloneLexicalState(nextLexicalState),
@@ -2579,6 +4125,16 @@ function startEditing(
   if (DEBUG_CANVAS_OVERLAY) console.debug('[mind-start-editing]', { nodeId, mode });
   void nextTick().then(() => {
     if (caretPlacement !== 'none') scheduleEditingCaretFollow(40, 5);
+    requestAnimationFrame(() => {
+      const operationProbe = getActiveMindPerfOperationProbe();
+      if (operationProbe && operationProbe.finishMode === 'edit-ready' && operationProbe.targetNodeId === nodeId) {
+        finishMindPerfOperationProbe(operationProbe, 'edit-ready', {
+          mode,
+        });
+      }
+      if (editingSession.value?.nodeId !== nodeId) return;
+      dumpEditorTextDiagnostics(nodeId, `start-editing-${mode}`);
+    });
     if (DEBUG_CANVAS_OVERLAY) {
       const overlayRoot = document.querySelector('.lexical-editor-root');
       const overlayStyle = overlayRoot instanceof HTMLElement ? window.getComputedStyle(overlayRoot) : null;
@@ -2739,12 +4295,43 @@ async function flushScheduledDocumentMutation() {
   const shouldMarkDirty = pendingMutationShouldMarkDirty;
   const layoutInvalidationNodeIds = [...pendingLayoutInvalidationNodeIds];
   const addedNodeInfos = [...pendingAddedNodeInfos];
+  const removedNodeIds = [...pendingRemovedNodeIds];
+  const hiddenNodeIds = [...pendingHiddenNodeIds];
+  const touchedParentIds = [...pendingTouchedParentIds];
+  const reuseDescendantCounts = pendingReuseDescendantCounts;
+  const reuseParentIndex = pendingReuseParentIndex;
+  const forceFullEdgeRebuild = pendingForceFullEdgeRebuild;
+  const trustExistingNodeMeasureCache = pendingTrustExistingNodeMeasureCache;
+  const useLayoutChangedNodeIds = pendingUseLayoutChangedNodeIds;
   pendingMutationEnsureVisibleNodeIds = new Set();
   pendingMutationResolvers = [];
   pendingMutationReason = 'mutation';
   pendingMutationShouldMarkDirty = false;
   pendingLayoutInvalidationNodeIds = new Set();
   pendingAddedNodeInfos = [];
+  pendingRemovedNodeIds = new Set();
+  pendingHiddenNodeIds = new Set();
+  pendingTouchedParentIds = new Set();
+  pendingReuseDescendantCounts = false;
+  pendingReuseParentIndex = false;
+  pendingForceFullEdgeRebuild = false;
+  pendingTrustExistingNodeMeasureCache = false;
+  pendingUseLayoutChangedNodeIds = false;
+
+  const perfProbe = getActiveMindPerfProbe();
+  const shouldProfileProbeFlush = !!perfProbe && perfProbe.mutationReason === reason;
+  const flushStartedAt = shouldProfileProbeFlush ? performance.now() : 0;
+  if (perfProbe && shouldProfileProbeFlush) {
+    perfProbe.flushStartedAt = flushStartedAt;
+    perfProbe.mutationQueueDelayMs = flushStartedAt - (perfProbe.mutationQueuedAt ?? perfProbe.startedAt);
+    pushMindPerfAnchor(perfProbe, 'mutation-flush-start', {
+      reason,
+      queueDelayMs: roundPerfMs(perfProbe.mutationQueueDelayMs),
+      ensureVisibleCount: ensureVisibleNodeIds.length,
+      invalidateCount: layoutInvalidationNodeIds.length,
+      addedNodeCount: addedNodeInfos.length,
+    });
+  }
 
   editorDebugState.value.rebuildCountInLastCommand += 1;
   const metrics = await redrawAllInternal(reason, {
@@ -2752,8 +4339,18 @@ async function flushScheduledDocumentMutation() {
     preserveSubtreeHeightCache: layoutInvalidationNodeIds.length > 0,
     invalidateSubtreeHeightNodeIds: layoutInvalidationNodeIds,
     addedNodeInfos,
+    removedNodeIds,
+    hiddenNodeIds,
+    touchedParentIds,
+    reuseDescendantCounts,
+    reuseParentIndex,
+    forceFullEdgeRebuild,
+    trustExistingNodeMeasureCache,
+    useLayoutChangedNodeIds,
   });
+  const ensureVisibleStartedAt = performance.now();
   if (ensureVisibleNodeIds.length) ensureNodesVisible(ensureVisibleNodeIds);
+  const ensureVisibleMs = performance.now() - ensureVisibleStartedAt;
   if (shouldMarkDirty) markContentDirty();
 
   if (DEBUG_CANVAS_OVERLAY) {
@@ -2767,17 +4364,73 @@ async function flushScheduledDocumentMutation() {
     });
   }
 
+  if (perfProbe && shouldProfileProbeFlush) {
+    perfProbe.nodeCountAfter = getMindPerfNodeCount();
+    perfProbe.flushTotalMs = performance.now() - flushStartedAt;
+    perfProbe.totalMs = performance.now() - perfProbe.startedAt;
+    if (perfProbe.op === 'drag-node' && perfProbe.releaseStartedAt != null) {
+      perfProbe.releaseToDropRenderedMs = performance.now() - perfProbe.releaseStartedAt;
+    }
+    perfProbe.redrawTotalMs = metrics.totalMs;
+    perfProbe.layoutRebuildMs = metrics.layoutRebuildMs;
+    perfProbe.layoutMeasureMs = metrics.layoutMeasureMs;
+    perfProbe.layoutMeasureCalls = metrics.layoutMeasureCalls;
+    perfProbe.layoutMeasureCacheHits = metrics.layoutMeasureCacheHits;
+    perfProbe.layoutSubtreeMs = metrics.layoutSubtreeMs;
+    perfProbe.layoutSubtreeCalls = metrics.layoutSubtreeCalls;
+    perfProbe.layoutSubtreeCacheHits = metrics.layoutSubtreeCacheHits;
+    perfProbe.layoutPlaceMs = metrics.layoutPlaceMs;
+    perfProbe.layoutPlaceCalls = metrics.layoutPlaceCalls;
+    perfProbe.worldBoxesBuildMs = metrics.worldBoxesBuildMs;
+    perfProbe.parentIndexBuildMs = metrics.parentIndexBuildMs;
+    perfProbe.changedNodeScanMs = metrics.changedNodeScanMs;
+    perfProbe.changedNodeCount = metrics.changedNodeCount;
+    perfProbe.descendantCountsMs = metrics.descendantCountsMs;
+    perfProbe.spatialIndexMs = metrics.spatialIndexMs;
+    perfProbe.edgeCacheMs = metrics.edgeCacheMs;
+    perfProbe.edgeAffectedParentCount = metrics.edgeAffectedParentCount;
+    perfProbe.edgeTranslatedParentCount = metrics.edgeTranslatedParentCount;
+    perfProbe.edgesRebuildMs = metrics.edgesRebuildMs;
+    perfProbe.drawMs = metrics.drawMs;
+    perfProbe.ensureVisibleMs = ensureVisibleMs;
+    perfProbe.finishedReason = reason;
+    pushMindPerfAnchor(perfProbe, 'mutation-flush-end', {
+      flushTotalMs: roundPerfMs(perfProbe.flushTotalMs),
+      totalMs: roundPerfMs(perfProbe.totalMs),
+      redrawTotalMs: roundPerfMs(perfProbe.redrawTotalMs),
+      nodeCountAfter: perfProbe.nodeCountAfter,
+    });
+  }
+
+  const operationProbe = getActiveMindPerfOperationProbe();
+  if (
+    operationProbe &&
+    operationProbe.finishMode === 'flush' &&
+    (!operationProbe.mutationReason || operationProbe.mutationReason === reason)
+  ) {
+    finishMindPerfOperationProbe(operationProbe, 'flush');
+  }
+
   resolvers.forEach((resolve) => resolve());
+  if (perfProbe && shouldProfileProbeFlush) finishMindPerfProbe(perfProbe);
 }
 
 async function applyDocumentMutation(
   reason: string,
-  options?: {
-    ensureVisibleNodeId?: string | null;
-    ensureVisibleNodeIds?: string[];
-    markDirty?: boolean;
-    invalidateSubtreeHeightNodeIds?: string[];
-    addedNodeInfo?: { nodeId: string; parentId: string | null };
+    options?: {
+      ensureVisibleNodeId?: string | null;
+      ensureVisibleNodeIds?: string[];
+      markDirty?: boolean;
+      invalidateSubtreeHeightNodeIds?: string[];
+      addedNodeInfo?: { nodeId: string; parentId: string | null };
+      removedNodeIds?: string[];
+      hiddenNodeIds?: string[];
+      touchedParentIds?: string[];
+      reuseDescendantCounts?: boolean;
+      reuseParentIndex?: boolean;
+      forceFullEdgeRebuild?: boolean;
+      trustExistingNodeMeasureCache?: boolean;
+      useLayoutChangedNodeIds?: boolean;
   }
 ) {
   const releaseDocWatchSuppression = holdLocalDocWatchSuppression();
@@ -2793,6 +4446,32 @@ async function applyDocumentMutation(
   if (options?.addedNodeInfo?.nodeId) {
     pendingAddedNodeInfos.push(options.addedNodeInfo);
   }
+  if (options?.removedNodeIds?.length) {
+    options.removedNodeIds.forEach((nodeId) => {
+      if (nodeId) pendingRemovedNodeIds.add(nodeId);
+    });
+  }
+  if (options?.hiddenNodeIds?.length) {
+    options.hiddenNodeIds.forEach((nodeId) => {
+      if (nodeId) pendingHiddenNodeIds.add(nodeId);
+    });
+  }
+  if (options?.touchedParentIds?.length) {
+    options.touchedParentIds.forEach((parentId) => {
+      if (parentId) pendingTouchedParentIds.add(parentId);
+    });
+  }
+  pendingReuseDescendantCounts = pendingReuseDescendantCounts || !!options?.reuseDescendantCounts;
+  pendingReuseParentIndex = pendingReuseParentIndex || !!options?.reuseParentIndex;
+  pendingForceFullEdgeRebuild = pendingForceFullEdgeRebuild || !!options?.forceFullEdgeRebuild;
+  pendingTrustExistingNodeMeasureCache = pendingTrustExistingNodeMeasureCache || !!options?.trustExistingNodeMeasureCache;
+  pendingUseLayoutChangedNodeIds = pendingUseLayoutChangedNodeIds || !!options?.useLayoutChangedNodeIds;
+  noteMindPerfMutationQueued(reason, {
+    ensureVisibleCount: options?.ensureVisibleNodeId ? 1 : options?.ensureVisibleNodeIds?.length ?? 0,
+    invalidateCount: options?.invalidateSubtreeHeightNodeIds?.length ?? 0,
+    addedNodeCount: options?.addedNodeInfo?.nodeId ? 1 : 0,
+  });
+  noteMindPerfOperationMutationQueued(reason);
 
   return await new Promise<void>((resolve) => {
     pendingMutationResolvers.push(() => {
@@ -3118,23 +4797,58 @@ function isNodeInsideDraggedTree(nodeId: string, currentDrag: DragDropState, dra
 }
 
 function scheduleDragBootstrap(dragRoots: string[]) {
+  const scheduledProbe = getActiveMindPerfProbe();
+  const scheduledDragProbeId = scheduledProbe?.op === 'drag-node' ? scheduledProbe.id : null;
+  const bootstrapQueuedAt = scheduledDragProbeId != null ? performance.now() : 0;
   cancelPendingDragBootstrap();
   dragOverlayBootstrapRafId = requestAnimationFrame(() => {
     dragOverlayBootstrapRafId = null;
     if (!dragState.value.isDragging || !isSameOrderedNodeIds(dragState.value.dragRoots, dragRoots)) return;
 
+    const activeProbe = getActiveMindPerfProbe();
+    const bootstrapProbe =
+      activeProbe && activeProbe.id === scheduledDragProbeId && activeProbe.op === 'drag-node' ? activeProbe : null;
+    if (bootstrapProbe) {
+      bootstrapProbe.bootstrapRafDelayMs = performance.now() - bootstrapQueuedAt;
+    }
+
+    const textLayoutStartedAt = performance.now();
+    const dragRootTextLayouts = dragRoots.map((nodeId) => getDragOverlayTextLayout(nodeId, getNodeLabel(nodeId)));
+    const bootstrapTextLayoutMs = performance.now() - textLayoutStartedAt;
     setDragState({
-      dragRootTextLayouts: dragRoots.map((nodeId) => getDragOverlayTextLayout(nodeId, getNodeLabel(nodeId))),
+      dragRootTextLayouts,
     });
+    if (bootstrapProbe) {
+      bootstrapProbe.bootstrapTextLayoutMs = bootstrapTextLayoutMs;
+      pushMindPerfAnchor(bootstrapProbe, 'drag-bootstrap-ready', {
+        bootstrapRafDelayMs: roundPerfMs(bootstrapProbe.bootstrapRafDelayMs),
+        bootstrapTextLayoutMs: roundPerfMs(bootstrapTextLayoutMs),
+        dragRootCount: dragRoots.length,
+      });
+    }
 
     updateDragDropTarget(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
 
+    const subtreeWarmupQueuedAt = performance.now();
     dragSubtreeWarmupTimer = window.setTimeout(() => {
       dragSubtreeWarmupTimer = null;
       if (!dragState.value.isDragging || !isSameOrderedNodeIds(dragState.value.dragRoots, dragRoots)) return;
+      const subtreeWarmupStartedAt = performance.now();
+      const draggedSubtreeNodeIds = collectDraggedSubtreeIds(dragRoots);
+      const subtreeWarmupMs = performance.now() - subtreeWarmupStartedAt;
       setDragState({
-        draggedSubtreeNodeIds: collectDraggedSubtreeIds(dragRoots),
+        draggedSubtreeNodeIds,
       });
+      const warmupProbe = getActiveMindPerfProbe();
+      if (warmupProbe && warmupProbe.id === scheduledDragProbeId && warmupProbe.op === 'drag-node') {
+        warmupProbe.subtreeWarmupDelayMs = subtreeWarmupStartedAt - subtreeWarmupQueuedAt;
+        warmupProbe.subtreeWarmupMs = subtreeWarmupMs;
+        pushMindPerfAnchor(warmupProbe, 'drag-subtree-warmup', {
+          subtreeWarmupDelayMs: roundPerfMs(warmupProbe.subtreeWarmupDelayMs),
+          subtreeWarmupMs: roundPerfMs(subtreeWarmupMs),
+          draggedSubtreeNodeCount: draggedSubtreeNodeIds.size,
+        });
+      }
       requestRender();
     }, 0);
   });
@@ -3292,7 +5006,15 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
 }
 
 function updateDragDropTarget(screenX: number, screenY: number) {
+  const probe = getActiveMindPerfProbe();
+  const resolveStartedAt = probe?.op === 'drag-node' ? performance.now() : 0;
   const { target, invalidReason } = resolveDropTarget(screenX, screenY);
+  if (probe?.op === 'drag-node') {
+    noteDragDropResolve(performance.now() - resolveStartedAt, {
+      targetType: target?.type ?? null,
+      invalidReason,
+    });
+  }
   setDragState({
     cursorScreenX: screenX,
     cursorScreenY: screenY,
@@ -3359,11 +5081,14 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
   beforeHash: string | null;
   afterHash: string | null;
 } {
+  const activeProbe = getActiveMindPerfProbe();
+  const dragProbe = activeProbe?.op === 'drag-node' ? activeProbe : null;
   const nodes = getMindNodes();
   if (!nodes) return { command: null, reason: 'missingNodes', changed: false, beforeHash: null, afterHash: null };
   const movingRootIds = dragState.value.dragRoots;
   if (!movingRootIds.length) return { command: null, reason: 'pointerStateLost', changed: false, beforeHash: null, afterHash: null };
 
+  const sourceInfosStartedAt = dragProbe ? performance.now() : 0;
   const sourceInfos = movingRootIds
     .map((nodeId) => {
       const parentInfo = findParentAndIndex(nodeId);
@@ -3379,16 +5104,26 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
       }
       return b.fromIndex - a.fromIndex;
     });
+  const buildMoveSourceInfosMs = dragProbe ? performance.now() - sourceInfosStartedAt : 0;
   if (!sourceInfos.length) return { command: null, reason: 'pointerStateLost', changed: false, beforeHash: null, afterHash: null };
 
+  const parentSnapshotStartedAt = dragProbe ? performance.now() : 0;
   const affectedParentIds = Array.from(new Set([...sourceInfos.map((info) => info.fromParentId), dropTarget.toParentId]));
+  const invalidateSubtreeHeightNodeIds = Array.from(
+    new Set(affectedParentIds.flatMap((parentId) => collectAncestorNodeIds(parentId)))
+  );
   const beforeChildrenByParent = Object.fromEntries(
     affectedParentIds.map((parentId) => [parentId, [...(Array.isArray(nodes[parentId]?.children) ? nodes[parentId].children : [])]])
   );
   const afterChildrenByParent = Object.fromEntries(
     affectedParentIds.map((parentId) => [parentId, [...beforeChildrenByParent[parentId]]])
   ) as Record<string, string[]>;
+  const buildMoveParentSnapshotMs = dragProbe ? performance.now() - parentSnapshotStartedAt : 0;
+  const affectedChildrenCounts = affectedParentIds.map((parentId) => beforeChildrenByParent[parentId]?.length ?? 0);
+  const buildMoveAffectedChildrenTotal = affectedChildrenCounts.reduce((sum, count) => sum + count, 0);
+  const buildMoveMaxChildrenCount = affectedChildrenCounts.length ? Math.max(...affectedChildrenCounts) : 0;
 
+  const applyStartedAt = dragProbe ? performance.now() : 0;
   for (const info of sourceInfos) {
     const siblings = afterChildrenByParent[info.fromParentId];
     const actualIndex = siblings.indexOf(info.nodeId);
@@ -3404,15 +5139,43 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
   }
   adjustedToIndex = Math.max(0, Math.min(adjustedToIndex, afterChildrenByParent[dropTarget.toParentId].length));
   afterChildrenByParent[dropTarget.toParentId].splice(adjustedToIndex, 0, ...movingRootIds);
+  const buildMoveApplyMs = dragProbe ? performance.now() - applyStartedAt : 0;
 
+  const changedCheckStartedAt = dragProbe ? performance.now() : 0;
   const changed = affectedParentIds.some((parentId) => {
     const before = beforeChildrenByParent[parentId];
     const after = afterChildrenByParent[parentId];
     return before.length !== after.length || before.some((value, index) => after[index] !== value);
   });
+  const buildMoveChangedCheckMs = dragProbe ? performance.now() - changedCheckStartedAt : 0;
+  const hashStartedAt = dragProbe ? performance.now() : 0;
   const beforeHash = hashChildrenMap(beforeChildrenByParent);
   const afterHash = hashChildrenMap(afterChildrenByParent);
+  const buildMoveHashMs = dragProbe ? performance.now() - hashStartedAt : 0;
+  if (dragProbe) {
+    dragProbe.buildMoveSourceInfosMs = buildMoveSourceInfosMs;
+    dragProbe.buildMoveParentSnapshotMs = buildMoveParentSnapshotMs;
+    dragProbe.buildMoveApplyMs = buildMoveApplyMs;
+    dragProbe.buildMoveChangedCheckMs = buildMoveChangedCheckMs;
+    dragProbe.buildMoveHashMs = buildMoveHashMs;
+    dragProbe.buildMoveAffectedParentCount = affectedParentIds.length;
+    dragProbe.buildMoveAffectedChildrenTotal = buildMoveAffectedChildrenTotal;
+    dragProbe.buildMoveMaxChildrenCount = buildMoveMaxChildrenCount;
+  }
   if (!changed) {
+    if (dragProbe) {
+      pushMindPerfAnchor(dragProbe, 'build-move-command-breakdown', {
+        buildMoveSourceInfosMs: roundPerfMs(buildMoveSourceInfosMs),
+        buildMoveParentSnapshotMs: roundPerfMs(buildMoveParentSnapshotMs),
+        buildMoveApplyMs: roundPerfMs(buildMoveApplyMs),
+        buildMoveChangedCheckMs: roundPerfMs(buildMoveChangedCheckMs),
+        buildMoveHashMs: roundPerfMs(buildMoveHashMs),
+        buildMoveAffectedParentCount: affectedParentIds.length,
+        buildMoveAffectedChildrenTotal,
+        buildMoveMaxChildrenCount,
+        changed: false,
+      });
+    }
     return {
       command: null,
       reason:
@@ -3425,24 +5188,44 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
     };
   }
 
-  return {
-    command: createMoveSubtreesCommand(
-      {
-        getNodes: getMindNodes,
-        setSelection,
-        applyMutation: applyDocumentMutation,
+  const createCommandStartedAt = dragProbe ? performance.now() : 0;
+  const command = createMoveSubtreesCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      applyMutation: applyDocumentMutation,
+    },
+    {
+      movingRootIds,
+      beforeChildrenByParent,
+      afterChildrenByParent,
+      touchedParentIds: affectedParentIds,
+      invalidateSubtreeHeightNodeIds,
+      previousSelection: snapshotSelection(),
+      nextSelection: {
+        ids: movingRootIds,
+        primaryId: dragState.value.primaryDragRootId ?? movingRootIds[movingRootIds.length - 1] ?? null,
       },
-      {
-        movingRootIds,
-        beforeChildrenByParent,
-        afterChildrenByParent,
-        previousSelection: snapshotSelection(),
-        nextSelection: {
-          ids: movingRootIds,
-          primaryId: dragState.value.primaryDragRootId ?? movingRootIds[movingRootIds.length - 1] ?? null,
-        },
-      }
-    ),
+    }
+  );
+  const buildMoveCreateCommandMs = dragProbe ? performance.now() - createCommandStartedAt : 0;
+  if (dragProbe) {
+    dragProbe.buildMoveCreateCommandMs = buildMoveCreateCommandMs;
+    pushMindPerfAnchor(dragProbe, 'build-move-command-breakdown', {
+      buildMoveSourceInfosMs: roundPerfMs(buildMoveSourceInfosMs),
+      buildMoveParentSnapshotMs: roundPerfMs(buildMoveParentSnapshotMs),
+      buildMoveApplyMs: roundPerfMs(buildMoveApplyMs),
+      buildMoveChangedCheckMs: roundPerfMs(buildMoveChangedCheckMs),
+      buildMoveHashMs: roundPerfMs(buildMoveHashMs),
+      buildMoveCreateCommandMs: roundPerfMs(buildMoveCreateCommandMs),
+      buildMoveAffectedParentCount: affectedParentIds.length,
+      buildMoveAffectedChildrenTotal,
+      buildMoveMaxChildrenCount,
+      changed: true,
+    });
+  }
+  return {
+    command,
     reason: null,
     changed: true,
     beforeHash,
@@ -3508,6 +5291,7 @@ function resetInteractionToIdle(reason: string, options?: { releaseCapture?: boo
   logInteractionTransition(reason, 'idle');
   const pointerId = interactionState.value.pointerId;
   interactionState.value = createIdleInteractionState();
+  pendingDragPerfStartContext = null;
   if (options?.releaseCapture !== false) releasePointer(pointerId, reason);
 }
 
@@ -3537,6 +5321,8 @@ function cancelInteraction(reason: string) {
   }
   if (interactionState.value.mode === 'draggingNodes') {
     clearDragTransient(reason);
+    finishPendingDragPerfProbe(reason);
+    cancelMindPerfOperationProbe();
   }
   removeGlobalDragListeners();
   resetInteractionToIdle(reason);
@@ -3546,14 +5332,43 @@ function cancelInteraction(reason: string) {
 function beginDragging(screenX: number, screenY: number) {
   const candidate = interactionState.value.dragCandidate;
   if (!candidate) return;
+  const dragStartedAt = performance.now();
+  const normalizeStartedAt = performance.now();
   const normalized = normalizeDragRootsFromIds(candidate.selectionIds);
+  const normalizeDragRootsMs = performance.now() - normalizeStartedAt;
   setFilteredOutDescendantsCount(normalized.filteredOutDescendantsCount);
   if (normalized.invalidReason || !normalized.finalTargets.length) {
+    pendingDragPerfStartContext = null;
     resetInteractionToIdle(normalized.invalidReason ?? 'node-not-draggable');
     requestRender();
     return;
   }
   const dragRoots = normalized.finalTargets.map((target) => target.nodeId);
+  beginMindPerfOperationProbe({
+    op: 'drag-node',
+    label: '拖拽移动节点',
+    trigger: 'pointer-drag',
+    finishMode: 'flush',
+    targetNodeId: candidate.primaryDragRootId ?? dragRoots[dragRoots.length - 1] ?? null,
+    selectedCount: candidate.selectionIds.length,
+    startedAt: pendingDragPerfStartContext?.startedAt ?? dragStartedAt,
+  });
+  const probe = beginDragPerfProbe({
+    targetNodeId: candidate.primaryDragRootId ?? dragRoots[dragRoots.length - 1] ?? pendingDragPerfStartContext?.targetNodeId ?? null,
+    selectedCount: candidate.selectionIds.length,
+    dragRootCount: dragRoots.length,
+    pointerDownLeadMs: pendingDragPerfStartContext ? dragStartedAt - pendingDragPerfStartContext.startedAt : null,
+  });
+  pendingDragPerfStartContext = null;
+  if (probe) {
+    probe.normalizeDragRootsMs = normalizeDragRootsMs;
+    noteDragPerfStep('normalize-drag-roots', {
+      normalizeDragRootsMs: roundPerfMs(normalizeDragRootsMs),
+      dragRootCount: dragRoots.length,
+      filteredOutDescendantsCount: normalized.filteredOutDescendantsCount,
+      rootId: normalized.rootId,
+    });
+  }
   const pointerId = interactionState.value.pointerId;
   const captureSuccess = pointerId != null ? capturePointer(pointerId, 'begin-dragging') : false;
   cancelPendingDragBootstrap();
@@ -3582,6 +5397,16 @@ function beginDragging(screenX: number, screenY: number) {
   });
   addGlobalDragListeners();
   requestRender();
+  if (probe) {
+    probe.dragStartSetupMs = performance.now() - dragStartedAt;
+    noteDragPerfStep('drag-state-ready', {
+      dragStartSetupMs: roundPerfMs(probe.dragStartSetupMs),
+      captureSuccess,
+      pointerId,
+      globalListenersActive: globalDragListenersActive,
+      dragRoots,
+    });
+  }
   if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-drag-start]', {
       pointerId,
@@ -3611,22 +5436,40 @@ function startMarqueeFromInteraction(screenX: number, screenY: number) {
 
 function finalizeDrop(reason = 'pointerup') {
   const startedAt = performance.now();
+  const probe = getActiveMindPerfProbe();
+  const dragProbe = probe?.op === 'drag-node' ? probe : null;
+  if (dragProbe) dragProbe.releaseStartedAt = startedAt;
   const canUseLastValidTarget =
     !dragState.value.dropTarget &&
     !!dragState.value.lastValidDropTarget &&
     (!dragState.value.invalidReason || dragState.value.invalidReason === 'tooFar' || dragState.value.invalidReason === 'pointerStateLost');
   const stableTarget = dragState.value.dropTarget ?? (canUseLastValidTarget ? dragState.value.lastValidDropTarget : null);
   const effectiveInvalidReason = stableTarget ? null : dragState.value.invalidReason ?? 'tooFar';
+  const buildMoveCommandStartedAt = dragProbe ? performance.now() : 0;
   const result =
     stableTarget && !effectiveInvalidReason
       ? buildMoveCommand(stableTarget)
       : {
-        command: null,
+          command: null,
         reason: effectiveInvalidReason,
         changed: false,
         beforeHash: null,
-        afterHash: null,
-      };
+          afterHash: null,
+        };
+  if (dragProbe) {
+    dragProbe.buildMoveCommandMs = performance.now() - buildMoveCommandStartedAt;
+    dragProbe.finalDropTargetType = stableTarget?.type ?? null;
+    dragProbe.finalDropToParentId = stableTarget?.toParentId ?? null;
+    dragProbe.finalDropToIndex = stableTarget?.toIndex ?? null;
+    pushMindPerfAnchor(dragProbe, 'build-move-command', {
+      buildMoveCommandMs: roundPerfMs(dragProbe.buildMoveCommandMs),
+      chosenDropTargetType: stableTarget?.type ?? null,
+      toParentId: stableTarget?.toParentId ?? null,
+      toIndex: stableTarget?.toIndex ?? null,
+      invalidReason: result.reason,
+      changed: result.changed,
+    });
+  }
   const isNoOp = !result.command;
   const rebuildScheduled = !isNoOp;
 
@@ -3655,8 +5498,38 @@ function finalizeDrop(reason = 'pointerup') {
     });
   }
 
+  if (dragProbe && !isNoOp) {
+    dragProbe.committed = true;
+  }
   clearDragTransient(reason);
-  if (isNoOp) return;
+  if (isNoOp) {
+    if (dragProbe) {
+      dragProbe.finalizeDropMs = performance.now() - startedAt;
+      dragProbe.releaseToDropRenderedMs = dragProbe.releaseStartedAt
+        ? performance.now() - dragProbe.releaseStartedAt
+        : dragProbe.finalizeDropMs;
+      finishPendingDragPerfProbe(result.reason ?? reason, {
+        finalizeDropMs: roundPerfMs(dragProbe.finalizeDropMs),
+        releaseToDropRenderedMs: roundPerfMs(dragProbe.releaseToDropRenderedMs),
+        noOpReason: result.reason,
+        });
+      }
+    const operationProbe = getActiveMindPerfOperationProbe();
+    if (operationProbe?.op === 'drag-node') {
+      finishMindPerfOperationProbe(operationProbe, 'fallback', {
+        fallbackReason: result.reason ?? reason,
+      });
+    }
+    return;
+  }
+  if (dragProbe) {
+    dragProbe.finalizeDropMs = performance.now() - startedAt;
+    pushMindPerfAnchor(dragProbe, 'drag-command-dispatched', {
+      finalizeDropMs: roundPerfMs(dragProbe.finalizeDropMs),
+      commandName: result.command.name,
+      chosenDropTargetType: stableTarget?.type ?? null,
+    });
+  }
   executeCommand(result.command);
 }
 
@@ -3689,10 +5562,16 @@ function finalizeInteraction(
     } else if (mode === 'draggingNodes') {
       if (options.commitDrag === false) {
         clearDragTransient(reason);
+        finishPendingDragPerfProbe(reason, {
+          eventSource: options.eventSource ?? 'system',
+        });
       } else {
         finalizeDrop(reason);
       }
     } else if (mode === 'pointerDownOnNode') {
+      if (interactionState.value.hitNodeId && selectedIds.value.size > 1) {
+        setSingleSelected(interactionState.value.hitNodeId);
+      }
       focusViewportWithoutScroll();
       requestRender();
     }
@@ -3711,6 +5590,23 @@ function computeSelectionAfterDelete(parentId: string, siblingIds: string[], ind
   const previousSiblingId = siblingIds[indexInParent - 1] ?? null;
   if (previousSiblingId) return previousSiblingId;
   return parentId;
+}
+
+function createDeleteMutationOptions(targets: Array<{ parentId: string; deletedSnapshot: MindSubtreeSnapshot }>) {
+  const touchedParentIds = Array.from(new Set(targets.map((target) => target.parentId).filter(Boolean)));
+  const invalidateSubtreeHeightNodeIds = Array.from(
+    new Set(touchedParentIds.flatMap((parentId) => collectAncestorNodeIds(parentId)).filter(Boolean))
+  );
+  const removedNodeIds = Array.from(
+    new Set(targets.flatMap((target) => target.deletedSnapshot.nodeIds).filter(Boolean))
+  );
+  return {
+    invalidateSubtreeHeightNodeIds,
+    removedNodeIds,
+    touchedParentIds,
+    trustExistingNodeMeasureCache: true,
+    useLayoutChangedNodeIds: true,
+  };
 }
 
 function isRootNode(nodeId: string) {
@@ -3775,13 +5671,7 @@ function parseClipboardNodePayload(clipboardData: DataTransfer | null | undefine
 }
 
 function normalizeSelectedTargets(options?: { allowRoot?: boolean; collapseToRootIfSelected?: boolean }) {
-  const nodes = getMindNodes();
-  if (!nodes) return { finalTargets: [], filteredOutDescendantsCount: 0 };
-  const result = normalizeSelectionTargets(nodes, getSelectedNodeIds(), {
-    rootNodeId: getRootNodeId(),
-    allowRoot: options?.allowRoot,
-    collapseToRootIfSelected: options?.collapseToRootIfSelected,
-  });
+  const result = normalizeSelectionTargetsFromParentIndex(getSelectedNodeIds(), options);
   setFilteredOutDescendantsCount(result.filteredOutDescendantsCount);
   if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-normalize-selection]', {
@@ -3848,6 +5738,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
   const siblingIds = Array.isArray(parentNode.children) ? [...parentNode.children] : [];
   const previousSelectionId = getPrimarySelectedId();
   const nextSelectionId = computeSelectionAfterDelete(parentId, siblingIds, index);
+  const deleteMutationOptions = createDeleteMutationOptions([{ parentId, deletedSnapshot }]);
 
   return createDeleteSubtreeCommand(
     {
@@ -3864,6 +5755,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       deletedSnapshot,
       previousSelectionId,
       nextSelectionId,
+      deleteMutationOptions,
     }
   );
 }
@@ -3890,16 +5782,29 @@ function createBatchAddChildSelectionCommand(targetNodeIds: string[]): Command |
   );
 }
 
-function createBatchAddSiblingSelectionCommand(targetNodeIds: string[]): Command | null {
+function createBatchAddSiblingSelectionCommand(
+  targetNodeIds: string[],
+  options?: { insertBefore?: boolean }
+): Command | null {
   const nodes = getMindNodes();
   if (!nodes || !targetNodeIds.length) return null;
+  const insertBefore = !!options?.insertBefore;
 
   const targetInfos = targetNodeIds
     .map((nodeId) => findParentAndIndex(nodeId))
     .map((parentInfo, index) =>
-      parentInfo ? { nodeId: targetNodeIds[index], parentId: parentInfo.parentId, indexInParent: parentInfo.index } : null
+      parentInfo
+        ? {
+            nodeId: targetNodeIds[index],
+            parentId: parentInfo.parentId,
+            indexInParent: parentInfo.index,
+            insertIndex: insertBefore ? parentInfo.index : parentInfo.index + 1,
+          }
+        : null
     )
-    .filter((value): value is { nodeId: string; parentId: string; indexInParent: number } => !!value)
+    .filter(
+      (value): value is { nodeId: string; parentId: string; indexInParent: number; insertIndex: number } => !!value
+    )
     .sort((a, b) => {
       if (a.parentId !== b.parentId) {
         const aInfo = getSelectionTargetInfo(nodes, a.nodeId);
@@ -3945,6 +5850,141 @@ function createBatchAddSiblingSelectionCommand(targetNodeIds: string[]): Command
       previousSelection: snapshotSelection(),
     }
   );
+}
+
+function createBatchAddParentSelectionCommand(targetInfosInput: SelectionTargetInfo[]): Command | null {
+  const nodes = getMindNodes();
+  if (!nodes || !targetInfosInput.length) return null;
+
+  const shouldProfileAddParent = DEBUG_MIND_PERF_PROBE && getActiveMindPerfProbe()?.op === 'add-parent-shortcut';
+  const resolveTargetInfosStartedAt = shouldProfileAddParent ? performance.now() : 0;
+  const targetInfos = targetInfosInput.filter((value): value is SelectionTargetInfo => !!value && !!value.parentId);
+  if (shouldProfileAddParent) {
+    noteMindPerfStep('resolve-target-infos', {
+      targetNodeCount: targetInfosInput.length,
+      targetInfoCount: targetInfos.length,
+      resolveTargetInfosMs: roundPerfMs(performance.now() - resolveTargetInfosStartedAt),
+      reusedNormalizedTargetInfos: true,
+    });
+  }
+
+  if (!targetInfos.length) return null;
+
+  const groupByParentStartedAt = shouldProfileAddParent ? performance.now() : 0;
+  const groupsByParentId = new Map<
+    string,
+    {
+      parentId: string;
+      firstOrder: number;
+      childIds: string[];
+      indices: number[];
+      newParentId: string;
+      role: MindNodeRole;
+    }
+  >();
+
+  targetInfos.forEach((info, orderIndex) => {
+    if (!info.parentId) return;
+    const existing = groupsByParentId.get(info.parentId);
+    if (existing) {
+      existing.childIds.push(info.nodeId);
+      existing.indices.push(info.indexInParent);
+      return;
+    }
+    groupsByParentId.set(info.parentId, {
+      parentId: info.parentId,
+      firstOrder: orderIndex,
+      childIds: [info.nodeId],
+      indices: [info.indexInParent],
+      newParentId: createNodeId(),
+      role: getMindNodeRole(props.doc, info.nodeId),
+    });
+  });
+  if (shouldProfileAddParent) {
+    noteMindPerfStep('group-targets-by-parent', {
+      groupedParentCount: groupsByParentId.size,
+      groupTargetsByParentMs: roundPerfMs(performance.now() - groupByParentStartedAt),
+    });
+  }
+
+  const finalizeGroupsStartedAt = shouldProfileAddParent ? performance.now() : 0;
+  const groups = Array.from(groupsByParentId.values())
+    .sort((a, b) => a.firstOrder - b.firstOrder)
+    .map((group) => {
+      const parentChildren = Array.isArray(nodes[group.parentId]?.children) ? [...nodes[group.parentId].children] : [];
+      const childIdSet = new Set(group.childIds);
+      const orderedChildIds = parentChildren.filter((childId) => childIdSet.has(childId));
+      const remainingChildren = parentChildren.filter((childId) => !childIdSet.has(childId));
+      const insertIndex = Math.min(...group.indices);
+      const afterChildren = [...remainingChildren];
+      afterChildren.splice(insertIndex, 0, group.newParentId);
+      return {
+        parentId: group.parentId,
+        childIds: orderedChildIds,
+        beforeChildren: parentChildren,
+        afterChildren,
+        newParentId: group.newParentId,
+        role: group.role,
+      };
+    })
+    .filter((group) => group.childIds.length > 0);
+  if (shouldProfileAddParent) {
+    noteMindPerfStep('finalize-parent-groups', {
+      groupCount: groups.length,
+      wrappedChildCount: groups.reduce((sum, group) => sum + group.childIds.length, 0),
+      finalizeParentGroupsMs: roundPerfMs(performance.now() - finalizeGroupsStartedAt),
+    });
+  }
+
+  if (!groups.length) return null;
+
+  const newParentIds = groups.map((group) => group.newParentId);
+  const touchedParentIds = Array.from(new Set(groups.flatMap((group) => [group.parentId, group.newParentId]).filter(Boolean)));
+  const invalidateSubtreeHeightNodeIds = Array.from(
+    new Set(groups.flatMap((group) => [group.newParentId, ...collectAncestorNodeIds(group.parentId)]).filter(Boolean))
+  );
+  if (shouldProfileAddParent) {
+    noteMindPerfStep('prepare-incremental-mutation-options', {
+      touchedParentCount: touchedParentIds.length,
+      invalidateCount: invalidateSubtreeHeightNodeIds.length,
+    });
+  }
+  const createCommandStartedAt = shouldProfileAddParent ? performance.now() : 0;
+  const command = createBatchAddParentCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      applyMutation: applyDocumentMutation,
+      createNodeRecord: (nodeId: string) =>
+        createNodeRecord(
+          nodeId,
+          NEW_NODE_TEXT,
+          groups.find((group) => group.newParentId === nodeId)?.role ?? 'default'
+        ),
+    },
+    {
+      groups: groups.map(({ role: _role, ...group }) => group),
+      insertMutationOptions: {
+        ensureVisibleNodeIds: newParentIds,
+        invalidateSubtreeHeightNodeIds,
+        touchedParentIds,
+        trustExistingNodeMeasureCache: true,
+        useLayoutChangedNodeIds: true,
+      },
+      previousSelection: snapshotSelection(),
+      nextSelection: {
+        ids: newParentIds,
+        primaryId: newParentIds[newParentIds.length - 1] ?? null,
+      },
+    }
+  );
+  if (shouldProfileAddParent) {
+    noteMindPerfStep('create-batch-add-parent-command', {
+      createCommandMs: roundPerfMs(performance.now() - createCommandStartedAt),
+      newParentCount: newParentIds.length,
+    });
+  }
+  return command;
 }
 
 function createPasteTextLinesCommand(targetParentId: string, lines: string[]): Command | null {
@@ -4008,6 +6048,12 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
     primaryDeleteTarget?.parentId != null
       ? computeSelectionAfterDelete(primaryDeleteTarget.parentId, siblingIds, primaryDeleteTarget.indexInParent)
       : resolveFallbackSelection(getPrimarySelectedId());
+  const deleteMutationOptions = createDeleteMutationOptions(
+    targetsForMutation.map((target) => ({
+      parentId: target.parentId,
+      deletedSnapshot: target.deletedSnapshot,
+    }))
+  );
 
   if (DEBUG_CANVAS_OVERLAY) {
     console.debug(
@@ -4032,6 +6078,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       previousSelection: snapshotSelection(),
       nextSelectionId,
       lastDeletedNodeId: primaryDeleteTarget?.nodeId ?? null,
+      deleteMutationOptions,
     }
   );
 }
@@ -4153,14 +6200,36 @@ function createAddChildCommand(parentId: string): Command | null {
   return {
     name: 'AddChildCommand',
     do: () => {
+      const prepareStartedAt = performance.now();
       const currentNodes = getMindNodes();
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
       currentParent.collapsed = false;
+      const parentChildrenBefore = currentParent.children.length;
+      noteMindPerfStep('prepare-parent-context', {
+        ms: roundPerfMs(performance.now() - prepareStartedAt),
+        parentChildrenBefore,
+      });
+      const createNodeStartedAt = performance.now();
       if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
+      noteMindPerfStep('create-node-record', {
+        ms: roundPerfMs(performance.now() - createNodeStartedAt),
+        parentChildrenBefore,
+      });
+      const insertStartedAt = performance.now();
       currentParent.children.splice(insertIndex, 0, newNodeId);
-      setSingleSelected(newNodeId);
+      noteMindPerfStep('insert-child-reference', {
+        ms: roundPerfMs(performance.now() - insertStartedAt),
+        parentChildrenBefore,
+        parentChildrenAfter: currentParent.children.length,
+        insertIndex,
+      });
+      const selectionStartedAt = performance.now();
+      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      noteMindPerfStep('selection-updated', {
+        ms: roundPerfMs(performance.now() - selectionStartedAt),
+      });
       void applyDocumentMutation('history:add-child', {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -4177,7 +6246,7 @@ function createAddChildCommand(parentId: string): Command | null {
       currentParent.collapsed = previousCollapsed;
       delete currentNodes[newNodeId];
       const restoredSelectionId = resolveFallbackSelection(previousSelectionId, parentId);
-      setSingleSelected(restoredSelectionId);
+      setSingleSelected(restoredSelectionId, { suppressRender: true, suppressFocus: true });
       editingNodeId.value = null;
       void applyDocumentMutation('history:undo-add-child', { ensureVisibleNodeId: restoredSelectionId });
     },
@@ -4190,7 +6259,7 @@ function createAddChildCommand(parentId: string): Command | null {
       if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
-      setSingleSelected(newNodeId);
+      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
       void applyDocumentMutation('history:redo-add-child', {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -4201,6 +6270,14 @@ function createAddChildCommand(parentId: string): Command | null {
 }
 
 function createAddSiblingCommand(nodeId: string): Command | null {
+  return createAddSiblingCommandAt(nodeId, { insertBefore: false });
+}
+
+function createAddSiblingBeforeCommand(nodeId: string): Command | null {
+  return createAddSiblingCommandAt(nodeId, { insertBefore: true });
+}
+
+function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: boolean }): Command | null {
   const parentInfo = findParentAndIndex(nodeId);
   if (!parentInfo) return null;
 
@@ -4209,22 +6286,47 @@ function createAddSiblingCommand(nodeId: string): Command | null {
   const parentNode = nodes?.[parentId];
   if (!nodes || !parentNode) return null;
 
+  const insertBefore = !!options?.insertBefore;
   const previousSelectionId = getPrimarySelectedId();
   const newNodeId = createNodeId();
-  const insertIndex = index + 1;
+  const insertIndex = insertBefore ? index : index + 1;
   const siblingRole = getMindNodeRole(props.doc, nodeId);
+  const commandName = insertBefore ? 'AddSiblingBeforeCommand' : 'AddSiblingCommand';
+  const mutationReason = insertBefore ? 'add-sibling-before' : 'add-sibling';
 
   return {
-    name: 'AddSiblingCommand',
+    name: commandName,
     do: () => {
+      const prepareStartedAt = performance.now();
       const currentNodes = getMindNodes();
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
+      const parentChildrenBefore = currentParent.children.length;
+      noteMindPerfStep('prepare-parent-context', {
+        ms: roundPerfMs(performance.now() - prepareStartedAt),
+        parentChildrenBefore,
+      });
+      const createNodeStartedAt = performance.now();
       if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
+      noteMindPerfStep('create-node-record', {
+        ms: roundPerfMs(performance.now() - createNodeStartedAt),
+        parentChildrenBefore,
+      });
+      const insertStartedAt = performance.now();
       currentParent.children.splice(Math.min(insertIndex, currentParent.children.length), 0, newNodeId);
-      setSingleSelected(newNodeId);
-      void applyDocumentMutation('history:add-sibling', {
+      noteMindPerfStep('insert-sibling-reference', {
+        ms: roundPerfMs(performance.now() - insertStartedAt),
+        parentChildrenBefore,
+        parentChildrenAfter: currentParent.children.length,
+        insertIndex,
+      });
+      const selectionStartedAt = performance.now();
+      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      noteMindPerfStep('selection-updated', {
+        ms: roundPerfMs(performance.now() - selectionStartedAt),
+      });
+      void applyDocumentMutation(`history:${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
         addedNodeInfo: { nodeId: newNodeId, parentId },
@@ -4239,9 +6341,9 @@ function createAddSiblingCommand(nodeId: string): Command | null {
       if (nextIndex >= 0) currentParent.children.splice(nextIndex, 1);
       delete currentNodes[newNodeId];
       const restoredSelectionId = resolveFallbackSelection(previousSelectionId, parentId);
-      setSingleSelected(restoredSelectionId);
+      setSingleSelected(restoredSelectionId, { suppressRender: true, suppressFocus: true });
       editingNodeId.value = null;
-      void applyDocumentMutation('history:undo-add-sibling', { ensureVisibleNodeId: restoredSelectionId });
+      void applyDocumentMutation(`history:undo-${mutationReason}`, { ensureVisibleNodeId: restoredSelectionId });
     },
     redo: () => {
       const currentNodes = getMindNodes();
@@ -4251,8 +6353,8 @@ function createAddSiblingCommand(nodeId: string): Command | null {
       if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
-      setSingleSelected(newNodeId);
-      void applyDocumentMutation('history:redo-add-sibling', {
+      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      void applyDocumentMutation(`history:redo-${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
         addedNodeInfo: { nodeId: newNodeId, parentId },
@@ -4261,10 +6363,44 @@ function createAddSiblingCommand(nodeId: string): Command | null {
   };
 }
 
+function wrapCommandDoWithMindPerf(command: Command, probe: MindPerfProbe): Command {
+  return {
+    ...command,
+    do: () => {
+      pushMindPerfAnchor(probe, 'command-do-start', { commandName: command.name });
+      const commandDoStartedAt = performance.now();
+      command.do();
+      probe.commandDoMs = performance.now() - commandDoStartedAt;
+      pushMindPerfAnchor(probe, 'command-do-end', {
+        commandName: command.name,
+        commandDoMs: roundPerfMs(probe.commandDoMs),
+      });
+    },
+  };
+}
+
 function executeCommand(command: Command | null) {
-  if (!command) return;
+  if (!command) {
+    cancelMindPerfOperationProbe();
+    return;
+  }
   resetCommandDebugState();
-  history.execute(command);
+  const probe = getActiveMindPerfProbe();
+  setMindPerfOperationCommandName(command.name);
+  const commandToExecute = probe ? wrapCommandDoWithMindPerf(command, probe) : command;
+  if (probe) {
+    probe.commandName = command.name;
+    pushMindPerfAnchor(probe, 'history-execute-start', { commandName: command.name });
+  }
+  const executeStartedAt = probe ? performance.now() : 0;
+  history.execute(commandToExecute);
+  if (probe) {
+    probe.historyExecuteMs = performance.now() - executeStartedAt;
+    pushMindPerfAnchor(probe, 'history-execute-end', {
+      commandName: command.name,
+      historyExecuteMs: roundPerfMs(probe.historyExecuteMs),
+    });
+  }
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -4293,10 +6429,40 @@ function withCameraResetLog(reason: string, mutate: () => void) {
 }
 
 function requestRender() {
+  const perfProbe = getActiveMindPerfProbe();
+  const isPreFlushProbeRender = !!perfProbe && perfProbe.flushStartedAt == null;
+  if (perfProbe && isPreFlushProbeRender) {
+    perfProbe.preFlushRequestRenderCount += 1;
+    if (perfProbe.preFlushRequestRenderCount === 1) {
+      pushMindPerfAnchor(perfProbe, 'request-render-queued', {
+        phase: 'pre-flush',
+      });
+    }
+  }
   if (drawRafId != null) return;
   drawRafId = requestAnimationFrame(() => {
     drawRafId = null;
+    const drawStartedAt = performance.now();
     draw();
+    const drawMs = performance.now() - drawStartedAt;
+    noteMindPerfCameraDraw(drawMs);
+    const operationProbe = getActiveMindPerfOperationProbe();
+    if (perfProbe && isPreFlushProbeRender) {
+      perfProbe.preFlushDrawCount += 1;
+      perfProbe.preFlushDrawMs += drawMs;
+      if (perfProbe.op === 'add-node-enter' || perfProbe.preFlushDrawCount === 1) {
+        if (perfProbe.op === 'drag-node' && perfProbe.dragStartToFollowVisibleMs == null) {
+          perfProbe.dragStartToFollowVisibleMs = performance.now() - perfProbe.startedAt;
+        }
+        pushMindPerfAnchor(perfProbe, perfProbe.op === 'drag-node' ? 'drag-first-draw' : 'request-render-draw', {
+          phase: 'pre-flush',
+          drawMs: roundPerfMs(drawMs),
+        });
+      }
+    }
+    if (operationProbe && operationProbe.finishMode === 'draw') {
+      finishMindPerfOperationProbe(operationProbe, 'draw');
+    }
   });
 }
 
@@ -4318,7 +6484,8 @@ const { onWheel, cleanup } = useInteraction(
   () => getMinCameraScale(),
   () => MAX_CAMERA_SCALE,
   requestRender,
-  () => schedulePersistViewport()
+  () => schedulePersistViewport(),
+  noteMindPerfCameraInteractionFrame
 );
 
 async function redrawAll(reason = 'redrawAll') {
@@ -4367,6 +6534,14 @@ async function redrawAllInternal(
     preserveSubtreeHeightCache?: boolean;
     invalidateSubtreeHeightNodeIds?: string[];
     addedNodeInfos?: Array<{ nodeId: string; parentId: string | null }>;
+    removedNodeIds?: string[];
+    hiddenNodeIds?: string[];
+    touchedParentIds?: string[];
+    reuseDescendantCounts?: boolean;
+    reuseParentIndex?: boolean;
+    forceFullEdgeRebuild?: boolean;
+    trustExistingNodeMeasureCache?: boolean;
+    useLayoutChangedNodeIds?: boolean;
   } = { restoreViewport: true }
 ) {
   const startedAt = performance.now();
@@ -4377,27 +6552,59 @@ async function redrawAllInternal(
 
   if (props.doc) ensureMindRoots(props.doc);
 
-  const layoutStartedAt = performance.now();
   if (options.invalidateSubtreeHeightNodeIds?.length) {
     invalidateSubtreeHeightCache(options.invalidateSubtreeHeightNodeIds);
   }
-  rebuildLayout({ preserveSubtreeHeightCache: options.preserveSubtreeHeightCache });
+  const layoutStartedAt = performance.now();
+  rebuildLayout({
+    preserveSubtreeHeightCache: options.preserveSubtreeHeightCache,
+    trustExistingNodeMeasureCache: options.trustExistingNodeMeasureCache ?? !!options.addedNodeInfos?.length,
+    translationBlockedNodeIds: options.invalidateSubtreeHeightNodeIds,
+  });
   const layoutRebuildMs = performance.now() - layoutStartedAt;
+  const layoutPerfMetrics = getLastLayoutPerfMetrics();
+  const layoutTranslationOps = getLastLayoutTranslationOps();
+  const layoutChangedNodeIds = options.useLayoutChangedNodeIds ? getLastLayoutChangedNodeIds() : [];
   const edgesStartedAt = performance.now();
+  const worldBoxesStartedAt = performance.now();
   const previousWorldBoxes = worldBoxes.value;
   const nextWorldBoxes = buildWorldBoxes(props.doc, layoutLocal);
   worldBoxes.value = nextWorldBoxes;
+  const worldBoxesBuildMs = performance.now() - worldBoxesStartedAt;
+  const parentIndexStartedAt = performance.now();
   const nodes = getMindNodes();
-  const nextParentIndex = options.addedNodeInfos?.length
-    ? updateParentIndexForAddedNodes(nodes, parentIndexByNodeId.value, options.addedNodeInfos)
-    : buildParentIndex(nodes);
-  const changedNodeIds: string[] = [];
-  if (options.addedNodeInfos?.length) {
+  const nextParentIndex = options.reuseParentIndex
+    ? parentIndexByNodeId.value
+    : options.removedNodeIds?.length
+    ? updateParentIndexForRemovedNodes(nodes, parentIndexByNodeId.value, options.touchedParentIds ?? [], options.removedNodeIds)
+    : options.touchedParentIds?.length
+    ? updateParentIndexForTouchedParents(nodes, parentIndexByNodeId.value, options.touchedParentIds)
+    : options.addedNodeInfos?.length
+      ? updateParentIndexForAddedNodes(nodes, parentIndexByNodeId.value, options.addedNodeInfos)
+      : buildParentIndex(nodes);
+  const parentIndexBuildMs = performance.now() - parentIndexStartedAt;
+  const changedNodeIds: string[] = options.useLayoutChangedNodeIds && layoutChangedNodeIds.length ? [...layoutChangedNodeIds] : [];
+  if (options.removedNodeIds?.length) {
+    options.removedNodeIds.forEach((nodeId) => {
+      if (nodeId && !changedNodeIds.includes(nodeId)) changedNodeIds.push(nodeId);
+    });
+  }
+  if (options.hiddenNodeIds?.length) {
+    options.hiddenNodeIds.forEach((nodeId) => {
+      if (nodeId && !changedNodeIds.includes(nodeId)) changedNodeIds.push(nodeId);
+    });
+  }
+  const changedNodeScanStartedAt = performance.now();
+  if (!changedNodeIds.length && options.addedNodeInfos?.length) {
     for (const [nodeId, nextRect] of nextWorldBoxes.entries()) {
       if (!isSameWorldRect(previousWorldBoxes.get(nodeId), nextRect)) changedNodeIds.push(nodeId);
     }
   }
-  if (options.addedNodeInfos?.length) {
+  const changedNodeScanMs = performance.now() - changedNodeScanStartedAt;
+  const descendantCountsStartedAt = performance.now();
+  if (options.reuseDescendantCounts) {
+    descendantCounts.value = descendantCounts.value;
+  } else if (options.addedNodeInfos?.length) {
     const nextDescendantCounts = new Map(descendantCounts.value);
     options.addedNodeInfos.forEach(({ nodeId, parentId }) => {
       if (!nodeId) return;
@@ -4410,33 +6617,69 @@ async function redrawAllInternal(
       }
     });
     descendantCounts.value = nextDescendantCounts;
+  } else if (options.removedNodeIds?.length) {
+    descendantCounts.value = buildDescendantCountMap(props.doc);
   } else {
     descendantCounts.value = buildDescendantCountMap(props.doc);
   }
+  const descendantCountsMs = performance.now() - descendantCountsStartedAt;
   parentIndexByNodeId.value = nextParentIndex;
+  const spatialIndexStartedAt = performance.now();
   if (changedNodeIds.length) {
     spatialIndex.updateMany(worldBoxes.value, changedNodeIds);
   } else {
     spatialIndex.rebuild(worldBoxes.value);
   }
-  if (changedNodeIds.length) {
+  const spatialIndexMs = performance.now() - spatialIndexStartedAt;
+  const edgeCacheStartedAt = performance.now();
+  let edgeAffectedParentCount = 0;
+  let edgeTranslatedParentCount = 0;
+  if (
+    (changedNodeIds.length || options.touchedParentIds?.length) &&
+    !options.removedNodeIds?.length &&
+    !options.hiddenNodeIds?.length &&
+    !options.forceFullEdgeRebuild
+  ) {
     const affectedParents = new Map<string, string>();
+    const translatedParentOffsets = new Map<string, { dx: number; dy: number }>();
+    layoutTranslationOps.forEach((op) => {
+      op.translatedParentIds.forEach((parentId) => {
+        translatedParentOffsets.set(parentId, { dx: op.dx, dy: op.dy });
+      });
+    });
+    const rootIdCache = new Map<string, string | null>();
+    const resolveCachedRootNodeId = (nodeId: string | null | undefined) => {
+      if (!nodeId) return null;
+      if (rootIdCache.has(nodeId)) return rootIdCache.get(nodeId) ?? null;
+      const rootId = resolveRootNodeId(nodeId, nextParentIndex);
+      rootIdCache.set(nodeId, rootId);
+      return rootId;
+    };
     changedNodeIds.forEach((nodeId) => {
       if (nodes?.[nodeId]?.children?.length) {
-        const rootId = resolveRootNodeId(nodeId, nextParentIndex);
+        const rootId = resolveCachedRootNodeId(nodeId);
         if (rootId) affectedParents.set(nodeId, rootId);
       }
       const parentInfo = nextParentIndex.get(nodeId);
       if (!parentInfo?.parentId) return;
-      const rootId = resolveRootNodeId(parentInfo.parentId, nextParentIndex);
+      const rootId = resolveCachedRootNodeId(parentInfo.parentId);
       if (rootId) affectedParents.set(parentInfo.parentId, rootId);
     });
-    rebuildEdgeCache(props.doc, worldBoxes.value, {
+    options.touchedParentIds?.forEach((parentId) => {
+      const rootId = resolveCachedRootNodeId(parentId);
+      if (rootId) affectedParents.set(parentId, rootId);
+    });
+    edgeAffectedParentCount = affectedParents.size;
+    const edgeCacheResult = rebuildEdgeCache(props.doc, worldBoxes.value, {
+      previousWorldBoxes,
+      translatedParentOffsets,
       affectedParents: Array.from(affectedParents.entries()).map(([parentId, rootId]) => ({ parentId, rootId })),
     });
+    edgeTranslatedParentCount = edgeCacheResult?.translatedParentCount ?? 0;
   } else {
     rebuildEdgeCache(props.doc, worldBoxes.value);
   }
+  const edgeCacheMs = performance.now() - edgeCacheStartedAt;
   const edgesRebuildMs = performance.now() - edgesStartedAt;
 
   if (options.restoreViewport) {
@@ -4450,10 +6693,30 @@ async function redrawAllInternal(
     }
   }
 
+  const drawStartedAt = performance.now();
   draw();
+  const drawMs = performance.now() - drawStartedAt;
   return {
     layoutRebuildMs,
+    layoutMeasureMs: layoutPerfMetrics?.measureNodeMs ?? null,
+    layoutMeasureCalls: layoutPerfMetrics?.measureNodeCalls ?? null,
+    layoutMeasureCacheHits: layoutPerfMetrics?.measureNodeCacheHits ?? null,
+    layoutSubtreeMs: layoutPerfMetrics?.subtreeHeightMs ?? null,
+    layoutSubtreeCalls: layoutPerfMetrics?.subtreeHeightCalls ?? null,
+    layoutSubtreeCacheHits: layoutPerfMetrics?.subtreeHeightCacheHits ?? null,
+    layoutPlaceMs: layoutPerfMetrics?.placeMs ?? null,
+    layoutPlaceCalls: layoutPerfMetrics?.placeCalls ?? null,
+    worldBoxesBuildMs,
+    parentIndexBuildMs,
+    changedNodeScanMs,
+    changedNodeCount: changedNodeIds.length,
+    descendantCountsMs,
+    spatialIndexMs,
+    edgeCacheMs,
+    edgeAffectedParentCount,
+    edgeTranslatedParentCount,
     edgesRebuildMs,
+    drawMs,
     totalMs: performance.now() - startedAt,
   };
 }
@@ -4483,6 +6746,10 @@ async function toggleNodeCollapsed(nodeId: string) {
   const node = nodes?.[nodeId];
   const children = Array.isArray(node?.children) ? node.children : [];
   if (!node || !children.length) return;
+  const invalidateSubtreeHeightNodeIds = collectAncestorNodeIds(nodeId);
+  const hiddenNodeIds = node.collapsed
+    ? []
+    : collectSubtreeNodeIds(nodes, nodeId).filter((childNodeId) => childNodeId !== nodeId);
 
   if (editingSession.value) {
     const editingSubtreeIds = new Set(collectSubtreeNodeIds(nodes, nodeId));
@@ -4491,6 +6758,14 @@ async function toggleNodeCollapsed(nodeId: string) {
     }
   }
 
+  beginMindPerfOperationProbe({
+    op: 'toggle-collapse',
+    label: node.collapsed ? '展开节点' : '收起节点',
+    trigger: 'collapse-tag-click',
+    finishMode: 'flush',
+    targetNodeId: nodeId,
+    selectedCount: selectedIds.value.size,
+  });
   const nextCollapsed = !node.collapsed;
   node.collapsed = nextCollapsed;
 
@@ -4503,7 +6778,16 @@ async function toggleNodeCollapsed(nodeId: string) {
   collapseTagHoverNodeId.value = nodeId;
   hoverNodeId.value = nodeId;
   keepCollapseTagVisible(nodeId);
-  await applyDocumentMutation('node-toggle-collapsed', { ensureVisibleNodeId: nodeId });
+  await applyDocumentMutation('node-toggle-collapsed', {
+    ensureVisibleNodeId: nodeId,
+    invalidateSubtreeHeightNodeIds,
+    hiddenNodeIds,
+    reuseDescendantCounts: true,
+    reuseParentIndex: true,
+    forceFullEdgeRebuild: true,
+    trustExistingNodeMeasureCache: true,
+    useLayoutChangedNodeIds: true,
+  });
 }
 
 function updateHoverFromScreenPoint(screenX: number, screenY: number) {
@@ -4512,7 +6796,8 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
     collapseTagScreenMap.value,
     collapseTagActiveNodeIds.value,
     screenX,
-    screenY
+    screenY,
+    { includeHidden: true }
   );
   const nextHoverId = nextCollapseTagHoverId ?? hitTest(screenX, screenY);
   if (nextHoverId === hoverNodeId.value && nextCollapseTagHoverId === collapseTagHoverNodeId.value) return;
@@ -4528,6 +6813,7 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
 function onCanvasPointerDown(event: PointerEvent) {
   if (event.button !== 0) return;
   focusViewportWithoutScroll();
+  pendingDragPerfStartContext = null;
   if (editingSession.value) {
     commitEditingSession();
   }
@@ -4541,7 +6827,8 @@ function onCanvasPointerDown(event: PointerEvent) {
     collapseTagScreenMap.value,
     collapseTagActiveNodeIds.value,
     screenPoint.x,
-    screenPoint.y
+    screenPoint.y,
+    { includeHidden: true }
   );
   const hitId = hitTest(screenPoint.x, screenPoint.y);
   const imageTarget = getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
@@ -4605,8 +6892,27 @@ function onCanvasPointerDown(event: PointerEvent) {
       const isAlreadySelected = selectedIds.value.has(hitId);
       const isPrimarySelected = primarySelectedNodeId.value === hitId;
       const selectionIds = isAlreadySelected ? getSelectedNodeIds() : [hitId];
+      if (!isAlreadySelected || !isPrimarySelected || selectedIds.value.size > 1) {
+        beginMindPerfOperationProbe({
+          op: 'click-select',
+          label: '单击选中节点',
+          trigger: 'pointer-click',
+          finishMode: 'draw',
+          targetNodeId: hitId,
+          selectedCount: selectionIds.length,
+        });
+      } else {
+        cancelMindPerfOperationProbe();
+      }
+      pendingDragPerfStartContext = {
+        startedAt: performance.now(),
+        targetNodeId: hitId,
+        selectedCount: selectionIds.length,
+        pointerId: event.pointerId,
+      };
       if (!isAlreadySelected) setSingleSelected(hitId);
       else if (!isPrimarySelected) setSelection(selectionIds, hitId);
+      else dumpCanvasTextDiagnostics(hitId, 'pointerdown-selected-primary');
       interactionState.value = {
         mode: 'pointerDownOnNode',
         pointerId: event.pointerId,
@@ -4677,13 +6983,22 @@ function onCanvasDoubleClick(event: MouseEvent) {
     collapseTagScreenMap.value,
     collapseTagActiveNodeIds.value,
     screenX,
-    screenY
+    screenY,
+    { includeHidden: true }
   );
   if (collapseTagNodeId) return;
   const hitId = hitTest(screenX, screenY);
   if (!hitId) return;
   event.preventDefault();
   event.stopPropagation();
+  beginMindPerfOperationProbe({
+    op: 'double-click-edit',
+    label: '双击进入编辑',
+    trigger: 'double-click',
+    finishMode: 'edit-ready',
+    targetNodeId: hitId,
+    selectedCount: selectedIds.value.has(hitId) ? selectedIds.value.size : 1,
+  });
   if (!selectedIds.value.has(hitId) || primarySelectedNodeId.value !== hitId) {
     setSingleSelected(hitId);
   }
@@ -5130,7 +7445,10 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isErrorMarkerShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'e';
   const isTaskDoneMarkerShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'r';
   const isDeleteShortcut = event.key === 'Backspace' || event.key === 'Delete';
-  const isEnterShortcut = event.key === 'Enter';
+  const isEnterKey = event.key === 'Enter';
+  const isAddParentShortcut = isEnterKey && isModifierPressed && !event.altKey && !event.shiftKey;
+  const isEnterShortcut = isEnterKey && !isModifierPressed && !event.altKey && !event.shiftKey;
+  const isArrowNavigationShortcut = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
   const isTabShortcut = event.key === 'Tab';
   const isSpaceShortcut = event.key === ' ' && !isModifierPressed && !event.altKey;
   const isPrintableCharacter =
@@ -5142,7 +7460,9 @@ function onWindowKeyDown(event: KeyboardEvent) {
     !event.metaKey;
   const shouldPreventDefault =
     isTabShortcut ||
+    isAddParentShortcut ||
     isEnterShortcut ||
+    (isArrowNavigationShortcut && selectedIds.value.size > 0) ||
     isDeleteShortcut ||
     isSelectAllShortcut ||
     isCutShortcut ||
@@ -5162,14 +7482,33 @@ function onWindowKeyDown(event: KeyboardEvent) {
   if (isUndoShortcut) {
     stopEditingSession();
     resetCommandDebugState();
+    beginMindPerfOperationProbe({
+      op: 'undo',
+      label: '撤销',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      commandName: historySnapshot.value.lastCommandName,
+      selectedCount: selectedIds.value.size,
+      targetNodeId: getPrimarySelectedId(),
+    });
     history.undo();
+    setMindPerfOperationCommandName(historySnapshot.value.lastCommandName);
     return;
   }
 
   if (isRedoShortcut) {
     stopEditingSession();
     resetCommandDebugState();
+    beginMindPerfOperationProbe({
+      op: 'redo',
+      label: '重做',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      selectedCount: selectedIds.value.size,
+      targetNodeId: getPrimarySelectedId(),
+    });
     history.redo();
+    setMindPerfOperationCommandName(historySnapshot.value.lastCommandName);
     return;
   }
 
@@ -5183,11 +7522,27 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const selectedCount = selectedNodeIds.length;
 
   if (primarySelectedId && isSpaceShortcut) {
+    beginMindPerfOperationProbe({
+      op: 'space-edit',
+      label: '空格进入编辑',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'edit-ready',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
     startEditing(primarySelectedId, { mode: 'append', caretPlacement: 'end' });
     return;
   }
 
   if (primarySelectedId && isPrintableCharacter && !isComposing.value) {
+    beginMindPerfOperationProbe({
+      op: 'type-to-edit',
+      label: '直接输入进入编辑',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'edit-ready',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
     startEditing(primarySelectedId, { mode: 'replace', insertedText: event.key, caretPlacement: 'end' });
     return;
   }
@@ -5228,12 +7583,31 @@ function onWindowKeyDown(event: KeyboardEvent) {
 
   if (!primarySelectedId) return;
 
+  if (isArrowNavigationShortcut) {
+    if (event.key === 'ArrowUp') moveSelectionWithKeyboard('up');
+    if (event.key === 'ArrowDown') moveSelectionWithKeyboard('down');
+    if (event.key === 'ArrowLeft') moveSelectionWithKeyboard('left');
+    if (event.key === 'ArrowRight') moveSelectionWithKeyboard('right');
+    return;
+  }
+
   if (isDeleteShortcut) {
+    beginMindPerfOperationProbe({
+      op: 'delete-node',
+      label: '删除节点',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
     const normalized = normalizeSelectedTargets({
       allowRoot: false,
     });
     setFilteredOutDescendantsCount(normalized.filteredOutDescendantsCount);
-    if (!normalized.finalTargets.length) return;
+    if (!normalized.finalTargets.length) {
+      cancelMindPerfOperationProbe();
+      return;
+    }
     stopEditingSession();
     executeCommand(
       normalized.finalTargets.length === 1
@@ -5244,12 +7618,59 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isTabShortcut) {
+    beginMindPerfOperationProbe({
+      op: 'add-child-tab',
+      label: 'Tab 新增子节点',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
     if (selectedCount >= 2) {
       const uniqueTargets = Array.from(new Set(selectedNodeIds));
       executeCommand(createBatchAddChildSelectionCommand(uniqueTargets));
       return;
     }
     executeCommand(createAddChildCommand(primarySelectedId));
+    return;
+  }
+
+  if (isAddParentShortcut) {
+    beginMindPerfOperationProbe({
+      op: 'add-parent-shortcut',
+      label: 'Ctrl/Cmd+Enter 增加父节点',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
+    beginAddParentPerfProbe('batch-add-parent', primarySelectedId, selectedCount);
+    const shouldProfileAddParent = DEBUG_MIND_PERF_PROBE;
+    const normalizeSelectionStartedAt = shouldProfileAddParent ? performance.now() : 0;
+    const normalized = normalizeSelectedTargets({
+      allowRoot: false,
+    });
+    if (shouldProfileAddParent) {
+      noteMindPerfStep('normalize-selection-targets', {
+        normalizeSelectionMs: roundPerfMs(performance.now() - normalizeSelectionStartedAt),
+        filteredOutDescendantsCount: normalized.filteredOutDescendantsCount,
+        finalTargetCount: normalized.finalTargets.length,
+      });
+    }
+    setFilteredOutDescendantsCount(normalized.filteredOutDescendantsCount);
+    if (!normalized.finalTargets.length) {
+      cancelMindPerfOperationProbe();
+      cancelMindPerfProbe('no-valid-targets');
+      return;
+    }
+    const command = createBatchAddParentSelectionCommand(normalized.finalTargets);
+    if (!command) {
+      cancelMindPerfOperationProbe();
+      cancelMindPerfProbe('command-create-failed');
+      return;
+    }
+    noteMindPerfStep('command-created', { commandName: command.name });
+    executeCommand(command);
     return;
   }
 
@@ -5264,18 +7685,82 @@ function onWindowKeyDown(event: KeyboardEvent) {
         .filter((info) => info.parentId != null)
         .map((info) => info.nodeId);
       if (!siblingTargetIds.length) {
-        executeCommand(createBatchAddChildSelectionCommand(selectedNodeIds));
+        beginMindPerfOperationProbe({
+          op: 'add-child-enter',
+          label: 'Enter 新增子节点',
+          trigger: 'keyboard-shortcut',
+          finishMode: 'flush',
+          targetNodeId: primarySelectedId,
+          selectedCount,
+        });
+        beginAddNodePerfProbe('batch-add-child', primarySelectedId, selectedCount);
+        const command = createBatchAddChildSelectionCommand(selectedNodeIds);
+        if (!command) {
+          cancelMindPerfOperationProbe();
+          cancelMindPerfProbe('command-create-failed');
+          return;
+        }
+        noteMindPerfStep('command-created', { commandName: command.name });
+        executeCommand(command);
         return;
       }
-      executeCommand(createBatchAddSiblingSelectionCommand(siblingTargetIds));
+      beginMindPerfOperationProbe({
+        op: 'add-sibling-enter',
+        label: 'Enter 新增同级节点',
+        trigger: 'keyboard-shortcut',
+        finishMode: 'flush',
+        targetNodeId: primarySelectedId,
+        selectedCount,
+      });
+      beginAddNodePerfProbe('batch-add-sibling', primarySelectedId, selectedCount);
+      const command = createBatchAddSiblingSelectionCommand(siblingTargetIds);
+      if (!command) {
+        cancelMindPerfOperationProbe();
+        cancelMindPerfProbe('command-create-failed');
+        return;
+      }
+      noteMindPerfStep('command-created', { commandName: command.name });
+      executeCommand(command);
       return;
     }
     const parentInfo = findParentAndIndex(primarySelectedId);
     if (!parentInfo) {
-      executeCommand(createAddChildCommand(primarySelectedId));
+      beginMindPerfOperationProbe({
+        op: 'add-child-enter',
+        label: 'Enter 新增子节点',
+        trigger: 'keyboard-shortcut',
+        finishMode: 'flush',
+        targetNodeId: primarySelectedId,
+        selectedCount,
+      });
+      beginAddNodePerfProbe('add-child', primarySelectedId, selectedCount);
+      const command = createAddChildCommand(primarySelectedId);
+      if (!command) {
+        cancelMindPerfOperationProbe();
+        cancelMindPerfProbe('command-create-failed');
+        return;
+      }
+      noteMindPerfStep('command-created', { commandName: command.name });
+      executeCommand(command);
       return;
     }
-    executeCommand(createAddSiblingCommand(primarySelectedId));
+    beginMindPerfOperationProbe({
+      op: 'add-sibling-enter',
+      label: 'Enter 新增同级节点',
+      trigger: 'keyboard-shortcut',
+      finishMode: 'flush',
+      targetNodeId: primarySelectedId,
+      selectedCount,
+    });
+    beginAddNodePerfProbe('add-sibling', primarySelectedId, selectedCount);
+    const command = createAddSiblingCommand(primarySelectedId);
+    if (!command) {
+      cancelMindPerfOperationProbe();
+      cancelMindPerfProbe('command-create-failed');
+      return;
+    }
+    noteMindPerfStep('command-created', { commandName: command.name });
+    executeCommand(command);
   }
 }
 
@@ -5462,6 +7947,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  if (activeMindPerfCameraFpsSession) finishMindPerfCameraFpsSession(activeMindPerfCameraFpsSession, 'unmount');
   clearCollapseTagHideTimer();
   removeBeforeCloseListener?.();
   removeBeforeCloseListener = null;

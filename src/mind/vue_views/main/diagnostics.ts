@@ -1,6 +1,12 @@
 import type { Camera } from './actions/useCamera';
 import type { WorldRect } from './geom/rect';
-import { DEBUG_CANVAS_OVERLAY, ROUGH_STYLE } from './constants';
+import {
+  DEBUG_CANVAS_OVERLAY,
+  DEBUG_MIND_PERF_CAMERA_FPS_SUMMARY,
+  DEBUG_MIND_PERF_OPERATION_SUMMARY,
+  DEBUG_NEW_MIND_SEED,
+  ROUGH_STYLE,
+} from './constants';
 export const WHEEL_LOG_SAMPLE_MS = 300;
 export const MARQUEE_LOG_SAMPLE_MS = 1000;
 
@@ -29,6 +35,12 @@ export function formatWorldRect(rect: WorldRect | null | undefined) {
 }
 
 export function logRendererDebugInstructions() {
+  const hasAnyDevToggle =
+    DEBUG_CANVAS_OVERLAY ||
+    DEBUG_MIND_PERF_OPERATION_SUMMARY ||
+    DEBUG_MIND_PERF_CAMERA_FPS_SUMMARY ||
+    !!DEBUG_NEW_MIND_SEED;
+  if (!hasAnyDevToggle) return;
   if (hasLoggedRendererInstructions) return;
   hasLoggedRendererInstructions = true;
 
@@ -36,7 +48,7 @@ export function logRendererDebugInstructions() {
     [
       '[mind-debug] Dev toggles',
       `- Canvas debug overlay: set DEBUG_CANVAS_OVERLAY in src/mind/vue_views/main/constants.ts`,
-      `- Seed new docs count: set DEBUG_NEW_MIND_SEED_NODE_COUNT in src/mind/vue_views/main/constants.ts`,
+      `- Seed new docs payload: set DEBUG_NEW_MIND_SEED in src/mind/vue_views/main/constants.ts`,
       `- Rough renderer: set ROUGH_STYLE in src/mind/vue_views/main/constants.ts (current: ${ROUGH_STYLE ? 'ON' : 'OFF'})`,
       "- Rough preset: localStorage.setItem('mind.roughThemePreset', 'clean'|'warm-paper'|'mono'|'accent-blue')",
       "- Rough overrides: localStorage.setItem('mind.roughThemeOverrides', JSON.stringify({ roughness: 0.9, bowing: 0.7, strokeWidthPx: 2, overlapPx: 6 }))",

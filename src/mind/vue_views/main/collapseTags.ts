@@ -118,10 +118,11 @@ export function hitTestCollapseTag(
   collapseTags: Map<string, CollapseTagInfo>,
   activeNodeIds: ReadonlySet<string>,
   screenX: number,
-  screenY: number
+  screenY: number,
+  options?: { includeHidden?: boolean }
 ) {
   for (const [nodeId, tag] of collapseTags.entries()) {
-    const visible = tag.isCollapsed || activeNodeIds.has(nodeId);
+    const visible = tag.isCollapsed || activeNodeIds.has(nodeId) || !!options?.includeHidden;
     if (!visible) continue;
     if (
       screenX >= tag.screenX - COLLAPSE_TAG_HIT_SLOP_PX &&

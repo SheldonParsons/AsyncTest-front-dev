@@ -33,6 +33,7 @@ import {
 } from '../../../rendering/roughTheme';
 import {
   getWorldViewportRect,
+  rectContains,
   rectIntersects,
   worldToScreen,
   type WorldRect,
@@ -909,7 +910,8 @@ export function useDraw(
     lastPastedRootId: string | null;
     filteredOutDescendantsCount: number;
     rebuildCountInLastCommand: number;
-  }>
+  }>,
+  cameraInteractionPreview?: Ref<{ kind: 'zoom' } | null>
 ) {
   const drawStats = ref<DrawStats>({
     worldViewportRect: null,
@@ -1015,6 +1017,10 @@ export function useDraw(
     dirty: true,
     signature: '',
     worldBoxesRef: null as WorldBoxes | null,
+    cameraSnapshot: null as Camera | null,
+    paddingX: 0,
+    paddingY: 0,
+    coverageWorldRect: null as WorldRect | null,
   };
   const viewportQueryCache = {
     signature: '',
@@ -1231,6 +1237,46 @@ export function useDraw(
         ? editingWidthPreview.value
         : null;
     const interactiveViewportExpansionX = activeEditingWidthPreview ? Math.abs(activeEditingWidthPreview.deltaX) : 0;
+    function collectVisibleScene(viewRect: WorldRect, queryRect: WorldRect = viewRect) {
+      const candidateIds = spatialIndex.queryRect(queryRect);
+      const visibleIds: string[] = [];
+      const falsePositiveIds: string[] = [];
+
+      for (const id of candidateIds) {
+        const rect = nodeWorldBoxes.get(id);
+        if (!rect) continue;
+        const interactiveRect = getInteractiveNodeRect?.(id, rect) ?? rect;
+        if (rectIntersects(viewRect, interactiveRect)) {
+          visibleIds.push(id);
+        } else {
+          falsePositiveIds.push(id);
+        }
+      }
+
+      const visibleParentEdgeGeoms = queryVisibleParentEdgeGeoms(queryRect);
+      const visibleEdgeGroups: VisibleEdgeGroup[] = [];
+      let visibleEdgeShapeCount = 0;
+      for (const geom of visibleParentEdgeGeoms) {
+        const branchEntries: VisibleEdgeGroup['branchEntries'] = [];
+        for (const [childId, branchBBox] of geom.branchBBoxes.entries()) {
+          if (!rectIntersects(branchBBox, viewRect)) continue;
+          const meta = geom.branchMeta.get(childId);
+          if (!meta) continue;
+          branchEntries.push({ childId, meta });
+        }
+        if (!branchEntries.length && !geom.trunkPathData) continue;
+        visibleEdgeGroups.push({ geom, branchEntries });
+        visibleEdgeShapeCount += branchEntries.length + (geom.trunkPathData ? 1 : 0);
+      }
+
+      return {
+        candidateIds,
+        visibleIds,
+        falsePositiveIds,
+        visibleEdgeGroups,
+        visibleEdgeShapeCount,
+      };
+    }
     const viewportSignature = [
       c.width,
       c.height,
@@ -1272,36 +1318,12 @@ export function useDraw(
           y2: worldViewportRect.y2,
         }
         : worldViewportRect;
-      candidateIds = spatialIndex.queryRect(queryViewportRect);
-      visibleIds = [];
-      falsePositiveIds = [];
-
-      for (const id of candidateIds) {
-        const rect = nodeWorldBoxes.get(id);
-        if (!rect) continue;
-        const interactiveRect = getInteractiveNodeRect?.(id, rect) ?? rect;
-        if (rectIntersects(worldViewportRect, interactiveRect)) {
-          visibleIds.push(id);
-        } else {
-          falsePositiveIds.push(id);
-        }
-      }
-
-      const visibleParentEdgeGeoms = queryVisibleParentEdgeGeoms(queryViewportRect);
-      visibleEdgeGroups = [];
-      visibleEdgeShapeCount = 0;
-      for (const geom of visibleParentEdgeGeoms) {
-        const branchEntries: VisibleEdgeGroup['branchEntries'] = [];
-        for (const [childId, branchBBox] of geom.branchBBoxes.entries()) {
-          if (!rectIntersects(branchBBox, worldViewportRect)) continue;
-          const meta = geom.branchMeta.get(childId);
-          if (!meta) continue;
-          branchEntries.push({ childId, meta });
-        }
-        if (!branchEntries.length && !geom.trunkPathData) continue;
-        visibleEdgeGroups.push({ geom, branchEntries });
-        visibleEdgeShapeCount += branchEntries.length + (geom.trunkPathData ? 1 : 0);
-      }
+      const scene = collectVisibleScene(worldViewportRect, queryViewportRect);
+      candidateIds = scene.candidateIds;
+      visibleIds = scene.visibleIds;
+      falsePositiveIds = scene.falsePositiveIds;
+      visibleEdgeGroups = scene.visibleEdgeGroups;
+      visibleEdgeShapeCount = scene.visibleEdgeShapeCount;
 
       viewportQueryCache.signature = viewportSignature;
       viewportQueryCache.worldBoxesRef = nodeWorldBoxes;
@@ -1688,7 +1710,7 @@ export function useDraw(
               if (segment.marks.strike) {
                 targetCtx.lineCap = 'butt';
                 targetCtx.lineJoin = 'miter';
-                targetCtx.lineWidth = Math.max(1.05, segment.fontSize * 0.07) + 1;
+                targetCtx.lineWidth = Math.max(1.1, segment.fontSize * 0.065);
                 const strikeY = snapWorldToDevicePixel(
                   snappedLineY + verticalMetrics.topLeadingPx + decorationOffsets.strikeFromContentTop,
                   cam.scale,
@@ -1710,27 +1732,51 @@ export function useDraw(
       targetCtx.restore();
     }
 
-    function ensureBaseCanvas() {
+    const isZoomPreviewActive = cameraInteractionPreview?.value?.kind === 'zoom';
+    const basePaddingX = isZoomPreviewActive ? Math.max(180, Math.round(viewportW * 0.4)) : 0;
+    const basePaddingY = isZoomPreviewActive ? Math.max(140, Math.round(viewportH * 0.4)) : 0;
+    const baseWorldViewportRect: WorldRect = {
+      x1: worldViewportRect.x1 - basePaddingX / Math.max(cam.scale, 0.0001),
+      y1: worldViewportRect.y1 - basePaddingY / Math.max(cam.scale, 0.0001),
+      x2: worldViewportRect.x2 + basePaddingX / Math.max(cam.scale, 0.0001),
+      y2: worldViewportRect.y2 + basePaddingY / Math.max(cam.scale, 0.0001),
+    };
+
+    function ensureBaseCanvas(paddingX: number, paddingY: number) {
       if (typeof document === 'undefined') return null;
       if (!baseCache.canvas) baseCache.canvas = document.createElement('canvas');
-      if (baseCache.canvas.width !== c.width) baseCache.canvas.width = c.width;
-      if (baseCache.canvas.height !== c.height) baseCache.canvas.height = c.height;
+      const targetWidth = Math.max(1, Math.round((viewportW + paddingX * 2) * dpr));
+      const targetHeight = Math.max(1, Math.round((viewportH + paddingY * 2) * dpr));
+      if (baseCache.canvas.width !== targetWidth) {
+        baseCache.canvas.width = targetWidth;
+        baseCache.dirty = true;
+      }
+      if (baseCache.canvas.height !== targetHeight) {
+        baseCache.canvas.height = targetHeight;
+        baseCache.dirty = true;
+      }
       return baseCache.canvas;
     }
 
-    function drawBaseScene(targetCtx: CanvasRenderingContext2D) {
+    function drawBaseScene(
+      targetCtx: CanvasRenderingContext2D,
+      renderVisibleEdgeGroups: VisibleEdgeGroup[],
+      renderVisibleIds: string[],
+      offsetX = 0,
+      offsetY = 0
+    ) {
       applyScreenTransform(targetCtx, dpr);
-      targetCtx.clearRect(0, 0, viewportW, viewportH);
+      targetCtx.clearRect(0, 0, targetCtx.canvas.width / dpr, targetCtx.canvas.height / dpr);
       targetCtx.fillStyle = roughStyle.colors.background;
-      targetCtx.fillRect(0, 0, viewportW, viewportH);
+      targetCtx.fillRect(0, 0, targetCtx.canvas.width / dpr, targetCtx.canvas.height / dpr);
 
       targetCtx.save();
-      applyWorldTransform(targetCtx, cam, dpr);
-      for (const { geom, branchEntries } of visibleEdgeGroups) {
+      targetCtx.setTransform(cam.scale * dpr, 0, 0, cam.scale * dpr, (cam.tx + offsetX) * dpr, (cam.ty + offsetY) * dpr);
+      for (const { geom, branchEntries } of renderVisibleEdgeGroups) {
         drawVisibleEdgeGroup(targetCtx, { geom, branchEntries });
       }
 
-      for (const id of visibleIds) {
+      for (const id of renderVisibleIds) {
         if (editingNodeId?.value === id) continue;
         const rect = nodeWorldBoxes.get(id);
         if (!rect) continue;
@@ -1740,41 +1786,109 @@ export function useDraw(
       targetCtx.restore();
     }
 
+    function drawZoomPreviewScene(
+      targetCtx: CanvasRenderingContext2D,
+      sourceCanvas: HTMLCanvasElement,
+      fromCamera: Camera,
+      toCamera: Camera,
+      fromPaddingX: number,
+      fromPaddingY: number
+    ) {
+      const scaleRatio = toCamera.scale / Math.max(fromCamera.scale, 0.0001);
+      const translateX = (toCamera.tx - (fromCamera.tx + fromPaddingX) * scaleRatio) * dpr;
+      const translateY = (toCamera.ty - (fromCamera.ty + fromPaddingY) * scaleRatio) * dpr;
+      targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+      targetCtx.clearRect(0, 0, c.width, c.height);
+      targetCtx.fillStyle = roughStyle.colors.background;
+      targetCtx.fillRect(0, 0, c.width, c.height);
+      targetCtx.imageSmoothingEnabled = true;
+      targetCtx.setTransform(scaleRatio, 0, 0, scaleRatio, translateX, translateY);
+      targetCtx.drawImage(sourceCanvas, 0, 0);
+      targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
     const baseSignature = [
       c.width,
       c.height,
       cam.scale.toFixed(4),
       cam.tx.toFixed(2),
       cam.ty.toFixed(2),
+      editingNodeId?.value ?? '',
       roughStyle.themeSignature,
     ].join('|');
-    const baseCanvas = ensureBaseCanvas();
+    const baseCanvas = ensureBaseCanvas(basePaddingX, basePaddingY);
+    const canUseZoomPreviewBase =
+      isZoomPreviewActive &&
+      !!baseCanvas &&
+      !baseCache.dirty &&
+      baseCache.worldBoxesRef === nodeWorldBoxes &&
+      !!baseCache.cameraSnapshot &&
+      !!baseCache.coverageWorldRect &&
+      rectContains(baseCache.coverageWorldRect, worldViewportRect);
     const shouldRedrawBase =
-      !baseCanvas ||
-      baseCache.dirty ||
-      baseCache.signature !== baseSignature ||
-      baseCache.worldBoxesRef !== nodeWorldBoxes;
+      !canUseZoomPreviewBase &&
+      (
+        !baseCanvas ||
+        baseCache.dirty ||
+        baseCache.signature !== baseSignature ||
+        baseCache.worldBoxesRef !== nodeWorldBoxes
+      );
 
     if (shouldRedrawBase) {
       const targetCanvas = baseCanvas ?? c;
       const targetCtx = targetCanvas.getContext('2d');
       if (targetCtx) {
+        const baseQueryViewportRect = interactiveViewportExpansionX > 0
+          ? {
+            x1: baseWorldViewportRect.x1 - interactiveViewportExpansionX,
+            y1: baseWorldViewportRect.y1,
+            x2: baseWorldViewportRect.x2 + interactiveViewportExpansionX,
+            y2: baseWorldViewportRect.y2,
+          }
+          : baseWorldViewportRect;
+        const baseScene = basePaddingX || basePaddingY
+          ? collectVisibleScene(baseWorldViewportRect, baseQueryViewportRect)
+          : {
+            visibleEdgeGroups,
+            visibleIds,
+          };
         if (roughRequested) {
           syncRoughRuntime(roughRuntime, targetCanvas);
         }
-        drawBaseScene(targetCtx);
+        drawBaseScene(
+          targetCtx,
+          baseScene.visibleEdgeGroups,
+          baseScene.visibleIds,
+          basePaddingX,
+          basePaddingY
+        );
         if (baseCanvas) {
           baseCache.signature = baseSignature;
           baseCache.worldBoxesRef = nodeWorldBoxes;
+          baseCache.cameraSnapshot = { ...cam };
+          baseCache.paddingX = basePaddingX;
+          baseCache.paddingY = basePaddingY;
+          baseCache.coverageWorldRect = baseWorldViewportRect;
           baseCache.dirty = false;
         }
       }
     }
 
     if (baseCanvas) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(baseCanvas, 0, 0);
+      if (canUseZoomPreviewBase && baseCache.cameraSnapshot) {
+        drawZoomPreviewScene(
+          ctx,
+          baseCanvas,
+          baseCache.cameraSnapshot,
+          cam,
+          baseCache.paddingX,
+          baseCache.paddingY
+        );
+      } else {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, c.width, c.height);
+        ctx.drawImage(baseCanvas, -baseCache.paddingX * dpr, -baseCache.paddingY * dpr);
+      }
       applyScreenTransform(ctx, dpr);
     }
 
@@ -1835,36 +1949,30 @@ export function useDraw(
         activeEditingWidthPreview.subtreeNodeIds.has(id);
       if (!isHover && !isSelected && !showImageAffordance && !isEditingPreview && !isWidthPreviewNode) continue;
       if (isEditingPreview) {
-        const previewEraseRect = expandRect(
-          mergeRects(rect, interactiveRect),
-          (SELECTED_OUTLINE_OFFSET_PX + 2) / Math.max(cam.scale, 0.0001)
-        );
-        drawVisibleNode(ctx, id, interactiveRect, { skipText: true, clearRect: previewEraseRect });
+        drawVisibleNode(ctx, id, interactiveRect, { skipText: true });
       } else if (isWidthPreviewNode) {
         const previewEraseRect = expandRect(
-          mergeRects(rect, interactiveRect),
+          rect,
           (SELECTED_OUTLINE_OFFSET_PX + 2) / Math.max(cam.scale, 0.0001)
         );
         drawVisibleNode(ctx, id, interactiveRect, { clearRect: previewEraseRect });
       }
 
-      const hoverOutlineRect = expandRect(bodyRect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
-      const selectedOutlineRect = expandRect(bodyRect, SELECTED_OUTLINE_OFFSET_PX / cam.scale);
+      const outlineRect = expandRect(bodyRect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
 
       if (isSelected) {
         drawRoundedRectOutline(
           ctx,
-          selectedOutlineRect,
-          getNodeCornerRadius(selectedOutlineRect),
+          outlineRect,
+          getNodeCornerRadius(outlineRect),
           roughStyle.colors.selection.stroke,
           2 / cam.scale
         );
-      }
-      if (isHover) {
+      } else if (isHover) {
         drawRoundedRectOutline(
           ctx,
-          hoverOutlineRect,
-          getNodeCornerRadius(hoverOutlineRect),
+          outlineRect,
+          getNodeCornerRadius(outlineRect),
           roughStyle.colors.hover.stroke,
           2 / cam.scale
         );

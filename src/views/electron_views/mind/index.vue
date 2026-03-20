@@ -64,7 +64,7 @@
 
 <script lang="ts" setup>
 import mindLogo from '@/mind/core/action_icon/mind.svg';
-import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants';
+import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 type RecentMindEntry = {
@@ -106,7 +106,9 @@ async function loadRecentMindEntries() {
 
 async function openMindNewInstance() {
     try {
-        await window.electronAPI.amind.newAndOpenWindow({ seedNodeCount: DEBUG_NEW_MIND_SEED_NODE_COUNT });
+        await window.electronAPI.amind.newAndOpenWindow(
+            DEBUG_NEW_MIND_SEED ? { seedConfig: DEBUG_NEW_MIND_SEED } : {}
+        );
     } catch {
         window.$toast({ title: '新建思维导图失败', type: 'error' });
     }

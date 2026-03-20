@@ -25,7 +25,8 @@ export function useInteraction(
   getMinScale: () => number,
   getMaxScale: () => number,
   requestRender: () => void,
-  schedulePersistViewport: () => void
+  schedulePersistViewport: () => void,
+  onWheelFrameApplied?: (kind: 'pan' | 'zoom') => void
 ) {
   const runningOnMac = isMacPlatform();
 
@@ -55,6 +56,7 @@ export function useInteraction(
     }
 
     let changed = false;
+    let interactionKind: 'pan' | 'zoom' | null = null;
 
     if (pendingZoomDeltaY !== 0 && lastZoomEvent) {
       const factor = Math.exp(-pendingZoomDeltaY * ZOOM_K);
@@ -66,12 +68,14 @@ export function useInteraction(
         const vy = lastZoomEvent.clientY - rect.top;
         zoomAtViewportPoint(vx, vy, next);
         changed = true;
+        interactionKind = 'zoom';
       }
     }
 
     if (pendingPanX !== 0 || pendingPanY !== 0) {
       panByPixels(-pendingPanX * PAN_K, -pendingPanY * PAN_K);
       changed = true;
+      interactionKind = interactionKind ?? 'pan';
     }
 
     pendingPanX = 0;
@@ -80,6 +84,7 @@ export function useInteraction(
     lastZoomEvent = null;
 
     if (!changed) return;
+    if (interactionKind) onWheelFrameApplied?.(interactionKind);
     requestRender();
     schedulePersistViewport();
   }

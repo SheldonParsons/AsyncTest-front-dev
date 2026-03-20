@@ -120,7 +120,7 @@ async function createMainWindow() {
     minWidth: 1300,
     minHeight: 820,
     trafficLightPosition: { x: 12, y: 12 },
-    openDevTools: true,
+    openDevTools: false,
     title: 'AsyncTest',
     frameless: true,
     nativeHeaderless: true,

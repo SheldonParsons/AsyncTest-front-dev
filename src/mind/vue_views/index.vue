@@ -17,7 +17,7 @@
                     <span v-if="saveState.isSaving" class="mind-header-saving-indicator">保存中...</span>
                 </div>
             </div>
-            <div class="mind-header-format-entry" :style="{ 'margin-right': isMac ? '0px' : '135px' }">
+            <div class="mind-header-format-entry" :style="{ 'margin-right': '0px' }">
                 <button class="mind-header-format-button" type="button" aria-label="打开格式面板" @click="toggleFormatPanel">
                     <img class="mind-header-format-icon" :src="settingsIcon" alt="" />
                 </button>
@@ -42,7 +42,7 @@ import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
 import homeIcon from '@/mind/core/action_icon/home.svg'
-import { DEBUG_NEW_MIND_SEED_NODE_COUNT } from '@/mind/vue_views/main/constants'
+import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants'
 import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
 import { onMounted, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
@@ -148,7 +148,9 @@ async function onOpenFolderClick() {
 
 async function onQuickNewClick() {
     try {
-        await window.electronAPI.amind.newAndOpenWindow({ seedNodeCount: DEBUG_NEW_MIND_SEED_NODE_COUNT });
+        await window.electronAPI.amind.newAndOpenWindow(
+            DEBUG_NEW_MIND_SEED ? { seedConfig: DEBUG_NEW_MIND_SEED } : {}
+        );
     } catch {
         toast('快速新建失败');
     }

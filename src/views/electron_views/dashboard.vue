@@ -5,16 +5,10 @@
         <!-- 进入 AsyncTest -->
         <div class="dashboard-card asynctest-card" @click="handleEnterAsyncTest">
           <div class="card-logo">
-            <img
-              class="logo-default"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_new.svg"
-              alt="AsyncTest"
-            />
-            <img
-              class="logo-hover"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_light.svg"
-              alt="AsyncTest"
-            />
+            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_new.svg"
+              alt="AsyncTest" />
+            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/logo_full_light.svg"
+              alt="AsyncTest" />
           </div>
           <h3 class="card-title">AsyncTest</h3>
           <p class="card-description">测试平台</p>
@@ -23,16 +17,10 @@
         <!-- 进入 AsyncTest Mind -->
         <div class="dashboard-card mind-card" @click="handleEnterMind">
           <div class="card-logo">
-            <img
-              class="logo-default"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/mind_full.svg"
-              alt="AsyncTest Mind"
-            />
-            <img
-              class="logo-hover"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/mind_full_light.svg"
-              alt="AsyncTest Mind"
-            />
+            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/mind_full.svg"
+              alt="AsyncTest Mind" />
+            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/mind_full_light.svg"
+              alt="AsyncTest Mind" />
           </div>
           <h3 class="card-title">AsyncTest Mind</h3>
           <p class="card-description">思维导图</p>
@@ -42,9 +30,9 @@
         <div class="dashboard-card dashboard-card-disabled" @click="handleMoreFeatures">
           <div class="card-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-              <circle cx="19" cy="12" r="1.5" fill="currentColor"/>
-              <circle cx="5" cy="12" r="1.5" fill="currentColor"/>
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+              <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+              <circle cx="5" cy="12" r="1.5" fill="currentColor" />
             </svg>
           </div>
           <h3 class="card-title">更多功能</h3>
@@ -55,13 +43,7 @@
     </div>
 
     <!-- 登录弹窗 -->
-    <DialogAnimation
-      ref="loginDialogRef"
-      title="登录"
-      bgtype="white"
-      :showCancel="false"
-      :showComfirm="false"
-    >
+    <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
       <LoginComponent @loginSuccess="handleLoginSuccess" />
     </DialogAnimation>
   </div>
@@ -74,19 +56,36 @@ import asyncTest from '@/db'
 import GlobalStatus from '@/global'
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import LoginComponent from './login.vue'
+import { ApiCheckPermission } from '@/api/layout/cookies'
 
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
 
+const emit = defineEmits(['doubleCheckLoginStatus'])
+
 // 检查登录状态
-const checkLoginStatus = () => {
+const checkLoginStatus = async () => {
   const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag)
+  if (currentCookie !== false) {
+    return await ApiCheckPermission({}).then((res: any) => {
+      if (res.result === 0) {
+        asyncTest.cookies.clearCookie(GlobalStatus.cookieTag)
+        emit('doubleCheckLoginStatus')
+        return false
+      } else {
+        return true
+      }
+    })
+  } else {
+    asyncTest.cookies.clearCookie(GlobalStatus.cookieTag)
+    emit('doubleCheckLoginStatus')
+  }
   return currentCookie !== false
 }
 
 // 进入 AsyncTest
-const handleEnterAsyncTest = () => {
-  if (checkLoginStatus()) {
+const handleEnterAsyncTest = async () => {
+  if (await checkLoginStatus()) {
     router.push({ name: "project" })
   } else {
     loginDialogRef.value?.open()
