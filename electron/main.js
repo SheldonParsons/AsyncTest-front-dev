@@ -146,6 +146,38 @@ async function createMainWindow() {
   return mainWindow;
 }
 
+function isManagedWindowVisible(win) {
+  return !!win && !win.isDestroyed() && !win.isMinimized() && win.isVisible();
+}
+
+function isManagedWindowHidden(win) {
+  return !!win && !win.isDestroyed() && !win.isMinimized() && !win.isVisible();
+}
+
+function getManagedWindowEntries() {
+  if (!windowManager) return [];
+  return windowManager
+    .listKeys()
+    .map((key) => [key, windowManager.get(key)])
+    .filter((entry) => !!entry[1]);
+}
+
+function shouldRestoreMainWindowOnActivate() {
+  const managedEntries = getManagedWindowEntries();
+  if (managedEntries.some(([, win]) => isManagedWindowVisible(win))) {
+    return false;
+  }
+
+  const childWindowsHiddenOrClosed = managedEntries
+    .filter(([key]) => key !== 'main')
+    .every(([, win]) => isManagedWindowHidden(win));
+
+  const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const mainHiddenOrClosed = !main || isManagedWindowHidden(main);
+
+  return childWindowsHiddenOrClosed && mainHiddenOrClosed;
+}
+
 // ===== 通用 IPC（放 createMainWindow 外，防重复绑定）=====
 ipcMain.on('open-url', (event, url) => {
   shell.openExternal(url);
@@ -290,11 +322,13 @@ app.whenReady().then(async () => {
 });
 
 app.on('activate', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-  } else {
-    createMainWindow();
+  if (shouldRestoreMainWindowOnActivate()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createMainWindow();
+    }
   }
 });
 

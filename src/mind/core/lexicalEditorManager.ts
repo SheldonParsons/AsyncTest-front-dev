@@ -3,7 +3,6 @@ import { registerList, ListItemNode, ListNode } from '@lexical/list';
 import { registerRichText, HeadingNode, QuoteNode } from '@lexical/rich-text';
 import {
   $getRoot,
-  $createTextNode,
   $isElementNode,
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
@@ -28,6 +27,7 @@ type StartSessionOptions = {
   initialState: SerializedLexicalEditorState;
   mode: 'append' | 'replace';
   caretPlacement?: 'start' | 'end' | 'none';
+  shouldFocus?: boolean;
   onChange?: (state: SerializedLexicalEditorState) => void;
   onCommit?: () => void;
   onCancel?: () => void;
@@ -131,9 +131,8 @@ function applyCaretPlacement(caretPlacement: 'start' | 'end' | 'none') {
     const root = $getRoot();
     const block = caretPlacement === 'end' ? (root.getLastChild() ?? root) : (root.getFirstChild() ?? root);
     if (block !== root && $isElementNode(block) && block.getChildrenSize() === 0) {
-      const anchor = $createTextNode('');
-      block.append(anchor);
-      anchor.select(0, 0);
+      if (caretPlacement === 'end') block.selectEnd();
+      else block.selectStart();
       return;
     }
     const textTarget =
@@ -234,7 +233,7 @@ function createSingletonEditor() {
       (event) => {
         if (event?.isComposing) return false;
         event?.preventDefault();
-        if (event?.altKey) {
+        if (event?.altKey || event?.shiftKey || event?.ctrlKey || event?.metaKey) {
           editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
           return true;
         }
@@ -282,9 +281,14 @@ function loadSession(options: StartSessionOptions) {
   const editorState = editor.parseEditorState(options.initialState);
   editor.setEditorState(editorState);
   latestState.value = cloneLexicalState(options.initialState);
-  requestAnimationFrame(() => {
+  if (options.shouldFocus !== false && rootElement) {
     focusEditor(options.caretPlacement ?? 'end');
-    if (plainTextFromLexicalState(options.initialState).length === 0) {
+  }
+  requestAnimationFrame(() => {
+    if (options.shouldFocus !== false) {
+      focusEditor(options.caretPlacement ?? 'end');
+    }
+    if (options.shouldFocus !== false && plainTextFromLexicalState(options.initialState).length === 0) {
       scheduleEmptyCaretRetry(options.caretPlacement ?? 'end');
     }
   });

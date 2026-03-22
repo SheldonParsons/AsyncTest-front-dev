@@ -15,6 +15,10 @@
         :initial-state="editingDisplayLexicalState" :mode="editingSession?.mode ?? 'append'"
         :caret-placement="editingSession?.caretPlacement ?? 'end'" @change="onLexicalEditorChange" @commit="commitEditingSession"
         @cancel="cancelEditingSession"></LexicalNodeEditorOverlay>
+      <textarea ref="pendingDirectTypeInputRef" class="mind-ime-capture" tabindex="-1" autocomplete="off"
+        autocapitalize="off" autocorrect="off" spellcheck="false" @input="onPendingDirectTypeInput"
+        @compositionstart.stop="onPendingDirectTypeCaptureCompositionStart"
+        @compositionend.stop="onPendingDirectTypeCaptureCompositionEnd" @blur="onPendingDirectTypeCaptureBlur" />
 
       <div v-if="horizontalScrollbar.visible" class="mind-scrollbar mind-scrollbar-x">
         <div class="mind-scrollbar-track">
@@ -366,6 +370,7 @@ import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageComm
 import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImageSizeCommand';
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
 import { collectSubtreeNodeIds, createSubtreeSnapshot, type MindSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
+import tools from '@/utils/tools';
 import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeLexicalState, type MindNodeImage } from '@/mind/core/nodeContent';
 import { layoutOverlayTextLines } from '@/mind/core/dragDrop/overlayTextLayout';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
@@ -431,11 +436,12 @@ import {
   type RichTextMarks,
 } from '@/mind/core/richText';
 import {
+  getNodeMinimumContentWidth,
   computeNodeTextGeometry,
+  getNodeMinimumWidth,
   getNodeTextStyle,
   measureTextVerticalMetrics,
   NODE_CONTENT_MAX_W,
-  NODE_MIN_W,
   NODE_LINE_HEIGHT,
   NODE_PADDING_X,
   NODE_TEXT_INSET_X,
@@ -526,6 +532,9 @@ function resetTextToggleState() {
 }
 
 function focusViewportWithoutScroll() {
+  if (!editingSession.value && primarySelectedNodeId.value && focusPendingDirectTypeInput(primarySelectedNodeId.value)) {
+    return;
+  }
   const element = viewportRef.value;
   if (!element) return;
   if (typeof document !== 'undefined' && document.activeElement === element) return;
@@ -534,6 +543,184 @@ function focusViewportWithoutScroll() {
   } catch {
     element.focus();
   }
+}
+
+function movePendingDirectTypeInputOffscreen() {
+  const element = pendingDirectTypeInputRef.value;
+  if (!element) return;
+  Object.assign(element.style, {
+    left: '-10000px',
+    top: '-10000px',
+    width: '1px',
+    height: '1px',
+  });
+}
+
+function clearPendingDirectTypeFlushTimeout() {
+  if (pendingDirectTypeFlushTimeoutId != null) window.clearTimeout(pendingDirectTypeFlushTimeoutId);
+  pendingDirectTypeFlushTimeoutId = null;
+}
+
+function clearPendingDirectTypeSeed() {
+  const element = pendingDirectTypeInputRef.value;
+  clearPendingDirectTypeFlushTimeout();
+  pendingDirectTypeSeed.value = null;
+  pendingDirectTypeCaptureComposing.value = false;
+  if (element) {
+    element.value = '';
+    movePendingDirectTypeInputOffscreen();
+    if (typeof document !== 'undefined' && document.activeElement === element) {
+      element.blur();
+    }
+  }
+}
+
+function startLexicalEditingSession(
+  nodeId: string,
+  initialState: SerializedLexicalEditorState,
+  mode: 'append' | 'replace',
+  caretPlacement: 'start' | 'end' | 'none',
+  shouldFocus = true
+) {
+  lexicalEditorManager.startSession({
+    nodeId,
+    initialState,
+    mode,
+    caretPlacement,
+    shouldFocus,
+    onChange: (state) => onLexicalEditorChange(state),
+    onCommit: () => commitEditingSession(),
+    onCancel: () => cancelEditingSession(),
+  });
+}
+
+function focusPendingDirectTypeInput(nodeId: string) {
+  const element = pendingDirectTypeInputRef.value;
+  const node = getNodeById(nodeId);
+  if (!element || !node) return false;
+  const textBoxRect = getEditingTextBoxRectForNode(nodeId);
+  const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
+  const screenRect = textBoxRect
+    ? {
+      x: textBoxRect.x * camera.value.scale + camera.value.tx,
+      y: textBoxRect.y * camera.value.scale + camera.value.ty,
+      width: Math.max(1, textBoxRect.width * camera.value.scale),
+      height: Math.max(1, textBoxRect.height * camera.value.scale),
+    }
+    : {
+      x: -10000,
+      y: -10000,
+      width: 1,
+      height: 1,
+    };
+  Object.assign(element.style, {
+    left: `${screenRect.x}px`,
+    top: `${screenRect.y}px`,
+    width: `${screenRect.width}px`,
+    height: `${screenRect.height}px`,
+    fontFamily: textStyle.fontFamily,
+    fontSize: `${textStyle.fontSizePx * camera.value.scale}px`,
+    fontWeight: String(textStyle.fontWeight),
+    fontStyle: textStyle.fontStyle,
+    lineHeight: `${textStyle.lineHeightPx * camera.value.scale}px`,
+    letterSpacing: `${textStyle.letterSpacingPx * camera.value.scale}px`,
+    textAlign: textStyle.textAlign,
+  });
+  pendingDirectTypeCaptureComposing.value = false;
+  element.value = '';
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+  element.setSelectionRange(0, 0);
+  return true;
+}
+
+function flushPendingDirectTypeToEditor(text: string) {
+  const pending = pendingDirectTypeSeed.value;
+  if (!pending) return;
+  clearPendingDirectTypeFlushTimeout();
+  const nextText = text;
+  clearPendingDirectTypeSeed();
+  if (!nextText) {
+    focusViewportWithoutScroll();
+    return;
+  }
+  applyCapturedDirectTypeText(pending.nodeId, nextText);
+}
+
+function onPendingDirectTypeInput() {
+  const pending = pendingDirectTypeSeed.value;
+  const element = pendingDirectTypeInputRef.value;
+  if (!pending || !element || pendingDirectTypeCaptureComposing.value) return;
+  flushPendingDirectTypeToEditor(element.value);
+}
+
+function schedulePendingDirectTypeFlushFromCapture() {
+  clearPendingDirectTypeFlushTimeout();
+  pendingDirectTypeFlushTimeoutId = window.setTimeout(() => {
+    pendingDirectTypeFlushTimeoutId = null;
+    if (!pendingDirectTypeSeed.value || pendingDirectTypeCaptureComposing.value) return;
+    flushPendingDirectTypeToEditor(pendingDirectTypeInputRef.value?.value ?? '');
+  }, 0);
+}
+
+function onPendingDirectTypeCaptureCompositionStart() {
+  clearPendingDirectTypeFlushTimeout();
+  pendingDirectTypeCaptureComposing.value = true;
+  isComposing.value = true;
+}
+
+function onPendingDirectTypeCaptureCompositionEnd(event: CompositionEvent) {
+  pendingDirectTypeCaptureComposing.value = false;
+  isComposing.value = false;
+  const committedText =
+    typeof event.data === 'string' && event.data.length > 0
+      ? event.data
+      : pendingDirectTypeInputRef.value?.value ?? '';
+  if (committedText) {
+    flushPendingDirectTypeToEditor(committedText);
+    return;
+  }
+  schedulePendingDirectTypeFlushFromCapture();
+}
+
+function onPendingDirectTypeCaptureBlur() {
+  if (!pendingDirectTypeSeed.value || pendingDirectTypeCaptureComposing.value) return;
+  schedulePendingDirectTypeFlushFromCapture();
+}
+
+function isPendingDirectTypeInputTarget(target: EventTarget | null) {
+  return !!pendingDirectTypeInputRef.value && target === pendingDirectTypeInputRef.value;
+}
+
+function applyCapturedDirectTypeText(nodeId: string, text: string) {
+  const node = getNodeById(nodeId);
+  const session = editingSession.value;
+  if (!node) return;
+  if (!session || session.nodeId !== nodeId || session.mode !== 'replace') {
+    startEditing(nodeId, { mode: 'replace', insertedText: text, caretPlacement: 'end' });
+    return;
+  }
+  const nextLexicalState = lexicalStateFromPlainText(text);
+  const nextRichText = cloneRichText(
+    createPersistedRichTextForNode(
+      props.doc,
+      node,
+      nodeId,
+      richTextFromLexicalState(nextLexicalState)
+    )
+  );
+  const displayLexicalState = convertLexicalStateFontSizesToRelativeEm(
+    nextLexicalState,
+    Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
+  );
+  editingDraftLexicalState.value = nextLexicalState;
+  editingDraftRichText.value = nextRichText;
+  editingDisplayLexicalState.value = displayLexicalState;
+  startLexicalEditingSession(nodeId, displayLexicalState, 'replace', session.caretPlacement, true);
+  scheduleEditingPreviewRelayout();
 }
 
 function getPanelSourceSelectedNodeId() {
@@ -618,6 +805,13 @@ const editingWidthPreview = ref<null | {
   affectedParentIds: Set<string>;
 }>(null);
 const isComposing = ref(false);
+const pendingDirectTypeInputRef = ref<HTMLTextAreaElement | null>(null);
+const pendingDirectTypeSeed = ref<null | {
+  nodeId: string;
+  key: string;
+}>(null);
+const pendingDirectTypeCaptureComposing = ref(false);
+let pendingDirectTypeFlushTimeoutId: number | null = null;
 const primarySelectedNodeId = ref<string | null>(null);
 const selectionAnchorNodeId = ref<string | null>(null);
 const selectionAnchorByGroup = ref<Record<string, string>>({});
@@ -3972,13 +4166,15 @@ function relayoutEditingPreviewNow() {
   const measuredLayout = measureNodeTextLayout(ctx, liveRichText, editingTextLayoutCache, {
     maxWidth: NODE_TEXT_MAX_WIDTH_PX,
     baseStyle: textStyle,
+    minContentWidth: getNodeMinimumContentWidth(node, liveRichText, image),
   });
   const textGeometry = computeNodeTextGeometry(ctx, measuredLayout, textStyle, image);
   const markerRow = measureNodeMarkerRow(node);
+  const minNodeWidth = getNodeMinimumWidth(node, liveRichText, image);
   const previousPreview = editingPreview.value?.nodeId === session.nodeId ? editingPreview.value : null;
   let computedNodeW = clampNodeDimension(
     Math.max(Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X, markerRow.width),
-    Math.max(NODE_MIN_W, markerRow.width),
+    Math.max(minNodeWidth, markerRow.width),
     NODE_W_HARD_MAX
   );
   let computedNodeH = textGeometry.contentBoxTop + textGeometry.contentBoxHeight + markerRow.bandHeight;
@@ -4009,7 +4205,7 @@ function relayoutEditingPreviewNow() {
     scheduleEditingLayoutSync();
   }
   requestRender();
-  if (lineCountChanged) {
+  if (lineCountChanged || widthChanged) {
     scheduleEditingCaretFollow(40);
   }
   if (DEBUG_CANVAS_OVERLAY) {
@@ -4047,7 +4243,12 @@ function clearEditingPreviewLayout() {
 
 function startEditing(
   nodeId: string,
-  options?: { mode?: 'append' | 'replace'; insertedText?: string; caretPlacement?: 'start' | 'end' | 'none' }
+  options?: {
+    mode?: 'append' | 'replace';
+    insertedText?: string;
+    caretPlacement?: 'start' | 'end' | 'none';
+    shouldFocusEditor?: boolean;
+  }
 ) {
   clearImageInteraction('start-text-editing');
   const node = getNodeById(nodeId);
@@ -4055,15 +4256,26 @@ function startEditing(
   const mode = options?.mode ?? 'append';
   const insertedText = options?.insertedText ?? '';
   const caretPlacement = options?.caretPlacement ?? 'end';
-  const initialRichText =
-    mode === 'replace'
-      ? richTextFromLexicalState(lexicalStateFromPlainText(insertedText))
-      : cloneRichText(getNodeRichText(node));
+  const shouldFocusEditor = options?.shouldFocusEditor ?? true;
+  const beforeRichText = cloneRichText(getNodeRichText(node));
+  const beforeLexicalState = cloneLexicalState(getNodeLexicalState(node));
   editingTextLayoutCache = new Map();
   const nextLexicalState =
     mode === 'replace'
       ? lexicalStateFromPlainText(insertedText)
-      : createEditingLexicalStateForNode(props.doc, node, nodeId, initialRichText);
+      : createEditingLexicalStateForNode(props.doc, node, nodeId, beforeRichText);
+  const nextRichText = cloneRichText(
+    createPersistedRichTextForNode(
+      props.doc,
+      node,
+      nodeId,
+      richTextFromLexicalState(nextLexicalState)
+    )
+  );
+  const displayLexicalState = convertLexicalStateFontSizesToRelativeEm(
+    nextLexicalState,
+    Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
+  );
   const currentRect = worldBoxes.value.get(nodeId);
   const initialTextBoxRect = currentRect
     ? (() => {
@@ -4080,18 +4292,16 @@ function startEditing(
   dumpCanvasTextDiagnostics(nodeId, 'start-editing-before-dom');
   editingSession.value = {
     nodeId,
-    initialLexicalState: cloneLexicalState(nextLexicalState),
-    initialRichText: cloneRichText(initialRichText),
+    initialLexicalState: beforeLexicalState,
+    initialRichText: beforeRichText,
     mode,
     caretPlacement,
   };
   editingDraftLexicalState.value = nextLexicalState;
-  editingDraftRichText.value = initialRichText;
-  editingDisplayLexicalState.value = convertLexicalStateFontSizesToRelativeEm(
-    nextLexicalState,
-    Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
-  );
+  editingDraftRichText.value = nextRichText;
+  editingDisplayLexicalState.value = displayLexicalState;
   editingNodeId.value = nodeId;
+  startLexicalEditingSession(nodeId, displayLexicalState, mode, caretPlacement, shouldFocusEditor);
   const nodes = getMindNodes();
   const editingSubtreeNodeIds = nodes ? collectSubtreeNodeIds(nodes, nodeId) : [];
   editingPreview.value = currentRect
@@ -4160,6 +4370,7 @@ function startEditing(
 function stopEditingSession() {
   clearImageInteraction('stop-text-editing');
   isComposing.value = false;
+  clearPendingDirectTypeSeed();
   editingSession.value = null;
   editingDraftLexicalState.value = getNodeLexicalState(null);
   editingDraftRichText.value = getNodeRichText(null);
@@ -5661,6 +5872,29 @@ function getNodeClipboardFallbackText(clipboardState: InternalClipboardState) {
   return `${NODE_CLIPBOARD_TEXT_PREFIX}${serializeNodeClipboardPayload(clipboardState)}`;
 }
 
+function resolvePreferredNodeClipboardState(
+  externalClipboardState: InternalClipboardState | null,
+  clipboardData?: DataTransfer | null
+) {
+  const internalClipboard = getInternalClipboard();
+  if (!externalClipboardState) {
+    const plainText = clipboardData?.getData('text/plain') ?? '';
+    const hasExternalText = plainText.length > 0 && !plainText.startsWith(NODE_CLIPBOARD_TEXT_PREFIX);
+    const hasExternalItems = Array.from(clipboardData?.items ?? []).some((item) => item.type !== 'text/plain');
+    if (hasExternalText || hasExternalItems) return null;
+    return internalClipboard.type === 'empty' ? null : internalClipboard;
+  }
+  if (internalClipboard.type === 'empty') return externalClipboardState;
+  const externalCreatedAt = externalClipboardState.createdAt ?? 0;
+  const internalCreatedAt = internalClipboard.createdAt ?? 0;
+  return internalCreatedAt >= externalCreatedAt ? internalClipboard : externalClipboardState;
+}
+
+async function syncClipboardStateToSystemClipboard(clipboardState: InternalClipboardState) {
+  if (clipboardState.type === 'empty') return;
+  await tools.copyText(getNodeClipboardFallbackText(clipboardState));
+}
+
 function parseClipboardNodePayload(clipboardData: DataTransfer | null | undefined) {
   if (!clipboardData) return null;
   const mimePayload = deserializeNodeClipboardPayload(clipboardData.getData(NODE_CLIPBOARD_MIME));
@@ -6406,6 +6640,7 @@ function executeCommand(command: Command | null) {
 function isEditableTarget(target: EventTarget | null) {
   const element = target as HTMLElement | null;
   if (!element) return false;
+  if (isPendingDirectTypeInputTarget(element)) return false;
   const tag = element.tagName;
   return (
     tag === 'INPUT' ||
@@ -7270,7 +7505,7 @@ async function onWindowPaste(event: ClipboardEvent) {
   const selectedNodeId = getPrimarySelectedId();
   const clipboardData = event.clipboardData;
   const items = Array.from(clipboardData?.items ?? []);
-  const nodeClipboardState = parseClipboardNodePayload(clipboardData);
+  const nodeClipboardState = resolvePreferredNodeClipboardState(parseClipboardNodePayload(clipboardData), clipboardData);
   const editingTextActive = isTextEditingActive(event.target);
   if (nodeClipboardState && selectedNodeId) {
     event.preventDefault();
@@ -7471,8 +7706,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
     isTaskDoneMarkerShortcut ||
     isUndoShortcut ||
     isRedoShortcut ||
-    isSpaceShortcut ||
-    isPrintableCharacter;
+    isSpaceShortcut;
 
   if (shouldPreventDefault) {
     event.preventDefault();
@@ -7543,7 +7777,22 @@ function onWindowKeyDown(event: KeyboardEvent) {
       targetNodeId: primarySelectedId,
       selectedCount,
     });
-    startEditing(primarySelectedId, { mode: 'replace', insertedText: event.key, caretPlacement: 'end' });
+    pendingDirectTypeSeed.value = {
+      nodeId: primarySelectedId,
+      key: event.key,
+    };
+    if (!editingSession.value || editingSession.value.nodeId !== primarySelectedId || editingSession.value.mode !== 'replace') {
+      startEditing(primarySelectedId, {
+        mode: 'replace',
+        insertedText: '',
+        caretPlacement: 'end',
+        shouldFocusEditor: false,
+      });
+    }
+    if (!isPendingDirectTypeInputTarget(document.activeElement) && !focusPendingDirectTypeInput(primarySelectedId)) {
+      clearPendingDirectTypeSeed();
+      startEditing(primarySelectedId, { mode: 'replace', insertedText: event.key, caretPlacement: 'end' });
+    }
     return;
   }
 
@@ -7572,11 +7821,17 @@ function onWindowKeyDown(event: KeyboardEvent) {
     });
     setFilteredOutDescendantsCount(normalized.filteredOutDescendantsCount);
     if (!normalized.finalTargets.length) return;
+    const targetIds = normalized.finalTargets.map((target) => target.nodeId);
+    performCopy(targetIds);
+    const clipboardState = getInternalClipboard();
+    if (clipboardState.type !== 'empty') {
+      void syncClipboardStateToSystemClipboard(clipboardState);
+    }
     stopEditingSession();
     executeCommand(
       normalized.finalTargets.length === 1
         ? createCutCommand(normalized.finalTargets[0].nodeId)
-        : createBatchCutSelectionCommand(normalized.finalTargets.map((target) => target.nodeId))
+        : createBatchCutSelectionCommand(targetIds)
     );
     return;
   }
@@ -7829,12 +8084,15 @@ function handleResize() {
   });
 }
 
-function onCompositionStart() {
+function onCompositionStart(event: CompositionEvent) {
+  if (event.target === pendingDirectTypeInputRef.value) return;
   isComposing.value = true;
 }
 
-function onCompositionEnd() {
+function onCompositionEnd(event: CompositionEvent) {
+  if (event.target === pendingDirectTypeInputRef.value) return;
   isComposing.value = false;
+  clearPendingDirectTypeSeed();
 }
 
 onMounted(() => {
@@ -7980,6 +8238,29 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+.mind-ime-capture {
+  position: absolute;
+  left: -10000px;
+  top: -10000px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
 .main-layout {
   height: 100%;
   display: flex;

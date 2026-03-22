@@ -28,6 +28,7 @@ export const NODE_IMAGE_TEXT_GAP = 8;
 export const NODE_PADDING_X = NODE_TEXT_INSET_X * 2;
 export const NODE_PADDING_Y = NODE_TEXT_INSET_Y * 2;
 export const NODE_CONTENT_MAX_W = NODE_TEXT_MAX_WIDTH_PX;
+export const EMPTY_NODE_MIN_W = Math.max(1, Math.round((NODE_TEXT_MIN_WIDTH_PX + NODE_PADDING_X) / 3));
 
 export type NodeTextStyle = {
   fontFamily: string;
@@ -100,6 +101,30 @@ export type NodeVisualLayout = {
   textOffsetY: number;
   textHeight: number;
 };
+
+function isRichTextFullyEmpty(richText: RichTextDocument | null | undefined) {
+  return (richText?.blocks ?? []).every((block) =>
+    (block.inlines ?? []).every((inline) => String(inline.text ?? '') === '')
+  );
+}
+
+export function getNodeMinimumWidth(
+  node: MindNodeLike | null | undefined,
+  richText?: RichTextDocument,
+  image?: MindNodeImage | null
+) {
+  const activeRichText = richText ?? getNodeRichText(node);
+  const activeImage = image ?? getNodeImage(node);
+  return isRichTextFullyEmpty(activeRichText) && !activeImage ? EMPTY_NODE_MIN_W : NODE_MIN_W;
+}
+
+export function getNodeMinimumContentWidth(
+  node: MindNodeLike | null | undefined,
+  richText?: RichTextDocument,
+  image?: MindNodeImage | null
+) {
+  return Math.max(1, getNodeMinimumWidth(node, richText, image) - NODE_PADDING_X);
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -223,7 +248,7 @@ export function measureNodeTextLayout(
   ctx: CanvasRenderingContext2D,
   input: string | RichTextDocument,
   cache?: Map<string, NodeTextLayout>,
-  options?: { maxWidth?: number; baseStyle?: NodeTextStyle }
+  options?: { maxWidth?: number; baseStyle?: NodeTextStyle; minContentWidth?: number }
 ): NodeTextLayout {
   const richText = typeof input === 'string' ? { blocks: [{ align: 'left', inlines: [{ text: input }] }] } : input;
   const baseStyle =
@@ -240,7 +265,8 @@ export function measureNodeTextLayout(
       canvasFontString: NODE_FONT,
     } satisfies NodeTextStyle);
   const maxWidth = options?.maxWidth ?? NODE_CONTENT_MAX_W;
-  const key = JSON.stringify({ richText, baseStyle, maxWidth });
+  const minContentWidth = Math.max(1, options?.minContentWidth ?? NODE_TEXT_MIN_WIDTH_PX);
+  const key = JSON.stringify({ richText, baseStyle, maxWidth, minContentWidth });
   const cached = cache?.get(key);
   if (cached) return cached;
 
@@ -283,9 +309,9 @@ export function measureNodeTextLayout(
   const layout = {
     lines,
     richLines,
-    w: clamp(Math.max(NODE_TEXT_MIN_WIDTH_PX, contentWidth) + NODE_PADDING_X, NODE_MIN_W, NODE_W_HARD_MAX),
+    w: clamp(Math.max(minContentWidth, contentWidth) + NODE_PADDING_X, EMPTY_NODE_MIN_W, NODE_W_HARD_MAX),
     h: clamp(Math.max(lineHeight, richLines.length * lineHeight) + NODE_PADDING_Y, NODE_LINE_HEIGHT + NODE_PADDING_Y, NODE_H_HARD_MAX),
-    contentWidth: Math.min(maxWidth, Math.max(NODE_TEXT_MIN_WIDTH_PX, Math.ceil(contentWidth))),
+    contentWidth: Math.min(maxWidth, Math.max(minContentWidth, Math.ceil(contentWidth))),
     contentHeight: Math.min(NODE_H_HARD_MAX, Math.max(lineHeight, richLines.length * lineHeight)),
     lineCount: richLines.length,
     lineHeight,
@@ -335,13 +361,15 @@ export function measureNodeVisualLayout(
   const textLayout = measureNodeTextLayout(ctx, richText, cache, {
     maxWidth: options?.maxTextWidth ?? NODE_CONTENT_MAX_W,
     baseStyle,
+    minContentWidth: getNodeMinimumContentWidth(node, richText),
   });
   const image = getNodeImage(node);
   const textGeometry = computeNodeTextGeometry(ctx, textLayout, baseStyle, image);
   const markerRow = measureNodeMarkerRow(node);
+  const minNodeWidth = getNodeMinimumWidth(node, richText, image);
   const width = clamp(
     Math.max(textLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X,
-    Math.max(NODE_MIN_W, markerRow.width),
+    Math.max(minNodeWidth, markerRow.width),
     NODE_W_HARD_MAX
   );
   const textOffsetY = textGeometry.textLineBoxTop;

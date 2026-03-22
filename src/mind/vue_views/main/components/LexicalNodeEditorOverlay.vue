@@ -138,15 +138,17 @@ function scheduleGlyphAlignment() {
 function mountEditor() {
   if (!props.visible || !editorRootRef.value || !props.nodeId) return;
   lexicalEditorManager.setRootElement(editorRootRef.value);
-  lexicalEditorManager.startSession({
-    nodeId: props.nodeId,
-    initialState: props.initialState,
-    mode: props.mode,
-    caretPlacement: props.caretPlacement,
-    onChange: (state) => emit('change', state),
-    onCommit: () => emit('commit'),
-    onCancel: () => emit('cancel'),
-  });
+  if (lexicalEditorManager.activeNodeId.value !== props.nodeId) {
+    lexicalEditorManager.startSession({
+      nodeId: props.nodeId,
+      initialState: props.initialState,
+      mode: props.mode,
+      caretPlacement: props.caretPlacement,
+      onChange: (state) => emit('change', state),
+      onCommit: () => emit('commit'),
+      onCancel: () => emit('cancel'),
+    });
+  }
   scheduleGlyphAlignment();
 }
 
@@ -289,7 +291,8 @@ onBeforeUnmount(() => {
 .lexical-editor-root :deep(p) {
   margin: 0;
   padding: 0;
-  min-height: 0;
+  min-height: 1em;
+  min-height: 1lh;
   color: inherit;
   font-family: inherit;
   font-size: inherit;

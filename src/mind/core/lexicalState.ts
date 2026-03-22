@@ -1,4 +1,4 @@
-import type { RichTextAlign, RichTextDocument, RichTextInline, RichTextMarks } from './richText';
+import type { RichTextAlign, RichTextBlock, RichTextDocument, RichTextInline, RichTextMarks } from './richText';
 import { normalizeRichText, richTextFromPlain, richTextToPlain } from './richText';
 
 export type SerializedLexicalNode = {
@@ -184,19 +184,22 @@ function inlineToLexicalChildren(inline: RichTextInline): SerializedLexicalNode[
   if (inline.marks?.strike) format |= TEXT_FORMAT.strikethrough;
   if (inline.marks?.underline) format |= TEXT_FORMAT.underline;
   const style = inlineStyleToString(inline.marks);
-  const parts = String(inline.text ?? '').split('\n');
+  const text = String(inline.text ?? '');
+  const parts = text.split('\n');
   const children: SerializedLexicalNode[] = [];
 
   parts.forEach((part, index) => {
-    children.push({
-      type: 'text',
-      version: 1,
-      text: part,
-      detail: 0,
-      format,
-      mode: 'normal',
-      style,
-    });
+    if (part.length > 0 || parts.length === 1) {
+      children.push({
+        type: 'text',
+        version: 1,
+        text: part,
+        detail: 0,
+        format,
+        mode: 'normal',
+        style,
+      });
+    }
     if (index < parts.length - 1) {
       children.push({
         type: 'linebreak',
@@ -205,7 +208,26 @@ function inlineToLexicalChildren(inline: RichTextInline): SerializedLexicalNode[
     }
   });
 
+  if (!children.length) {
+    children.push({
+      type: 'text',
+      version: 1,
+      text: '',
+      detail: 0,
+      format,
+      mode: 'normal',
+      style,
+    });
+  }
+
   return children;
+}
+
+function shouldSerializeAsEmptyParagraph(block: RichTextBlock) {
+  return block.inlines.every((inline) => {
+    const hasMarks = !!inline.marks && Object.keys(inline.marks).length > 0;
+    return !hasMarks && String(inline.text ?? '') === '';
+  });
 }
 
 export function lexicalStateFromPlainText(text: string): SerializedLexicalEditorState {
@@ -242,7 +264,9 @@ export function lexicalStateFromRichText(richText: RichTextDocument): Serialized
         indent: 0,
         textFormat: 0,
         textStyle: '',
-        children: block.inlines.flatMap((inline) => inlineToLexicalChildren(inline)),
+        children: shouldSerializeAsEmptyParagraph(block)
+          ? []
+          : block.inlines.flatMap((inline) => inlineToLexicalChildren(inline)),
       })),
     },
   };
