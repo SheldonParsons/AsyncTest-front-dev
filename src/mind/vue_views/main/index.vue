@@ -1,5 +1,140 @@
 <template>
   <div class="main-layout">
+    <div v-if="showSearchPanel" class="search-panel-shell" @pointerdown.stop @mousedown.stop @click.stop>
+      <aside class="search-panel">
+        <div class="search-panel-header">
+          <button class="search-panel-tab" :class="{ 'is-active': searchPanelTab === 'text' }" type="button"
+            @click="searchPanelTab = 'text'">
+            文本
+          </button>
+          <button class="search-panel-tab" :class="{ 'is-active': searchPanelTab === 'mark' }" type="button"
+            @click="searchPanelTab = 'mark'">
+            标记
+          </button>
+        </div>
+        <div class="search-panel-body">
+          <div v-if="searchPanelTab === 'text'" class="search-pane">
+            <section class="search-query-card">
+              <input id="mind-search-text-input" v-model="searchTextQuery" class="search-query-input" type="text"
+                placeholder="查找内容" autocomplete="off" spellcheck="false" @keydown.stop />
+              <input v-model="searchReplaceText" class="search-query-input" type="text" placeholder="替换为"
+                autocomplete="off" spellcheck="false" @keydown.stop />
+              <div class="search-action-row">
+                <button class="search-action-button" type="button" :disabled="!canReplaceSelectedSearchResult"
+                  @click="replaceSelectedSearchResult">
+                  替换
+                </button>
+                <button class="search-action-button" type="button" :disabled="!canReplaceAllSearchResults"
+                  @click="replaceAllSearchResults">
+                  全部替换
+                </button>
+              </div>
+            </section>
+
+            <div class="search-results-meta">
+              <span class="search-results-count">{{ searchTextResultCountLabel }}</span>
+            </div>
+
+            <div v-if="searchTextResults.length" class="search-result-shell">
+              <div ref="searchResultScrollRef" class="search-result-list-shell" @scroll.passive="updateSearchResultScrollMetrics">
+                <div class="search-result-list">
+                  <button v-for="(result, index) in searchTextResults" :key="result.nodeId" class="search-result-item"
+                    :class="{ 'is-active': selectedSearchResultNodeId === result.nodeId }" type="button"
+                    @click="onSearchTextResultClick(result.nodeId)">
+                    <span class="search-result-order">{{ index + 1 }}</span>
+                    <span class="search-result-text" :data-empty="result.singleLineText ? 'false' : 'true'">{{
+                      result.singleLineText }}</span>
+                  </button>
+                </div>
+              </div>
+              <div ref="searchResultHorizontalScrollbarRef" v-show="searchResultScrollMetrics.showHorizontal"
+                class="search-panel-scrollbar search-panel-scrollbar-x"
+                @mousedown.prevent="onSearchResultScrollbarTrackMouseDown('horizontal', $event)">
+                <div class="search-panel-scrollbar-thumb"
+                  :class="{ 'is-dragging': searchResultScrollbarDrag?.axis === 'horizontal', 'is-disabled': !searchResultScrollMetrics.horizontalScrollable }"
+                  :style="{
+                    width: `${searchResultScrollMetrics.horizontalThumbSize}px`,
+                    transform: `translateX(${searchResultScrollMetrics.horizontalThumbOffset}px)`,
+                  }" @mousedown.stop.prevent="startSearchResultScrollbarDrag('horizontal', $event)" />
+              </div>
+              <div ref="searchResultVerticalScrollbarRef" v-show="searchResultScrollMetrics.showVertical"
+                class="search-panel-scrollbar search-panel-scrollbar-y"
+                @mousedown.prevent="onSearchResultScrollbarTrackMouseDown('vertical', $event)">
+                <div class="search-panel-scrollbar-thumb"
+                  :class="{ 'is-dragging': searchResultScrollbarDrag?.axis === 'vertical', 'is-disabled': !searchResultScrollMetrics.verticalScrollable }"
+                  :style="{
+                    height: `${searchResultScrollMetrics.verticalThumbSize}px`,
+                    transform: `translateY(${searchResultScrollMetrics.verticalThumbOffset}px)`,
+                  }" @mousedown.stop.prevent="startSearchResultScrollbarDrag('vertical', $event)" />
+              </div>
+            </div>
+
+            <div v-else class="search-empty-state">
+              {{ searchTextEmptyState }}
+            </div>
+          </div>
+
+          <div v-else class="search-pane">
+            <div class="search-marker-groups">
+              <section v-for="group in markerPanelGroups" :key="group.key" class="marker-group">
+                <h3 class="marker-group-title">{{ group.label }}</h3>
+                <div class="marker-grid">
+                  <button v-for="marker in group.items" :key="marker.key" class="marker-tile search-marker-tile"
+                    :class="{ 'is-selected': searchMarkerKeys.includes(marker.key) }" type="button" :title="marker.name"
+                    @click="onSearchMarkerTileClick(marker.key)">
+                    <img class="marker-tile-icon" :src="marker.src" :alt="marker.name" />
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <div class="search-results-meta">
+              <span class="search-results-count">{{ searchMarkerResultCountLabel }}</span>
+              <span v-if="selectedSearchMarkerSummary" class="search-results-chip">{{ selectedSearchMarkerSummary }}</span>
+            </div>
+
+            <div v-if="searchMarkerResults.length" class="search-result-shell">
+              <div ref="searchResultScrollRef" class="search-result-list-shell" @scroll.passive="updateSearchResultScrollMetrics">
+                <div class="search-result-list">
+                  <button v-for="(result, index) in searchMarkerResults" :key="result.nodeId" class="search-result-item"
+                    :class="{ 'is-active': primarySelectedNodeId === result.nodeId }" type="button"
+                    @click="focusSearchResultNode(result.nodeId)">
+                    <span class="search-result-order">{{ index + 1 }}</span>
+                    <span class="search-result-text" :data-empty="result.singleLineText ? 'false' : 'true'">{{
+                      result.singleLineText }}</span>
+                  </button>
+                </div>
+              </div>
+              <div ref="searchResultHorizontalScrollbarRef" v-show="searchResultScrollMetrics.showHorizontal"
+                class="search-panel-scrollbar search-panel-scrollbar-x"
+                @mousedown.prevent="onSearchResultScrollbarTrackMouseDown('horizontal', $event)">
+                <div class="search-panel-scrollbar-thumb"
+                  :class="{ 'is-dragging': searchResultScrollbarDrag?.axis === 'horizontal', 'is-disabled': !searchResultScrollMetrics.horizontalScrollable }"
+                  :style="{
+                    width: `${searchResultScrollMetrics.horizontalThumbSize}px`,
+                    transform: `translateX(${searchResultScrollMetrics.horizontalThumbOffset}px)`,
+                  }" @mousedown.stop.prevent="startSearchResultScrollbarDrag('horizontal', $event)" />
+              </div>
+              <div ref="searchResultVerticalScrollbarRef" v-show="searchResultScrollMetrics.showVertical"
+                class="search-panel-scrollbar search-panel-scrollbar-y"
+                @mousedown.prevent="onSearchResultScrollbarTrackMouseDown('vertical', $event)">
+                <div class="search-panel-scrollbar-thumb"
+                  :class="{ 'is-dragging': searchResultScrollbarDrag?.axis === 'vertical', 'is-disabled': !searchResultScrollMetrics.verticalScrollable }"
+                  :style="{
+                    height: `${searchResultScrollMetrics.verticalThumbSize}px`,
+                    transform: `translateY(${searchResultScrollMetrics.verticalThumbOffset}px)`,
+                  }" @mousedown.stop.prevent="startSearchResultScrollbarDrag('vertical', $event)" />
+              </div>
+            </div>
+
+            <div v-else class="search-empty-state">
+              {{ searchMarkerEmptyState }}
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
     <div class="main-container" ref="viewportRef" tabindex="0">
       <canvas ref="canvasRef" class="mind-canvas" :width="canvasPixelW" :height="canvasPixelH" :style="canvasStyle"
         @dblclick="onCanvasDoubleClick" @pointerdown="onCanvasPointerDown" @pointermove="onCanvasPointerMove"
@@ -380,6 +515,7 @@ import {
   cloneLexicalState,
   convertLexicalStateFontSizesToRelativeEm,
   convertLexicalStateRelativeEmToPx,
+  lexicalStateFromRichText,
   lexicalStateFromPlainText,
   richTextFromLexicalState,
   updateLexicalStateBlockAlign,
@@ -409,6 +545,8 @@ import { buildWorldBoxes, type WorldBoxes } from './geom/worldBoxes';
 import { UniformGridSpatialIndex } from './grid/spatialIndex';
 import {
   clearNodeMarkers,
+  getNodeMarkerItem,
+  getNodeMarkerKeys,
   getNodeBodyWorldRect,
   measureNodeMarkerRow,
   nodeMarkerGroups,
@@ -430,6 +568,7 @@ import {
 } from './imageInteraction';
 import {
   cloneRichText,
+  normalizeRichText,
   type RichTextAlign,
   type RichTextDocument,
   type RichTextInline,
@@ -488,16 +627,98 @@ import type { MindNodeRole } from './nodeStyles';
 import { createInitialNodeStyleForRole, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
 
-const props = defineProps<{ doc?: any; filePath?: any; docId?: string; windowKey?: any; showFormatPanel?: boolean }>();
+type SearchPanelNodeEntry = {
+  nodeId: string;
+  singleLineText: string;
+  normalizedLineTexts: string[];
+  markerKeys: string[];
+};
+
+const props = defineProps<{
+  doc?: any;
+  filePath?: any;
+  docId?: string;
+  windowKey?: any;
+  showSearchPanel?: boolean;
+  showFormatPanel?: boolean;
+}>();
 const emit = defineEmits<{
   (event: 'filePathChange', value: string | null): void;
   (event: 'saveStateChange', value: { isDirty: boolean; isSaving: boolean; displayName: string }): void;
   (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number }): void;
+  (event: 'toggleSearchPanel'): void;
   (event: 'toggleFormatPanel'): void;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const SEARCH_TEXT_QUERY_DEBOUNCE_MS = 300;
+const searchPanelTab = ref<'text' | 'mark'>('text');
+const searchTextQuery = ref('');
+const searchResolvedTextQuery = ref('');
+const searchReplaceText = ref('');
+const searchMarkerKeys = ref<string[]>([]);
+const searchResultScrollRef = ref<HTMLDivElement | null>(null);
+const searchResultHorizontalScrollbarRef = ref<HTMLDivElement | null>(null);
+const searchResultVerticalScrollbarRef = ref<HTMLDivElement | null>(null);
+const searchNodeEntries = ref<SearchPanelNodeEntry[]>([]);
+const searchNodeEntriesRevisionKey = ref('');
+const selectedSearchResultNodeId = ref<string | null>(null);
+const SEARCH_RESULT_SCROLLBAR_MIN_THUMB = 32;
+const searchResultScrollMetrics = ref({
+  showHorizontal: false,
+  showVertical: false,
+  horizontalScrollable: false,
+  verticalScrollable: false,
+  horizontalThumbSize: SEARCH_RESULT_SCROLLBAR_MIN_THUMB,
+  horizontalThumbOffset: 0,
+  verticalThumbSize: SEARCH_RESULT_SCROLLBAR_MIN_THUMB,
+  verticalThumbOffset: 0,
+});
+const searchResultScrollbarDrag = ref<null | {
+  axis: 'horizontal' | 'vertical';
+  startClient: number;
+  startOffset: number;
+}>(null);
+const selectedSearchMarkerSummary = computed(() => {
+  if (!searchMarkerKeys.value.length) return '';
+  if (searchMarkerKeys.value.length === 1) {
+    return getNodeMarkerItem(searchMarkerKeys.value[0])?.name ?? '已选 1 个标记';
+  }
+  return `已选 ${searchMarkerKeys.value.length} 个标记`;
+});
+const searchTextResults = computed(() => {
+  if (!props.showSearchPanel) return [] as SearchPanelNodeEntry[];
+  const query = searchResolvedTextQuery.value;
+  if (!query) return [] as SearchPanelNodeEntry[];
+  return searchNodeEntries.value.filter((entry) => entry.normalizedLineTexts.some((lineText) => lineText.includes(query)));
+});
+const searchMarkerResults = computed(() => {
+  if (!props.showSearchPanel || !searchMarkerKeys.value.length) return [] as SearchPanelNodeEntry[];
+  return searchNodeEntries.value.filter((entry) =>
+    searchMarkerKeys.value.every((markerKey) => entry.markerKeys.includes(markerKey))
+  );
+});
+const canReplaceSelectedSearchResult = computed(() => {
+  if (!searchResolvedTextQuery.value || !selectedSearchResultNodeId.value) return false;
+  return searchTextResults.value.some((entry) => entry.nodeId === selectedSearchResultNodeId.value);
+});
+const canReplaceAllSearchResults = computed(() => !!searchResolvedTextQuery.value && searchTextResults.value.length > 0);
+const searchTextResultCountLabel = computed(() =>
+  searchResolvedTextQuery.value ? `找到 ${searchTextResults.value.length} 个节点` : '输入关键词开始搜索'
+);
+const searchMarkerResultCountLabel = computed(() => {
+  if (!searchMarkerKeys.value.length) return '点击一个或多个标记开始筛选';
+  return `找到 ${searchMarkerResults.value.length} 个节点`;
+});
+const searchTextEmptyState = computed(() =>
+  searchResolvedTextQuery.value ? '未找到匹配节点' : '输入关键词开始搜索'
+);
+const searchMarkerEmptyState = computed(() =>
+  searchMarkerKeys.value.length ? '当前组合标记下没有节点' : '点击上方标记开始筛选'
+);
+let searchTextQueryDebounceTimerId: number | null = null;
+let searchResultResizeObserver: ResizeObserver | null = null;
 const formatPanelTab = ref<'style' | 'mark'>('style');
 const isMarkerDeleteMode = ref(false);
 const markerPanelGroups = nodeMarkerGroups;
@@ -756,6 +977,329 @@ function syncStylePanelFromSelection() {
     underline: !!marks?.underline,
     strike: !!marks?.strike,
   };
+}
+
+function clearSearchTextQueryDebounceTimer() {
+  if (searchTextQueryDebounceTimerId != null) window.clearTimeout(searchTextQueryDebounceTimerId);
+  searchTextQueryDebounceTimerId = null;
+}
+
+function resetSearchResultScrollMetrics() {
+  searchResultScrollMetrics.value = {
+    showHorizontal: false,
+    showVertical: false,
+    horizontalScrollable: false,
+    verticalScrollable: false,
+    horizontalThumbSize: SEARCH_RESULT_SCROLLBAR_MIN_THUMB,
+    horizontalThumbOffset: 0,
+    verticalThumbSize: SEARCH_RESULT_SCROLLBAR_MIN_THUMB,
+    verticalThumbOffset: 0,
+  };
+}
+
+function stopSearchResultScrollbarDrag() {
+  searchResultScrollbarDrag.value = null;
+  window.removeEventListener('mousemove', handleSearchResultScrollbarDrag);
+  window.removeEventListener('mouseup', stopSearchResultScrollbarDrag);
+}
+
+function teardownSearchResultResizeObserver() {
+  searchResultResizeObserver?.disconnect();
+  searchResultResizeObserver = null;
+}
+
+function bindSearchResultResizeObserver() {
+  teardownSearchResultResizeObserver();
+  const container = searchResultScrollRef.value;
+  if (!container) return;
+  searchResultResizeObserver = new ResizeObserver(() => {
+    updateSearchResultScrollMetrics();
+  });
+  searchResultResizeObserver.observe(container);
+  const content = container.firstElementChild;
+  if (content instanceof HTMLElement) {
+    searchResultResizeObserver.observe(content);
+  }
+}
+
+function updateSearchResultScrollMetrics() {
+  const container = searchResultScrollRef.value;
+  const hasResults = searchPanelTab.value === 'text' ? searchTextResults.value.length > 0 : searchMarkerResults.value.length > 0;
+  if (!container || !props.showSearchPanel || !hasResults) {
+    resetSearchResultScrollMetrics();
+    return;
+  }
+
+  const horizontalOverflow = Math.max(container.scrollWidth - container.clientWidth, 0);
+  const verticalOverflow = Math.max(container.scrollHeight - container.clientHeight, 0);
+  const horizontalScrollable = horizontalOverflow > 1;
+  const verticalScrollable = verticalOverflow > 1;
+  const horizontalTrackSize =
+    searchResultHorizontalScrollbarRef.value?.clientWidth ?? Math.max(container.clientWidth - 14, 0);
+  const verticalTrackSize =
+    searchResultVerticalScrollbarRef.value?.clientHeight ?? Math.max(container.clientHeight - 14, 0);
+  const horizontalThumbSize = horizontalScrollable
+    ? Math.max((container.clientWidth / container.scrollWidth) * horizontalTrackSize, SEARCH_RESULT_SCROLLBAR_MIN_THUMB)
+    : horizontalTrackSize;
+  const verticalThumbSize = verticalScrollable
+    ? Math.max((container.clientHeight / container.scrollHeight) * verticalTrackSize, SEARCH_RESULT_SCROLLBAR_MIN_THUMB)
+    : verticalTrackSize;
+  const horizontalTravel = Math.max(horizontalTrackSize - horizontalThumbSize, 0);
+  const verticalTravel = Math.max(verticalTrackSize - verticalThumbSize, 0);
+
+  searchResultScrollMetrics.value = {
+    showHorizontal: true,
+    showVertical: true,
+    horizontalScrollable,
+    verticalScrollable,
+    horizontalThumbSize,
+    horizontalThumbOffset:
+      horizontalScrollable && horizontalOverflow > 0 ? (container.scrollLeft / horizontalOverflow) * horizontalTravel : 0,
+    verticalThumbSize,
+    verticalThumbOffset:
+      verticalScrollable && verticalOverflow > 0 ? (container.scrollTop / verticalOverflow) * verticalTravel : 0,
+  };
+}
+
+function onSearchResultScrollbarTrackMouseDown(axis: 'horizontal' | 'vertical', event: MouseEvent) {
+  const container = searchResultScrollRef.value;
+  if (!container) return;
+  const track = event.currentTarget as HTMLDivElement | null;
+  if (!track) return;
+  const isScrollable =
+    axis === 'horizontal' ? searchResultScrollMetrics.value.horizontalScrollable : searchResultScrollMetrics.value.verticalScrollable;
+  if (!isScrollable) return;
+
+  const rect = track.getBoundingClientRect();
+  if (axis === 'horizontal') {
+    const maxThumbOffset = Math.max(rect.width - searchResultScrollMetrics.value.horizontalThumbSize, 1);
+    const pointer = Math.min(
+      maxThumbOffset,
+      Math.max(0, event.clientX - rect.left - searchResultScrollMetrics.value.horizontalThumbSize / 2)
+    );
+    container.scrollLeft = (pointer / maxThumbOffset) * Math.max(container.scrollWidth - container.clientWidth, 0);
+  } else {
+    const maxThumbOffset = Math.max(rect.height - searchResultScrollMetrics.value.verticalThumbSize, 1);
+    const pointer = Math.min(
+      maxThumbOffset,
+      Math.max(0, event.clientY - rect.top - searchResultScrollMetrics.value.verticalThumbSize / 2)
+    );
+    container.scrollTop = (pointer / maxThumbOffset) * Math.max(container.scrollHeight - container.clientHeight, 0);
+  }
+
+  updateSearchResultScrollMetrics();
+}
+
+function startSearchResultScrollbarDrag(axis: 'horizontal' | 'vertical', event: MouseEvent) {
+  const isScrollable =
+    axis === 'horizontal' ? searchResultScrollMetrics.value.horizontalScrollable : searchResultScrollMetrics.value.verticalScrollable;
+  if (!isScrollable) return;
+
+  searchResultScrollbarDrag.value = {
+    axis,
+    startClient: axis === 'horizontal' ? event.clientX : event.clientY,
+    startOffset:
+      axis === 'horizontal'
+        ? searchResultScrollMetrics.value.horizontalThumbOffset
+        : searchResultScrollMetrics.value.verticalThumbOffset,
+  };
+  window.addEventListener('mousemove', handleSearchResultScrollbarDrag);
+  window.addEventListener('mouseup', stopSearchResultScrollbarDrag);
+}
+
+function handleSearchResultScrollbarDrag(event: MouseEvent) {
+  const drag = searchResultScrollbarDrag.value;
+  const container = searchResultScrollRef.value;
+  if (!drag || !container) return;
+
+  if (drag.axis === 'horizontal') {
+    const trackSize = searchResultHorizontalScrollbarRef.value?.clientWidth ?? container.clientWidth;
+    const maxThumbOffset = Math.max(trackSize - searchResultScrollMetrics.value.horizontalThumbSize, 1);
+    const nextOffset = Math.min(maxThumbOffset, Math.max(0, drag.startOffset + (event.clientX - drag.startClient)));
+    container.scrollLeft = (nextOffset / maxThumbOffset) * Math.max(container.scrollWidth - container.clientWidth, 0);
+  } else {
+    const trackSize = searchResultVerticalScrollbarRef.value?.clientHeight ?? container.clientHeight;
+    const maxThumbOffset = Math.max(trackSize - searchResultScrollMetrics.value.verticalThumbSize, 1);
+    const nextOffset = Math.min(maxThumbOffset, Math.max(0, drag.startOffset + (event.clientY - drag.startClient)));
+    container.scrollTop = (nextOffset / maxThumbOffset) * Math.max(container.scrollHeight - container.clientHeight, 0);
+  }
+
+  updateSearchResultScrollMetrics();
+}
+
+function normalizeSearchDisplayText(text: string) {
+  return text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSearchQuery(text: string) {
+  return normalizeSearchDisplayText(text).toLocaleLowerCase();
+}
+
+function buildSearchNodeOrder(nodes: Record<string, any>) {
+  const orderedNodeIds: string[] = [];
+  const visited = new Set<string>();
+  const activeMind = getActiveMind(props.doc);
+
+  function visit(nodeId: string | null | undefined) {
+    if (typeof nodeId !== 'string' || !nodeId || visited.has(nodeId) || !nodes[nodeId]) return;
+    visited.add(nodeId);
+    orderedNodeIds.push(nodeId);
+    const children = Array.isArray(nodes[nodeId]?.children) ? nodes[nodeId].children : [];
+    children.forEach((childId: string) => visit(childId));
+  }
+
+  const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+  roots.forEach((root: any) => visit(root?.rootId));
+  Object.keys(nodes).forEach((nodeId) => visit(nodeId));
+
+  return orderedNodeIds;
+}
+
+function buildSearchNodeEntries() {
+  const nodes = getMindNodes();
+  if (!nodes) return [] as SearchPanelNodeEntry[];
+
+  return buildSearchNodeOrder(nodes).map((nodeId) => {
+    const plainText = getNodePlainText(nodes[nodeId]);
+    const singleLineText = normalizeSearchDisplayText(plainText);
+    return {
+      nodeId,
+      singleLineText,
+      normalizedLineTexts: plainText.split('\n').map((lineText) => normalizeSearchQuery(lineText)),
+      markerKeys: getNodeMarkerKeys(nodes[nodeId]),
+    } satisfies SearchPanelNodeEntry;
+  });
+}
+
+function buildSearchNodeEntriesRevisionKey() {
+  return `${getActiveMind(props.doc)?.id ?? 'none'}:${contentRevision.value}`;
+}
+
+function rebuildSearchNodeEntries(force = false) {
+  const nextRevisionKey = buildSearchNodeEntriesRevisionKey();
+  if (!force && searchNodeEntriesRevisionKey.value === nextRevisionKey) return;
+  searchNodeEntries.value = buildSearchNodeEntries();
+  searchNodeEntriesRevisionKey.value = nextRevisionKey;
+}
+
+function getCurrentSelectionSnapshot(): SelectionSnapshot {
+  return {
+    ids: Array.from(selectedIds.value),
+    primaryId: getPrimarySelectedId(),
+  };
+}
+
+function escapeSearchReplacePattern(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createLineReplacePattern(query: string) {
+  const compactQuery = query.trim().replace(/\s+/g, ' ');
+  if (!compactQuery) return null;
+  const pattern = compactQuery
+    .split(' ')
+    .map((part) => escapeSearchReplacePattern(part))
+    .join('[\\t ]+');
+  return new RegExp(pattern, 'giu');
+}
+
+function downgradeRichTextToPlainBlocks(richText: RichTextDocument) {
+  const normalized = normalizeRichText(richText);
+  return normalized.blocks.map((block) => ({
+    align: block.align,
+    text: block.inlines.map((inline) => inline.text).join(''),
+  }));
+}
+
+function buildPlainRichTextFromBlocks(blocks: Array<{ align: RichTextAlign; text: string }>): RichTextDocument {
+  return {
+    blocks: blocks.length
+      ? blocks.map((block) => ({
+        align: block.align,
+        inlines: [{ text: block.text }],
+      }))
+      : [{ align: 'left', inlines: [{ text: '' }] }],
+  };
+}
+
+function buildSearchReplaceRichText(
+  richText: RichTextDocument,
+  searchQuery: string,
+  replacementText: string
+): RichTextDocument | null {
+  const pattern = createLineReplacePattern(searchQuery);
+  if (!pattern) return null;
+
+  let changed = false;
+  const nextBlocks = downgradeRichTextToPlainBlocks(richText).map((block) => {
+    const nextText = block.text.replace(pattern, () => replacementText);
+    if (nextText !== block.text) changed = true;
+    return {
+      align: block.align,
+      text: nextText,
+    };
+  });
+
+  if (!changed) return null;
+  return buildPlainRichTextFromBlocks(nextBlocks);
+}
+
+function createSearchReplaceCommand(targetNodeIds: string[], replacementText: string, preferredSelectionNodeId: string | null) {
+  const nodes = getMindNodes();
+  if (!nodes || !searchResolvedTextQuery.value) return null;
+
+  const beforeSnapshots: NodePresentationSnapshot[] = [];
+  const afterSnapshots: NodePresentationSnapshot[] = [];
+
+  targetNodeIds.forEach((nodeId) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    const beforeRichText = getNodeRichText(node);
+    const afterRichText = buildSearchReplaceRichText(beforeRichText, searchResolvedTextQuery.value, replacementText);
+    if (!afterRichText || isRichTextEqual(beforeRichText, afterRichText)) return;
+    beforeSnapshots.push({
+      nodeId,
+      lexicalState: getNodeLexicalState(node),
+      richText: beforeRichText,
+    });
+    afterSnapshots.push({
+      nodeId,
+      lexicalState: lexicalStateFromRichText(afterRichText),
+      richText: afterRichText,
+    });
+  });
+
+  if (!afterSnapshots.length) return null;
+
+  const previousSelection = getCurrentSelectionSnapshot();
+  const preferredNodeId =
+    preferredSelectionNodeId && afterSnapshots.some((snapshot) => snapshot.nodeId === preferredSelectionNodeId)
+      ? preferredSelectionNodeId
+      : afterSnapshots[0]?.nodeId ?? null;
+  const nextSelection: SelectionSnapshot = preferredNodeId
+    ? { ids: [preferredNodeId], primaryId: preferredNodeId }
+    : previousSelection;
+
+  return createBatchUpdateNodePresentationCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection: (nodeIds, primaryId) => setSelection(nodeIds, primaryId ?? null),
+      applyMutation: (reason, options) =>
+        applyDocumentMutation(reason, {
+          ensureVisibleNodeIds: options?.ensureVisibleNodeIds,
+          markDirty: true,
+        }),
+    },
+    {
+      name: 'SearchReplaceTextCommand',
+      mutationReason: 'search-replace-text',
+      beforeSnapshots,
+      afterSnapshots,
+      previousSelection,
+      nextSelection,
+      ensureVisibleNodeIds: afterSnapshots.map((snapshot) => snapshot.nodeId),
+    }
+  );
 }
 
 const viewportW = ref(1200);
@@ -2668,6 +3212,113 @@ function closeImagePreview() {
     src: '',
     title: '',
   };
+}
+
+function onSearchMarkerTileClick(markerKey: string) {
+  if (searchMarkerKeys.value.includes(markerKey)) {
+    searchMarkerKeys.value = searchMarkerKeys.value.filter((key) => key !== markerKey);
+    return;
+  }
+  searchMarkerKeys.value = [...searchMarkerKeys.value, markerKey];
+}
+
+async function revealSearchTargetNode(nodeId: string) {
+  const nodes = getMindNodes();
+  if (!nodes?.[nodeId]) return;
+
+  const collapsedAncestorIds = collectAncestorNodeIds(nodeId)
+    .slice(1)
+    .filter((ancestorId) => {
+      const ancestorNode = nodes[ancestorId];
+      const children = Array.isArray(ancestorNode?.children) ? ancestorNode.children : [];
+      return !!ancestorNode?.collapsed && children.length > 0;
+    });
+
+  if (!collapsedAncestorIds.length) return;
+
+  collapsedAncestorIds.forEach((ancestorId) => {
+    nodes[ancestorId].collapsed = false;
+  });
+
+  await applyDocumentMutation('search-reveal-node', {
+    ensureVisibleNodeId: nodeId,
+    markDirty: false,
+    invalidateSubtreeHeightNodeIds: Array.from(
+      new Set(collapsedAncestorIds.flatMap((ancestorId) => collectAncestorNodeIds(ancestorId)))
+    ),
+    reuseDescendantCounts: true,
+    reuseParentIndex: true,
+    forceFullEdgeRebuild: true,
+    trustExistingNodeMeasureCache: true,
+    useLayoutChangedNodeIds: true,
+  });
+}
+
+function resolveSearchFocusNodeId(nodeId: string) {
+  return collectAncestorNodeIds(nodeId).find((candidateId) => worldBoxes.value.has(candidateId)) ?? null;
+}
+
+function centerNodeInViewport(nodeId: string) {
+  const focusNodeId = resolveSearchFocusNodeId(nodeId) ?? nodeId;
+  const rect = worldBoxes.value.get(focusNodeId);
+  if (!rect) {
+    ensureNodeVisible(focusNodeId);
+    return;
+  }
+
+  const centerX = (rect.x1 + rect.x2) / 2;
+  const centerY = (rect.y1 + rect.y2) / 2;
+
+  setCamera({
+    ...camera.value,
+    tx: viewportW.value / 2 - centerX * camera.value.scale,
+    ty: viewportH.value / 2 - centerY * camera.value.scale,
+  });
+  requestRender();
+}
+
+async function focusSearchResultNode(nodeId: string) {
+  if (!getNodeById(nodeId)) return;
+  if (editingSession.value && editingSession.value.nodeId !== nodeId) {
+    commitEditingSession();
+  }
+
+  await revealSearchTargetNode(nodeId);
+  clearCollapseTagHideTimer();
+  hoverNodeId.value = null;
+  collapseTagHoverNodeId.value = null;
+  collapseTagStickyNodeId.value = null;
+  setSingleSelected(nodeId, { suppressRender: true, suppressFocus: true });
+  centerNodeInViewport(nodeId);
+  focusViewportWithoutScroll();
+}
+
+async function onSearchTextResultClick(nodeId: string) {
+  selectedSearchResultNodeId.value = nodeId;
+  await focusSearchResultNode(nodeId);
+}
+
+function replaceSelectedSearchResult() {
+  if (!canReplaceSelectedSearchResult.value || !selectedSearchResultNodeId.value) return;
+  if (editingSession.value) commitEditingSession();
+  const command = createSearchReplaceCommand([selectedSearchResultNodeId.value], searchReplaceText.value, selectedSearchResultNodeId.value);
+  if (!command) {
+    window.$toast?.({ title: '当前节点没有可替换的文本' });
+    return;
+  }
+  executeCommand(command);
+}
+
+function replaceAllSearchResults() {
+  if (!canReplaceAllSearchResults.value) return;
+  if (editingSession.value) commitEditingSession();
+  const targetNodeIds = searchTextResults.value.map((entry) => entry.nodeId);
+  const command = createSearchReplaceCommand(targetNodeIds, searchReplaceText.value, selectedSearchResultNodeId.value);
+  if (!command) {
+    window.$toast?.({ title: '当前结果里没有可替换的文本' });
+    return;
+  }
+  executeCommand(command);
 }
 
 function collectMarkerTargetNodeIds() {
@@ -7641,6 +8292,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isModifierPressed = event.metaKey || event.ctrlKey;
   const isSaveShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 's';
   const isSaveAsShortcut = isModifierPressed && !event.altKey && event.shiftKey && lowerKey === 's';
+  const isToggleSearchPanelShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'f';
   const isToggleFormatPanelShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'w';
   if (isSaveShortcut) {
     event.preventDefault();
@@ -7652,6 +8304,12 @@ function onWindowKeyDown(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     void saveDocumentAs();
+    return;
+  }
+  if (isToggleSearchPanelShortcut) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('toggleSearchPanel');
     return;
   }
   if (isToggleFormatPanelShortcut) {
@@ -8155,6 +8813,74 @@ watch(
 );
 
 watch(
+  searchTextQuery,
+  (nextQuery) => {
+    clearSearchTextQueryDebounceTimer();
+    const normalizedQuery = normalizeSearchQuery(nextQuery);
+    if (!normalizedQuery) {
+      searchResolvedTextQuery.value = '';
+      return;
+    }
+    searchTextQueryDebounceTimerId = window.setTimeout(() => {
+      searchTextQueryDebounceTimerId = null;
+      searchResolvedTextQuery.value = normalizeSearchQuery(searchTextQuery.value);
+    }, SEARCH_TEXT_QUERY_DEBOUNCE_MS);
+  },
+  { immediate: true }
+);
+
+watch(
+  [() => !!props.showSearchPanel, contentRevision],
+  ([visible]) => {
+    if (!visible) return;
+    rebuildSearchNodeEntries();
+  },
+  { immediate: true, deep: false }
+);
+
+watch(
+  searchResultScrollRef,
+  () => {
+    nextTick().then(() => {
+      bindSearchResultResizeObserver();
+      updateSearchResultScrollMetrics();
+    });
+  },
+  { deep: false }
+);
+
+watch(
+  [() => !!props.showSearchPanel, () => searchPanelTab.value, () => searchResolvedTextQuery.value, () => searchMarkerKeys.value.join('|'), contentRevision],
+  ([visible]) => {
+    if (!visible) {
+      stopSearchResultScrollbarDrag();
+      teardownSearchResultResizeObserver();
+      resetSearchResultScrollMetrics();
+      return;
+    }
+    nextTick().then(() => {
+      bindSearchResultResizeObserver();
+      updateSearchResultScrollMetrics();
+    });
+  },
+  { immediate: true, deep: false }
+);
+
+watch(
+  () => searchResolvedTextQuery.value,
+  () => {
+    selectedSearchResultNodeId.value = null;
+  }
+);
+
+watch(
+  () => searchTextResults.value.map((entry) => `${entry.nodeId}:${entry.singleLineText}`).join('|'),
+  () => {
+    selectedSearchResultNodeId.value = null;
+  }
+);
+
+watch(
   selectedIds,
   (nextSelection) => {
     if (isSelectionWatchSuppressed()) return;
@@ -8205,6 +8931,9 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  clearSearchTextQueryDebounceTimer();
+  stopSearchResultScrollbarDrag();
+  teardownSearchResultResizeObserver();
   if (activeMindPerfCameraFpsSession) finishMindPerfCameraFpsSession(activeMindPerfCameraFpsSession, 'unmount');
   clearCollapseTagHideTimer();
   removeBeforeCloseListener?.();
@@ -8291,6 +9020,7 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+.search-panel-shell,
 .format-panel-shell {
   flex: 0 0 15%;
   width: 15%;
@@ -8298,14 +9028,38 @@ onBeforeUnmount(() => {
   max-width: 15%;
   height: 100%;
   display: flex;
+}
+
+.search-panel-shell {
+  justify-content: flex-end;
+}
+
+.format-panel-shell {
   justify-content: flex-start;
   // padding-right: 10px;
 }
 
+.search-panel,
 .format-panel {
   width: 100%;
   height: 100%;
   border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.search-panel {
+  background:
+    linear-gradient(180deg, rgba(248, 252, 254, 0.96), rgba(240, 248, 251, 0.94)),
+    #ffffff;
+  border: 1px solid rgba(201, 216, 226, 0.96);
+  box-shadow:
+    0 14px 28px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.format-panel {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(245, 247, 250, 0.92)),
     #ffffff;
@@ -8313,11 +9067,9 @@ onBeforeUnmount(() => {
   box-shadow:
     0 12px 24px rgba(15, 23, 42, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
+.search-panel-header,
 .format-panel-header {
   display: flex;
   gap: 8px;
@@ -8326,6 +9078,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.search-panel-tab,
 .format-panel-tab {
   min-width: 66px;
   height: 30px;
@@ -8343,9 +9096,16 @@ onBeforeUnmount(() => {
     box-shadow 0.18s ease;
 }
 
+.search-panel-tab:hover,
 .format-panel-tab:hover {
   background: rgba(148, 163, 184, 0.14);
   color: #0f172a;
+}
+
+.search-panel-tab.is-active {
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
 }
 
 .format-panel-tab.is-active {
@@ -8354,12 +9114,330 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
 }
 
+.search-panel-body,
 .format-panel-body {
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   padding: 14px 12px 18px;
+}
+
+.search-panel-body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.format-panel-body {
+  overflow-y: auto;
+}
+
+.search-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.search-query-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(241, 245, 249, 0.98)),
+    #ffffff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  min-width: 0;
+}
+
+.search-query-label {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.search-query-input {
+  width: 100%;
+  max-width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 12px;
+  outline: none;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.search-query-input:focus {
+  border-color: rgba(14, 116, 144, 0.55);
+  box-shadow: 0 0 0 4px rgba(14, 116, 144, 0.12);
+}
+
+.search-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.search-action-button {
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.search-action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(14, 116, 144, 0.34);
+  background: rgba(240, 249, 255, 0.95);
+  box-shadow: 0 8px 14px rgba(14, 116, 144, 0.08);
+}
+
+.search-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.search-query-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.search-marker-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 30%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.search-results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 22px;
+  padding: 0 2px;
+}
+
+.search-results-count {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.search-results-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.11);
+  color: #155e75;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.search-result-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.search-result-list-shell {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  box-sizing: border-box;
+  padding-right: 14px;
+  padding-bottom: 14px;
+  scrollbar-width: none;
+}
+
+.search-result-list-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.search-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.search-result-item {
+  width: max-content;
+  min-width: 100%;
+  display: grid;
+  grid-template-columns: max-content auto;
+  align-items: start;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid rgba(203, 213, 225, 0.88);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.search-result-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(14, 116, 144, 0.3);
+  box-shadow: 0 8px 16px rgba(14, 116, 144, 0.08);
+}
+
+.search-result-item.is-active {
+  border-color: rgba(14, 116, 144, 0.6);
+  background: rgba(240, 249, 255, 0.98);
+  box-shadow:
+    0 0 0 3px rgba(14, 116, 144, 0.12),
+    0 8px 16px rgba(14, 116, 144, 0.08);
+}
+
+.search-result-order {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.search-result-text {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.search-result-text[data-empty='true']::before {
+  content: ' ';
+}
+
+.search-empty-state {
+  flex: 1;
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.86);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.search-panel-scrollbar {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgba(203, 213, 225, 0.75);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(8px);
+  user-select: none;
+}
+
+.search-panel-scrollbar-x {
+  left: 0;
+  right: 14px;
+  bottom: 0;
+  height: 8px;
+}
+
+.search-panel-scrollbar-y {
+  top: 4px;
+  right: 0;
+  bottom: 14px;
+  width: 8px;
+}
+
+.search-panel-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.34) 0%, rgba(100, 116, 139, 0.46) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+
+.search-panel-scrollbar-thumb.is-dragging {
+  background: linear-gradient(180deg, rgba(100, 116, 139, 0.5) 0%, rgba(71, 85, 105, 0.62) 100%);
+}
+
+.search-panel-scrollbar-thumb.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.search-panel-scrollbar-x .search-panel-scrollbar-thumb {
+  height: 100%;
+}
+
+.search-panel-scrollbar-y .search-panel-scrollbar-thumb {
+  width: 100%;
+}
+
+.search-marker-groups::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.search-marker-groups::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.8);
+  border-radius: 999px;
+}
+
+.search-marker-groups::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.8);
+  border-radius: 999px;
+  border: 2px solid rgba(226, 232, 240, 0.8);
 }
 
 .style-panel {
@@ -8850,6 +9928,12 @@ onBeforeUnmount(() => {
   border-color: rgba(148, 163, 184, 0.28);
   cursor: pointer;
   transform: translateY(-1px);
+}
+
+.search-marker-tile.is-selected {
+  background: rgba(14, 116, 144, 0.12);
+  border-color: rgba(14, 116, 144, 0.38);
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.12);
 }
 
 .marker-tile-icon {

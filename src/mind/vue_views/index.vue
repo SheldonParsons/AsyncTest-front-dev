@@ -17,17 +17,28 @@
                     <span v-if="saveState.isSaving" class="mind-header-saving-indicator">保存中...</span>
                 </div>
             </div>
-            <div class="mind-header-format-entry" :style="{ 'margin-right': '0px' }">
-                <button class="mind-header-format-button" type="button" aria-label="打开格式面板" @click="toggleFormatPanel">
-                    <img class="mind-header-format-icon" :src="settingsIcon" alt="" />
-                </button>
-                <span class="mind-header-format-label">格式</span>
+            <div class="mind-header-panel-actions">
+                <div class="mind-header-panel-entry">
+                    <button class="mind-header-panel-button" :class="{ 'is-active': showSearchPanel }" type="button"
+                        aria-label="打开搜索面板" @click="toggleSearchPanel">
+                        <img class="mind-header-panel-icon" :src="searchIcon" alt="" />
+                    </button>
+                    <span class="mind-header-panel-label">搜索</span>
+                </div>
+                <div class="mind-header-panel-entry">
+                    <button class="mind-header-panel-button" :class="{ 'is-active': showFormatPanel }" type="button"
+                        aria-label="打开格式面板" @click="toggleFormatPanel">
+                        <img class="mind-header-panel-icon" :src="settingsIcon" alt="" />
+                    </button>
+                    <span class="mind-header-panel-label">格式</span>
+                </div>
             </div>
         </MindHeader>
         <MindMain ref="mindMainRef" class="mind-main-container" :doc="doc" :filePath="filePath" :docId="docId"
-            :windowKey="windowKey" :show-format-panel="showFormatPanel" @filePathChange="changeFilePath"
+            :windowKey="windowKey" :show-search-panel="showSearchPanel" :show-format-panel="showFormatPanel"
+            @filePathChange="changeFilePath"
             @saveStateChange="updateSaveState" @nodeCountChange="updateNodeCountState"
-            @toggleFormatPanel="toggleFormatPanel">
+            @toggleSearchPanel="toggleSearchPanel" @toggleFormatPanel="toggleFormatPanel">
         </MindMain>
         <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
             :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
@@ -42,6 +53,7 @@ import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
 import homeIcon from '@/mind/core/action_icon/home.svg'
+import searchIcon from '@/mind/core/action_icon/search.svg'
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants'
 import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
 import { onMounted, ref, computed } from 'vue';
@@ -63,6 +75,7 @@ const doc = ref<any>(null);
 const windowKey = ref<any>(null);
 const mindMainRef = ref<MindMainExpose | null>(null);
 const recentPaths = ref<string[]>([]);
+const showSearchPanel = ref(false);
 const showFormatPanel = ref(false);
 const saveState = ref({
     isDirty: false,
@@ -106,6 +119,10 @@ function updateNodeCountState(value: { totalNodes: number; selectedNodes: number
 
 function toggleFormatPanel() {
     showFormatPanel.value = !showFormatPanel.value;
+}
+
+function toggleSearchPanel() {
+    showSearchPanel.value = !showSearchPanel.value;
 }
 
 async function showMainWindow() {
@@ -197,8 +214,9 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
 .mind-container :deep(.save-actions-menu),
 .mind-container :deep(.save-actions-trigger),
 .mind-container :deep(.mind-header-home-button),
-.mind-container :deep(.mind-header-format-entry),
-.mind-container :deep(.mind-header-format-button) {
+.mind-container :deep(.mind-header-panel-actions),
+.mind-container :deep(.mind-header-panel-entry),
+.mind-container :deep(.mind-header-panel-button) {
     -webkit-app-region: no-drag;
 }
 
@@ -295,19 +313,25 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
         flex: 0 0 auto;
     }
 
-    .mind-header-format-entry {
+    .mind-header-panel-actions {
+        flex: 0 0 auto;
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .mind-header-panel-entry {
         flex: 0 0 auto;
         width: 44px;
-        margin-left: auto;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 2px;
-        margin-right: 0;
     }
 
-    .mind-header-format-button {
+    .mind-header-panel-button {
         width: 28px;
         height: 28px;
         display: inline-flex;
@@ -320,19 +344,24 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
         transition: background-color 0.16s ease, transform 0.16s ease;
     }
 
-    .mind-header-format-button:hover {
+    .mind-header-panel-button:hover,
+    .mind-header-panel-button.is-active {
         background: rgba(156, 163, 175, 0.22);
         transform: translateY(-1px);
     }
 
-    .mind-header-format-icon {
+    .mind-header-panel-button.is-active {
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+    }
+
+    .mind-header-panel-icon {
         width: 16px;
         height: 16px;
         display: block;
         opacity: 0.82;
     }
 
-    .mind-header-format-label {
+    .mind-header-panel-label {
         font-size: 11px;
         line-height: 1;
         color: #6b7280;
