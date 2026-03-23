@@ -1,16 +1,22 @@
 import { createEmptyHistoryState, registerHistory } from '@lexical/history';
 import { registerList, ListItemNode, ListNode } from '@lexical/list';
 import { registerRichText, HeadingNode, QuoteNode } from '@lexical/rich-text';
+import { $insertDataTransferForPlainText } from '@lexical/clipboard';
 import {
+  $getSelection,
   $getRoot,
   $isElementNode,
+  $isRangeSelection,
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
+  CONTROLLED_TEXT_INSERTION_COMMAND,
   createEditor,
   INSERT_LINE_BREAK_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
+  PASTE_COMMAND,
+  type PasteCommandType,
   type LexicalEditor,
 } from 'lexical';
 import { computed, reactive, shallowRef } from 'vue';
@@ -53,6 +59,7 @@ let unregisterEditor: (() => void) | null = null;
 let rootElement: HTMLElement | null = null;
 let pendingSession: StartSessionOptions | null = null;
 let pendingCaretTimeoutIds: number[] = [];
+let suppressControlledPasteUntil = 0;
 
 function isScrollableElement(element: HTMLElement) {
   const style = window.getComputedStyle(element);
@@ -199,6 +206,65 @@ function scheduleEmptyCaretRetry(caretPlacement: 'start' | 'end' | 'none' = 'end
   });
 }
 
+function htmlToPlainText(html: string) {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const body = doc.body;
+  if (!body) return '';
+  return body.innerText || body.textContent || '';
+}
+
+function insertPlainTextFromDataTransfer(dataTransfer: DataTransfer) {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return false;
+  const plainText = dataTransfer.getData('text/plain') || dataTransfer.getData('text/uri-list');
+  if (plainText) {
+    $insertDataTransferForPlainText(dataTransfer, selection);
+    return true;
+  }
+  const html = dataTransfer.getData('text/html');
+  if (!html) return false;
+  const htmlAsPlainText = htmlToPlainText(html);
+  if (!htmlAsPlainText) return false;
+  selection.insertRawText(htmlAsPlainText);
+  return true;
+}
+
+function handlePlainTextPasteCommand(event: PasteCommandType) {
+  const clipboardData = 'clipboardData' in event ? event.clipboardData : null;
+  if (clipboardData && insertPlainTextFromDataTransfer(clipboardData)) {
+    suppressControlledPasteUntil = performance.now() + 80;
+    event.preventDefault();
+    return true;
+  }
+  if ('dataTransfer' in event && event.dataTransfer && insertPlainTextFromDataTransfer(event.dataTransfer)) {
+    suppressControlledPasteUntil = performance.now() + 80;
+    event.preventDefault();
+    return true;
+  }
+  if ('data' in event && typeof event.data === 'string' && event.data) {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection)) return false;
+    event.preventDefault();
+    selection.insertRawText(event.data);
+    return true;
+  }
+  return false;
+}
+
+function handleControlledPlainTextInsertion(eventOrText: InputEvent | string) {
+  if (typeof eventOrText === 'string') return false;
+  if (performance.now() <= suppressControlledPasteUntil) {
+    eventOrText.preventDefault();
+    return true;
+  }
+  if (eventOrText.dataTransfer && insertPlainTextFromDataTransfer(eventOrText.dataTransfer)) {
+    eventOrText.preventDefault();
+    return true;
+  }
+  return false;
+}
+
 function createSingletonEditor() {
   if (editorRef.value) return editorRef.value;
   const editor = createEditor({
@@ -228,6 +294,16 @@ function createSingletonEditor() {
       latestState.value = editorState.toJSON() as SerializedLexicalEditorState;
       if (latestState.value) sessionCallbacks.onChange?.(latestState.value);
     }),
+    editor.registerCommand(
+      CONTROLLED_TEXT_INSERTION_COMMAND,
+      (eventOrText) => handleControlledPlainTextInsertion(eventOrText),
+      COMMAND_PRIORITY_HIGH
+    ),
+    editor.registerCommand(
+      PASTE_COMMAND,
+      (event) => handlePlainTextPasteCommand(event),
+      COMMAND_PRIORITY_HIGH
+    ),
     editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
