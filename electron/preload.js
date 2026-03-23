@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         save: (payload) => ipcRenderer.invoke('amind:save', payload),
         saveAsDialog: (payload) => ipcRenderer.invoke('amind:saveAsDialog', payload),
         exportXmindDialog: (payload) => ipcRenderer.invoke('amind:exportXmindDialog', payload),
+        exportXmindDocDialog: (payload) => ipcRenderer.invoke('amind:exportXmindDocDialog', payload),
+        exportAmindDialog: (payload) => ipcRenderer.invoke('amind:exportAmindDialog', payload),
         saveRecentPreview: (payload) => ipcRenderer.invoke('amind:saveRecentPreview', payload),
 
         assetAddFromFile: (payload) => ipcRenderer.invoke('amind:assetAddFromFile', payload),

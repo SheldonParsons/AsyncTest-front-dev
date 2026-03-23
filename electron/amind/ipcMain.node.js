@@ -256,6 +256,31 @@ export function initAmindMain({ userDataPath, windowManager }) {
     };
   });
 
+  ipcMain.handle('amind:exportXmindDocDialog', async (event, { doc, defaultPath, thumbnailBytes }) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultPath || '思维导图.xmind',
+      filters: [{ name: 'XMind', extensions: ['xmind'] }],
+    });
+    if (canceled || !filePath) return null;
+    const thumbnail = thumbnailBytes ? Buffer.from(thumbnailBytes) : null;
+    const result = await writeXmindFile(filePath, doc, thumbnail);
+    return {
+      filePath: result.path,
+    };
+  });
+
+  ipcMain.handle('amind:exportAmindDialog', async (event, { doc, defaultPath }) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultPath || `思维导图${AMIND_EXT}`,
+      filters: [{ name: 'AsyncTest Mind', extensions: [AMIND_EXT.slice(1)] }],
+    });
+    if (canceled || !filePath) return null;
+    const result = await writeAmindFile(filePath, doc);
+    return {
+      filePath: result.path,
+    };
+  });
+
   ipcMain.handle('amind:save', async (event, { docId }) => {
     const entry = docStore.mustGet(docId);
     if (!entry.filePath) return { needSaveAs: true };

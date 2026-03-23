@@ -32,7 +32,35 @@
             </section>
 
             <div class="search-results-meta">
-              <span class="search-results-count">{{ searchTextResultCountLabel }}</span>
+              <div class="search-results-meta-main">
+                <span v-if="searchTextResultCountLabel" class="search-results-count">{{ searchTextResultCountLabel }}</span>
+              </div>
+              <div class="search-results-actions">
+                <div ref="searchExportDropdownRef" class="search-export-dropdown"
+                  :class="{ 'is-open': searchExportDropdownOpen }">
+                  <button class="search-export-trigger" type="button" :disabled="isExportingSearchResults"
+                    @click.stop="toggleSearchExportDropdown">
+                    <span class="search-export-trigger-label">格式</span>
+                    <span class="search-export-trigger-value">{{ currentSearchExportFormatOption.label }}</span>
+                    <span class="search-export-trigger-caret" aria-hidden="true"></span>
+                  </button>
+                  <transition name="search-export-menu">
+                    <div v-if="searchExportDropdownOpen" class="search-export-menu" @click.stop>
+                      <button v-for="option in SEARCH_EXPORT_FORMAT_OPTIONS" :key="option.value"
+                        class="search-export-option" :class="{ 'is-active': searchExportFormat === option.value }"
+                        type="button" @click.stop="selectSearchExportFormat(option.value)">
+                        <span class="search-export-option-title">{{ option.label }}</span>
+                        <span class="search-export-option-check" aria-hidden="true">{{ searchExportFormat === option.value ? '✓' :
+                          '' }}</span>
+                      </button>
+                    </div>
+                  </transition>
+                </div>
+                <button class="search-action-button search-export-button" type="button"
+                  :disabled="!canExportCurrentSearchResults" @click="exportCurrentSearchResults">
+                  {{ isExportingSearchResults ? '导出中...' : '导出' }}
+                </button>
+              </div>
             </div>
 
             <div v-if="searchTextResults.length" class="search-result-shell">
@@ -69,7 +97,7 @@
               </div>
             </div>
 
-            <div v-else class="search-empty-state">
+            <div v-else-if="searchTextEmptyState" class="search-empty-state">
               {{ searchTextEmptyState }}
             </div>
           </div>
@@ -89,8 +117,36 @@
             </div>
 
             <div class="search-results-meta">
-              <span class="search-results-count">{{ searchMarkerResultCountLabel }}</span>
-              <span v-if="selectedSearchMarkerSummary" class="search-results-chip">{{ selectedSearchMarkerSummary }}</span>
+              <div class="search-results-meta-main">
+                <span v-if="searchMarkerResultCountLabel" class="search-results-count">{{ searchMarkerResultCountLabel }}</span>
+                <span v-if="selectedSearchMarkerSummary" class="search-results-chip">{{ selectedSearchMarkerSummary }}</span>
+              </div>
+              <div class="search-results-actions">
+                <div ref="searchExportDropdownRef" class="search-export-dropdown"
+                  :class="{ 'is-open': searchExportDropdownOpen }">
+                  <button class="search-export-trigger" type="button" :disabled="isExportingSearchResults"
+                    @click.stop="toggleSearchExportDropdown">
+                    <span class="search-export-trigger-label">格式</span>
+                    <span class="search-export-trigger-value">{{ currentSearchExportFormatOption.label }}</span>
+                    <span class="search-export-trigger-caret" aria-hidden="true"></span>
+                  </button>
+                  <transition name="search-export-menu">
+                    <div v-if="searchExportDropdownOpen" class="search-export-menu" @click.stop>
+                      <button v-for="option in SEARCH_EXPORT_FORMAT_OPTIONS" :key="option.value"
+                        class="search-export-option" :class="{ 'is-active': searchExportFormat === option.value }"
+                        type="button" @click.stop="selectSearchExportFormat(option.value)">
+                        <span class="search-export-option-title">{{ option.label }}</span>
+                        <span class="search-export-option-check" aria-hidden="true">{{ searchExportFormat === option.value ? '✓' :
+                          '' }}</span>
+                      </button>
+                    </div>
+                  </transition>
+                </div>
+                <button class="search-action-button search-export-button" type="button"
+                  :disabled="!canExportCurrentSearchResults" @click="exportCurrentSearchResults">
+                  {{ isExportingSearchResults ? '导出中...' : '导出' }}
+                </button>
+              </div>
             </div>
 
             <div v-if="searchMarkerResults.length" class="search-result-shell">
@@ -127,7 +183,7 @@
               </div>
             </div>
 
-            <div v-else class="search-empty-state">
+            <div v-else-if="searchMarkerEmptyState" class="search-empty-state">
               {{ searchMarkerEmptyState }}
             </div>
           </div>
@@ -635,6 +691,16 @@ type SearchPanelNodeEntry = {
   markerKeys: string[];
 };
 
+type SearchExportFormat = 'xmind' | 'amind';
+
+const SEARCH_EXPORT_FORMAT_OPTIONS: Array<{
+  value: SearchExportFormat;
+  label: string;
+}> = [
+  { value: 'xmind', label: 'XMind' },
+  { value: 'amind', label: 'AMind' },
+];
+
 const props = defineProps<{
   doc?: any;
   filePath?: any;
@@ -658,6 +724,10 @@ const searchPanelTab = ref<'text' | 'mark'>('text');
 const searchTextQuery = ref('');
 const searchResolvedTextQuery = ref('');
 const searchReplaceText = ref('');
+const searchExportFormat = ref<SearchExportFormat>('xmind');
+const searchExportDropdownOpen = ref(false);
+const searchExportDropdownRef = ref<HTMLElement | null>(null);
+const isExportingSearchResults = ref(false);
 const searchMarkerKeys = ref<string[]>([]);
 const searchResultScrollRef = ref<HTMLDivElement | null>(null);
 const searchResultHorizontalScrollbarRef = ref<HTMLDivElement | null>(null);
@@ -700,23 +770,32 @@ const searchMarkerResults = computed(() => {
     searchMarkerKeys.value.every((markerKey) => entry.markerKeys.includes(markerKey))
   );
 });
+const currentSearchResults = computed(() =>
+  searchPanelTab.value === 'text' ? searchTextResults.value : searchMarkerResults.value
+);
+const currentSearchExportFormatOption = computed(() =>
+  SEARCH_EXPORT_FORMAT_OPTIONS.find((option) => option.value === searchExportFormat.value) ?? SEARCH_EXPORT_FORMAT_OPTIONS[0]
+);
+const canExportCurrentSearchResults = computed(() =>
+  !isExportingSearchResults.value && currentSearchResults.value.length > 0
+);
 const canReplaceSelectedSearchResult = computed(() => {
   if (!searchResolvedTextQuery.value || !selectedSearchResultNodeId.value) return false;
   return searchTextResults.value.some((entry) => entry.nodeId === selectedSearchResultNodeId.value);
 });
 const canReplaceAllSearchResults = computed(() => !!searchResolvedTextQuery.value && searchTextResults.value.length > 0);
 const searchTextResultCountLabel = computed(() =>
-  searchResolvedTextQuery.value ? `找到 ${searchTextResults.value.length} 个节点` : '输入关键词开始搜索'
+  searchResolvedTextQuery.value ? `找到 ${searchTextResults.value.length} 个节点` : ''
 );
 const searchMarkerResultCountLabel = computed(() => {
-  if (!searchMarkerKeys.value.length) return '点击一个或多个标记开始筛选';
+  if (!searchMarkerKeys.value.length) return '';
   return `找到 ${searchMarkerResults.value.length} 个节点`;
 });
 const searchTextEmptyState = computed(() =>
-  searchResolvedTextQuery.value ? '未找到匹配节点' : '输入关键词开始搜索'
+  searchResolvedTextQuery.value ? '未找到匹配节点' : ''
 );
 const searchMarkerEmptyState = computed(() =>
-  searchMarkerKeys.value.length ? '当前组合标记下没有节点' : '点击上方标记开始筛选'
+  searchMarkerKeys.value.length ? '当前组合标记下没有节点' : ''
 );
 let searchTextQueryDebounceTimerId: number | null = null;
 let searchResultResizeObserver: ResizeObserver | null = null;
@@ -3297,6 +3376,28 @@ function onSearchMarkerTileClick(markerKey: string) {
   searchMarkerKeys.value = [...searchMarkerKeys.value, markerKey];
 }
 
+function closeSearchExportDropdown() {
+  searchExportDropdownOpen.value = false;
+}
+
+function toggleSearchExportDropdown() {
+  if (isExportingSearchResults.value) return;
+  searchExportDropdownOpen.value = !searchExportDropdownOpen.value;
+}
+
+function selectSearchExportFormat(format: SearchExportFormat) {
+  searchExportFormat.value = format;
+  closeSearchExportDropdown();
+}
+
+function onSearchExportDropdownPointerDown(event: PointerEvent) {
+  const root = searchExportDropdownRef.value;
+  const target = event.target as Node | null;
+  if (!root || !target) return;
+  if (root.contains(target)) return;
+  closeSearchExportDropdown();
+}
+
 async function revealSearchTargetNode(nodeId: string) {
   const nodes = getMindNodes();
   if (!nodes?.[nodeId]) return;
@@ -5479,11 +5580,151 @@ function getDocumentTitleForExport() {
   return manifestTitle || getDocumentTitleForSave() || '思维导图';
 }
 
-function getExportXmindBaseName() {
-  return getDocumentTitleForExport()
+function sanitizeExportBaseName(raw: string) {
+  return raw
     .replace(/\s+/g, '')
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
     .trim() || '思维导图';
+}
+
+function getExportXmindBaseName() {
+  return sanitizeExportBaseName(getDocumentTitleForExport());
+}
+
+function getSearchResultsExportBaseName() {
+  const suffix = searchPanelTab.value === 'text' ? '搜索结果' : '标记结果';
+  return sanitizeExportBaseName(`${getDocumentTitleForExport()}-${suffix}`);
+}
+
+function collectAncestorNodeIdsFromIndex(
+  startNodeId: string | null | undefined,
+  nextParentIndex: Map<string, { parentId: string; index: number }>
+) {
+  const ids: string[] = [];
+  let currentId = startNodeId ?? null;
+  while (currentId) {
+    ids.push(currentId);
+    const parentInfo = nextParentIndex.get(currentId);
+    currentId = parentInfo?.parentId ?? null;
+  }
+  return ids;
+}
+
+function buildSearchResultsExportDoc(resultNodeIds: string[]) {
+  if (!props.doc) return null;
+  const exportDoc = toPlainDoc(props.doc);
+  ensureMultiMindDoc(exportDoc);
+  const activeMind = getActiveMind(exportDoc);
+  if (!activeMind) return null;
+  const nodes = activeMind.nodes as Record<string, any> | null | undefined;
+  if (!nodes) return null;
+  const parentIndex = buildParentIndex(nodes);
+  const includedNodeIds = new Set<string>();
+  for (const nodeId of resultNodeIds) {
+    if (!nodes[nodeId]) continue;
+    collectAncestorNodeIdsFromIndex(nodeId, parentIndex).forEach((ancestorId) => includedNodeIds.add(ancestorId));
+    collectSubtreeNodeIds(nodes, nodeId).forEach((descendantId) => includedNodeIds.add(descendantId));
+  }
+  const rootId = typeof activeMind.roots?.[0]?.rootId === 'string' ? activeMind.roots[0].rootId : null;
+  if (rootId && nodes[rootId]) includedNodeIds.add(rootId);
+  if (!includedNodeIds.size || (rootId && !includedNodeIds.has(rootId))) return null;
+
+  const nextNodes: Record<string, any> = {};
+  for (const nodeId of includedNodeIds) {
+    const node = nodes[nodeId];
+    if (!node) continue;
+    const clonedNode = JSON.parse(JSON.stringify(node));
+    const children = Array.isArray(clonedNode.children) ? clonedNode.children : [];
+    clonedNode.children = children.filter((childId: string) => typeof childId === 'string' && includedNodeIds.has(childId));
+    nextNodes[nodeId] = clonedNode;
+  }
+  if (rootId && !nextNodes[rootId]) return null;
+
+  const exportTitle = `${getDocumentTitleForExport()} - ${searchPanelTab.value === 'text' ? '搜索结果' : '标记结果'}`;
+  activeMind.nodes = nextNodes;
+  activeMind.title = exportTitle;
+  activeMind.roots = Array.isArray(activeMind.roots)
+    ? activeMind.roots.filter((root: any) => typeof root?.rootId === 'string' && !!nextNodes[root.rootId])
+    : [];
+  activeMind.view = {
+    ...(activeMind.view ?? {}),
+    viewport: {},
+  };
+  const activeMindId = typeof activeMind.id === 'string' && activeMind.id ? activeMind.id : 'mind-1';
+  exportDoc.mind = {
+    ...(exportDoc.mind ?? {}),
+    activeMindId,
+    order: [activeMindId],
+    minds: {
+      [activeMindId]: activeMind,
+    },
+  };
+  exportDoc.manifest = {
+    ...(exportDoc.manifest ?? {}),
+    title: exportTitle,
+  };
+  return exportDoc;
+}
+
+async function exportPlainDocAsXmind(doc: any, defaultPath: string) {
+  const thumbnailBytes = await exportMindPreviewPng(doc).catch(() => null);
+  const result = await window.electronAPI.amind.exportXmindDocDialog({
+    doc,
+    defaultPath,
+    thumbnailBytes: thumbnailBytes ?? undefined,
+  });
+  return !!result?.filePath;
+}
+
+async function exportPlainDocAsAmind(doc: any, defaultPath: string) {
+  const result = await window.electronAPI.amind.exportAmindDialog({
+    doc,
+    defaultPath,
+  });
+  return !!result?.filePath;
+}
+
+async function exportCurrentSearchResults() {
+  if (!props.doc || isSaving.value || !canExportCurrentSearchResults.value) return false;
+  closeSearchExportDropdown();
+  const resultNodeIds = Array.from(
+    new Set(
+      currentSearchResults.value
+        .map((entry) => entry.nodeId)
+        .filter((nodeId) => typeof nodeId === 'string' && !!getNodeById(nodeId))
+    )
+  );
+  if (!resultNodeIds.length) {
+    window.$toast?.({ title: '当前搜索结果没有可导出的节点', type: 'error' });
+    return false;
+  }
+  isExportingSearchResults.value = true;
+  try {
+    clearPersistTimer();
+    if (editingSession.value) commitEditingSession();
+    await flushPendingDocumentMutation();
+    const exportDoc = buildSearchResultsExportDoc(resultNodeIds);
+    if (!exportDoc) {
+      window.$toast?.({ title: '构建导出文档失败', type: 'error' });
+      return false;
+    }
+    const defaultPath = `${getSearchResultsExportBaseName()}.${searchExportFormat.value === 'xmind' ? 'xmind' : 'amind'}`;
+    const exported = searchExportFormat.value === 'xmind'
+      ? await exportPlainDocAsXmind(exportDoc, defaultPath)
+      : await exportPlainDocAsAmind(exportDoc, defaultPath);
+    if (!exported) return false;
+    window.$toast?.({ title: '导出完成' });
+    return true;
+  } catch (error) {
+    console.error('[mind-export-search-results]', error);
+    window.$toast?.({
+      title: error instanceof Error ? error.message : '导出搜索结果失败',
+      type: 'error',
+    });
+    return false;
+  } finally {
+    isExportingSearchResults.value = false;
+  }
 }
 
 async function exportXmind() {
@@ -8934,6 +9175,7 @@ onMounted(() => {
   window.addEventListener('paste', onWindowPaste, true);
   window.addEventListener('compositionstart', onCompositionStart, true);
   window.addEventListener('compositionend', onCompositionEnd, true);
+  window.addEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
 });
 
 watch(
@@ -9011,6 +9253,7 @@ watch(
 watch(
   [() => !!props.showSearchPanel, () => searchPanelTab.value, () => searchResolvedTextQuery.value, () => searchMarkerKeys.value.join('|'), contentRevision],
   ([visible]) => {
+    closeSearchExportDropdown();
     if (!visible) {
       stopSearchResultScrollbarDrag();
       teardownSearchResultResizeObserver();
@@ -9122,6 +9365,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('paste', onWindowPaste, true);
   window.removeEventListener('compositionstart', onCompositionStart, true);
   window.removeEventListener('compositionend', onCompositionEnd, true);
+  window.removeEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
 });
 </script>
 
@@ -9401,11 +9645,19 @@ onBeforeUnmount(() => {
 
 .search-results-meta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 22px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 0 2px;
+}
+
+.search-results-meta-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 
 .search-results-count {
@@ -9413,19 +9665,187 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .search-results-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 24px;
-  padding: 0 10px;
+  min-height: 22px;
+  max-width: 100%;
+  padding: 0 8px;
   border-radius: 999px;
-  background: rgba(14, 116, 144, 0.11);
-  color: #155e75;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.search-results-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.search-export-dropdown {
+  position: relative;
+  flex: 0 0 108px;
+}
+
+.search-export-trigger {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.search-export-trigger:hover:not(:disabled) {
+  border-color: rgba(14, 116, 144, 0.28);
+  background: rgba(248, 250, 252, 0.98);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+}
+
+.search-export-trigger:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.search-export-trigger-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.search-export-trigger-value {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.search-export-trigger-caret {
+  position: relative;
+  margin-left: auto;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.search-export-trigger-caret::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-right: 1.5px solid rgba(15, 23, 42, 0.72);
+  border-bottom: 1.5px solid rgba(15, 23, 42, 0.72);
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.search-export-dropdown.is-open .search-export-trigger-caret::before {
+  transform: rotate(-135deg);
+}
+
+.search-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  min-width: 108px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.12);
+}
+
+.search-export-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.search-export-option:hover {
+  border-color: rgba(14, 116, 144, 0.2);
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.search-export-option.is-active {
+  border-color: rgba(14, 116, 144, 0.24);
+  background: rgba(240, 249, 255, 0.92);
+}
+
+.search-export-option-title {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.search-export-option-check {
+  width: 14px;
+  text-align: center;
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.search-export-button {
+  min-width: 56px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+}
+
+.search-export-menu-enter-active,
+.search-export-menu-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  transform-origin: top right;
+}
+
+.search-export-menu-enter-from,
+.search-export-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
 }
 
 .search-result-shell {
@@ -9443,6 +9863,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: auto;
   box-sizing: border-box;
+  padding-top: 4px;
+  padding-left: 4px;
   padding-right: 14px;
   padding-bottom: 14px;
   scrollbar-width: none;
@@ -9462,6 +9884,8 @@ onBeforeUnmount(() => {
 }
 
 .search-result-item {
+  position: relative;
+  z-index: 0;
   width: max-content;
   min-width: 100%;
   display: grid;
@@ -9483,12 +9907,14 @@ onBeforeUnmount(() => {
 }
 
 .search-result-item:hover {
+  z-index: 2;
   transform: translateY(-1px);
   border-color: rgba(14, 116, 144, 0.3);
   box-shadow: 0 8px 16px rgba(14, 116, 144, 0.08);
 }
 
 .search-result-item.is-active {
+  z-index: 3;
   border-color: rgba(14, 116, 144, 0.6);
   background: rgba(240, 249, 255, 0.98);
   box-shadow:
