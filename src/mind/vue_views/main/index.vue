@@ -2518,6 +2518,7 @@ const verticalScrollbar = computed(() => {
 let scrollbarAxis: 'x' | 'y' | null = null;
 let scrollbarStartClient = 0;
 let scrollbarStartOffset = 0;
+let suppressCanvasContextMenuUntil = 0;
 const hasSavedViewport = ref(false);
 const hasAppliedInitialFit = ref(false);
 const NEW_NODE_TEXT = '新增主题';
@@ -2645,7 +2646,9 @@ type InteractionMode =
   | 'idle'
   | 'pointerDownBlank'
   | 'pointerDownOnNode'
+  | 'pointerDownSecondary'
   | 'marqueeSelecting'
+  | 'panningCanvas'
   | 'draggingNodes';
 
 type DragCandidate = {
@@ -6151,7 +6154,11 @@ function clearMarqueeTransient(reason?: string) {
 
 function resetInteractionToIdle(reason: string, options?: { releaseCapture?: boolean }) {
   logInteractionTransition(reason, 'idle');
+  const previousMode = interactionState.value.mode;
   const pointerId = interactionState.value.pointerId;
+  if (previousMode === 'pointerDownSecondary' || previousMode === 'panningCanvas') {
+    setCanvasCursor('');
+  }
   interactionState.value = createIdleInteractionState();
   pendingDragPerfStartContext = null;
   if (options?.releaseCapture !== false) releasePointer(pointerId, reason);
@@ -6296,6 +6303,24 @@ function startMarqueeFromInteraction(screenX: number, screenY: number) {
   });
 }
 
+function beginCanvasPanning(screenX: number, screenY: number) {
+  suppressCanvasContextMenuUntil = performance.now() + 400;
+  transitionInteraction('begin-canvas-pan', 'panningCanvas', {
+    lastScreenX: screenX,
+    lastScreenY: screenY,
+  });
+  addGlobalDragListeners();
+  setCanvasCursor('grabbing');
+}
+
+function panCanvasFromPointerDelta(deltaX: number, deltaY: number) {
+  setCanvasCursor('grabbing');
+  if (deltaX === 0 && deltaY === 0) return;
+  panByPixels(deltaX, deltaY);
+  requestRender();
+  schedulePersistViewport();
+}
+
 function finalizeDrop(reason = 'pointerup') {
   const startedAt = performance.now();
   const probe = getActiveMindPerfProbe();
@@ -6419,8 +6444,12 @@ function finalizeInteraction(
       if (interactionState.value.shouldClearSelectionOnClick) {
         setSelection([], null);
       }
+    } else if (mode === 'pointerDownSecondary') {
+      focusViewportWithoutScroll();
     } else if (mode === 'marqueeSelecting') {
       finishMarqueeSelection();
+    } else if (mode === 'panningCanvas') {
+      focusViewportWithoutScroll();
     } else if (mode === 'draggingNodes') {
       if (options.commitDrag === false) {
         clearDragTransient(reason);
@@ -7696,8 +7725,21 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
   requestRender();
 }
 
+function isSecondaryPointerTrigger(event: PointerEvent) {
+  return event.button === 2;
+}
+
+function isActiveInteractionButtonPressed(event: PointerEvent) {
+  if (interactionState.value.mode === 'pointerDownSecondary' || interactionState.value.mode === 'panningCanvas') {
+    return (event.buttons & 2) === 2;
+  }
+  return (event.buttons & 1) === 1;
+}
+
 function onCanvasPointerDown(event: PointerEvent) {
-  if (event.button !== 0) return;
+  const isPrimaryPointerDown = event.button === 0;
+  const isSecondaryPointerDown = isSecondaryPointerTrigger(event);
+  if (!isPrimaryPointerDown && !isSecondaryPointerDown) return;
   focusViewportWithoutScroll();
   pendingDragPerfStartContext = null;
   if (editingSession.value) {
@@ -7717,7 +7759,7 @@ function onCanvasPointerDown(event: PointerEvent) {
     { includeHidden: true }
   );
   const hitId = hitTest(screenPoint.x, screenPoint.y);
-  const imageTarget = getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
+  const imageTarget = isSecondaryPointerDown ? null : getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
 
   if (imageTarget) {
     event.preventDefault();
@@ -7752,7 +7794,7 @@ function onCanvasPointerDown(event: PointerEvent) {
     pointerDownNeedsRender = true;
   }
 
-  if (collapseTagNodeId) {
+  if (!isSecondaryPointerDown && collapseTagNodeId) {
     event.preventDefault();
     event.stopPropagation();
     editingNodeId.value = null;
@@ -7761,6 +7803,31 @@ function onCanvasPointerDown(event: PointerEvent) {
   }
 
   capturePointer(event.pointerId, 'pointerdown');
+
+  if (isSecondaryPointerDown) {
+    interactionState.value = {
+      mode: 'pointerDownSecondary',
+      pointerId: event.pointerId,
+      downScreenX: screenPoint.x,
+      downScreenY: screenPoint.y,
+      downWorldX: downWorld.x,
+      downWorldY: downWorld.y,
+      lastScreenX: screenPoint.x,
+      lastScreenY: screenPoint.y,
+      lastWorldX: downWorld.x,
+      lastWorldY: downWorld.y,
+      hitNodeId: hitId,
+      additiveSelection: false,
+      baseSelectionIds: [],
+      shouldClearSelectionOnClick: false,
+      dragCandidate: null,
+    };
+    logInteractionTransition('pointerdown-secondary', 'pointerDownSecondary', {
+      hitNodeId: hitId,
+    });
+    if (pointerDownNeedsRender) requestRender();
+    return;
+  }
 
   if (hitId) {
     event.preventDefault();
@@ -7892,6 +7959,12 @@ function onCanvasDoubleClick(event: MouseEvent) {
 }
 
 async function onCanvasContextMenu(event: MouseEvent) {
+  if (performance.now() <= suppressCanvasContextMenuUntil) {
+    suppressCanvasContextMenuUntil = 0;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
@@ -7938,7 +8011,7 @@ function onCanvasPointerMove(event: PointerEvent) {
     return;
   }
 
-  if ((event.buttons & 1) !== 1 && interactionState.value.mode !== 'idle') {
+  if (!isActiveInteractionButtonPressed(event) && interactionState.value.mode !== 'idle') {
     finalizeInteraction('buttonsReleasedFallback', {
       commitDrag: interactionState.value.mode === 'draggingNodes',
       eventSource: 'canvas',
@@ -7946,6 +8019,8 @@ function onCanvasPointerMove(event: PointerEvent) {
     return;
   }
 
+  const previousLastScreenX = interactionState.value.lastScreenX;
+  const previousLastScreenY = interactionState.value.lastScreenY;
   const worldPoint = screenToWorld(camera.value, screenPoint.x, screenPoint.y);
   setInteractionState({
     lastScreenX: screenPoint.x,
@@ -7966,6 +8041,13 @@ function onCanvasPointerMove(event: PointerEvent) {
     return;
   }
 
+  if (interactionState.value.mode === 'pointerDownSecondary') {
+    if (distance >= DRAG_START_THRESHOLD_PX) {
+      beginCanvasPanning(screenPoint.x, screenPoint.y);
+    }
+    return;
+  }
+
   if (interactionState.value.mode === 'pointerDownOnNode') {
     if (distance >= DRAG_START_THRESHOLD_PX) {
       beginDragging(screenPoint.x, screenPoint.y);
@@ -7975,6 +8057,11 @@ function onCanvasPointerMove(event: PointerEvent) {
 
   if (interactionState.value.mode === 'marqueeSelecting') {
     updateMarqueeSelection({ x: screenPoint.x, y: screenPoint.y });
+    return;
+  }
+
+  if (interactionState.value.mode === 'panningCanvas') {
+    panCanvasFromPointerDelta(screenPoint.x - previousLastScreenX, screenPoint.y - previousLastScreenY);
     return;
   }
 
@@ -8088,7 +8175,7 @@ function onGlobalMouseUp(event: MouseEvent) {
     finishImageResize(true, 'image-global-mouseup');
     return;
   }
-  if (interactionState.value.mode !== 'draggingNodes') return;
+  if (interactionState.value.mode !== 'draggingNodes' && interactionState.value.mode !== 'panningCanvas') return;
   if (DEBUG_CANVAS_OVERLAY) {
     console.debug('[mind-mouseup-global-fallback]', {
       button: event.button,
