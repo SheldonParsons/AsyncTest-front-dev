@@ -28,7 +28,7 @@
         ></el-col>
       </el-row>
     </template>
-    <FilesPage ref="filesPageRef"></FilesPage>
+    <FilesPage ref="filesPageRef" :selectable="true" :sync-route="false"></FilesPage>
     <template #footer>
       <div class="process-dialog-footer">
         <button class="process-dialog-btn cancel-btn" @click="emit('update:modelValue', false)">

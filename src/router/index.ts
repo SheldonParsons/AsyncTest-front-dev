@@ -69,7 +69,7 @@ const routes = [
                 component: () => import('@/views/settings/source_management/datasource.vue')
               },
               {
-                path: '/home/main/project/:project/settings/source/files',
+                path: '/home/main/project/:project/settings/source/files/:pathMatch(.*)*',
                 name: 'settings_source_files',
                 component: () => import('@/views/settings/source_management/files.vue')
               },

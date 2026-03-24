@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.10",
+  "version": "2.0.11",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增搜索\\n#### 1、新增功能，搜索panel中支持导出搜索到的节点\",\"publishDate\":\"2026-03-23\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增搜索\\n#### 1、新增功能：文件系统改造\",\"publishDate\":\"2026-03-24\"}"
     },
     "publish": [
       {

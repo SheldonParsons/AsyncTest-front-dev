@@ -1,5 +1,9 @@
 import { http } from "@/utils/http";
 
+const PROJECT_FILE_ENDPOINT = "/project/file";
+const PROJECT_CREATE_DIRECTORY_ENDPOINT = `${PROJECT_FILE_ENDPOINT}/create_dir`;
+const PROJECT_DELETE_DIRECTORY_ENDPOINT = `${PROJECT_FILE_ENDPOINT}/delete_dir`;
+
 // 获取项目列表
 export function ApiGetProjects(params: any): Promise<String> {
   return new Promise((resolve) => {
@@ -87,7 +91,7 @@ export function createProjects(data: any): Promise<String> {
 export function ApiUploadFiles(data: any, params: any): Promise<String> {
   return new Promise((resolve) => {
     http
-      .httpPost("/project/file", data, params, {
+      .httpPost(PROJECT_FILE_ENDPOINT, data, params, {
         "Content-Type": "multipart/form-data",
       })
       .then((res: any) => {
@@ -99,7 +103,7 @@ export function ApiUploadFiles(data: any, params: any): Promise<String> {
 // 删除文件
 export function ApiDeleteFile(id: number): Promise<String> {
   return new Promise((resolve) => {
-    http.httpDelete(`/project/file/${id}`).then((res: any) => {
+    http.httpDelete(`${PROJECT_FILE_ENDPOINT}/${id}`).then((res: any) => {
       resolve(res);
     });
   });
@@ -108,7 +112,7 @@ export function ApiDeleteFile(id: number): Promise<String> {
 // 获取文件
 export function ApiGetFile(config: any): Promise<String> {
   return new Promise((resolve) => {
-    http.cancelHttpGet("/project/file", config).then((res: any) => {
+    http.cancelHttpGet(PROJECT_FILE_ENDPOINT, config).then((res: any) => {
       resolve(res);
     });
   });
@@ -117,7 +121,51 @@ export function ApiGetFile(config: any): Promise<String> {
 // 批量删除
 export function ApiDeleteFiles(data: any): Promise<String> {
   return new Promise((resolve) => {
-    http.httpDelete(`/project/file/bulk_delete`, data).then((res: any) => {
+    http.httpDelete(`${PROJECT_FILE_ENDPOINT}/bulk_delete`, data).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiListProjectEntries(config: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.cancelHttpGet(PROJECT_FILE_ENDPOINT, config).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiUploadProjectEntries(data: any, params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http
+      .httpPost(PROJECT_FILE_ENDPOINT, data, params, {
+        "Content-Type": "multipart/form-data",
+      })
+      .then((res: any) => {
+        resolve(res);
+      });
+  });
+}
+
+export function ApiDeleteProjectEntry(id: number | string): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpDelete(`${PROJECT_FILE_ENDPOINT}/${id}`).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiCreateProjectDirectory(data: any, params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpPost(PROJECT_CREATE_DIRECTORY_ENDPOINT, data, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiDeleteProjectDirectory(data: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpPost(PROJECT_DELETE_DIRECTORY_ENDPOINT, data).then((res: any) => {
       resolve(res);
     });
   });
