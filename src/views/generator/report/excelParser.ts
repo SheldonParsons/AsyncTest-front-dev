@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { EMPTY_MODULE_LABEL } from "./types";
 import type {
   ReportExcelColumnMapping,
   ReportExcelParseResult,
@@ -91,7 +92,17 @@ function pickDefaultColumn(columns: ExcelColumnMeta[], keyword: string) {
 }
 
 function buildPreviewRows(rows: Array<{ module: string; requirement: string; owner: string }>): ReportExcelPreviewRow[] {
-  const previewRows = rows.map((row, index) => ({
+  const groupedRows = Array.from(
+    rows.reduce<Map<string, Array<{ module: string; requirement: string; owner: string }>>>((accumulator, row) => {
+      const groupKey = row.module || "__EMPTY_MODULE__";
+      const currentGroup = accumulator.get(groupKey) || [];
+      currentGroup.push(row);
+      accumulator.set(groupKey, currentGroup);
+      return accumulator;
+    }, new Map()).values()
+  ).flat();
+
+  const previewRows = groupedRows.map((row, index) => ({
     id: `${index}`,
     ...row,
     showModule: true,
@@ -254,6 +265,7 @@ export function buildExcelParseResult(
       previewRows: [],
       uniqueOwners: [],
       uniqueModules: [],
+      hasEmptyModule: false,
       excludedOwners: [],
       excludedModules: [],
       rowCount: 0,
@@ -277,6 +289,7 @@ export function buildExcelParseResult(
       previewRows: [],
       uniqueOwners: [],
       uniqueModules: [],
+      hasEmptyModule: false,
       excludedOwners: overrides?.excludedOwners ?? [],
       excludedModules: overrides?.excludedModules ?? [],
       rowCount: 0,
@@ -290,13 +303,20 @@ export function buildExcelParseResult(
   const excludedModules = Array.from(new Set((overrides?.excludedModules ?? []).filter((item) => !!item)));
   const excludedOwners = Array.from(new Set((overrides?.excludedOwners ?? []).filter((item) => !!item)));
 
-  const rows = sheet.rows
+  const rawRows = sheet.rows
     .map((row) => ({
       module: normalizeCellValue(row[moduleIndex]),
       requirement: normalizeCellValue(row[requirementIndex]),
       owner: normalizeCellValue(row[ownerIndex]),
     }))
-    .filter((row) => row.module || row.requirement || row.owner)
+    .filter((row) => row.module || row.requirement || row.owner);
+
+  const hasEmptyModule = rawRows.some((row) => !row.module);
+  const rows = rawRows
+    .map((row) => ({
+      ...row,
+      module: row.module || EMPTY_MODULE_LABEL,
+    }))
     .filter((row) => !excludedModules.includes(row.module) && !excludedOwners.includes(row.owner));
 
   return {
@@ -314,7 +334,8 @@ export function buildExcelParseResult(
     columnMapping,
     previewRows: buildPreviewRows(rows),
     uniqueOwners: Array.from(new Set(rows.map((row) => row.owner).filter((item) => !!item))),
-    uniqueModules: Array.from(new Set(rows.map((row) => row.module).filter((item) => !!item))),
+    uniqueModules: Array.from(new Set(rows.map((row) => row.module).filter((item) => !!item && item !== EMPTY_MODULE_LABEL))),
+    hasEmptyModule,
     excludedOwners,
     excludedModules,
     rowCount: rows.length,

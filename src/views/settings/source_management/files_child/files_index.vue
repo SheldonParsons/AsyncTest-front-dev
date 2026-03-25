@@ -222,6 +222,7 @@
       :before_comfirm="createDirectory"
       :bgtype="'white'"
       :topMove="'0% !important'"
+      :z-index="2600"
     >
       <div class="files-dialog-panel files-dialog-panel-compact">
         <div class="files-dialog-block">
@@ -246,6 +247,7 @@
       :before_comfirm="submitUploadFiles"
       :bgtype="'white'"
       :topMove="'0% !important'"
+      :z-index="2600"
     >
       <div class="files-dialog-panel files-dialog-panel-upload">
         <div class="files-dialog-block files-dialog-block-upload">

@@ -4,14 +4,14 @@
             <Dialog.Portal>
                 <AnimatePresence>
                     <Dialog.Overlay as-child>
-                        <motion.div class="overlay" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+                        <motion.div class="overlay" :style="{ zIndex: props.zIndex }" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                             :exit="{ opacity: 0 }" />
                     </Dialog.Overlay>
                     <Dialog.Content as-child @escape-key-down="handleEscapeKeyDown">
                         <motion.div class="input-modal-container" :initial="dialogInitialState"
                             :animate="dialogOpenState" :exit="dialogInitialState" style="top: -50%;"
-                            :style="{ transformPerspective: 200, top: topMove }">
-                            <div class="modal" :style="{ backgroundColor: bgtype === 'black' ? '#0b1011' : 'white' }">
+                            :style="{ transformPerspective: 200, top: topMove, zIndex: props.zIndex }">
+                            <div class="modal" :style="{ backgroundColor: bgtype === 'black' ? '#0b1011' : 'white', zIndex: props.zIndex }">
                                 <Dialog.Title class="dialog-title"
                                     :style="{ color: bgtype === 'black' ? 'white' : 'black' }">
                                     {{ title }}
@@ -65,6 +65,7 @@ const props = defineProps({
     showCancel: { type: Boolean, default: true },
     showComfirm: { type: Boolean, default: true },
     closeOnPressEscape: { type: Boolean, default: true },
+    zIndex: { type: Number, default: 100 },
 })
 
 const visible = ref(false)
@@ -161,14 +162,12 @@ const dialogInitialState: any = {
     background: rgba(0, 0, 0, 0.5);
     position: fixed;
     inset: 0;
-    z-index: 100 !important;
     backdrop-filter: blur(3px);
 }
 
 .input-modal-container {
     position: fixed;
     inset: 0;
-    z-index: 100 !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -178,7 +177,6 @@ const dialogInitialState: any = {
         border-radius: 10px;
         border: 1px solid #1d2628;
         background-color: #0b1011;
-        z-index: 100 !important;
         padding: 20px;
         min-width: 300px;
         pointer-events: auto;

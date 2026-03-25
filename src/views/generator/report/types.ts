@@ -1,4 +1,5 @@
 export type ReportStepKey = "draft" | "sources" | "parse" | "generate";
+export const EMPTY_MODULE_LABEL = "【空】";
 
 export type ReportSeverity = "info" | "success" | "warning" | "error";
 
@@ -180,6 +181,7 @@ export type ReportExcelParseResult = {
   previewRows: ReportExcelPreviewRow[];
   uniqueOwners: string[];
   uniqueModules: string[];
+  hasEmptyModule: boolean;
   excludedOwners: string[];
   excludedModules: string[];
   rowCount: number;

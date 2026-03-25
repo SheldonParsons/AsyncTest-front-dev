@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.13",
+  "version": "2.0.14",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 新增功能\\n#### 1、新增功能：测试报告生成 & 附件优化\",\"publishDate\":\"2026-03-25\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 1、现在导出的测试文件docx模块划分将会归纳到一起\\n#### 2、修复子dialog弹窗层级关系的问题\",\"publishDate\":\"2026-03-25\"}"
     },
     "publish": [
       {

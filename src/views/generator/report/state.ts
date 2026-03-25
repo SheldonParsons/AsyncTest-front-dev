@@ -4,6 +4,7 @@ import asyncTest from "@/db";
 import GlobalStatus from "@/global";
 import { ApiCheckPermission } from "@/api/layout/cookies";
 import { ApiGetProjects } from "@/api/project/index";
+import { EMPTY_MODULE_LABEL } from "./types";
 import type {
   ReportAmindParseResult,
   ReportAmindSourceFile,
@@ -1059,6 +1060,7 @@ export function useReportWorkspaceState() {
         previewRows: [],
         uniqueOwners: [],
         uniqueModules: [],
+        hasEmptyModule: false,
         excludedOwners: overrides?.excludedOwners ?? state.excelParseResult?.excludedOwners ?? [],
         excludedModules: overrides?.excludedModules ?? state.excelParseResult?.excludedModules ?? [],
         rowCount: 0,
@@ -1099,6 +1101,20 @@ export function useReportWorkspaceState() {
   function excludeExcelModule(moduleName: string) {
     if (!state.excelFile || !moduleName.trim()) return;
     const excludedModules = Array.from(new Set([...(state.excelParseResult?.excludedModules ?? []), moduleName]));
+    void parseExcelFile({
+      sheetName: state.excelParseResult?.selectedSheet,
+      columnMapping: state.excelParseResult?.columnMapping,
+      excludedModules,
+      excludedOwners: state.excelParseResult?.excludedOwners ?? [],
+    });
+  }
+
+  function toggleExcelEmptyModule() {
+    if (!state.excelFile) return;
+    const currentExcludedModules = state.excelParseResult?.excludedModules ?? [];
+    const excludedModules = currentExcludedModules.includes(EMPTY_MODULE_LABEL)
+      ? currentExcludedModules.filter((item) => item !== EMPTY_MODULE_LABEL)
+      : Array.from(new Set([...currentExcludedModules, EMPTY_MODULE_LABEL]));
     void parseExcelFile({
       sheetName: state.excelParseResult?.selectedSheet,
       columnMapping: state.excelParseResult?.columnMapping,
@@ -1671,6 +1687,7 @@ export function useReportWorkspaceState() {
     updateExcelSelectedSheet,
     updateExcelColumnMapping,
     excludeExcelModule,
+    toggleExcelEmptyModule,
     excludeExcelOwner,
     saveRecentExport,
     startGenerationPreview,

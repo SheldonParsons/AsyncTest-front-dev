@@ -50,6 +50,7 @@
           @update-excel-column="updateExcelColumnMapping"
           @exclude-excel-module="excludeExcelModule"
           @exclude-excel-owner="excludeExcelOwner"
+          @toggle-excel-empty-module="toggleExcelEmptyModule"
         />
       </div>
 
@@ -136,6 +137,7 @@ const {
   updateExcelColumnMapping,
   excludeExcelModule,
   excludeExcelOwner,
+  toggleExcelEmptyModule,
   saveRecentExport,
   startGenerationPreview,
 } = useReportWorkspaceState();

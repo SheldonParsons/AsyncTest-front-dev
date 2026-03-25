@@ -164,9 +164,9 @@
                      <div><span>负责人去重</span><strong>{{ excelParseResult.uniqueOwners.length }}</strong></div>
                    </div>
 
-                   <div class="excel-unique-group">
-                    <div class="excel-unique-block">
-                      <span>所有模块</span>
+                    <div class="excel-unique-group">
+                     <div class="excel-unique-block">
+                       <span>所有模块</span>
                       <div class="excel-chip-list">
                           <button
                             v-for="moduleName in excelParseResult.uniqueModules"
@@ -178,11 +178,26 @@
                             <span>{{ moduleName }}</span>
                             <span aria-hidden="true">×</span>
                           </button>
-                        </div>
-                      </div>
+                         </div>
+                       </div>
 
-                      <div class="excel-unique-block">
-                        <span>所有负责人</span>
+                       <div v-if="excelParseResult.hasEmptyModule" class="excel-unique-block">
+                         <span>空模块</span>
+                         <div class="excel-chip-list">
+                           <button
+                             class="excel-chip excel-chip-removable"
+                             :class="{ 'excel-chip-muted': excelParseResult.excludedModules.includes(EMPTY_MODULE_LABEL) }"
+                             type="button"
+                             @click="$emit('toggle-excel-empty-module')"
+                           >
+                             <span>{{ EMPTY_MODULE_LABEL }}</span>
+                             <span aria-hidden="true">{{ excelParseResult.excludedModules.includes(EMPTY_MODULE_LABEL) ? "恢复" : "移除" }}</span>
+                           </button>
+                         </div>
+                       </div>
+
+                       <div class="excel-unique-block">
+                         <span>所有负责人</span>
                         <div class="excel-chip-list">
                           <button
                             v-for="ownerName in excelParseResult.uniqueOwners"
@@ -209,7 +224,7 @@
                         </thead>
                         <tbody>
                           <tr v-for="row in excelParseResult.previewRows" :key="row.id">
-                            <td v-if="row.showModule" :rowspan="row.moduleRowSpan">{{ row.module || "-" }}</td>
+                            <td v-if="row.showModule" :rowspan="row.moduleRowSpan">{{ row.module }}</td>
                             <td v-if="row.showRequirement" :rowspan="row.requirementRowSpan" class="excel-cell-requirement">{{ row.requirement || "-" }}</td>
                             <td v-if="row.showOwner" :rowspan="row.ownerRowSpan" class="excel-cell-owner">{{ row.owner || "-" }}</td>
                           </tr>
@@ -263,6 +278,7 @@
 </template>
 
 <script setup lang="ts">
+import { EMPTY_MODULE_LABEL } from "../types";
 import GeneratorDropdown from "./GeneratorDropdown.vue";
 import type {
   ReportAmindParseResult,
@@ -295,6 +311,7 @@ defineEmits<{
   "update-excel-column": [payload: { key: keyof ReportExcelColumnMapping; value: string }];
   "exclude-excel-module": [moduleName: string];
   "exclude-excel-owner": [ownerName: string];
+  "toggle-excel-empty-module": [];
 }>();
 </script>
 
@@ -710,6 +727,11 @@ defineEmits<{
   transform: translateY(-1px);
   background: #e5e7eb;
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+.excel-chip-muted {
+  background: rgba(148, 163, 184, 0.14);
+  color: #64748b;
 }
 
 .excel-preview-wrap {
