@@ -6,7 +6,7 @@ import CFB from 'cfb';
 import iconv from 'iconv-lite';
 
 const OLE_PACKAGE_ICON_PATH = fileURLToPath(new URL('./assets/ole-package-icon.png', import.meta.url));
-const OLE_EXCEL_ICON_PATH = fileURLToPath(new URL('./assets/ole-excel-icon.png', import.meta.url));
+const OLE_BUG_PACKAGE_ICON_PATH = fileURLToPath(new URL('./assets/ole-bug-package-icon.png', import.meta.url));
 const OLE_OBJINFO_BUFFER = Buffer.from('400003000100', 'hex');
 const BUG_RESOLUTION_MAPPING = {
   '': '未解决',
@@ -212,13 +212,6 @@ function buildEmbeddedPackageBuffer(fileName, data) {
   return Buffer.from(CFB.write(cfb, { type: 'buffer' }));
 }
 
-function buildEmbeddedExcelBuffer(data) {
-  const cfb = CFB.utils.cfb_new();
-  CFB.utils.cfb_add(cfb, '/package', data, { unsafe: true });
-  CFB.utils.cfb_add(cfb, '/\u0003ObjInfo', OLE_OBJINFO_BUFFER, { unsafe: true });
-  return Buffer.from(CFB.write(cfb, { type: 'buffer' }));
-}
-
 function buildResolutionSummaryText(resolutionMapping = {}) {
   const parts = Object.entries(BUG_RESOLUTION_MAPPING)
     .map(([key, label]) => {
@@ -367,10 +360,10 @@ function buildBodyTable(payload, environment, attachments) {
     [
       { content: '缺陷汇总', options: { width: 1500 } },
       {
-        content: attachments?.bugExcel
+        content: attachments?.bugZip
           ? [
               paragraph(buildDefectSummaryText(payload, environment), { size: 20 }),
-              attachmentObjectParagraph(attachments.bugExcel),
+              attachmentObjectParagraph(attachments.bugZip),
             ]
           : buildDefectSummaryText(payload, environment),
         options: { width: 7500, gridSpan: 3 },
@@ -547,9 +540,7 @@ export async function writeReportDocx(filePath, payload, environment, attachment
       const iconBytes = await fs.readFile(attachment.iconPath);
       zip.folder('word')?.folder('media')?.file(attachment.imageName, iconBytes);
       const embeddingBuffer =
-        attachment.kind === 'excel'
-          ? buildEmbeddedExcelBuffer(attachment.buffer)
-          : buildEmbeddedPackageBuffer(attachment.fileName, attachment.buffer);
+        buildEmbeddedPackageBuffer(attachment.fileName, attachment.buffer);
       zip.folder('word')?.folder('embeddings')?.file(attachment.embeddingName, embeddingBuffer);
     }
   }
@@ -602,16 +593,28 @@ async function buildAmindAttachmentZip(payload, tempDir) {
   };
 }
 
-async function buildBugExcelAttachment(payload, environment) {
+async function buildBugZipAttachment(payload, environment, tempDir) {
   const envName = environment?.name || '';
-  const filePath = payload?.zendao?.bug_excel_file_paths?.[envName];
-  if (!filePath) {
+  const excelPath = payload?.zendao?.bug_excel_file_paths?.[envName];
+  if (!excelPath) {
     return null;
   }
 
-  const buffer = await fs.readFile(filePath);
+  const attachmentZip = new JSZip();
+  const attachmentFolder = attachmentZip.folder('缺陷列表');
+  const excelBytes = await fs.readFile(excelPath);
+  const archiveName = sanitizeFileNamePart(path.basename(excelPath));
+  attachmentFolder?.file(archiveName, excelBytes);
+
+  const attachmentDir = path.join(tempDir, 'attachments');
+  await fs.mkdir(attachmentDir, { recursive: true });
+  const fileName = '缺陷列表.zip';
+  const filePath = path.join(attachmentDir, `${sanitizeFileNamePart(envName || '环境')}-${fileName}`);
+  const buffer = await attachmentZip.generateAsync({ type: 'nodebuffer' });
+  await fs.writeFile(filePath, buffer);
+
   return {
-    fileName: path.basename(filePath),
+    fileName,
     filePath,
     buffer,
   };
@@ -622,22 +625,7 @@ function buildAttachmentDescriptor(type, attachment) {
     return null;
   }
 
-  if (type === 'excel') {
-    return {
-      ...attachment,
-      kind: 'excel',
-      progId: 'Excel.Sheet.12',
-      objectRelId: 'rId6',
-      imageRelId: 'rId7',
-      shapeId: '_x0000_i1027',
-      objectId: '_1468075726',
-      embeddingName: 'oleObject2.bin',
-      imageName: 'image2.png',
-      iconPath: OLE_EXCEL_ICON_PATH,
-    };
-  }
-
-  return {
+  const descriptor = {
     ...attachment,
     kind: 'package',
     progId: 'Package',
@@ -649,6 +637,21 @@ function buildAttachmentDescriptor(type, attachment) {
     imageName: 'image1.png',
     iconPath: OLE_PACKAGE_ICON_PATH,
   };
+
+  if (type === 'bug-zip') {
+    return {
+      ...descriptor,
+      objectRelId: 'rId6',
+      imageRelId: 'rId7',
+      shapeId: '_x0000_i1027',
+      objectId: '_1468075726',
+      embeddingName: 'oleObject2.bin',
+      imageName: 'image2.png',
+      iconPath: OLE_BUG_PACKAGE_ICON_PATH,
+    };
+  }
+
+  return descriptor;
 }
 
 export async function exportEnvironmentReportPackage({ tempDir, payload }) {
@@ -662,10 +665,10 @@ export async function exportEnvironmentReportPackage({ tempDir, payload }) {
   for (const environment of enabledEnvironments) {
     const fileName = buildEnvironmentReportDocxName(payload, environment);
     const filePath = path.join(docxDir, fileName);
-    const bugExcelAttachment = buildAttachmentDescriptor('excel', await buildBugExcelAttachment(payload, environment));
+    const bugZipAttachment = buildAttachmentDescriptor('bug-zip', await buildBugZipAttachment(payload, environment, tempDir));
     await writeReportDocx(filePath, payload, environment, {
       testCase: testCaseAttachment,
-      bugExcel: bugExcelAttachment,
+      bugZip: bugZipAttachment,
     });
     docxFiles.push({ envName: environment?.name || '', fileName, filePath });
   }
