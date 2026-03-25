@@ -215,19 +215,11 @@ function enter() {
   console.log("in enter");
 
   if (!username.value) {
-    proxy.$message({
-      message: t("noticeError.username"),
-      duration: 3000,
-      type: "warning",
-    });
+    window.$toast({ title: t("noticeError.username"), type: "warning" });
     return;
   }
   if (!password.value) {
-    proxy.$message({
-      message: t("noticeError.password"),
-      duration: 3000,
-      type: "warning",
-    });
+    window.$toast({ title: t("noticeError.password"), type: "warning" });
     return;
   }
   disabled.value = true;
@@ -245,12 +237,7 @@ function validateUser() {
   ApiLogin(data).then((res: any) => {
     console.log(res);
     if (res.result === 1) {
-      proxy.$messageNotice({
-        title: t("notice.successLogin"),
-        message: t("notice.usingSystem"),
-        type: "success",
-        position: "bottom-right",
-      });
+      window.$toast({ title: t("notice.successLogin"), type: "success" });
       const userStatus = {
         userId: res.data.id,
         username: username.value,
@@ -273,11 +260,7 @@ function validateUser() {
         }
       });
     } else {
-      proxy.$message({
-        message: res.msg,
-        duration: 3000,
-        type: "warning",
-      });
+      window.$toast({ title: res.msg, type: "warning" });
     }
     disabled.value = false;
     loading.close();

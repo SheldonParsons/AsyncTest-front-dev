@@ -200,20 +200,13 @@ const handleChange: UploadProps['onChange'] = (uploadFile: any) => {
         .catch((error) => {
           originData.value = null
           upload.value!.clearFiles()
-          proxy.$message({
-            message:
-              '文件解析错误，请升级您的Xmind，该版本缺少content.json文件：' +
-              error,
-            duration: 3000,
+          window.$toast({
+            title: '文件解析错误，请升级您的Xmind，该版本缺少content.json文件：' + error,
             type: 'warning'
           })
         })
     } catch (error) {
-      proxy.$message({
-        message: '文件内容有误，请调整文件：' + error,
-        duration: 3000,
-        type: 'warning'
-      })
+      window.$toast({ title: '文件内容有误，请调整文件：' + error, type: 'warning' })
       originData.value = null
       upload.value!.clearFiles()
     }
@@ -282,11 +275,7 @@ function generateTable() {
     dyViewWidth.value = document.body.clientWidth * 0.9 - 35
     closedUploadDialog()
   } else {
-    proxy.$message({
-      message: '请先上传文件！',
-      duration: 3000,
-      type: 'warning'
-    })
+    window.$toast({ title: '请先上传文件！', type: 'warning' })
   }
 }
 
@@ -294,11 +283,7 @@ function checkFile(name: string) {
   const _splitList = name.split('.')
   const _suffix = _splitList[_splitList.length - 1]
   if (_suffix !== 'xmind') {
-    proxy.$message({
-      message: '文件类型不一致，请重新上传！',
-      duration: 3000,
-      type: 'warning'
-    })
+    window.$toast({ title: '文件类型不一致，请重新上传！', type: 'warning' })
     upload.value!.clearFiles()
     return false
   }

@@ -71,11 +71,7 @@ defineExpose({
 function add_item() {
   const select = filesPageRef.value?.get_select()
   if (select.length === 0) {
-    proxy.$message({
-      message: "请至少选择一个文件",
-      duration: 3000,
-      type: "warning",
-    });
+    window.$toast({ title: "请至少选择一个文件", type: "warning" });
   } else {
     emit('choice_select', select)
     filesPageRef.value?.clean_select()

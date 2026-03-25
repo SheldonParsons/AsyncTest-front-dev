@@ -138,8 +138,14 @@
                 </button>
 
                 <div v-else class="entry-main">
-                  <span class="entry-icon entry-icon-file">
-                    <el-icon><Document /></el-icon>
+                  <span class="entry-icon" :class="row.iconSrc ? 'entry-icon-amind' : 'entry-icon-file'">
+                    <img
+                      v-if="row.iconSrc"
+                      class="entry-icon-image"
+                      :src="row.iconSrc"
+                      :alt="`${row.extensionLabel} 文件图标`"
+                    />
+                    <el-icon v-else><Document /></el-icon>
                   </span>
                   <span class="entry-copy">
                     <span class="entry-title">{{ row.name }}</span>
@@ -285,6 +291,7 @@ import {
   ApiListProjectEntries,
   ApiUploadProjectEntries,
 } from "@/api/project/index";
+import amindFileIcon from "@/assets/img/amind.png";
 import tools from "@/utils/tools";
 import { HttpClass } from "@/utils/http";
 
@@ -302,6 +309,7 @@ type FileManagerEntry = {
   createdBy: string;
   downloadUrl: string;
   extensionLabel: string;
+  iconSrc: string | null;
   raw: Record<string, any>;
 };
 
@@ -309,10 +317,16 @@ const props = withDefaults(
   defineProps<{
     selectable?: boolean;
     syncRoute?: boolean;
+    projectId?: string | number;
+    allowedExtensions?: string[];
+    singleSelection?: boolean;
   }>(),
   {
     selectable: false,
     syncRoute: true,
+    projectId: "",
+    allowedExtensions: () => [],
+    singleSelection: false,
   }
 );
 
@@ -348,7 +362,13 @@ const headerCellStyle = {
   background: "#f8fafc",
 };
 
+const normalizedAllowedExtensions = computed(() =>
+  (props.allowedExtensions ?? []).map((item) => `${item ?? ""}`.trim().replace(/^\./, "").toLowerCase()).filter((item) => !!item)
+);
+
 const projectId = computed(() => {
+  const propProjectId = `${props.projectId ?? ""}`.trim();
+  if (propProjectId) return propProjectId;
   const value = route.params.project;
   return Array.isArray(value) ? `${value[0] ?? ""}` : `${value ?? ""}`;
 });
@@ -501,6 +521,18 @@ function resolveExtensionLabel(name: string, kind: FileManagerEntryKind, raw: Re
   return segments[segments.length - 1].slice(0, 8).toUpperCase();
 }
 
+function isAmindFile(name: string, raw: Record<string, any>): boolean {
+  const rawExtension = typeof raw.extension === "string" ? raw.extension.trim().replace(/^\./, "") : "";
+  if (rawExtension.toLowerCase() === "amind") return true;
+  const segments = name.split(".");
+  return segments.length > 1 && segments[segments.length - 1].toLowerCase() === "amind";
+}
+
+function resolveEntryIconSrc(name: string, kind: FileManagerEntryKind, raw: Record<string, any>): string | null {
+  if (kind === "directory") return null;
+  return isAmindFile(name, raw) ? amindFileIcon : null;
+}
+
 function resolveEntrySize(raw: Record<string, any>, kind: FileManagerEntryKind): number | null {
   if (kind === "directory") return null;
   const rawSize = raw.size ?? raw.file_size ?? raw.bytes;
@@ -560,6 +592,7 @@ function normalizeEntry(raw: Record<string, any>, fallbackSegments: string[]): F
     createdBy: resolveEntryCreatedBy(raw),
     downloadUrl: resolveDownloadUrl(raw, kind),
     extensionLabel: resolveExtensionLabel(name, kind, raw),
+    iconSrc: resolveEntryIconSrc(name, kind, raw),
     raw,
   };
 }
@@ -616,7 +649,10 @@ function getRowKey(row: FileManagerEntry) {
 }
 
 function canSelectRow(row: FileManagerEntry) {
-  return row.kind === "file";
+  if (row.kind !== "file") return false;
+  if (!normalizedAllowedExtensions.value.length) return true;
+  const extension = `${row.raw?.extension ?? row.name.split(".").pop() ?? ""}`.trim().replace(/^\./, "").toLowerCase();
+  return normalizedAllowedExtensions.value.includes(extension);
 }
 
 function resolveEntryFolder(entry: FileManagerEntry): string {
@@ -632,12 +668,15 @@ function serializeSelectedEntry(entry: FileManagerEntry) {
     id: entry.raw?.id ?? entry.id,
     name: entry.raw?.name ?? entry.name,
     key: entry.raw?.key ?? entry.downloadUrl,
+    download_url: entry.raw?.download_url ?? entry.downloadUrl,
+    downloadUrl: entry.downloadUrl,
     path: entry.raw?.path ?? entry.path,
     folder: resolveEntryFolder(entry),
     kind: entry.kind,
     size: entry.raw?.size ?? entry.size,
     create_by: entry.raw?.create_by ?? entry.createdBy,
     add_time: entry.raw?.add_time ?? entry.updatedAt,
+    extension: entry.raw?.extension ?? entry.name.split(".").pop() ?? "",
   };
 }
 
@@ -957,6 +996,12 @@ async function onDropZoneDrop(event: DragEvent) {
 
 function handleSelectionChange(rows: FileManagerEntry[]) {
   if (!props.selectable || isSyncingTableSelection) return;
+  const nextRows = props.singleSelection ? rows.slice(-1) : rows;
+  if (props.singleSelection && rows.length > 1) {
+    selectedEntries.value = nextRows.filter((entry) => entry.kind === "file");
+    void syncTableSelectionFromCache();
+    return;
+  }
   const visibleFileKeys = new Set(
     entries.value
       .filter((entry) => entry.kind === "file")
@@ -964,7 +1009,7 @@ function handleSelectionChange(rows: FileManagerEntry[]) {
   );
   selectedEntries.value = [
     ...selectedEntries.value.filter((entry) => !visibleFileKeys.has(entry.selectionKey)),
-    ...rows.filter((entry) => entry.kind === "file"),
+    ...nextRows.filter((entry) => entry.kind === "file"),
   ];
 }
 
@@ -980,6 +1025,12 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   }
 
   if (props.selectable) {
+    if (!canSelectRow(row)) return;
+    if (props.singleSelection) {
+      selectedEntries.value = [row];
+      void syncTableSelectionFromCache();
+      return;
+    }
     multipleTableRef.value?.toggleRowSelection(row);
   }
 }
@@ -1270,6 +1321,19 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
 .entry-icon-file {
   background: rgba(248, 250, 252, 0.98);
   color: #475569;
+}
+
+.entry-icon-amind {
+  background: transparent;
+  padding: 0;
+}
+
+.entry-icon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .entry-copy {

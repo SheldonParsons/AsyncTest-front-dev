@@ -113,17 +113,6 @@ async function check_dataset_name() {
         window.$toast({ title: '数据集名称过长(Limit 255)。', type: 'info' })
         return false
     }
-    const _data = {
-        type: 1,
-        child_action_type: "create_dataset",
-        content: {
-            name: currentDataSetName.value,
-            case: props.case_id
-        }
-    }
-    const resp = await send_action(_data)
-    if (!resp) return false
-    create_dataset.value = resp
     return true
 }
 

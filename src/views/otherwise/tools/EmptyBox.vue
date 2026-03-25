@@ -25,11 +25,7 @@ onMounted(() => {
 })
 
 function showTips() {
-  proxy.$message({
-    message: t('tool.more'),
-    duration: 3000,
-    type: 'success'
-  })
+  window.$toast({ title: t('tool.more'), type: 'success' })
 }
 </script>
 

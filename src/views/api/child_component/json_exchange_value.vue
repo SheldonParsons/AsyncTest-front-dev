@@ -71,11 +71,7 @@ function add_item() {
     JSON.parse(code.value);
     emit("exchange_value", code.value);
   } catch (error) {
-    proxy.$message({
-      message: "该字符串不为标准的json字符串，无法转换",
-      duration: 3000,
-      type: "warning",
-    });
+    window.$toast({ title: "该字符串不为标准的json字符串，无法转换", type: "warning" });
   }
 }
 

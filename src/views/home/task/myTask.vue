@@ -186,11 +186,7 @@ function closedTaskDetailDialog() {
 
 function sendConfirmApproveProject(result: Number) {
   if (approveDesc.value === '') {
-    proxy.$message({
-      message: t('project.approve.emptyApproveReason'),
-      duration: 3000,
-      type: 'warning'
-    })
+    window.$toast({ title: t('project.approve.emptyApproveReason'), type: 'warning' })
   } else {
     const data = {
       desc: approveDesc.value,
@@ -199,11 +195,7 @@ function sendConfirmApproveProject(result: Number) {
     }
     ApiApproveTask(currentTaskId.value, data).then((data: any) => {
       if (data.non_field_errors) {
-        proxy.$message({
-          message: t('project.approve.dupApprove'),
-          duration: 3000,
-          type: 'warning'
-        })
+        window.$toast({ title: t('project.approve.dupApprove'), type: 'warning' })
       } else {
         console.log(data)
         showApproveProjectDialog.value = false
@@ -242,11 +234,7 @@ function getData(size = 10) {
   ApiGetTasks(data).then((data: any) => {
     console.log(data)
     if (data.detail) {
-      proxy.$message({
-        message: t('response.lessData'),
-        duration: 3000,
-        type: 'warning'
-      })
+      window.$toast({ title: t('response.lessData'), type: 'warning' })
       clearStatus()
       alwaysDisInfinite.value = true
       return

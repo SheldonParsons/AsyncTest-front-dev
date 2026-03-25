@@ -32,7 +32,8 @@ export interface IElectronAPI {
   invoke: (event: any) => void;
   wm: any,
   platform: any,
-  amind: any
+  amind: any,
+  generator: any
 }
 
 declare global {

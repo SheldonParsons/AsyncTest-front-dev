@@ -26,6 +26,23 @@
           <p class="card-description">思维导图</p>
         </div>
 
+        <div class="dashboard-card generator-card" @click="handleEnterGenerator">
+          <div class="card-logo">
+            <img
+              class="logo-default"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark.svg"
+              alt="Generator"
+            />
+            <img
+              class="logo-hover"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light.svg"
+              alt="Generator"
+            />
+          </div>
+          <h3 class="card-title">Generator</h3>
+          <p class="card-description">AsyncTest 生成工具</p>
+        </div>
+
         <!-- 更多功能 -->
         <div class="dashboard-card dashboard-card-disabled" @click="handleMoreFeatures">
           <div class="card-icon">
@@ -99,6 +116,10 @@ const handleEnterMind = () => {
   //   return;
   // }
   router.push({ name: "mindDashboard" })
+}
+
+const handleEnterGenerator = () => {
+  router.push({ name: "generator" })
 }
 
 // 更多功能
@@ -308,6 +329,36 @@ const handleLoginSuccess = () => {
 
     .card-description {
       color: #d1d5db;
+    }
+  }
+}
+
+.generator-card {
+  .card-logo {
+    height: 42px;
+
+    img {
+      max-width: 82%;
+      max-height: 82%;
+      filter: drop-shadow(0 1px 2px rgba(14, 165, 233, 0.14));
+    }
+  }
+
+  &:hover:not(.dashboard-card-disabled) {
+    border-color: #0ea5e9;
+    box-shadow: 0 8px 16px rgba(14, 165, 233, 0.14), 0 2px 4px rgba(14, 165, 233, 0.08);
+    background: linear-gradient(135deg, #082f49 0%, #0f172a 100%);
+
+    &::before {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.06) 0%, rgba(2, 132, 199, 0.1) 100%);
+    }
+
+    .card-title {
+      color: #ffffff;
+    }
+
+    .card-description {
+      color: #dbeafe;
     }
   }
 }

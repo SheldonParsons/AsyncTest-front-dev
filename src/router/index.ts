@@ -23,6 +23,11 @@ const routes = [
     path: '/mind',
     name: 'mind',
     component: () => import('@/mind/vue_views/index.vue')
+  },
+  {
+    path: '/generator',
+    name: 'generator',
+    component: () => import('@/views/generator/index.vue')
   }] : []),
   {
     path: '/login',

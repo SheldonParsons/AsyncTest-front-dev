@@ -172,11 +172,7 @@ function getData(size = 10) {
   ApiGetEvents(data).then((data: any) => {
     console.log(data)
     if (data.detail) {
-      proxy.$message({
-        message: t('response.lessData'),
-        duration: 3000,
-        type: 'warning'
-      })
+      window.$toast({ title: t('response.lessData'), type: 'warning' })
       clearStatus()
       alwaysDisInfinite.value = true
       return

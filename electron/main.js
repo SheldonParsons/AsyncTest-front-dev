@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
 import { initAmindMain } from './amind/ipcMain.node.js';
+import { initGeneratorMain } from './generator/ipcMain.node.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -120,7 +121,7 @@ async function createMainWindow() {
     minWidth: 1300,
     minHeight: 820,
     trafficLightPosition: { x: 12, y: 12 },
-    openDevTools: false,
+    openDevTools: true,
     title: 'AsyncTest',
     frameless: true,
     nativeHeaderless: true,
@@ -299,6 +300,8 @@ app.whenReady().then(async () => {
     userDataPath: app.getPath('userData'),
     windowManager,
   });
+
+  initGeneratorMain();
 
   await flushPendingOpenQueue();
 

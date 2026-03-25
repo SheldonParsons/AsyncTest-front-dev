@@ -67,8 +67,15 @@ import { useStore } from '@/store'
 import CheckBox from '@/assets/motion/checkbox.vue'
 import { ApiLogin } from '@/api/anonymous/index'
 
-const router = useRouter()
 const store = useStore()
+const router = useRouter()
+
+const props = defineProps({
+  redirectOnSuccess: {
+    type: Boolean,
+    default: true,
+  },
+})
 
 const passwordVisible = ref(false)
 const isLoggingIn = ref(false)
@@ -150,11 +157,13 @@ function handleLogin() {
 
       store.dispatch("saveUser", userStatus).then(() => {
         emit('loginSuccess')
-        const projectId = res.data.default_project_id
-        if (projectId === null) {
-          router.push({ name: "project" })
-        } else {
-          router.push({ name: "interface", params: { project: projectId } })
+        if (props.redirectOnSuccess) {
+          const projectId = res.data.default_project_id
+          if (projectId === null) {
+            router.push({ name: "project" })
+          } else {
+            router.push({ name: "interface", params: { project: projectId } })
+          }
         }
       })
     } else {

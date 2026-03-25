@@ -56,4 +56,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         assetAddFromBytes: (payload) => ipcRenderer.invoke('amind:assetAddFromBytes', payload),
         assetGetBytes: (payload) => ipcRenderer.invoke('amind:assetGetBytes', payload),
     },
+
+    generator: {
+        runZendao: (payload) => ipcRenderer.invoke('generator:runZendao', payload),
+        getLatestZendaoRun: () => ipcRenderer.invoke('generator:getLatestZendaoRun'),
+        getRecentExports: () => ipcRenderer.invoke('generator:getRecentExports'),
+        saveRecentExport: (payload) => ipcRenderer.invoke('generator:saveRecentExport', payload),
+        dumpCacheSnapshot: (payload) => ipcRenderer.invoke('generator:dumpCacheSnapshot', payload),
+        exportDocxPackage: (payload) => ipcRenderer.invoke('generator:exportDocxPackage', payload),
+    },
 });
