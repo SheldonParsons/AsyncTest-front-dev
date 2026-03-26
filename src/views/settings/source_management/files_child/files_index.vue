@@ -238,9 +238,9 @@
       </div>
     </DialogAnimation>
 
-    <DialogAnimation
-      ref="uploadDialogRef"
-      title="上传文件"
+      <DialogAnimation
+        ref="uploadDialogRef"
+        title="上传文件"
       cancel_title="取消"
       :confirm_title="uploadingFiles ? '上传中...' : '开始上传'"
       :showCancel="!uploadingFiles"
@@ -271,6 +271,39 @@
         </div>
       </div>
     </DialogAnimation>
+
+    <Teleport to="body">
+      <div v-if="uploadProgressItems.length" class="files-upload-progress-overlay">
+        <div class="files-upload-progress-card">
+          <div class="files-upload-progress-head">
+            <strong>文件上传进度</strong>
+            <span>{{ activeUploadCount > 0 ? "上传中" : "已完成" }}</span>
+          </div>
+
+          <div class="files-upload-progress-list">
+            <div
+              v-for="item in uploadProgressItems"
+              :key="item.id"
+              class="files-upload-progress-item"
+              :class="`is-${item.status}`"
+            >
+              <div class="files-upload-progress-meta">
+                <span class="files-upload-progress-name" :title="item.name">{{ item.name }}</span>
+                <span class="files-upload-progress-value">
+                  {{ getUploadProgressText(item) }}
+                </span>
+              </div>
+              <div class="files-upload-progress-bar">
+                <span :style="{ width: `${item.progress}%` }"></span>
+              </div>
+              <div v-if="item.status === 'error' && item.errorMessage" class="files-upload-progress-error">
+                {{ item.errorMessage }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -315,6 +348,16 @@ type FileManagerEntry = {
   raw: Record<string, any>;
 };
 
+type UploadProgressStatus = "pending" | "uploading" | "processing" | "success" | "error";
+
+type UploadProgressItem = {
+  id: string;
+  name: string;
+  progress: number;
+  status: UploadProgressStatus;
+  errorMessage: string;
+};
+
 const props = withDefaults(
   defineProps<{
     selectable?: boolean;
@@ -352,10 +395,14 @@ const selectedEntries = ref<FileManagerEntry[]>([]);
 const newDirectoryName = ref("");
 const pendingUploadList = ref<any[]>([]);
 const localDirectorySegments = ref<string[]>([]);
+const uploadProgressItems = ref<UploadProgressItem[]>([]);
+
+const UPLOAD_PROGRESS_MAX_BEFORE_RESPONSE = 95;
 
 let listCancelTokenSource: any = null;
 let loadRequestId = 0;
 let isSyncingTableSelection = false;
+let uploadProgressCleanupTimer: number | null = null;
 
 const headerCellStyle = {
   color: "#0f172a",
@@ -389,6 +436,13 @@ const sortedEntries = computed(() => {
     if (left.kind !== right.kind) {
       return left.kind === "directory" ? -1 : 1;
     }
+
+    const leftTime = normalizeDateValue(left.updatedAt)?.getTime() ?? 0;
+    const rightTime = normalizeDateValue(right.updatedAt)?.getTime() ?? 0;
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+
     return left.name.localeCompare(right.name, "zh-CN", {
       numeric: true,
       sensitivity: "base",
@@ -401,6 +455,11 @@ const directoryCount = computed(
 );
 const fileCount = computed(() => entries.value.filter((entry) => entry.kind === "file").length);
 const emptyDescription = computed(() => "当前目录还没有文件或目录");
+const activeUploadCount = computed(() =>
+  uploadProgressItems.value.filter((item) =>
+    item.status === "pending" || item.status === "uploading" || item.status === "processing"
+  ).length
+);
 
 defineExpose({
   get_select,
@@ -418,6 +477,10 @@ watch(
 onBeforeUnmount(() => {
   if (listCancelTokenSource) {
     listCancelTokenSource.cancel("组件卸载");
+  }
+  if (uploadProgressCleanupTimer) {
+    window.clearTimeout(uploadProgressCleanupTimer);
+    uploadProgressCleanupTimer = null;
   }
 });
 
@@ -810,7 +873,7 @@ async function createDirectory() {
     tools.message("请输入目录名称", proxy, "info");
     return false;
   }
-  if (name.includes("/") || name.includes("\\") || name.includes(".")) {
+  if (name.includes("/") || name.includes("\\")) {
     tools.message("目录名称不能包含 /、\\、.", proxy, "warning");
     return false;
   }
@@ -934,6 +997,49 @@ function collectPendingRawFiles() {
     .filter((file): file is File => typeof File !== "undefined" && file instanceof File);
 }
 
+function resetUploadProgressItems(rawFiles: File[]) {
+  if (uploadProgressCleanupTimer) {
+    window.clearTimeout(uploadProgressCleanupTimer);
+    uploadProgressCleanupTimer = null;
+  }
+  uploadProgressItems.value = rawFiles.map((file, index) => ({
+    id: `${Date.now()}-${index}-${file.name}`,
+    name: file.name,
+    progress: 0,
+    status: "pending",
+    errorMessage: "",
+  }));
+}
+
+function updateUploadProgressItem(itemId: string, patch: Partial<UploadProgressItem>) {
+  uploadProgressItems.value = uploadProgressItems.value.map((item) =>
+    item.id === itemId
+      ? {
+          ...item,
+          ...patch,
+        }
+      : item
+  );
+}
+
+function getUploadProgressText(item: UploadProgressItem) {
+  if (item.status === "error") return "失败";
+  if (item.status === "success") return "已完成";
+  if (item.status === "processing") return "处理中";
+  if (item.status === "pending") return "等待中";
+  return `${item.progress}%`;
+}
+
+function scheduleUploadProgressCleanup() {
+  if (uploadProgressCleanupTimer) {
+    window.clearTimeout(uploadProgressCleanupTimer);
+  }
+  uploadProgressCleanupTimer = window.setTimeout(() => {
+    uploadProgressItems.value = [];
+    uploadProgressCleanupTimer = null;
+  }, 4000);
+}
+
 async function submitUploadFiles() {
   if (uploadingFiles.value) return false;
   const rawFiles = collectPendingRawFiles();
@@ -947,23 +1053,82 @@ async function uploadFilesToCurrentDirectory(rawFiles: File[]) {
     return false;
   }
 
-  const formData = new FormData();
-  rawFiles.forEach((file) => {
-    formData.append("files", file);
-  });
-
   uploadingFiles.value = true;
+  resetUploadProgressItems(rawFiles);
+  let successCount = 0;
   try {
-    const response: any = await ApiUploadProjectEntries(formData, {
-      project: projectId.value,
-      folder: currentDirectoryPath.value,
-    });
-    if (!ensureApiSuccess(response, "上传文件失败")) return false;
-    tools.message("文件上传完成", proxy, "success");
-    pendingUploadList.value = [];
-    uploadRef.value?.clearFiles();
-    await loadDirectory();
-    return true;
+    for (const [index, file] of rawFiles.entries()) {
+      const itemId = uploadProgressItems.value[index]?.id;
+      if (!itemId) continue;
+
+      const formData = new FormData();
+      formData.append("files", file);
+      updateUploadProgressItem(itemId, {
+        status: "uploading",
+        progress: 0,
+        errorMessage: "",
+      });
+
+      const response: any = await ApiUploadProjectEntries(
+        formData,
+        {
+          project: projectId.value,
+          folder: currentDirectoryPath.value,
+        },
+        {
+          onUploadProgress: (event: any) => {
+            const total = Number(event?.total || 0);
+            const loaded = Number(event?.loaded || 0);
+            const ratio = total > 0 ? loaded / total : 0;
+            const progress =
+              total > 0
+                ? Math.min(
+                    UPLOAD_PROGRESS_MAX_BEFORE_RESPONSE,
+                    Math.max(1, Math.round(ratio * UPLOAD_PROGRESS_MAX_BEFORE_RESPONSE))
+                  )
+                : 0;
+            updateUploadProgressItem(itemId, {
+              status: ratio >= 1 ? "processing" : "uploading",
+              progress,
+            });
+          },
+        }
+      );
+
+      if (response?.result === 0) {
+        updateUploadProgressItem(itemId, {
+          status: "error",
+          progress: 100,
+          errorMessage: response?.data || response?.msg || "上传失败",
+        });
+        continue;
+      }
+
+      updateUploadProgressItem(itemId, {
+        status: "success",
+        progress: 100,
+      });
+      successCount += 1;
+    }
+
+    if (successCount > 0) {
+      pendingUploadList.value = [];
+      uploadRef.value?.clearFiles();
+      await loadDirectory();
+    }
+
+    if (successCount === rawFiles.length) {
+      scheduleUploadProgressCleanup();
+      return true;
+    }
+
+    if (successCount > 0) {
+      tools.message("部分文件上传失败", proxy, "warning");
+    } else {
+      tools.message("上传文件失败", proxy, "error");
+    }
+    scheduleUploadProgressCleanup();
+    return false;
   } finally {
     uploadingFiles.value = false;
   }
@@ -1043,6 +1208,145 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   padding: 16px 20px 14px;
   height: 100%;
   box-sizing: border-box;
+}
+
+.files-upload-progress-overlay {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 5000;
+  pointer-events: none;
+}
+
+.files-upload-progress-card {
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(48vh, 420px);
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(10px);
+  padding: 14px;
+}
+
+.files-upload-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+
+  strong {
+    color: #0f172a;
+    font-size: 14px;
+  }
+
+  span {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+  }
+}
+
+.files-upload-progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.files-upload-progress-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.files-upload-progress-item.is-success {
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.files-upload-progress-item.is-processing {
+  border-color: rgba(37, 99, 235, 0.24);
+}
+
+.files-upload-progress-item.is-error {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(254, 242, 242, 0.92);
+}
+
+.files-upload-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.files-upload-progress-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-upload-progress-value {
+  flex: 0 0 auto;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.files-upload-progress-bar {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+
+  > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #111827, #2563eb);
+    transition: width 0.18s ease;
+  }
+}
+
+.files-upload-progress-item.is-processing .files-upload-progress-bar > span {
+  background:
+    linear-gradient(90deg, rgba(17, 24, 39, 0.95), rgba(37, 99, 235, 0.92)),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.08) 25%, rgba(255, 255, 255, 0.28) 25%, rgba(255, 255, 255, 0.28) 50%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.08) 75%, rgba(255, 255, 255, 0.28) 75%);
+  background-size: 100% 100%, 28px 100%;
+  animation: files-upload-progress-processing 0.8s linear infinite;
+}
+
+.files-upload-progress-item.is-error .files-upload-progress-bar > span {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.files-upload-progress-item.is-success .files-upload-progress-bar > span {
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+}
+
+.files-upload-progress-error {
+  margin-top: 8px;
+  color: #b91c1c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@keyframes files-upload-progress-processing {
+  from {
+    background-position: 0 0, 0 0;
+  }
+
+  to {
+    background-position: 0 0, 28px 0;
+  }
 }
 
 .files-shell {

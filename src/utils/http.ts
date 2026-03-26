@@ -209,10 +209,18 @@ class Http {
     url: string,
     data: AxiosRequestConfig,
     params = {},
-    headers = {}
+    headers = {},
+    config: AxiosRequestConfig = {}
   ): Promise<T> {
     return Http.axiosInstance
-      .post(url, data, { params, headers })
+      .post(url, data, {
+        ...config,
+        params,
+        headers: {
+          ...(config.headers || {}),
+          ...(headers || {}),
+        },
+      })
       .then((res) => {
         return res.data;
       })

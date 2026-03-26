@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from "axios";
 import { http } from "@/utils/http";
 
 const PROJECT_FILE_ENDPOINT = "/project/file";
@@ -135,12 +136,12 @@ export function ApiListProjectEntries(config: any): Promise<String> {
   });
 }
 
-export function ApiUploadProjectEntries(data: any, params: any): Promise<String> {
+export function ApiUploadProjectEntries(data: any, params: any, config: AxiosRequestConfig = {}): Promise<String> {
   return new Promise((resolve) => {
     http
       .httpPost(PROJECT_FILE_ENDPOINT, data, params, {
         "Content-Type": "multipart/form-data",
-      })
+      }, config)
       .then((res: any) => {
         resolve(res);
       });
