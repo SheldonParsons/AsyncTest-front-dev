@@ -19,6 +19,10 @@ export class WindowManager {
 
     // key -> { resolve, timer }
     this._closeRequests = new Map();
+    /** @type {Map<string, Promise<boolean>>} */
+    this._closeAttempts = new Map();
+    /** @type {Map<string, () => Promise<boolean>>} */
+    this._managedCloseHandlers = new Map();
   }
 
   has(key) {
@@ -58,13 +62,13 @@ export class WindowManager {
       });
     }
 
-    const TIMEOUT_MS = 10000;
+    const TIMEOUT_MS = 60000;
 
     const p = new Promise((resolve) => {
       const timer = setTimeout(() => {
         this._closeRequests.delete(key);
-        // 超时策略：默认放行（避免开发期卡死关不了窗口）
-        resolve(true);
+        // 超时策略：默认取消关闭，避免未保存确认在无明确响应时被强制放行。
+        resolve(false);
       }, TIMEOUT_MS);
 
       this._closeRequests.set(key, { resolve, timer });
@@ -86,6 +90,18 @@ export class WindowManager {
     this._closeRequests.delete(key);
     req.resolve(!!allow);
     return true;
+  }
+
+  async requestManagedClose(key) {
+    const handler = this._managedCloseHandlers.get(key);
+    if (typeof handler === 'function') {
+      return await handler();
+    }
+
+    const win = this.get(key);
+    if (!win) return true;
+    win.close();
+    return !this.get(key);
   }
 
   /**
@@ -194,6 +210,8 @@ export class WindowManager {
     // closed：统一清理 + 回调
     win.on('closed', () => {
       this.windows.delete(key);
+      this._managedCloseHandlers.delete(key);
+      this._closeAttempts.delete(key);
 
       const req = this._closeRequests.get(key);
       if (req) {
@@ -206,8 +224,66 @@ export class WindowManager {
 
     // close：hide / beforeClose 拦截
     let bypassCloseOnce = false;
+    const requestManagedClose = async () => {
+      const currentWin = this.get(key);
+      if (!currentWin) return true;
 
-    win.on('close', async (event) => {
+      if (this._closeAttempts.has(key)) {
+        return await this._closeAttempts.get(key);
+      }
+
+      const closePromise = (async () => {
+        let allow = true;
+        if (typeof beforeClose === 'function') {
+          try {
+            allow = await Promise.resolve(beforeClose());
+          } catch {
+            allow = false;
+          }
+        }
+
+        if (!allow) return false;
+
+        const targetWin = this.get(key);
+        if (!targetWin) return true;
+
+        return await new Promise((resolve) => {
+          let settled = false;
+          const onClosed = () => finish(true);
+          const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            targetWin.removeListener('closed', onClosed);
+            if (!value) {
+              bypassCloseOnce = false;
+            }
+            resolve(value);
+          };
+          const timer = setTimeout(() => {
+            finish(!this.get(key));
+          }, 15000);
+
+          targetWin.once('closed', onClosed);
+          bypassCloseOnce = true;
+
+          try {
+            targetWin.close();
+          } catch {
+            finish(false);
+          }
+        });
+      })().finally(() => {
+        this._closeAttempts.delete(key);
+      });
+
+      this._closeAttempts.set(key, closePromise);
+      return await closePromise;
+    };
+
+    this._managedCloseHandlers.set(key, requestManagedClose);
+
+    win.on('close', (event) => {
       console.log("in close.............");
       
       const finalBehavior =
@@ -225,18 +301,7 @@ export class WindowManager {
 
       if (typeof beforeClose === 'function') {
         event.preventDefault();
-
-        let allow = true;
-        try {
-          allow = await Promise.resolve(beforeClose());
-        } catch {
-          allow = false;
-        }
-
-        if (allow) {
-          bypassCloseOnce = true;
-          win.close();
-        }
+        void requestManagedClose();
         return;
       }
     });
@@ -287,6 +352,21 @@ export class WindowManager {
       win.show();
       win.focus();
     }
+  }
+
+  bringToFront(key) {
+    const win = this.get(key);
+    if (!win) return false;
+
+    if (win.isMinimized()) win.restore();
+    win.show();
+    if (typeof win.moveTop === 'function') {
+      try {
+        win.moveTop();
+      } catch {}
+    }
+    win.focus();
+    return true;
   }
 
   sendTo(key, channel, payload) {

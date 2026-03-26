@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.15",
+  "version": "2.0.16",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 1、上传文件功能优化\",\"publishDate\":\"2026-03-26\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 1、修复amind最近打开列表无法滚动的问题\\n#### 2、优化Windows子窗口缩小、放大、关闭按钮的样式\\n#### 3、优化了窗口关闭的流程，现在会确认每个子窗口安全退出后再关闭应用\\n#### 4、修复思维导图全部展开/收起的位置错误问题\\n#### 5、修复数据集创建失败问题\",\"publishDate\":\"2026-03-26\"}"
     },
     "publish": [
       {

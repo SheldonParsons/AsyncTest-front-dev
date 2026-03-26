@@ -31,20 +31,20 @@ defineEmits<{
 <style scoped>
 .no-drag { -webkit-app-region: no-drag; }
 
-/* 右上角，按钮高度约 30% header（55px * 0.3 ≈ 16.5） */
 .win-controls {
   position: absolute;
-  top: 0px;
-  right: 0px;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
   height: 23px;
   display: flex;
   align-items: center;
+  padding-left: 5px;
 }
 
-/* 默认：完全透明、无边框、无底色 */
 .btn {
   height: 100%;
-  width: 45px;            /* Win11 更接近 36~46，这里偏紧凑 */
+  width: 25px;
   border: none;
   background: transparent;
   padding: 0;
@@ -53,34 +53,32 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   color: rgba(0,0,0,0.5);
-  border-radius: 0px;     /* 微圆角 */
   cursor: pointer;
+  border-radius: 5px;
 }
 
-/* hover：才出现浅灰底（无边框） */
 .btn:hover {
   background: rgba(0,0,0,0.08);
 }
 
-/* active：更深一点 */
 .btn:active {
   background: rgba(0,0,0,0.14);
 }
 
-/* close hover：红底白字，接近原生 */
 .btn.close:hover {
   background: #e81123;
   color: #fff;
 }
+
 .btn.close:active {
   background: #c50f1f;
   color: #fff;
 }
+
 .btn.minimize .icon {
   transform: translateY(-3px);
 }
 
-/* SVG 图标：用 stroke 更像原生（线条细） */
 .icon {
   width: 15px;
   height: 15px;
@@ -92,7 +90,6 @@ defineEmits<{
   opacity: 0.95;
 }
 
-/* 最大化方框稍微偏细一点更像系统 */
 .btn:nth-child(2) .icon {
   stroke-width: 1.0;
 }

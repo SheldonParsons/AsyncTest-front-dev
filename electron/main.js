@@ -16,6 +16,8 @@ const rustEngine = require('../src-rust/index.cjs');
 let mainWindow = null;
 let windowManager = null;
 let isQuitting = false;
+let isQuitApproved = false;
+let pendingAppQuitPromise = null;
 
 // amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
 let amindMain = null;
@@ -141,7 +143,11 @@ async function createMainWindow() {
     if (process.platform === 'darwin') {
       event.preventDefault();
       mainWindow?.hide();
+      return;
     }
+
+    event.preventDefault();
+    void requestAppQuit();
   });
 
   return mainWindow;
@@ -177,6 +183,51 @@ function shouldRestoreMainWindowOnActivate() {
   const mainHiddenOrClosed = !main || isManagedWindowHidden(main);
 
   return childWindowsHiddenOrClosed && mainHiddenOrClosed;
+}
+
+function getManagedChildWindowKeys() {
+  if (!windowManager) return [];
+  return windowManager.listKeys().filter((key) => key !== 'main');
+}
+
+async function requestAppQuit() {
+  if (isQuitApproved || isQuittingForUpdate()) {
+    isQuitting = true;
+    return true;
+  }
+
+  if (pendingAppQuitPromise) {
+    return await pendingAppQuitPromise;
+  }
+
+  pendingAppQuitPromise = (async () => {
+    try {
+      for (const key of getManagedChildWindowKeys()) {
+        const childWin = windowManager?.get(key);
+        if (!childWin) continue;
+
+        windowManager?.bringToFront(key);
+        const closed = await windowManager.requestManagedClose(key);
+        if (!closed) {
+          isQuitting = false;
+          return false;
+        }
+      }
+
+      isQuitApproved = true;
+      isQuitting = true;
+      app.quit();
+      return true;
+    } catch (error) {
+      console.error('requestAppQuit failed', error);
+      isQuitting = false;
+      return false;
+    } finally {
+      pendingAppQuitPromise = null;
+    }
+  })();
+
+  return await pendingAppQuitPromise;
 }
 
 // ===== 通用 IPC（放 createMainWindow 外，防重复绑定）=====
@@ -335,8 +386,14 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
-  isQuitting = true;
+app.on('before-quit', (event) => {
+  if (isQuitApproved || isQuittingForUpdate()) {
+    isQuitting = true;
+    return;
+  }
+
+  event.preventDefault();
+  void requestAppQuit();
 });
 
 app.on('window-all-closed', () => {

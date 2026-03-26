@@ -3529,9 +3529,6 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
   if (!targetNodeIds.length) return;
   const nodes = getMindNodes();
   if (!nodes) return;
-  const invalidateSubtreeHeightNodeIds = Array.from(
-    new Set(targetNodeIds.flatMap((targetNodeId) => collectAncestorNodeIds(targetNodeId)).filter(Boolean))
-  );
   const hiddenNodeIds = collapsed
     ? Array.from(
         new Set(
@@ -3547,6 +3544,7 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
   }
 
   let changed = false;
+  const changedCollapsedNodeIds: string[] = [];
   for (const targetNodeId of targetNodeIds) {
     for (const nodeId of collectSubtreeNodeIds(nodes, targetNodeId)) {
       const node = nodes[nodeId];
@@ -3554,11 +3552,18 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
       if (!node || !children.length) continue;
       if (!!node.collapsed === collapsed) continue;
       node.collapsed = collapsed;
+      changedCollapsedNodeIds.push(nodeId);
       changed = true;
     }
   }
 
   if (!changed) return;
+  const invalidateSubtreeHeightNodeIds = Array.from(
+    new Set([
+      ...changedCollapsedNodeIds,
+      ...targetNodeIds.flatMap((targetNodeId) => collectAncestorNodeIds(targetNodeId)).filter(Boolean),
+    ])
+  );
   await applyDocumentMutation(collapsed ? 'node-collapse-subtrees' : 'node-expand-subtrees', {
     ensureVisibleNodeIds: targetNodeIds,
     invalidateSubtreeHeightNodeIds,
@@ -7974,7 +7979,7 @@ async function toggleNodeCollapsed(nodeId: string) {
   const node = nodes?.[nodeId];
   const children = Array.isArray(node?.children) ? node.children : [];
   if (!node || !children.length) return;
-  const invalidateSubtreeHeightNodeIds = collectAncestorNodeIds(nodeId);
+  const invalidateSubtreeHeightNodeIds = Array.from(new Set([nodeId, ...collectAncestorNodeIds(nodeId)]));
   const hiddenNodeIds = node.collapsed
     ? []
     : collectSubtreeNodeIds(nodes, nodeId).filter((childNodeId) => childNodeId !== nodeId);

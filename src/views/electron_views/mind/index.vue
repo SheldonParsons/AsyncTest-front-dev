@@ -24,40 +24,42 @@
             </div>
         </section>
 
-        <section v-if="recentMindEntries.length" class="mind-recents-grid">
-            <article
-                v-for="entry in recentMindEntries"
-                :key="entry.filePath"
-                class="mind-recent-card"
-                @click="openRecentMind(entry.filePath)"
-            >
-                <div class="mind-recent-preview">
-                    <img
-                        v-if="entry.previewUrl"
-                        class="mind-recent-preview-image"
-                        :src="entry.previewUrl"
-                        :alt="entry.title || getRecentLabel(entry.filePath)"
-                        @error="handlePreviewError(entry.filePath)"
-                    />
-                    <div v-else class="mind-recent-preview-placeholder">
-                        <div class="mind-recent-placeholder-header">
-                            <img class="mind-recent-placeholder-logo" :src="mindLogo" alt="" />
-                            <span class="mind-recent-placeholder-label">Mind</span>
+        <section class="mind-recents-shell">
+            <section v-if="recentMindEntries.length" class="mind-recents-grid">
+                <article
+                    v-for="entry in recentMindEntries"
+                    :key="entry.filePath"
+                    class="mind-recent-card"
+                    @click="openRecentMind(entry.filePath)"
+                >
+                    <div class="mind-recent-preview">
+                        <img
+                            v-if="entry.previewUrl"
+                            class="mind-recent-preview-image"
+                            :src="entry.previewUrl"
+                            :alt="entry.title || getRecentLabel(entry.filePath)"
+                            @error="handlePreviewError(entry.filePath)"
+                        />
+                        <div v-else class="mind-recent-preview-placeholder">
+                            <div class="mind-recent-placeholder-header">
+                                <img class="mind-recent-placeholder-logo" :src="mindLogo" alt="" />
+                                <span class="mind-recent-placeholder-label">Mind</span>
+                            </div>
+                            <span class="mind-recent-placeholder-name">{{ getRecentLabel(entry.filePath) }}</span>
                         </div>
-                        <span class="mind-recent-placeholder-name">{{ getRecentLabel(entry.filePath) }}</span>
                     </div>
-                </div>
 
-                <div class="mind-recent-meta">
-                    <h3 class="mind-recent-name">{{ entry.title || getRecentLabel(entry.filePath) }}</h3>
-                    <p class="mind-recent-time">{{ formatUpdatedAt(entry.updatedAt) }}</p>
-                </div>
-            </article>
-        </section>
+                    <div class="mind-recent-meta">
+                        <h3 class="mind-recent-name">{{ entry.title || getRecentLabel(entry.filePath) }}</h3>
+                        <p class="mind-recent-time">{{ formatUpdatedAt(entry.updatedAt) }}</p>
+                    </div>
+                </article>
+            </section>
 
-        <section v-else class="mind-recents-empty">
-            <p class="mind-recents-empty-title">还没有最近打开的思维导图</p>
-            <p class="mind-recents-empty-description">保存一次文件后，这里会显示自动生成的预览图片。</p>
+            <section v-else class="mind-recents-empty">
+                <p class="mind-recents-empty-title">还没有最近打开的思维导图</p>
+                <p class="mind-recents-empty-description">保存一次文件后，这里会显示自动生成的预览图片。</p>
+            </section>
         </section>
     </div>
 </template>
@@ -153,13 +155,23 @@ function formatUpdatedAt(value?: string | null) {
 
 <style lang="scss" scoped>
 .mind-dashboard-page {
-    min-height: 100vh;
+    height: 100vh;
+    min-height: 0;
+    box-sizing: border-box;
     padding: 24px;
     background: #ffffff;
     display: flex;
     flex-direction: column;
     gap: 18px;
-    overflow: auto;
+    overflow: hidden;
+}
+
+.mind-recents-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
 }
 
 .mind-hero {
@@ -219,7 +231,7 @@ function formatUpdatedAt(value?: string | null) {
 
 .mind-hero-title {
     margin: 0;
-    font-size: 34px;
+    font-size: 28px;
     line-height: 1.1;
     font-weight: 800;
     color: #111827;

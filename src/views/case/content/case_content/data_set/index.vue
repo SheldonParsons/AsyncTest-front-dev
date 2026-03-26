@@ -42,8 +42,8 @@
             </motion.div>
         </div>
     </div>
-    <DialogAnimation ref="updateDateSetNameDialogRef" title="编辑数据集名称" cancel_title="取消" :confirm_title="confirm_title"
-        :before_comfirm="check_dataset_name">
+    <DialogAnimation ref="updateDateSetNameDialogRef" :title="datasetDialogTitle" cancel_title="取消"
+        :confirm_title="confirm_title" :before_comfirm="check_dataset_name">
         <div>
             <input ref="inputRef" v-model="currentDataSetName" placeholder="数据集名称">
         </div>
@@ -77,6 +77,8 @@ const emit = defineEmits(['edit'])
 
 const confirm_title = ref('创建')
 
+const datasetDialogTitle = ref("编辑数据集名称")
+
 const showIdTooltip = ref(-1)
 
 const currentDataSetName: any = ref('')
@@ -93,8 +95,12 @@ const create_dataset: any = ref()
 
 const deleteConfirmText = ref("")
 
+const isCreate = ref(false)
+
 async function addDataset() {
     confirm_title.value = "创建"
+    datasetDialogTitle.value = "创建数据集"
+    isCreate.value = true
     const result = await updateDateSetNameDialogRef.value.open()
     if (result.action === 'comfirm' && result.hook_result === true) {
         data.value.unshift(create_dataset.value)
@@ -105,6 +111,20 @@ async function addDataset() {
     currentDataSetName.value = ''
 }
 
+async function createDateSet() {
+    const _data = {
+        type: 1,
+        child_action_type: "create_dataset",
+        content: {
+            name: currentDataSetName.value,
+            case: props.case_id
+        }
+    }
+    const resp = await send_action(_data)
+    if (!resp) return false
+    create_dataset.value = resp
+}
+
 async function check_dataset_name() {
     if (currentDataSetName.value.length === 0) {
         window.$toast({ title: '数据集名称不能为空。', type: 'info' })
@@ -112,6 +132,10 @@ async function check_dataset_name() {
     } else if (currentDataSetName.value.length > 255) {
         window.$toast({ title: '数据集名称过长(Limit 255)。', type: 'info' })
         return false
+    }
+    if (isCreate.value) {
+        await createDateSet()
+        isCreate.value = false
     }
     return true
 }
@@ -252,6 +276,7 @@ input {
     outline: none;
     box-sizing: border-box;
 }
+
 .data-set-container {
     height: 100%;
     width: 100%;

@@ -108,14 +108,6 @@
           <el-skeleton :rows="8" animated />
         </el-col>
       </el-row>
-      <el-row style="margin-top: 10px;">
-        <el-col :span="22" :offset="1">
-          <div class="ast-header-left">
-            <span class="ast-block-icon"></span>
-            <label class="ast-label">请求参数</label>
-          </div>
-        </el-col>
-      </el-row>
       <div v-if="loading === false">
         <el-row style="margin-top: 10px;">
           <el-col :span="22" :offset="1">
