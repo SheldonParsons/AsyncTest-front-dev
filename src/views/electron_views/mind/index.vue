@@ -31,6 +31,7 @@
                     :key="entry.filePath"
                     class="mind-recent-card"
                     @click="openRecentMind(entry.filePath)"
+                    @contextmenu="openRecentContextMenu($event, entry)"
                 >
                     <div class="mind-recent-preview">
                         <img
@@ -50,7 +51,7 @@
                     </div>
 
                     <div class="mind-recent-meta">
-                        <h3 class="mind-recent-name">{{ entry.title || getRecentLabel(entry.filePath) }}</h3>
+                        <h3 class="mind-recent-name">{{ getRecentLabel(entry.filePath) }}</h3>
                         <p class="mind-recent-time">{{ formatUpdatedAt(entry.updatedAt) }}</p>
                     </div>
                 </article>
@@ -100,6 +101,18 @@ function handleWindowFocus() {
 async function loadRecentMindEntries() {
     try {
         const entries = await window.electronAPI.amind.recentEntries();
+        console.info('[mind-preview-debug] loadRecentMindEntries', {
+            count: Array.isArray(entries) ? entries.length : 0,
+            entries: Array.isArray(entries)
+                ? entries.map((entry) => ({
+                    filePath: entry?.filePath ?? null,
+                    title: entry?.title ?? null,
+                    updatedAt: entry?.updatedAt ?? null,
+                    hasPreviewUrl: !!entry?.previewUrl,
+                    previewUrlLength: typeof entry?.previewUrl === 'string' ? entry.previewUrl.length : 0,
+                }))
+                : [],
+        });
         recentMindEntries.value = Array.isArray(entries) ? entries : [];
     } catch {
         recentMindEntries.value = [];
@@ -132,6 +145,63 @@ async function openRecentMind(filePath: string) {
         window.$toast({ title: '找不到该最近文件', type: 'error' });
         await window.electronAPI.amind.removeRecent({ filePath });
         await loadRecentMindEntries();
+    }
+}
+
+async function removeRecentEntry(filePath: string, options: { notifyMissing?: boolean } = {}) {
+    await window.electronAPI.amind.removeRecent({ filePath });
+    await loadRecentMindEntries();
+    if (options.notifyMissing) {
+        window.$toast({ title: '文件不存在，已移除最近打开记录', type: 'info' });
+    }
+}
+
+async function ensureRecentFileExists(filePath: string) {
+    const result = await window.electronAPI.amind.fileExists({ filePath });
+    if (result?.ok && result?.exists) return true;
+    await removeRecentEntry(filePath, { notifyMissing: true });
+    return false;
+}
+
+async function revealRecentMindInFolder(filePath: string) {
+    const exists = await ensureRecentFileExists(filePath);
+    if (!exists) return;
+    const result = await window.electronAPI.amind.openFolder({ filePath });
+    if (!result?.ok) {
+        window.$toast({ title: result?.error || '打开文件目录失败', type: 'error' });
+        if (result?.error === '当前文件不存在' || result?.error === '当前文件目录不存在') {
+            await removeRecentEntry(filePath, { notifyMissing: true });
+        }
+    }
+}
+
+async function removeRecentMind(filePath: string) {
+    const exists = await window.electronAPI.amind.fileExists({ filePath });
+    if (!exists?.ok || !exists?.exists) {
+        await removeRecentEntry(filePath, { notifyMissing: true });
+        return;
+    }
+    await removeRecentEntry(filePath);
+    window.$toast({ title: '已移除最近打开记录', type: 'success' });
+}
+
+async function openRecentContextMenu(event: MouseEvent, entry: RecentMindEntry) {
+    event.preventDefault();
+    event.stopPropagation();
+    const action = await window.electronAPI.wm.popupMenu({
+        x: event.clientX,
+        y: event.clientY,
+        items: [
+            { id: 'open-folder', label: '打开文件目录' },
+            { id: 'remove-recent', label: '移除' },
+        ],
+    });
+    if (action === 'open-folder') {
+        await revealRecentMindInFolder(entry.filePath);
+        return;
+    }
+    if (action === 'remove-recent') {
+        await removeRecentMind(entry.filePath);
     }
 }
 
@@ -171,7 +241,7 @@ function formatUpdatedAt(value?: string | null) {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-right: 4px;
+    padding: 4px 4px 8px 0;
 }
 
 .mind-hero {
@@ -281,6 +351,7 @@ function formatUpdatedAt(value?: string | null) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 14px;
+    padding-top: 4px;
 }
 
 .mind-recent-card {

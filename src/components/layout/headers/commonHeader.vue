@@ -192,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick, computed } from "vue"
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed } from "vue"
 import { motion, animate, stagger } from "motion-v"
 import { splitText } from "motion-plus"
 import zhCn from "element-plus/es/locale/lang/zh-cn"
@@ -225,6 +225,7 @@ const project_name = ref("loading...")
 const isReady = ref(false)
 const { locale: localeLang } = useI18n()
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
+const currentWindowKey = computed(() => (route.query.windowKey as string) || 'main')
 const userImage = ref(
   "https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png"
 )
@@ -268,6 +269,8 @@ const ideaIconUrl = "https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/In
 const containerRef = ref<HTMLDivElement | null>(null)
 const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null)
 const loginDialogRef = ref<any>(null)
+let removeAuthLogoutListener: (() => void) | null = null
+let removeAuthLoginListener: (() => void) | null = null
 
 const emit = defineEmits(["up"])
 
@@ -285,10 +288,28 @@ onMounted(async () => {
     isReady.value = true
   }, 50)
 
+  if (isElectron && window.electronAPI?.on) {
+    removeAuthLogoutListener = window.electronAPI.on('auth:logout', (_event: any, payload: { sourceWindow?: string } = {}) => {
+      if (payload?.sourceWindow === currentWindowKey.value) return
+      applyLoggedOutState()
+    })
+    removeAuthLoginListener = window.electronAPI.on('auth:login', (_event: any, payload: { sourceWindow?: string } = {}) => {
+      if (payload?.sourceWindow === currentWindowKey.value) return
+      updateLoginStatus()
+    })
+  }
+
   const res = await get_project_info()
   if (res) {
     animateProjectName()
   }
+})
+
+onBeforeUnmount(() => {
+  removeAuthLogoutListener?.()
+  removeAuthLogoutListener = null
+  removeAuthLoginListener?.()
+  removeAuthLoginListener = null
 })
 
 async function get_project_info() {
@@ -374,17 +395,22 @@ function langHandleSelect(e: any) {
   }
 }
 
-function logout() {
-  ClearServerCookie().then(() => {
-    window.$toast({ title: '退出登录' })
-    // 更新登录状态
-    isLoggedIn.value = false
-    if (import.meta.env.VITE_IS_ELECTRON === 'true') {
-      router.push({ name: "dashboard" })
-    } else {
-      router.push({ name: "login" })
-    }
-  })
+function applyLoggedOutState() {
+  isLoggedIn.value = false
+  if (import.meta.env.VITE_IS_ELECTRON === 'true') {
+    router.push({ name: "dashboard" })
+  } else {
+    router.push({ name: "login" })
+  }
+}
+
+async function logout() {
+  await ClearServerCookie()
+  window.$toast({ title: '退出登录' })
+  applyLoggedOutState()
+  if (isElectron && window.electronAPI?.wm?.broadcast) {
+    await window.electronAPI.wm.broadcast('auth:logout', { sourceWindow: currentWindowKey.value })
+  }
 }
 
 function toProject() {
@@ -421,6 +447,9 @@ function handleLoginSuccess() {
   // 更新登录状态
   isLoggedIn.value = true
   getUserImage()
+  if (isElectron && window.electronAPI?.wm?.broadcast) {
+    void window.electronAPI.wm.broadcast('auth:login', { sourceWindow: currentWindowKey.value })
+  }
 }
 
 // 在桌面端打开文档

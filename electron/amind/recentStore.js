@@ -47,8 +47,18 @@ async function toRendererEntry(entry) {
             const bytes = await fs.readFile(entry.previewPath);
             previewUrl = `data:image/png;base64,${bytes.toString('base64')}`;
         } catch {
+            console.warn('[mind-preview-debug:main] failed to read preview file', {
+                filePath: entry.filePath,
+                previewPath: entry.previewPath,
+            });
             previewUrl = null;
         }
+    } else {
+        console.warn('[mind-preview-debug:main] renderer entry missing previewPath', {
+            filePath: entry.filePath,
+            updatedAt: entry.updatedAt ?? null,
+            title: entry.title ?? null,
+        });
     }
     return {
         ...entry,
@@ -136,6 +146,11 @@ export function createRecentStore({ userDataPath }) {
         const previewPath = createPreviewPath(normalizedPath);
         await fs.mkdir(previewDir, { recursive: true });
         await fs.writeFile(previewPath, bytes);
+        console.info('[mind-preview-debug:main] preview file written', {
+            filePath: normalizedPath,
+            previewPath,
+            byteLength: bytes?.length ?? 0,
+        });
         const entries = await update(normalizedPath, {
             ...patch,
             previewPath,

@@ -34,7 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         new: (payload) => ipcRenderer.invoke('amind:new', payload),
         newAndOpenWindow: (payload) => ipcRenderer.invoke('amind:newAndOpenWindow', payload),
         openFileInWindow: (payload) => ipcRenderer.invoke('amind:openFileInWindow', payload),
+        openRemoteBufferInWindow: (payload) => ipcRenderer.invoke('amind:openRemoteBufferInWindow', payload),
         openFolder: (payload) => ipcRenderer.invoke('amind:openFolder', payload),
+        fileExists: (payload) => ipcRenderer.invoke('amind:fileExists', payload),
 
         recents: () => ipcRenderer.invoke('amind:recents'),
         recentEntries: () => ipcRenderer.invoke('amind:recentEntries'),
@@ -47,6 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
         save: (payload) => ipcRenderer.invoke('amind:save', payload),
         saveAsDialog: (payload) => ipcRenderer.invoke('amind:saveAsDialog', payload),
+        buildUploadPayload: (payload) => ipcRenderer.invoke('amind:buildUploadPayload', payload),
         exportXmindDialog: (payload) => ipcRenderer.invoke('amind:exportXmindDialog', payload),
         exportXmindDocDialog: (payload) => ipcRenderer.invoke('amind:exportXmindDocDialog', payload),
         exportAmindDialog: (payload) => ipcRenderer.invoke('amind:exportAmindDialog', payload),
@@ -64,5 +67,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         saveRecentExport: (payload) => ipcRenderer.invoke('generator:saveRecentExport', payload),
         dumpCacheSnapshot: (payload) => ipcRenderer.invoke('generator:dumpCacheSnapshot', payload),
         exportDocxPackage: (payload) => ipcRenderer.invoke('generator:exportDocxPackage', payload),
+    },
+
+    projectFiles: {
+        saveCurrentFolderZip: (payload) => ipcRenderer.invoke('projectFiles:saveCurrentFolderZip', payload),
     },
 });

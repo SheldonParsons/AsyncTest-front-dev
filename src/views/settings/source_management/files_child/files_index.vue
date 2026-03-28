@@ -15,6 +15,16 @@
               <el-icon><UploadFilled /></el-icon>
               <span>上传文件</span>
             </el-button>
+            <el-button
+              v-if="canUseCurrentFolderExport"
+              class="files-tool-btn files-tool-btn-export"
+              plain
+              :loading="folderExportMetaLoading && !folderExportDialogVisible"
+              @click="openFolderExportDialog"
+            >
+              <el-icon><Download /></el-icon>
+              <span>批量下载</span>
+            </el-button>
           </div>
         </div>
       </div>
@@ -174,7 +184,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="152" fixed="right" align="left" header-align="left">
+          <el-table-column label="操作" width="184" fixed="right" align="left" header-align="left">
             <template #default="{ row }">
               <div class="entry-actions">
                 <button
@@ -187,7 +197,17 @@
                 </button>
 
                 <button
-                  v-else-if="row.downloadUrl"
+                  v-else-if="canOpenAmindInMindWindow && isAmindEntry(row)"
+                  class="entry-action-chip"
+                  type="button"
+                  :disabled="downloadingEntryKey === row.selectionKey"
+                  @click.stop="openAmindEntry(row)"
+                >
+                  {{ downloadingEntryKey === row.selectionKey ? "打开中" : "打开" }}
+                </button>
+
+                <button
+                  v-if="row.kind === 'file' && row.downloadUrl"
                   class="entry-action-chip entry-action-chip-link"
                   type="button"
                   :disabled="downloadingEntryKey === row.selectionKey"
@@ -196,7 +216,7 @@
                   <span>{{ downloadingEntryKey === row.selectionKey ? "下载中" : "下载" }}</span>
                 </button>
 
-                <span v-else class="entry-action-placeholder">无下载链接</span>
+                <span v-else-if="row.kind === 'file'" class="entry-action-placeholder">无下载链接</span>
 
                 <button
                   class="entry-action-chip entry-action-chip-danger"
@@ -272,6 +292,79 @@
       </div>
     </DialogAnimation>
 
+    <DialogAnimation
+      ref="folderExportDialogRef"
+      title="批量下载"
+      cancel_title="取消"
+      :confirm_title="exportingCurrentFolderZip ? '处理中...' : '下载 ZIP'"
+      :showCancel="!exportingCurrentFolderZip"
+      :before_comfirm="submitCurrentFolderExport"
+      :bgtype="'white'"
+      :topMove="'0% !important'"
+      :z-index="2600"
+    >
+      <div
+        class="files-dialog-panel files-export-panel"
+        v-loading="folderExportMetaLoading || exportingCurrentFolderZip"
+        element-loading-text="正在准备下载，请稍候..."
+      >
+        <div class="files-export-hero">
+          <div>
+            <div class="files-export-eyebrow">当前目录批量导出</div>
+            <div class="files-export-title">当前目录直接子文件将被打包为 ZIP</div>
+            <div class="files-export-desc">
+              仅处理当前目录下的文件，不递归子目录。
+            </div>
+          </div>
+          <div class="files-export-path">{{ currentDirectoryDisplayPath }}</div>
+        </div>
+
+        <div v-if="folderExportMeta" class="files-export-metrics">
+          <div class="files-export-metric-card">
+            <span class="files-export-metric-label">文件数量</span>
+            <strong class="files-export-metric-value">{{ folderExportMeta.directFileCount }}</strong>
+          </div>
+          <div class="files-export-metric-card">
+            <span class="files-export-metric-label">总大小</span>
+            <strong class="files-export-metric-value">{{ formatByteCount(folderExportMeta.directTotalSize) }}</strong>
+          </div>
+          <div class="files-export-metric-card">
+            <span class="files-export-metric-label">amind 文件</span>
+            <strong class="files-export-metric-value">{{ folderExportMeta.amindFileCount }}</strong>
+          </div>
+        </div>
+
+        <div v-if="folderExportMeta?.directFileCount === 0" class="files-export-empty">
+          当前目录下没有可导出的直接子文件。
+        </div>
+
+        <div v-else-if="folderExportMeta" class="files-export-option-card">
+          <div class="files-export-option-copy">
+            <div class="files-export-option-title">导出附加选项</div>
+            <div
+              class="files-export-option-desc"
+              :class="{ 'is-warning': folderExportMeta.hasAmindFile && !canConvertCurrentFolderAmind }"
+            >
+              {{ folderExportMeta.hasAmindFile
+                ? canConvertCurrentFolderAmind
+                  ? `检测到 ${folderExportMeta.amindFileCount} 个 amind 文件，勾选后自动将所有amind文件转为xmind。`
+                  : `检测到 ${folderExportMeta.amindFileCount} 个 amind 文件，Web 端暂不支持转换，请使用桌面版。`
+                : "当前目录没有 amind 文件，本次将直接保存原始 ZIP。"
+              }}
+            </div>
+          </div>
+
+          <el-checkbox
+            v-model="convertCurrentFolderAmindToXmind"
+            :disabled="!folderExportMeta.hasAmindFile || !canConvertCurrentFolderAmind || exportingCurrentFolderZip"
+            size="large"
+          >
+            将 amind 转成 xmind
+          </el-checkbox>
+        </div>
+      </div>
+    </DialogAnimation>
+
     <Teleport to="body">
       <div v-if="uploadProgressItems.length" class="files-upload-progress-overlay">
         <div class="files-upload-progress-card">
@@ -314,6 +407,7 @@ import { ElMessageBox } from "element-plus";
 import type { UploadInstance } from "element-plus";
 import DialogAnimation from "@/components/common/general/dialog.vue";
 import {
+  Download,
   Document,
   FolderAdd,
   FolderOpened,
@@ -321,12 +415,15 @@ import {
 } from "@element-plus/icons-vue";
 import {
   ApiCreateProjectDirectory,
+  ApiDownloadProjectFolderZip,
   ApiDeleteProjectDirectory,
   ApiDeleteProjectEntry,
+  ApiGetProjectFolderMeta,
   ApiListProjectEntries,
   ApiUploadProjectEntries,
 } from "@/api/project/index";
 import amindFileIcon from "@/assets/img/amind.png";
+import { buildRemoteBindingFromTarget } from "@/mind/vue_views/remoteBinding";
 import tools from "@/utils/tools";
 import { HttpClass } from "@/utils/http";
 
@@ -358,6 +455,15 @@ type UploadProgressItem = {
   errorMessage: string;
 };
 
+type FolderExportMeta = {
+  folderName: string;
+  folder: string;
+  directFileCount: number;
+  directTotalSize: number;
+  hasAmindFile: boolean;
+  amindFileCount: number;
+};
+
 const props = withDefaults(
   defineProps<{
     selectable?: boolean;
@@ -375,12 +481,17 @@ const props = withDefaults(
   }
 );
 
+const emit = defineEmits<{
+  (event: "directoryChange", payload: { path: string; displayPath: string; segments: string[] }): void;
+}>();
+
 const { proxy }: any = getCurrentInstance();
 const route = useRoute();
 const router = useRouter();
 
 const createDirectoryDialogRef = ref<any>(null);
 const uploadDialogRef = ref<any>(null);
+const folderExportDialogRef = ref<any>(null);
 const multipleTableRef = ref<any>(null);
 const uploadRef = ref<UploadInstance | null>(null);
 
@@ -396,6 +507,11 @@ const newDirectoryName = ref("");
 const pendingUploadList = ref<any[]>([]);
 const localDirectorySegments = ref<string[]>([]);
 const uploadProgressItems = ref<UploadProgressItem[]>([]);
+const folderExportDialogVisible = ref(false);
+const folderExportMetaLoading = ref(false);
+const exportingCurrentFolderZip = ref(false);
+const folderExportMeta = ref<FolderExportMeta | null>(null);
+const convertCurrentFolderAmindToXmind = ref(false);
 
 const UPLOAD_PROGRESS_MAX_BEFORE_RESPONSE = 95;
 
@@ -460,15 +576,32 @@ const activeUploadCount = computed(() =>
     item.status === "pending" || item.status === "uploading" || item.status === "processing"
   ).length
 );
+const canUseCurrentFolderExport = computed(() => !props.selectable);
+const canConvertCurrentFolderAmind = computed(() =>
+  import.meta.env.VITE_IS_ELECTRON === "true" && !!window.electronAPI?.projectFiles?.saveCurrentFolderZip
+);
+const canOpenAmindInMindWindow = computed(() =>
+  import.meta.env.VITE_IS_ELECTRON === "true" && !!window.electronAPI?.amind?.openRemoteBufferInWindow
+);
 
 defineExpose({
   get_select,
   clean_select,
+  get_current_directory,
+  refresh_directory,
 });
 
 watch(
   () => [projectId.value, currentDirectoryPath.value],
   () => {
+    folderExportMeta.value = null;
+    folderExportDialogVisible.value = false;
+    convertCurrentFolderAmindToXmind.value = false;
+    emit("directoryChange", {
+      path: currentDirectoryPath.value,
+      displayPath: currentDirectoryDisplayPath.value,
+      segments: [...currentDirectorySegments.value],
+    });
     loadDirectory();
   },
   { immediate: true }
@@ -700,6 +833,79 @@ function formatEntrySize(size: number | null, kind: FileManagerEntryKind) {
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+function formatByteCount(size: number | null | undefined) {
+  if (size === null || size === undefined || !Number.isFinite(Number(size))) return "—";
+  return formatEntrySize(Number(size), "file");
+}
+
+function normalizeFolderExportMeta(response: any): FolderExportMeta | null {
+  const payload = response?.data ?? response;
+  if (!payload || typeof payload !== "object") return null;
+  const amindFileCount = Number(payload.amind_file_count ?? payload.amindFileCount ?? 0) || 0;
+  const defaultFolderName = currentDirectorySegments.value[currentDirectorySegments.value.length - 1] || "根目录";
+  return {
+    folderName: `${currentDirectorySegments.value.length === 0 ? "根目录" : payload.folder_name ?? payload.name ?? payload.folderName ?? defaultFolderName}`,
+    folder: `${payload.folder ?? currentDirectoryPath.value ?? ""}`,
+    directFileCount: Number(payload.direct_file_count ?? payload.file_count ?? payload.directFileCount ?? 0) || 0,
+    directTotalSize: Number(payload.direct_total_size ?? payload.total_size ?? payload.directTotalSize ?? 0) || 0,
+    hasAmindFile: amindFileCount > 0,
+    amindFileCount,
+  };
+}
+
+function getCurrentFolderZipDefaultName() {
+  const fallbackName = currentDirectorySegments.value[currentDirectorySegments.value.length - 1] || "根目录";
+  const displayName = folderExportMeta.value?.folderName?.trim() || fallbackName;
+  return `${displayName}.zip`;
+}
+
+function parseContentDispositionFileName(contentDisposition: string | null | undefined) {
+  if (!contentDisposition) return "";
+  const utfMatch = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1].trim().replace(/^["']|["']$/g, ""));
+    } catch (_error) {
+      return utfMatch[1].trim().replace(/^["']|["']$/g, "");
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+  return plainMatch?.[1]?.trim().replace(/^["']|["']$/g, "") || "";
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = fileName;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 1000);
+}
+
+async function resolveZipDownloadErrorMessage(error: any, fallbackMessage: string) {
+  const responseData = error?.response?.data;
+  if (responseData instanceof Blob) {
+    try {
+      const text = await responseData.text();
+      if (!text) return fallbackMessage;
+      try {
+        const payload = JSON.parse(text);
+        return payload?.data || payload?.msg || fallbackMessage;
+      } catch (_parseError) {
+        return text;
+      }
+    } catch (_blobError) {
+      return fallbackMessage;
+    }
+  }
+  return error?.response?.data?.data || error?.response?.data?.msg || error?.message || fallbackMessage;
+}
+
 function ensureApiSuccess(response: any, fallbackMessage: string) {
   if (response?.result === 0) {
     if (response?.msg === "cancel") return false;
@@ -747,6 +953,18 @@ function serializeSelectedEntry(entry: FileManagerEntry) {
 
 function get_select() {
   return selectedEntries.value.map((entry) => serializeSelectedEntry(entry));
+}
+
+function get_current_directory() {
+  return {
+    path: currentDirectoryPath.value,
+    displayPath: currentDirectoryDisplayPath.value,
+    segments: [...currentDirectorySegments.value],
+  };
+}
+
+async function refresh_directory() {
+  await loadDirectory();
 }
 
 async function syncTableSelectionFromCache() {
@@ -866,6 +1084,60 @@ function openCreateDirectoryDialog() {
   createDirectoryDialogRef.value?.open();
 }
 
+async function loadFolderExportMeta() {
+  if (!projectId.value) {
+    folderExportMeta.value = null;
+    convertCurrentFolderAmindToXmind.value = false;
+    return false;
+  }
+
+  folderExportMetaLoading.value = true;
+  try {
+    const response: any = await ApiGetProjectFolderMeta({
+      project: projectId.value,
+      folder: currentDirectoryPath.value,
+    });
+    if (!ensureApiSuccess(response, "获取当前目录摘要失败")) {
+      folderExportMeta.value = null;
+      return false;
+    }
+
+    const meta = normalizeFolderExportMeta(response);
+    if (!meta) {
+      folderExportMeta.value = null;
+      tools.message("当前目录摘要数据格式不正确", proxy, "error");
+      return false;
+    }
+
+    folderExportMeta.value = meta;
+    if (!meta.hasAmindFile || !canConvertCurrentFolderAmind.value) {
+      convertCurrentFolderAmindToXmind.value = false;
+    }
+    return true;
+  } catch (error) {
+    console.log(error);
+    folderExportMeta.value = null;
+    tools.message("获取当前目录摘要失败", proxy, "error");
+    return false;
+  } finally {
+    folderExportMetaLoading.value = false;
+  }
+}
+
+async function openFolderExportDialog() {
+  if (folderExportMetaLoading.value || exportingCurrentFolderZip.value) return;
+  const loaded = await loadFolderExportMeta();
+  if (!loaded) return;
+
+  folderExportDialogVisible.value = true;
+  try {
+    await nextTick();
+    await folderExportDialogRef.value?.open();
+  } finally {
+    folderExportDialogVisible.value = false;
+  }
+}
+
 async function createDirectory() {
   if (creatingDirectory.value) return false;
   const name = newDirectoryName.value.trim();
@@ -972,6 +1244,110 @@ async function downloadEntry(entry: FileManagerEntry) {
       }, 1000);
     }
     downloadingEntryKey.value = null;
+  }
+}
+
+function isAmindEntry(entry: FileManagerEntry) {
+  if (entry.kind !== "file") return false;
+  const extension = `${entry.raw?.extension ?? entry.name.split(".").pop() ?? ""}`.trim().replace(/^\./, "").toLowerCase();
+  return extension === "amind";
+}
+
+async function openAmindEntry(entry: FileManagerEntry) {
+  if (!canOpenAmindInMindWindow.value || !isAmindEntry(entry) || !entry.downloadUrl || downloadingEntryKey.value) return;
+  downloadingEntryKey.value = entry.selectionKey;
+  try {
+    const response = await fetch(entry.downloadUrl);
+    if (!response.ok) {
+      throw new Error(`download failed: ${response.status}`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const remoteBinding = buildRemoteBindingFromTarget({
+      projectId: projectId.value,
+      projectName: "",
+      folder: resolveEntryFolder(entry),
+      fileId: entry.raw?.id ?? entry.id,
+      fileName: entry.name,
+      filePath: entry.path,
+    });
+    if (!remoteBinding) {
+      throw new Error("无法生成远程绑定信息");
+    }
+    await window.electronAPI.amind.openRemoteBufferInWindow({
+      bytes,
+      fileName: entry.name,
+      remoteBinding,
+    });
+  } catch (error) {
+    console.log(error);
+    tools.message("打开 amind 文件失败", proxy, "error");
+  } finally {
+    downloadingEntryKey.value = null;
+  }
+}
+
+async function submitCurrentFolderExport() {
+  if (exportingCurrentFolderZip.value || folderExportMetaLoading.value) return false;
+  if (!projectId.value) {
+    tools.message("缺少项目参数，无法导出当前目录文件", proxy, "error");
+    return false;
+  }
+
+  if (!folderExportMeta.value) {
+    const loaded = await loadFolderExportMeta();
+    if (!loaded) return false;
+  }
+
+  if (!folderExportMeta.value || folderExportMeta.value.directFileCount <= 0) {
+    tools.message("当前目录没有可导出的直接子文件", proxy, "info");
+    return false;
+  }
+
+  exportingCurrentFolderZip.value = true;
+  try {
+    const response = await ApiDownloadProjectFolderZip({
+      project: projectId.value,
+      folder: currentDirectoryPath.value,
+    });
+    const zipBlob =
+      response?.data instanceof Blob ? response.data : new Blob([response?.data], { type: "application/zip" });
+
+    if (convertCurrentFolderAmindToXmind.value) {
+      if (!canConvertCurrentFolderAmind.value || !window.electronAPI?.projectFiles?.saveCurrentFolderZip) {
+        tools.message("当前环境不支持 amind 转 xmind 后再打包", proxy, "warning");
+        return false;
+      }
+
+      const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+      const result = await window.electronAPI.projectFiles.saveCurrentFolderZip({
+        zipBytes,
+        defaultFileName: getCurrentFolderZipDefaultName(),
+        convertAmindToXmind: true,
+      });
+
+      if (result?.canceled) {
+        return false;
+      }
+
+      const failedCount = Array.isArray(result?.failedAmindFiles) ? result.failedAmindFiles.length : 0;
+      if (failedCount > 0) {
+        tools.message(`ZIP 已保存，${result?.convertedCount || 0} 个 amind 已转换，${failedCount} 个转换失败`, proxy, "warning");
+      } else {
+        tools.message(`ZIP 已保存，已转换 ${result?.convertedCount || 0} 个 amind 文件`, proxy, "success");
+      }
+      return true;
+    }
+
+    triggerBlobDownload(zipBlob, getCurrentFolderZipDefaultName());
+    tools.message("当前目录 ZIP 已开始下载", proxy, "success");
+    return true;
+  } catch (error: any) {
+    console.log(error);
+    const message = await resolveZipDownloadErrorMessage(error, "导出当前目录文件失败");
+    tools.message(message, proxy, "error");
+    return false;
+  } finally {
+    exportingCurrentFolderZip.value = false;
   }
 }
 
@@ -1675,40 +2051,72 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   justify-content: flex-start;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .entry-action-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #334155;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  color: #1f2937;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1;
   text-decoration: none;
   cursor: pointer;
   transition:
     border-color 0.16s ease,
     background-color 0.16s ease,
-    color 0.16s ease;
+    color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .entry-action-chip:hover {
   border-color: rgba(148, 163, 184, 1);
-  background: #f8fafc;
+  background: linear-gradient(180deg, #ffffff, #f1f5f9);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
 }
 
 .entry-action-chip-link {
-  color: #0369a1;
+  color: #075985;
 }
 
 .entry-action-chip-danger {
   color: #b42318;
+  background: linear-gradient(180deg, #fff7f7, #fff1f2);
+  border-color: rgba(254, 205, 211, 0.95);
+}
+
+.entry-action-chip-danger:hover {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: linear-gradient(180deg, #fff7f7, #ffe4e6);
+}
+
+.entry-action-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  box-shadow: none;
+}
+
+.entry-action-placeholder {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .entry-action-chip-danger:hover {
@@ -1734,6 +2142,10 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
 }
 
 .files-dialog-panel-upload {
+  width: 560px;
+}
+
+.files-export-panel {
   width: 560px;
 }
 
@@ -1783,6 +2195,122 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   font-weight: 700;
 }
 
+.files-export-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(191, 219, 254, 0.85);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.92), rgba(248, 250, 252, 0.98));
+}
+
+.files-export-eyebrow {
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.files-export-title {
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.files-export-desc {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.files-export-path {
+  flex: 0 0 auto;
+  max-width: 220px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  word-break: break-all;
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", monospace;
+}
+
+.files-export-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.files-export-metric-card,
+.files-export-option-card,
+.files-export-empty {
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.files-export-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.files-export-metric-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.files-export-metric-value {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.files-export-option-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.files-export-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.files-export-option-title {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.files-export-option-desc,
+.files-export-empty {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.files-export-option-desc.is-warning {
+  color: #a16207;
+  background: rgba(254, 249, 195, 0.7);
+  border: 1px solid rgba(253, 224, 71, 0.7);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
 .files-upload-icon {
   color: #0f172a;
   font-size: 28px;
@@ -1830,6 +2358,19 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
 }
 
 .files-table :deep(.el-table__row:hover > td) {
+  background: rgba(248, 250, 252, 0.9) !important;
+}
+
+.files-table :deep(td.el-table-fixed-column--right),
+.files-table :deep(.el-table__fixed-right-patch) {
+  background: #ffffff !important;
+}
+
+.files-table :deep(th.el-table-fixed-column--right) {
+  background: #f8fafc !important;
+}
+
+.files-table :deep(.el-table__row:hover > td.el-table-fixed-column--right) {
   background: rgba(248, 250, 252, 0.9) !important;
 }
 
@@ -1883,6 +2424,15 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
 
   .files-toolbar-actions {
     justify-content: flex-start;
+  }
+
+  .files-export-hero,
+  .files-export-option-card {
+    flex-direction: column;
+  }
+
+  .files-export-metrics {
+    grid-template-columns: 1fr;
   }
 
   .files-nav-card,

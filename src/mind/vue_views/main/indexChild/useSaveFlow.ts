@@ -1,6 +1,7 @@
 import type { Ref } from 'vue';
 import { ensureMindRoots, toPlainDoc } from '../actions/useDocUtils';
 import { exportMindPreviewPng } from '../exportPreview';
+import type { MindRemoteBinding } from '@/mind/vue_views/remoteBinding';
 
 type SaveResult = {
   filePath?: string | null;
@@ -30,6 +31,8 @@ type UseSaveFlowOptions = {
   saveError: Ref<string | null>;
   contentRevision: Ref<number>;
   lastSavedContentRevision: Ref<number>;
+  getRemoteBinding?: () => MindRemoteBinding | null;
+  saveRemoteDocument?: (binding: MindRemoteBinding) => Promise<SaveResult>;
 };
 
 export function useSaveFlow(options: UseSaveFlowOptions) {
@@ -87,10 +90,37 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     previewOptions: { filePath?: string | null; savedAt?: string | null; title?: string | null }
   ) {
     const filePath = typeof previewOptions.filePath === 'string' && previewOptions.filePath ? previewOptions.filePath : null;
-    if (!filePath || !docSnapshot) return;
+    if (!filePath || !docSnapshot) {
+      console.warn('[mind-preview-debug] skip persistRecentPreview', {
+        hasDocSnapshot: !!docSnapshot,
+        filePath,
+        title: previewOptions.title ?? docSnapshot?.manifest?.title ?? null,
+        updatedAt: previewOptions.savedAt ?? docSnapshot?.manifest?.updatedAt ?? null,
+      });
+      return;
+    }
+    console.info('[mind-preview-debug] start persistRecentPreview', {
+      filePath,
+      title: previewOptions.title ?? docSnapshot?.manifest?.title ?? null,
+      updatedAt: previewOptions.savedAt ?? docSnapshot?.manifest?.updatedAt ?? null,
+      activeMindId: docSnapshot?.mind?.activeMindId ?? null,
+      manifestTitle: docSnapshot?.manifest?.title ?? null,
+    });
     const pngBytes = await exportMindPreviewPng(docSnapshot);
-    if (!pngBytes?.length) return;
-    await window.electronAPI.amind.saveRecentPreview({
+    if (!pngBytes?.length) {
+      console.warn('[mind-preview-debug] exportMindPreviewPng returned empty bytes', {
+        filePath,
+        title: previewOptions.title ?? docSnapshot?.manifest?.title ?? null,
+        activeMindId: docSnapshot?.mind?.activeMindId ?? null,
+      });
+      return;
+    }
+    console.info('[mind-preview-debug] preview png generated', {
+      filePath,
+      byteLength: pngBytes.length,
+      title: previewOptions.title ?? docSnapshot?.manifest?.title ?? null,
+    });
+    const savePreviewResult = await window.electronAPI.amind.saveRecentPreview({
       filePath,
       bytes: pngBytes,
       title: typeof previewOptions.title === 'string' && previewOptions.title
@@ -100,12 +130,24 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         ? previewOptions.savedAt
         : docSnapshot?.manifest?.updatedAt ?? null,
     });
+    console.info('[mind-preview-debug] saveRecentPreview resolved', {
+      filePath,
+      previewPath: savePreviewResult?.previewPath ?? null,
+      previewUpdatedAt: savePreviewResult?.previewUpdatedAt ?? null,
+      updatedAt: savePreviewResult?.updatedAt ?? null,
+      title: savePreviewResult?.title ?? null,
+    });
   }
 
   function scheduleRecentPreviewPersist(
     docSnapshot: any,
     previewOptions: { filePath?: string | null; savedAt?: string | null; title?: string | null }
   ) {
+    console.info('[mind-preview-debug] scheduleRecentPreviewPersist', {
+      filePath: previewOptions.filePath ?? null,
+      title: previewOptions.title ?? docSnapshot?.manifest?.title ?? null,
+      updatedAt: previewOptions.savedAt ?? docSnapshot?.manifest?.updatedAt ?? null,
+    });
     void persistRecentPreview(docSnapshot, previewOptions).catch((error) => {
       console.error('[mind-preview-save]', error);
     });
@@ -163,6 +205,41 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
   async function saveDocument() {
     const docId = options.getDocId();
     if (!docId || options.isSaving.value) return false;
+    const remoteBinding = options.getRemoteBinding?.() ?? null;
+    if (remoteBinding && options.saveRemoteDocument) {
+      let nextFilePath = options.getFilePath() ?? null;
+      const startedAt = Date.now();
+      options.isSaving.value = true;
+      options.emitSaveState(nextFilePath);
+      console.info('[mind-preview-debug] saveDocument using remote binding', {
+        filePath: nextFilePath,
+        remoteBinding,
+      });
+      try {
+        const prepared = await flushForSave();
+        if (!prepared) return false;
+        const result = await options.saveRemoteDocument(remoteBinding);
+        nextFilePath = applySaveResult(result);
+        scheduleRecentPreviewPersist(prepared, {
+          filePath: nextFilePath,
+          savedAt: result?.savedAt ?? null,
+          title: result?.title ?? null,
+        });
+        console.info('[mind-preview-debug] remote save finished', {
+          filePath: nextFilePath,
+          savedAt: result?.savedAt ?? null,
+          title: result?.title ?? null,
+        });
+        return true;
+      } catch (error) {
+        notifySaveFailure(error);
+        return false;
+      } finally {
+        await waitForMinimumDuration(startedAt, 1000);
+        options.isSaving.value = false;
+        options.emitSaveState(nextFilePath);
+      }
+    }
     if (!options.getFilePath()) {
       return await saveDocumentAs();
     }
@@ -170,14 +247,27 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     const startedAt = Date.now();
     options.isSaving.value = true;
     options.emitSaveState(nextFilePath);
+    console.info('[mind-preview-debug] saveDocument using local file', {
+      filePath: nextFilePath,
+      docId,
+    });
     try {
       const prepared = await flushForSave();
       if (!prepared) return false;
       const result = await window.electronAPI.amind.save({ docId });
       if (result?.needSaveAs) {
+        console.info('[mind-preview-debug] local save requires saveAs', {
+          filePath: nextFilePath,
+          docId,
+        });
         return await saveDocumentAs({ skipPrepare: true, preparedDoc: prepared });
       }
       nextFilePath = applySaveResult(result);
+      console.info('[mind-preview-debug] local save finished', {
+        filePath: nextFilePath,
+        savedAt: result?.savedAt ?? null,
+        title: result?.title ?? null,
+      });
       scheduleRecentPreviewPersist(prepared, {
         filePath: nextFilePath,
         savedAt: result?.savedAt ?? null,

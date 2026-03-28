@@ -8,6 +8,7 @@ import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
 import { initAmindMain } from './amind/ipcMain.node.js';
 import { initGeneratorMain } from './generator/ipcMain.node.js';
+import { initProjectFilesMain } from './projectFiles.node.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -353,6 +354,7 @@ app.whenReady().then(async () => {
   });
 
   initGeneratorMain();
+  initProjectFilesMain();
 
   await flushPendingOpenQueue();
 

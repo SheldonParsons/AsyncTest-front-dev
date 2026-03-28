@@ -39,5 +39,9 @@ export function createDocStore() {
     map.delete(docId);
   }
 
-  return { create, get, mustGet, setDoc, setFilePath, setWindowKey, remove };
+  function entries() {
+    return Array.from(map.entries());
+  }
+
+  return { create, get, mustGet, setDoc, setFilePath, setWindowKey, remove, entries };
 }

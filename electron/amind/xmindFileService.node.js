@@ -964,8 +964,7 @@ export function convertAmindDocToXmindWorkbook(doc) {
     return { sheets, resourceEntries };
 }
 
-export async function writeXmindFile(filePath, doc, thumbnailBuffer = null) {
-    const abs = path.resolve(ensureXmindExt(filePath));
+export async function buildXmindBuffer(doc, thumbnailBuffer = null) {
     const { sheets, resourceEntries } = convertAmindDocToXmindWorkbook(doc);
     const zip = new JSZip();
     const thumbnailPath = 'Thumbnails/thumbnail.png';
@@ -992,7 +991,12 @@ export async function writeXmindFile(filePath, doc, thumbnailBuffer = null) {
     for (const entry of resourceEntries) {
         zip.file(entry.path, entry.bytes, { compression: 'STORE' });
     }
-    const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    return await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+}
+
+export async function writeXmindFile(filePath, doc, thumbnailBuffer = null) {
+    const abs = path.resolve(ensureXmindExt(filePath));
+    const out = await buildXmindBuffer(doc, thumbnailBuffer);
     await fs.writeFile(abs, out);
     return { path: abs };
 }

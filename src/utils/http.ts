@@ -205,6 +205,10 @@ class Http {
       });
   }
 
+  public httpGetResponse(url: string, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {
+    return Http.axiosInstance.get(url, config);
+  }
+
   public httpPost<T>(
     url: string,
     data: AxiosRequestConfig,

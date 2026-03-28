@@ -33,7 +33,19 @@ export interface IElectronAPI {
   wm: any,
   platform: any,
   amind: any,
-  generator: any
+  generator: any,
+  projectFiles?: {
+    saveCurrentFolderZip: (payload: {
+      zipBytes: Uint8Array;
+      defaultFileName: string;
+      convertAmindToXmind?: boolean;
+    }) => Promise<{
+      canceled: boolean;
+      filePath?: string;
+      convertedCount?: number;
+      failedAmindFiles?: Array<{ path: string; message: string }>;
+    }>;
+  }
 }
 
 declare global {

@@ -683,6 +683,14 @@ import mindLogo from '@/mind/core/action_icon/mind.svg';
 import type { MindNodeRole } from './nodeStyles';
 import { createInitialNodeStyleForRole, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
+import { ApiCheckProjectFileExists, ApiUploadProjectEntries } from '@/api/project/index';
+import {
+  buildRemoteBindingFromTarget,
+  ensureAmindFileName,
+  getRemoteBinding,
+  setRemoteBinding,
+  type MindRemoteBinding,
+} from '@/mind/vue_views/remoteBinding';
 
 type SearchPanelNodeEntry = {
   nodeId: string;
@@ -2698,10 +2706,14 @@ const imagePreviewState = ref({
 });
 
 const isDirty = computed(() => contentRevision.value !== lastSavedContentRevision.value);
-const shouldConfirmClose = computed(() => isDirty.value || !props.filePath);
+const shouldConfirmClose = computed(() => isDirty.value || (!props.filePath && !getRemoteBinding(props.doc)));
 
 function getFileDisplayName(filePath: string | null | undefined = props.filePath ?? null) {
-  if (!filePath) return '思维导图';
+  if (!filePath) {
+    const remoteBinding = getRemoteBinding(props.doc);
+    if (remoteBinding?.fileName) return remoteBinding.fileName;
+    return '思维导图';
+  }
   return String(filePath).split(/[\\/]/).filter(Boolean).pop() ?? '思维导图';
 }
 
@@ -3257,6 +3269,33 @@ function selectAllNodesInCurrentSheet() {
   setSelection(allNodeIds, nextPrimaryId, { anchorId: nextPrimaryId });
   const nextGroupAnchors: Record<string, string> = {};
   allNodeIds.forEach((nodeId) => {
+    const groupKey = getSelectionGroupKey(nodeId);
+    if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
+  });
+  selectionAnchorByGroup.value = nextGroupAnchors;
+}
+
+function collectLeafNodeIdsInCurrentSheet() {
+  const nodes = getMindNodes();
+  const rootId = getRootNodeId();
+  if (!nodes || !rootId || !nodes[rootId]) return [];
+
+  return collectSubtreeNodeIds(nodes, rootId).filter((nodeId) => {
+    const children = Array.isArray(nodes[nodeId]?.children) ? nodes[nodeId].children : [];
+    return children.length === 0;
+  });
+}
+
+function selectAllLeafNodesInCurrentSheet() {
+  const leafNodeIds = collectLeafNodeIdsInCurrentSheet();
+  if (!leafNodeIds.length) return;
+
+  const currentPrimary = getPrimarySelectedId();
+  const nextPrimaryId = currentPrimary && leafNodeIds.includes(currentPrimary) ? currentPrimary : leafNodeIds[leafNodeIds.length - 1];
+  setSelection(leafNodeIds, nextPrimaryId, { anchorId: nextPrimaryId });
+
+  const nextGroupAnchors: Record<string, string> = {};
+  leafNodeIds.forEach((nodeId) => {
     const groupKey = getSelectionGroupKey(nodeId);
     if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
   });
@@ -5562,6 +5601,66 @@ function getDocumentTitleForSave() {
   return rootTitle || props.doc?.manifest?.title || '中心主题';
 }
 
+async function buildRemoteUploadFile(fileName: string) {
+  if (!props.docId) {
+    throw new Error('当前文档不存在，无法上传远程 amind');
+  }
+  const payload = await window.electronAPI.amind.buildUploadPayload({
+    docId: props.docId,
+    fallbackFileName: ensureAmindFileName(fileName, getDocumentTitleForSave()),
+  });
+  const bytes = payload?.bytes ? new Uint8Array(payload.bytes) : null;
+  if (!bytes?.length) {
+    throw new Error('生成远程 amind 文件失败');
+  }
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  return {
+    file: blob,
+    fileName: ensureAmindFileName(fileName, payload?.fileName || getDocumentTitleForSave()),
+    savedAt: typeof payload?.savedAt === 'string' ? payload.savedAt : null,
+    title: typeof payload?.title === 'string' ? payload.title : null,
+  };
+}
+
+async function refreshRemoteBindingAfterUpload(binding: MindRemoteBinding) {
+  const response: any = await ApiCheckProjectFileExists({
+    project: binding.projectId,
+    folder: binding.folder,
+    name: binding.fileName,
+  });
+  if (response?.result === 0 || !response?.data) {
+    return binding;
+  }
+  return buildRemoteBindingFromTarget({
+    projectId: binding.projectId,
+    projectName: binding.projectName,
+    folder: response.data.folder ?? binding.folder,
+    fileId: response.data.id ?? binding.fileId,
+    fileName: response.data.name ?? binding.fileName,
+    filePath: response.data.path ?? binding.filePath,
+    boundAt: binding.boundAt,
+  }) ?? binding;
+}
+
+async function saveRemoteDocument(binding: MindRemoteBinding) {
+  const remoteFile = await buildRemoteUploadFile(binding.fileName);
+  const formData = new FormData();
+  formData.append('files', remoteFile.file, remoteFile.fileName);
+  const response: any = await ApiUploadProjectEntries(formData, {
+    project: binding.projectId,
+    folder: binding.folder,
+  });
+  if (response?.result === 0) {
+    throw new Error(response?.data || response?.msg || '保存远程 amind 失败');
+  }
+  const nextBinding = await refreshRemoteBindingAfterUpload(binding);
+  setRemoteBinding(props.doc, nextBinding);
+  return {
+    savedAt: remoteFile.savedAt,
+    title: remoteFile.title,
+  };
+}
+
 const { saveDocument, saveDocumentAs } = useSaveFlow({
   getDoc: () => props.doc,
   getDocId: () => props.docId,
@@ -5578,6 +5677,8 @@ const { saveDocument, saveDocumentAs } = useSaveFlow({
   saveError,
   contentRevision,
   lastSavedContentRevision,
+  getRemoteBinding: () => getRemoteBinding(props.doc),
+  saveRemoteDocument,
 });
 
 function getDocumentTitleForExport() {
@@ -5807,12 +5908,39 @@ async function renameMindBoard(boardId: string, title: string) {
   return await saveDocument();
 }
 
+async function updateRemoteBindingState(binding: MindRemoteBinding | null) {
+  if (!props.doc) return false;
+  setRemoteBinding(props.doc, binding);
+  await applyDocumentMutation('remote-binding-update');
+  emitSaveState();
+  return true;
+}
+
+async function saveToRemoteBindingTarget(binding: MindRemoteBinding) {
+  if (!props.doc) return false;
+  const previousBinding = getRemoteBinding(props.doc);
+  setRemoteBinding(props.doc, binding);
+  emitSaveState();
+  const saved = await saveDocument();
+  if (saved) return true;
+  setRemoteBinding(props.doc, previousBinding);
+  emitSaveState();
+  return false;
+}
+
+function refreshSaveStatePresentation() {
+  emitSaveState();
+}
+
 defineExpose({
   saveDocument,
   saveDocumentAs,
   exportXmind,
   switchMindBoard,
   renameMindBoard,
+  updateRemoteBindingState,
+  saveToRemoteBindingTarget,
+  refreshSaveStatePresentation,
 });
 
 function findParentAndIndex(nodeId: string) {
@@ -8733,6 +8861,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isRedoShortcut =
     isModifierPressed && !event.altKey && (lowerKey === 'y' || (lowerKey === 'z' && event.shiftKey));
   const isSelectAllShortcut = isModifierPressed && !event.altKey && lowerKey === 'a';
+  const isSelectLeafNodesShortcut = isModifierPressed && !event.altKey && lowerKey === 't';
   const isCopyShortcut = isModifierPressed && !event.altKey && lowerKey === 'c';
   const isCutShortcut = isModifierPressed && !event.altKey && lowerKey === 'x';
   const isLevelMarkerShortcut =
@@ -8762,6 +8891,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
     isEnterShortcut ||
     (isArrowNavigationShortcut && selectedIds.value.size > 0) ||
     isDeleteShortcut ||
+    isSelectLeafNodesShortcut ||
     isSelectAllShortcut ||
     isCutShortcut ||
     isLevelMarkerShortcut ||
@@ -8811,6 +8941,11 @@ function onWindowKeyDown(event: KeyboardEvent) {
 
   if (isSelectAllShortcut) {
     selectAllNodesInCurrentSheet();
+    return;
+  }
+
+  if (isSelectLeafNodesShortcut) {
+    selectAllLeafNodesInCurrentSheet();
     return;
   }
 

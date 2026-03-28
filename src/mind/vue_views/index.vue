@@ -1,6 +1,20 @@
 <template>
     <div class="mind-container">
         <MindHeader>
+            <div class="mind-header-user-section">
+                <div class="mind-header-action-item">
+                    <div class="mind-header-avatar-container" @click="handleAvatarClick">
+                        <el-avatar :size="36" :src="userImage" class="mind-header-user-avatar" />
+                        <div class="mind-header-online-indicator"></div>
+                    </div>
+                </div>
+                <div v-if="isLoggedIn" class="mind-header-action-item">
+                    <button class="mind-header-user-action-btn mind-header-logout-btn" type="button"
+                        aria-label="退出登录" @click="logout">
+                        <AnimatedLogoutIcon :size="18" />
+                    </button>
+                </div>
+            </div>
             <div class="mind-header-meta">
                 <div class="mind-header-title">
                     <button class="mind-header-home-button" type="button" aria-label="显示主窗口" @click="showMainWindow">
@@ -18,6 +32,9 @@
                 </div>
             </div>
             <div class="mind-header-panel-actions">
+                <button class="mind-header-share-button" type="button" aria-label="分享" @click="onShareClick">
+                    分享
+                </button>
                 <div class="mind-header-panel-entry">
                     <button class="mind-header-panel-button" :class="{ 'is-active': showSearchPanel }" type="button"
                         aria-label="打开搜索面板" @click="toggleSearchPanel">
@@ -43,6 +60,14 @@
         <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
             :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
             @switch-board="onSwitchBoard" @rename-board="onRenameBoard"></MindFooter>
+        <UserProfileDialog ref="userProfileDialogRef" />
+        <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
+            <LoginComponent :redirect-on-success="false" @loginSuccess="handleLoginSuccess" />
+        </DialogAnimation>
+        <RemoteBindingDialog v-model="remoteBindingDialogVisible" :binding="currentRemoteBinding"
+            :invalid-binding="invalidRemoteBinding" :default-file-name="remoteBindingDefaultFileName"
+            :preferred-project-id="preferredBindingProjectId" @bind="handleBindRemoteFile"
+            @save-to-directory="handleSaveToDirectoryAndBind" @unbind="handleUnbindRemoteFile" />
     </div>
 </template>
 
@@ -51,15 +76,27 @@ import MindHeader from '@/mind/vue_views/headers/index.vue'
 import MindMain from '@/mind/vue_views/main/index.vue'
 import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
+import RemoteBindingDialog from '@/mind/vue_views/components/RemoteBindingDialog.vue'
+import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
+import AnimatedLogoutIcon from "@/assets/svg/header/AnimatedLogoutIcon.vue"
+import DialogAnimation from '@/components/common/general/dialog.vue'
+import LoginComponent from '@/views/electron_views/login.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
 import homeIcon from '@/mind/core/action_icon/home.svg'
 import searchIcon from '@/mind/core/action_icon/search.svg'
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants'
 import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
-import { onMounted, ref, computed } from 'vue';
+import { ApiCheckProjectFileExists } from '@/api/project/index'
+import { ensureAmindFileName, getRemoteBinding, type MindRemoteBinding } from '@/mind/vue_views/remoteBinding'
+import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { useStore } from '@/store'
+import { ClearServerCookie } from '@/api/layout/cookies'
+import asyncTest from '@/db'
+import GlobalStatus from '@/global'
 
 const route = useRoute();
+const store: any = useStore()
 
 type MindMainExpose = {
     saveDocument: () => Promise<boolean>;
@@ -67,6 +104,9 @@ type MindMainExpose = {
     exportXmind: () => Promise<boolean>;
     switchMindBoard: (boardId: string) => Promise<boolean>;
     renameMindBoard: (boardId: string, title: string) => Promise<boolean>;
+    updateRemoteBindingState: (binding: MindRemoteBinding | null) => Promise<boolean>;
+    saveToRemoteBindingTarget: (binding: MindRemoteBinding) => Promise<boolean>;
+    refreshSaveStatePresentation: () => void;
 };
 
 const docId = ref<string>('');
@@ -82,6 +122,14 @@ const saveState = ref({
     isSaving: false,
     displayName: '思维导图',
 });
+const isLoggedIn = ref(checkLoginStatus());
+const userImage = ref("https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png");
+const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null);
+const loginDialogRef = ref<any>(null);
+const remoteBindingDialogVisible = ref(false);
+const invalidRemoteBinding = ref<MindRemoteBinding | null>(null);
+let removeAuthLogoutListener: (() => void) | null = null;
+let removeAuthLoginListener: (() => void) | null = null;
 const nodeCountState = ref({
     totalNodes: 0,
     selectedNodes: 0,
@@ -89,6 +137,14 @@ const nodeCountState = ref({
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const mindBoards = computed(() => listMindBoards(doc.value));
 const activeBoardId = computed(() => getActiveMindId(doc.value));
+const currentRemoteBinding = computed(() => getRemoteBinding(doc.value));
+const preferredBindingProjectId = computed(() =>
+    `${currentRemoteBinding.value?.projectId ?? invalidRemoteBinding.value?.projectId ?? ""}`.trim()
+);
+const remoteBindingDefaultFileName = computed(() => {
+    const rawTitle = `${doc.value?.manifest?.title ?? saveState.value.displayName ?? "思维导图"}`.trim();
+    return ensureAmindFileName(rawTitle || '思维导图');
+});
 onMounted(async () => {
     const qDocId = route.query.docId;
     windowKey.value = route.query.windowKey
@@ -102,7 +158,27 @@ onMounted(async () => {
     filePath.value = res.filePath;
     ensureMultiMindDoc(res.doc);
     doc.value = res.doc;
+    if (isLoggedIn.value) {
+        await getUserImage();
+    }
+    if (window.electronAPI?.on) {
+        removeAuthLogoutListener = window.electronAPI.on('auth:logout', (_event: any, payload: { sourceWindow?: string } = {}) => {
+            if (payload?.sourceWindow === windowKey.value) return;
+            applyLoggedOutState();
+        });
+        removeAuthLoginListener = window.electronAPI.on('auth:login', (_event: any, payload: { sourceWindow?: string } = {}) => {
+            if (payload?.sourceWindow === windowKey.value) return;
+            updateLoginStatus();
+        });
+    }
     await loadRecentPaths();
+});
+
+onBeforeUnmount(() => {
+    removeAuthLogoutListener?.();
+    removeAuthLogoutListener = null;
+    removeAuthLoginListener?.();
+    removeAuthLoginListener = null;
 });
 
 function changeFilePath(value: any) {
@@ -153,6 +229,124 @@ async function loadRecentPaths() {
 
 function toast(title: string) {
     window.$toast({ title })
+}
+
+function checkLoginStatus() {
+    const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag);
+    return currentCookie !== false;
+}
+
+async function getUserImage() {
+    const res = await store.dispatch("getUser");
+    if (res && res.id) {
+        userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.userId + (0 % 100)}.png`;
+    }
+}
+
+function handleAvatarClick() {
+    if (checkLoginStatus()) {
+        userProfileDialogRef.value?.open();
+    } else {
+        loginDialogRef.value?.open();
+    }
+}
+
+function applyLoggedOutState() {
+    isLoggedIn.value = false;
+}
+
+function updateLoginStatus() {
+    isLoggedIn.value = checkLoginStatus();
+    if (isLoggedIn.value) {
+        void getUserImage();
+    }
+}
+
+async function logout() {
+    await ClearServerCookie();
+    window.$toast({ title: '退出登录' });
+    applyLoggedOutState();
+    if (window.electronAPI?.wm?.broadcast) {
+        await window.electronAPI.wm.broadcast('auth:logout', { sourceWindow: windowKey.value || 'mind' });
+    }
+}
+
+async function validateCurrentRemoteBinding() {
+    const binding = currentRemoteBinding.value;
+    if (!binding) {
+        invalidRemoteBinding.value = null;
+        return true;
+    }
+    const response: any = await ApiCheckProjectFileExists({
+        project: binding.projectId,
+        folder: binding.folder,
+        name: binding.fileName,
+    });
+    if (response?.result === 0) {
+        window.$toast({ title: response?.data || response?.msg || '校验远程绑定失败', type: 'error' });
+        return false;
+    }
+    if (response?.data?.exists) {
+        invalidRemoteBinding.value = null;
+        return true;
+    }
+    invalidRemoteBinding.value = binding;
+    await mindMainRef.value?.updateRemoteBindingState(null);
+    mindMainRef.value?.refreshSaveStatePresentation();
+    window.$toast({ title: '原绑定文件已不存在，已自动解除绑定', type: 'warning' });
+    return true;
+}
+
+async function onShareClick() {
+    if (!checkLoginStatus()) {
+        handleAvatarClick();
+        return;
+    }
+    const ready = await validateCurrentRemoteBinding();
+    if (!ready) return;
+    remoteBindingDialogVisible.value = true;
+}
+
+function handleLoginSuccess() {
+    loginDialogRef.value?.close();
+    isLoggedIn.value = true;
+    void getUserImage();
+    if (window.electronAPI?.wm?.broadcast) {
+        void window.electronAPI.wm.broadcast('auth:login', { sourceWindow: windowKey.value || 'mind' });
+    }
+}
+
+async function handleBindRemoteFile(binding: MindRemoteBinding) {
+    invalidRemoteBinding.value = null;
+    const updated = await mindMainRef.value?.updateRemoteBindingState(binding);
+    if (!updated) return;
+    window.$toast({ title: `已绑定到 ${binding.filePath}`, type: 'success' });
+}
+
+async function handleSaveToDirectoryAndBind(payload: {
+    binding: MindRemoteBinding;
+    overwriteExisting: boolean;
+    done: (success: boolean) => void | Promise<void>;
+}) {
+    invalidRemoteBinding.value = null;
+    const saved = await mindMainRef.value?.saveToRemoteBindingTarget(payload.binding);
+    if (!saved) {
+        await payload.done(false);
+        return;
+    }
+    const title = payload.overwriteExisting
+        ? `已覆盖并绑定 ${payload.binding.filePath}`
+        : `已保存并绑定 ${payload.binding.filePath}`;
+    window.$toast({ title, type: 'success' });
+    mindMainRef.value?.refreshSaveStatePresentation();
+    await payload.done(true);
+}
+
+async function handleUnbindRemoteFile() {
+    invalidRemoteBinding.value = null;
+    const updated = await mindMainRef.value?.updateRemoteBindingState(null);
+    if (!updated) return;
+    window.$toast({ title: '已取消远程绑定', type: 'success' });
 }
 
 async function onOpenFolderClick() {
@@ -216,7 +410,11 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
 .mind-container :deep(.mind-header-home-button),
 .mind-container :deep(.mind-header-panel-actions),
 .mind-container :deep(.mind-header-panel-entry),
-.mind-container :deep(.mind-header-panel-button) {
+.mind-container :deep(.mind-header-panel-button),
+.mind-container :deep(.mind-header-user-section),
+.mind-container :deep(.mind-header-avatar-container),
+.mind-container :deep(.mind-header-user-action-btn),
+.mind-container :deep(.mind-header-action-item) {
     -webkit-app-region: no-drag;
 }
 
@@ -231,6 +429,84 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
     .mind-main-container {
         flex: 1;
         min-height: 0;
+    }
+
+    .mind-header-user-section {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-right: 10px;
+        padding: 4px 6px 4px 4px;
+        background: rgba(0, 0, 0, 0.03);
+        border-radius: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .mind-header-action-item {
+        position: relative;
+        flex: 0 0 auto;
+    }
+
+    .mind-header-avatar-container {
+        position: relative;
+        cursor: pointer;
+    }
+
+    .mind-header-user-avatar {
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        border: 2px solid rgba(0, 0, 0, 0.08);
+        will-change: transform;
+    }
+
+    .mind-header-avatar-container:hover .mind-header-user-avatar {
+        transform: scale(1.08) rotate(5deg);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .mind-header-online-indicator {
+        position: absolute;
+        bottom: 1px;
+        right: 1px;
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04);
+    }
+
+    .mind-header-user-action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: #64748b;
+        cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        position: relative;
+    }
+
+    .mind-header-user-action-btn::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 8px;
+        background: rgba(16, 185, 129, 0.1);
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+
+    .mind-header-user-action-btn:hover {
+        color: #059669;
+    }
+
+    .mind-header-user-action-btn:hover::before {
+        opacity: 1;
     }
 
     .mind-header-meta {
@@ -318,7 +594,39 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
         margin-left: auto;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+    }
+
+    .mind-header-share-button {
+        height: 34px;
+        padding: 0 16px;
+        border: none;
+        border-radius: 11px;
+        background: #101317;
+        color: #f8fafc;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        box-shadow:
+            0 10px 24px rgba(15, 23, 42, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        cursor: pointer;
+        transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            background-color 0.18s ease;
+    }
+
+    .mind-header-share-button:hover {
+        background: #171b21;
+        transform: translateY(-1px);
+        box-shadow:
+            0 14px 30px rgba(15, 23, 42, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    }
+
+    .mind-header-share-button:active {
+        transform: translateY(0);
     }
 
     .mind-header-panel-entry {

@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.16",
+  "version": "2.0.18",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 1、修复amind最近打开列表无法滚动的问题\\n#### 2、优化Windows子窗口缩小、放大、关闭按钮的样式\\n#### 3、优化了窗口关闭的流程，现在会确认每个子窗口安全退出后再关闭应用\\n#### 4、修复思维导图全部展开/收起的位置错误问题\\n#### 5、修复数据集创建失败问题\",\"publishDate\":\"2026-03-26\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化/新增功能\\n#### 思维导图支持分享功能(关联到某个文件)\\n#### 项目文件管理支持批量下载并统一将amind转为xmind文件（桌面端）\\n#### 项目文件管理对于amind格式文件支持直接打开（桌面端）\\n#### 思维导图增加了一个快捷键【ctrl/cmd+T】：选中所有叶子节点\\n#### 思维导图窗口增加登录状态功能，并且该登录状态在必要的时候会被广播\\n#### 现在最近打开列表中名称固定显示文件的物理路径\",\"publishDate\":\"2026-03-28\"}"
     },
     "publish": [
       {

@@ -136,6 +136,29 @@ export function ApiListProjectEntries(config: any): Promise<String> {
   });
 }
 
+export function ApiGetProjectFolderMeta(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet(`${PROJECT_FILE_ENDPOINT}/folder_meta`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiDownloadProjectFolderZip(params: any) {
+  return http.httpGetResponse(`${PROJECT_FILE_ENDPOINT}/download_zip`, {
+    params,
+    responseType: "blob",
+  });
+}
+
+export function ApiCheckProjectFileExists(params: any): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpGet(`${PROJECT_FILE_ENDPOINT}/exists`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
 export function ApiUploadProjectEntries(data: any, params: any, config: AxiosRequestConfig = {}): Promise<String> {
   return new Promise((resolve) => {
     http

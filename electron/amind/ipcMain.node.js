@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app, dialog, ipcMain, shell } from 'electron';
 import { AMIND_EXT } from './constants.js';
-import { createEmptyDoc, readAmindAsset, readAmindFile, writeAmindFile } from './amindFileService.node.js';
+import { buildAmindBuffer, createEmptyDoc, readAmindAsset, readAmindBuffer, readAmindFile, writeAmindFile } from './amindFileService.node.js';
 import { readXmindAsAmindDoc, writeXmindFile } from './xmindFileService.node.js';
 import { createAmindAssetCache } from './amindAssetCache.node.js';
 import { createRecentStore } from './recentStore.js';
@@ -55,6 +55,31 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   function buildImportWindowTitle(title) {
     return title ? `AsyncTest Mind - ${title}` : 'AsyncTest Mind';
+  }
+
+  function normalizeRemoteBindingKey(remoteBinding) {
+    if (!remoteBinding || typeof remoteBinding !== 'object') return null;
+    const projectId = `${remoteBinding.projectId ?? ''}`.trim();
+    const fileId = remoteBinding.fileId === null || remoteBinding.fileId === undefined
+      ? ''
+      : `${remoteBinding.fileId}`.trim();
+    const filePath = `${remoteBinding.filePath ?? remoteBinding.path ?? ''}`.trim();
+    if (!projectId) return null;
+    if (fileId) return `project:${projectId}:file:${fileId}`;
+    if (filePath) return `project:${projectId}:path:${filePath}`;
+    return null;
+  }
+
+  function findDocIdByRemoteBinding(remoteBinding) {
+    const targetKey = normalizeRemoteBindingKey(remoteBinding);
+    if (!targetKey) return null;
+    for (const [docId, entry] of docStore.entries()) {
+      const entryKey = normalizeRemoteBindingKey(entry?.doc?.manifest?.remoteBinding);
+      if (entryKey && entryKey === targetKey) {
+        return docId;
+      }
+    }
+    return null;
   }
 
   function refreshWindowTitle(docId) {
@@ -194,13 +219,58 @@ export function initAmindMain({ userDataPath, windowManager }) {
     return await openFileInWindow(filePath);
   });
 
+  ipcMain.handle('amind:openRemoteBufferInWindow', async (event, { bytes, fileName, remoteBinding } = {}) => {
+    const existingDocId = findDocIdByRemoteBinding(remoteBinding);
+    if (existingDocId) {
+      const entry = docStore.mustGet(existingDocId);
+      if (entry.windowKey) windowManager.focus(entry.windowKey);
+      return {
+        reused: true,
+        docId: existingDocId,
+        filePath: entry.filePath,
+      };
+    }
+
+    const fileBuffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+    const sourcePath = fileName || `remote${AMIND_EXT}`;
+    const { doc } = await readAmindBuffer(fileBuffer, sourcePath);
+    doc.manifest = doc.manifest || {};
+    if (remoteBinding && typeof remoteBinding === 'object') {
+      doc.manifest.remoteBinding = { ...remoteBinding };
+    }
+
+    const docId = newDocId();
+    docStore.create(docId, { doc, filePath: null, windowKey: null });
+    await openMindWindow({
+      docId,
+      filePath: null,
+      title: buildImportWindowTitle(doc?.manifest?.title || path.basename(sourcePath, AMIND_EXT)),
+    });
+    return {
+      reused: false,
+      docId,
+      filePath: null,
+    };
+  });
+
   ipcMain.handle('amind:openFolder', async (event, { filePath }) => {
     if (!filePath) return { ok: false, error: '当前文件尚未保存，无法打开文件目录' };
-    const dirPath = path.dirname(path.resolve(filePath));
+    const absPath = path.resolve(filePath);
+    const dirPath = path.dirname(absPath);
     if (!fs.existsSync(dirPath)) return { ok: false, error: '当前文件目录不存在' };
-    const error = await shell.openPath(dirPath);
-    if (error) return { ok: false, error };
-    return { ok: true, dirPath };
+    if (!fs.existsSync(absPath)) return { ok: false, error: '当前文件不存在' };
+    shell.showItemInFolder(absPath);
+    return { ok: true, dirPath, filePath: absPath };
+  });
+
+  ipcMain.handle('amind:fileExists', async (event, { filePath }) => {
+    if (!filePath) return { ok: false, exists: false, error: '缺少文件路径' };
+    const absPath = path.resolve(filePath);
+    return {
+      ok: true,
+      exists: fs.existsSync(absPath),
+      filePath: absPath,
+    };
   });
 
   ipcMain.handle('amind:docGet', async (event, { docId }) => {
@@ -278,6 +348,22 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const result = await writeAmindFile(filePath, doc);
     return {
       filePath: result.path,
+    };
+  });
+
+  ipcMain.handle('amind:buildUploadPayload', async (event, { docId, fallbackFileName } = {}) => {
+    const entry = docStore.mustGet(docId);
+    const fileKey = getFileKey({ docId, filePath: entry.filePath });
+    const dirtyAssets = assetCache.listDirty(fileKey);
+    const buildResult = await buildAmindBuffer(entry.filePath || fallbackFileName || `思维导图${AMIND_EXT}`, entry.doc, {
+      assetsToWrite: dirtyAssets.map(a => ({ assetId: a.assetId, ext: a.ext, bytes: a.bytes })),
+    });
+    return {
+      docId,
+      fileName: path.basename(buildResult.path),
+      bytes: Uint8Array.from(buildResult.buffer),
+      savedAt: buildResult.doc?.manifest?.updatedAt ?? null,
+      title: buildResult.doc?.manifest?.title ?? null,
     };
   });
 
@@ -386,9 +472,22 @@ export function initAmindMain({ userDataPath, windowManager }) {
         : Array.isArray(bytes)
           ? Uint8Array.from(bytes)
           : new Uint8Array(bytes ?? []);
+    console.info('[mind-preview-debug:main] saveRecentPreview invoked', {
+      filePath,
+      byteLength: previewBytes.length,
+      title: typeof title === 'string' && title ? title : null,
+      updatedAt: typeof updatedAt === 'string' && updatedAt ? updatedAt : null,
+    });
     const entry = await recentStore.savePreview(filePath, previewBytes, {
       title: typeof title === 'string' && title ? title : undefined,
       updatedAt: typeof updatedAt === 'string' && updatedAt ? updatedAt : undefined,
+    });
+    console.info('[mind-preview-debug:main] saveRecentPreview stored', {
+      filePath,
+      previewPath: entry?.previewPath ?? null,
+      previewUpdatedAt: entry?.previewUpdatedAt ?? null,
+      updatedAt: entry?.updatedAt ?? null,
+      title: entry?.title ?? null,
     });
     notifyRecentEntriesChanged();
     return entry;

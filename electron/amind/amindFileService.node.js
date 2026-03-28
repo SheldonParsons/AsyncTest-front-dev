@@ -386,6 +386,11 @@ async function buildAssetIndexFromZip(zip) {
 export async function readAmindFile(filePath) {
     const abs = path.resolve(filePath);
     const buf = await fs.readFile(abs);
+    return await readAmindBuffer(buf, abs);
+}
+
+export async function readAmindBuffer(buffer, sourcePath = AMIND_EXT) {
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
     const zip = await JSZip.loadAsync(buf);
 
     const manifestRaw = await zip.file('manifest.json')?.async('string');
@@ -397,7 +402,7 @@ export async function readAmindFile(filePath) {
 
     const assetIndex = await buildAssetIndexFromZip(zip);
 
-    return { path: abs, doc, assetIndex };
+    return { path: path.resolve(sourcePath), doc, assetIndex };
 }
 
 export async function readAmindAsset(filePath, { assetId, ext }) {
@@ -418,7 +423,7 @@ export async function readAmindAsset(filePath, { assetId, ext }) {
  * @param doc {manifest, mind}
  * @param assetsToWrite [{assetId, ext, bytes}]
  */
-export async function writeAmindFile(filePath, doc, { assetsToWrite = [] } = {}) {
+export async function buildAmindBuffer(filePath, doc, { assetsToWrite = [] } = {}) {
     validateDoc(doc);
 
     const abs = path.resolve(ensureAmindExt(filePath));
@@ -458,8 +463,12 @@ export async function writeAmindFile(filePath, doc, { assetsToWrite = [] } = {})
         zip.file(`assets/${a.assetId}.${a.ext}`, a.bytes, { compression: 'STORE' });
     }
 
-    const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    await fs.writeFile(abs, out);
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    return { path: abs, buffer, doc: { ...doc, manifest } };
+}
 
-    return { path: abs, doc: { ...doc, manifest } };
+export async function writeAmindFile(filePath, doc, { assetsToWrite = [] } = {}) {
+    const result = await buildAmindBuffer(filePath, doc, { assetsToWrite });
+    await fs.writeFile(result.path, result.buffer);
+    return { path: result.path, doc: result.doc };
 }
