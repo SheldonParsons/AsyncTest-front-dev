@@ -798,8 +798,9 @@ function handleUnbind() {
   &.el-dialog {
     display: flex;
     flex-direction: column;
-    margin: 40px auto 0 !important;
-    max-height: calc(100vh - 40px);
+    margin: 50px auto !important;
+    height: calc(100vh - 100px);
+    max-height: calc(100vh - 100px);
     overflow: hidden;
   }
 

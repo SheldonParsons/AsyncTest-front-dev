@@ -1502,7 +1502,14 @@ export function useDraw(
       targetCtx.lineCap = 'round';
       targetCtx.lineJoin = 'round';
 
-      if (roughEnabled) {
+      const useRoughEdgesForGroup =
+        roughEnabled &&
+        branchEntries.some(({ childId }) => {
+          const childVisual = getMindNodeDefaultVisualStyle(props.doc, childId);
+          return childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed';
+        });
+
+      if (useRoughEdgesForGroup) {
         drawNativeSegment(targetCtx, geom.parentAnchor, geom.trunkJoin, trunkStroke, trunkLineWidth);
         drawNativeSegment(targetCtx, geom.trunkTop, geom.trunkBottom, trunkStroke, trunkLineWidth);
       } else if (geom.trunkPath) {
@@ -1511,7 +1518,11 @@ export function useDraw(
       }
 
       for (const { childId, meta } of branchEntries) {
-        if (roughEnabled && roughRuntime.rc && roughRuntime.gen) {
+        const childVisual = getMindNodeDefaultVisualStyle(props.doc, childId);
+        const useRoughEdge =
+          roughEnabled &&
+          (childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed');
+        if (useRoughEdge && roughRuntime.rc && roughRuntime.gen) {
           const branchPathData = geom.childBranchPathData.get(childId);
           if (!branchPathData) continue;
           const branchDrawable = getOrCreateEdgeDrawable(
@@ -1642,21 +1653,23 @@ export function useDraw(
         drawRoundedRectShape(targetCtx, bodyRect, nodeCornerRadius, 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 0);
       }
 
-      const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id });
-      const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
-      if (visualLayout.image?.src) {
-        const loadedImage = getLoadedNodeImage(visualLayout.image.src);
-        if (loadedImage) {
-          const imageRect = getNodeImageWorldRect(bodyRect, {
-            w: visualLayout.image.width,
-            h: visualLayout.image.height,
-          });
-          if (imageRect) {
-            targetCtx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+      const skipNodeDetails = !!options?.skipText;
+
+      if (!skipNodeDetails) {
+        const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id });
+        const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
+        if (visualLayout.image?.src) {
+          const loadedImage = getLoadedNodeImage(visualLayout.image.src);
+          if (loadedImage) {
+            const imageRect = getNodeImageWorldRect(bodyRect, {
+              w: visualLayout.image.width,
+              h: visualLayout.image.height,
+            });
+            if (imageRect) {
+              targetCtx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+            }
           }
         }
-      }
-      if (!options?.skipText) {
         targetCtx.textBaseline = 'top';
         let lineY = bodyRect.y1 + visualLayout.textGeometry.textGlyphTop;
         const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2;
@@ -1727,8 +1740,8 @@ export function useDraw(
           }
           lineY += line.height;
         });
+        drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage);
       }
-      drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage);
       targetCtx.restore();
     }
 

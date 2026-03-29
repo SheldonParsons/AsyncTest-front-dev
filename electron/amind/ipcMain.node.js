@@ -7,12 +7,21 @@ import { readXmindAsAmindDoc, writeXmindFile } from './xmindFileService.node.js'
 import { createAmindAssetCache } from './amindAssetCache.node.js';
 import { createRecentStore } from './recentStore.js';
 import { createDocStore } from './docStore.node.js';
+import { createMindFontService } from './fontService.node.js';
+import { migrateLegacyMindStyles } from './styleMigration.node.js';
 
 export function initAmindMain({ userDataPath, windowManager }) {
   const recentStore = createRecentStore({ userDataPath });
   const assetCache = createAmindAssetCache();
 
   const docStore = createDocStore();
+  const mindFontService = createMindFontService({
+    userDataPath,
+    onStatusChange: (catalog) => {
+      if (!windowManager) return;
+      windowManager.broadcast('amind:mind-fonts-updated', catalog);
+    },
+  });
 
   // fileKey -> docId （用于：同文件单窗口）
   const fileIndex = new Map();
@@ -155,6 +164,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     }
 
     const { path: realAbs, doc } = await readAmindFile(absInput);
+    migrateLegacyMindStyles(doc);
+    await mindFontService.normalizeDocFonts(doc);
 
     const fkReal = normalizeFileKey(realAbs);
     const existingDocId2 = fileIndex.get(fkReal);
@@ -182,6 +193,13 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   async function importXmindFileInWindow(filePath) {
     const { path: abs, doc } = await readXmindAsAmindDoc(filePath);
+    migrateLegacyMindStyles(doc);
+    await mindFontService.normalizeDocFonts(doc);
+    console.info('[mind-style-debug:main] import xmind doc manifest', {
+      sourcePath: abs,
+      renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
+      title: doc?.manifest?.title ?? null,
+    });
     const docId = newDocId();
     docStore.create(docId, { doc, filePath: null, windowKey: null });
     await openMindWindow({
@@ -202,6 +220,11 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:new', async (event, payload = {}) => {
     const docId = newDocId();
     const doc = createEmptyDoc(undefined, payload);
+    console.info('[mind-style-debug:main] create new doc manifest', {
+      renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
+      title: doc?.manifest?.title ?? null,
+      payload,
+    });
     docStore.create(docId, { doc, filePath: null, windowKey: null });
     return { docId, filePath: null };
   });
@@ -209,6 +232,11 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:newAndOpenWindow', async (event, payload = {}) => {
     const docId = newDocId();
     const doc = createEmptyDoc(undefined, payload);
+    console.info('[mind-style-debug:main] create new window doc manifest', {
+      renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
+      title: doc?.manifest?.title ?? null,
+      payload,
+    });
     docStore.create(docId, { doc, filePath: null, windowKey: null });
 
     await openMindWindow({ docId, filePath: null, title: 'AsyncTest Mind' });
@@ -234,6 +262,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const fileBuffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
     const sourcePath = fileName || `remote${AMIND_EXT}`;
     const { doc } = await readAmindBuffer(fileBuffer, sourcePath);
+    migrateLegacyMindStyles(doc);
+    await mindFontService.normalizeDocFonts(doc);
     doc.manifest = doc.manifest || {};
     if (remoteBinding && typeof remoteBinding === 'object') {
       doc.manifest.remoteBinding = { ...remoteBinding };
@@ -281,6 +311,18 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:docUpdate', async (event, { docId, doc }) => {
     const entry = docStore.setDoc(docId, doc);
     return { docId, filePath: entry.filePath };
+  });
+
+  ipcMain.handle('amind:prepareMindFonts', async () => {
+    return await mindFontService.prepareFonts();
+  });
+
+  ipcMain.handle('amind:retryMindFontDownload', async (event, payload = {}) => {
+    return await mindFontService.retryFontDownload(payload);
+  });
+
+  ipcMain.handle('amind:readMindFontFace', async (event, payload = {}) => {
+    return await mindFontService.readFontFace(payload);
   });
 
   ipcMain.handle('amind:recents', async () => recentStore.load());

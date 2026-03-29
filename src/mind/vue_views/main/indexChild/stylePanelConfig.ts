@@ -1,5 +1,6 @@
 import rough from 'roughjs';
 import type { Options } from 'roughjs/bin/core';
+import { getMindFontDefinitions, resolveMindFontKey } from '@/mind/fontRegistry.js';
 import type { MindNodeBorderPreset, MindNodeFillPreset } from '../nodeStyles';
 
 export const styleColorSwatches = [
@@ -125,32 +126,25 @@ export const styleStrokeWidthOptions = [
   { key: 'heavy', label: '极粗', previewPx: 6 },
 ] as const;
 
-export const styleFontOptions = [
-  {
-    key: 'modern-sans',
-    label: 'Microsoft YaHei',
-    sample: 'YaHei',
-    fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
-  },
-  {
-    key: 'humanist',
-    label: 'Humanist',
-    sample: 'Trebuchet',
-    fontFamily: '"Trebuchet MS", Verdana, sans-serif',
-  },
-  {
-    key: 'classic-serif',
-    label: 'Classic Serif',
-    sample: 'Georgia',
-    fontFamily: 'Georgia, "Times New Roman", serif',
-  },
-  {
-    key: 'mono',
-    label: 'Mono',
-    sample: 'SF Mono',
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-  },
-] as const;
+const currentPlatform = typeof window !== 'undefined' ? window.electronAPI?.platform : undefined;
+
+export type StyleFontKey = 'platform-default' | 'alibaba-puhuiti' | 'source-han-serif' | 'maru-sc';
+
+type StyleFontDefinition = {
+  key: StyleFontKey;
+  label: string;
+  sample: string;
+  fontFamily: string;
+  downloadable: boolean;
+};
+
+export const styleFontDefinitions: ReadonlyArray<StyleFontDefinition> = getMindFontDefinitions(currentPlatform).map((option) => ({
+  key: option.key as StyleFontKey,
+  label: option.label,
+  sample: option.sample,
+  fontFamily: option.fontFamily,
+  downloadable: !!option.downloadable,
+}));
 
 export const styleFontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48] as const;
 
@@ -170,7 +164,6 @@ export const styleTextAlignOptions = [
 export type StyleFillPresetKey = (typeof styleFillOptions)[number]['key'];
 export type StyleBorderPresetKey = (typeof styleBorderOptions)[number]['key'];
 export type StyleBorderWidthKey = (typeof styleStrokeWidthOptions)[number]['key'];
-export type StyleFontKey = (typeof styleFontOptions)[number]['key'];
 export type StyleFontSizeValue = (typeof styleFontSizes)[number];
 export type StyleTextToggleKey = (typeof styleTextToggleOptions)[number]['key'];
 export type StyleTextAlignKey = (typeof styleTextAlignOptions)[number]['key'];
@@ -211,25 +204,7 @@ export function mapBorderWidthKeyToStrokeWidth(key: StyleBorderWidthKey) {
 }
 
 export function resolveFontOptionKey(fontFamily: string): StyleFontKey {
-  const normalizedFontFamily = normalizeStyleToken(fontFamily);
-  const matched = styleFontOptions.find((option) => {
-    const candidates = [
-      option.fontFamily,
-      option.label,
-      option.sample,
-      option.key === 'modern-sans' ? 'pingfang sc' : '',
-      option.key === 'modern-sans' ? 'helvetica neue' : '',
-      option.key === 'modern-sans' ? 'microsoft yahei' : '',
-      option.key === 'humanist' ? 'trebuchet ms' : '',
-      option.key === 'humanist' ? 'verdana' : '',
-      option.key === 'classic-serif' ? 'times new roman' : '',
-      option.key === 'classic-serif' ? 'georgia' : '',
-      option.key === 'mono' ? 'sfmono' : '',
-      option.key === 'mono' ? 'consolas' : '',
-    ].map((value) => normalizeStyleToken(value));
-    return candidates.some((candidate) => candidate && normalizedFontFamily.includes(candidate));
-  });
-  return matched?.key ?? 'modern-sans';
+  return resolveMindFontKey(fontFamily, currentPlatform) as StyleFontKey;
 }
 
 export function resolveFontSizeValue(fontSizePx: number): StyleFontSizeValue {

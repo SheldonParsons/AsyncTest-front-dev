@@ -63,6 +63,7 @@ function createBaseManifest(title) {
         createdAt: now,
         updatedAt: now,
         title,
+        renderStylePreset: 'clean',
     };
 }
 

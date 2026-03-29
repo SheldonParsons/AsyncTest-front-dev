@@ -342,12 +342,20 @@
                 <div class="style-control-mask-shell">
                   <div class="style-font-grid" :class="{ 'is-editing-locked': !!editingSession }">
                     <button v-for="option in styleFontOptions" :key="option.key" class="style-font-card"
-                      :class="{ 'is-selected': selectedFontKey === option.key }" type="button"
-                      @click="onFontFamilySelect(option.key)">
+                      :class="{
+                        'is-selected': selectedFontKey === option.key,
+                        'is-disabled': option.disabled,
+                        'is-busy': option.status === 'downloading',
+                        'is-failed': option.status === 'failed',
+                      }" type="button" :disabled="option.disabled" @click="onFontFamilySelect(option.key)">
                       <span class="style-font-sample" :style="{ fontFamily: option.fontFamily }">Aa</span>
                       <span class="style-font-copy">
                         <span class="style-font-title">{{ option.label }}</span>
-                        <span class="style-font-stack">{{ option.sample }}</span>
+                        <span class="style-font-stack">{{ option.helperText }}</span>
+                      </span>
+                      <span v-if="option.statusLabel" class="style-font-status" :class="`is-${option.status}`">
+                        <span v-if="option.status === 'downloading'" class="style-font-status-spinner" aria-hidden="true" />
+                        {{ option.statusLabel }}
                       </span>
                     </button>
                   </div>
@@ -664,7 +672,7 @@ import {
   styleBorderOptions,
   styleFillColorSwatches,
   styleFillOptions,
-  styleFontOptions,
+  styleFontDefinitions,
   styleFontSizes,
   styleOutlineColorSwatches,
   styleStrokeWidthOptions,
@@ -681,7 +689,7 @@ import { useSaveFlow } from './indexChild/useSaveFlow';
 import { exportMindPreviewPng } from './exportPreview';
 import mindLogo from '@/mind/core/action_icon/mind.svg';
 import type { MindNodeRole } from './nodeStyles';
-import { createInitialNodeStyleForRole, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
+import { createInitialNodeStyleForInsert, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
 import { ApiCheckProjectFileExists, ApiUploadProjectEntries } from '@/api/project/index';
 import {
@@ -816,8 +824,47 @@ const selectedFillColor = ref<string>('#ffffff');
 const selectedBorderPresetKey = ref<(typeof styleBorderOptions)[number]['key']>('rough-solid');
 const selectedBorderColor = ref<string>('#111111');
 const selectedBorderWidthKey = ref<(typeof styleStrokeWidthOptions)[number]['key']>('medium');
-const selectedFontKey = ref<(typeof styleFontOptions)[number]['key']>('modern-sans');
+const selectedFontKey = ref<StyleFontKey>('platform-default');
 const selectedFontSize = ref<(typeof styleFontSizes)[number]>(18);
+
+type MindFontFaceEntry = {
+  variant: 'regular' | 'bold';
+  weight: number;
+  style: 'normal' | 'italic';
+  format: string;
+  filePath: string;
+  exists: boolean;
+};
+
+type MindFontCatalogEntry = {
+  key: StyleFontKey;
+  label: string;
+  sample: string;
+  fontFamily: string;
+  familyName: string;
+  downloadable: boolean;
+  status: 'ready' | 'downloading' | 'failed' | 'unavailable';
+  error?: string | null;
+  faces: MindFontFaceEntry[];
+};
+
+type MindFontCatalogPayload = {
+  version?: number;
+  platform?: string;
+  fonts?: MindFontCatalogEntry[];
+};
+
+type MindFontPanelOption = (typeof styleFontDefinitions)[number] & {
+  status: 'ready' | 'downloading' | 'failed' | 'unavailable';
+  disabled: boolean;
+  helperText: string;
+  statusLabel: string;
+};
+
+const mindFontCatalogEntries = ref<Record<string, MindFontCatalogEntry>>({});
+const mindFontRegistrationState = ref<Record<string, 'ready' | 'failed'>>({});
+const registeredMindFontFaceKeys = new Set<string>();
+let removeMindFontUpdateListener: (() => void) | null = null;
 const selectedTextColor = ref<string>('#111111');
 const selectedTextAlign = ref<(typeof styleTextAlignOptions)[number]['key']>('left');
 const textToggleState = ref<Record<(typeof styleTextToggleOptions)[number]['key'], boolean>>({
@@ -840,10 +887,134 @@ function resetTextToggleState() {
   };
 }
 
+function getMindFontCatalogEntry(key: StyleFontKey) {
+  return mindFontCatalogEntries.value[key] ?? null;
+}
+
+function getMindFontOptionStatus(key: StyleFontKey): MindFontPanelOption['status'] {
+  if (key === 'platform-default') return 'ready';
+  const entry = getMindFontCatalogEntry(key);
+  if (!entry) return 'unavailable';
+  if (entry.status === 'failed') return 'failed';
+  if (entry.status === 'downloading') return 'downloading';
+  if (entry.status === 'ready') {
+    if (mindFontRegistrationState.value[key] === 'failed') return 'failed';
+    return mindFontRegistrationState.value[key] === 'ready' ? 'ready' : 'downloading';
+  }
+  return 'unavailable';
+}
+
+function buildMindFontHelperText(option: (typeof styleFontDefinitions)[number], status: MindFontPanelOption['status'], entry: MindFontCatalogEntry | null) {
+  if (status === 'failed') return entry?.error?.trim() || '下载失败';
+  if (status === 'downloading') return option.downloadable ? '下载中，完成后可选' : option.sample;
+  if (status === 'unavailable') return option.downloadable ? '等待检查字体缓存' : option.sample;
+  return option.sample;
+}
+
+function buildMindFontStatusLabel(status: MindFontPanelOption['status']) {
+  if (status === 'downloading') return '下载中';
+  if (status === 'failed') return '失败';
+  if (status === 'unavailable') return '未就绪';
+  return '';
+}
+
+const styleFontOptions = computed<MindFontPanelOption[]>(() =>
+  styleFontDefinitions.map((option) => {
+    const entry = getMindFontCatalogEntry(option.key as StyleFontKey);
+    const status = getMindFontOptionStatus(option.key as StyleFontKey);
+    return {
+      ...option,
+      status,
+      disabled: !!editingSession.value || status === 'downloading' || status === 'unavailable',
+      helperText: buildMindFontHelperText(option, status, entry),
+      statusLabel: buildMindFontStatusLabel(status),
+    };
+  })
+);
+
+async function registerMindFontFace(entry: MindFontCatalogEntry, face: MindFontFaceEntry) {
+  if (typeof document === 'undefined' || !document.fonts) return false;
+  const faceKey = `${entry.key}:${face.weight}:${face.filePath}`;
+  if (registeredMindFontFaceKeys.has(faceKey)) return true;
+  const payload = await window.electronAPI.amind.readMindFontFace({
+    key: entry.key,
+    variant: face.variant,
+  });
+  const bytes =
+    payload?.bytes instanceof Uint8Array
+      ? payload.bytes
+      : Array.isArray(payload?.bytes)
+        ? Uint8Array.from(payload.bytes)
+        : new Uint8Array(payload?.bytes ?? []);
+  const fontFace = new FontFace(entry.familyName, bytes, {
+    style: face.style,
+    weight: `${face.weight}`,
+  });
+  await fontFace.load();
+  document.fonts.add(fontFace);
+  registeredMindFontFaceKeys.add(faceKey);
+  return true;
+}
+
+async function registerMindFontEntry(entry: MindFontCatalogEntry) {
+  if (!entry.downloadable || entry.status !== 'ready') return;
+  try {
+    for (const face of entry.faces) {
+      if (!face.exists) continue;
+      await registerMindFontFace(entry, face);
+    }
+    mindFontRegistrationState.value = {
+      ...mindFontRegistrationState.value,
+      [entry.key]: 'ready',
+    };
+  } catch (error) {
+    console.error('[mind-font] failed to register font', { key: entry.key, error });
+    mindFontRegistrationState.value = {
+      ...mindFontRegistrationState.value,
+      [entry.key]: 'failed',
+    };
+  }
+}
+
+async function applyMindFontCatalog(payload: MindFontCatalogPayload | null | undefined) {
+  const entries = Array.isArray(payload?.fonts) ? payload.fonts : [];
+  const nextEntries: Record<string, MindFontCatalogEntry> = {};
+  for (const entry of entries) {
+    if (!entry?.key) continue;
+    nextEntries[entry.key] = entry;
+    await registerMindFontEntry(entry);
+  }
+  mindFontCatalogEntries.value = nextEntries;
+}
+
+async function bootstrapMindFonts() {
+  if (!window.electronAPI?.amind?.prepareMindFonts) return;
+  try {
+    const payload = await window.electronAPI.amind.prepareMindFonts();
+    await applyMindFontCatalog(payload);
+  } catch (error) {
+    console.error('[mind-font] failed to prepare fonts', error);
+  }
+}
+
+async function retryMindFontDownload(key: StyleFontKey) {
+  if (!window.electronAPI?.amind?.retryMindFontDownload || key === 'platform-default') return;
+  try {
+    const payload = await window.electronAPI.amind.retryMindFontDownload({ key });
+    await applyMindFontCatalog(payload);
+  } catch (error) {
+    console.error('[mind-font] failed to retry font download', { key, error });
+  }
+}
+
 function focusViewportWithoutScroll() {
   if (!editingSession.value && primarySelectedNodeId.value && focusPendingDirectTypeInput(primarySelectedNodeId.value)) {
     return;
   }
+  focusViewportElementWithoutScroll();
+}
+
+function focusViewportElementWithoutScroll() {
   const element = viewportRef.value;
   if (!element) return;
   if (typeof document !== 'undefined' && document.activeElement === element) return;
@@ -1126,7 +1297,7 @@ function syncStylePanelFromSelection() {
   selectedBorderPresetKey.value = mapNodeBorderPresetToPanelKey(visualStyle.borderPreset);
   selectedBorderColor.value = visualStyle.stroke;
   selectedBorderWidthKey.value = resolveStrokeWidthKey(shapeStyle?.strokeWidthPx ?? roughTheme.strokeWidthPx);
-  selectedFontKey.value = resolveFontOptionKey(textStyle.fontFamily);
+  selectedFontKey.value = resolveFontOptionKey(node.style?.text?.fontFamily ?? textStyle.fontFamily);
   selectedFontSize.value = resolveFontSizeValue(textStyle.fontSizePx);
   selectedTextColor.value = textStyle.color;
   selectedTextAlign.value = textStyle.textAlign;
@@ -3885,8 +4056,13 @@ async function onBorderWidthSelect(key: StyleBorderWidthKey) {
 
 async function onFontFamilySelect(key: StyleFontKey) {
   if (editingSession.value) return;
-  const option = styleFontOptions.find((item) => item.key === key);
+  const option = styleFontOptions.value.find((item) => item.key === key);
   if (!option) return;
+  if (option.status === 'failed') {
+    await retryMindFontDownload(key);
+    return;
+  }
+  if (option.status !== 'ready') return;
   await applyTextStyleToSelectedNodes(
     'node-style-font-family',
     (lexicalState, textStyle) => {
@@ -3900,6 +4076,8 @@ async function onFontFamilySelect(key: StyleFontKey) {
       selectedFontKey.value = key;
     }
   );
+  scheduleStylePanelSync();
+  focusViewportElementWithoutScroll();
 }
 
 async function onFontSizeSelect(size: number) {
@@ -5580,14 +5758,24 @@ function resolveNewChildRole(parentId: string | null | undefined): MindNodeRole 
   return getMindNodeRole(props.doc, parentId) === 'root' ? 'secondary' : 'default';
 }
 
-function createNodeRecord(nodeId: string, initialText = NEW_NODE_TEXT, role: MindNodeRole = 'default') {
+function createNodeRecord(
+  nodeId: string,
+  initialText = NEW_NODE_TEXT,
+  role: MindNodeRole = 'default',
+  options?: { parentId?: string | null; insertIndex?: number }
+) {
   const lexicalState = lexicalStateFromPlainText(initialText);
   return {
     id: nodeId,
     text: { plain: initialText },
     richText: richTextFromLexicalState(lexicalState),
     textLexical: lexicalState,
-    style: createInitialNodeStyleForRole(role),
+    style: createInitialNodeStyleForInsert({
+      role,
+      doc: props.doc,
+      parentId: options?.parentId ?? null,
+      insertIndex: options?.insertIndex ?? 0,
+    }),
     children: [],
     images: [],
     image: null,
@@ -5943,8 +6131,19 @@ defineExpose({
   refreshSaveStatePresentation,
 });
 
+function findParentAndIndexFromNodes(nodeId: string) {
+  const nodes = getMindNodes();
+  if (!nodes?.[nodeId]) return null;
+  for (const [parentId, parentNode] of Object.entries(nodes)) {
+    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    const index = children.indexOf(nodeId);
+    if (index >= 0) return { parentId, index };
+  }
+  return null;
+}
+
 function findParentAndIndex(nodeId: string) {
-  return parentIndexByNodeId.value.get(nodeId) ?? null;
+  return parentIndexByNodeId.value.get(nodeId) ?? findParentAndIndexFromNodes(nodeId) ?? null;
 }
 
 function getNodeRootId(nodeId: string) {
@@ -7122,17 +7321,35 @@ function createDeleteCommand(targetNodeId: string): Command | null {
 
 function createBatchAddChildSelectionCommand(targetNodeIds: string[]): Command | null {
   if (!targetNodeIds.length) return null;
+  const nodes = getMindNodes();
+  if (!nodes) return null;
   const newNodeIds = targetNodeIds.map(() => createNodeId());
   const roleByNodeId = Object.fromEntries(
     newNodeIds.map((nodeId, index) => [nodeId, resolveNewChildRole(targetNodeIds[index])])
   );
+  const childInsertContextByNodeId = new Map<string, { parentId: string; insertIndex: number }>();
+  const nextInsertIndexByParentId = new Map<string, number>();
+  newNodeIds.forEach((nodeId, index) => {
+    const parentId = targetNodeIds[index];
+    const initialInsertIndex =
+      nextInsertIndexByParentId.get(parentId) ??
+      (Array.isArray(nodes[parentId]?.children) ? nodes[parentId].children.length : 0);
+    childInsertContextByNodeId.set(nodeId, { parentId, insertIndex: initialInsertIndex });
+    nextInsertIndexByParentId.set(parentId, initialInsertIndex + 1);
+  });
   return createBatchAddChildCommand(
     {
       getNodes: getMindNodes,
       setSelection,
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
-      createNodeRecord: (nodeId: string) => createNodeRecord(nodeId, NEW_NODE_TEXT, roleByNodeId[nodeId] ?? 'default'),
+      createNodeRecord: (nodeId: string) =>
+        createNodeRecord(
+          nodeId,
+          NEW_NODE_TEXT,
+          roleByNodeId[nodeId] ?? 'default',
+          childInsertContextByNodeId.get(nodeId)
+        ),
     },
     {
       parentIds: targetNodeIds,
@@ -7182,6 +7399,13 @@ function createBatchAddSiblingSelectionCommand(
       getMindNodeRole(props.doc, target.nodeId),
     ])
   );
+  const siblingInsertContextByNodeId = new Map<string, { parentId: string; insertIndex: number }>();
+  targetInfos.forEach((target) => {
+    siblingInsertContextByNodeId.set(newNodeIdsByTargetId[target.nodeId], {
+      parentId: target.parentId,
+      insertIndex: target.insertIndex,
+    });
+  });
   const selectionOrder = targetNodeIds.map((nodeId) => newNodeIdsByTargetId[nodeId]).filter(Boolean);
 
   if (DEBUG_CANVAS_OVERLAY) {
@@ -7201,7 +7425,13 @@ function createBatchAddSiblingSelectionCommand(
       setSelection,
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
-      createNodeRecord: (nodeId: string) => createNodeRecord(nodeId, NEW_NODE_TEXT, roleByNewNodeId[nodeId] ?? 'default'),
+      createNodeRecord: (nodeId: string) =>
+        createNodeRecord(
+          nodeId,
+          NEW_NODE_TEXT,
+          roleByNewNodeId[nodeId] ?? 'default',
+          siblingInsertContextByNodeId.get(nodeId)
+        ),
     },
     {
       targetsForMutation: targetInfos,
@@ -7284,6 +7514,7 @@ function createBatchAddParentSelectionCommand(targetInfosInput: SelectionTargetI
         beforeChildren: parentChildren,
         afterChildren,
         newParentId: group.newParentId,
+        insertIndex,
         role: group.role,
       };
     })
@@ -7319,7 +7550,11 @@ function createBatchAddParentSelectionCommand(targetInfosInput: SelectionTargetI
         createNodeRecord(
           nodeId,
           NEW_NODE_TEXT,
-          groups.find((group) => group.newParentId === nodeId)?.role ?? 'default'
+          groups.find((group) => group.newParentId === nodeId)?.role ?? 'default',
+          (() => {
+            const group = groups.find((item) => item.newParentId === nodeId);
+            return group ? { parentId: group.parentId, insertIndex: group.insertIndex } : undefined;
+          })()
         ),
     },
     {
@@ -7349,8 +7584,14 @@ function createBatchAddParentSelectionCommand(targetInfosInput: SelectionTargetI
 
 function createPasteTextLinesCommand(targetParentId: string, lines: string[]): Command | null {
   if (!lines.length) return null;
+  const nodes = getMindNodes();
+  const parentChildrenCount = Array.isArray(nodes?.[targetParentId]?.children) ? nodes?.[targetParentId]?.children.length : 0;
   const newNodeIds = lines.map(() => createNodeId());
   const lineByNodeId = Object.fromEntries(newNodeIds.map((nodeId, index) => [nodeId, lines[index]]));
+  const insertContextByNodeId = new Map<string, { parentId: string; insertIndex: number }>();
+  newNodeIds.forEach((nodeId, index) => {
+    insertContextByNodeId.set(nodeId, { parentId: targetParentId, insertIndex: parentChildrenCount + index });
+  });
   return createBatchAddChildCommand(
     {
       getNodes: getMindNodes,
@@ -7358,7 +7599,12 @@ function createPasteTextLinesCommand(targetParentId: string, lines: string[]): C
       startEditing: () => undefined,
       applyMutation: applyDocumentMutation,
       createNodeRecord: (nodeId: string) =>
-        createNodeRecord(nodeId, lineByNodeId[nodeId] ?? NEW_NODE_TEXT, resolveNewChildRole(targetParentId)),
+        createNodeRecord(
+          nodeId,
+          lineByNodeId[nodeId] ?? NEW_NODE_TEXT,
+          resolveNewChildRole(targetParentId),
+          insertContextByNodeId.get(nodeId)
+        ),
     },
     {
       parentIds: Array.from({ length: lines.length }, () => targetParentId),
@@ -7572,7 +7818,12 @@ function createAddChildCommand(parentId: string): Command | null {
         parentChildrenBefore,
       });
       const createNodeStartedAt = performance.now();
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
+      if (!currentNodes[newNodeId]) {
+        currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole, {
+          parentId,
+          insertIndex,
+        });
+      }
       noteMindPerfStep('create-node-record', {
         ms: roundPerfMs(performance.now() - createNodeStartedAt),
         parentChildrenBefore,
@@ -7587,6 +7838,7 @@ function createAddChildCommand(parentId: string): Command | null {
       });
       const selectionStartedAt = performance.now();
       setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      focusViewportElementWithoutScroll();
       noteMindPerfStep('selection-updated', {
         ms: roundPerfMs(performance.now() - selectionStartedAt),
       });
@@ -7616,10 +7868,16 @@ function createAddChildCommand(parentId: string): Command | null {
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
       currentParent.collapsed = false;
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole);
+      if (!currentNodes[newNodeId]) {
+        currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, newNodeRole, {
+          parentId,
+          insertIndex,
+        });
+      }
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
       setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      focusViewportElementWithoutScroll();
       void applyDocumentMutation('history:redo-add-child', {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -7639,12 +7897,16 @@ function createAddSiblingBeforeCommand(nodeId: string): Command | null {
 
 function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: boolean }): Command | null {
   const parentInfo = findParentAndIndex(nodeId);
-  if (!parentInfo) return null;
+  if (!parentInfo) {
+    return null;
+  }
 
   const { parentId, index } = parentInfo;
   const nodes = getMindNodes();
   const parentNode = nodes?.[parentId];
-  if (!nodes || !parentNode) return null;
+  if (!nodes || !parentNode) {
+    return null;
+  }
 
   const insertBefore = !!options?.insertBefore;
   const previousSelectionId = getPrimarySelectedId();
@@ -7668,7 +7930,12 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
         parentChildrenBefore,
       });
       const createNodeStartedAt = performance.now();
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
+      if (!currentNodes[newNodeId]) {
+        currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole, {
+          parentId,
+          insertIndex,
+        });
+      }
       noteMindPerfStep('create-node-record', {
         ms: roundPerfMs(performance.now() - createNodeStartedAt),
         parentChildrenBefore,
@@ -7683,6 +7950,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       });
       const selectionStartedAt = performance.now();
       setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      focusViewportElementWithoutScroll();
       noteMindPerfStep('selection-updated', {
         ms: roundPerfMs(performance.now() - selectionStartedAt),
       });
@@ -7710,10 +7978,16 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       const currentParent = currentNodes?.[parentId];
       if (!currentNodes || !currentParent) return;
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
-      if (!currentNodes[newNodeId]) currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole);
+      if (!currentNodes[newNodeId]) {
+        currentNodes[newNodeId] = createNodeRecord(newNodeId, NEW_NODE_TEXT, siblingRole, {
+          parentId,
+          insertIndex,
+        });
+      }
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
       setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
+      focusViewportElementWithoutScroll();
       void applyDocumentMutation(`history:redo-${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -8851,11 +9125,15 @@ function onWindowKeyDown(event: KeyboardEvent) {
     emit('toggleFormatPanel');
     return;
   }
-  if (editingSession.value && !isTextEditingActive(event.target)) return;
+  if (editingSession.value && !isTextEditingActive(event.target)) {
+    return;
+  }
   if (interactionState.value.mode === 'pointerDownOnNode') {
     finalizeInteraction('keyboard-settle-before-shortcut', { commitDrag: false, eventSource: 'system' });
   }
-  if (event.isComposing || isTextEditingActive(event.target)) return;
+  if (event.isComposing || isTextEditingActive(event.target)) {
+    return;
+  }
 
   const isUndoShortcut = isModifierPressed && !event.altKey && lowerKey === 'z' && !event.shiftKey;
   const isRedoShortcut =
@@ -9310,12 +9588,16 @@ onMounted(() => {
   redrawAll('mounted');
 
   window.addEventListener('resize', handleResize);
-  window.addEventListener('keydown', onWindowKeyDown);
+  window.addEventListener('keydown', onWindowKeyDown, true);
   window.addEventListener('copy', onWindowCopy, true);
   window.addEventListener('paste', onWindowPaste, true);
   window.addEventListener('compositionstart', onCompositionStart, true);
   window.addEventListener('compositionend', onCompositionEnd, true);
   window.addEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
+  removeMindFontUpdateListener = window.electronAPI.on('amind:mind-fonts-updated', async (_event: any, payload: MindFontCatalogPayload) => {
+    await applyMindFontCatalog(payload);
+  });
+  void bootstrapMindFonts();
 });
 
 watch(
@@ -9480,6 +9762,8 @@ onBeforeUnmount(() => {
   clearCollapseTagHideTimer();
   removeBeforeCloseListener?.();
   removeBeforeCloseListener = null;
+  removeMindFontUpdateListener?.();
+  removeMindFontUpdateListener = null;
   clearImageInteraction('beforeUnmount');
   clearPersistTimer();
   cleanup();
@@ -9500,7 +9784,7 @@ onBeforeUnmount(() => {
   if (syncStylePanelRafId != null) cancelAnimationFrame(syncStylePanelRafId);
   if (viewportRef.value) viewportRef.value.removeEventListener('wheel', onWheel as any);
   window.removeEventListener('resize', handleResize);
-  window.removeEventListener('keydown', onWindowKeyDown);
+  window.removeEventListener('keydown', onWindowKeyDown, true);
   window.removeEventListener('copy', onWindowCopy, true);
   window.removeEventListener('paste', onWindowPaste, true);
   window.removeEventListener('compositionstart', onCompositionStart, true);
@@ -10475,7 +10759,21 @@ onBeforeUnmount(() => {
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    transform 0.18s ease;
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.style-font-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.style-font-card.is-busy {
+  border-color: rgba(59, 130, 246, 0.34);
+}
+
+.style-font-card.is-failed {
+  border-color: rgba(239, 68, 68, 0.34);
 }
 
 .style-font-sample {
@@ -10500,6 +10798,43 @@ onBeforeUnmount(() => {
 .style-font-stack {
   white-space: normal;
   word-break: break-word;
+}
+
+.style-font-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.style-font-status.is-downloading {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.9);
+}
+
+.style-font-status.is-failed {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.92);
+}
+
+.style-font-status.is-unavailable {
+  color: #475569;
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.style-font-status-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  animation: style-font-spin 0.75s linear infinite;
 }
 
 .style-size-chip,

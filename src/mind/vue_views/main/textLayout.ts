@@ -51,6 +51,7 @@ export type TextVerticalMetrics = {
 };
 
 const domTextTopOffsetCache = new Map<string, number>();
+const richTextLayoutKeyCache = new WeakMap<RichTextDocument, string>();
 
 export type RichTextLineSegment = {
   text: string;
@@ -266,7 +267,18 @@ export function measureNodeTextLayout(
     } satisfies NodeTextStyle);
   const maxWidth = options?.maxWidth ?? NODE_CONTENT_MAX_W;
   const minContentWidth = Math.max(1, options?.minContentWidth ?? NODE_TEXT_MIN_WIDTH_PX);
-  const key = JSON.stringify({ richText, baseStyle, maxWidth, minContentWidth });
+  const richTextKey = typeof input === 'string' ? input : getRichTextLayoutCacheKey(richText);
+  const baseStyleKey = [
+    baseStyle.fontFamily,
+    baseStyle.fontSizePx,
+    baseStyle.fontWeight,
+    baseStyle.fontStyle,
+    baseStyle.lineHeightPx,
+    baseStyle.color,
+    baseStyle.textAlign,
+    baseStyle.letterSpacingPx,
+  ].join('|');
+  const key = `${richTextKey}::${baseStyleKey}::${maxWidth}::${minContentWidth}`;
   const cached = cache?.get(key);
   if (cached) return cached;
 
@@ -320,6 +332,14 @@ export function measureNodeTextLayout(
 
   cache?.set(key, layout);
   return layout;
+}
+
+function getRichTextLayoutCacheKey(richText: RichTextDocument) {
+  const cachedKey = richTextLayoutKeyCache.get(richText);
+  if (cachedKey) return cachedKey;
+  const key = JSON.stringify(richText);
+  richTextLayoutKeyCache.set(richText, key);
+  return key;
 }
 
 export function computeNodeTextGeometry(

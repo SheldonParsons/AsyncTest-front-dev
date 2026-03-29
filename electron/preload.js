@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         exportXmindDocDialog: (payload) => ipcRenderer.invoke('amind:exportXmindDocDialog', payload),
         exportAmindDialog: (payload) => ipcRenderer.invoke('amind:exportAmindDialog', payload),
         saveRecentPreview: (payload) => ipcRenderer.invoke('amind:saveRecentPreview', payload),
+        prepareMindFonts: () => ipcRenderer.invoke('amind:prepareMindFonts'),
+        retryMindFontDownload: (payload) => ipcRenderer.invoke('amind:retryMindFontDownload', payload),
+        readMindFontFace: (payload) => ipcRenderer.invoke('amind:readMindFontFace', payload),
 
         assetAddFromFile: (payload) => ipcRenderer.invoke('amind:assetAddFromFile', payload),
         assetAddFromBytes: (payload) => ipcRenderer.invoke('amind:assetAddFromBytes', payload),

@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.18",
+  "version": "2.0.19",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化/新增功能\\n#### 思维导图支持分享功能(关联到某个文件)\\n#### 项目文件管理支持批量下载并统一将amind转为xmind文件（桌面端）\\n#### 项目文件管理对于amind格式文件支持直接打开（桌面端）\\n#### 思维导图增加了一个快捷键【ctrl/cmd+T】：选中所有叶子节点\\n#### 思维导图窗口增加登录状态功能，并且该登录状态在必要的时候会被广播\\n#### 现在最近打开列表中名称固定显示文件的物理路径\",\"publishDate\":\"2026-03-28\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化/新增功能\\n#### 思维导图支持分享功能(关联到某个文件)\\n#### 项目文件管理支持批量下载并统一将amind转为xmind文件（桌面端）\\n#### 项目文件管理对于amind格式文件支持直接打开（桌面端）\\n#### 思维导图增加了一个快捷键【ctrl/cmd+T】：选中所有叶子节点\\n#### 思维导图窗口增加登录状态功能，并且该登录状态在必要的时候会被广播\\n#### 现在最近打开列表中名称固定显示文件的物理路径\\n#### 最近打开列表的右键context menu添加了两个功能：移除、打开文件目录（统一优化：打开文件目录将自动选中该文件）\\n#### 优化功能：字体归一化：Windows：Microsoft YaHei，Mac：PingFang SC\\n#### 新增功能：新增字体：阿里巴巴普惠体、思源宋体、狮尾圆体，并删除了一些字体\\n#### 优化功能：现在节点的默认样式进行了调整\\n#### 新增功能：现在非前三级节点在新增时继承上级节点的样式\\n#### 优化功能：优化了一些显示\\n#### 优化了一些显示\",\"publishDate\":\"2026-03-29\"}"
     },
     "publish": [
       {

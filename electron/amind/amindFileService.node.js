@@ -311,6 +311,7 @@ export function createEmptyDoc(title = '思维导图', options = {}) {
             createdAt: now,
             updatedAt: now,
             title,
+            renderStylePreset: 'clean',
         },
 
         mind: {
