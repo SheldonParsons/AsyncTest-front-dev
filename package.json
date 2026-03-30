@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.22",
+  "version": "2.0.23",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 修复缺陷：修复ctrl/cmd+T 快捷键在多节点下的性能问题\",\"publishDate\":\"2026-03-30\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：提供了查看用户信息接口，以及修改用户信息接口\",\"publishDate\":\"2026-03-30\"}"
     },
     "publish": [
       {

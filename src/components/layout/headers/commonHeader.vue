@@ -369,8 +369,7 @@ function getHeader(r: any) {
 function getUserImage() {
   store.dispatch("getUser").then((res: any) => {
     if (res && res.id) {
-      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.userId + (0 % 100)
-        }.png`
+      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.id}.png`
     }
   })
 }

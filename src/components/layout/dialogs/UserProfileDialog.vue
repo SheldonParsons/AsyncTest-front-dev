@@ -1,102 +1,115 @@
 <template>
-  <AstDialog ref="dialogRef" title="" bgtype="black" topMove="-15% !important" :showCancel="false"
-    :showComfirm="false">
-    <div class="user-profile-container">
-      <!-- 背景装饰 -->
-      <div class="profile-bg-effects">
-        <div class="glow-orb orb-1"></div>
-        <div class="glow-orb orb-2"></div>
-        <div class="grid-lines"></div>
-      </div>
-
-      <!-- 头像区域 -->
-      <div class="avatar-section">
-        <div class="avatar-ring">
-          <div class="avatar-glow"></div>
-          <el-avatar :size="100" :src="userAvatar" class="profile-avatar" />
-          <div class="status-badge">
-            <span class="status-dot"></span>
-            <span class="status-text">在线</span>
+  <AstDialog
+    ref="dialogRef"
+    title=""
+    bgtype="white"
+    topMove="0 !important"
+    :showCancel="false"
+    :showComfirm="false"
+  >
+    <div class="profile-sheet">
+      <div class="profile-sheet__hero">
+        <div class="profile-sheet__identity">
+          <div class="profile-sheet__avatar-wrap">
+            <el-avatar :size="72" :src="userAvatar" class="profile-sheet__avatar" />
           </div>
-        </div>
-        <h2 class="user-nickname">{{ userInfo.nickName || userInfo.username || 'User' }}</h2>
-        <div class="user-role-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-          </svg>
-          <span>{{ getRoleText(userInfo.role) }}</span>
-        </div>
-      </div>
 
-      <!-- 信息卡片区域 -->
-      <div class="info-cards">
-        <!-- 用户名 -->
-        <div class="info-card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-          </div>
-          <div class="card-content">
-            <span class="card-label">用户名</span>
-            <span class="card-value">{{ userInfo.username || '-' }}</span>
+          <div class="profile-sheet__headline">
+            <div class="profile-sheet__eyebrow">PROFILE</div>
+            <h2 class="profile-sheet__name">{{ profile.nick_name || profile.username || '未命名用户' }}</h2>
+            <div class="profile-sheet__subline">@{{ profile.username || '--' }}</div>
           </div>
         </div>
 
-        <!-- 邮箱 -->
-        <div class="info-card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-              <polyline points="22,6 12,13 2,6" />
-            </svg>
+        <div class="profile-sheet__summary">
+          <div class="profile-sheet__summary-item">
+            <span class="profile-sheet__summary-label">最近登录</span>
+            <span class="profile-sheet__summary-value">{{ formatDateTime(profile.last_login) }}</span>
           </div>
-          <div class="card-content">
-            <span class="card-label">邮箱</span>
-            <span class="card-value">{{ userInfo.email || '-' }}</span>
-          </div>
-        </div>
-
-        <!-- 手机 -->
-        <div class="info-card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-              <line x1="12" y1="18" x2="12.01" y2="18" />
-            </svg>
-          </div>
-          <div class="card-content">
-            <span class="card-label">手机</span>
-            <span class="card-value">{{ userInfo.mobile || '-' }}</span>
-          </div>
-        </div>
-
-        <!-- 用户ID -->
-        <div class="info-card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-          </div>
-          <div class="card-content">
-            <span class="card-label">用户 ID</span>
-            <span class="card-value mono">{{ userInfo.userId || '-' }}</span>
+          <div class="profile-sheet__summary-item">
+            <span class="profile-sheet__summary-label">注册时间</span>
+            <span class="profile-sheet__summary-value">{{ formatDateTime(profile.date_joined || profile.add_time) }}</span>
           </div>
         </div>
       </div>
 
-      <!-- 底部操作按钮 -->
-      <div class="profile-actions">
-        <button class="action-btn secondary" @click="close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-          <span>关闭</span>
+      <div class="profile-sheet__content" v-loading="loading">
+        <section class="profile-card profile-card--readonly">
+          <div class="profile-card__header">
+            <div>
+              <p class="profile-card__kicker">Account</p>
+              <h3 class="profile-card__title">账户信息</h3>
+            </div>
+          </div>
+
+          <div class="profile-readonly-grid">
+            <div class="profile-readonly-item">
+              <span class="profile-readonly-item__label">用户名</span>
+              <span class="profile-readonly-item__value">{{ profile.username || '--' }}</span>
+            </div>
+            <div class="profile-readonly-item">
+              <span class="profile-readonly-item__label">状态</span>
+              <span class="profile-readonly-item__value">{{ profile.is_active ? '正常' : '已停用' }}</span>
+            </div>
+            <div class="profile-readonly-item">
+              <span class="profile-readonly-item__label">员工标识</span>
+              <span class="profile-readonly-item__value">{{ profile.is_staff ? '是' : '否' }}</span>
+            </div>
+            <div class="profile-readonly-item">
+              <span class="profile-readonly-item__label">超级管理员</span>
+              <span class="profile-readonly-item__value">{{ profile.is_superuser ? '是' : '否' }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="profile-card">
+          <div class="profile-card__header">
+            <div>
+              <p class="profile-card__kicker">Editable</p>
+              <h3 class="profile-card__title">个人资料</h3>
+            </div>
+            <p class="profile-card__hint">仅可修改昵称、邮箱、手机号和性别</p>
+          </div>
+
+          <el-form
+            ref="formRef"
+            :model="form"
+            :rules="formRules"
+            label-position="top"
+            class="profile-form"
+            @submit.prevent
+          >
+            <div class="profile-form__grid">
+              <el-form-item label="昵称" prop="nick_name">
+                <el-input v-model="form.nick_name" maxlength="40" placeholder="请输入昵称" />
+              </el-form-item>
+
+              <el-form-item label="邮箱" prop="email">
+                <el-input v-model="form.email" maxlength="100" placeholder="请输入邮箱" />
+              </el-form-item>
+
+              <el-form-item label="手机号" prop="mobile">
+                <el-input v-model="form.mobile" maxlength="20" placeholder="请输入手机号" />
+              </el-form-item>
+
+              <el-form-item label="性别" prop="sex">
+                <el-radio-group v-model="form.sex" class="profile-form__radio-group">
+                  <el-radio :value="1">男</el-radio>
+                  <el-radio :value="2">女</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </div>
+          </el-form>
+        </section>
+      </div>
+
+      <div class="profile-sheet__footer">
+        <button class="profile-btn profile-btn--ghost" @click="close">关闭</button>
+        <button class="profile-btn profile-btn--secondary" :disabled="loading || saving || !dirty" @click="resetForm">
+          重置
+        </button>
+        <button class="profile-btn profile-btn--primary" :disabled="loading || saving || !dirty" @click="submitForm">
+          {{ saving ? '保存中...' : '保存资料' }}
         </button>
       </div>
     </div>
@@ -104,55 +117,187 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useStore } from '@/store'
+import { computed, reactive, ref } from 'vue'
+import type { FormInstance, FormRules } from 'element-plus'
 import AstDialog from '@/components/common/general/dialog.vue'
+import { http } from '@/utils/http'
 
-const store: any = useStore()
-const dialogRef = ref<InstanceType<typeof AstDialog> | null>(null)
-
-const userInfo = reactive({
-  userId: '',
-  username: '',
-  nickName: '',
-  email: '',
-  mobile: '',
-  role: '',
-  sex: ''
-})
-
-const userAvatar = ref('https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png')
-
-function getRoleText(role: string) {
-  const roleMap: Record<string, string> = {
-    'admin': '管理员',
-    'user': '普通用户',
-    'guest': '访客',
-    'developer': '开发者',
-    'tester': '测试工程师'
-  }
-  return roleMap[role] || role || '成员'
+type UserProfile = {
+  id: number | null;
+  username: string;
+  nick_name: string;
+  email: string;
+  mobile: string;
+  sex: number;
+  last_login: string;
+  is_superuser: boolean;
+  is_staff: boolean;
+  is_active: boolean;
+  date_joined: string;
+  add_time: string;
 }
 
-async function loadUserInfo() {
-  const res = await store.dispatch('getUser')
-  if (res) {
-    userInfo.userId = res.userId || ''
-    userInfo.username = res.username || ''
-    userInfo.nickName = res.nickName || ''
-    userInfo.email = res.email || ''
-    userInfo.mobile = res.mobile || ''
-    userInfo.role = res.role || ''
-    userInfo.sex = res.sex || ''
+type UserProfileForm = Pick<UserProfile, 'nick_name' | 'email' | 'mobile' | 'sex'>
 
-    if (res.userId) {
-      userAvatar.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.userId + (0 % 100)}.png`
-    }
+type UserProfileResponse = {
+  result: number;
+  msg: string;
+  data?: Partial<UserProfile>;
+}
+
+const emit = defineEmits<{
+  updated: [profile: UserProfile]
+}>()
+
+const dialogRef = ref<InstanceType<typeof AstDialog> | null>(null)
+const formRef = ref<FormInstance | null>(null)
+const loading = ref(false)
+const saving = ref(false)
+
+const profile = reactive<UserProfile>({
+  id: null,
+  username: '',
+  nick_name: '',
+  email: '',
+  mobile: '',
+  sex: 0,
+  last_login: '',
+  is_superuser: false,
+  is_staff: false,
+  is_active: true,
+  date_joined: '',
+  add_time: '',
+})
+
+const form = reactive<UserProfileForm>({
+  nick_name: '',
+  email: '',
+  mobile: '',
+  sex: 0,
+})
+
+const initialForm = ref<UserProfileForm>({
+  nick_name: '',
+  email: '',
+  mobile: '',
+  sex: 0,
+})
+
+const formRules: FormRules<UserProfileForm> = {
+  nick_name: [
+    { required: true, message: '请输入昵称', trigger: 'blur' },
+    { min: 1, max: 40, message: '昵称长度需在 1-40 个字符之间', trigger: 'blur' },
+  ],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入正确的邮箱格式', trigger: ['blur', 'change'] },
+  ],
+  mobile: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { min: 6, max: 20, message: '手机号长度需在 6-20 个字符之间', trigger: 'blur' },
+  ],
+  sex: [{ required: true, message: '请选择性别', trigger: 'change' }],
+}
+
+const dirty = computed(() =>
+  form.nick_name !== initialForm.value.nick_name ||
+  form.email !== initialForm.value.email ||
+  form.mobile !== initialForm.value.mobile ||
+  form.sex !== initialForm.value.sex
+)
+
+const userAvatar = computed(() => {
+  const userId = profile.id ?? 99
+  return `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${userId}.png`
+})
+
+function normalizeProfile(payload?: Partial<UserProfile>): UserProfile {
+  return {
+    id: typeof payload?.id === 'number' ? payload.id : null,
+    username: payload?.username ?? '',
+    nick_name: payload?.nick_name ?? '',
+    email: payload?.email ?? '',
+    mobile: payload?.mobile ?? '',
+    sex: typeof payload?.sex === 'number' ? payload.sex : 0,
+    last_login: payload?.last_login ?? '',
+    is_superuser: !!payload?.is_superuser,
+    is_staff: !!payload?.is_staff,
+    is_active: payload?.is_active !== false,
+    date_joined: payload?.date_joined ?? '',
+    add_time: payload?.add_time ?? '',
   }
+}
+
+function applyProfile(nextProfile: UserProfile) {
+  Object.assign(profile, nextProfile)
+  const nextForm: UserProfileForm = {
+    nick_name: nextProfile.nick_name,
+    email: nextProfile.email,
+    mobile: nextProfile.mobile,
+    sex: nextProfile.sex,
+  }
+  Object.assign(form, nextForm)
+  initialForm.value = { ...nextForm }
+}
+
+function formatDateTime(value: string) {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  const hour = `${date.getHours()}`.padStart(2, '0')
+  const minute = `${date.getMinutes()}`.padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+async function fetchUserProfile() {
+  loading.value = true
+  const res = await http.httpGet<UserProfileResponse>('/user/me/', {})
+  loading.value = false
+  if (res?.result !== 1 || !res.data) {
+    window.$toast({ title: res?.msg || '获取用户信息失败', type: 'error' })
+    return false
+  }
+  applyProfile(normalizeProfile(res.data))
+  return true
+}
+
+function resetForm() {
+  Object.assign(form, initialForm.value)
+  formRef.value?.clearValidate()
+}
+
+async function submitForm() {
+  if (!formRef.value || saving.value || !dirty.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  saving.value = true
+  const payload: UserProfileForm = {
+    nick_name: form.nick_name.trim(),
+    email: form.email.trim(),
+    mobile: form.mobile.trim(),
+    sex: form.sex,
+  }
+  const res = await http.httpPut<UserProfileResponse>('/user/me/update_info/', payload)
+  saving.value = false
+
+  if (res?.result !== 1 || !res.data) {
+    window.$toast({ title: res?.msg || '修改个人信息失败', type: 'error' })
+    return
+  }
+
+  const nextProfile = normalizeProfile(res.data)
+  applyProfile(nextProfile)
+  emit('updated', nextProfile)
+  window.$toast({ title: res.msg || '个人信息已更新', type: 'success' })
 }
 
 async function open() {
-  await loadUserInfo()
+  const loaded = await fetchUserProfile()
+  if (!loaded) return
   return dialogRef.value?.open()
 }
 
@@ -164,304 +309,305 @@ defineExpose({ open, close })
 </script>
 
 <style lang="scss" scoped>
-.user-profile-container {
-  position: relative;
-  width: 380px;
-  padding: 30px 25px 25px;
-  overflow: hidden;
+.profile-sheet {
+  width: 620px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+  color: #111111;
+  background: #ffffff;
+  border-radius: 18px;
 }
 
-// 背景效果
-.profile-bg-effects {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.glow-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.15;
-
-  &.orb-1 {
-    width: 200px;
-    height: 200px;
-    background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-    top: -80px;
-    left: -60px;
-    animation: float1 8s ease-in-out infinite;
-  }
-
-  &.orb-2 {
-    width: 150px;
-    height: 150px;
-    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-    bottom: -50px;
-    right: -40px;
-    animation: float2 10s ease-in-out infinite;
-  }
-}
-
-.grid-lines {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-
-@keyframes float1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(20px, 20px) scale(1.1); }
-}
-
-@keyframes float2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-15px, -15px) scale(1.05); }
-}
-
-// 头像区域
-.avatar-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 28px;
-  position: relative;
-  z-index: 1;
-}
-
-.avatar-ring {
-  position: relative;
-  padding: 4px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #059669, #047857);
-  margin-bottom: 16px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #10b981, transparent, #059669);
-    animation: rotate 4s linear infinite;
-    opacity: 0.6;
-  }
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.avatar-glow {
-  position: absolute;
-  inset: -20px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%);
-  animation: pulse-glow 3s ease-in-out infinite;
-}
-
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.05); }
-}
-
-.profile-avatar {
-  border: 3px solid #0b1011;
-  position: relative;
-  z-index: 1;
-}
-
-.status-badge {
-  position: absolute;
-  bottom: 5px;
-  right: -5px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px 3px 6px;
-  background: rgba(16, 185, 129, 0.2);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  border-radius: 12px;
-  backdrop-filter: blur(8px);
-  z-index: 2;
-
-  .status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 8px #10b981;
-    animation: blink 2s ease-in-out infinite;
-  }
-
-  .status-text {
-    font-size: 10px;
-    color: #10b981;
-    font-weight: 500;
-  }
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.user-nickname {
-  margin: 0 0 8px;
-  font-size: 22px;
-  font-weight: 600;
-  color: #fff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.user-role-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 20px;
-
-  svg {
-    width: 14px;
-    height: 14px;
-    color: #10b981;
-  }
-
-  span {
-    font-size: 12px;
-    color: #10b981;
-    font-weight: 500;
-  }
-}
-
-// 信息卡片
-.info-cards {
+.profile-sheet__hero {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.85fr);
   gap: 12px;
-  margin-bottom: 24px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid #e8e8e8;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.015), rgba(0, 0, 0, 0)),
+    linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+}
+
+.profile-sheet__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-sheet__avatar-wrap {
   position: relative;
-  z-index: 1;
-}
-
-.info-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  transition: all 0.3s ease;
-
-  &:hover {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.03));
-    border-color: rgba(16, 185, 129, 0.2);
-    transform: translateY(-2px);
-  }
-}
-
-.card-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
-  border-radius: 10px;
   flex-shrink: 0;
-
-  svg {
-    width: 18px;
-    height: 18px;
-    color: #10b981;
-  }
+  padding: 4px;
+  border-radius: 18px;
+  border: 1px solid #d7d7d7;
+  background: linear-gradient(135deg, #f9f9f9, #efefef);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
-.card-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
+.profile-sheet__avatar {
+  border: 2px solid #ffffff;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
 }
 
-.card-label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+.profile-sheet__headline {
+  min-width: 0;
+}
+
+.profile-sheet__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #7a7a7a;
+}
+
+.profile-sheet__name {
+  margin: 6px 0 4px;
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #111111;
+}
+
+.profile-sheet__subline {
+  font-size: 12px;
+  color: #6d6d6d;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
-.card-value {
-  font-size: 13px;
-  color: #fff;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  &.mono {
-    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.8);
-  }
-}
-
-// 底部操作
-.profile-actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.profile-sheet__summary {
+  display: grid;
   gap: 8px;
-  padding: 10px 24px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 500;
+  align-content: start;
+}
+
+.profile-sheet__summary-item {
+  padding: 11px 12px;
+  border: 1px solid #e4e4e4;
+  border-radius: 14px;
+  background: #fcfcfc;
+}
+
+.profile-sheet__summary-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8b8b8b;
+  font-weight: 700;
+}
+
+.profile-sheet__summary-value {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #151515;
+}
+
+.profile-sheet__content {
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #ffffff;
+}
+
+.profile-card {
+  border: 1px solid #e7e7e7;
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.035);
+}
+
+.profile-card--readonly {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+}
+
+.profile-card__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid #efefef;
+}
+
+.profile-card__kicker {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a8a8a;
+}
+
+.profile-card__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #111111;
+}
+
+.profile-card__hint {
+  margin: 0;
+  font-size: 11px;
+  color: #7a7a7a;
+  text-align: right;
+}
+
+.profile-readonly-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.profile-readonly-item {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #ededed;
+  background: #fafafa;
+}
+
+.profile-readonly-item__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #7a7a7a;
+}
+
+.profile-readonly-item__value {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #151515;
+}
+
+.profile-form {
+  padding: 12px 16px 16px;
+}
+
+.profile-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+
+.profile-form :deep(.el-form-item__label) {
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #252525;
+}
+
+.profile-form :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+
+.profile-form :deep(.el-input__wrapper) {
+  min-height: 38px;
+  border-radius: 12px;
+  background: #f6f6f6;
+  box-shadow: inset 0 0 0 1px #e6e6e6;
+}
+
+.profile-form :deep(.el-input__wrapper.is-focus) {
+  box-shadow: inset 0 0 0 1px #111111;
+}
+
+.profile-form :deep(.el-input__inner) {
+  color: #111111;
+}
+
+.profile-form__radio-group {
+  display: flex;
+  gap: 12px;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: #f6f6f6;
+  box-shadow: inset 0 0 0 1px #e6e6e6;
+}
+
+.profile-form :deep(.el-radio) {
+  margin-right: 0;
+  color: #3c3c3c;
+}
+
+.profile-form :deep(.el-radio__input.is-checked .el-radio__inner) {
+  border-color: #111111;
+  background: #111111;
+}
+
+.profile-form :deep(.el-radio__input.is-checked + .el-radio__label) {
+  color: #111111;
+}
+
+.profile-sheet__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.profile-btn {
+  min-width: 88px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid #d9d9d9;
+  background: #ffffff;
+  color: #111111;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 
-  svg {
-    width: 16px;
-    height: 16px;
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
-  &.secondary {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+  &:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+}
 
-    &:hover {
-      background: rgba(255, 255, 255, 0.12);
-      color: #fff;
-      transform: translateY(-2px);
-    }
+.profile-btn--ghost {
+  background: #ffffff;
+  color: #555555;
+}
+
+.profile-btn--secondary {
+  background: #f5f5f5;
+  color: #111111;
+}
+
+.profile-btn--primary {
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 900px) {
+  .profile-sheet {
+    width: min(620px, calc(100vw - 24px));
   }
 
-  &.primary {
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: #fff;
-    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+  .profile-sheet__hero,
+  .profile-form__grid,
+  .profile-readonly-grid {
+    grid-template-columns: 1fr;
+  }
 
-    &:hover {
-      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
-      transform: translateY(-2px);
-    }
+  .profile-sheet__hero,
+  .profile-sheet__content,
+  .profile-sheet__footer {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }
 </style>
