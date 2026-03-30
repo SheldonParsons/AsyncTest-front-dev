@@ -143,8 +143,9 @@ export class WindowManager {
    *  onReadyToShow?: (win: BrowserWindow) => void,
    *  onClosed?: () => void,
    *  beforeClose?: () => Promise<boolean>|boolean,
-   * }} config
-   */
+   *  managedCloseAction?: 'close'|'destroy',
+    * }} config
+    */
   async createOrFocus(key, config = {}) {
     const existing = this.get(key);
     if (existing) {
@@ -179,6 +180,7 @@ export class WindowManager {
       onReadyToShow,
       onClosed,
       beforeClose,
+      managedCloseAction = 'close',
     } = config;
 
     const parent = parentKey ? this.get(parentKey) : null;
@@ -287,13 +289,18 @@ export class WindowManager {
           }, 15000);
 
           targetWin.once('closed', onClosed);
-          bypassCloseOnce = true;
+          const useDestroy = managedCloseAction === 'destroy';
+          bypassCloseOnce = !useDestroy;
 
           try {
-            logCloseDebug('wm', 'requestManagedClose:calling-close', this._buildCloseDebugPayload({ key }));
-            targetWin.close();
+            logCloseDebug('wm', useDestroy ? 'requestManagedClose:calling-destroy' : 'requestManagedClose:calling-close', this._buildCloseDebugPayload({ key }));
+            if (useDestroy) {
+              targetWin.destroy();
+            } else {
+              targetWin.close();
+            }
           } catch {
-            logCloseDebug('wm', 'requestManagedClose:close-threw', this._buildCloseDebugPayload({ key }));
+            logCloseDebug('wm', useDestroy ? 'requestManagedClose:destroy-threw' : 'requestManagedClose:close-threw', this._buildCloseDebugPayload({ key }));
             finish(false);
           }
         });

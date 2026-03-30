@@ -129,6 +129,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
       nativeHeaderless: true,
       openDevTools: true,
       closeBehavior: 'platform',
+      managedCloseAction: 'destroy',
       query: { windowKey, docId, filePath: filePath || null },
 
       onClosed: () => {
