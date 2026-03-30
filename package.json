@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.21",
+  "version": "2.0.22",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
