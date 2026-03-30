@@ -9,6 +9,7 @@ import { createRecentStore } from './recentStore.js';
 import { createDocStore } from './docStore.node.js';
 import { createMindFontService } from './fontService.node.js';
 import { migrateLegacyMindStyles } from './styleMigration.node.js';
+import { logCloseDebug } from '../closeDebugLogger.js';
 
 export function initAmindMain({ userDataPath, windowManager }) {
   const recentStore = createRecentStore({ userDataPath });
@@ -105,6 +106,14 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
     const windowKey = `mind:${docId}`;
     const existedBefore = windowManager.has(windowKey);
+    logCloseDebug('amind', 'openMindWindow:start', {
+      docId,
+      windowKey,
+      filePath: filePath || null,
+      existedBefore,
+      pid: process.pid,
+      platform: process.platform,
+    });
 
     const win = await windowManager.createOrFocus(windowKey, {
       key: windowKey,
@@ -123,6 +132,13 @@ export function initAmindMain({ userDataPath, windowManager }) {
       query: { windowKey, docId, filePath: filePath || null },
 
       onClosed: () => {
+        logCloseDebug('amind', 'openMindWindow:onClosed', {
+          docId,
+          windowKey,
+          filePath: filePath || null,
+          pid: process.pid,
+          platform: process.platform,
+        });
         const entry = docStore.get(docId);
         if (!entry) return;
 
@@ -147,8 +163,20 @@ export function initAmindMain({ userDataPath, windowManager }) {
     win.show();
     win.focus();
     if (!existedBefore) {
+      logCloseDebug('amind', 'openMindWindow:hide-main', {
+        docId,
+        windowKey,
+        pid: process.pid,
+        platform: process.platform,
+      });
       windowManager.hide('main');
     }
+    logCloseDebug('amind', 'openMindWindow:done', {
+      docId,
+      windowKey,
+      pid: process.pid,
+      platform: process.platform,
+    });
     return { windowKey };
   }
 

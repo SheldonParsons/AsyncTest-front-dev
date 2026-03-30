@@ -9,6 +9,7 @@ import { WindowManager } from './windowManager.js';
 import { initAmindMain } from './amind/ipcMain.node.js';
 import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
+import { getCloseDebugLogPath, logCloseDebug } from './closeDebugLogger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -141,10 +142,12 @@ async function createMainWindow() {
 
   // 主窗口关闭策略：mac 默认 hide 而不是退出
   mainWindow.on('close', (event) => {
+    logCloseDebug('main', 'mainWindow:close:event', buildCloseDebugPayload({ mainCloseRequestedFromRenderer }));
     if (isQuitting || isQuittingForUpdate()) return;
     if (process.platform === 'darwin') {
       event.preventDefault();
       mainWindow?.hide();
+      logCloseDebug('main', 'mainWindow:close:hide-darwin', buildCloseDebugPayload());
       return;
     }
 
@@ -152,11 +155,29 @@ async function createMainWindow() {
     mainCloseRequestedFromRenderer = false;
     if (!shouldQuit) {
       event.preventDefault();
+      logCloseDebug('main', 'mainWindow:close:blocked', buildCloseDebugPayload());
       return;
     }
 
     event.preventDefault();
+    logCloseDebug('main', 'mainWindow:close:requestAppQuit', buildCloseDebugPayload());
     void requestAppQuit();
+  });
+
+  mainWindow.on('closed', () => {
+    logCloseDebug('main', 'mainWindow:closed', buildCloseDebugPayload());
+  });
+  mainWindow.on('hide', () => {
+    logCloseDebug('main', 'mainWindow:hide', buildCloseDebugPayload());
+  });
+  mainWindow.on('show', () => {
+    logCloseDebug('main', 'mainWindow:show', buildCloseDebugPayload());
+  });
+  mainWindow.on('minimize', () => {
+    logCloseDebug('main', 'mainWindow:minimize', buildCloseDebugPayload());
+  });
+  mainWindow.on('restore', () => {
+    logCloseDebug('main', 'mainWindow:restore', buildCloseDebugPayload());
   });
 
   return mainWindow;
@@ -208,13 +229,30 @@ function resolveWindowKeyFromWebContents(webContents) {
   return null;
 }
 
+function buildCloseDebugPayload(extra = {}) {
+  return {
+    ...extra,
+    mainVisible: !!mainWindow && !mainWindow.isDestroyed() ? mainWindow.isVisible() : null,
+    mainMinimized: !!mainWindow && !mainWindow.isDestroyed() ? mainWindow.isMinimized() : null,
+    windowKeys: windowManager?.listKeys?.() ?? [],
+    isQuitting,
+    isQuitApproved,
+    pendingAppQuit: pendingAppQuitPromise != null,
+    platform: process.platform,
+    pid: process.pid,
+  };
+}
+
 async function requestAppQuit() {
+  logCloseDebug('main', 'requestAppQuit:start', buildCloseDebugPayload());
   if (isQuitApproved || isQuittingForUpdate()) {
     isQuitting = true;
+    logCloseDebug('main', 'requestAppQuit:approved', buildCloseDebugPayload());
     return true;
   }
 
   if (pendingAppQuitPromise) {
+    logCloseDebug('main', 'requestAppQuit:reuse-pending', buildCloseDebugPayload());
     return await pendingAppQuitPromise;
   }
 
@@ -224,23 +262,28 @@ async function requestAppQuit() {
         const childWin = windowManager?.get(key);
         if (!childWin) continue;
 
+        logCloseDebug('main', 'requestAppQuit:closing-child', buildCloseDebugPayload({ key }));
         windowManager?.bringToFront(key);
         const closed = await windowManager.requestManagedClose(key);
         if (!closed) {
           isQuitting = false;
+          logCloseDebug('main', 'requestAppQuit:child-blocked', buildCloseDebugPayload({ key }));
           return false;
         }
       }
 
       isQuitApproved = true;
       isQuitting = true;
+      logCloseDebug('main', 'requestAppQuit:app-quit', buildCloseDebugPayload());
       app.quit();
       return true;
     } catch (error) {
       console.error('requestAppQuit failed', error);
       isQuitting = false;
+      logCloseDebug('main', 'requestAppQuit:error', buildCloseDebugPayload({ error }));
       return false;
     } finally {
+      logCloseDebug('main', 'requestAppQuit:finally', buildCloseDebugPayload());
       pendingAppQuitPromise = null;
     }
   })();
@@ -265,6 +308,11 @@ ipcMain.handle('wm:open', async (event, options) => {
   const { key } = opts;
   if (!key) throw new Error('wm:open 缺少 key（窗口唯一标识）');
   const existedBefore = windowManager.has(key);
+  logCloseDebug('main', 'wm:open', buildCloseDebugPayload({
+    key,
+    existedBefore,
+    senderKey: resolveWindowKeyFromWebContents(event.sender),
+  }));
 
   const config = {
     ...opts,
@@ -285,8 +333,10 @@ ipcMain.handle('wm:open', async (event, options) => {
 ipcMain.handle('wm:control', async (event, { key, action }) => {
   if (!key || !action) return false;
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  logCloseDebug('main', 'wm:control', buildCloseDebugPayload({ senderKey, targetKey: key, action }));
   if (senderKey && senderKey !== key) {
     console.warn('[wm:control] blocked cross-window control request', { senderKey, targetKey: key, action });
+    logCloseDebug('main', 'wm:control:blocked', buildCloseDebugPayload({ senderKey, targetKey: key, action }));
     return false;
   }
 
@@ -316,8 +366,10 @@ ipcMain.handle('wm:control', async (event, { key, action }) => {
 
 ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  logCloseDebug('main', 'wm:closeResponse', buildCloseDebugPayload({ senderKey, targetKey: key, allow: !!allow }));
   if (senderKey && senderKey !== key) {
     console.warn('[wm:closeResponse] blocked mismatched close response', { senderKey, targetKey: key, allow: !!allow });
+    logCloseDebug('main', 'wm:closeResponse:blocked', buildCloseDebugPayload({ senderKey, targetKey: key, allow: !!allow }));
     return false;
   }
   return windowManager.resolveCloseRequest(key, !!allow);
@@ -326,8 +378,10 @@ ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
 ipcMain.handle('wm:close', async (event, key) => {
   if (!key) return false;
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  logCloseDebug('main', 'wm:close', buildCloseDebugPayload({ senderKey, targetKey: key }));
   if (senderKey && senderKey !== key) {
     console.warn('[wm:close] blocked cross-window close request', { senderKey, targetKey: key });
+    logCloseDebug('main', 'wm:close:blocked', buildCloseDebugPayload({ senderKey, targetKey: key }));
     return false;
   }
   if (process.platform === 'win32' && key.startsWith('mind:')) {
@@ -390,6 +444,11 @@ ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
 
 // ===== App 生命周期 =====
 app.whenReady().then(async () => {
+  logCloseDebug('main', 'app:whenReady:start', {
+    logPath: getCloseDebugLogPath(),
+    platform: process.platform,
+    pid: process.pid,
+  });
   const win = await createMainWindow();
 
   amindMain = initAmindMain({
@@ -422,6 +481,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('activate', () => {
+  logCloseDebug('main', 'app:activate', buildCloseDebugPayload());
   if (shouldRestoreMainWindowOnActivate()) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
@@ -433,6 +493,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', (event) => {
+  logCloseDebug('main', 'app:before-quit', buildCloseDebugPayload());
   if (isQuitApproved || isQuittingForUpdate()) {
     isQuitting = true;
     return;
@@ -440,4 +501,12 @@ app.on('before-quit', (event) => {
 
   event.preventDefault();
   void requestAppQuit();
+});
+
+app.on('will-quit', () => {
+  logCloseDebug('main', 'app:will-quit', buildCloseDebugPayload());
+});
+
+app.on('quit', (_event, exitCode) => {
+  logCloseDebug('main', 'app:quit', buildCloseDebugPayload({ exitCode }));
 });
