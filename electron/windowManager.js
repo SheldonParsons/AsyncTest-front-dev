@@ -1,5 +1,4 @@
 import { BrowserWindow } from 'electron';
-import { logCloseDebug } from './closeDebugLogger.js';
 
 /**
  * WindowManager:
@@ -41,15 +40,6 @@ export class WindowManager {
     return [...this.windows.keys()];
   }
 
-  _buildCloseDebugPayload(extra = {}) {
-    return {
-      ...extra,
-      windowKeys: this.listKeys(),
-      pid: process.pid,
-      platform: process.platform,
-    };
-  }
-
   /**
    * 主进程请求 renderer 决定是否允许关闭。
    * renderer 需监听 'wm:before-close' 并调用 ipc invoke 'wm:closeResponse' 回传。
@@ -58,7 +48,6 @@ export class WindowManager {
    */
   async requestCloseFromRenderer(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'requestCloseFromRenderer:start', this._buildCloseDebugPayload({ key }));
     if (!win) return true;
 
     // 已有等待中的请求，复用（避免并发）
@@ -86,7 +75,6 @@ export class WindowManager {
   });
 
   win.webContents.send('wm:before-close', { key });
-  logCloseDebug('wm', 'requestCloseFromRenderer:sent', this._buildCloseDebugPayload({ key }));
   return await p;
 }
 
@@ -96,7 +84,6 @@ export class WindowManager {
    * @param {boolean} allow
    */
   resolveCloseRequest(key, allow) {
-    logCloseDebug('wm', 'resolveCloseRequest', this._buildCloseDebugPayload({ key, allow: !!allow }));
     const req = this._closeRequests.get(key);
     if (!req) return false;
     clearTimeout(req.timer);
@@ -106,7 +93,6 @@ export class WindowManager {
   }
 
   async requestManagedClose(key) {
-    logCloseDebug('wm', 'requestManagedClose:entry', this._buildCloseDebugPayload({ key }));
     const handler = this._managedCloseHandlers.get(key);
     if (typeof handler === 'function') {
       return await handler();
@@ -149,7 +135,6 @@ export class WindowManager {
   async createOrFocus(key, config = {}) {
     const existing = this.get(key);
     if (existing) {
-      logCloseDebug('wm', 'createOrFocus:existing', this._buildCloseDebugPayload({ key }));
       if (existing.isMinimized()) existing.restore();
       existing.show();
       existing.focus();
@@ -215,11 +200,9 @@ export class WindowManager {
     });
 
     this.windows.set(key, win);
-    logCloseDebug('wm', 'createOrFocus:created', this._buildCloseDebugPayload({ key, title, route }));
 
     win.webContents.on('did-finish-load', () => {
       if (config.title) win.setTitle(config.title);
-      logCloseDebug('wm', 'window:did-finish-load', this._buildCloseDebugPayload({ key, title: config.title || title }));
     });
 
     if (this.options.isDev && openDevTools) {
@@ -228,7 +211,6 @@ export class WindowManager {
 
     // closed：统一清理 + 回调
     win.on('closed', () => {
-      logCloseDebug('wm', 'window:closed', this._buildCloseDebugPayload({ key }));
       this.windows.delete(key);
       this._managedCloseHandlers.delete(key);
       this._closeAttempts.delete(key);
@@ -245,12 +227,10 @@ export class WindowManager {
     // close：hide / beforeClose 拦截
     let bypassCloseOnce = false;
     const requestManagedClose = async () => {
-      logCloseDebug('wm', 'requestManagedClose:start', this._buildCloseDebugPayload({ key }));
       const currentWin = this.get(key);
       if (!currentWin) return true;
 
       if (this._closeAttempts.has(key)) {
-        logCloseDebug('wm', 'requestManagedClose:reuse-pending', this._buildCloseDebugPayload({ key }));
         return await this._closeAttempts.get(key);
       }
 
@@ -259,10 +239,8 @@ export class WindowManager {
         if (typeof beforeClose === 'function') {
           try {
             allow = await Promise.resolve(beforeClose());
-            logCloseDebug('wm', 'requestManagedClose:beforeClose-resolved', this._buildCloseDebugPayload({ key, allow }));
           } catch {
             allow = false;
-            logCloseDebug('wm', 'requestManagedClose:beforeClose-threw', this._buildCloseDebugPayload({ key }));
           }
         }
 
@@ -293,19 +271,16 @@ export class WindowManager {
           bypassCloseOnce = !useDestroy;
 
           try {
-            logCloseDebug('wm', useDestroy ? 'requestManagedClose:calling-destroy' : 'requestManagedClose:calling-close', this._buildCloseDebugPayload({ key }));
             if (useDestroy) {
               targetWin.destroy();
             } else {
               targetWin.close();
             }
           } catch {
-            logCloseDebug('wm', useDestroy ? 'requestManagedClose:destroy-threw' : 'requestManagedClose:close-threw', this._buildCloseDebugPayload({ key }));
             finish(false);
           }
         });
       })().finally(() => {
-        logCloseDebug('wm', 'requestManagedClose:finally', this._buildCloseDebugPayload({ key }));
         this._closeAttempts.delete(key);
       });
 
@@ -316,7 +291,6 @@ export class WindowManager {
     this._managedCloseHandlers.set(key, requestManagedClose);
 
     win.on('close', (event) => {
-      logCloseDebug('wm', 'window:close:event', this._buildCloseDebugPayload({ key, bypassCloseOnce, closeBehavior }));
       const finalBehavior =
         closeBehavior === 'platform'
           ? 'close'
@@ -325,7 +299,6 @@ export class WindowManager {
       if (finalBehavior === 'hide') {
         event.preventDefault();
         win.hide();
-        logCloseDebug('wm', 'window:close:hide', this._buildCloseDebugPayload({ key }));
         return;
       }
 
@@ -333,7 +306,6 @@ export class WindowManager {
 
       if (typeof beforeClose === 'function') {
         event.preventDefault();
-        logCloseDebug('wm', 'window:close:delegating-managed-close', this._buildCloseDebugPayload({ key }));
         void requestManagedClose();
         return;
       }
@@ -341,24 +313,7 @@ export class WindowManager {
 
     win.once('ready-to-show', () => {
       if (show) win.show();
-      logCloseDebug('wm', 'window:ready-to-show', this._buildCloseDebugPayload({ key, show }));
       if (typeof onReadyToShow === 'function') onReadyToShow(win);
-    });
-
-    win.on('show', () => {
-      logCloseDebug('wm', 'window:show', this._buildCloseDebugPayload({ key }));
-    });
-    win.on('hide', () => {
-      logCloseDebug('wm', 'window:hide', this._buildCloseDebugPayload({ key }));
-    });
-    win.on('minimize', () => {
-      logCloseDebug('wm', 'window:minimize', this._buildCloseDebugPayload({ key }));
-    });
-    win.on('restore', () => {
-      logCloseDebug('wm', 'window:restore', this._buildCloseDebugPayload({ key }));
-    });
-    win.on('focus', () => {
-      logCloseDebug('wm', 'window:focus', this._buildCloseDebugPayload({ key }));
     });
 
     const finalURL = this._buildURL({ route, hash, query });
@@ -376,19 +331,16 @@ export class WindowManager {
 
   close(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'close', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (win) win.close();
   }
 
   minimize(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'minimize', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (win) win.minimize();
   }
 
   maximizeToggle(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'maximizeToggle', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (!win) return;
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
@@ -396,13 +348,11 @@ export class WindowManager {
 
   hide(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'hide', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (win) win.hide();
   }
 
   focus(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'focus', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (win) {
       win.show();
       win.focus();
@@ -411,7 +361,6 @@ export class WindowManager {
 
   bringToFront(key) {
     const win = this.get(key);
-    logCloseDebug('wm', 'bringToFront', this._buildCloseDebugPayload({ key, exists: !!win }));
     if (!win) return false;
 
     if (win.isMinimized()) win.restore();
