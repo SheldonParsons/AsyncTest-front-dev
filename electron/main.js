@@ -510,3 +510,7 @@ app.on('will-quit', () => {
 app.on('quit', (_event, exitCode) => {
   logCloseDebug('main', 'app:quit', buildCloseDebugPayload({ exitCode }));
 });
+
+app.on('window-all-closed', () => {
+  logCloseDebug('main', 'app:window-all-closed', buildCloseDebugPayload());
+});
