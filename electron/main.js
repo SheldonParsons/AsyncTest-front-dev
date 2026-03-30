@@ -191,6 +191,15 @@ function getManagedChildWindowKeys() {
   return windowManager.listKeys().filter((key) => key !== 'main');
 }
 
+function resolveWindowKeyFromWebContents(webContents) {
+  if (!windowManager || !webContents) return null;
+  for (const key of windowManager.listKeys()) {
+    const win = windowManager.get(key);
+    if (win?.webContents === webContents) return key;
+  }
+  return null;
+}
+
 async function requestAppQuit() {
   if (isQuitApproved || isQuittingForUpdate()) {
     isQuitting = true;
@@ -267,6 +276,11 @@ ipcMain.handle('wm:open', async (event, options) => {
 
 ipcMain.handle('wm:control', async (event, { key, action }) => {
   if (!key || !action) return false;
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (senderKey && senderKey !== key) {
+    console.warn('[wm:control] blocked cross-window control request', { senderKey, targetKey: key, action });
+    return false;
+  }
 
   switch (action) {
     case 'minimize':
@@ -290,11 +304,21 @@ ipcMain.handle('wm:control', async (event, { key, action }) => {
 });
 
 ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (senderKey && senderKey !== key) {
+    console.warn('[wm:closeResponse] blocked mismatched close response', { senderKey, targetKey: key, allow: !!allow });
+    return false;
+  }
   return windowManager.resolveCloseRequest(key, !!allow);
 });
 
 ipcMain.handle('wm:close', async (event, key) => {
   if (!key) return false;
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (senderKey && senderKey !== key) {
+    console.warn('[wm:close] blocked cross-window close request', { senderKey, targetKey: key });
+    return false;
+  }
   if (process.platform === 'win32' && key.startsWith('mind:')) {
     return await windowManager.requestManagedClose(key);
   }
