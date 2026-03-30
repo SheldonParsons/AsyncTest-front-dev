@@ -284,8 +284,6 @@ export class WindowManager {
     this._managedCloseHandlers.set(key, requestManagedClose);
 
     win.on('close', (event) => {
-      console.log("in close.............");
-      
       const finalBehavior =
         closeBehavior === 'platform'
           ? 'close'

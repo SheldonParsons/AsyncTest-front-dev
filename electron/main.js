@@ -19,6 +19,7 @@ let windowManager = null;
 let isQuitting = false;
 let isQuitApproved = false;
 let pendingAppQuitPromise = null;
+let mainCloseRequestedFromRenderer = false;
 
 // amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
 let amindMain = null;
@@ -144,6 +145,13 @@ async function createMainWindow() {
     if (process.platform === 'darwin') {
       event.preventDefault();
       mainWindow?.hide();
+      return;
+    }
+
+    const shouldQuit = mainCloseRequestedFromRenderer || !!mainWindow?.isVisible();
+    mainCloseRequestedFromRenderer = false;
+    if (!shouldQuit) {
+      event.preventDefault();
       return;
     }
 
@@ -293,6 +301,9 @@ ipcMain.handle('wm:control', async (event, { key, action }) => {
       if (process.platform === 'win32' && key.startsWith('mind:')) {
         return await windowManager.requestManagedClose(key);
       }
+      if (key === 'main' && senderKey === 'main') {
+        mainCloseRequestedFromRenderer = true;
+      }
       windowManager.close(key);
       return true;
     case 'hide':
@@ -321,6 +332,9 @@ ipcMain.handle('wm:close', async (event, key) => {
   }
   if (process.platform === 'win32' && key.startsWith('mind:')) {
     return await windowManager.requestManagedClose(key);
+  }
+  if (key === 'main' && senderKey === 'main') {
+    mainCloseRequestedFromRenderer = true;
   }
   windowManager.close(key);
   return true;
