@@ -2070,7 +2070,7 @@ function compactPerfData(data: Record<string, unknown>) {
 }
 
 function getMindPerfNodeCount() {
-  return worldBoxes.value.size || Object.keys(getMindNodes() ?? {}).length;
+  return Object.keys(getMindNodes() ?? {}).length;
 }
 
 function getActiveMindPerfProbe() {
@@ -9672,10 +9672,14 @@ onMounted(() => {
 watch(
   () => props.doc,
   () => {
-    if (!props.doc) return;
+    if (!props.doc) {
+      emitNodeCountState();
+      return;
+    }
     ensureMindRoots(props.doc);
     if (isLocalDocWatchSuppressed()) return;
     redrawAll('watch:doc');
+    scheduleNodeCountStateEmit();
   },
   { deep: false }
 );

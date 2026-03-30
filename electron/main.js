@@ -403,7 +403,3 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   void requestAppQuit();
 });
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});

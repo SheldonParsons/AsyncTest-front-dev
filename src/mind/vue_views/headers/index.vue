@@ -20,17 +20,29 @@ import { useRoute } from 'vue-router';
 import WinWindowControls from './WinWindowControls.vue';
 
 const route = useRoute();
-const windowKey = computed(() => (route.query.windowKey as string) || 'main');
+const windowKey = computed(() => {
+  const raw = route.query.windowKey;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+});
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 
+function dispatchWindowAction(action: 'minimize' | 'maximizeToggle' | 'close') {
+  const key = windowKey.value;
+  if (!key) {
+    console.error('[mind-window] Missing windowKey for window control action:', action);
+    return;
+  }
+  void window.electronAPI?.wm?.control(key, action);
+}
+
 function minimize() {
-  window.electronAPI?.wm?.control(windowKey.value, 'minimize');
+  dispatchWindowAction('minimize');
 }
 function maximize() {
-  window.electronAPI?.wm?.control(windowKey.value, 'maximizeToggle');
+  dispatchWindowAction('maximizeToggle');
 }
 function close() {
-  window.electronAPI?.wm?.control(windowKey.value, 'close');
+  dispatchWindowAction('close');
 }
 </script>
 
