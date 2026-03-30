@@ -276,6 +276,9 @@ ipcMain.handle('wm:control', async (event, { key, action }) => {
       windowManager.maximizeToggle(key);
       return true;
     case 'close':
+      if (process.platform === 'win32' && key.startsWith('mind:')) {
+        return await windowManager.requestManagedClose(key);
+      }
       windowManager.close(key);
       return true;
     case 'hide':
@@ -292,6 +295,9 @@ ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
 
 ipcMain.handle('wm:close', async (event, key) => {
   if (!key) return false;
+  if (process.platform === 'win32' && key.startsWith('mind:')) {
+    return await windowManager.requestManagedClose(key);
+  }
   windowManager.close(key);
   return true;
 });

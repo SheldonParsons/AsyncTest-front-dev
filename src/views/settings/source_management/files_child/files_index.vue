@@ -415,6 +415,7 @@ import {
 } from "@element-plus/icons-vue";
 import {
   ApiCreateProjectDirectory,
+  ApiDownloadProjectFile,
   ApiDownloadProjectFolderZip,
   ApiDeleteProjectDirectory,
   ApiDeleteProjectEntry,
@@ -1216,33 +1217,19 @@ async function confirmDeleteEntry(entry: FileManagerEntry) {
 }
 
 async function downloadEntry(entry: FileManagerEntry) {
-  if (entry.kind !== "file" || !entry.downloadUrl || downloadingEntryKey.value) return;
+  const fileId = entry.raw?.id ?? entry.id;
+  if (entry.kind !== "file" || !fileId || downloadingEntryKey.value) return;
   downloadingEntryKey.value = entry.selectionKey;
-  const fileName = resolveDownloadFileName(entry);
-  let objectUrl = "";
   try {
-    const response = await fetch(entry.downloadUrl);
-    if (!response.ok) {
-      throw new Error(`download failed: ${response.status}`);
-    }
-    const blob = await response.blob();
-    objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = fileName;
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const response = await ApiDownloadProjectFile({ id: fileId });
+    const headerFileName = parseContentDispositionFileName(response.headers?.["content-disposition"]);
+    const fileName = headerFileName || resolveDownloadFileName(entry);
+    triggerBlobDownload(response.data, fileName);
   } catch (error) {
     console.log(error);
-    tools.message("文件下载失败", proxy, "error");
+    const message = await resolveZipDownloadErrorMessage(error, "文件下载失败");
+    tools.message(message, proxy, "error");
   } finally {
-    if (objectUrl) {
-      setTimeout(() => {
-        URL.revokeObjectURL(objectUrl);
-      }, 1000);
-    }
     downloadingEntryKey.value = null;
   }
 }

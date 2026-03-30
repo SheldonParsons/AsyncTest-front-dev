@@ -59,6 +59,7 @@
         </MindMain>
         <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
             :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
+            :has-local-file-binding="!!filePath"
             @switch-board="onSwitchBoard" @rename-board="onRenameBoard"></MindFooter>
         <UserProfileDialog ref="userProfileDialogRef" />
         <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">

@@ -1007,9 +1007,27 @@ async function retryMindFontDownload(key: StyleFontKey) {
   }
 }
 
+function schedulePendingDirectTypeFocusRetry(nodeId: string, attempt = 0) {
+  clearPendingDirectTypeFocusRetry();
+  pendingDirectTypeFocusRetryRafId = requestAnimationFrame(() => {
+    pendingDirectTypeFocusRetryRafId = null;
+    if (editingSession.value || primarySelectedNodeId.value !== nodeId) return;
+    if (getEditingTextBoxRectForNode(nodeId) && focusPendingDirectTypeInput(nodeId)) {
+      return;
+    }
+    if (attempt < 2) {
+      schedulePendingDirectTypeFocusRetry(nodeId, attempt + 1);
+    }
+  });
+}
+
 function focusViewportWithoutScroll() {
-  if (!editingSession.value && primarySelectedNodeId.value && focusPendingDirectTypeInput(primarySelectedNodeId.value)) {
-    return;
+  if (!editingSession.value && primarySelectedNodeId.value) {
+    const currentNodeId = primarySelectedNodeId.value;
+    if (getEditingTextBoxRectForNode(currentNodeId) && focusPendingDirectTypeInput(currentNodeId)) {
+      return;
+    }
+    schedulePendingDirectTypeFocusRetry(currentNodeId);
   }
   focusViewportElementWithoutScroll();
 }
@@ -1045,8 +1063,14 @@ function clearPendingDirectTypeFlushTimeout() {
   pendingDirectTypeFlushTimeoutId = null;
 }
 
+function clearPendingDirectTypeFocusRetry() {
+  if (pendingDirectTypeFocusRetryRafId != null) cancelAnimationFrame(pendingDirectTypeFocusRetryRafId);
+  pendingDirectTypeFocusRetryRafId = null;
+}
+
 function clearPendingDirectTypeSeed() {
   const element = pendingDirectTypeInputRef.value;
+  clearPendingDirectTypeFocusRetry();
   clearPendingDirectTypeFlushTimeout();
   pendingDirectTypeSeed.value = null;
   pendingDirectTypeCaptureComposing.value = false;
@@ -1686,6 +1710,7 @@ const pendingDirectTypeSeed = ref<null | {
 }>(null);
 const pendingDirectTypeCaptureComposing = ref(false);
 let pendingDirectTypeFlushTimeoutId: number | null = null;
+let pendingDirectTypeFocusRetryRafId: number | null = null;
 const primarySelectedNodeId = ref<string | null>(null);
 const selectionAnchorNodeId = ref<string | null>(null);
 const selectionAnchorByGroup = ref<Record<string, string>>({});
@@ -7885,8 +7910,7 @@ function createAddChildCommand(parentId: string): Command | null {
         insertIndex,
       });
       const selectionStartedAt = performance.now();
-      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
-      focusViewportElementWithoutScroll();
+      setSingleSelected(newNodeId, { suppressRender: true });
       noteMindPerfStep('selection-updated', {
         ms: roundPerfMs(performance.now() - selectionStartedAt),
       });
@@ -7924,8 +7948,7 @@ function createAddChildCommand(parentId: string): Command | null {
       }
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
-      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
-      focusViewportElementWithoutScroll();
+      setSingleSelected(newNodeId, { suppressRender: true });
       void applyDocumentMutation('history:redo-add-child', {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -7997,8 +8020,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
         insertIndex,
       });
       const selectionStartedAt = performance.now();
-      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
-      focusViewportElementWithoutScroll();
+      setSingleSelected(newNodeId, { suppressRender: true });
       noteMindPerfStep('selection-updated', {
         ms: roundPerfMs(performance.now() - selectionStartedAt),
       });
@@ -8034,8 +8056,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       }
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
-      setSingleSelected(newNodeId, { suppressRender: true, suppressFocus: true });
-      focusViewportElementWithoutScroll();
+      setSingleSelected(newNodeId, { suppressRender: true });
       void applyDocumentMutation(`history:redo-${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -9820,6 +9841,7 @@ onBeforeUnmount(() => {
   removeGlobalDragListeners();
   if (mutationFlushRafId != null) cancelAnimationFrame(mutationFlushRafId);
   mutationFlushRafId = null;
+  clearPendingDirectTypeFocusRetry();
   pendingMutationResolvers.forEach((resolve) => resolve());
   pendingMutationResolvers = [];
   onScrollbarMouseUp();

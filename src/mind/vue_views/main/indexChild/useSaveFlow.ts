@@ -13,6 +13,7 @@ type SaveResult = {
 type SaveDocumentAsOptions = {
   skipPrepare?: boolean;
   preparedDoc?: any;
+  managedSavingState?: boolean;
 };
 
 type UseSaveFlowOptions = {
@@ -171,11 +172,14 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
   async function saveDocumentAs(saveOptions?: SaveDocumentAsOptions) {
     const docId = options.getDocId();
     const doc = options.getDoc();
-    if (!docId || options.isSaving.value) return false;
+    const managedSavingState = saveOptions?.managedSavingState === true;
+    if (!docId || (options.isSaving.value && !managedSavingState)) return false;
     let nextFilePath = options.getFilePath() ?? null;
     const startedAt = Date.now();
-    options.isSaving.value = true;
-    options.emitSaveState(nextFilePath);
+    if (!managedSavingState) {
+      options.isSaving.value = true;
+      options.emitSaveState(nextFilePath);
+    }
     try {
       const preparedDoc = saveOptions?.skipPrepare ? saveOptions?.preparedDoc ?? toPlainDoc(doc) : await flushForSave();
       if (!preparedDoc) return false;
@@ -196,83 +200,144 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
       notifySaveFailure(error);
       return false;
     } finally {
-      await waitForMinimumDuration(startedAt, 1000);
-      options.isSaving.value = false;
-      options.emitSaveState(nextFilePath);
+      if (!managedSavingState) {
+        await waitForMinimumDuration(startedAt, 1000);
+        options.isSaving.value = false;
+        options.emitSaveState(nextFilePath);
+      }
     }
+  }
+
+  async function saveLocalDocument(preparedDoc: any) {
+    const docId = options.getDocId();
+    let nextFilePath = options.getFilePath() ?? null;
+    if (!docId) {
+      return {
+        success: false,
+        filePath: nextFilePath,
+        savedAt: null as string | null,
+        title: null as string | null,
+        previewHandled: false,
+      };
+    }
+    const result = await window.electronAPI.amind.save({ docId });
+    if (result?.needSaveAs) {
+      const success = await saveDocumentAs({
+        skipPrepare: true,
+        preparedDoc,
+        managedSavingState: true,
+      });
+      return {
+        success,
+        filePath: options.getFilePath() ?? null,
+        savedAt: typeof options.getDoc()?.manifest?.updatedAt === 'string' ? options.getDoc().manifest.updatedAt : null,
+        title: typeof options.getDoc()?.manifest?.title === 'string' ? options.getDoc().manifest.title : null,
+        previewHandled: success,
+      };
+    }
+    nextFilePath = applySaveResult(result);
+    return {
+      success: true,
+      filePath: nextFilePath,
+      savedAt: result?.savedAt ?? null,
+      title: result?.title ?? null,
+      previewHandled: false,
+    };
   }
 
   async function saveDocument() {
     const docId = options.getDocId();
     if (!docId || options.isSaving.value) return false;
     const remoteBinding = options.getRemoteBinding?.() ?? null;
-    if (remoteBinding && options.saveRemoteDocument) {
-      let nextFilePath = options.getFilePath() ?? null;
-      const startedAt = Date.now();
-      options.isSaving.value = true;
-      options.emitSaveState(nextFilePath);
-      console.info('[mind-preview-debug] saveDocument using remote binding', {
-        filePath: nextFilePath,
-        remoteBinding,
-      });
-      try {
-        const prepared = await flushForSave();
-        if (!prepared) return false;
-        const result = await options.saveRemoteDocument(remoteBinding);
-        nextFilePath = applySaveResult(result);
-        scheduleRecentPreviewPersist(prepared, {
-          filePath: nextFilePath,
-          savedAt: result?.savedAt ?? null,
-          title: result?.title ?? null,
-        });
-        console.info('[mind-preview-debug] remote save finished', {
-          filePath: nextFilePath,
-          savedAt: result?.savedAt ?? null,
-          title: result?.title ?? null,
-        });
-        return true;
-      } catch (error) {
-        notifySaveFailure(error);
-        return false;
-      } finally {
-        await waitForMinimumDuration(startedAt, 1000);
-        options.isSaving.value = false;
-        options.emitSaveState(nextFilePath);
-      }
-    }
-    if (!options.getFilePath()) {
-      return await saveDocumentAs();
-    }
+    const hasRemoteTarget = !!(remoteBinding && options.saveRemoteDocument);
+    const hasLocalTarget = !!options.getFilePath();
     let nextFilePath = options.getFilePath() ?? null;
     const startedAt = Date.now();
     options.isSaving.value = true;
     options.emitSaveState(nextFilePath);
-    console.info('[mind-preview-debug] saveDocument using local file', {
-      filePath: nextFilePath,
-      docId,
-    });
     try {
       const prepared = await flushForSave();
       if (!prepared) return false;
-      const result = await window.electronAPI.amind.save({ docId });
-      if (result?.needSaveAs) {
-        console.info('[mind-preview-debug] local save requires saveAs', {
+      let remoteSaveError: unknown = null;
+
+      if (hasRemoteTarget && remoteBinding && options.saveRemoteDocument) {
+        console.info('[mind-preview-debug] saveDocument using remote binding', {
           filePath: nextFilePath,
-          docId,
+          remoteBinding,
         });
-        return await saveDocumentAs({ skipPrepare: true, preparedDoc: prepared });
+        try {
+          const result = await options.saveRemoteDocument(remoteBinding);
+          if (!hasLocalTarget) {
+            nextFilePath = applySaveResult(result);
+            scheduleRecentPreviewPersist(prepared, {
+              filePath: nextFilePath,
+              savedAt: result?.savedAt ?? null,
+              title: result?.title ?? null,
+            });
+            console.info('[mind-preview-debug] remote save finished', {
+              filePath: nextFilePath,
+              savedAt: result?.savedAt ?? null,
+              title: result?.title ?? null,
+            });
+            return true;
+          }
+          console.info('[mind-preview-debug] remote save finished for dual binding', {
+            filePath: nextFilePath,
+            savedAt: result?.savedAt ?? null,
+            title: result?.title ?? null,
+          });
+        } catch (error) {
+          if (!hasLocalTarget) {
+            notifySaveFailure(error);
+            return false;
+          }
+          remoteSaveError = error;
+          console.error('[mind-save] remote save failed, continuing local save', error);
+        }
       }
-      nextFilePath = applySaveResult(result);
-      console.info('[mind-preview-debug] local save finished', {
+
+      if (!hasLocalTarget) {
+        const saved = await saveDocumentAs({
+          skipPrepare: true,
+          preparedDoc: prepared,
+          managedSavingState: true,
+        });
+        nextFilePath = options.getFilePath() ?? nextFilePath;
+        return saved;
+      }
+
+      console.info('[mind-preview-debug] saveDocument using local file', {
         filePath: nextFilePath,
-        savedAt: result?.savedAt ?? null,
-        title: result?.title ?? null,
+        docId,
+        remoteBinding: hasRemoteTarget ? remoteBinding : null,
       });
-      scheduleRecentPreviewPersist(prepared, {
-        filePath: nextFilePath,
-        savedAt: result?.savedAt ?? null,
-        title: result?.title ?? null,
-      });
+
+      const localResult = await saveLocalDocument(prepared);
+      nextFilePath = localResult.filePath ?? nextFilePath;
+      if (!localResult.success) {
+        return false;
+      }
+
+      if (!localResult.previewHandled) {
+        console.info('[mind-preview-debug] local save finished', {
+          filePath: nextFilePath,
+          savedAt: localResult.savedAt ?? null,
+          title: localResult.title ?? null,
+        });
+        scheduleRecentPreviewPersist(prepared, {
+          filePath: nextFilePath,
+          savedAt: localResult.savedAt ?? null,
+          title: localResult.title ?? null,
+        });
+      }
+
+      if (remoteSaveError) {
+        const message = `远程保存失败，本地文件已保存：${remoteSaveError instanceof Error ? remoteSaveError.message : '保存失败'}`;
+        options.saveError.value = message;
+        window.alert(message);
+        return false;
+      }
+
       return true;
     } catch (error) {
       notifySaveFailure(error);

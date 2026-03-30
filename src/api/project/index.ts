@@ -151,6 +151,13 @@ export function ApiDownloadProjectFolderZip(params: any) {
   });
 }
 
+export function ApiDownloadProjectFile(params: { id: number | string }) {
+  return http.httpGetResponse(`${PROJECT_FILE_ENDPOINT}/download`, {
+    params,
+    responseType: "blob",
+  });
+}
+
 export function ApiCheckProjectFileExists(params: any): Promise<String> {
   return new Promise((resolve) => {
     http.httpGet(`${PROJECT_FILE_ENDPOINT}/exists`, params).then((res: any) => {

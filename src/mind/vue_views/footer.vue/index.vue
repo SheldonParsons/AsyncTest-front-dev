@@ -31,6 +31,9 @@
                 </button>
             </div>
         </div>
+        <div v-if="!hasLocalFileBinding" class="footer-warning-text">
+            当前文件未保存到本地，或仅保存在远程文件中。
+        </div>
         <div class="footer-node-count">
             {{ footerCountText }}
         </div>
@@ -45,11 +48,13 @@ const props = withDefaults(defineProps<{
     selectedNodes?: number;
     boards?: Array<{ id: string; title: string }>;
     activeBoardId?: string | null;
+    hasLocalFileBinding?: boolean;
 }>(), {
     totalNodes: 0,
     selectedNodes: 0,
     boards: () => [],
     activeBoardId: null,
+    hasLocalFileBinding: false,
 });
 
 const emit = defineEmits<{
@@ -114,6 +119,19 @@ function commitRename(board: { id: string; title: string }) {
     gap: 6px;
     overflow-x: auto;
     scrollbar-width: none;
+}
+
+.footer-warning-text {
+    flex: 0 1 auto;
+    max-width: 320px;
+    font-size: 12px;
+    line-height: 1;
+    color: #9a6700;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
 }
 
 .footer-board-tabs::-webkit-scrollbar {
