@@ -1797,7 +1797,21 @@ const collapseTagActiveNodeIds = computed(() => {
   if (hoverNodeId.value) active.add(hoverNodeId.value);
   if (collapseTagHoverNodeId.value) active.add(collapseTagHoverNodeId.value);
   if (collapseTagStickyNodeId.value) active.add(collapseTagStickyNodeId.value);
-  for (const nodeId of displaySelectedIds.value) active.add(nodeId);
+  if (displaySelectedIds.value.size <= BULK_SELECTION_ACTIVE_VISUAL_LIMIT) {
+    for (const nodeId of displaySelectedIds.value) active.add(nodeId);
+  } else {
+    let addedCount = 0;
+    for (const nodeId of collapseTagVisibleNodeIds.value) {
+      if (!displaySelectedIds.value.has(nodeId)) continue;
+      active.add(nodeId);
+      addedCount += 1;
+      if (addedCount >= BULK_SELECTION_ACTIVE_VISUAL_LIMIT) break;
+    }
+    if (!addedCount) {
+      const primaryId = getPrimarySelectedId();
+      if (primaryId) active.add(primaryId);
+    }
+  }
   return active;
 });
 const collapseTagScreenMap = computed(() =>
@@ -3163,25 +3177,25 @@ function isSameWorldRect(a: { x1: number; y1: number; x2: number; y2: number } |
 function getVisibleSelectedNodeCount() {
   const nodes = getMindNodes();
   if (!nodes) return 0;
+  const hiddenByCollapsedCache = new Map<string, boolean>();
+
+  const isHiddenByCollapsedAncestor = (nodeId: string): boolean => {
+    if (hiddenByCollapsedCache.has(nodeId)) return hiddenByCollapsedCache.get(nodeId) ?? false;
+    const parentInfo = parentIndexByNodeId.value.get(nodeId) ?? findParentAndIndex(nodeId);
+    if (!parentInfo) {
+      hiddenByCollapsedCache.set(nodeId, false);
+      return false;
+    }
+    const parentNode = nodes[parentInfo.parentId];
+    const hidden = !!parentNode?.collapsed || isHiddenByCollapsedAncestor(parentInfo.parentId);
+    hiddenByCollapsedCache.set(nodeId, hidden);
+    return hidden;
+  };
 
   let count = 0;
   for (const nodeId of selectedIds.value) {
     if (!nodes[nodeId]) continue;
-
-    let currentId = nodeId;
-    let hiddenByCollapsedAncestor = false;
-    while (true) {
-      const parentInfo = findParentAndIndex(currentId);
-      if (!parentInfo) break;
-      const parentNode = nodes[parentInfo.parentId];
-      if (parentNode?.collapsed) {
-        hiddenByCollapsedAncestor = true;
-        break;
-      }
-      currentId = parentInfo.parentId;
-    }
-
-    if (!hiddenByCollapsedAncestor) count += 1;
+    if (!isHiddenByCollapsedAncestor(nodeId)) count += 1;
   }
 
   return count;
@@ -3283,6 +3297,8 @@ function normalizeSelectionTargetsFromParentIndex(
 }
 
 const ROOT_SELECTION_GROUP_KEY = '__sheet-root__';
+const BULK_SELECTION_GROUP_ANCHOR_LIMIT = 512;
+const BULK_SELECTION_ACTIVE_VISUAL_LIMIT = 512;
 
 function getRootSelectionIds() {
   const roots = getActiveMind(props.doc)?.roots;
@@ -3302,6 +3318,14 @@ function getGroupNodeIds(groupKey: string | null) {
   if (groupKey === ROOT_SELECTION_GROUP_KEY) return getRootSelectionIds();
   const parentNode = getNodeById(groupKey);
   return Array.isArray(parentNode?.children) ? parentNode.children : [];
+}
+
+function resolveSelectionGroupKeyFromParentIndex(
+  nodeId: string | null | undefined,
+  nextParentIndex: Map<string, { parentId: string; index: number }> = parentIndexByNodeId.value
+) {
+  if (!nodeId) return null;
+  return nextParentIndex.get(nodeId)?.parentId ?? ROOT_SELECTION_GROUP_KEY;
 }
 
 function pruneSelectionAnchors(nextIdsSet: Set<string>) {
@@ -3437,13 +3461,7 @@ function selectAllNodesInCurrentSheet() {
   if (!allNodeIds.length) return;
   const currentPrimary = getPrimarySelectedId();
   const nextPrimaryId = currentPrimary && allNodeIds.includes(currentPrimary) ? currentPrimary : allNodeIds[allNodeIds.length - 1];
-  setSelection(allNodeIds, nextPrimaryId, { anchorId: nextPrimaryId });
-  const nextGroupAnchors: Record<string, string> = {};
-  allNodeIds.forEach((nodeId) => {
-    const groupKey = getSelectionGroupKey(nodeId);
-    if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
-  });
-  selectionAnchorByGroup.value = nextGroupAnchors;
+  setBulkSelectedNodeIds(allNodeIds, nextPrimaryId);
 }
 
 function collectLeafNodeIdsInCurrentSheet() {
@@ -3451,10 +3469,47 @@ function collectLeafNodeIdsInCurrentSheet() {
   const rootId = getRootNodeId();
   if (!nodes || !rootId || !nodes[rootId]) return [];
 
-  return collectSubtreeNodeIds(nodes, rootId).filter((nodeId) => {
+  const leafNodeIds: string[] = [];
+  const stack: string[] = [rootId];
+  while (stack.length) {
+    const nodeId = stack.pop() as string;
     const children = Array.isArray(nodes[nodeId]?.children) ? nodes[nodeId].children : [];
-    return children.length === 0;
+    if (!children.length) {
+      leafNodeIds.push(nodeId);
+      continue;
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const childId = children[index];
+      if (typeof childId === 'string' && childId) stack.push(childId);
+    }
+  }
+  return leafNodeIds;
+}
+
+function buildBulkSelectionGroupAnchors(nodeIds: string[], primaryId: string | null) {
+  if (!nodeIds.length) return {};
+  const nextGroupAnchors: Record<string, string> = {};
+  if (nodeIds.length > BULK_SELECTION_GROUP_ANCHOR_LIMIT) {
+    const primaryGroupKey = resolveSelectionGroupKeyFromParentIndex(primaryId);
+    if (primaryGroupKey && primaryId) nextGroupAnchors[primaryGroupKey] = primaryId;
+    return nextGroupAnchors;
+  }
+  const nextParentIndex = parentIndexByNodeId.value;
+  nodeIds.forEach((nodeId) => {
+    const groupKey = resolveSelectionGroupKeyFromParentIndex(nodeId, nextParentIndex);
+    if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
   });
+  const primaryGroupKey = resolveSelectionGroupKeyFromParentIndex(primaryId, nextParentIndex);
+  if (primaryGroupKey && primaryId && !nextGroupAnchors[primaryGroupKey]) {
+    nextGroupAnchors[primaryGroupKey] = primaryId;
+  }
+  return nextGroupAnchors;
+}
+
+function setBulkSelectedNodeIds(nodeIds: string[], primaryId: string | null) {
+  setSelection(nodeIds, primaryId, { anchorId: primaryId, suppressRender: true });
+  selectionAnchorByGroup.value = buildBulkSelectionGroupAnchors(nodeIds, primaryId);
+  requestRender();
 }
 
 function selectAllLeafNodesInCurrentSheet() {
@@ -3463,14 +3518,7 @@ function selectAllLeafNodesInCurrentSheet() {
 
   const currentPrimary = getPrimarySelectedId();
   const nextPrimaryId = currentPrimary && leafNodeIds.includes(currentPrimary) ? currentPrimary : leafNodeIds[leafNodeIds.length - 1];
-  setSelection(leafNodeIds, nextPrimaryId, { anchorId: nextPrimaryId });
-
-  const nextGroupAnchors: Record<string, string> = {};
-  leafNodeIds.forEach((nodeId) => {
-    const groupKey = getSelectionGroupKey(nodeId);
-    if (groupKey && !nextGroupAnchors[groupKey]) nextGroupAnchors[groupKey] = nodeId;
-  });
-  selectionAnchorByGroup.value = nextGroupAnchors;
+  setBulkSelectedNodeIds(leafNodeIds, nextPrimaryId);
 }
 
 function getKeyboardNavigationBaseNodeId() {

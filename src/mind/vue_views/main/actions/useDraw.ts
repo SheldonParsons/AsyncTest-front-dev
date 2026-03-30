@@ -91,6 +91,7 @@ const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
 const COLLAPSE_TAG_STROKE = '#111111';
 const COLLAPSE_TAG_TEXT = '#FFFFFF';
 const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
+const BULK_SELECTION_OVERLAY_LIMIT = 512;
 const TEXT_DECORATION_OFFSET_MAP = [
   { fontSize: 12, underlineFromBaseline: 10, strikeFromContentTop: 2.5 },
   { fontSize: 14, underlineFromBaseline: 11.7, strikeFromContentTop: 3.6 },
@@ -1937,7 +1938,21 @@ export function useDraw(
     }
     const overlayNodeIds = new Set<string>();
     if (hoverNodeId.value) overlayNodeIds.add(hoverNodeId.value);
-    for (const id of selectedIds.value) overlayNodeIds.add(id);
+    if (selectedIds.value.size <= BULK_SELECTION_OVERLAY_LIMIT) {
+      for (const id of selectedIds.value) overlayNodeIds.add(id);
+    } else {
+      const visibleSelectedCandidateIds = spatialIndex.queryRect(worldViewportRect);
+      let addedSelectedCount = 0;
+      for (const id of visibleSelectedCandidateIds) {
+        if (!selectedIds.value.has(id)) continue;
+        overlayNodeIds.add(id);
+        addedSelectedCount += 1;
+        if (addedSelectedCount >= BULK_SELECTION_OVERLAY_LIMIT) break;
+      }
+      if (!addedSelectedCount && primarySelectedNodeId?.value && selectedIds.value.has(primarySelectedNodeId.value)) {
+        overlayNodeIds.add(primarySelectedNodeId.value);
+      }
+    }
     if (imageInteraction?.value?.nodeId) overlayNodeIds.add(imageInteraction.value.nodeId);
     if (editingNodeId?.value) overlayNodeIds.add(editingNodeId.value);
     if (activeEditingWidthPreview && Math.abs(activePreviewDeltaX) > 0.01) {
