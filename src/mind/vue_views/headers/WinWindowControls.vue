@@ -12,7 +12,7 @@
       </svg>
     </button>
 
-    <button class="btn close" title="Close" aria-label="Close" @click="$emit('minimize')">
+    <button class="btn close" title="Close" aria-label="Close" @click="$emit('close')">
       <svg viewBox="0 0 10 10" class="icon" aria-hidden="true">
         <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
       </svg>
