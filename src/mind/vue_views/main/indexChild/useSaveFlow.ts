@@ -14,6 +14,12 @@ type SaveDocumentAsOptions = {
   skipPrepare?: boolean;
   preparedDoc?: any;
   managedSavingState?: boolean;
+  savedRevision?: number;
+};
+
+type SaveDocumentOptions = {
+  forceRemoteSave?: boolean;
+  skipRemoteExistsCheck?: boolean;
 };
 
 type UseSaveFlowOptions = {
@@ -33,10 +39,19 @@ type UseSaveFlowOptions = {
   contentRevision: Ref<number>;
   lastSavedContentRevision: Ref<number>;
   getRemoteBinding?: () => MindRemoteBinding | null;
-  saveRemoteDocument?: (binding: MindRemoteBinding) => Promise<SaveResult>;
+  saveRemoteDocument?: (binding: MindRemoteBinding, saveOptions?: SaveDocumentOptions) => Promise<SaveResult>;
+  clearRemoteBindingOnFailure?: () => Promise<boolean> | boolean;
+};
+
+type RemoteBindingInvalidError = Error & {
+  remoteBindingInvalid?: boolean;
 };
 
 export function useSaveFlow(options: UseSaveFlowOptions) {
+  let activeSavePromise: Promise<boolean> | null = null;
+  let pendingSaveRequested = false;
+  let pendingForceRemoteSave = false;
+
   function getSaveAsBaseName() {
     const normalizedRootText = options.getDocumentTitleForSave()
       .replace(/\s+/g, '')
@@ -66,7 +81,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     return await syncDocumentToMainProcess();
   }
 
-  function applySaveResult(result: SaveResult) {
+  function applySaveResult(result: SaveResult, savedRevision?: number) {
     const doc = options.getDoc();
     if (!result) return options.getFilePath() ?? null;
     if (doc?.manifest) {
@@ -77,7 +92,14 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         doc.manifest.title = result.title;
       }
     }
-    options.lastSavedContentRevision.value = options.contentRevision.value;
+    const nextSavedRevision =
+      typeof savedRevision === 'number'
+        ? savedRevision
+        : options.contentRevision.value;
+    options.lastSavedContentRevision.value = Math.max(
+      options.lastSavedContentRevision.value,
+      nextSavedRevision
+    );
     options.saveError.value = null;
     if (typeof result.filePath === 'string') {
       options.emitFilePathChange(result.filePath);
@@ -161,6 +183,19 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     window.alert(message);
   }
 
+  function notifyRemoteBindingWarning(message: string) {
+    options.saveError.value = message;
+    if (typeof window.$toast === 'function') {
+      window.$toast({ title: message, type: 'warning' });
+      return;
+    }
+    window.alert(message);
+  }
+
+  function isRemoteBindingInvalidError(error: unknown): error is RemoteBindingInvalidError {
+    return error instanceof Error && (error as RemoteBindingInvalidError).remoteBindingInvalid === true;
+  }
+
   function waitForMinimumDuration(startedAt: number, minimumMs: number) {
     const elapsed = Date.now() - startedAt;
     if (elapsed >= minimumMs) return Promise.resolve();
@@ -182,6 +217,10 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     }
     try {
       const preparedDoc = saveOptions?.skipPrepare ? saveOptions?.preparedDoc ?? toPlainDoc(doc) : await flushForSave();
+      const preparedRevision =
+        typeof saveOptions?.savedRevision === 'number'
+          ? saveOptions.savedRevision
+          : options.contentRevision.value;
       if (!preparedDoc) return false;
       const defaultPath = options.getFilePath() ?? `${getSaveAsBaseName()}.amind`;
       const result = await window.electronAPI.amind.saveAsDialog({
@@ -189,7 +228,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         defaultPath,
       });
       if (!result) return false;
-      nextFilePath = applySaveResult(result);
+      nextFilePath = applySaveResult(result, preparedRevision);
       scheduleRecentPreviewPersist(preparedDoc, {
         filePath: nextFilePath,
         savedAt: result?.savedAt ?? null,
@@ -208,7 +247,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     }
   }
 
-  async function saveLocalDocument(preparedDoc: any) {
+  async function saveLocalDocument(preparedDoc: any, preparedRevision: number) {
     const docId = options.getDocId();
     let nextFilePath = options.getFilePath() ?? null;
     if (!docId) {
@@ -226,6 +265,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         skipPrepare: true,
         preparedDoc,
         managedSavingState: true,
+        savedRevision: preparedRevision,
       });
       return {
         success,
@@ -235,7 +275,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         previewHandled: success,
       };
     }
-    nextFilePath = applySaveResult(result);
+    nextFilePath = applySaveResult(result, preparedRevision);
     return {
       success: true,
       filePath: nextFilePath,
@@ -245,9 +285,9 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     };
   }
 
-  async function saveDocument() {
+  async function runSingleSave(saveOptions?: SaveDocumentOptions) {
     const docId = options.getDocId();
-    if (!docId || options.isSaving.value) return false;
+    if (!docId) return false;
     const remoteBinding = options.getRemoteBinding?.() ?? null;
     const hasRemoteTarget = !!(remoteBinding && options.saveRemoteDocument);
     const hasLocalTarget = !!options.getFilePath();
@@ -256,19 +296,28 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     options.isSaving.value = true;
     options.emitSaveState(nextFilePath);
     try {
-      const prepared = await flushForSave();
+      let prepared = await flushForSave();
       if (!prepared) return false;
+      let preparedRevision = options.contentRevision.value;
+      const hasUnsavedChanges = preparedRevision !== options.lastSavedContentRevision.value;
+      const shouldForceRemoteSave = saveOptions?.forceRemoteSave === true;
       let remoteSaveError: unknown = null;
+      let remoteBindingCleared = false;
+      let shouldClearRemoteBindingAfterSave = false;
 
-      if (hasRemoteTarget && remoteBinding && options.saveRemoteDocument) {
+      if (!hasUnsavedChanges && hasRemoteTarget && !shouldForceRemoteSave) {
+        if (!hasLocalTarget) {
+          return true;
+        }
+      } else if (hasRemoteTarget && remoteBinding && options.saveRemoteDocument) {
         console.info('[mind-preview-debug] saveDocument using remote binding', {
           filePath: nextFilePath,
           remoteBinding,
         });
         try {
-          const result = await options.saveRemoteDocument(remoteBinding);
+          const result = await options.saveRemoteDocument(remoteBinding, saveOptions);
           if (!hasLocalTarget) {
-            nextFilePath = applySaveResult(result);
+            nextFilePath = applySaveResult(result, preparedRevision);
             scheduleRecentPreviewPersist(prepared, {
               filePath: nextFilePath,
               savedAt: result?.savedAt ?? null,
@@ -287,7 +336,16 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
             title: result?.title ?? null,
           });
         } catch (error) {
+          if (isRemoteBindingInvalidError(error) && options.clearRemoteBindingOnFailure) {
+            shouldClearRemoteBindingAfterSave = true;
+          }
           if (!hasLocalTarget) {
+            if (shouldClearRemoteBindingAfterSave) {
+              const message = error instanceof Error ? error.message : '原绑定远程文件已不存在，已自动解除绑定';
+              notifyRemoteBindingWarning(message);
+              remoteBindingCleared = await Promise.resolve(options.clearRemoteBindingOnFailure());
+              return false;
+            }
             notifySaveFailure(error);
             return false;
           }
@@ -301,6 +359,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
           skipPrepare: true,
           preparedDoc: prepared,
           managedSavingState: true,
+          savedRevision: preparedRevision,
         });
         nextFilePath = options.getFilePath() ?? nextFilePath;
         return saved;
@@ -312,7 +371,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         remoteBinding: hasRemoteTarget ? remoteBinding : null,
       });
 
-      const localResult = await saveLocalDocument(prepared);
+      const localResult = await saveLocalDocument(prepared, preparedRevision);
       nextFilePath = localResult.filePath ?? nextFilePath;
       if (!localResult.success) {
         return false;
@@ -332,9 +391,19 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
       }
 
       if (remoteSaveError) {
-        const message = `远程保存失败，本地文件已保存：${remoteSaveError instanceof Error ? remoteSaveError.message : '保存失败'}`;
+        const baseMessage = remoteSaveError instanceof Error ? remoteSaveError.message : '远程保存失败';
+        if (shouldClearRemoteBindingAfterSave && options.clearRemoteBindingOnFailure) {
+          const warningMessage = `${baseMessage}，旧的远程绑定已自动解除，本地文件已保存`;
+          notifyRemoteBindingWarning(warningMessage);
+          remoteBindingCleared = await Promise.resolve(options.clearRemoteBindingOnFailure());
+        }
+        const message = remoteBindingCleared
+          ? `${baseMessage}，旧绑定已自动解除，本地文件已保存`
+          : `远程保存失败，本地文件已保存：${baseMessage}`;
         options.saveError.value = message;
-        window.alert(message);
+        if (!remoteBindingCleared) {
+          window.alert(message);
+        }
         return false;
       }
 
@@ -347,6 +416,36 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
       options.isSaving.value = false;
       options.emitSaveState(nextFilePath);
     }
+  }
+
+  async function saveDocument(saveOptions?: SaveDocumentOptions) {
+    const docId = options.getDocId();
+    if (!docId) return false;
+    const shouldForceRemoteSave = saveOptions?.forceRemoteSave === true;
+
+    if (activeSavePromise) {
+      pendingSaveRequested = true;
+      pendingForceRemoteSave = pendingForceRemoteSave || shouldForceRemoteSave;
+      return await activeSavePromise;
+    }
+
+    if (options.isSaving.value) return false;
+
+    activeSavePromise = (async () => {
+      let saved = false;
+      let forceRemoteSave = shouldForceRemoteSave;
+      do {
+        pendingSaveRequested = false;
+        pendingForceRemoteSave = false;
+        saved = await runSingleSave({ forceRemoteSave });
+        forceRemoteSave = pendingForceRemoteSave;
+      } while (pendingSaveRequested && saved);
+      return saved;
+    })().finally(() => {
+      activeSavePromise = null;
+    });
+
+    return await activeSavePromise;
   }
 
   return {

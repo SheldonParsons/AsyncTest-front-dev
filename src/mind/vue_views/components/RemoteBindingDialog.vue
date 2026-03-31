@@ -123,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { ApiCheckProjectFileExists, ApiGetProjects } from "@/api/project/index";
 import FilesPage from "@/views/settings/source_management/files_child/files_index.vue";
@@ -238,10 +238,12 @@ const saveDirectoryButtonLabel = computed(() => {
 
 watch(
   () => props.modelValue,
-  (visible) => {
+  async (visible) => {
     if (!visible) return;
     resetDialogState();
-    void loadProjects();
+    await loadProjects();
+    await nextTick();
+    await filesPageRef.value?.refresh_directory?.();
   }
 );
 

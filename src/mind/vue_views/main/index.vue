@@ -5903,7 +5903,31 @@ async function refreshRemoteBindingAfterUpload(binding: MindRemoteBinding) {
   }) ?? binding;
 }
 
-async function saveRemoteDocument(binding: MindRemoteBinding) {
+async function saveRemoteDocument(
+  binding: MindRemoteBinding,
+  saveOptions?: { skipRemoteExistsCheck?: boolean }
+) {
+  const createRemoteBindingInvalidError = (message: string) => {
+    const error = new Error(message);
+    (error as Error & { remoteBindingInvalid?: boolean }).remoteBindingInvalid = true;
+    return error;
+  };
+  if (!saveOptions?.skipRemoteExistsCheck) {
+    const existsResponse: any = await ApiCheckProjectFileExists({
+      project: binding.projectId,
+      folder: binding.folder,
+      name: binding.fileName,
+    });
+    if (existsResponse?.result === 0) {
+      throw createRemoteBindingInvalidError(
+        existsResponse?.data || existsResponse?.msg || '原绑定远程文件当前无法访问，已自动解除绑定'
+      );
+    }
+    if (!existsResponse?.data?.exists) {
+      throw createRemoteBindingInvalidError('原绑定远程文件已不存在，已自动解除绑定');
+    }
+  }
+
   const remoteFile = await buildRemoteUploadFile(binding.fileName);
   const formData = new FormData();
   formData.append('files', remoteFile.file, remoteFile.fileName);
@@ -5912,7 +5936,12 @@ async function saveRemoteDocument(binding: MindRemoteBinding) {
     folder: binding.folder,
   });
   if (response?.result === 0) {
-    throw new Error(response?.data || response?.msg || '保存远程 amind 失败');
+    const error = new Error(response?.data || response?.msg || '保存远程 amind 失败');
+    const message = `${response?.data || response?.msg || ''}`;
+    if (message.includes('不存在') || message.includes('无权限') || message.includes('权限') || message.includes('not exist')) {
+      (error as Error & { remoteBindingInvalid?: boolean }).remoteBindingInvalid = true;
+    }
+    throw error;
   }
   const nextBinding = await refreshRemoteBindingAfterUpload(binding);
   setRemoteBinding(props.doc, nextBinding);
@@ -5940,6 +5969,15 @@ const { saveDocument, saveDocumentAs } = useSaveFlow({
   lastSavedContentRevision,
   getRemoteBinding: () => getRemoteBinding(props.doc),
   saveRemoteDocument,
+  clearRemoteBindingOnFailure: async () => {
+    const currentBinding = getRemoteBinding(props.doc);
+    if (!currentBinding) return false;
+    // Only clear the stale remote binding; never touch the local filePath binding here.
+    setRemoteBinding(props.doc, null);
+    await applyDocumentMutation('remote-binding-cleared-after-save-failure', { markDirty: false });
+    emitSaveState();
+    return true;
+  },
 });
 
 function getDocumentTitleForExport() {
@@ -6178,15 +6216,40 @@ async function updateRemoteBindingState(binding: MindRemoteBinding | null) {
 }
 
 async function saveToRemoteBindingTarget(binding: MindRemoteBinding) {
-  if (!props.doc) return false;
+  if (!props.doc || !props.docId) return false;
   const previousBinding = getRemoteBinding(props.doc);
-  setRemoteBinding(props.doc, binding);
-  emitSaveState();
-  const saved = await saveDocument();
-  if (saved) return true;
-  setRemoteBinding(props.doc, previousBinding);
-  emitSaveState();
-  return false;
+  try {
+    clearPersistTimer();
+    if (editingSession.value) commitEditingSession();
+    await flushPendingDocumentMutation();
+    ensureMindRoots(props.doc);
+    props.doc.manifest = props.doc.manifest || {};
+    props.doc.manifest.title = getDocumentTitleForSave();
+    writeViewportToDoc();
+    const plain = toPlainDoc(props.doc);
+    await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+    const result = await saveRemoteDocument(binding, { skipRemoteExistsCheck: true });
+    if (props.doc?.manifest) {
+      if (typeof result?.savedAt === 'string' && result.savedAt) {
+        props.doc.manifest.updatedAt = result.savedAt;
+      }
+      if (typeof result?.title === 'string' && result.title) {
+        props.doc.manifest.title = result.title;
+      }
+    }
+    lastSavedContentRevision.value = Math.max(lastSavedContentRevision.value, contentRevision.value);
+    saveError.value = null;
+    emitSaveState();
+    return true;
+  } catch (error) {
+    setRemoteBinding(props.doc, previousBinding);
+    emitSaveState();
+    const message = error instanceof Error ? error.message : '保存远程 amind 失败';
+    saveError.value = message;
+    console.error('[mind-save-to-remote-binding-target]', error);
+    window.alert(message);
+    return false;
+  }
 }
 
 function refreshSaveStatePresentation() {

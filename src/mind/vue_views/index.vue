@@ -284,8 +284,14 @@ async function validateCurrentRemoteBinding() {
         name: binding.fileName,
     });
     if (response?.result === 0) {
-        window.$toast({ title: response?.data || response?.msg || '校验远程绑定失败', type: 'error' });
-        return false;
+        invalidRemoteBinding.value = binding;
+        await mindMainRef.value?.updateRemoteBindingState(null);
+        mindMainRef.value?.refreshSaveStatePresentation();
+        window.$toast({
+            title: response?.data || response?.msg || '原绑定文件当前无法访问，已自动解除绑定，请重新选择目标',
+            type: 'warning'
+        });
+        return true;
     }
     if (response?.data?.exists) {
         invalidRemoteBinding.value = null;
@@ -330,6 +336,13 @@ async function handleSaveToDirectoryAndBind(payload: {
     done: (success: boolean) => void | Promise<void>;
 }) {
     invalidRemoteBinding.value = null;
+    if (currentRemoteBinding.value) {
+        const unbound = await mindMainRef.value?.updateRemoteBindingState(null);
+        if (!unbound) {
+            await payload.done(false);
+            return;
+        }
+    }
     const saved = await mindMainRef.value?.saveToRemoteBindingTarget(payload.binding);
     if (!saved) {
         await payload.done(false);

@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.33",
+  "version": "2.0.34",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 修复缺陷：修复了web端文件列表无法下载的问题\\n#### 修复缺陷：修复了思维导图同时绑定了远程和本地文件时保存，本地文件没有更新的问题\\n#### 修复缺陷：修复了tab后输入法进行输入时，第一个字符没有录入输入法的问题\\n#### 修复缺陷：修复ctrl/cmd+T 快捷键在多节点下的性能问题\\n#### 新增功能：提供了查看用户信息接口，以及修改用户信息接口\\n#### 优化功能：现在如果未保存到本地文件，会在footer中显式的告诉你这个事情\\n#### 优化功能：现在Windows子窗口关闭更加符合Windows系统的逻辑\\n#### 修复缺陷：思维导图总节点统计现在会纳入被收起的节点\",\"publishDate\":\"2026-03-30\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 优化功能：优化在短时间内重复保存的多线程处理\\n#### 优化功能：优化在保存期间持续修改内容时的多线程处理\\n#### 优化功能：优化了在没有内容修改的情况下，不向后端嗅探远程文件的状态\\n#### 优化功能：优化了远程文件不存在或项目权限消失时的处理\",\"publishDate\":\"2026-03-30\"}"
     },
     "publish": [
       {

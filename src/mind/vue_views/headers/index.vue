@@ -69,6 +69,10 @@ function close() {
   -webkit-app-region: drag;
 }
 
+.window-header.has-win-controls .header-content {
+  padding-left: 5px;
+}
+
 .drag-spacer {
   flex: 0 0 0;
   -webkit-app-region: drag;
