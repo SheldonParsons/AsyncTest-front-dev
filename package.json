@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.0.34",
+  "version": "2.0.35",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 优化功能：优化在短时间内重复保存的多线程处理\\n#### 优化功能：优化在保存期间持续修改内容时的多线程处理\\n#### 优化功能：优化了在没有内容修改的情况下，不向后端嗅探远程文件的状态\\n#### 优化功能：优化了远程文件不存在或项目权限消失时的处理\",\"publishDate\":\"2026-03-30\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 修复缺陷：修复在跨节点批量展开时，子节点展开位置可能发生重叠的问题\\n#### 新增功能：根节点增加保密级别tag\",\"publishDate\":\"2026-03-31\"}"
     },
     "publish": [
       {

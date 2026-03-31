@@ -9,6 +9,7 @@ export type NodePresentationSnapshot = {
   nodeId: string;
   style?: any;
   markers?: string[];
+  secrecy?: any;
   lexicalState?: SerializedLexicalEditorState;
   richText?: RichTextDocument;
 };
@@ -41,6 +42,9 @@ function cloneSnapshot(snapshot: NodePresentationSnapshot): NodePresentationSnap
   if (Object.prototype.hasOwnProperty.call(snapshot, 'markers')) {
     next.markers = Array.isArray(snapshot.markers) ? [...snapshot.markers] : snapshot.markers;
   }
+  if (Object.prototype.hasOwnProperty.call(snapshot, 'secrecy')) {
+    next.secrecy = clonePlain(snapshot.secrecy);
+  }
   if (Object.prototype.hasOwnProperty.call(snapshot, 'lexicalState') && snapshot.lexicalState) {
     next.lexicalState = cloneLexicalState(snapshot.lexicalState);
   }
@@ -59,6 +63,11 @@ function applySnapshot(node: any, snapshot: NodePresentationSnapshot) {
   if (Object.prototype.hasOwnProperty.call(snapshot, 'markers')) {
     if (snapshot.markers === undefined) delete node.markers;
     else node.markers = [...snapshot.markers];
+  }
+
+  if (Object.prototype.hasOwnProperty.call(snapshot, 'secrecy')) {
+    if (snapshot.secrecy === undefined) delete node.secrecy;
+    else node.secrecy = clonePlain(snapshot.secrecy);
   }
 
   if (Object.prototype.hasOwnProperty.call(snapshot, 'lexicalState') && snapshot.lexicalState) {

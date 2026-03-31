@@ -47,6 +47,12 @@ export type NodeStyle = {
     text?: NodeTextStyleOverrides | null;
 };
 
+export type NodeSecrecy = {
+    level: 'top-secret' | 'confidential' | 'secret';
+    durationYears?: number | null;
+    markedAt?: string | null;
+};
+
 export type Node = {
     id: NodeId;
     parentId: NodeId | null;
@@ -63,6 +69,7 @@ export type Node = {
 
     collapsed?: boolean;
     style?: NodeStyle | null;
+    secrecy?: NodeSecrecy | null;
 };
 
 export type AmindDoc = {

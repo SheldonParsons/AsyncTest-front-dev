@@ -571,7 +571,19 @@ import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImage
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
 import { collectSubtreeNodeIds, createSubtreeSnapshot, type MindSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
 import tools from '@/utils/tools';
-import { cloneNodeImage, getNodeImage, getNodeLexicalState, getNodePlainText, getNodeRichText, setNodeLexicalState, type MindNodeImage } from '@/mind/core/nodeContent';
+import {
+  cloneNodeImage,
+  formatNodeSecrecyLabel,
+  getNodeImage,
+  getNodeLexicalState,
+  getNodePlainText,
+  getNodeRichText,
+  getNodeSecrecy,
+  setNodeLexicalState,
+  setNodeSecrecy,
+  type MindNodeImage,
+  type MindNodeSecrecy,
+} from '@/mind/core/nodeContent';
 import { layoutOverlayTextLines } from '@/mind/core/dragDrop/overlayTextLayout';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
 import { createHistory, type Command, type HistorySnapshot } from '@/mind/core/history';
@@ -3841,10 +3853,17 @@ async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: 
   }
 
   if (!changed) return;
+  const invalidateDescendantNodeIds = changedCollapsedNodeIds.flatMap((changedNodeId) =>
+    collectSubtreeNodeIds(nodes, changedNodeId).filter((nodeId) => nodeId !== changedNodeId)
+  );
+  const invalidateAncestorNodeIds = changedCollapsedNodeIds.flatMap((changedNodeId) =>
+    collectAncestorNodeIds(changedNodeId).filter(Boolean)
+  );
   const invalidateSubtreeHeightNodeIds = Array.from(
     new Set([
       ...changedCollapsedNodeIds,
-      ...targetNodeIds.flatMap((targetNodeId) => collectAncestorNodeIds(targetNodeId)).filter(Boolean),
+      ...invalidateDescendantNodeIds,
+      ...invalidateAncestorNodeIds,
     ])
   );
   await applyDocumentMutation(collapsed ? 'node-collapse-subtrees' : 'node-expand-subtrees', {
@@ -3875,14 +3894,21 @@ function cloneNodeMarkersSnapshot(node: any) {
   return Array.isArray(node?.markers) ? [...node.markers] : [];
 }
 
+function cloneNodeSecrecySnapshot(node: any) {
+  if (!Object.prototype.hasOwnProperty.call(node ?? {}, 'secrecy')) return undefined;
+  const secrecy = getNodeSecrecy(node);
+  return secrecy ? JSON.parse(JSON.stringify(secrecy)) : null;
+}
+
 function createNodePresentationSnapshot(
   nodeId: string,
   node: any,
-  options: { includeStyle?: boolean; includeMarkers?: boolean; includeLexical?: boolean }
+  options: { includeStyle?: boolean; includeMarkers?: boolean; includeSecrecy?: boolean; includeLexical?: boolean }
 ) {
   const snapshot: NodePresentationSnapshot = { nodeId };
   if (options.includeStyle) snapshot.style = cloneNodeStyleSnapshot(node?.style);
   if (options.includeMarkers) snapshot.markers = cloneNodeMarkersSnapshot(node);
+  if (options.includeSecrecy) snapshot.secrecy = cloneNodeSecrecySnapshot(node);
   if (options.includeLexical) {
     snapshot.lexicalState = getNodeLexicalState(node);
     snapshot.richText = cloneRichText(getNodeRichText(node));
@@ -3892,12 +3918,13 @@ function createNodePresentationSnapshot(
 
 function createNodePresentationDraft(
   node: any,
-  options: { includeStyle?: boolean; includeMarkers?: boolean; includeLexical?: boolean }
+  options: { includeStyle?: boolean; includeMarkers?: boolean; includeSecrecy?: boolean; includeLexical?: boolean }
 ) {
   return {
     ...node,
     style: options.includeStyle ? cloneNodeStyleSnapshot(node?.style) : node?.style,
     markers: options.includeMarkers ? cloneNodeMarkersSnapshot(node) : node?.markers,
+    secrecy: options.includeSecrecy ? cloneNodeSecrecySnapshot(node) : node?.secrecy,
     text: node?.text ? JSON.parse(JSON.stringify(node.text)) : node?.text,
     richText: options.includeLexical ? cloneRichText(getNodeRichText(node)) : node?.richText,
     textLexical: options.includeLexical ? getNodeLexicalState(node) : node?.textLexical,
@@ -3910,6 +3937,9 @@ function isNodePresentationSnapshotEqual(a: NodePresentationSnapshot, b: NodePre
   }
   if (Object.prototype.hasOwnProperty.call(a, 'markers') || Object.prototype.hasOwnProperty.call(b, 'markers')) {
     if (JSON.stringify(a.markers ?? null) !== JSON.stringify(b.markers ?? null)) return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(a, 'secrecy') || Object.prototype.hasOwnProperty.call(b, 'secrecy')) {
+    if (JSON.stringify(a.secrecy ?? null) !== JSON.stringify(b.secrecy ?? null)) return false;
   }
   if (Object.prototype.hasOwnProperty.call(a, 'lexicalState') || Object.prototype.hasOwnProperty.call(b, 'lexicalState')) {
     if (!a.lexicalState || !b.lexicalState) return false;
@@ -3929,6 +3959,7 @@ function createBatchNodePresentationCommand(
     mutationReason: string;
     includeStyle?: boolean;
     includeMarkers?: boolean;
+    includeSecrecy?: boolean;
     includeLexical?: boolean;
     updateDraftNode: (draftNode: any, nodeId: string) => void;
   }
@@ -7285,6 +7316,132 @@ function isRootNode(nodeId: string) {
   return nodeId === getRootNodeId();
 }
 
+function formatCurrentDateLabel() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  const day = `${now.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildRootSecrecyValue(level: 'top-secret' | 'confidential' | 'secret', durationYears?: number): MindNodeSecrecy {
+  if (level === 'secret') {
+    return {
+      level,
+      durationYears: Math.min(10, Math.max(1, Math.round(durationYears ?? 1))),
+    };
+  }
+  if (level === 'confidential') {
+    return {
+      level,
+    };
+  }
+  return {
+    level,
+    markedAt: formatCurrentDateLabel(),
+  };
+}
+
+function cloneRootSecrecyValue(secrecy: MindNodeSecrecy | null | undefined) {
+  return secrecy ? JSON.parse(JSON.stringify(secrecy)) as MindNodeSecrecy : null;
+}
+
+function createRootSecrecyCommand(
+  rootNodeId: string,
+  nextSecrecy: MindNodeSecrecy | null,
+  options: { name: string; mutationReason: string }
+): Command | null {
+  const nodes = getMindNodes();
+  const node = nodes?.[rootNodeId];
+  if (!node) return null;
+  const previousSecrecy = cloneRootSecrecyValue(getNodeSecrecy(node));
+  const targetSecrecy = cloneRootSecrecyValue(nextSecrecy);
+  if (JSON.stringify(previousSecrecy ?? null) === JSON.stringify(targetSecrecy ?? null)) return null;
+  const selection = snapshotSelection();
+
+  const applySecrecy = (secrecy: MindNodeSecrecy | null, reason: string) => {
+    const currentNodes = getMindNodes();
+    const currentNode = currentNodes?.[rootNodeId];
+    if (!currentNode) return;
+    setNodeSecrecy(currentNode, secrecy);
+    setSelection(selection.ids, selection.primaryId);
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: [rootNodeId],
+      markDirty: true,
+    });
+  };
+
+  return {
+    name: options.name,
+    do: () => applySecrecy(targetSecrecy, options.mutationReason),
+    undo: () => applySecrecy(previousSecrecy, `undo-${options.mutationReason}`),
+    redo: () => applySecrecy(targetSecrecy, `redo-${options.mutationReason}`),
+  };
+}
+
+function buildRootSecrecyMenuItem(rootNodeId: string) {
+  const nodes = getMindNodes();
+  const rootNode = nodes?.[rootNodeId];
+  if (!rootNode) return null;
+  const currentLabel = formatNodeSecrecyLabel(getNodeSecrecy(rootNode));
+  return {
+    id: 'secrecy-level',
+    label: '保密级别设置',
+    submenu: [
+      { id: 'secrecy-top-secret', label: '绝密' },
+      { id: 'secrecy-confidential', label: '机密' },
+      {
+        id: 'secrecy-secret',
+        label: '秘密',
+        submenu: Array.from({ length: 10 }, (_, index) => {
+          const years = index + 1;
+          return {
+            id: `secrecy-secret-${years}`,
+            label: formatNodeSecrecyLabel({ level: 'secret', durationYears: years }),
+          };
+        }),
+      },
+      ...(currentLabel ? [{ id: 'secrecy-clear', label: `清除当前密级（${currentLabel}）` }] : []),
+    ],
+  };
+}
+
+function applyRootSecrecyAction(rootNodeId: string, action: string | null) {
+  if (!action) return;
+  if (action === 'secrecy-clear') {
+    const command = createRootSecrecyCommand(rootNodeId, null, {
+      name: 'ClearRootSecrecyCommand',
+      mutationReason: 'clear-root-secrecy',
+    });
+    executeCommand(command);
+    return;
+  }
+
+  if (action.startsWith('secrecy-secret-')) {
+    const durationYears = Number(action.slice('secrecy-secret-'.length));
+    executeCommand(createRootSecrecyCommand(rootNodeId, buildRootSecrecyValue('secret', durationYears), {
+      name: 'SetRootSecrecyCommand',
+      mutationReason: 'set-root-secrecy',
+    }));
+    return;
+  }
+
+  if (action === 'secrecy-confidential') {
+    executeCommand(createRootSecrecyCommand(rootNodeId, buildRootSecrecyValue('confidential'), {
+      name: 'SetRootSecrecyCommand',
+      mutationReason: 'set-root-secrecy',
+    }));
+    return;
+  }
+
+  if (action === 'secrecy-top-secret') {
+    executeCommand(createRootSecrecyCommand(rootNodeId, buildRootSecrecyValue('top-secret'), {
+      name: 'SetRootSecrecyCommand',
+      mutationReason: 'set-root-secrecy',
+    }));
+  }
+}
+
 function createClipboardStateFromSnapshots(
   snapshots: ReturnType<typeof createSubtreeSnapshot>[],
   sourceNodeIds: string[]
@@ -8827,16 +8984,23 @@ async function onCanvasContextMenu(event: MouseEvent) {
   event.stopPropagation();
   focusViewportWithoutScroll();
 
+  const isRootHit = isRootNode(hitId);
   const targetNodeIds = resolveContextMenuTargetNodeIds(hitId);
+  const secrecyMenuItem = isRootHit ? buildRootSecrecyMenuItem(hitId) : null;
   const action = await window.electronAPI.wm.popupMenu({
     x: event.clientX,
     y: event.clientY,
     items: [
       { id: 'expand-all', label: '全部展开' },
       { id: 'collapse-all', label: '全部收起' },
+      ...(secrecyMenuItem ? [secrecyMenuItem] : []),
     ],
   });
 
+  if (typeof action === 'string' && action.startsWith('secrecy-')) {
+    applyRootSecrecyAction(hitId, action);
+    return;
+  }
   if (action === 'expand-all') {
     await setCollapsedStateForSubtrees(targetNodeIds, false);
     return;

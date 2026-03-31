@@ -1,7 +1,7 @@
 import type { Ref } from 'vue';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { InternalClipboardState } from '@/mind/core/clipboard';
-import { getNodePlainText } from '@/mind/core/nodeContent';
+import { formatNodeSecrecyLabel, getNodePlainText, getNodeSecrecy } from '@/mind/core/nodeContent';
 import type { DragDropState } from '@/mind/core/drag/types';
 import { buildPreviewGeometry } from '@/mind/core/dragDrop/previewGeometry';
 import rough from 'roughjs';
@@ -91,6 +91,9 @@ const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
 const COLLAPSE_TAG_STROKE = '#111111';
 const COLLAPSE_TAG_TEXT = '#FFFFFF';
 const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
+const ROOT_SECRECY_TEXT = '#ffffff';
+const ROOT_SECRECY_STROKE = '#111111';
+const ROOT_SECRECY_FILL = '#D02F48';
 const BULK_SELECTION_OVERLAY_LIMIT = 512;
 const TEXT_DECORATION_OFFSET_MAP = [
   { fontSize: 12, underlineFromBaseline: 10, strikeFromContentTop: 2.5 },
@@ -357,6 +360,39 @@ function drawNodeMarkers(
   }
 }
 
+function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect, label: string) {
+  const padX = 7;
+  const badgeHeight = 18;
+  const radius = 5;
+  const badgeX = bodyRect.x1 + 6;
+  const badgeY = bodyRect.y1 - badgeHeight - 4;
+  ctx.save();
+  ctx.font = '700 12px "Source Han Serif SC", "STSong", "Songti SC", serif';
+  const textWidth = ctx.measureText(label).width;
+  const badgeWidth = textWidth + padX * 2;
+
+  drawRoundedRectShape(
+    ctx,
+    {
+      x1: badgeX,
+      y1: badgeY,
+      x2: badgeX + badgeWidth,
+      y2: badgeY + badgeHeight,
+    },
+    radius,
+    ROOT_SECRECY_FILL,
+    ROOT_SECRECY_STROKE,
+    1
+  );
+
+  ctx.fillStyle = ROOT_SECRECY_TEXT;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const textY = badgeY + badgeHeight / 2 + 0.15;
+  ctx.fillText(label, badgeX + padX, textY);
+  ctx.restore();
+}
+
 function snapToDevicePixel(value: number, dpr: number) {
   return Math.round(value * dpr) / dpr;
 }
@@ -513,7 +549,7 @@ function drawRoundedRectShape(
   ctx: CanvasRenderingContext2D,
   rect: WorldRect,
   radius: number,
-  fillStyle: string,
+  fillStyle: string | CanvasGradient | CanvasPattern,
   strokeStyle: string,
   lineWidth: number
 ) {
@@ -1470,7 +1506,9 @@ export function useDraw(
       );
     }
 
-    const nodes = getActiveMind(d)?.nodes || {};
+    const activeMind = getActiveMind(d);
+    const nodes = activeMind?.nodes || {};
+    const rootNodeId = activeMind?.roots?.[0]?.rootId ?? null;
     let edgesDrawnParents = 0;
     let branchesDrawn = 0;
     let roundedBranchesCount = 0;
@@ -1742,6 +1780,12 @@ export function useDraw(
           lineY += line.height;
         });
         drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage);
+        if (id === rootNodeId) {
+          const secrecyLabel = formatNodeSecrecyLabel(getNodeSecrecy(node));
+          if (secrecyLabel) {
+            drawRootSecrecyBadge(targetCtx, bodyRect, secrecyLabel);
+          }
+        }
       }
       targetCtx.restore();
     }

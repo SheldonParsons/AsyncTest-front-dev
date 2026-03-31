@@ -19,6 +19,14 @@ export type MindNodeImage = null | {
   naturalHeight: number;
 };
 
+export type MindNodeSecrecyLevel = 'top-secret' | 'confidential' | 'secret';
+
+export type MindNodeSecrecy = {
+  level: MindNodeSecrecyLevel;
+  durationYears?: number | null;
+  markedAt?: string | null;
+};
+
 export type MindNodeLike = {
   title?: string;
   text?: string | { plain?: string };
@@ -45,7 +53,74 @@ export type MindNodeLike = {
   image?: MindNodeImage;
   images?: unknown[];
   markers?: string[];
+  secrecy?: MindNodeSecrecy | null;
 };
+
+const SECRET_DURATION_YEAR_LABELS: Record<number, string> = {
+  1: '一年',
+  2: '二年',
+  3: '三年',
+  4: '四年',
+  5: '五年',
+  6: '六年',
+  7: '七年',
+  8: '八年',
+  9: '九年',
+  10: '十年',
+};
+
+function normalizeNodeSecrecyLevel(value: unknown): MindNodeSecrecyLevel | null {
+  if (value === 'top-secret' || value === 'confidential' || value === 'secret') return value;
+  return null;
+}
+
+export function normalizeNodeSecrecy(secrecy: unknown): MindNodeSecrecy | null {
+  if (!secrecy || typeof secrecy !== 'object') return null;
+  const candidate = secrecy as Record<string, unknown>;
+  const level = normalizeNodeSecrecyLevel(candidate.level);
+  if (!level) return null;
+  const normalized: MindNodeSecrecy = { level };
+  if (level === 'secret') {
+    const durationYears = Number(candidate.durationYears);
+    if (Number.isInteger(durationYears) && durationYears >= 1 && durationYears <= 10) {
+      normalized.durationYears = durationYears;
+    } else {
+      normalized.durationYears = 1;
+    }
+  }
+  if (level === 'top-secret') {
+    normalized.markedAt = typeof candidate.markedAt === 'string' && candidate.markedAt.trim()
+      ? candidate.markedAt.trim()
+      : null;
+  }
+  return normalized;
+}
+
+export function getNodeSecrecy(node: MindNodeLike | null | undefined): MindNodeSecrecy | null {
+  return normalizeNodeSecrecy((node as MindNodeLike | null | undefined)?.secrecy ?? null);
+}
+
+export function setNodeSecrecy(node: MindNodeLike | null | undefined, secrecy: MindNodeSecrecy | null | undefined) {
+  if (!node) return;
+  const normalized = normalizeNodeSecrecy(secrecy ?? null);
+  if (!normalized) {
+    delete node.secrecy;
+    return;
+  }
+  node.secrecy = normalized;
+}
+
+export function formatNodeSecrecyLabel(secrecy: MindNodeSecrecy | null | undefined) {
+  const normalized = normalizeNodeSecrecy(secrecy ?? null);
+  if (!normalized) return '';
+  if (normalized.level === 'secret') {
+    return `秘密▲${SECRET_DURATION_YEAR_LABELS[normalized.durationYears ?? 1] ?? '一年'}`;
+  }
+  if (normalized.level === 'confidential') {
+    return '机密▲长期';
+  }
+  return `绝密▲${normalized.markedAt || ''}`.replace(/▲$/, '');
+}
 
 export function getNodeRichText(node: MindNodeLike | null | undefined): RichTextDocument {
   if (!node) return richTextFromPlain('');

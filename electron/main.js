@@ -370,20 +370,36 @@ ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
 
   return await new Promise((resolve) => {
     let chosenId = null;
+    let settled = false;
+    const resolveOnce = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const buildMenuItems = (menuItems = []) =>
+      menuItems.map((item) => {
+        const template = {
+          label: item.label,
+          enabled: item.enabled !== false,
+        };
+        if (Array.isArray(item.submenu) && item.submenu.length) {
+          template.submenu = Menu.buildFromTemplate(buildMenuItems(item.submenu));
+        } else {
+          template.click = () => {
+            chosenId = item.id ?? null;
+            resolveOnce(chosenId);
+          };
+        }
+        return template;
+      });
     const menu = Menu.buildFromTemplate(
-      items.map((item) => ({
-        label: item.label,
-        enabled: item.enabled !== false,
-        click: () => {
-          chosenId = item.id ?? null;
-        },
-      }))
+      buildMenuItems(items)
     );
     menu.popup({
       window: browserWindow,
       x: Number.isFinite(options.x) ? Math.round(options.x) : undefined,
       y: Number.isFinite(options.y) ? Math.round(options.y) : undefined,
-      callback: () => resolve(chosenId),
+      callback: () => resolveOnce(chosenId),
     });
   });
 });
