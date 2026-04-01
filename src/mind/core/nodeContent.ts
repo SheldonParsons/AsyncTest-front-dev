@@ -81,11 +81,15 @@ export function normalizeNodeSecrecy(secrecy: unknown): MindNodeSecrecy | null {
   if (!level) return null;
   const normalized: MindNodeSecrecy = { level };
   if (level === 'secret') {
-    const durationYears = Number(candidate.durationYears);
-    if (Number.isInteger(durationYears) && durationYears >= 1 && durationYears <= 10) {
-      normalized.durationYears = durationYears;
+    if (candidate.durationYears == null || candidate.durationYears === '') {
+      normalized.durationYears = null;
     } else {
-      normalized.durationYears = 1;
+      const durationYears = Number(candidate.durationYears);
+      if (Number.isInteger(durationYears) && durationYears >= 1 && durationYears <= 10) {
+        normalized.durationYears = durationYears;
+      } else {
+        normalized.durationYears = null;
+      }
     }
   }
   if (level === 'top-secret') {
@@ -114,7 +118,9 @@ export function formatNodeSecrecyLabel(secrecy: MindNodeSecrecy | null | undefin
   const normalized = normalizeNodeSecrecy(secrecy ?? null);
   if (!normalized) return '';
   if (normalized.level === 'secret') {
-    return `秘密▲${SECRET_DURATION_YEAR_LABELS[normalized.durationYears ?? 1] ?? '一年'}`;
+    return normalized.durationYears == null
+      ? '秘密▲'
+      : `秘密▲${SECRET_DURATION_YEAR_LABELS[normalized.durationYears] ?? '一年'}`;
   }
   if (normalized.level === 'confidential') {
     return '机密▲长期';

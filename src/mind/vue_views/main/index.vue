@@ -7328,7 +7328,10 @@ function buildRootSecrecyValue(level: 'top-secret' | 'confidential' | 'secret', 
   if (level === 'secret') {
     return {
       level,
-      durationYears: Math.min(10, Math.max(1, Math.round(durationYears ?? 1))),
+      durationYears:
+        durationYears == null
+          ? null
+          : Math.min(10, Math.max(1, Math.round(durationYears))),
     };
   }
   if (level === 'confidential') {
@@ -7393,13 +7396,16 @@ function buildRootSecrecyMenuItem(rootNodeId: string) {
       {
         id: 'secrecy-secret',
         label: '秘密',
-        submenu: Array.from({ length: 10 }, (_, index) => {
-          const years = index + 1;
-          return {
-            id: `secrecy-secret-${years}`,
-            label: formatNodeSecrecyLabel({ level: 'secret', durationYears: years }),
-          };
-        }),
+        submenu: [
+          { id: 'secrecy-secret-none', label: '秘密▲' },
+          ...Array.from({ length: 10 }, (_, index) => {
+            const years = index + 1;
+            return {
+              id: `secrecy-secret-${years}`,
+              label: formatNodeSecrecyLabel({ level: 'secret', durationYears: years }),
+            };
+          }),
+        ],
       },
       ...(currentLabel ? [{ id: 'secrecy-clear', label: `清除当前密级（${currentLabel}）` }] : []),
     ],
@@ -7414,6 +7420,14 @@ function applyRootSecrecyAction(rootNodeId: string, action: string | null) {
       mutationReason: 'clear-root-secrecy',
     });
     executeCommand(command);
+    return;
+  }
+
+  if (action === 'secrecy-secret-none') {
+    executeCommand(createRootSecrecyCommand(rootNodeId, buildRootSecrecyValue('secret'), {
+      name: 'SetRootSecrecyCommand',
+      mutationReason: 'set-root-secrecy',
+    }));
     return;
   }
 
