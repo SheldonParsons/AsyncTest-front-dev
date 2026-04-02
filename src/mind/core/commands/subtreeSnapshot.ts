@@ -1,3 +1,5 @@
+import { getStructuralChildIds, getNodeSummaries, setNodeSummaries } from '../summaryMeta';
+
 export type MindNodes = Record<string, any>;
 
 export type MindSubtreeSnapshot = {
@@ -21,7 +23,7 @@ export function collectSubtreeNodeIds(nodes: MindNodes, rootId: string) {
     if (!node) return;
     visited.add(nodeId);
     order.push(nodeId);
-    const children = Array.isArray(node.children) ? node.children : [];
+    const children = getStructuralChildIds(node);
     for (const childId of children) visit(childId);
   }
 
@@ -76,6 +78,11 @@ export function remapSubtreeSnapshot(
     cloned.id = newNodeId;
     const children = Array.isArray(cloned.children) ? cloned.children : [];
     cloned.children = children.map((childId: string) => idRemap[childId] ?? childId);
+    const summaries = getNodeSummaries(cloned).map((summary) => ({
+      ...summary,
+      summaryNodeId: idRemap[summary.summaryNodeId] ?? summary.summaryNodeId,
+    }));
+    setNodeSummaries(cloned, summaries);
     remappedNodes[newNodeId] = cloned;
   }
 

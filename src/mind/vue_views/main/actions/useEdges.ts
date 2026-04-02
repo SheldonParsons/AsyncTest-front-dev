@@ -5,6 +5,7 @@ import type { WorldBoxes } from '../geom/worldBoxes';
 import { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import { getNodeBodyWorldRect } from '../nodeMarkers';
 import { DEFAULT_ROOT_H_GAP, getActiveMind, resolveRootHorizontalGap } from './useDocUtils';
+import { getStructuralChildIds } from '@/mind/core/summaryMeta';
 
 export type ParentEdgeKey = `parent:${string}`;
 export type EdgePoint = { x: number; y: number };
@@ -734,6 +735,9 @@ export function useEdges() {
 
           const childIds: string[] = Array.isArray(parentNode.children) ? parentNode.children : [];
           for (const childId of childIds) queue.push(childId);
+          for (const structuralChildId of getStructuralChildIds(parentNode)) {
+            if (!childIds.includes(structuralChildId)) queue.push(structuralChildId);
+          }
           if (!childIds.length) continue;
 
           const geom = buildParentGeom(rootId, parentId, childIds, nodes, worldBoxes, hGap);

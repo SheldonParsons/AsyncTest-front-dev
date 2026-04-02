@@ -569,7 +569,13 @@ import { createPasteSubtreeCommand } from '@/mind/core/commands/PasteSubtreeComm
 import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageCommand';
 import { createSetNodeImageSizeCommand } from '@/mind/core/commands/SetNodeImageSizeCommand';
 import { createUpdateNodeLexicalStateCommand, isLexicalStateEqual } from '@/mind/core/commands/UpdateNodeLexicalStateCommand';
-import { collectSubtreeNodeIds, createSubtreeSnapshot, type MindSubtreeSnapshot } from '@/mind/core/commands/subtreeSnapshot';
+import {
+  collectSubtreeNodeIds,
+  createSubtreeSnapshot,
+  insertSubtreeSnapshot,
+  removeSubtreeSnapshot,
+  type MindSubtreeSnapshot,
+} from '@/mind/core/commands/subtreeSnapshot';
 import tools from '@/utils/tools';
 import {
   cloneNodeImage,
@@ -600,6 +606,7 @@ import {
   type SerializedLexicalEditorState,
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, type SelectionTargetInfo } from '@/mind/core/selection/normalizeSelection';
+import { getNodeSummaries, getRegularChildIds, getStructuralChildIds, hasSummaryRange, isSummaryNode, setNodeSummaries, type MindSummaryMeta } from '@/mind/core/summaryMeta';
 import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
@@ -728,6 +735,7 @@ const SEARCH_EXPORT_FORMAT_OPTIONS: Array<{
   { value: 'xmind', label: 'XMind' },
   { value: 'amind', label: 'AMind' },
 ];
+const SUMMARY_DEFAULT_TEXT = '概要';
 
 const props = defineProps<{
   doc?: any;
@@ -740,7 +748,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'filePathChange', value: string | null): void;
   (event: 'saveStateChange', value: { isDirty: boolean; isSaving: boolean; displayName: string }): void;
-  (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number }): void;
+  (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number; canCreateSummary: boolean }): void;
   (event: 'toggleSearchPanel'): void;
   (event: 'toggleFormatPanel'): void;
 }>();
@@ -2951,6 +2959,7 @@ function emitNodeCountState() {
   emit('nodeCountChange', {
     totalNodes: getMindPerfNodeCount(),
     selectedNodes: getVisibleSelectedNodeCount(),
+    canCreateSummary: resolveSummaryCreationCandidates().length > 0,
   });
 }
 
@@ -3107,7 +3116,7 @@ function buildParentIndex(nodes: Record<string, any> | null | undefined) {
   const parentIndex = new Map<string, { parentId: string; index: number }>();
   if (!nodes) return parentIndex;
   for (const [parentId, parentNode] of Object.entries(nodes)) {
-    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    const children = getStructuralChildIds(parentNode);
     children.forEach((childId, index) => {
       if (typeof childId === 'string' && childId) {
         parentIndex.set(childId, { parentId, index });
@@ -3128,7 +3137,7 @@ function updateParentIndexForAddedNodes(
     if (parentId) touchedParentIds.add(parentId);
   });
   touchedParentIds.forEach((parentId) => {
-    const children = Array.isArray(nodes?.[parentId]?.children) ? nodes?.[parentId]?.children : [];
+    const children = getStructuralChildIds(nodes?.[parentId]);
     children.forEach((childId: string, index: number) => {
       if (typeof childId === 'string' && childId) nextIndex.set(childId, { parentId, index });
     });
@@ -3151,7 +3160,7 @@ function updateParentIndexForRemovedNodes(
     if (parentId) uniqueParentIds.add(parentId);
   }
   uniqueParentIds.forEach((parentId) => {
-    const children = Array.isArray(nodes?.[parentId]?.children) ? nodes?.[parentId]?.children : [];
+    const children = getStructuralChildIds(nodes?.[parentId]);
     children.forEach((childId: string, index: number) => {
       if (typeof childId === 'string' && childId) nextIndex.set(childId, { parentId, index });
     });
@@ -3170,7 +3179,7 @@ function updateParentIndexForTouchedParents(
     if (parentId) uniqueParentIds.add(parentId);
   }
   uniqueParentIds.forEach((parentId) => {
-    const children = Array.isArray(nodes?.[parentId]?.children) ? nodes?.[parentId]?.children : [];
+    const children = getStructuralChildIds(nodes?.[parentId]);
     children.forEach((childId: string, index: number) => {
       if (typeof childId === 'string' && childId) nextIndex.set(childId, { parentId, index });
     });
@@ -3354,7 +3363,7 @@ function getGroupNodeIds(groupKey: string | null) {
   if (!groupKey) return [];
   if (groupKey === ROOT_SELECTION_GROUP_KEY) return getRootSelectionIds();
   const parentNode = getNodeById(groupKey);
-  return Array.isArray(parentNode?.children) ? parentNode.children : [];
+  return getStructuralChildIds(parentNode);
 }
 
 function resolveSelectionGroupKeyFromParentIndex(
@@ -4573,6 +4582,94 @@ function finishImageResize(commit: boolean, reason: string) {
     startSize: { w: nextWidth, h: nextHeight },
     previewSize: null,
   });
+}
+
+function getSelectedImageNodeId() {
+  const current = imageInteraction.value;
+  if (!current?.selected || current.resizing) return null;
+  const node = getNodeById(current.nodeId);
+  if (!getNodeImage(node)) return null;
+  return current.nodeId;
+}
+
+function createDeleteSelectedImageCommand(nodeId: string): Command | null {
+  const node = getNodeById(nodeId);
+  const beforeImage = cloneNodeImage(getNodeImage(node));
+  if (!node || !beforeImage) return null;
+  return createSetNodeImageCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      applyMutation: applyDocumentMutation,
+    },
+    {
+      nodeId,
+      beforeImage,
+      afterImage: null,
+      previousSelection: snapshotSelection(),
+      nextSelection: { ids: [nodeId], primaryId: nodeId },
+    }
+  );
+}
+
+function deleteSelectedImage() {
+  const nodeId = getSelectedImageNodeId();
+  if (!nodeId) return false;
+  const command = createDeleteSelectedImageCommand(nodeId);
+  if (!command) return false;
+  clearImageInteraction('delete-selected-image');
+  stopEditingSession();
+  executeCommand(command);
+  return true;
+}
+
+async function copyNodeImageToSystemClipboard(nodeId: string) {
+  const image = getNodeImage(getNodeById(nodeId));
+  if (!image?.src) return false;
+  const resolveImageBlob = async () => {
+    if (image.src.startsWith('data:')) {
+      const commaIndex = image.src.indexOf(',');
+      if (commaIndex < 0) return null;
+      const header = image.src.slice(0, commaIndex);
+      const mimeMatch = header.match(/^data:([^;]+)(;base64)?$/i);
+      const mime = mimeMatch?.[1] || image.mime || 'image/png';
+      const encoded = image.src.slice(commaIndex + 1);
+      const binary = header.includes(';base64') ? atob(encoded) : decodeURIComponent(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return new Blob([bytes], { type: mime });
+    }
+    const response = await fetch(image.src);
+    return response.blob();
+  };
+  if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+    try {
+      const blob = await resolveImageBlob();
+      if (!blob) return false;
+      const mime = blob.type || image.mime || 'image/png';
+      await navigator.clipboard.write([new ClipboardItem({ [mime]: blob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function copySelectedImageToClipboard() {
+  const nodeId = getSelectedImageNodeId();
+  if (!nodeId) return false;
+  return copyNodeImageToSystemClipboard(nodeId);
+}
+
+async function cutSelectedImageToClipboard() {
+  const nodeId = getSelectedImageNodeId();
+  if (!nodeId) return false;
+  const copied = await copyNodeImageToSystemClipboard(nodeId);
+  if (!copied) return false;
+  return deleteSelectedImage();
 }
 
 function snapshotSelection(): SelectionSnapshot {
@@ -5886,6 +5983,28 @@ function createNodeRecord(
   };
 }
 
+function createSummaryNodeRecord(nodeId: string, parentId: string, insertIndex: number) {
+  const node = createNodeRecord(nodeId, SUMMARY_DEFAULT_TEXT, 'default', { parentId, insertIndex });
+  node.nodeKind = 'summary';
+  node.style = {
+    shape: {
+      ...(node.style?.shape ?? {}),
+      fill: '#F49D00',
+      stroke: '#111111',
+      fillPreset: 'solid',
+      borderPreset: 'clean',
+      strokeWidthPx: 2,
+    },
+    text: {
+      ...(node.style?.text ?? {}),
+      color: '#111111',
+      fontWeight: 400,
+      fontStyle: 'normal',
+    },
+  };
+  return node;
+}
+
 function getDocumentTitleForSave() {
   const rootId = getRootNodeId();
   const rootNode = getNodeById(rootId);
@@ -6287,6 +6406,54 @@ function refreshSaveStatePresentation() {
   emitSaveState();
 }
 
+function triggerHeaderBranchAction() {
+  const primarySelectedId = getPrimarySelectedId();
+  if (!primarySelectedId) return false;
+  const selectedNodeIds = getSelectedNodeIds();
+  const selectedCount = selectedIds.value.size;
+  if (selectedCount >= 2) {
+    const nodes = getMindNodes() ?? {};
+    const targetInfos = selectedNodeIds
+      .map((nodeId) => getSelectionTargetInfo(nodes, nodeId))
+      .filter((value): value is NonNullable<typeof value> => !!value)
+      .sort(compareSelectionTargetInfo);
+    const siblingTargetIds = targetInfos
+      .filter((info) => info.parentId != null)
+      .map((info) => info.nodeId);
+    const command = siblingTargetIds.length
+      ? createBatchAddSiblingSelectionCommand(siblingTargetIds)
+      : createBatchAddChildSelectionCommand(selectedNodeIds);
+    if (!command) return false;
+    executeCommand(command);
+    return true;
+  }
+  const parentInfo = findParentAndIndex(primarySelectedId);
+  const command = parentInfo ? createAddSiblingCommand(primarySelectedId) : createAddChildCommand(primarySelectedId);
+  if (!command) return false;
+  executeCommand(command);
+  return true;
+}
+
+function triggerHeaderChildBranchAction() {
+  const primarySelectedId = getPrimarySelectedId();
+  if (!primarySelectedId) return false;
+  const selectedNodeIds = getSelectedNodeIds();
+  const command = selectedIds.value.size >= 2
+    ? createBatchAddChildSelectionCommand(Array.from(new Set(selectedNodeIds)))
+    : createAddChildCommand(primarySelectedId);
+  if (!command) return false;
+  executeCommand(command);
+  return true;
+}
+
+function triggerHeaderSummaryAction() {
+  const candidates = resolveSummaryCreationCandidates();
+  const command = createAddSummariesCommand(candidates);
+  if (!command) return false;
+  executeCommand(command);
+  return true;
+}
+
 defineExpose({
   saveDocument,
   saveDocumentAs,
@@ -6296,13 +6463,16 @@ defineExpose({
   updateRemoteBindingState,
   saveToRemoteBindingTarget,
   refreshSaveStatePresentation,
+  triggerHeaderBranchAction,
+  triggerHeaderChildBranchAction,
+  triggerHeaderSummaryAction,
 });
 
 function findParentAndIndexFromNodes(nodeId: string) {
   const nodes = getMindNodes();
   if (!nodes?.[nodeId]) return null;
   for (const [parentId, parentNode] of Object.entries(nodes)) {
-    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    const children = getStructuralChildIds(parentNode);
     const index = children.indexOf(nodeId);
     if (index >= 0) return { parentId, index };
   }
@@ -6371,6 +6541,9 @@ function normalizeDragRootsFromIds(nodeIds: string[]) {
   const uniqueIds = Array.from(new Set(nodeIds)).filter((nodeId) => !!nodes[nodeId] && nodeId !== rootNodeId);
   if (!uniqueIds.length) {
     return { finalTargets: [], rootId: null, invalidReason: 'rootNotDraggable', filteredOutDescendantsCount: 0 };
+  }
+  if (uniqueIds.some((nodeId) => isSummaryNode(nodes[nodeId]))) {
+    return { finalTargets: [], rootId: null, invalidReason: 'summaryNotDraggable', filteredOutDescendantsCount: 0 };
   }
   if (uniqueIds.length === 1) {
     const onlyTarget = getCachedSelectionTargetInfo(uniqueIds[0], nextParentIndex);
@@ -6866,6 +7039,18 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
   }
 
   const createCommandStartedAt = dragProbe ? performance.now() : 0;
+  const beforeSummariesByParent = snapshotSummariesByParent(affectedParentIds);
+  const afterSummariesByParent = new Map<string, MindSummaryMeta[]>();
+  affectedParentIds.forEach((parentId) => {
+    afterSummariesByParent.set(
+      parentId,
+      remapSummariesByChildren(
+        beforeSummariesByParent.get(parentId) ?? [],
+        beforeChildrenByParent[parentId] ?? [],
+        afterChildrenByParent[parentId] ?? []
+      )
+    );
+  });
   const command = createMoveSubtreesCommand(
     {
       getNodes: getMindNodes,
@@ -6883,6 +7068,8 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
         ids: movingRootIds,
         primaryId: dragState.value.primaryDragRootId ?? movingRootIds[movingRootIds.length - 1] ?? null,
       },
+      applyDoState: (currentNodes) => applySummarySnapshotsByParent(afterSummariesByParent, currentNodes),
+      applyUndoState: (currentNodes) => applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes),
     }
   );
   const buildMoveCreateCommandMs = dragProbe ? performance.now() - createCommandStartedAt : 0;
@@ -7456,11 +7643,240 @@ function applyRootSecrecyAction(rootNodeId: string, action: string | null) {
   }
 }
 
+type SummaryCreationCandidate = {
+  parentId: string;
+  startIndex: number;
+  endIndex: number;
+};
+
+function resolveSummaryCreationCandidates() {
+  const nodes = getMindNodes();
+  const rootNodeId = getRootNodeId();
+  if (!nodes || !rootNodeId) return [] as SummaryCreationCandidate[];
+  if (selectedIds.value.has(rootNodeId)) return [] as SummaryCreationCandidate[];
+  if (Array.from(selectedIds.value).some((nodeId) => isSummaryNode(nodes[nodeId]))) {
+    return [] as SummaryCreationCandidate[];
+  }
+  const normalized = normalizeSelectedTargets({ allowRoot: true, collapseToRootIfSelected: false });
+  const groups = new Map<string, SelectionTargetInfo[]>();
+  for (const target of normalized.finalTargets) {
+    if (!target.parentId || target.indexInParent < 0) continue;
+    if (isSummaryNode(nodes[target.nodeId])) continue;
+    const nextGroup = groups.get(target.parentId) ?? [];
+    nextGroup.push(target);
+    groups.set(target.parentId, nextGroup);
+  }
+  const candidates: SummaryCreationCandidate[] = [];
+  for (const [parentId, targets] of groups.entries()) {
+    const parentNode = nodes[parentId];
+    if (!parentNode) continue;
+    const indexes = targets.map((target) => target.indexInParent).filter((index) => index >= 0);
+    if (!indexes.length) continue;
+    const startIndex = Math.min(...indexes);
+    const endIndex = Math.max(...indexes);
+    if (hasSummaryRange(parentNode, startIndex, endIndex)) continue;
+    const coveredNodeIds = getRegularChildIds(parentNode).slice(startIndex, endIndex + 1);
+    if (!coveredNodeIds.length) continue;
+    candidates.push({ parentId, startIndex, endIndex });
+  }
+  return candidates.sort((a, b) => {
+    if (a.parentId !== b.parentId) return a.parentId.localeCompare(b.parentId);
+    if (a.startIndex !== b.startIndex) return a.startIndex - b.startIndex;
+    return a.endIndex - b.endIndex;
+  });
+}
+
+function canCreateSummaryFromCurrentSelection(hitId: string) {
+  if (!selectedIds.value.has(hitId)) return false;
+  return resolveSummaryCreationCandidates().length > 0;
+}
+
+function createAddSummariesCommand(candidates: SummaryCreationCandidate[]): Command | null {
+  const nodes = getMindNodes();
+  if (!nodes || !candidates.length) return null;
+  const previousSelection = snapshotSelection();
+  const createdSummaryNodeIds: string[] = [];
+  const createdNodes = new Map<string, any>();
+  const parentIds = Array.from(new Set(candidates.map((candidate) => candidate.parentId)));
+  const beforeSummariesByParent = new Map<string, MindSummaryMeta[]>();
+  const afterSummariesByParent = new Map<string, MindSummaryMeta[]>();
+
+  for (const parentId of parentIds) {
+    beforeSummariesByParent.set(parentId, getNodeSummaries(nodes[parentId]));
+    afterSummariesByParent.set(parentId, getNodeSummaries(nodes[parentId]));
+  }
+
+  for (const candidate of candidates) {
+    const summaryNodeId = createNodeId();
+    const summaryId = createNodeId();
+    createdSummaryNodeIds.push(summaryNodeId);
+    createdNodes.set(summaryNodeId, createSummaryNodeRecord(summaryNodeId, candidate.parentId, candidate.endIndex + 1));
+    const nextSummaries = afterSummariesByParent.get(candidate.parentId) ?? [];
+    nextSummaries.push({
+      id: summaryId,
+      summaryNodeId,
+      startIndex: candidate.startIndex,
+      endIndex: candidate.endIndex,
+    });
+    afterSummariesByParent.set(candidate.parentId, nextSummaries);
+  }
+
+  const invalidateNodeIds = Array.from(
+    new Set(
+      createdSummaryNodeIds.flatMap((summaryNodeId) => [summaryNodeId, ...collectAncestorNodeIds(summaryNodeId)])
+        .concat(parentIds.flatMap((parentId) => [parentId, ...collectAncestorNodeIds(parentId)]))
+    )
+  );
+
+  const applySummaries = (
+    targetSummariesByParent: Map<string, MindSummaryMeta[]>,
+    reason: string,
+    options: { restoreSelection?: boolean } = {}
+  ) => {
+    const currentNodes = getMindNodes();
+    if (!currentNodes) return;
+    if (!options.restoreSelection) {
+      createdNodes.forEach((node, nodeId) => {
+        currentNodes[nodeId] = JSON.parse(JSON.stringify(node));
+      });
+    } else {
+      createdSummaryNodeIds.forEach((nodeId) => {
+        delete currentNodes[nodeId];
+      });
+    }
+    for (const parentId of parentIds) {
+      const parentNode = currentNodes[parentId];
+      if (!parentNode) continue;
+      setNodeSummaries(parentNode, targetSummariesByParent.get(parentId) ?? []);
+    }
+    if (options.restoreSelection) {
+      setSelection(previousSelection.ids, previousSelection.primaryId, { suppressFocus: true });
+    } else {
+      setSelection(createdSummaryNodeIds, createdSummaryNodeIds[0] ?? null, { suppressFocus: true });
+    }
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: createdSummaryNodeIds,
+      touchedParentIds: parentIds,
+      invalidateSubtreeHeightNodeIds: invalidateNodeIds,
+    });
+  };
+
+  return {
+    name: 'AddSummaryCommand',
+    do: () => applySummaries(afterSummariesByParent, 'history:add-summary'),
+    undo: () => applySummaries(beforeSummariesByParent, 'history:undo-add-summary', { restoreSelection: true }),
+    redo: () => applySummaries(afterSummariesByParent, 'history:redo-add-summary'),
+  };
+}
+
+function createSummaryFromCurrentSelection() {
+  const candidates = resolveSummaryCreationCandidates();
+  if (!candidates.length) {
+    window.$toast?.({ title: '当前选区无法生成概要', type: 'info' });
+    return;
+  }
+  executeCommand(createAddSummariesCommand(candidates));
+}
+
+function adjustSummariesForSiblingInsert(
+  summaries: MindSummaryMeta[],
+  insertIndex: number
+): MindSummaryMeta[] {
+  return summaries.map((summary) => {
+    if (insertIndex <= summary.startIndex) {
+      return {
+        ...summary,
+        startIndex: summary.startIndex + 1,
+        endIndex: summary.endIndex + 1,
+      };
+    }
+    if (insertIndex <= summary.endIndex + 1) {
+      return {
+        ...summary,
+        endIndex: summary.endIndex + 1,
+      };
+    }
+    return { ...summary };
+  });
+}
+
+function remapSummariesByChildren(
+  summaries: MindSummaryMeta[],
+  beforeChildren: string[],
+  afterChildren: string[]
+): MindSummaryMeta[] {
+  return summaries
+    .map((summary) => {
+      const coveredIds = beforeChildren
+        .slice(summary.startIndex, summary.endIndex + 1)
+        .filter((childId) => afterChildren.includes(childId));
+      if (!coveredIds.length) return null;
+      const nextIndexes = coveredIds
+        .map((childId) => afterChildren.indexOf(childId))
+        .filter((index) => index >= 0)
+        .sort((a, b) => a - b);
+      if (!nextIndexes.length) return null;
+      return {
+        ...summary,
+        startIndex: nextIndexes[0],
+        endIndex: nextIndexes[nextIndexes.length - 1],
+      };
+    })
+    .filter((summary): summary is MindSummaryMeta => !!summary);
+}
+
+function snapshotSummariesByParent(parentIds: Iterable<string>) {
+  const nodes = getMindNodes();
+  const snapshots = new Map<string, MindSummaryMeta[]>();
+  for (const parentId of parentIds) {
+    if (!parentId || !nodes?.[parentId]) continue;
+    snapshots.set(parentId, getNodeSummaries(nodes[parentId]));
+  }
+  return snapshots;
+}
+
+function applySummarySnapshotsByParent(target: Map<string, MindSummaryMeta[]>, nodes: Record<string, any> | null | undefined) {
+  if (!nodes) return;
+  for (const [parentId, summaries] of target.entries()) {
+    const parentNode = nodes[parentId];
+    if (!parentNode) continue;
+    setNodeSummaries(parentNode, summaries);
+  }
+}
+
+function findSummaryHostInfo(summaryNodeId: string) {
+  const nodes = getMindNodes();
+  if (!nodes?.[summaryNodeId]) return null;
+  for (const [parentId, parentNode] of Object.entries(nodes)) {
+    const summaries = getNodeSummaries(parentNode);
+    const summaryIndex = summaries.findIndex((summary) => summary.summaryNodeId === summaryNodeId);
+    if (summaryIndex < 0) continue;
+    return {
+      parentId,
+      summaries,
+      summary: summaries[summaryIndex],
+      summaryIndex,
+    };
+  }
+  return null;
+}
+
 function createClipboardStateFromSnapshots(
   snapshots: ReturnType<typeof createSubtreeSnapshot>[],
   sourceNodeIds: string[]
 ): InternalClipboardState {
-  const items = snapshots.filter((value): value is NonNullable<typeof value> => !!value);
+  const items = snapshots
+    .map((snapshot) => {
+      if (!snapshot) return null;
+      const rootNode = snapshot.nodes[snapshot.rootId];
+      if (!isSummaryNode(rootNode)) return snapshot;
+      const normalizedSnapshot = JSON.parse(JSON.stringify(snapshot)) as MindSubtreeSnapshot;
+      if (normalizedSnapshot.nodes[normalizedSnapshot.rootId]) {
+        delete normalizedSnapshot.nodes[normalizedSnapshot.rootId].nodeKind;
+      }
+      return normalizedSnapshot;
+    })
+    .filter((value): value is NonNullable<typeof value> => !!value);
   if (!items.length) {
     return {
       type: 'empty',
@@ -7572,6 +7988,13 @@ function performCopy(nodeIds?: string[]) {
 
 function onWindowCopy(event: ClipboardEvent) {
   if (isTextEditingActive(event.target)) return;
+  const selectedImageNodeId = getSelectedImageNodeId();
+  if (selectedImageNodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    void copySelectedImageToClipboard();
+    return;
+  }
   const normalized = normalizeSelectedTargets({
     allowRoot: true,
     collapseToRootIfSelected: true,
@@ -7591,8 +8014,80 @@ function onWindowCopy(event: ClipboardEvent) {
 function createDeleteCommand(targetNodeId: string): Command | null {
   if (isRootNode(targetNodeId)) return null;
   const nodes = getMindNodes();
+  if (!nodes) return null;
+  if (isSummaryNode(nodes[targetNodeId])) {
+    const summaryHost = findSummaryHostInfo(targetNodeId);
+    if (!summaryHost) return null;
+    const deletedSnapshot = createSubtreeSnapshot(nodes, targetNodeId);
+    if (!deletedSnapshot) return null;
+    const siblingIds = getStructuralChildIds(nodes[summaryHost.parentId]);
+    const previousSelectionId = getPrimarySelectedId();
+    const nextSelectionId = computeSelectionAfterDelete(
+      summaryHost.parentId,
+      siblingIds,
+      Math.max(0, siblingIds.indexOf(targetNodeId))
+    );
+    const deleteMutationOptions = createDeleteMutationOptions([{ parentId: summaryHost.parentId, deletedSnapshot }]);
+    return {
+      name: 'DeleteSummaryCommand',
+      do: () => {
+        const currentNodes = getMindNodes();
+        const currentParent = currentNodes?.[summaryHost.parentId];
+        if (!currentNodes || !currentParent) return;
+        removeSubtreeSnapshot(currentNodes, deletedSnapshot);
+        setNodeSummaries(
+          currentParent,
+          summaryHost.summaries.filter((summary) => summary.id !== summaryHost.summary.id)
+        );
+        setLastDeletedNodeId?.(targetNodeId);
+        setSingleSelected(nextSelectionId);
+        void applyDocumentMutation('history:delete-summary', {
+          ensureVisibleNodeId: nextSelectionId,
+          invalidateSubtreeHeightNodeIds: deleteMutationOptions.invalidateSubtreeHeightNodeIds,
+          removedNodeIds: deleteMutationOptions.removedNodeIds,
+          touchedParentIds: [summaryHost.parentId],
+          trustExistingNodeMeasureCache: deleteMutationOptions.trustExistingNodeMeasureCache,
+          useLayoutChangedNodeIds: deleteMutationOptions.useLayoutChangedNodeIds,
+        });
+      },
+      undo: () => {
+        const currentNodes = getMindNodes();
+        const currentParent = currentNodes?.[summaryHost.parentId];
+        if (!currentNodes || !currentParent) return;
+        insertSubtreeSnapshot(currentNodes, deletedSnapshot);
+        setNodeSummaries(currentParent, summaryHost.summaries);
+        setSingleSelected(previousSelectionId);
+        void applyDocumentMutation('history:undo-delete-summary', {
+          ensureVisibleNodeId: previousSelectionId,
+          invalidateSubtreeHeightNodeIds: deleteMutationOptions.invalidateSubtreeHeightNodeIds,
+          touchedParentIds: [summaryHost.parentId],
+          trustExistingNodeMeasureCache: deleteMutationOptions.trustExistingNodeMeasureCache,
+          useLayoutChangedNodeIds: deleteMutationOptions.useLayoutChangedNodeIds,
+        });
+      },
+      redo: () => {
+        const currentNodes = getMindNodes();
+        const currentParent = currentNodes?.[summaryHost.parentId];
+        if (!currentNodes || !currentParent) return;
+        removeSubtreeSnapshot(currentNodes, deletedSnapshot);
+        setNodeSummaries(
+          currentParent,
+          summaryHost.summaries.filter((summary) => summary.id !== summaryHost.summary.id)
+        );
+        setSingleSelected(nextSelectionId);
+        void applyDocumentMutation('history:redo-delete-summary', {
+          ensureVisibleNodeId: nextSelectionId,
+          invalidateSubtreeHeightNodeIds: deleteMutationOptions.invalidateSubtreeHeightNodeIds,
+          removedNodeIds: deleteMutationOptions.removedNodeIds,
+          touchedParentIds: [summaryHost.parentId],
+          trustExistingNodeMeasureCache: deleteMutationOptions.trustExistingNodeMeasureCache,
+          useLayoutChangedNodeIds: deleteMutationOptions.useLayoutChangedNodeIds,
+        });
+      },
+    };
+  }
   const parentInfo = findParentAndIndex(targetNodeId);
-  if (!nodes || !parentInfo) return null;
+  if (!parentInfo) return null;
 
   const { parentId, index } = parentInfo;
   const parentNode = nodes[parentId];
@@ -7605,6 +8100,10 @@ function createDeleteCommand(targetNodeId: string): Command | null {
   const previousSelectionId = getPrimarySelectedId();
   const nextSelectionId = computeSelectionAfterDelete(parentId, siblingIds, index);
   const deleteMutationOptions = createDeleteMutationOptions([{ parentId, deletedSnapshot }]);
+  const beforeSummaries = getNodeSummaries(parentNode);
+  const beforeChildren = getRegularChildIds(parentNode);
+  const afterChildren = beforeChildren.filter((childId) => childId !== targetNodeId);
+  const afterSummaries = remapSummariesByChildren(beforeSummaries, beforeChildren, afterChildren);
 
   return createDeleteSubtreeCommand(
     {
@@ -7622,6 +8121,16 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       previousSelectionId,
       nextSelectionId,
       deleteMutationOptions,
+      applyDoState: (currentNodes) => {
+        const currentParent = currentNodes[parentId];
+        if (!currentParent) return;
+        setNodeSummaries(currentParent, afterSummaries);
+      },
+      applyUndoState: (currentNodes) => {
+        const currentParent = currentNodes[parentId];
+        if (!currentParent) return;
+        setNodeSummaries(currentParent, beforeSummaries);
+      },
     }
   );
 }
@@ -7726,6 +8235,20 @@ function createBatchAddSiblingSelectionCommand(
     );
   }
 
+  const touchedParentIds = Array.from(new Set(targetInfos.map((target) => target.parentId)));
+  const beforeSummariesByParent = snapshotSummariesByParent(touchedParentIds);
+  const afterSummariesByParent = new Map<string, MindSummaryMeta[]>();
+  touchedParentIds.forEach((parentId) => {
+    const targetInsertIndexes = targetInfos
+      .filter((target) => target.parentId === parentId)
+      .map((target) => target.insertIndex);
+    let nextSummaries = beforeSummariesByParent.get(parentId) ?? [];
+    for (const insertIndex of targetInsertIndexes) {
+      nextSummaries = adjustSummariesForSiblingInsert(nextSummaries, insertIndex);
+    }
+    afterSummariesByParent.set(parentId, nextSummaries);
+  });
+
   return createBatchAddSiblingCommand(
     {
       getNodes: getMindNodes,
@@ -7745,6 +8268,8 @@ function createBatchAddSiblingSelectionCommand(
       newNodeIdsByTargetId,
       addedNodeIdsInSelectionOrder: selectionOrder,
       previousSelection: snapshotSelection(),
+      applyDoState: (currentNodes) => applySummarySnapshotsByParent(afterSummariesByParent, currentNodes),
+      applyUndoState: (currentNodes) => applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes),
     }
   );
 }
@@ -7941,6 +8466,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
         parentId: info.parentId,
         indexInParent: info.indexInParent,
         deletedSnapshot,
+        skipParentChildrenMutation: isSummaryNode(nodes[info.nodeId]),
       };
     })
     .filter((value): value is NonNullable<typeof value> => !!value)
@@ -7956,7 +8482,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
   if (!targetsForMutation.length) return null;
 
   const primaryParent = primaryDeleteTarget?.parentId ? nodes[primaryDeleteTarget.parentId] : null;
-  const siblingIds = primaryParent && Array.isArray(primaryParent.children) ? [...primaryParent.children] : [];
+  const siblingIds = primaryParent ? getStructuralChildIds(primaryParent) : [];
   const nextSelectionId =
     primaryDeleteTarget?.parentId != null
       ? computeSelectionAfterDelete(primaryDeleteTarget.parentId, siblingIds, primaryDeleteTarget.indexInParent)
@@ -7979,6 +8505,42 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
     );
   }
 
+  const touchedParentIds = new Set<string>();
+  const selectedSummaryNodeIdsByParent = new Map<string, Set<string>>();
+  const removedRegularChildIdsByParent = new Map<string, Set<string>>();
+  targetsForMutation.forEach((target) => {
+    const targetNode = nodes[target.nodeId];
+    if (isSummaryNode(targetNode)) {
+      const host = findSummaryHostInfo(target.nodeId);
+      if (!host) return;
+      touchedParentIds.add(host.parentId);
+      const current = selectedSummaryNodeIdsByParent.get(host.parentId) ?? new Set<string>();
+      current.add(target.nodeId);
+      selectedSummaryNodeIdsByParent.set(host.parentId, current);
+      return;
+    }
+    touchedParentIds.add(target.parentId);
+    const current = removedRegularChildIdsByParent.get(target.parentId) ?? new Set<string>();
+    current.add(target.nodeId);
+    removedRegularChildIdsByParent.set(target.parentId, current);
+  });
+  const touchedParentIdList = Array.from(touchedParentIds);
+  const beforeSummariesByParent = snapshotSummariesByParent(touchedParentIdList);
+  const afterSummariesByParent = new Map<string, MindSummaryMeta[]>();
+  touchedParentIdList.forEach((parentId) => {
+    const beforeChildren = getRegularChildIds(nodes[parentId]);
+    const selectedSummaryNodeIds = selectedSummaryNodeIdsByParent.get(parentId) ?? new Set<string>();
+    const keptSummaries = (beforeSummariesByParent.get(parentId) ?? []).filter(
+      (summary) => !selectedSummaryNodeIds.has(summary.summaryNodeId)
+    );
+    const removedRegularChildIds = removedRegularChildIdsByParent.get(parentId) ?? new Set<string>();
+    const afterChildren = beforeChildren.filter((childId) => !removedRegularChildIds.has(childId));
+    afterSummariesByParent.set(
+      parentId,
+      remapSummariesByChildren(keptSummaries, beforeChildren, afterChildren)
+    );
+  });
+
   return createBatchDeleteSubtreesCommand(
     {
       getNodes: getMindNodes,
@@ -7992,6 +8554,8 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       nextSelectionId,
       lastDeletedNodeId: primaryDeleteTarget?.nodeId ?? null,
       deleteMutationOptions,
+      applyDoState: (currentNodes) => applySummarySnapshotsByParent(afterSummariesByParent, currentNodes),
+      applyUndoState: (currentNodes) => applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes),
     }
   );
 }
@@ -8201,6 +8765,9 @@ function createAddSiblingBeforeCommand(nodeId: string): Command | null {
 }
 
 function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: boolean }): Command | null {
+  if (isSummaryNode(getNodeById(nodeId))) {
+    return null;
+  }
   const parentInfo = findParentAndIndex(nodeId);
   if (!parentInfo) {
     return null;
@@ -8220,6 +8787,8 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
   const siblingRole = getMindNodeRole(props.doc, nodeId);
   const commandName = insertBefore ? 'AddSiblingBeforeCommand' : 'AddSiblingCommand';
   const mutationReason = insertBefore ? 'add-sibling-before' : 'add-sibling';
+  const beforeSummaries = getNodeSummaries(parentNode);
+  const afterSummaries = adjustSummariesForSiblingInsert(beforeSummaries, insertIndex);
 
   return {
     name: commandName,
@@ -8258,6 +8827,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       noteMindPerfStep('selection-updated', {
         ms: roundPerfMs(performance.now() - selectionStartedAt),
       });
+      setNodeSummaries(currentParent, afterSummaries);
       void applyDocumentMutation(`history:${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
         invalidateSubtreeHeightNodeIds: [newNodeId, ...collectAncestorNodeIds(parentId)],
@@ -8271,6 +8841,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       currentParent.children = Array.isArray(currentParent.children) ? currentParent.children : [];
       const nextIndex = currentParent.children.indexOf(newNodeId);
       if (nextIndex >= 0) currentParent.children.splice(nextIndex, 1);
+      setNodeSummaries(currentParent, beforeSummaries);
       delete currentNodes[newNodeId];
       const restoredSelectionId = resolveFallbackSelection(previousSelectionId, parentId);
       setSingleSelected(restoredSelectionId, { suppressRender: true, suppressFocus: true });
@@ -8290,6 +8861,7 @@ function createAddSiblingCommandAt(nodeId: string, options?: { insertBefore?: bo
       }
       const nextIndex = Math.min(insertIndex, currentParent.children.length);
       if (!currentParent.children.includes(newNodeId)) currentParent.children.splice(nextIndex, 0, newNodeId);
+      setNodeSummaries(currentParent, afterSummaries);
       setSingleSelected(newNodeId, { suppressRender: true });
       void applyDocumentMutation(`history:redo-${mutationReason}`, {
         ensureVisibleNodeId: newNodeId,
@@ -8782,6 +9354,7 @@ function onCanvasPointerDown(event: PointerEvent) {
     { includeHidden: true }
   );
   const hitId = hitTest(screenPoint.x, screenPoint.y);
+  const hitImageNodeId = getImageTargetAtScreenPoint(screenPoint.x, screenPoint.y);
   const imageTarget = isSecondaryPointerDown ? null : getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
 
   if (imageTarget) {
@@ -8812,7 +9385,12 @@ function onCanvasPointerDown(event: PointerEvent) {
   }
 
   let pointerDownNeedsRender = false;
-  if (imageInteraction.value) {
+  const keepSelectedImageOnSecondaryContext =
+    isSecondaryPointerDown &&
+    !!imageInteraction.value?.selected &&
+    !!imageInteraction.value?.nodeId &&
+    imageInteraction.value.nodeId === hitImageNodeId;
+  if (imageInteraction.value && !keepSelectedImageOnSecondaryContext) {
     clearImageInteraction('pointerdown-outside-image');
     pointerDownNeedsRender = true;
   }
@@ -8991,8 +9569,40 @@ async function onCanvasContextMenu(event: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
+  const hitImageNodeId = getImageTargetAtScreenPoint(event.clientX - rect.left, event.clientY - rect.top);
+  const selectedImageNodeId = getSelectedImageNodeId();
+  if (selectedImageNodeId && hitImageNodeId === selectedImageNodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    focusViewportWithoutScroll();
+    const action = await window.electronAPI.wm.popupMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [{ id: 'delete-image', label: '删除' }],
+    });
+    if (action === 'delete-image') {
+      deleteSelectedImage();
+    }
+    return;
+  }
   const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
-  if (!hitId) return;
+  if (!hitId) {
+    event.preventDefault();
+    event.stopPropagation();
+    focusViewportWithoutScroll();
+    const action = await window.electronAPI.wm.popupMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [{ id: 'center-root-topic', label: '前往中心主题' }],
+    });
+    if (action === 'center-root-topic') {
+      const rootNodeId = getRootNodeId();
+      if (rootNodeId) {
+        centerNodeInViewport(rootNodeId);
+      }
+    }
+    return;
+  }
 
   event.preventDefault();
   event.stopPropagation();
@@ -9001,6 +9611,9 @@ async function onCanvasContextMenu(event: MouseEvent) {
   const isRootHit = isRootNode(hitId);
   const targetNodeIds = resolveContextMenuTargetNodeIds(hitId);
   const secrecyMenuItem = isRootHit ? buildRootSecrecyMenuItem(hitId) : null;
+  const summaryMenuItem = canCreateSummaryFromCurrentSelection(hitId)
+    ? { id: 'create-summary', label: '概要' }
+    : null;
   const action = await window.electronAPI.wm.popupMenu({
     x: event.clientX,
     y: event.clientY,
@@ -9008,11 +9621,16 @@ async function onCanvasContextMenu(event: MouseEvent) {
       { id: 'expand-all', label: '全部展开' },
       { id: 'collapse-all', label: '全部收起' },
       ...(secrecyMenuItem ? [secrecyMenuItem] : []),
+      ...(summaryMenuItem ? [summaryMenuItem] : []),
     ],
   });
 
   if (typeof action === 'string' && action.startsWith('secrecy-')) {
     applyRootSecrecyAction(hitId, action);
+    return;
+  }
+  if (action === 'create-summary') {
+    createSummaryFromCurrentSelection();
     return;
   }
   if (action === 'expand-all') {
@@ -9583,6 +10201,12 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isCopyShortcut) {
+    if (getSelectedImageNodeId()) {
+      event.preventDefault();
+      event.stopPropagation();
+      void copySelectedImageToClipboard();
+      return;
+    }
     return;
   }
 
@@ -9602,6 +10226,10 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isCutShortcut) {
+    if (getSelectedImageNodeId()) {
+      void cutSelectedImageToClipboard();
+      return;
+    }
     const normalized = normalizeSelectedTargets({
       allowRoot: false,
     });
@@ -9633,6 +10261,9 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isDeleteShortcut) {
+    if (deleteSelectedImage()) {
+      return;
+    }
     beginMindPerfOperationProbe({
       op: 'delete-node',
       label: '删除节点',

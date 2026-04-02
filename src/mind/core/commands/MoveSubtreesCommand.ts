@@ -26,6 +26,8 @@ export type MoveSubtreesCommandOptions = {
   invalidateSubtreeHeightNodeIds: string[];
   previousSelection: SelectionSnapshot;
   nextSelection: SelectionSnapshot;
+  applyDoState?: (nodes: MindNodes) => void;
+  applyUndoState?: (nodes: MindNodes) => void;
 };
 
 export function createMoveSubtreesCommand(
@@ -40,6 +42,8 @@ export function createMoveSubtreesCommand(
     invalidateSubtreeHeightNodeIds,
     previousSelection,
     nextSelection,
+    applyDoState,
+    applyUndoState,
   } = options;
 
   function applyChildrenSnapshots(nodes: MindNodes, snapshots: Record<string, string[]>) {
@@ -56,6 +60,7 @@ export function createMoveSubtreesCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       applyChildrenSnapshots(nodes, afterChildrenByParent);
+      applyDoState?.(nodes);
       context.setSelection(nextSelection.ids, nextSelection.primaryId);
       void context.applyMutation('history:move-subtrees', {
         ensureVisibleNodeIds: movingRootIds,
@@ -70,6 +75,7 @@ export function createMoveSubtreesCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       applyChildrenSnapshots(nodes, beforeChildrenByParent);
+      applyUndoState?.(nodes);
       context.setSelection(previousSelection.ids, previousSelection.primaryId);
       void context.applyMutation('history:undo-move-subtrees', {
         ensureVisibleNodeIds: previousSelection.ids,
@@ -84,6 +90,7 @@ export function createMoveSubtreesCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       applyChildrenSnapshots(nodes, afterChildrenByParent);
+      applyDoState?.(nodes);
       context.setSelection(nextSelection.ids, nextSelection.primaryId);
       void context.applyMutation('history:redo-move-subtrees', {
         ensureVisibleNodeIds: movingRootIds,

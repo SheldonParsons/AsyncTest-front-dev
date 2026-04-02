@@ -1,4 +1,5 @@
 import type { Camera } from './actions/useCamera';
+import { getStructuralChildIds } from '@/mind/core/summaryMeta';
 import { getActiveMind } from './actions/useDocUtils';
 import type { WorldBoxes } from './geom/worldBoxes';
 import { getNodeBodyWorldRect } from './nodeMarkers';
@@ -31,8 +32,7 @@ const COLLAPSE_TAG_CHAR_WIDTH_PX = 7;
 const COLLAPSE_TAG_HIT_SLOP_PX = 8;
 
 function getNodeChildren(doc: any, nodeId: string) {
-  const children = getActiveMind(doc)?.nodes?.[nodeId]?.children;
-  return Array.isArray(children) ? children : [];
+  return getStructuralChildIds(getActiveMind(doc)?.nodes?.[nodeId]);
 }
 
 export function buildDescendantCountMap(doc: any) {
@@ -42,7 +42,7 @@ export function buildDescendantCountMap(doc: any) {
   function count(nodeId: string) {
     const cached = result.get(nodeId);
     if (cached != null) return cached;
-    const children = Array.isArray(nodes[nodeId]?.children) ? nodes[nodeId].children : [];
+    const children = getStructuralChildIds(nodes[nodeId]);
     let total = children.length;
     for (const childId of children) {
       total += count(childId);

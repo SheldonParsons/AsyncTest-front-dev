@@ -53,6 +53,13 @@ export type NodeSecrecy = {
     markedAt?: string | null;
 };
 
+export type SummaryMeta = {
+    id: string;
+    summaryNodeId: NodeId;
+    startIndex: number;
+    endIndex: number;
+};
+
 export type Node = {
     id: NodeId;
     parentId: NodeId | null;
@@ -70,6 +77,8 @@ export type Node = {
     collapsed?: boolean;
     style?: NodeStyle | null;
     secrecy?: NodeSecrecy | null;
+    nodeKind?: 'summary';
+    summaries?: SummaryMeta[];
 };
 
 export type AmindDoc = {

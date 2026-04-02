@@ -22,13 +22,15 @@ export type BatchAddSiblingCommandOptions = {
   newNodeIdsByTargetId: Record<string, string>;
   addedNodeIdsInSelectionOrder: string[];
   previousSelection: SelectionSnapshot;
+  applyDoState?: (nodes: MindNodes) => void;
+  applyUndoState?: (nodes: MindNodes) => void;
 };
 
 export function createBatchAddSiblingCommand(
   context: BatchAddSiblingCommandContext,
   options: BatchAddSiblingCommandOptions
 ): Command {
-  const { targetsForMutation, newNodeIdsByTargetId, addedNodeIdsInSelectionOrder, previousSelection } = options;
+  const { targetsForMutation, newNodeIdsByTargetId, addedNodeIdsInSelectionOrder, previousSelection, applyDoState, applyUndoState } = options;
 
   function insert(nodes: MindNodes) {
     targetsForMutation.forEach((target) => {
@@ -61,6 +63,7 @@ export function createBatchAddSiblingCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       insert(nodes);
+      applyDoState?.(nodes);
       context.setSelection(addedNodeIdsInSelectionOrder, addedNodeIdsInSelectionOrder[addedNodeIdsInSelectionOrder.length - 1] ?? null);
       const lastAddedId = addedNodeIdsInSelectionOrder[addedNodeIdsInSelectionOrder.length - 1];
       if (lastAddedId) context.startEditing(lastAddedId);
@@ -70,6 +73,7 @@ export function createBatchAddSiblingCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       remove(nodes);
+      applyUndoState?.(nodes);
       context.setSelection(previousSelection.ids, previousSelection.primaryId);
       void context.applyMutation('history:undo-batch-add-sibling', { ensureVisibleNodeIds: previousSelection.ids });
     },
@@ -77,6 +81,7 @@ export function createBatchAddSiblingCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       insert(nodes);
+      applyDoState?.(nodes);
       context.setSelection(addedNodeIdsInSelectionOrder, addedNodeIdsInSelectionOrder[addedNodeIdsInSelectionOrder.length - 1] ?? null);
       const lastAddedId = addedNodeIdsInSelectionOrder[addedNodeIdsInSelectionOrder.length - 1];
       if (lastAddedId) context.startEditing(lastAddedId);

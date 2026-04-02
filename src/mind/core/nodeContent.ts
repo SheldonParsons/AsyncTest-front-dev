@@ -8,6 +8,7 @@ import {
   richTextFromLexicalState,
   type SerializedLexicalEditorState,
 } from './lexicalState';
+import type { MindSummaryMeta } from './summaryMeta';
 const MAX_NODE_IMAGE_WIDTH_PX = 450;
 
 export type MindNodeImage = null | {
@@ -54,6 +55,8 @@ export type MindNodeLike = {
   images?: unknown[];
   markers?: string[];
   secrecy?: MindNodeSecrecy | null;
+  nodeKind?: 'summary';
+  summaries?: MindSummaryMeta[];
 };
 
 const SECRET_DURATION_YEAR_LABELS: Record<number, string> = {

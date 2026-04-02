@@ -1,8 +1,10 @@
 import type { Ref } from 'vue';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { InternalClipboardState } from '@/mind/core/clipboard';
+import { collectSubtreeNodeIds } from '@/mind/core/commands/subtreeSnapshot';
 import { formatNodeSecrecyLabel, getNodePlainText, getNodeSecrecy } from '@/mind/core/nodeContent';
 import type { DragDropState } from '@/mind/core/drag/types';
+import { getNodeSummaries, getRegularChildIds, getNodeSummaryLaneMap } from '@/mind/core/summaryMeta';
 import { buildPreviewGeometry } from '@/mind/core/dragDrop/previewGeometry';
 import rough from 'roughjs';
 import type { Drawable } from 'roughjs/bin/core';
@@ -94,6 +96,8 @@ const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft 
 const ROOT_SECRECY_TEXT = '#ffffff';
 const ROOT_SECRECY_STROKE = '#111111';
 const ROOT_SECRECY_FILL = '#D02F48';
+const SUMMARY_BRACE_STROKE = '#111111';
+const SUMMARY_BRACE_TEXT = '#111111';
 const BULK_SELECTION_OVERLAY_LIMIT = 512;
 const TEXT_DECORATION_OFFSET_MAP = [
   { fontSize: 12, underlineFromBaseline: 10, strikeFromContentTop: 2.5 },
@@ -1692,23 +1696,24 @@ export function useDraw(
         drawRoundedRectShape(targetCtx, bodyRect, nodeCornerRadius, 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 0);
       }
 
-      const skipNodeDetails = !!options?.skipText;
+      const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id });
+      const skipNodeText = !!options?.skipText;
 
-      if (!skipNodeDetails) {
-        const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id });
-        const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
-        if (visualLayout.image?.src) {
-          const loadedImage = getLoadedNodeImage(visualLayout.image.src);
-          if (loadedImage) {
-            const imageRect = getNodeImageWorldRect(bodyRect, {
-              w: visualLayout.image.width,
-              h: visualLayout.image.height,
-            });
-            if (imageRect) {
-              targetCtx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
-            }
+      if (visualLayout.image?.src) {
+        const loadedImage = getLoadedNodeImage(visualLayout.image.src);
+        if (loadedImage) {
+          const imageRect = getNodeImageWorldRect(bodyRect, {
+            w: visualLayout.image.width,
+            h: visualLayout.image.height,
+          });
+          if (imageRect) {
+            targetCtx.drawImage(loadedImage, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
           }
         }
+      }
+
+      if (!skipNodeText) {
+        const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
         targetCtx.textBaseline = 'top';
         let lineY = bodyRect.y1 + visualLayout.textGeometry.textGlyphTop;
         const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2;
@@ -1790,6 +1795,121 @@ export function useDraw(
       targetCtx.restore();
     }
 
+    function resolveSubtreeWorldRect(rootNodeId: string): WorldRect | null {
+      const subtreeRects = collectSubtreeNodeIds(nodes, rootNodeId)
+        .map((nodeId) => nodeWorldBoxes.get(nodeId))
+        .filter((rect): rect is WorldRect => !!rect);
+      if (!subtreeRects.length) return null;
+      return {
+        x1: Math.min(...subtreeRects.map((rect) => rect.x1)),
+        y1: Math.min(...subtreeRects.map((rect) => rect.y1)),
+        x2: Math.max(...subtreeRects.map((rect) => rect.x2)),
+        y2: Math.max(...subtreeRects.map((rect) => rect.y2)),
+      };
+    }
+
+    function resolveSummaryCoveredWorldRect(parentNode: any, summaryStartIndex: number, summaryEndIndex: number): WorldRect | null {
+      const coveredChildRects = getRegularChildIds(parentNode)
+        .slice(summaryStartIndex, summaryEndIndex + 1)
+        .map((childId) => resolveSubtreeWorldRect(childId))
+        .filter((rect): rect is WorldRect => !!rect);
+      if (!coveredChildRects.length) return null;
+      return {
+        x1: Math.min(...coveredChildRects.map((rect) => rect.x1)),
+        y1: Math.min(...coveredChildRects.map((rect) => rect.y1)),
+        x2: Math.max(...coveredChildRects.map((rect) => rect.x2)),
+        y2: Math.max(...coveredChildRects.map((rect) => rect.y2)),
+      };
+    }
+
+    function drawVisibleSummaries(targetCtx: CanvasRenderingContext2D, viewRect: WorldRect) {
+      targetCtx.save();
+      const braceStroke = multiplyColorAlpha(SUMMARY_BRACE_STROKE, strokeAlphaFactor);
+      const braceLineWidth = getStrokeScreenWidthPx(cam.scale, 2) / Math.max(cam.scale, 0.0001);
+      targetCtx.strokeStyle = braceStroke;
+      targetCtx.fillStyle = multiplyColorAlpha(SUMMARY_BRACE_TEXT, strokeAlphaFactor);
+      targetCtx.lineWidth = braceLineWidth;
+      targetCtx.lineCap = 'round';
+      targetCtx.lineJoin = 'round';
+
+      for (const [parentId, parentNode] of Object.entries(nodes)) {
+        if (!parentNode || parentNode.collapsed) continue;
+        const summaries = getNodeSummaries(parentNode);
+        if (!summaries.length) continue;
+        for (const summary of summaries) {
+          const summaryRect = nodeWorldBoxes.get(summary.summaryNodeId);
+          if (!summaryRect) continue;
+          const coveredRect = resolveSummaryCoveredWorldRect(parentNode, summary.startIndex, summary.endIndex);
+          if (!coveredRect) continue;
+          const rangeTop = coveredRect.y1;
+          const rangeBottom = coveredRect.y2;
+          const rangeRight = coveredRect.x2;
+          const summaryBodyRect = getNodeBodyWorldRect(nodes[summary.summaryNodeId], summaryRect);
+          const braceStemX = summaryBodyRect.x1 - 16;
+          const braceNearX = braceStemX - 14;
+          const targetX = summaryBodyRect.x1 - 10;
+          const decorationRect: WorldRect = {
+            x1: Math.min(rangeRight, braceNearX),
+            y1: rangeTop,
+            x2: summaryRect.x2,
+            y2: Math.max(rangeBottom, summaryRect.y2),
+          };
+          if (!rectIntersects(decorationRect, viewRect) && !rectIntersects(summaryRect, viewRect)) continue;
+          const rangeCenterY = (rangeTop + rangeBottom) / 2;
+          const baseSpan = Math.max(
+            rangeBottom - rangeTop,
+            Math.max(34, summaryRect.y2 - summaryRect.y1)
+          );
+          const topY = rangeCenterY - baseSpan / 2;
+          const bottomY = rangeCenterY + baseSpan / 2;
+          const curveDepthY = Math.max(baseSpan * 0.16, 10);
+          const curveJoinTopY = topY + curveDepthY;
+          const curveJoinBottomY = bottomY - curveDepthY;
+          const midY = (curveJoinTopY + curveJoinBottomY) / 2;
+
+          targetCtx.beginPath();
+          targetCtx.moveTo(braceNearX, topY);
+          targetCtx.bezierCurveTo(
+            braceStemX,
+            topY,
+            braceStemX,
+            curveJoinTopY,
+            braceStemX,
+            curveJoinTopY
+          );
+          targetCtx.lineTo(braceStemX, curveJoinBottomY);
+          targetCtx.bezierCurveTo(
+            braceStemX,
+            curveJoinBottomY,
+            braceStemX,
+            bottomY,
+            braceNearX,
+            bottomY
+          );
+          targetCtx.stroke();
+
+          targetCtx.beginPath();
+          targetCtx.moveTo(braceStemX, midY);
+          targetCtx.lineTo(targetX, midY);
+          targetCtx.stroke();
+        }
+      }
+
+      targetCtx.restore();
+    }
+
+    function resolveSummaryRangeOutlineRect(summaryNodeId: string): WorldRect | null {
+      const summaryNode = nodes[summaryNodeId];
+      if (!summaryNode) return null;
+      for (const [parentId, parentNode] of Object.entries(nodes)) {
+        const summaries = getNodeSummaries(parentNode);
+        const targetSummary = summaries.find((item) => item.summaryNodeId === summaryNodeId);
+        if (!targetSummary) continue;
+        return resolveSummaryCoveredWorldRect(parentNode, targetSummary.startIndex, targetSummary.endIndex);
+      }
+      return null;
+    }
+
     const isZoomPreviewActive = cameraInteractionPreview?.value?.kind === 'zoom';
     const basePaddingX = isZoomPreviewActive ? Math.max(180, Math.round(viewportW * 0.4)) : 0;
     const basePaddingY = isZoomPreviewActive ? Math.max(140, Math.round(viewportH * 0.4)) : 0;
@@ -1833,6 +1953,7 @@ export function useDraw(
       for (const { geom, branchEntries } of renderVisibleEdgeGroups) {
         drawVisibleEdgeGroup(targetCtx, { geom, branchEntries });
       }
+      drawVisibleSummaries(targetCtx, baseWorldViewportRect);
 
       for (const id of renderVisibleIds) {
         if (editingNodeId?.value === id) continue;
@@ -2002,6 +2123,15 @@ export function useDraw(
     if (activeEditingWidthPreview && Math.abs(activePreviewDeltaX) > 0.01) {
       for (const id of activeEditingWidthPreview.subtreeNodeIds) overlayNodeIds.add(id);
     }
+    const summaryOutlineNodeIds = new Set<string>();
+    if (hoverNodeId.value && nodes[hoverNodeId.value]?.nodeKind === 'summary') {
+      summaryOutlineNodeIds.add(hoverNodeId.value);
+    }
+    if (selectedIds.value.size <= BULK_SELECTION_OVERLAY_LIMIT) {
+      for (const id of selectedIds.value) {
+        if (nodes[id]?.nodeKind === 'summary') summaryOutlineNodeIds.add(id);
+      }
+    }
     for (const id of overlayNodeIds) {
       const rect = nodeWorldBoxes.get(id);
       if (!rect) continue;
@@ -2084,6 +2214,25 @@ export function useDraw(
           }
         }
       }
+    }
+    for (const summaryNodeId of summaryOutlineNodeIds) {
+      const rangeRect = resolveSummaryRangeOutlineRect(summaryNodeId);
+      if (!rangeRect) continue;
+      const isSelected = selectedIds.value.has(summaryNodeId);
+      const isHover = summaryNodeId === hoverNodeId.value;
+      if (!isSelected && !isHover) continue;
+      const outlineRect = expandRect(
+        rangeRect,
+        (isSelected ? SELECTED_OUTLINE_OFFSET_PX : HOVER_OUTLINE_OFFSET_PX) / Math.max(cam.scale, 0.0001)
+      );
+      if (!rectIntersects(worldViewportRect, outlineRect)) continue;
+      drawRoundedRectOutline(
+        ctx,
+        outlineRect,
+        getNodeCornerRadius(outlineRect),
+        isSelected ? roughStyle.colors.selection.stroke : roughStyle.colors.hover.stroke,
+        2 / Math.max(cam.scale, 0.0001)
+      );
     }
     drawCollapseTags(ctx, collapseTags.value, collapseTagActiveNodeIds.value, collapseTagHoverNodeId.value);
     ctx.restore();

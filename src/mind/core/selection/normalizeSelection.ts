@@ -1,4 +1,5 @@
 import type { MindNodes } from '../commands/subtreeSnapshot';
+import { getStructuralChildIds } from '../summaryMeta';
 
 export type SelectionTargetInfo = {
   nodeId: string;
@@ -20,7 +21,7 @@ type ParentIndexEntry = {
 function buildParentIndex(nodes: MindNodes) {
   const parentIndex = new Map<string, ParentIndexEntry>();
   for (const [parentId, parentNode] of Object.entries(nodes)) {
-    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    const children = getStructuralChildIds(parentNode);
     children.forEach((childId, indexInParent) => {
       if (typeof childId === 'string') parentIndex.set(childId, { parentId, indexInParent });
     });
@@ -32,7 +33,7 @@ function findParentAndIndex(nodes: MindNodes, nodeId: string, parentIndex?: Read
   const cached = parentIndex?.get(nodeId);
   if (cached) return cached;
   for (const [parentId, parentNode] of Object.entries(nodes)) {
-    const children = Array.isArray(parentNode?.children) ? parentNode.children : [];
+    const children = getStructuralChildIds(parentNode);
     const indexInParent = children.indexOf(nodeId);
     if (indexInParent >= 0) return { parentId, indexInParent };
   }

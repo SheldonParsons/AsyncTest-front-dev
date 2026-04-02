@@ -7,6 +7,8 @@ import {
     ensureMindRoots,
     getActiveMind
 } from './useDocUtils';
+import { collectSubtreeNodeIds } from '@/mind/core/commands/subtreeSnapshot';
+import { doSummaryRangesOverlap, getNodeSummaries, getRegularChildIds, getNodeSummaryLaneMap } from '@/mind/core/summaryMeta';
 import { measureNodeVisualLayout, type NodeTextLayout } from '../textLayout';
 import { DEBUG_MIND_PERF_PROBE } from '../constants';
 
@@ -63,6 +65,7 @@ export function useLayout(
     /** 文字宽度测量缓存，避免同一文本重复测量 */
     const measureCache = new Map<string, NodeTextLayout>();
     const subtreeHeightCache = new Map<string, number>();
+    const summaryBoundaryPaddingCache = new Map<string, { before: number[]; after: number[] }>();
     let lastLayoutPerfMetrics: LayoutPerfMetrics | null = null;
     let currentLayoutPerfMetrics: LayoutPerfMetrics | null = null;
     let trustExistingNodeMeasureCache = false;
@@ -72,6 +75,7 @@ export function useLayout(
     let currentLayoutTranslationOps: LayoutTranslationOp[] = [];
     let lastLayoutChangedNodeIds: string[] = [];
     let currentLayoutChangedNodeIds = new Set<string>();
+    const nodeGapById = new Map<string, { hGap: number; vGap: number }>();
     type CachedNodeMeasure = {
         nodeId: string | null;
         richTextRef: unknown;
@@ -241,9 +245,14 @@ export function useLayout(
             return subtreeH;
         }
 
+        const boundaryPadding = resolveSummaryBoundaryPadding(nodes, nodeId, n, ctx, vGap);
         let sum = 0;
-        for (const cid of children) sum += subtreeHeight(nodes, cid, ctx, vGap);
-        sum += vGap * (children.length - 1);
+        children.forEach((cid, index) => {
+            sum += boundaryPadding.before[index];
+            sum += subtreeHeight(nodes, cid, ctx, vGap);
+            sum += boundaryPadding.after[index];
+            if (index < children.length - 1) sum += vGap;
+        });
         const height = Math.max(subtreeH, sum);
         subtreeHeightCache.set(nodeId, height);
         if (perfMetrics) perfMetrics.subtreeHeightMs += performance.now() - startedAt;
@@ -281,11 +290,53 @@ export function useLayout(
     }
 
     function invalidateSubtreeHeightCache(nodeIds?: Iterable<string> | null) {
+        summaryBoundaryPaddingCache.clear();
         if (!nodeIds) return;
         for (const nodeId of nodeIds) {
             if (!nodeId) continue;
             subtreeHeightCache.delete(nodeId);
         }
+    }
+
+    function resolveSummaryBoundaryPadding(
+        nodes: Record<string, any> | null | undefined,
+        parentNodeId: string,
+        parentNode: any,
+        ctx: CanvasRenderingContext2D,
+        vGap: number
+    ) {
+        const childIds = getRegularChildIds(parentNode);
+        const cached = summaryBoundaryPaddingCache.get(parentNodeId);
+        if (cached && cached.before.length === childIds.length && cached.after.length === childIds.length) {
+            return cached;
+        }
+        const before = new Array<number>(childIds.length).fill(0);
+        const after = new Array<number>(childIds.length).fill(0);
+        if (!childIds.length) {
+            const empty = { before, after };
+            summaryBoundaryPaddingCache.set(parentNodeId, empty);
+            return empty;
+        }
+        getNodeSummaries(parentNode).forEach((summary) => {
+            if (!nodes?.[summary.summaryNodeId]) return;
+            const startIndex = Math.max(0, Math.min(summary.startIndex, childIds.length - 1));
+            const endIndex = Math.max(startIndex, Math.min(summary.endIndex, childIds.length - 1));
+            let coveredHeight = 0;
+            for (let index = startIndex; index <= endIndex; index += 1) {
+                coveredHeight += subtreeHeight(nodes, childIds[index], ctx, vGap);
+            }
+            coveredHeight += Math.max(0, endIndex - startIndex) * vGap;
+            const summaryHeight = subtreeHeight(nodes, summary.summaryNodeId, ctx, vGap);
+            const overflowHeight = Math.max(0, summaryHeight - coveredHeight);
+            if (!overflowHeight) return;
+            const topPadding = overflowHeight / 2;
+            const bottomPadding = overflowHeight - topPadding;
+            before[startIndex] += topPadding;
+            after[endIndex] += bottomPadding;
+        });
+        const result = { before, after };
+        summaryBoundaryPaddingCache.set(parentNodeId, result);
+        return result;
     }
 
     function markNodeLayoutChanged(nodeId: string, box: Box) {
@@ -382,6 +433,7 @@ export function useLayout(
         const y = topY + (sh - m.bodyH) / 2;
         const nextBox = { x: nodeX, y, w: m.w, h: m.h };
         layoutLocal.set(nodeId, nextBox);
+        nodeGapById.set(nodeId, { hGap, vGap });
         markNodeLayoutChanged(nodeId, nextBox);
 
         const children: string[] = n.collapsed ? [] : (n.children || []);
@@ -394,13 +446,19 @@ export function useLayout(
             nodeId: cid,
             height: subtreeHeight(nodes, cid, ctx, vGap),
         }));
+        const boundaryPadding = resolveSummaryBoundaryPadding(nodes, nodeId, n, ctx, vGap);
         let childrenTotalHeight = 0;
-        for (const child of childHeights) childrenTotalHeight += child.height;
-        childrenTotalHeight += vGap * (children.length - 1);
+        childHeights.forEach((child, index) => {
+            childrenTotalHeight += boundaryPadding.before[index];
+            childrenTotalHeight += child.height;
+            childrenTotalHeight += boundaryPadding.after[index];
+            if (index < childHeights.length - 1) childrenTotalHeight += vGap;
+        });
 
         // 当父节点自身比 children block 更高时，children block 也要在该子树区域内垂直居中。
         let cursorY = topY + (sh - childrenTotalHeight) / 2;
-        for (const child of childHeights) {
+        childHeights.forEach((child, index) => {
+            cursorY += boundaryPadding.before[index];
             const childNode = nodes?.[child.nodeId];
             const childMeasure = childNode ? measureNode(ctx, childNode, child.nodeId) : null;
             const childX = nodeX + m.w + hGap;
@@ -427,9 +485,117 @@ export function useLayout(
             } else {
                 place(nodes, child.nodeId, ctx, childX, cursorY, hGap, vGap);
             }
-            cursorY += child.height + vGap;
-        }
+            cursorY += child.height + boundaryPadding.after[index];
+            if (index < childHeights.length - 1) cursorY += vGap;
+        });
         if (perfMetrics) perfMetrics.placeMs += performance.now() - startedAt;
+    }
+
+    function layoutSummaryNodes(
+        nodes: Record<string, any> | null | undefined,
+        ctx: CanvasRenderingContext2D
+    ) {
+        if (!nodes) return;
+        const regularParentIndex = new Map<string, string>();
+        for (const [candidateParentId, candidateParentNode] of Object.entries(nodes)) {
+            const childIds = getRegularChildIds(candidateParentNode);
+            childIds.forEach((childId) => {
+                if (!regularParentIndex.has(childId)) regularParentIndex.set(childId, candidateParentId);
+            });
+        }
+        const parentDepthCache = new Map<string, number>();
+        const resolveParentDepth = (nodeId: string): number => {
+            const cached = parentDepthCache.get(nodeId);
+            if (cached != null) return cached;
+            const parentId = regularParentIndex.get(nodeId);
+            const depth = parentId ? resolveParentDepth(parentId) + 1 : 0;
+            parentDepthCache.set(nodeId, depth);
+            return depth;
+        };
+        const summaryParents = Object.entries(nodes)
+            .filter(([, parentNode]) => !!parentNode && !parentNode.collapsed && getNodeSummaries(parentNode).length > 0)
+            .sort(([aId], [bId]) => resolveParentDepth(bId) - resolveParentDepth(aId));
+        for (const [parentId, parentNode] of summaryParents) {
+            if (!parentNode || parentNode.collapsed) continue;
+            const summaries = getNodeSummaries(parentNode);
+            if (!summaries.length) continue;
+            const childIds = getRegularChildIds(parentNode);
+            const summaryLaneMap = getNodeSummaryLaneMap(parentNode);
+            const hostGap = nodeGapById.get(parentId) ?? {
+                hGap: DEFAULT_ROOT_H_GAP,
+                vGap: resolveRootVerticalGap(undefined),
+            };
+            const baseSummaryGap = Math.max(36, hostGap.hGap * 0.75);
+            const summaryLaneGap = Math.max(28, hostGap.hGap * 0.7);
+            const placedSummarySubtreeRightById = new Map<string, number>();
+            const orderedSummaries = summaries.slice().sort((a, b) => {
+                const laneDiff = (summaryLaneMap.get(a.id) ?? 0) - (summaryLaneMap.get(b.id) ?? 0);
+                if (laneDiff !== 0) return laneDiff;
+                if (a.startIndex !== b.startIndex) return b.startIndex - a.startIndex;
+                if (a.endIndex !== b.endIndex) return a.endIndex - b.endIndex;
+                return a.id.localeCompare(b.id);
+            });
+            const resolveSummaryCoveredBoxes = (summary: typeof orderedSummaries[number]) => {
+                const rangeChildIds = childIds.slice(summary.startIndex, summary.endIndex + 1);
+                if (!rangeChildIds.length) return null;
+                const coveredNodeIds = Array.from(
+                    new Set(rangeChildIds.flatMap((childId) => collectSubtreeNodeIds(nodes, childId)))
+                );
+                let rangeTop = Number.POSITIVE_INFINITY;
+                let rangeBottom = Number.NEGATIVE_INFINITY;
+                let rangeRight = Number.NEGATIVE_INFINITY;
+                coveredNodeIds.forEach((coveredNodeId) => {
+                    const rect = layoutLocal.get(coveredNodeId);
+                    if (!rect) return;
+                    rangeTop = Math.min(rangeTop, rect.y);
+                    rangeBottom = Math.max(rangeBottom, rect.y + rect.h);
+                    rangeRight = Math.max(rangeRight, rect.x + rect.w);
+                });
+                if (!Number.isFinite(rangeTop) || !Number.isFinite(rangeBottom) || !Number.isFinite(rangeRight)) {
+                    return null;
+                }
+                return { rangeTop, rangeBottom, rangeRight };
+            };
+            orderedSummaries.forEach((summary) => {
+                const summaryNode = nodes[summary.summaryNodeId];
+                if (!summaryNode) return;
+                const covered = resolveSummaryCoveredBoxes(summary);
+                if (!covered) return;
+                const lane = summaryLaneMap.get(summary.id) ?? 0;
+                const summarySubtreeHeight = subtreeHeight(nodes, summary.summaryNodeId, ctx, hostGap.vGap);
+                const summaryTopY = (covered.rangeTop + covered.rangeBottom) / 2 - summarySubtreeHeight / 2;
+                let summaryX = covered.rangeRight + baseSummaryGap;
+                if (lane > 0) {
+                    for (const candidate of orderedSummaries) {
+                        if (candidate.id === summary.id) break;
+                        const candidateLane = summaryLaneMap.get(candidate.id) ?? 0;
+                        if (candidateLane >= lane) continue;
+                        if (!doSummaryRangesOverlap(candidate, summary)) continue;
+                        const candidateRight = placedSummarySubtreeRightById.get(candidate.id);
+                        if (candidateRight == null) continue;
+                        summaryX = Math.max(summaryX, candidateRight + summaryLaneGap);
+                    }
+                }
+                place(
+                    nodes,
+                    summary.summaryNodeId,
+                    ctx,
+                    summaryX,
+                    summaryTopY,
+                    Math.max(32, hostGap.hGap * 0.72),
+                    hostGap.vGap
+                );
+                let subtreeRight = Number.NEGATIVE_INFINITY;
+                for (const subtreeNodeId of collectSubtreeNodeIds(nodes, summary.summaryNodeId)) {
+                    const rect = layoutLocal.get(subtreeNodeId);
+                    if (!rect) continue;
+                    subtreeRight = Math.max(subtreeRight, rect.x + rect.w);
+                }
+                if (Number.isFinite(subtreeRight)) {
+                    placedSummarySubtreeRightById.set(summary.id, subtreeRight);
+                }
+            });
+        }
     }
 
     /**
@@ -490,6 +656,8 @@ export function useLayout(
         const nodes = activeMind.nodes ?? null;
 
         layoutLocal.clear();
+        nodeGapById.clear();
+        summaryBoundaryPaddingCache.clear();
         if (!options?.preserveSubtreeHeightCache) {
             subtreeHeightCache.clear();
             nodeMeasureCache = new WeakMap<object, CachedNodeMeasure>();
@@ -504,6 +672,7 @@ export function useLayout(
             const vGap = resolveRootVerticalGap(root.layout?.vGap);
             place(nodes, rootId, ctx, rootPos.x, rootPos.y, hGap, vGap);
         }
+        layoutSummaryNodes(nodes, ctx);
 
         rebuildBounds();
         if (perfMetrics) perfMetrics.totalMs = performance.now() - startedAt;

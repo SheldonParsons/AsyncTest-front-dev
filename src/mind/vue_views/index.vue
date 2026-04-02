@@ -31,6 +31,35 @@
                     <span v-if="saveState.isSaving" class="mind-header-saving-indicator">保存中...</span>
                 </div>
             </div>
+            <div class="mind-header-shortcuts">
+                <div class="mind-header-shortcut-strip">
+                    <button class="mind-header-shortcut-entry" :class="{ 'is-disabled': !hasSelectedNodes }" type="button"
+                        :disabled="!hasSelectedNodes" @click="onHeaderBranchClick">
+                        <img class="mind-header-shortcut-icon" :src="nextNodeIcon" alt="" />
+                        <span class="mind-header-shortcut-label">分支</span>
+                    </button>
+                    <button class="mind-header-shortcut-entry" :class="{ 'is-disabled': !hasSelectedNodes }" type="button"
+                        :disabled="!hasSelectedNodes" @click="onHeaderChildBranchClick">
+                        <img class="mind-header-shortcut-icon" :src="childNodeIcon" alt="" />
+                        <span class="mind-header-shortcut-label">子分支</span>
+                    </button>
+                    <span class="mind-header-shortcut-divider" aria-hidden="true"></span>
+                    <button class="mind-header-shortcut-entry is-disabled" type="button" disabled>
+                        <img class="mind-header-shortcut-icon" :src="connectIcon" alt="" />
+                        <span class="mind-header-shortcut-label">连线</span>
+                    </button>
+                    <button class="mind-header-shortcut-entry"
+                        :class="{ 'is-disabled': !nodeCountState.canCreateSummary }" type="button"
+                        :disabled="!nodeCountState.canCreateSummary" @click="onHeaderSummaryClick">
+                        <img class="mind-header-shortcut-icon" :src="sumIcon" alt="" />
+                        <span class="mind-header-shortcut-label">概要</span>
+                    </button>
+                    <button class="mind-header-shortcut-entry is-disabled" type="button" disabled>
+                        <img class="mind-header-shortcut-icon" :src="outerIcon" alt="" />
+                        <span class="mind-header-shortcut-label">外框</span>
+                    </button>
+                </div>
+            </div>
             <div class="mind-header-panel-actions">
                 <button class="mind-header-share-button" type="button" aria-label="分享" @click="onShareClick">
                     分享
@@ -85,6 +114,11 @@ import LoginComponent from '@/views/electron_views/login.vue'
 import settingsIcon from '@/mind/core/action_icon/settings.svg'
 import homeIcon from '@/mind/core/action_icon/home.svg'
 import searchIcon from '@/mind/core/action_icon/search.svg'
+import nextNodeIcon from '@/mind/core/action_icon/next_node.svg'
+import childNodeIcon from '@/mind/core/action_icon/child_node.svg'
+import connectIcon from '@/mind/core/action_icon/connect.svg'
+import sumIcon from '@/mind/core/action_icon/sum.svg'
+import outerIcon from '@/mind/core/action_icon/outer.svg'
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants'
 import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
 import { ApiCheckProjectFileExists } from '@/api/project/index'
@@ -108,6 +142,9 @@ type MindMainExpose = {
     updateRemoteBindingState: (binding: MindRemoteBinding | null) => Promise<boolean>;
     saveToRemoteBindingTarget: (binding: MindRemoteBinding) => Promise<boolean>;
     refreshSaveStatePresentation: () => void;
+    triggerHeaderBranchAction: () => boolean;
+    triggerHeaderChildBranchAction: () => boolean;
+    triggerHeaderSummaryAction: () => boolean;
 };
 
 const docId = ref<string>('');
@@ -134,7 +171,9 @@ let removeAuthLoginListener: (() => void) | null = null;
 const nodeCountState = ref({
     totalNodes: 0,
     selectedNodes: 0,
+    canCreateSummary: false,
 });
+const hasSelectedNodes = computed(() => nodeCountState.value.selectedNodes > 0);
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const mindBoards = computed(() => listMindBoards(doc.value));
 const activeBoardId = computed(() => getActiveMindId(doc.value));
@@ -190,8 +229,20 @@ function updateSaveState(value: { isDirty: boolean; isSaving: boolean; displayNa
     saveState.value = value;
 }
 
-function updateNodeCountState(value: { totalNodes: number; selectedNodes: number }) {
+function updateNodeCountState(value: { totalNodes: number; selectedNodes: number; canCreateSummary?: boolean }) {
     nodeCountState.value = value;
+}
+
+function onHeaderBranchClick() {
+    mindMainRef.value?.triggerHeaderBranchAction();
+}
+
+function onHeaderChildBranchClick() {
+    mindMainRef.value?.triggerHeaderChildBranchAction();
+}
+
+function onHeaderSummaryClick() {
+    mindMainRef.value?.triggerHeaderSummaryAction();
 }
 
 function toggleFormatPanel() {
@@ -428,7 +479,10 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
 .mind-container :deep(.mind-header-user-section),
 .mind-container :deep(.mind-header-avatar-container),
 .mind-container :deep(.mind-header-user-action-btn),
-.mind-container :deep(.mind-header-action-item) {
+.mind-container :deep(.mind-header-action-item),
+.mind-container :deep(.mind-header-shortcuts),
+.mind-container :deep(.mind-header-shortcut-strip),
+.mind-container :deep(.mind-header-shortcut-entry) {
     -webkit-app-region: no-drag;
 }
 
@@ -609,6 +663,83 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
         display: flex;
         align-items: center;
         gap: 10px;
+    }
+
+    .mind-header-shortcuts {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 0 14px;
+        transform: translateX(-28px);
+    }
+
+    .mind-header-shortcut-strip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 0;
+    }
+
+    .mind-header-shortcut-entry {
+        width: 58px;
+        min-width: 58px;
+        padding: 5px 6px 4px;
+        border: none;
+        border-radius: 12px;
+        background: transparent;
+        color: #253047;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        cursor: pointer;
+        transition:
+            transform 0.16s ease,
+            background-color 0.16s ease,
+            color 0.16s ease,
+            opacity 0.16s ease;
+    }
+
+    .mind-header-shortcut-entry:hover:not(:disabled) {
+        transform: translateY(-1px);
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .mind-header-shortcut-entry:active:not(:disabled) {
+        transform: translateY(0);
+    }
+
+    .mind-header-shortcut-entry:disabled,
+    .mind-header-shortcut-entry.is-disabled {
+        cursor: default;
+        color: #9aa4b2;
+        opacity: 0.58;
+    }
+
+    .mind-header-shortcut-icon {
+        width: 17px;
+        height: 17px;
+        display: block;
+        opacity: 0.9;
+    }
+
+    .mind-header-shortcut-label {
+        font-size: 11px;
+        line-height: 1;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        user-select: none;
+        pointer-events: none;
+    }
+
+    .mind-header-shortcut-divider {
+        width: 1px;
+        align-self: stretch;
+        margin: 3px 4px;
+        background: linear-gradient(180deg, rgba(148, 163, 184, 0), rgba(148, 163, 184, 0.55), rgba(148, 163, 184, 0));
     }
 
     .mind-header-share-button {

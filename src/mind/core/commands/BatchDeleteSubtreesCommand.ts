@@ -7,6 +7,7 @@ export type BatchDeleteTarget = {
   parentId: string;
   indexInParent: number;
   deletedSnapshot: MindSubtreeSnapshot;
+  skipParentChildrenMutation?: boolean;
 };
 
 export type BatchDeleteSubtreesCommandContext = {
@@ -38,18 +39,28 @@ export type BatchDeleteSubtreesCommandOptions = {
     trustExistingNodeMeasureCache?: boolean;
     useLayoutChangedNodeIds?: boolean;
   };
+  applyDoState?: (nodes: MindNodes) => void;
+  applyUndoState?: (nodes: MindNodes) => void;
 };
 
 export function createBatchDeleteSubtreesCommand(
   context: BatchDeleteSubtreesCommandContext,
   options: BatchDeleteSubtreesCommandOptions
 ): Command {
-  const { targetsForMutation, previousSelection, nextSelectionId, lastDeletedNodeId, deleteMutationOptions } = options;
+  const {
+    targetsForMutation,
+    previousSelection,
+    nextSelectionId,
+    lastDeletedNodeId,
+    deleteMutationOptions,
+    applyDoState,
+    applyUndoState,
+  } = options;
 
   function remove(nodes: MindNodes) {
     targetsForMutation.forEach((target) => {
       const parent = nodes[target.parentId];
-      if (parent) {
+      if (parent && !target.skipParentChildrenMutation) {
         parent.children = Array.isArray(parent.children) ? parent.children : [];
         const actualIndex = parent.children.indexOf(target.nodeId);
         if (actualIndex >= 0) parent.children.splice(actualIndex, 1);
@@ -66,6 +77,7 @@ export function createBatchDeleteSubtreesCommand(
         insertSubtreeSnapshot(nodes, target.deletedSnapshot);
         const parent = nodes[target.parentId];
         if (!parent) return;
+        if (target.skipParentChildrenMutation) return;
         parent.children = Array.isArray(parent.children) ? parent.children : [];
         if (!parent.children.includes(target.nodeId)) {
           parent.children.splice(Math.min(target.indexInParent, parent.children.length), 0, target.nodeId);
@@ -79,6 +91,7 @@ export function createBatchDeleteSubtreesCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       remove(nodes);
+      applyDoState?.(nodes);
       context.setLastDeletedNodeId?.(lastDeletedNodeId);
       context.setSelection(nextSelectionId ? [nextSelectionId] : [], nextSelectionId);
       void context.applyMutation('history:batch-delete-subtrees', {
@@ -94,15 +107,21 @@ export function createBatchDeleteSubtreesCommand(
       const nodes = context.getNodes();
       if (!nodes) return;
       restore(nodes);
+      applyUndoState?.(nodes);
       context.setSelection(previousSelection.ids, previousSelection.primaryId);
       void context.applyMutation('history:undo-batch-delete-subtrees', {
         ensureVisibleNodeIds: previousSelection.ids,
+        invalidateSubtreeHeightNodeIds: deleteMutationOptions?.invalidateSubtreeHeightNodeIds,
+        touchedParentIds: deleteMutationOptions?.touchedParentIds,
+        trustExistingNodeMeasureCache: deleteMutationOptions?.trustExistingNodeMeasureCache,
+        useLayoutChangedNodeIds: deleteMutationOptions?.useLayoutChangedNodeIds,
       });
     },
     redo: () => {
       const nodes = context.getNodes();
       if (!nodes) return;
       remove(nodes);
+      applyDoState?.(nodes);
       context.setLastDeletedNodeId?.(lastDeletedNodeId);
       context.setSelection(nextSelectionId ? [nextSelectionId] : [], nextSelectionId);
       void context.applyMutation('history:redo-batch-delete-subtrees', {

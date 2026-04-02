@@ -39,6 +39,8 @@ export type DeleteSubtreeCommandOptions = {
     trustExistingNodeMeasureCache?: boolean;
     useLayoutChangedNodeIds?: boolean;
   };
+  applyDoState?: (nodes: MindNodes) => void;
+  applyUndoState?: (nodes: MindNodes) => void;
 };
 
 export function createDeleteSubtreeCommand(
@@ -53,6 +55,8 @@ export function createDeleteSubtreeCommand(
     previousSelectionId,
     nextSelectionId,
     deleteMutationOptions,
+    applyDoState,
+    applyUndoState,
   } = options;
 
   function removeFromParent(nodes: MindNodes) {
@@ -79,6 +83,7 @@ export function createDeleteSubtreeCommand(
       if (!nodes) return;
       removeFromParent(nodes);
       removeSubtreeSnapshot(nodes, deletedSnapshot);
+      applyDoState?.(nodes);
       context.setLastDeletedNodeId?.(targetNodeId);
       context.setSingleSelected(nextSelectionId);
       if (context.debugEnabled) {
@@ -104,9 +109,14 @@ export function createDeleteSubtreeCommand(
       if (!nodes) return;
       insertSubtreeSnapshot(nodes, deletedSnapshot);
       insertIntoParent(nodes);
+      applyUndoState?.(nodes);
       context.setSingleSelected(previousSelectionId);
       void context.applyMutation('history:undo-delete-subtree', {
         ensureVisibleNodeId: previousSelectionId,
+        invalidateSubtreeHeightNodeIds: deleteMutationOptions?.invalidateSubtreeHeightNodeIds,
+        touchedParentIds: deleteMutationOptions?.touchedParentIds,
+        trustExistingNodeMeasureCache: deleteMutationOptions?.trustExistingNodeMeasureCache,
+        useLayoutChangedNodeIds: deleteMutationOptions?.useLayoutChangedNodeIds,
       });
     },
   };
