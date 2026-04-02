@@ -226,6 +226,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
       const result = await window.electronAPI.amind.saveAsDialog({
         docId,
         defaultPath,
+        doc: preparedDoc,
       });
       if (!result) return false;
       nextFilePath = applySaveResult(result, preparedRevision);
@@ -259,7 +260,7 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
         previewHandled: false,
       };
     }
-    const result = await window.electronAPI.amind.save({ docId });
+    const result = await window.electronAPI.amind.save({ docId, doc: preparedDoc });
     if (result?.needSaveAs) {
       const success = await saveDocumentAs({
         skipPrepare: true,

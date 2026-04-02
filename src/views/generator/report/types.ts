@@ -116,6 +116,9 @@ export type ReportAmindSourceFile = {
   size: number | null;
   updatedAt: string | number | null;
   docxFileType: "xmind" | "amind";
+  boardOptions: ReportSelectOption[];
+  selectedBoardIds: string[];
+  includeFreeNodes: boolean;
 };
 
 export type ReportExcelSourceFile = {
@@ -136,6 +139,9 @@ export type ReportAmindParseResult = {
   projectName: string;
   boardId: string;
   boardTitle: string;
+  boardOptions: ReportSelectOption[];
+  selectedBoardIds: string[];
+  includeFreeNodes: boolean;
   totalCaseCount: number;
   passedCaseCount: number;
   failedCaseCount: number;

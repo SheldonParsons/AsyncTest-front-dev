@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import type { ReportAmindParseResult, ReportAmindSourceFile } from "./types";
+import type { ReportAmindParseResult, ReportAmindSourceFile, ReportSelectOption } from "./types";
 
 type AmindDoc = {
   mind?: {
@@ -14,23 +14,6 @@ const REUSE_MARKER = "other:lightbulb";
 
 function toMarkerSet(node: any) {
   return new Set<string>(Array.isArray(node?.markers) ? node.markers.filter((item: unknown): item is string => typeof item === "string") : []);
-}
-
-function resolveBoard(doc: AmindDoc) {
-  const boardId = doc?.mind?.order?.[0];
-  if (!boardId) {
-    throw new Error("amind 中不存在可解析的画板");
-  }
-
-  const board = doc?.mind?.minds?.[boardId];
-  if (!board || !board.nodes) {
-    throw new Error("amind 第一个画板结构无效");
-  }
-
-  return {
-    boardId,
-    board,
-  };
 }
 
 function resolveRootIds(board: any) {
@@ -55,6 +38,52 @@ function resolveBoardTitle(board: any, nodes: Record<string, any>, rootIds: stri
   return rootTitle || "第一个画板";
 }
 
+function resolveBoards(doc: AmindDoc) {
+  const order = Array.isArray(doc?.mind?.order) ? doc.mind.order : [];
+  if (!order.length) {
+    throw new Error("amind 中不存在可解析的画板");
+  }
+
+  const boards = order
+    .map((boardId) => {
+      const board = doc?.mind?.minds?.[boardId];
+      if (!board || !board.nodes) return null;
+      const nodes = board.nodes as Record<string, any>;
+      const rootIds = resolveRootIds(board);
+      return {
+        boardId,
+        board,
+        nodes,
+        rootIds,
+        boardTitle: resolveBoardTitle(board, nodes, rootIds),
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        boardId: string;
+        board: any;
+        nodes: Record<string, any>;
+        rootIds: string[];
+        boardTitle: string;
+      } => !!item
+    );
+
+  if (!boards.length) {
+    throw new Error("amind 画板结构无效");
+  }
+
+  return boards;
+}
+
+function resolveSelectedBoardIds(boardOptions: ReportSelectOption[], selectedBoardIds: string[]) {
+  const selectedSet = new Set(selectedBoardIds);
+  const normalized = boardOptions.filter((item) => selectedSet.has(item.value)).map((item) => item.value);
+  if (normalized.length) return normalized;
+  return boardOptions[0] ? [boardOptions[0].value] : [];
+}
+
 export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise<ReportAmindParseResult> {
   const response = await fetch(sourceFile.downloadUrl);
   if (!response.ok) {
@@ -74,10 +103,21 @@ export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise
     mind: JSON.parse(mindRaw),
   } as AmindDoc;
 
-  const { boardId, board } = resolveBoard(doc);
-  const nodes = board.nodes as Record<string, any>;
-  const rootIds = resolveRootIds(board);
-  const boardTitle = resolveBoardTitle(board, nodes, rootIds);
+  const boards = resolveBoards(doc);
+  const boardOptions = boards.map((item) => ({
+    value: item.boardId,
+    label: item.boardTitle,
+  }));
+  const selectedBoardIds = resolveSelectedBoardIds(boardOptions, sourceFile.selectedBoardIds ?? []);
+  const selectedBoardIdSet = new Set(selectedBoardIds);
+  const selectedBoards = boards.filter((item) => selectedBoardIdSet.has(item.boardId));
+  const boardTitle = selectedBoards.length === 1
+    ? selectedBoards[0].boardTitle
+    : selectedBoards.length > 1
+      ? `${selectedBoards[0].boardTitle} 等 ${selectedBoards.length} 个 Tab`
+      : "第一个画板";
+  const boardId = selectedBoards[0]?.boardId ?? boards[0]?.boardId ?? "";
+  const includeFreeNodes = sourceFile.includeFreeNodes === true;
 
   let totalCaseCount = 0;
   let passedCaseCount = 0;
@@ -85,7 +125,7 @@ export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise
   let pendingCaseCount = 0;
   let reusedCaseCount = 0;
 
-  const walk = (nodeId: string, inheritedError: boolean, inheritedReuse: boolean) => {
+  const walk = (nodes: Record<string, any>, nodeId: string, inheritedError: boolean, inheritedReuse: boolean) => {
     const node = nodes[nodeId];
     if (!node) return;
 
@@ -120,12 +160,26 @@ export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise
     }
 
     children.forEach((childId) => {
-      walk(childId, currentError, currentReuse);
+      walk(nodes, childId, currentError, currentReuse);
     });
   };
 
-  rootIds.forEach((rootId) => {
-    walk(rootId, false, false);
+  selectedBoards.forEach(({ board, nodes }) => {
+    const rootIds = Array.isArray(board?.roots)
+      ? board.roots
+          .filter((root: any, index: number) => {
+            if (typeof root?.rootId !== "string" || !nodes[root.rootId]) return false;
+            if (includeFreeNodes) return true;
+            if (root?.rootKind === "free") return false;
+            if (root?.rootKind === "main") return true;
+            return index === 0;
+          })
+          .map((root: any) => root.rootId)
+      : [];
+
+    rootIds.forEach((rootId) => {
+      walk(nodes, rootId, false, false);
+    });
   });
 
   const passRate = totalCaseCount > 0 ? `${((passedCaseCount / totalCaseCount) * 100).toFixed(2)}%` : "0.00%";
@@ -137,6 +191,9 @@ export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise
     projectName: sourceFile.projectName,
     boardId,
     boardTitle,
+    boardOptions,
+    selectedBoardIds,
+    includeFreeNodes,
     totalCaseCount,
     passedCaseCount,
     failedCaseCount,

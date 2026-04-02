@@ -829,7 +829,24 @@ export function useReportWorkspaceState() {
       size: rawFile?.size === undefined || rawFile?.size === null ? null : Number(rawFile.size),
       updatedAt: rawFile?.add_time ?? null,
       docxFileType: "xmind",
+      boardOptions: [],
+      selectedBoardIds: [],
+      includeFreeNodes: false,
     };
+  }
+
+  function syncAmindFileParseMeta(results: ReportAmindParseResult[]) {
+    const resultMap = new Map(results.filter((item) => item.status === "success").map((item) => [item.fileId, item]));
+    state.amindFiles = state.amindFiles.map((file) => {
+      const parseResult = resultMap.get(file.id);
+      if (!parseResult) return file;
+      return {
+        ...file,
+        boardOptions: parseResult.boardOptions,
+        selectedBoardIds: parseResult.selectedBoardIds,
+        includeFreeNodes: parseResult.includeFreeNodes,
+      };
+    });
   }
 
   function normalizeExcelSourceFile(rawFile: any, project: ReportSelectOption | null): ReportExcelSourceFile | null {
@@ -868,6 +885,9 @@ export function useReportWorkspaceState() {
       nextMap.set(item.id, {
         ...item,
         docxFileType: existed?.docxFileType ?? item.docxFileType ?? "xmind",
+        boardOptions: existed?.boardOptions ?? item.boardOptions ?? [],
+        selectedBoardIds: existed?.selectedBoardIds ?? item.selectedBoardIds ?? [],
+        includeFreeNodes: existed?.includeFreeNodes ?? item.includeFreeNodes ?? false,
       });
     });
 
@@ -900,6 +920,32 @@ export function useReportWorkspaceState() {
         : item
     );
     persistDraft();
+  }
+
+  function updateAmindSelectedBoards(payload: { fileId: string; boardIds: string[] }) {
+    state.amindFiles = state.amindFiles.map((item) =>
+      item.id === payload.fileId
+        ? {
+            ...item,
+            selectedBoardIds: payload.boardIds,
+          }
+        : item
+    );
+    persistDraft();
+    void parseAmindFiles();
+  }
+
+  function updateAmindIncludeFreeNodes(payload: { fileId: string; value: boolean }) {
+    state.amindFiles = state.amindFiles.map((item) =>
+      item.id === payload.fileId
+        ? {
+            ...item,
+            includeFreeNodes: payload.value,
+          }
+        : item
+    );
+    persistDraft();
+    void parseAmindFiles();
   }
 
   function addExcelFile(files: any[], project: ReportSelectOption | null) {
@@ -988,6 +1034,9 @@ export function useReportWorkspaceState() {
           projectName: file.projectName,
           boardId: "",
           boardTitle: "第一个画板",
+          boardOptions: file.boardOptions ?? [],
+          selectedBoardIds: file.selectedBoardIds ?? [],
+          includeFreeNodes: file.includeFreeNodes === true,
           totalCaseCount: 0,
           passedCaseCount: 0,
           failedCaseCount: 0,
@@ -1001,6 +1050,7 @@ export function useReportWorkspaceState() {
     }
 
     state.amindParseResults = results;
+    syncAmindFileParseMeta(results);
     markStep("parse", results.some((item) => item.status === "error") ? "warning" : "success");
     updateAmindParseSummary();
     state.parsingAmind = false;
@@ -1680,6 +1730,8 @@ export function useReportWorkspaceState() {
     addAmindFiles,
     removeAmindFile,
     updateAmindDocxFileType,
+    updateAmindSelectedBoards,
+    updateAmindIncludeFreeNodes,
     addExcelFile,
     removeExcelFile,
     parseAmindFiles,

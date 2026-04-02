@@ -10,6 +10,61 @@ import { createDocStore } from './docStore.node.js';
 import { createMindFontService } from './fontService.node.js';
 import { migrateLegacyMindStyles } from './styleMigration.node.js';
 
+function readRichTextPlain(richText) {
+  if (!richText || typeof richText !== 'object' || !Array.isArray(richText.blocks)) return '';
+  return richText.blocks
+    .map((block) => (Array.isArray(block?.inlines) ? block.inlines.map((inline) => inline?.text ?? '').join('') : ''))
+    .join('\n')
+    .trim();
+}
+
+function readLexicalPlain(node) {
+  if (!node || typeof node !== 'object') return '';
+  if (typeof node.text === 'string') return node.text;
+  if (!Array.isArray(node.children)) return '';
+  const childText = node.children.map((child) => readLexicalPlain(child)).join('');
+  return node.type === 'linebreak' ? '\n' : childText;
+}
+
+function readMindNodePlainText(node) {
+  if (!node || typeof node !== 'object') return '';
+  const richText = readRichTextPlain(node.richText);
+  if (richText) return richText;
+  const lexical = readLexicalPlain(node.textLexical?.root ?? node.textLexical);
+  if (lexical.trim()) return lexical.trim();
+  if (typeof node.text === 'string' && node.text.trim()) return node.text.trim();
+  if (node.text && typeof node.text === 'object' && typeof node.text.plain === 'string' && node.text.plain.trim()) {
+    return node.text.plain.trim();
+  }
+  if (typeof node.textPlain === 'string' && node.textPlain.trim()) return node.textPlain.trim();
+  if (typeof node.title === 'string' && node.title.trim()) return node.title.trim();
+  return '';
+}
+
+function sanitizeExportBaseName(raw) {
+  const cleaned = `${raw ?? ''}`
+    .replace(/\s+/g, '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .trim();
+  return cleaned || '思维导图';
+}
+
+function getDocXmindDefaultPath(doc, requestedDefaultPath) {
+  const requestedName = typeof requestedDefaultPath === 'string' ? requestedDefaultPath.trim() : '';
+  const requestedBaseName = requestedName ? path.basename(requestedName) : '';
+  if (requestedBaseName && requestedBaseName !== '思维导图.xmind') {
+    return requestedName;
+  }
+
+  const activeMindId = typeof doc?.mind?.activeMindId === 'string' ? doc.mind.activeMindId : null;
+  const activeMind = activeMindId ? doc?.mind?.minds?.[activeMindId] : null;
+  const rootId = typeof activeMind?.roots?.[0]?.rootId === 'string' ? activeMind.roots[0].rootId : null;
+  const rootNode = rootId && activeMind?.nodes ? activeMind.nodes[rootId] : null;
+  const rootTitle = readMindNodePlainText(rootNode);
+  const manifestTitle = typeof doc?.manifest?.title === 'string' ? doc.manifest.title.trim() : '';
+  return `${sanitizeExportBaseName(rootTitle || manifestTitle)}.xmind`;
+}
+
 export function initAmindMain({ userDataPath, windowManager }) {
   const recentStore = createRecentStore({ userDataPath });
   const assetCache = createAmindAssetCache();
@@ -357,7 +412,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:exportXmindDialog', async (event, { docId, defaultPath, thumbnailBytes }) => {
     const entry = docStore.mustGet(docId);
     const { canceled, filePath } = await dialog.showSaveDialog({
-      defaultPath: defaultPath || '思维导图.xmind',
+      defaultPath: getDocXmindDefaultPath(entry.doc, defaultPath),
       filters: [{ name: 'XMind', extensions: ['xmind'] }],
     });
     if (canceled || !filePath) return null;
@@ -371,7 +426,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   ipcMain.handle('amind:exportXmindDocDialog', async (event, { doc, defaultPath, thumbnailBytes }) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      defaultPath: defaultPath || '思维导图.xmind',
+      defaultPath: getDocXmindDefaultPath(doc, defaultPath),
       filters: [{ name: 'XMind', extensions: ['xmind'] }],
     });
     if (canceled || !filePath) return null;
@@ -410,14 +465,15 @@ export function initAmindMain({ userDataPath, windowManager }) {
     };
   });
 
-  ipcMain.handle('amind:save', async (event, { docId }) => {
+  ipcMain.handle('amind:save', async (event, { docId, doc }) => {
     const entry = docStore.mustGet(docId);
     if (!entry.filePath) return { needSaveAs: true };
+    const docToSave = doc && typeof doc === 'object' ? doc : entry.doc;
 
     const fileKey = getFileKey({ docId, filePath: entry.filePath });
     const dirtyAssets = assetCache.listDirty(fileKey);
 
-    const { path: abs, doc: saved } = await writeAmindFile(entry.filePath, entry.doc, {
+    const { path: abs, doc: saved } = await writeAmindFile(entry.filePath, docToSave, {
       assetsToWrite: dirtyAssets.map(a => ({ assetId: a.assetId, ext: a.ext, bytes: a.bytes })),
     });
 
@@ -450,8 +506,9 @@ export function initAmindMain({ userDataPath, windowManager }) {
    * - 更新 fileIndex（解绑旧路径，绑定新路径）
    * - 通知 renderer（可选，但建议）
    */
-  ipcMain.handle('amind:saveAsDialog', async (event, { docId, defaultPath }) => {
+  ipcMain.handle('amind:saveAsDialog', async (event, { docId, defaultPath, doc }) => {
     const entry = docStore.mustGet(docId);
+    const docToSave = doc && typeof doc === 'object' ? doc : entry.doc;
 
     const oldFilePath = entry.filePath; // 可能为 null
     const oldFk = oldFilePath ? normalizeFileKey(oldFilePath) : null;
@@ -465,7 +522,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const fileKeyOldForAssets = getFileKey({ docId, filePath: oldFilePath });
     const dirtyAssets = assetCache.listDirty(fileKeyOldForAssets);
 
-    const { path: abs, doc: saved } = await writeAmindFile(filePath, entry.doc, {
+    const { path: abs, doc: saved } = await writeAmindFile(filePath, docToSave, {
       assetsToWrite: dirtyAssets.map(a => ({ assetId: a.assetId, ext: a.ext, bytes: a.bytes })),
     });
 

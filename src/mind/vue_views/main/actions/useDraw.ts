@@ -10,7 +10,7 @@ import rough from 'roughjs';
 import type { Drawable } from 'roughjs/bin/core';
 import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { RoughGenerator } from 'roughjs/bin/generator';
-import { ensureMindRoots, getActiveMind } from './useDocUtils';
+import { getActiveMind } from './useDocUtils';
 import type { Camera } from './useCamera';
 import type { BranchMeta, ParentEdgeCacheStats, ParentEdgeGeom } from './useEdges';
 import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS, ROUGH_STYLE } from '../constants';
@@ -66,6 +66,7 @@ import {
   type ImageWorldRect,
 } from '../imageInteraction';
 import { getInlineFont } from '@/mind/core/richText';
+import { buildRelationDraftPreview, type MindRelationGeom } from './useRelations';
 const DEBUG_VIEWPORT = '#f97316';
 const DEBUG_GRID = 'rgba(148, 163, 184, 0.28)';
 const DEBUG_WORLD_BOX = 'rgba(59, 130, 246, 0.92)';
@@ -365,15 +366,29 @@ function drawNodeMarkers(
 }
 
 function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect, label: string) {
-  const padX = 7;
-  const badgeHeight = 18;
-  const radius = 5;
-  const badgeX = bodyRect.x1 + 6;
+  const bodyWidth = rectWidth(bodyRect);
+  const availableWidth = Math.max(26, bodyWidth - 4);
+  const badgeHeight = 15;
+  const radius = 4;
   const badgeY = bodyRect.y1 - badgeHeight - 4;
+  const fontCandidates = [10, 9, 8];
+  let fontSize = fontCandidates[0];
+  let padX = 5;
+  let textWidth = 0;
+
   ctx.save();
-  ctx.font = '700 12px "Source Han Serif SC", "STSong", "Songti SC", serif';
-  const textWidth = ctx.measureText(label).width;
-  const badgeWidth = textWidth + padX * 2;
+  for (const candidate of fontCandidates) {
+    const candidatePadX = candidate <= 8 ? 4 : 5;
+    ctx.font = `600 ${candidate}px "Source Han Serif SC", "STSong", "Songti SC", serif`;
+    const candidateWidth = ctx.measureText(label).width + candidatePadX * 2;
+    fontSize = candidate;
+    padX = candidatePadX;
+    textWidth = candidateWidth - candidatePadX * 2;
+    if (candidateWidth <= availableWidth) break;
+  }
+
+  const badgeWidth = Math.min(availableWidth, textWidth + padX * 2);
+  const badgeX = bodyRect.x1 + Math.max(2, (bodyWidth - badgeWidth) / 2);
 
   drawRoundedRectShape(
     ctx,
@@ -389,12 +404,26 @@ function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect
     1
   );
 
+  ctx.font = `600 ${fontSize}px "Source Han Serif SC", "STSong", "Songti SC", serif`;
   ctx.fillStyle = ROOT_SECRECY_TEXT;
   ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   const textY = badgeY + badgeHeight / 2 + 0.15;
-  ctx.fillText(label, badgeX + padX, textY);
+  ctx.fillText(label, badgeX + badgeWidth / 2, textY);
   ctx.restore();
+}
+
+function drawRootSecrecyBadgeIfNeeded(
+  ctx: CanvasRenderingContext2D,
+  rootNodeIds: Set<string>,
+  id: string,
+  node: any,
+  bodyRect: WorldRect
+) {
+  if (!rootNodeIds.has(id)) return;
+  const secrecyLabel = formatNodeSecrecyLabel(getNodeSecrecy(node));
+  if (!secrecyLabel) return;
+  drawRootSecrecyBadge(ctx, bodyRect, secrecyLabel);
 }
 
 function snapToDevicePixel(value: number, dpr: number) {
@@ -920,10 +949,22 @@ export function useDraw(
   collapseTagActiveNodeIds: Ref<Set<string>>,
   collapseTagHoverNodeId: Ref<string | null>,
   queryVisibleParentEdgeGeoms: (rect: WorldRect) => ParentEdgeGeom[],
+  queryVisibleRelationGeoms: (rect: WorldRect) => MindRelationGeom[],
   edgeStats: Ref<ParentEdgeCacheStats>,
+  relationCacheVersion?: Ref<number>,
   spatialIndex: UniformGridSpatialIndex,
   hoverNodeId: Ref<string | null>,
   selectedIds: Ref<Set<string>>,
+  selectedRelationId?: Ref<string | null>,
+  allRelationsSelected?: Ref<boolean>,
+  hoverRelationId?: Ref<string | null>,
+  relationDraft?: Ref<{
+    active: boolean;
+    fromNodeId: string | null;
+    hoverTargetNodeId: string | null;
+    cursorScreenX: number;
+    cursorScreenY: number;
+  }>,
   marqueeRectScreen: Ref<ScreenRect | null>,
   marqueeWorldRect: Ref<WorldRect | null>,
   dragState?: Ref<DragDropState>,
@@ -1072,6 +1113,7 @@ export function useDraw(
     visibleIds: [] as string[],
     falsePositiveIds: [] as string[],
     visibleEdgeGroups: [] as VisibleEdgeGroup[],
+    visibleRelationGeoms: [] as MindRelationGeom[],
     visibleEdgeShapeCount: 0,
   };
   let lastRoughStyleSignature = '';
@@ -1169,7 +1211,6 @@ export function useDraw(
     const viewportW = Math.max(1, c.clientWidth || Math.round(c.width / dpr));
     const viewportH = Math.max(1, c.clientHeight || Math.round(c.height / dpr));
 
-    ensureMindRoots(d);
     const historySnapshot = getHistorySnapshot();
     const clipboardDebug = getClipboardDebugSnapshot();
     const currentDragState = dragState?.value;
@@ -1295,6 +1336,7 @@ export function useDraw(
       }
 
       const visibleParentEdgeGeoms = queryVisibleParentEdgeGeoms(queryRect);
+      const visibleRelationGeoms = queryVisibleRelationGeoms(queryRect);
       const visibleEdgeGroups: VisibleEdgeGroup[] = [];
       let visibleEdgeShapeCount = 0;
       for (const geom of visibleParentEdgeGeoms) {
@@ -1315,6 +1357,7 @@ export function useDraw(
         visibleIds,
         falsePositiveIds,
         visibleEdgeGroups,
+        visibleRelationGeoms,
         visibleEdgeShapeCount,
       };
     }
@@ -1325,6 +1368,7 @@ export function useDraw(
       cam.tx.toFixed(2),
       cam.ty.toFixed(2),
       interactiveViewportExpansionX.toFixed(2),
+      String(relationCacheVersion?.value ?? 0),
     ].join('|');
     const canReuseViewportQuery =
       viewportQueryCache.signature === viewportSignature &&
@@ -1338,6 +1382,7 @@ export function useDraw(
     let visibleIds: string[];
     let falsePositiveIds: string[];
     let visibleEdgeGroups: VisibleEdgeGroup[];
+    let visibleRelationGeoms: MindRelationGeom[];
     let visibleEdgeShapeCount: number;
 
     if (canReuseViewportQuery) {
@@ -1347,6 +1392,7 @@ export function useDraw(
       visibleIds = viewportQueryCache.visibleIds;
       falsePositiveIds = viewportQueryCache.falsePositiveIds;
       visibleEdgeGroups = viewportQueryCache.visibleEdgeGroups;
+      visibleRelationGeoms = viewportQueryCache.visibleRelationGeoms;
       visibleEdgeShapeCount = viewportQueryCache.visibleEdgeShapeCount;
     } else {
       worldViewportRect = getWorldViewportRect(cam, viewportW, viewportH);
@@ -1364,6 +1410,7 @@ export function useDraw(
       visibleIds = scene.visibleIds;
       falsePositiveIds = scene.falsePositiveIds;
       visibleEdgeGroups = scene.visibleEdgeGroups;
+      visibleRelationGeoms = scene.visibleRelationGeoms;
       visibleEdgeShapeCount = scene.visibleEdgeShapeCount;
 
       viewportQueryCache.signature = viewportSignature;
@@ -1374,6 +1421,7 @@ export function useDraw(
       viewportQueryCache.visibleIds = visibleIds;
       viewportQueryCache.falsePositiveIds = falsePositiveIds;
       viewportQueryCache.visibleEdgeGroups = visibleEdgeGroups;
+      viewportQueryCache.visibleRelationGeoms = visibleRelationGeoms;
       viewportQueryCache.visibleEdgeShapeCount = visibleEdgeShapeCount;
     }
 
@@ -1512,7 +1560,13 @@ export function useDraw(
 
     const activeMind = getActiveMind(d);
     const nodes = activeMind?.nodes || {};
-    const rootNodeId = activeMind?.roots?.[0]?.rootId ?? null;
+    const rootNodeIds = new Set(
+      Array.isArray(activeMind?.roots)
+        ? activeMind.roots
+            .map((root: any) => root?.rootId)
+            .filter((rootId: unknown): rootId is string => typeof rootId === 'string' && rootId.length > 0)
+        : []
+    );
     let edgesDrawnParents = 0;
     let branchesDrawn = 0;
     let roundedBranchesCount = 0;
@@ -1525,6 +1579,10 @@ export function useDraw(
     const edgeLineWidth = strokeScreenWidthPx / cam.scale;
     const trunkLineWidth = strokeScreenWidthPx / cam.scale;
     const overlapWorld = roughStyle.overlapPx / Math.max(cam.scale, 0.0001);
+    const hiddenDraggedNodeIds =
+      currentDragState?.isDragging && currentDragState.dragKind === 'free-root'
+        ? currentDragState.draggedSubtreeNodeIds
+        : null;
 
     function drawVisibleEdgeGroup(
       targetCtx: CanvasRenderingContext2D,
@@ -1533,7 +1591,11 @@ export function useDraw(
     ) {
       const translateX = options?.translateX ?? 0;
       const collectStats = options?.collectStats !== false;
-      const { geom, branchEntries } = edgeGroup;
+      const { geom } = edgeGroup;
+      const branchEntries = hiddenDraggedNodeIds
+        ? edgeGroup.branchEntries.filter(({ childId }) => !hiddenDraggedNodeIds.has(childId) && !hiddenDraggedNodeIds.has(geom.parentId))
+        : edgeGroup.branchEntries;
+      if (!branchEntries.length) return;
       const branchStroke = multiplyColorAlpha(roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
       const trunkStroke = multiplyColorAlpha(roughStyle.colors.edges.trunkStroke, strokeAlphaFactor);
       let parentBranchCount = 0;
@@ -1600,6 +1662,77 @@ export function useDraw(
         edgesDrawnParents += 1;
         branchesDrawn += parentBranchCount;
       }
+    }
+
+    function drawRelationPath(
+      targetCtx: CanvasRenderingContext2D,
+      relationGeom: MindRelationGeom,
+      options?: {
+        strokeStyle?: string;
+        lineWidth?: number;
+        dashed?: boolean;
+        alpha?: number;
+        arrow?: boolean;
+      }
+    ) {
+      targetCtx.save();
+      if (options?.alpha != null) targetCtx.globalAlpha *= options.alpha;
+      targetCtx.strokeStyle = options?.strokeStyle ?? 'rgba(79, 70, 229, 0.72)';
+      targetCtx.lineWidth = options?.lineWidth ?? 1.4;
+      targetCtx.lineCap = 'round';
+      targetCtx.lineJoin = 'round';
+      targetCtx.setLineDash(options?.dashed ? [8, 6] : []);
+      targetCtx.stroke(relationGeom.path);
+      if (options?.arrow !== false && relationGeom.samplePoints.length >= 2) {
+        const endPoint = relationGeom.endPoint;
+        const previousPoint = relationGeom.samplePoints[relationGeom.samplePoints.length - 2];
+        const angle = Math.atan2(endPoint.y - previousPoint.y, endPoint.x - previousPoint.x);
+        const arrowLength = 10;
+        const arrowSpread = Math.PI / 7;
+        targetCtx.fillStyle = options?.strokeStyle ?? 'rgba(79, 70, 229, 0.72)';
+        targetCtx.beginPath();
+        targetCtx.moveTo(endPoint.x, endPoint.y);
+        targetCtx.lineTo(
+          endPoint.x - Math.cos(angle - arrowSpread) * arrowLength,
+          endPoint.y - Math.sin(angle - arrowSpread) * arrowLength
+        );
+        targetCtx.lineTo(
+          endPoint.x - Math.cos(angle + arrowSpread) * arrowLength,
+          endPoint.y - Math.sin(angle + arrowSpread) * arrowLength
+        );
+        targetCtx.closePath();
+        targetCtx.fill();
+      }
+      targetCtx.restore();
+    }
+
+    function drawVisibleRelations(targetCtx: CanvasRenderingContext2D, relationGeoms: MindRelationGeom[]) {
+      if (!relationGeoms.length) return;
+      const baseStroke = multiplyColorAlpha('rgba(79, 70, 229, 0.82)', Math.max(0.45, strokeAlphaFactor));
+      const baseLineWidth = 1.7;
+      relationGeoms.forEach((relationGeom) => {
+        drawRelationPath(targetCtx, relationGeom, {
+          strokeStyle: baseStroke,
+          lineWidth: baseLineWidth,
+          dashed: true,
+          arrow: true,
+        });
+      });
+    }
+
+    function drawRelationHandles(targetCtx: CanvasRenderingContext2D, relationGeom: MindRelationGeom, strokeStyle: string) {
+      const radius = 4.5 / Math.max(cam.scale, 0.0001);
+      targetCtx.save();
+      targetCtx.fillStyle = '#ffffff';
+      targetCtx.strokeStyle = strokeStyle;
+      targetCtx.lineWidth = 1.8 / Math.max(cam.scale, 0.0001);
+      [relationGeom.startPoint, relationGeom.endPoint].forEach((point) => {
+        targetCtx.beginPath();
+        targetCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.stroke();
+      });
+      targetCtx.restore();
     }
 
     function drawVisibleNode(
@@ -1785,13 +1918,8 @@ export function useDraw(
           lineY += line.height;
         });
         drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage);
-        if (id === rootNodeId) {
-          const secrecyLabel = formatNodeSecrecyLabel(getNodeSecrecy(node));
-          if (secrecyLabel) {
-            drawRootSecrecyBadge(targetCtx, bodyRect, secrecyLabel);
-          }
-        }
       }
+      drawRootSecrecyBadgeIfNeeded(targetCtx, rootNodeIds, id, node, bodyRect);
       targetCtx.restore();
     }
 
@@ -1837,6 +1965,7 @@ export function useDraw(
         const summaries = getNodeSummaries(parentNode);
         if (!summaries.length) continue;
         for (const summary of summaries) {
+          if (hiddenDraggedNodeIds?.has(summary.summaryNodeId)) continue;
           const summaryRect = nodeWorldBoxes.get(summary.summaryNodeId);
           if (!summaryRect) continue;
           const coveredRect = resolveSummaryCoveredWorldRect(parentNode, summary.startIndex, summary.endIndex);
@@ -1940,6 +2069,7 @@ export function useDraw(
       targetCtx: CanvasRenderingContext2D,
       renderVisibleEdgeGroups: VisibleEdgeGroup[],
       renderVisibleIds: string[],
+      renderVisibleRelationGeoms: MindRelationGeom[],
       offsetX = 0,
       offsetY = 0
     ) {
@@ -1954,12 +2084,17 @@ export function useDraw(
         drawVisibleEdgeGroup(targetCtx, { geom, branchEntries });
       }
       drawVisibleSummaries(targetCtx, baseWorldViewportRect);
+      drawVisibleRelations(targetCtx, renderVisibleRelationGeoms);
 
       for (const id of renderVisibleIds) {
         if (editingNodeId?.value === id) continue;
+        if (hiddenDraggedNodeIds?.has(id)) continue;
         const rect = nodeWorldBoxes.get(id);
         if (!rect) continue;
-        const isDraggedGhost = currentDragState?.isDragging && currentDragState.draggedSubtreeNodeIds.has(id);
+        const isDraggedGhost =
+          currentDragState?.isDragging &&
+          (currentDragState.draggedSubtreeNodeIds.has(id) ||
+            (currentDragState.dragKind === 'free-root' && currentDragState.primaryDragRootId === id));
         drawVisibleNode(targetCtx, id, rect, { isDraggedGhost });
       }
       targetCtx.restore();
@@ -1986,13 +2121,14 @@ export function useDraw(
       targetCtx.setTransform(1, 0, 0, 1, 0, 0);
     }
 
-    const baseSignature = [
+      const baseSignature = [
       c.width,
       c.height,
       cam.scale.toFixed(4),
       cam.tx.toFixed(2),
       cam.ty.toFixed(2),
       editingNodeId?.value ?? '',
+      String(relationCacheVersion?.value ?? 0),
       roughStyle.themeSignature,
     ].join('|');
     const baseCanvas = ensureBaseCanvas(basePaddingX, basePaddingY);
@@ -2029,6 +2165,7 @@ export function useDraw(
           ? collectVisibleScene(baseWorldViewportRect, baseQueryViewportRect)
           : {
             visibleEdgeGroups,
+            visibleRelationGeoms,
             visibleIds,
           };
         if (roughRequested) {
@@ -2038,6 +2175,7 @@ export function useDraw(
           targetCtx,
           baseScene.visibleEdgeGroups,
           baseScene.visibleIds,
+          baseScene.visibleRelationGeoms,
           basePaddingX,
           basePaddingY
         );
@@ -2099,6 +2237,63 @@ export function useDraw(
         ctx.fillStyle = roughStyle.colors.background;
         ctx.fillRect(clearRect.x1, clearRect.y1, rectWidth(clearRect), rectHeight(clearRect));
         drawVisibleEdgeGroup(ctx, edgeGroup, { translateX: activePreviewDeltaX, collectStats: false });
+      }
+    }
+    for (const relationGeom of visibleRelationGeoms) {
+      const isSelected = !!allRelationsSelected?.value || selectedRelationId?.value === relationGeom.relationId;
+      const isHover = hoverRelationId?.value === relationGeom.relationId;
+      if (!isSelected && !isHover) continue;
+      const strokeStyle = isSelected ? roughStyle.colors.selection.stroke : roughStyle.colors.hover.stroke;
+      drawRelationPath(ctx, relationGeom, {
+        strokeStyle,
+        lineWidth: isSelected ? 3 : 2.4,
+        dashed: true,
+        arrow: true,
+      });
+      if (isSelected) drawRelationHandles(ctx, relationGeom, strokeStyle);
+    }
+    if (relationDraft?.value?.active && relationDraft.value.fromNodeId) {
+      const draftPreview = buildRelationDraftPreview(
+        nodeWorldBoxes,
+        nodes,
+        relationDraft.value.fromNodeId,
+        {
+          x: (relationDraft.value.cursorScreenX - cam.tx) / Math.max(cam.scale, 0.0001),
+          y: (relationDraft.value.cursorScreenY - cam.ty) / Math.max(cam.scale, 0.0001),
+        },
+        relationDraft.value.hoverTargetNodeId
+      );
+      if (draftPreview) {
+        ctx.save();
+        ctx.strokeStyle = relationDraft.value.hoverTargetNodeId
+          ? roughStyle.colors.selection.stroke
+          : multiplyColorAlpha(roughStyle.colors.selection.stroke, 0.7);
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.setLineDash([7, 5]);
+        ctx.stroke(draftPreview.path);
+        if (draftPreview.samplePoints.length >= 2) {
+          const endPoint = draftPreview.endPoint;
+          const previousPoint = draftPreview.samplePoints[draftPreview.samplePoints.length - 2];
+          const angle = Math.atan2(endPoint.y - previousPoint.y, endPoint.x - previousPoint.x);
+          const arrowLength = 10;
+          const arrowSpread = Math.PI / 7;
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.beginPath();
+          ctx.moveTo(endPoint.x, endPoint.y);
+          ctx.lineTo(
+            endPoint.x - Math.cos(angle - arrowSpread) * arrowLength,
+            endPoint.y - Math.sin(angle - arrowSpread) * arrowLength
+          );
+          ctx.lineTo(
+            endPoint.x - Math.cos(angle + arrowSpread) * arrowLength,
+            endPoint.y - Math.sin(angle + arrowSpread) * arrowLength
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
       }
     }
     const overlayNodeIds = new Set<string>();
@@ -2347,6 +2542,43 @@ function drawDragOverlay(
   nodes: Record<string, any>
 ) {
   if (!dragState?.isDragging) return;
+  if (dragState.dragKind === 'free-root') {
+    ctx.save();
+    const dpr = getCanvasDevicePixelRatio(ctx.canvas);
+    applyScreenTransform(ctx, dpr);
+    ctx.font = NODE_FONT;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#111827';
+    const layouts =
+      dragState.dragRootTextLayouts.length
+        ? dragState.dragRootTextLayouts
+        : (dragState.dragRootTexts.length
+            ? dragState.dragRootTexts.map((text, index) => ({
+                nodeId: dragState.dragRoots[index] ?? dragState.primaryDragRootId ?? '',
+                text,
+                lines: text.split('\n'),
+                lineHeightPx: 18,
+              }))
+            : [
+                {
+                  nodeId: dragState.primaryDragRootId ?? '',
+                  text: getNodePlainText(nodes[dragState.primaryDragRootId ?? '']),
+                  lines: [getNodePlainText(nodes[dragState.primaryDragRootId ?? ''])],
+                  lineHeightPx: 18,
+                },
+              ]);
+    const startX = dragState.cursorScreenX + DRAG_OVERLAY_OFFSET_X_PX;
+    let currentY = dragState.cursorScreenY + DRAG_OVERLAY_OFFSET_Y_PX;
+    for (const layout of layouts) {
+      for (const line of layout.lines) {
+        ctx.fillText(line, startX, snapToDevicePixel(currentY, dpr), DRAG_OVERLAY_MAX_WIDTH_PX);
+        currentY += layout.lineHeightPx;
+      }
+      currentY += DRAG_OVERLAY_ROOT_GAP_PX;
+    }
+    ctx.restore();
+    return;
+  }
 
   const canUseLastValidTarget =
     !dragState.dropTarget &&

@@ -564,6 +564,7 @@ import { createBatchDeleteSubtreesCommand } from '@/mind/core/commands/BatchDele
 import { createBatchPasteSubtreesCommand } from '@/mind/core/commands/BatchPasteSubtreesCommand';
 import { createCutSubtreeCommand } from '@/mind/core/commands/CutSubtreeCommand';
 import { createDeleteSubtreeCommand } from '@/mind/core/commands/DeleteSubtreeCommand';
+import { createMoveFreeRootCommand } from '@/mind/core/commands/MoveFreeRootCommand';
 import { createMoveSubtreesCommand } from '@/mind/core/commands/MoveSubtreesCommand';
 import { createPasteSubtreeCommand } from '@/mind/core/commands/PasteSubtreeCommand';
 import { createSetNodeImageCommand } from '@/mind/core/commands/SetNodeImageCommand';
@@ -607,11 +608,13 @@ import {
 } from '@/mind/core/lexicalState';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, type SelectionTargetInfo } from '@/mind/core/selection/normalizeSelection';
 import { getNodeSummaries, getRegularChildIds, getStructuralChildIds, hasSummaryRange, isSummaryNode, setNodeSummaries, type MindSummaryMeta } from '@/mind/core/summaryMeta';
-import { ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
+import { getMindPlatformDefaultFontFamily } from '@/mind/fontRegistry.js';
+import { DEFAULT_ROOT_H_GAP, DEFAULT_ROOT_V_GAP, ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
 import { useDraw } from './actions/useDraw';
 import { useEdges } from './actions/useEdges';
+import { useRelations } from './actions/useRelations';
 import { useInteraction } from './actions/useInteraction';
 import { useMarquee } from './actions/useMarquee';
 import { usePersistence } from './actions/usePersistence';
@@ -736,6 +739,7 @@ const SEARCH_EXPORT_FORMAT_OPTIONS: Array<{
   { value: 'amind', label: 'AMind' },
 ];
 const SUMMARY_DEFAULT_TEXT = '概要';
+const FREE_TOPIC_DEFAULT_TEXT = '自由主题';
 
 const props = defineProps<{
   doc?: any;
@@ -748,7 +752,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'filePathChange', value: string | null): void;
   (event: 'saveStateChange', value: { isDirty: boolean; isSaving: boolean; displayName: string }): void;
-  (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number; canCreateSummary: boolean }): void;
+  (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number; canCreateSummary: boolean; canCreateRelation: boolean }): void;
   (event: 'toggleSearchPanel'): void;
   (event: 'toggleFormatPanel'): void;
 }>();
@@ -1685,6 +1689,7 @@ const worldBoxes = ref<WorldBoxes>(new Map());
 const descendantCounts = ref<Map<string, number>>(new Map());
 const parentIndexByNodeId = ref<Map<string, { parentId: string; index: number }>>(new Map());
 const hoverNodeId = ref<string | null>(null);
+const hoverRelationId = ref<string | null>(null);
 const collapseTagHoverNodeId = ref<string | null>(null);
 const collapseTagStickyNodeId = ref<string | null>(null);
 const editingNodeId = ref<string | null>(null);
@@ -1731,6 +1736,7 @@ const pendingDirectTypeSeed = ref<null | {
 const pendingDirectTypeCaptureComposing = ref(false);
 let pendingDirectTypeFlushTimeoutId: number | null = null;
 let pendingDirectTypeFocusRetryRafId: number | null = null;
+const selectedRelationId = ref<string | null>(null);
 const primarySelectedNodeId = ref<string | null>(null);
 const selectionAnchorNodeId = ref<string | null>(null);
 const selectionAnchorByGroup = ref<Record<string, string>>({});
@@ -1751,16 +1757,33 @@ const editorDebugState = ref({
   filteredOutDescendantsCount: 0,
   rebuildCountInLastCommand: 0,
 });
+let lastCopiedNodeClipboardPlainText: string | null = null;
 const imageInteraction = ref<ImageInteractionState | null>(null);
 const cameraInteractionPreview = ref<{ kind: 'zoom' } | null>(null);
+let lastGlobalPointerClient: { x: number; y: number } | null = null;
+const relationDraft = ref({
+  active: false,
+  stage: 'source' as 'source' | 'target',
+  fromNodeId: null as string | null,
+  hoverTargetNodeId: null as string | null,
+  cursorScreenX: 0,
+  cursorScreenY: 0,
+});
+const allRelationsSelected = ref(false);
+const allImagesSelected = ref(false);
 const dragState = ref<DragDropState>({
   isDragging: false,
+  dragKind: 'subtree',
   dragRoots: [],
   dragRootTexts: [],
   dragRootTextLayouts: [],
   primaryDragRootId: null,
   rootId: null,
   draggedSubtreeNodeIds: new Set(),
+  previewWorldOffsetX: 0,
+  previewWorldOffsetY: 0,
+  freeRootBasePosX: null,
+  freeRootBasePosY: null,
   cursorScreenX: 0,
   cursorScreenY: 0,
   dropTarget: null,
@@ -1875,6 +1898,7 @@ const history = createHistory((nextSnapshot) => {
 
 // layout + draw
 const { edgeStats, rebuildEdgeCache, queryVisibleParentEdgeGeoms } = useEdges();
+const { relationCacheVersion, rebuildRelationCache, queryVisibleRelationGeoms, hitTestRelation } = useRelations();
 const { draw } = useDraw(
   props,
   canvasRef,
@@ -1884,10 +1908,16 @@ const { draw } = useDraw(
   collapseTagActiveNodeIds,
   collapseTagHoverNodeId,
   queryVisibleParentEdgeGeoms,
+  queryVisibleRelationGeoms,
   edgeStats,
+  relationCacheVersion,
   spatialIndex,
   hoverNodeId,
   displaySelectedIds,
+  selectedRelationId,
+  allRelationsSelected,
+  hoverRelationId,
+  relationDraft,
   marqueeRectScreen,
   marqueeWorldRect,
   dragState,
@@ -2956,10 +2986,12 @@ function emitSaveState(filePath: string | null | undefined = props.filePath ?? n
 }
 
 function emitNodeCountState() {
+  const primarySelectedId = getPrimarySelectedId();
   emit('nodeCountChange', {
     totalNodes: getMindPerfNodeCount(),
     selectedNodes: getVisibleSelectedNodeCount(),
     canCreateSummary: resolveSummaryCreationCandidates().length > 0,
+    canCreateRelation: !relationDraft.value.active,
   });
 }
 
@@ -3092,8 +3124,19 @@ const interactionState = ref<InteractionState>(createIdleInteractionState());
 
 function getMindNodes() {
   if (!props.doc) return null;
-  ensureMindRoots(props.doc);
   return getActiveMind(props.doc)?.nodes as Record<string, any> | null;
+}
+
+function getMindRoots() {
+  if (!props.doc) return [] as any[];
+  const roots = getActiveMind(props.doc)?.roots;
+  return Array.isArray(roots) ? roots : [];
+}
+
+function getMindRelations() {
+  if (!props.doc) return [] as any[];
+  const relations = getActiveMind(props.doc)?.relations;
+  return Array.isArray(relations) ? relations : [];
 }
 
 function createNodeId() {
@@ -3104,6 +3147,19 @@ function createNodeId() {
 
 function getRootNodeId() {
   return getActiveMind(props.doc)?.roots?.[0]?.rootId ?? null;
+}
+
+function getMindRootEntryByNodeId(nodeId: string | null | undefined) {
+  if (!nodeId) return null;
+  return getMindRoots().find((root: any) => root?.rootId === nodeId) ?? null;
+}
+
+function isFreeRootNode(nodeId: string | null | undefined) {
+  return getMindRootEntryByNodeId(nodeId)?.rootKind === 'free';
+}
+
+function isMainRootNode(nodeId: string | null | undefined) {
+  return !!nodeId && nodeId === getRootNodeId();
 }
 
 function getNodeById(nodeId: string | null | undefined) {
@@ -3252,6 +3308,90 @@ function getPrimarySelectedId() {
     return primarySelectedNodeId.value;
   }
   return selectedIds.value.values().next().value ?? null;
+}
+
+function setSelectedRelation(
+  relationId: string | null,
+  options?: { suppressRender?: boolean; suppressFocus?: boolean }
+) {
+  const changed = selectedRelationId.value !== relationId || allRelationsSelected.value || allImagesSelected.value;
+  selectedRelationId.value = relationId;
+  allRelationsSelected.value = false;
+  allImagesSelected.value = false;
+  if (relationId) {
+    const releaseSelectionWatchSuppression = holdSelectionWatchSuppression();
+    selectedIds.value = new Set();
+    primarySelectedNodeId.value = null;
+    selectionAnchorNodeId.value = null;
+    selectionAnchorByGroup.value = {};
+    releaseSelectionWatchSuppression();
+  }
+  if (!options?.suppressFocus) focusViewportWithoutScroll();
+  scheduleNodeCountStateEmit();
+  if (changed && !options?.suppressRender) requestRender();
+}
+
+function setAllRelationsSelected(options?: { suppressRender?: boolean; suppressFocus?: boolean }) {
+  const hasRelations = getMindRelations().length > 0;
+  const changed = !allRelationsSelected.value || selectedRelationId.value != null || allImagesSelected.value;
+  selectedRelationId.value = null;
+  allRelationsSelected.value = hasRelations;
+  allImagesSelected.value = false;
+  if (hasRelations) {
+    const releaseSelectionWatchSuppression = holdSelectionWatchSuppression();
+    selectedIds.value = new Set();
+    primarySelectedNodeId.value = null;
+    selectionAnchorNodeId.value = null;
+    selectionAnchorByGroup.value = {};
+    releaseSelectionWatchSuppression();
+  }
+  if (!options?.suppressFocus) focusViewportWithoutScroll();
+  scheduleNodeCountStateEmit();
+  if (changed && !options?.suppressRender) requestRender();
+}
+
+function clearRelationDraft(options?: { suppressRender?: boolean }) {
+  const changed =
+    relationDraft.value.active ||
+    relationDraft.value.stage !== 'source' ||
+    relationDraft.value.fromNodeId != null ||
+    relationDraft.value.hoverTargetNodeId != null;
+  relationDraft.value = {
+    active: false,
+    stage: 'source',
+    fromNodeId: null,
+    hoverTargetNodeId: null,
+    cursorScreenX: 0,
+    cursorScreenY: 0,
+  };
+  scheduleNodeCountStateEmit();
+  if (changed && !options?.suppressRender) requestRender();
+}
+
+function createRelationPairKey(fromNodeId: string, toNodeId: string) {
+  return [fromNodeId, toNodeId].sort().join('::');
+}
+
+function findRelationById(relationId: string | null | undefined) {
+  if (!relationId) return null;
+  return getMindRelations().find((relation: any) => relation?.id === relationId) ?? null;
+}
+
+function canUseNodeForRelation(nodeId: string | null | undefined) {
+  if (!nodeId) return false;
+  return !!getNodeById(nodeId);
+}
+
+function canStartRelationFromNode(nodeId: string | null | undefined) {
+  return !!nodeId && canUseNodeForRelation(nodeId) && !editingSession.value;
+}
+
+function getExistingRelationBetween(nodeAId: string, nodeBId: string) {
+  const pairKey = createRelationPairKey(nodeAId, nodeBId);
+  return getMindRelations().find((relation: any) => {
+    if (!relation?.fromNodeId || !relation?.toNodeId) return false;
+    return createRelationPairKey(relation.fromNodeId, relation.toNodeId) === pairKey;
+  }) ?? null;
 }
 
 function setSingleSelected(
@@ -3409,7 +3549,11 @@ function setSelection(
   const selectionChanged =
     prevSelection.size !== nextIdsSet.size || nextIds.some((nodeId) => !prevSelection.has(nodeId));
   const primaryChanged = primarySelectedNodeId.value !== nextPrimaryId;
-
+  const relationSelectionChanged = selectedRelationId.value != null || allRelationsSelected.value;
+  const imageSelectionChanged = allImagesSelected.value;
+  if (selectedRelationId.value) selectedRelationId.value = null;
+  if (allRelationsSelected.value) allRelationsSelected.value = false;
+  if (allImagesSelected.value) allImagesSelected.value = false;
   selectedIds.value = nextIdsSet;
   primarySelectedNodeId.value = nextPrimaryId;
   if (!options?.suppressFocus) focusViewportWithoutScroll();
@@ -3418,8 +3562,8 @@ function setSelection(
     selectionAnchorNodeId.value = null;
     selectionAnchorByGroup.value = {};
     releaseSelectionWatchSuppression();
-    if ((selectionChanged || primaryChanged) && !options?.suppressRender) requestRender();
-    return;
+      if ((selectionChanged || primaryChanged || relationSelectionChanged || imageSelectionChanged) && !options?.suppressRender) requestRender();
+      return;
   }
   const preservedAnchorId =
     options?.preserveAnchor && selectionAnchorNodeId.value && nextIdsSet.has(selectionAnchorNodeId.value)
@@ -3438,7 +3582,7 @@ function setSelection(
     }
   }
   releaseSelectionWatchSuppression();
-  if ((selectionChanged || primaryChanged) && !options?.suppressRender) requestRender();
+  if ((selectionChanged || primaryChanged || relationSelectionChanged || imageSelectionChanged) && !options?.suppressRender) requestRender();
   if (nextIds.length === 1 && nextPrimaryId) {
     dumpCanvasTextDiagnostics(nextPrimaryId, 'set-selection');
   }
@@ -3503,7 +3647,12 @@ function selectAllNodesInCurrentSheet() {
   const nodes = getMindNodes();
   const rootId = getRootNodeId();
   if (!nodes || !rootId || !nodes[rootId]) return;
-  const allNodeIds = collectSubtreeNodeIds(nodes, rootId);
+  const selectedNodeIds = new Set<string>(collectSubtreeNodeIds(nodes, rootId));
+  getMindRoots().forEach((root: any) => {
+    if (root?.rootKind !== 'free' || typeof root.rootId !== 'string' || !nodes[root.rootId]) return;
+    collectSubtreeNodeIds(nodes, root.rootId).forEach((nodeId) => selectedNodeIds.add(nodeId));
+  });
+  const allNodeIds = Array.from(selectedNodeIds);
   if (!allNodeIds.length) return;
   const currentPrimary = getPrimarySelectedId();
   const nextPrimaryId = currentPrimary && allNodeIds.includes(currentPrimary) ? currentPrimary : allNodeIds[allNodeIds.length - 1];
@@ -3565,6 +3714,60 @@ function selectAllLeafNodesInCurrentSheet() {
   const currentPrimary = getPrimarySelectedId();
   const nextPrimaryId = currentPrimary && leafNodeIds.includes(currentPrimary) ? currentPrimary : leafNodeIds[leafNodeIds.length - 1];
   setBulkSelectedNodeIds(leafNodeIds, nextPrimaryId);
+}
+
+function selectAllFreeTopicNodesInCurrentSheet() {
+  const nodes = getMindNodes();
+  if (!nodes) return;
+  const selectedNodeIds = new Set<string>();
+  getMindRoots().forEach((root: any) => {
+    if (root?.rootKind !== 'free' || typeof root.rootId !== 'string' || !nodes[root.rootId]) return;
+    collectSubtreeNodeIds(nodes, root.rootId).forEach((nodeId) => selectedNodeIds.add(nodeId));
+  });
+  const nodeIds = Array.from(selectedNodeIds);
+  if (!nodeIds.length) return;
+  setBulkSelectedNodeIds(nodeIds, nodeIds[nodeIds.length - 1] ?? null);
+}
+
+function collectAllSummaryNodeIdsInCurrentSheet() {
+  const nodes = getMindNodes();
+  if (!nodes) return [];
+  return Object.keys(nodes).filter((nodeId) => isSummaryNode(nodes[nodeId]));
+}
+
+function selectAllSummaryNodesInCurrentSheet() {
+  const nodes = getMindNodes();
+  if (!nodes) return;
+  const selectedNodeIds = new Set<string>();
+  collectAllSummaryNodeIdsInCurrentSheet().forEach((summaryNodeId) => {
+    collectSubtreeNodeIds(nodes, summaryNodeId).forEach((nodeId) => selectedNodeIds.add(nodeId));
+  });
+  const nodeIds = Array.from(selectedNodeIds);
+  if (!nodeIds.length) return;
+  setBulkSelectedNodeIds(nodeIds, nodeIds[nodeIds.length - 1] ?? null);
+}
+
+function selectAllImageNodesInCurrentSheet() {
+  const nodes = getMindNodes();
+  if (!nodes) return;
+  const imageNodeIds = Object.keys(nodes).filter((nodeId) => !!getNodeImage(nodes[nodeId]));
+  if (!imageNodeIds.length) return;
+  const primaryId = imageNodeIds[imageNodeIds.length - 1] ?? null;
+  setBulkSelectedNodeIds(imageNodeIds, primaryId);
+  allImagesSelected.value = true;
+  if (primaryId) {
+    upsertImageInteraction({
+      nodeId: primaryId,
+      hovered: false,
+      selected: true,
+      resizing: false,
+      handle: null,
+      pointerId: null,
+      startPointer: { xScreen: 0, yScreen: 0 },
+      startSize: { w: 0, h: 0 },
+      previewSize: null,
+    });
+  }
 }
 
 function getKeyboardNavigationBaseNodeId() {
@@ -3827,6 +4030,49 @@ function resolveContextMenuTargetNodeIds(clickedNodeId: string) {
     collapseToRootIfSelected: true,
   });
   return normalized.finalTargets.map((target) => target.nodeId);
+}
+
+function getMainRootContextTargetNodeIds() {
+  const rootNodeId = getRootNodeId();
+  return rootNodeId ? [rootNodeId] : [];
+}
+
+function buildBlankSelectionMenuItem() {
+  return {
+    id: 'select',
+    label: '选择',
+    submenu: [
+      { id: 'select-all-free-topics', label: '所有自由主题' },
+      { id: 'select-all-relations', label: '所有连线' },
+      { id: 'select-all-summaries', label: '所有概要' },
+      { id: 'select-all-images', label: '所有图片' },
+      { id: 'select-all-leaf-nodes', label: '所有叶子节点' },
+    ],
+  };
+}
+
+function applyBlankSelectionMenuAction(action: string) {
+  if (action === 'select-all-free-topics') {
+    selectAllFreeTopicNodesInCurrentSheet();
+    return true;
+  }
+  if (action === 'select-all-relations') {
+    setAllRelationsSelected();
+    return true;
+  }
+  if (action === 'select-all-summaries') {
+    selectAllSummaryNodesInCurrentSheet();
+    return true;
+  }
+  if (action === 'select-all-images') {
+    selectAllImageNodesInCurrentSheet();
+    return true;
+  }
+  if (action === 'select-all-leaf-nodes') {
+    selectAllLeafNodesInCurrentSheet();
+    return true;
+  }
+  return false;
 }
 
 async function setCollapsedStateForSubtrees(targetNodeIds: string[], collapsed: boolean) {
@@ -4585,6 +4831,7 @@ function finishImageResize(commit: boolean, reason: string) {
 }
 
 function getSelectedImageNodeId() {
+  if (allImagesSelected.value) return null;
   const current = imageInteraction.value;
   if (!current?.selected || current.resizing) return null;
   const node = getNodeById(current.nodeId);
@@ -4592,7 +4839,15 @@ function getSelectedImageNodeId() {
   return current.nodeId;
 }
 
-function createDeleteSelectedImageCommand(nodeId: string): Command | null {
+function getAllSelectedImageNodeIds() {
+  if (!allImagesSelected.value) return [];
+  return getSelectedNodeIds().filter((nodeId) => !!getNodeImage(getNodeById(nodeId)));
+}
+
+function createDeleteSelectedImageCommand(
+  nodeId: string,
+  selectionSnapshot?: { previousSelection: SelectionSnapshot; nextSelection: SelectionSnapshot }
+): Command | null {
   const node = getNodeById(nodeId);
   const beforeImage = cloneNodeImage(getNodeImage(node));
   if (!node || !beforeImage) return null;
@@ -4606,13 +4861,55 @@ function createDeleteSelectedImageCommand(nodeId: string): Command | null {
       nodeId,
       beforeImage,
       afterImage: null,
-      previousSelection: snapshotSelection(),
-      nextSelection: { ids: [nodeId], primaryId: nodeId },
+      previousSelection: selectionSnapshot?.previousSelection ?? snapshotSelection(),
+      nextSelection: selectionSnapshot?.nextSelection ?? { ids: [nodeId], primaryId: nodeId },
     }
   );
 }
 
+function createDeleteSelectedImagesCommand(nodeIds: string[]): Command | null {
+  if (!nodeIds.length) return null;
+  const previousSelection = snapshotSelection();
+  const nextSelection = previousSelection;
+  const command = createCommandSequence(
+    'DeleteSelectedImagesCommand',
+    nodeIds.map((nodeId) =>
+      createDeleteSelectedImageCommand(nodeId, {
+        previousSelection,
+        nextSelection,
+      })
+    )
+  );
+  if (!command) return null;
+  const hasImages = nodeIds.length > 0;
+  return {
+    name: 'DeleteSelectedImagesCommand',
+    do: () => {
+      command.do();
+      clearImageInteraction('delete-selected-images');
+      allImagesSelected.value = false;
+    },
+    undo: () => {
+      command.undo();
+      allImagesSelected.value = hasImages;
+    },
+    redo: () => {
+      command.redo();
+      clearImageInteraction('redo-delete-selected-images');
+      allImagesSelected.value = false;
+    },
+  };
+}
+
 function deleteSelectedImage() {
+  const selectedImageNodeIds = getAllSelectedImageNodeIds();
+  if (selectedImageNodeIds.length) {
+    const command = createDeleteSelectedImagesCommand(selectedImageNodeIds);
+    if (!command) return false;
+    stopEditingSession();
+    executeCommand(command);
+    return true;
+  }
   const nodeId = getSelectedImageNodeId();
   if (!nodeId) return false;
   const command = createDeleteSelectedImageCommand(nodeId);
@@ -6005,11 +6302,492 @@ function createSummaryNodeRecord(nodeId: string, parentId: string, insertIndex: 
   return node;
 }
 
-function getDocumentTitleForSave() {
-  const rootId = getRootNodeId();
-  const rootNode = getNodeById(rootId);
+function createFreeTopicNodeRecord(nodeId: string) {
+  const node = createNodeRecord(nodeId, FREE_TOPIC_DEFAULT_TEXT, 'root');
+  node.style = {
+    shape: {
+      ...(node.style?.shape ?? {}),
+      fill: '#D9D9D9',
+      stroke: 'rgba(0, 0, 0, 0)',
+      fillPreset: 'solid',
+      borderPreset: 'none',
+    },
+    text: {
+      ...(node.style?.text ?? {}),
+      fontFamily: getMindPlatformDefaultFontFamily(
+        typeof window !== 'undefined' ? window.electronAPI?.platform : undefined
+      ),
+      fontSizePx: 24,
+      fontWeight: 400,
+      fontStyle: 'normal',
+      color: '#111111',
+    },
+  };
+  return node;
+}
+
+function createFreeRootCommandAt(position: { x: number; y: number }) {
+  const activeMind = getActiveMind(props.doc);
+  const nodes = getMindNodes();
+  if (!activeMind || !nodes) return { command: null, newNodeId: null as string | null };
+  const previousSelection = snapshotSelection();
+  const newNodeId = createNodeId();
+  const newRoot = {
+    rootId: newNodeId,
+    pos: { x: position.x, y: position.y },
+    layout: { direction: 'right' as const, hGap: DEFAULT_ROOT_H_GAP, vGap: DEFAULT_ROOT_V_GAP },
+    rootKind: 'free' as const,
+  };
+
+  const applyRootState = (selection: SelectionSnapshot, reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    const currentNodes = getMindNodes();
+    if (!currentMind || !currentNodes) return;
+    currentMind.roots = Array.isArray(currentMind.roots) ? currentMind.roots : [];
+    if (!currentNodes[newNodeId]) {
+      currentNodes[newNodeId] = createFreeTopicNodeRecord(newNodeId);
+    }
+    if (!currentMind.roots.some((root: any) => root?.rootId === newNodeId)) {
+      currentMind.roots.push({
+        ...newRoot,
+        pos: { ...newRoot.pos },
+        layout: { ...newRoot.layout },
+      });
+    }
+    setSelection(selection.ids, selection.primaryId, { suppressRender: true });
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeId: newNodeId,
+      addedNodeInfo: { nodeId: newNodeId, parentId: null },
+      reuseDescendantCounts: true,
+      reuseParentIndex: true,
+      trustExistingNodeMeasureCache: true,
+      useLayoutChangedNodeIds: true,
+    });
+  };
+
+  const restorePreviousSelection = () => {
+    const currentNodes = getMindNodes();
+    if (!currentNodes) return;
+    const nextIds = previousSelection.ids.filter((nodeId) => !!currentNodes[nodeId]);
+    const nextPrimaryId = resolveFallbackSelection(previousSelection.primaryId);
+    setSelection(nextIds.length ? nextIds : (nextPrimaryId ? [nextPrimaryId] : []), nextPrimaryId, {
+      suppressRender: true,
+      suppressFocus: true,
+    });
+  };
+
+  const command: Command = {
+    name: 'CreateFreeRootCommand',
+    do: () => {
+      applyRootState({ ids: [newNodeId], primaryId: newNodeId }, 'history:create-free-root');
+    },
+    undo: () => {
+      const currentMind = getActiveMind(props.doc);
+      const currentNodes = getMindNodes();
+      if (!currentMind || !currentNodes) return;
+      currentMind.roots = Array.isArray(currentMind.roots)
+        ? currentMind.roots.filter((root: any) => root?.rootId !== newNodeId)
+        : [];
+      delete currentNodes[newNodeId];
+      editingNodeId.value = null;
+      restorePreviousSelection();
+      void applyDocumentMutation('history:undo-create-free-root', {
+        ensureVisibleNodeId: resolveFallbackSelection(previousSelection.primaryId),
+        removedNodeIds: [newNodeId],
+        reuseDescendantCounts: true,
+        reuseParentIndex: true,
+        trustExistingNodeMeasureCache: true,
+        useLayoutChangedNodeIds: true,
+      });
+    },
+    redo: () => {
+      applyRootState({ ids: [newNodeId], primaryId: newNodeId }, 'history:redo-create-free-root');
+    },
+  };
+
+  return { command, newNodeId };
+}
+
+function createDeleteFreeRootCommand(targetNodeId: string): Command | null {
+  const activeMind = getActiveMind(props.doc);
+  const nodes = getMindNodes();
+  if (!activeMind || !nodes || !isFreeRootNode(targetNodeId)) return null;
+  const deletedSnapshot = createSubtreeSnapshot(nodes, targetNodeId);
+  if (!deletedSnapshot) return null;
+  const previousSelection = snapshotSelection();
+  const previousRootIndex = getMindRoots().findIndex((root: any) => root?.rootId === targetNodeId);
+  if (previousRootIndex < 0) return null;
+  const previousRoot = getMindRoots()[previousRootIndex];
+  const deletedNodeIdSet = new Set(deletedSnapshot.nodeIds);
+  const survivingSelectedIds = previousSelection.ids.filter((nodeId) => !deletedNodeIdSet.has(nodeId) && !!nodes[nodeId]);
+  const nextSelectionId =
+    (previousSelection.primaryId && !deletedNodeIdSet.has(previousSelection.primaryId) ? previousSelection.primaryId : null) ??
+    survivingSelectedIds[survivingSelectedIds.length - 1] ??
+    getRootNodeId();
+
+  const restorePreviousSelection = () => {
+    const currentNodes = getMindNodes();
+    if (!currentNodes) return;
+    const nextIds = previousSelection.ids.filter((nodeId) => !!currentNodes[nodeId]);
+    const nextPrimaryId = resolveFallbackSelection(previousSelection.primaryId);
+    setSelection(nextIds.length ? nextIds : (nextPrimaryId ? [nextPrimaryId] : []), nextPrimaryId, {
+      suppressRender: true,
+      suppressFocus: true,
+    });
+  };
+
+  return {
+    name: 'DeleteFreeRootCommand',
+    do: () => {
+      const currentMind = getActiveMind(props.doc);
+      const currentNodes = getMindNodes();
+      if (!currentMind || !currentNodes) return;
+      currentMind.roots = Array.isArray(currentMind.roots)
+        ? currentMind.roots.filter((root: any) => root?.rootId !== targetNodeId)
+        : [];
+      removeSubtreeSnapshot(currentNodes, deletedSnapshot);
+      setLastDeletedNodeId?.(targetNodeId);
+      setSingleSelected(nextSelectionId, { suppressRender: true });
+      void applyDocumentMutation('history:delete-free-root', {
+        ensureVisibleNodeId: nextSelectionId,
+        removedNodeIds: deletedSnapshot.nodeIds,
+        reuseDescendantCounts: true,
+        reuseParentIndex: true,
+        trustExistingNodeMeasureCache: true,
+        useLayoutChangedNodeIds: true,
+      });
+    },
+    undo: () => {
+      const currentMind = getActiveMind(props.doc);
+      const currentNodes = getMindNodes();
+      if (!currentMind || !currentNodes) return;
+      currentMind.roots = Array.isArray(currentMind.roots) ? currentMind.roots : [];
+      if (!currentMind.roots.some((root: any) => root?.rootId === previousRoot.rootId)) {
+        currentMind.roots.splice(previousRootIndex, 0, JSON.parse(JSON.stringify(previousRoot)));
+      }
+      insertSubtreeSnapshot(currentNodes, deletedSnapshot);
+      restorePreviousSelection();
+      void applyDocumentMutation('history:undo-delete-free-root', {
+        ensureVisibleNodeId: targetNodeId,
+        reuseDescendantCounts: true,
+        reuseParentIndex: true,
+        trustExistingNodeMeasureCache: true,
+        useLayoutChangedNodeIds: true,
+      });
+    },
+    redo: () => {
+      const currentMind = getActiveMind(props.doc);
+      const currentNodes = getMindNodes();
+      if (!currentMind || !currentNodes) return;
+      currentMind.roots = Array.isArray(currentMind.roots)
+        ? currentMind.roots.filter((root: any) => root?.rootId !== targetNodeId)
+        : [];
+      removeSubtreeSnapshot(currentNodes, deletedSnapshot);
+      setSingleSelected(nextSelectionId, { suppressRender: true });
+      void applyDocumentMutation('history:redo-delete-free-root', {
+        ensureVisibleNodeId: nextSelectionId,
+        removedNodeIds: deletedSnapshot.nodeIds,
+        reuseDescendantCounts: true,
+        reuseParentIndex: true,
+        trustExistingNodeMeasureCache: true,
+        useLayoutChangedNodeIds: true,
+      });
+    },
+  };
+}
+
+function createCommandSequence(name: string, commands: Array<Command | null | undefined>): Command | null {
+  const validCommands = commands.filter((command): command is Command => !!command);
+  if (!validCommands.length) return null;
+  if (validCommands.length === 1) return validCommands[0];
+  return {
+    name,
+    do: () => {
+      validCommands.forEach((command) => command.do());
+    },
+    undo: () => {
+      [...validCommands].reverse().forEach((command) => command.undo());
+    },
+    redo: () => {
+      validCommands.forEach((command) => (command.redo ?? command.do)());
+    },
+  };
+}
+
+function createCreateRelationCommand(fromNodeId: string, toNodeId: string): Command | null {
+  if (!canUseNodeForRelation(fromNodeId) || !canUseNodeForRelation(toNodeId) || fromNodeId === toNodeId) return null;
+  if (getExistingRelationBetween(fromNodeId, toNodeId)) return null;
+  const activeMind = getActiveMind(props.doc);
+  if (!activeMind) return null;
+  const relationId = createNodeId();
+  const relationRecord = {
+    id: relationId,
+    fromNodeId,
+    toNodeId,
+    style: null,
+    label: null,
+  };
+  const applyInsert = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations) ? currentMind.relations : [];
+    if (!currentMind.relations.some((relation: any) => relation?.id === relationId)) {
+      currentMind.relations.push(JSON.parse(JSON.stringify(relationRecord)));
+    }
+    setSelectedRelation(relationId, { suppressRender: true });
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: [fromNodeId, toNodeId],
+      markDirty: true,
+    });
+  };
+  const applyDelete = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations)
+      ? currentMind.relations.filter((relation: any) => relation?.id !== relationId)
+      : [];
+    if (selectedRelationId.value === relationId) {
+      setSelectedRelation(null, { suppressRender: true });
+    }
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: [fromNodeId, toNodeId],
+      markDirty: true,
+    });
+  };
+  return {
+    name: 'CreateRelationCommand',
+    do: () => applyInsert('history:create-relation'),
+    undo: () => applyDelete('history:undo-create-relation'),
+    redo: () => applyInsert('history:redo-create-relation'),
+  };
+}
+
+function createDeleteRelationCommand(relationId: string): Command | null {
+  const activeMind = getActiveMind(props.doc);
+  const relation = Array.isArray(activeMind?.relations)
+    ? activeMind.relations.find((item: any) => item?.id === relationId)
+    : null;
+  if (!relation) return null;
+  const relationSnapshot = JSON.parse(JSON.stringify(relation));
+  const affectedNodeIds = [relationSnapshot.fromNodeId, relationSnapshot.toNodeId].filter(Boolean);
+  const applyDelete = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations)
+      ? currentMind.relations.filter((item: any) => item?.id !== relationId)
+      : [];
+    if (selectedRelationId.value === relationId) {
+      setSelectedRelation(null, { suppressRender: true });
+    }
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: affectedNodeIds,
+      markDirty: true,
+    });
+  };
+  const applyRestore = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations) ? currentMind.relations : [];
+    if (!currentMind.relations.some((item: any) => item?.id === relationId)) {
+      currentMind.relations.push(JSON.parse(JSON.stringify(relationSnapshot)));
+    }
+    setSelectedRelation(relationId, { suppressRender: true });
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: affectedNodeIds,
+      markDirty: true,
+    });
+  };
+  return {
+    name: 'DeleteRelationCommand',
+    do: () => applyDelete('history:delete-relation'),
+    undo: () => applyRestore('history:undo-delete-relation'),
+    redo: () => applyDelete('history:redo-delete-relation'),
+  };
+}
+
+function createDeleteAllRelationsCommand(): Command | null {
+  const relations = getMindRelations();
+  if (!relations.length) return null;
+  const relationSnapshots = JSON.parse(JSON.stringify(relations));
+  const relationIds = new Set<string>(relationSnapshots.map((relation: any) => relation.id).filter(Boolean));
+  const affectedNodeIds = Array.from(
+    new Set(
+      relationSnapshots.flatMap((relation: any) => [relation?.fromNodeId, relation?.toNodeId]).filter(Boolean)
+    )
+  );
+  const applyDelete = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = [];
+    setSelectedRelation(null, { suppressRender: true });
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: affectedNodeIds,
+      markDirty: true,
+    });
+  };
+  const applyRestore = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations) ? currentMind.relations : [];
+    relationSnapshots.forEach((relation: any) => {
+      if (!currentMind.relations.some((item: any) => item?.id === relation.id)) {
+        currentMind.relations.push(JSON.parse(JSON.stringify(relation)));
+      }
+    });
+    allRelationsSelected.value = relationIds.size > 0;
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: affectedNodeIds,
+      markDirty: true,
+    });
+  };
+  return {
+    name: 'DeleteAllRelationsCommand',
+    do: () => applyDelete('history:delete-all-relations'),
+    undo: () => applyRestore('history:undo-delete-all-relations'),
+    redo: () => applyDelete('history:redo-delete-all-relations'),
+  };
+}
+
+function createDeleteRelationsForNodeIdsCommand(nodeIds: Iterable<string>): Command | null {
+  const deletedNodeIdSet = new Set(Array.from(nodeIds).filter(Boolean));
+  if (!deletedNodeIdSet.size) return null;
+  const relations = getMindRelations();
+  const affectedRelations = relations.filter(
+    (relation: any) =>
+      deletedNodeIdSet.has(relation?.fromNodeId) || deletedNodeIdSet.has(relation?.toNodeId)
+  );
+  if (!affectedRelations.length) return null;
+  const relationSnapshots = JSON.parse(JSON.stringify(affectedRelations));
+  const affectedRelationIds = new Set<string>(relationSnapshots.map((relation: any) => relation.id).filter(Boolean));
+  const applyDelete = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations)
+      ? currentMind.relations.filter((relation: any) => !affectedRelationIds.has(relation?.id))
+      : [];
+    if (selectedRelationId.value && affectedRelationIds.has(selectedRelationId.value)) {
+      setSelectedRelation(null, { suppressRender: true });
+    }
+    void applyDocumentMutation(reason, { markDirty: true });
+  };
+  const applyRestore = (reason: string) => {
+    const currentMind = getActiveMind(props.doc);
+    if (!currentMind) return;
+    currentMind.relations = Array.isArray(currentMind.relations) ? currentMind.relations : [];
+    relationSnapshots.forEach((relation: any) => {
+      if (!currentMind.relations.some((item: any) => item?.id === relation.id)) {
+        currentMind.relations.push(JSON.parse(JSON.stringify(relation)));
+      }
+    });
+    void applyDocumentMutation(reason, { markDirty: true });
+  };
+  return {
+    name: 'DeleteAttachedRelationsCommand',
+    do: () => applyDelete('history:delete-attached-relations'),
+    undo: () => applyRestore('history:undo-delete-attached-relations'),
+    redo: () => applyDelete('history:redo-delete-attached-relations'),
+  };
+}
+
+function createBatchDeleteFreeRootSelectionCommand(targetNodeIds: string[]): Command | null {
+  const nodes = getMindNodes();
+  const currentRoots = getMindRoots();
+  if (!nodes || !targetNodeIds.length || !currentRoots.length) return null;
+  const uniqueRootIds = Array.from(new Set(targetNodeIds)).filter((nodeId) => isFreeRootNode(nodeId));
+  if (!uniqueRootIds.length) return null;
+  const snapshots = uniqueRootIds
+    .map((rootId) => {
+      const snapshot = createSubtreeSnapshot(nodes, rootId);
+      const rootIndex = currentRoots.findIndex((root: any) => root?.rootId === rootId);
+      const rootEntry = rootIndex >= 0 ? currentRoots[rootIndex] : null;
+      if (!snapshot || !rootEntry) return null;
+      return {
+        rootId,
+        snapshot,
+        rootIndex,
+        rootEntry: JSON.parse(JSON.stringify(rootEntry)),
+      };
+    })
+    .filter((value): value is NonNullable<typeof value> => !!value)
+    .sort((a, b) => a.rootIndex - b.rootIndex);
+  if (!snapshots.length) return null;
+
+  const previousSelection = snapshotSelection();
+  const removedNodeIds = snapshots.flatMap(({ snapshot }) => snapshot.nodeIds);
+  const removedNodeIdSet = new Set(removedNodeIds);
+  const survivingSelectedIds = previousSelection.ids.filter((nodeId) => !removedNodeIdSet.has(nodeId) && !!nodes[nodeId]);
+  const nextSelectionId =
+    (previousSelection.primaryId && !removedNodeIdSet.has(previousSelection.primaryId) ? previousSelection.primaryId : null) ??
+    survivingSelectedIds[survivingSelectedIds.length - 1] ??
+    getRootNodeId();
+
+  const restorePreviousSelection = () => {
+    const currentNodes = getMindNodes();
+    if (!currentNodes) return;
+    const nextIds = previousSelection.ids.filter((nodeId) => !!currentNodes[nodeId]);
+    const nextPrimaryId = resolveFallbackSelection(previousSelection.primaryId);
+    setSelection(nextIds.length ? nextIds : (nextPrimaryId ? [nextPrimaryId] : []), nextPrimaryId, {
+      suppressRender: true,
+      suppressFocus: true,
+    });
+  };
+
+  const applyDelete = (reason: string) => {
+    const activeMind = getActiveMind(props.doc);
+    const currentNodes = getMindNodes();
+    if (!activeMind || !currentNodes) return;
+    activeMind.roots = Array.isArray(activeMind.roots)
+      ? activeMind.roots.filter((root: any) => !snapshots.some((item) => item.rootId === root?.rootId))
+      : [];
+    snapshots.forEach(({ snapshot }) => removeSubtreeSnapshot(currentNodes, snapshot));
+    setLastDeletedNodeId?.(snapshots[snapshots.length - 1]?.rootId ?? null);
+    setSingleSelected(nextSelectionId, { suppressRender: true });
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeId: nextSelectionId,
+      removedNodeIds,
+      reuseDescendantCounts: true,
+      reuseParentIndex: true,
+      trustExistingNodeMeasureCache: true,
+      useLayoutChangedNodeIds: true,
+    });
+  };
+
+  const applyRestore = (reason: string) => {
+    const activeMind = getActiveMind(props.doc);
+    const currentNodes = getMindNodes();
+    if (!activeMind || !currentNodes) return;
+    activeMind.roots = Array.isArray(activeMind.roots) ? activeMind.roots : [];
+    snapshots.forEach(({ rootEntry, rootIndex, snapshot }) => {
+      if (!activeMind.roots.some((root: any) => root?.rootId === rootEntry.rootId)) {
+        activeMind.roots.splice(Math.min(rootIndex, activeMind.roots.length), 0, JSON.parse(JSON.stringify(rootEntry)));
+      }
+      insertSubtreeSnapshot(currentNodes, snapshot);
+    });
+    restorePreviousSelection();
+    void applyDocumentMutation(reason, {
+      ensureVisibleNodeIds: uniqueRootIds,
+      reuseDescendantCounts: true,
+      reuseParentIndex: true,
+      trustExistingNodeMeasureCache: true,
+      useLayoutChangedNodeIds: true,
+    });
+  };
+
+  return {
+    name: 'BatchDeleteFreeRootsCommand',
+    do: () => applyDelete('history:batch-delete-free-roots'),
+    undo: () => applyRestore('history:undo-batch-delete-free-roots'),
+    redo: () => applyDelete('history:redo-batch-delete-free-roots'),
+  };
+}
+
+function getDocumentTitleForSave(docSnapshot: any = props.doc) {
+  const activeMind = getActiveMind(docSnapshot);
+  const rootId = typeof activeMind?.roots?.[0]?.rootId === 'string' ? activeMind.roots[0].rootId : null;
+  const rootNode = rootId && activeMind?.nodes ? activeMind.nodes[rootId] : null;
   const rootTitle = getNodePlainText(rootNode).trim();
-  return rootTitle || props.doc?.manifest?.title || '中心主题';
+  const manifestTitle = typeof docSnapshot?.manifest?.title === 'string' ? docSnapshot.manifest.title.trim() : '';
+  return rootTitle || manifestTitle || '中心主题';
 }
 
 async function buildRemoteUploadFile(fileName: string) {
@@ -6130,9 +6908,8 @@ const { saveDocument, saveDocumentAs } = useSaveFlow({
   },
 });
 
-function getDocumentTitleForExport() {
-  const manifestTitle = typeof props.doc?.manifest?.title === 'string' ? props.doc.manifest.title.trim() : '';
-  return manifestTitle || getDocumentTitleForSave() || '思维导图';
+function getDocumentTitleForExport(docSnapshot: any = props.doc) {
+  return getDocumentTitleForSave(docSnapshot) || '思维导图';
 }
 
 function sanitizeExportBaseName(raw: string) {
@@ -6142,8 +6919,15 @@ function sanitizeExportBaseName(raw: string) {
     .trim() || '思维导图';
 }
 
-function getExportXmindBaseName() {
-  return sanitizeExportBaseName(getDocumentTitleForExport());
+function getLocalFileBaseName(filePath: string | null | undefined = props.filePath ?? null) {
+  const fileName = getFileDisplayName(filePath);
+  return fileName.replace(/\.[^.]+$/u, '').trim();
+}
+
+function getExportXmindBaseName(docSnapshot: any = props.doc, filePath: string | null | undefined = props.filePath ?? null) {
+  const localFileBaseName = getLocalFileBaseName(filePath);
+  if (localFileBaseName) return sanitizeExportBaseName(localFileBaseName);
+  return sanitizeExportBaseName(getDocumentTitleForSave(docSnapshot) || getDocumentTitleForExport(docSnapshot));
 }
 
 function getSearchResultsExportBaseName() {
@@ -6292,7 +7076,7 @@ async function exportXmind() {
     writeViewportToDoc();
     const plain = toPlainDoc(props.doc);
     await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
-    const defaultPath = `${getExportXmindBaseName()}.xmind`;
+    const defaultPath = `${getExportXmindBaseName(plain, props.filePath)}.xmind`;
     const thumbnailBytes = await exportMindPreviewPng(plain).catch(() => null);
     const result = await window.electronAPI.amind.exportXmindDialog({
       docId: props.docId,
@@ -6454,6 +7238,91 @@ function triggerHeaderSummaryAction() {
   return true;
 }
 
+function startRelationDraftFromNode(nodeId: string) {
+  if (!canStartRelationFromNode(nodeId)) return false;
+  const cursor = resolveCurrentDraftCursorScreenPosition();
+  setSingleSelected(nodeId, { suppressRender: true });
+  setSelectedRelation(null, { suppressRender: true });
+  relationDraft.value = {
+    active: true,
+    stage: 'target',
+    fromNodeId: nodeId,
+    hoverTargetNodeId: null,
+    cursorScreenX: cursor.x,
+    cursorScreenY: cursor.y,
+  };
+  scheduleNodeCountStateEmit();
+  requestRender();
+  return true;
+}
+
+function startRelationDraftWithoutSource() {
+  const cursor = resolveCurrentDraftCursorScreenPosition();
+  setSelectedRelation(null, { suppressRender: true });
+  relationDraft.value = {
+    active: true,
+    stage: 'source',
+    fromNodeId: null,
+    hoverTargetNodeId: null,
+    cursorScreenX: cursor.x,
+    cursorScreenY: cursor.y,
+  };
+  scheduleNodeCountStateEmit();
+  requestRender();
+  return true;
+}
+
+function finalizeRelationDraftAtTarget(targetNodeId: string | null | undefined) {
+  const fromNodeId = relationDraft.value.fromNodeId;
+  if (!relationDraft.value.active || !fromNodeId) {
+    clearRelationDraft();
+    return false;
+  }
+  if (!targetNodeId || targetNodeId === fromNodeId || !canUseNodeForRelation(targetNodeId)) {
+    clearRelationDraft();
+    return false;
+  }
+  const command = createCreateRelationCommand(fromNodeId, targetNodeId);
+  clearRelationDraft({ suppressRender: true });
+  if (!command) {
+    requestRender();
+    return false;
+  }
+  executeCommand(command);
+  return true;
+}
+
+function triggerHeaderRelationAction() {
+  const primarySelectedId = getPrimarySelectedId();
+  if (relationDraft.value.active) return false;
+  if (!primarySelectedId) return startRelationDraftWithoutSource();
+  return startRelationDraftFromNode(primarySelectedId);
+}
+
+function createFreeRootAtScreenPoint(screenX: number, screenY: number) {
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  const { command, newNodeId } = createFreeRootCommandAt(worldPoint);
+  if (!command || !newNodeId) return null;
+  executeCommand(command);
+  return newNodeId;
+}
+
+function resolveCurrentDraftCursorScreenPosition() {
+  const canvas = canvasRef.value;
+  const pointer = lastGlobalPointerClient;
+  if (canvas && pointer) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: pointer.x - rect.left,
+      y: pointer.y - rect.top,
+    };
+  }
+  return {
+    x: viewportW.value / 2,
+    y: viewportH.value / 2,
+  };
+}
+
 defineExpose({
   saveDocument,
   saveDocumentAs,
@@ -6465,6 +7334,7 @@ defineExpose({
   refreshSaveStatePresentation,
   triggerHeaderBranchAction,
   triggerHeaderChildBranchAction,
+  triggerHeaderRelationAction,
   triggerHeaderSummaryAction,
 });
 
@@ -6534,28 +7404,54 @@ function getDragOverlayTextLayout(nodeId: string, text: string) {
 function normalizeDragRootsFromIds(nodeIds: string[]) {
   const nodes = getMindNodes();
   if (!nodes) {
-    return { finalTargets: [], rootId: null, invalidReason: 'missingNodes', filteredOutDescendantsCount: 0 };
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'missingNodes',
+      filteredOutDescendantsCount: 0,
+      dragKind: 'subtree' as const,
+    };
   }
   const nextParentIndex = parentIndexByNodeId.value;
   const rootNodeId = getRootNodeId();
   const uniqueIds = Array.from(new Set(nodeIds)).filter((nodeId) => !!nodes[nodeId] && nodeId !== rootNodeId);
   if (!uniqueIds.length) {
-    return { finalTargets: [], rootId: null, invalidReason: 'rootNotDraggable', filteredOutDescendantsCount: 0 };
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'rootNotDraggable',
+      filteredOutDescendantsCount: 0,
+      dragKind: 'subtree' as const,
+    };
   }
   if (uniqueIds.some((nodeId) => isSummaryNode(nodes[nodeId]))) {
-    return { finalTargets: [], rootId: null, invalidReason: 'summaryNotDraggable', filteredOutDescendantsCount: 0 };
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'summaryNotDraggable',
+      filteredOutDescendantsCount: 0,
+      dragKind: 'subtree' as const,
+    };
   }
   if (uniqueIds.length === 1) {
     const onlyTarget = getCachedSelectionTargetInfo(uniqueIds[0], nextParentIndex);
     const onlyRootId = resolveRootNodeId(uniqueIds[0], nextParentIndex);
     if (!onlyTarget || !onlyRootId) {
-      return { finalTargets: [], rootId: null, invalidReason: 'rootNotDraggable', filteredOutDescendantsCount: 0 };
+      return {
+        finalTargets: [],
+        rootId: null,
+        invalidReason: 'rootNotDraggable',
+        filteredOutDescendantsCount: 0,
+        dragKind: 'subtree' as const,
+      };
     }
+    const dragKind = onlyTarget.nodeId === onlyRootId && isFreeRootNode(onlyTarget.nodeId) ? 'free-root' : 'subtree';
     return {
       finalTargets: [onlyTarget],
       rootId: onlyRootId,
       invalidReason: null,
       filteredOutDescendantsCount: 0,
+      dragKind,
     };
   }
 
@@ -6586,16 +7482,38 @@ function normalizeDragRootsFromIds(nodeIds: string[]) {
 
   const rootIds = Array.from(new Set(finalTargets.map((target) => resolveRootNodeId(target.nodeId, nextParentIndex)).filter(Boolean)));
   if (!finalTargets.length) {
-    return { finalTargets: [], rootId: null, invalidReason: 'rootNotDraggable', filteredOutDescendantsCount };
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'rootNotDraggable',
+      filteredOutDescendantsCount,
+      dragKind: 'subtree' as const,
+    };
   }
   if (rootIds.length !== 1) {
-    return { finalTargets: [], rootId: null, invalidReason: 'crossRoot', filteredOutDescendantsCount };
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'crossRoot',
+      filteredOutDescendantsCount,
+      dragKind: 'subtree' as const,
+    };
+  }
+  if (finalTargets.some((target) => isRootNode(target.nodeId))) {
+    return {
+      finalTargets: [],
+      rootId: null,
+      invalidReason: 'rootNotDraggable',
+      filteredOutDescendantsCount,
+      dragKind: 'subtree' as const,
+    };
   }
   return {
     finalTargets,
     rootId: rootIds[0] ?? null,
     invalidReason: null,
     filteredOutDescendantsCount,
+    dragKind: 'subtree' as const,
   };
 }
 
@@ -6607,6 +7525,14 @@ function collectDraggedSubtreeIds(rootIds: string[]) {
     for (const nodeId of collectSubtreeNodeIds(nodes, rootId)) {
       collected.add(nodeId);
     }
+  }
+  return collected;
+}
+
+function collectDraggedDescendantIds(rootIds: string[]) {
+  const collected = collectDraggedSubtreeIds(rootIds);
+  for (const rootId of rootIds) {
+    collected.delete(rootId);
   }
   return collected;
 }
@@ -6646,7 +7572,7 @@ function isNodeInsideDraggedTree(nodeId: string, currentDrag: DragDropState, dra
   return false;
 }
 
-function scheduleDragBootstrap(dragRoots: string[]) {
+function scheduleDragBootstrap(dragRoots: string[], dragKind: DragDropState['dragKind']) {
   const scheduledProbe = getActiveMindPerfProbe();
   const scheduledDragProbeId = scheduledProbe?.op === 'drag-node' ? scheduledProbe.id : null;
   const bootstrapQueuedAt = scheduledDragProbeId != null ? performance.now() : 0;
@@ -6677,14 +7603,19 @@ function scheduleDragBootstrap(dragRoots: string[]) {
       });
     }
 
-    updateDragDropTarget(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    if (dragKind === 'free-root') {
+      updateFreeRootDragPreview(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    } else {
+      updateDragDropTarget(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    }
 
     const subtreeWarmupQueuedAt = performance.now();
     dragSubtreeWarmupTimer = window.setTimeout(() => {
       dragSubtreeWarmupTimer = null;
       if (!dragState.value.isDragging || !isSameOrderedNodeIds(dragState.value.dragRoots, dragRoots)) return;
       const subtreeWarmupStartedAt = performance.now();
-      const draggedSubtreeNodeIds = collectDraggedSubtreeIds(dragRoots);
+      const draggedSubtreeNodeIds =
+        dragKind === 'free-root' ? collectDraggedDescendantIds(dragRoots) : collectDraggedSubtreeIds(dragRoots);
       const subtreeWarmupMs = performance.now() - subtreeWarmupStartedAt;
       setDragState({
         draggedSubtreeNodeIds,
@@ -6702,6 +7633,22 @@ function scheduleDragBootstrap(dragRoots: string[]) {
       requestRender();
     }, 0);
   });
+}
+
+function updateFreeRootDragPreview(screenX: number, screenY: number) {
+  if (!dragState.value.isDragging || dragState.value.dragKind !== 'free-root') return;
+  if (dragState.value.freeRootBasePosX == null || dragState.value.freeRootBasePosY == null) return;
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  setDragState({
+    cursorScreenX: screenX,
+    cursorScreenY: screenY,
+    previewWorldOffsetX: worldPoint.x - interactionState.value.downWorldX,
+    previewWorldOffsetY: worldPoint.y - interactionState.value.downWorldY,
+    dropTarget: null,
+    lastValidDropTarget: null,
+    invalidReason: null,
+  });
+  requestRender();
 }
 
 function hashChildrenMap(childrenByParent: Record<string, string[]>) {
@@ -6741,12 +7688,17 @@ function transitionInteraction(reason: string, nextMode: InteractionMode, next: 
 function resetDragState() {
   dragState.value = {
     isDragging: false,
+    dragKind: 'subtree',
     dragRoots: [],
     dragRootTexts: [],
     dragRootTextLayouts: [],
     primaryDragRootId: null,
     rootId: null,
     draggedSubtreeNodeIds: new Set(),
+    previewWorldOffsetX: 0,
+    previewWorldOffsetY: 0,
+    freeRootBasePosX: null,
+    freeRootBasePosY: null,
     cursorScreenX: 0,
     cursorScreenY: 0,
     dropTarget: null,
@@ -6769,6 +7721,7 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
   const currentDrag = dragState.value;
   const nodes = getMindNodes();
   if (!currentDrag.isDragging || !nodes) return { target: null, invalidReason: null };
+  if (currentDrag.dragKind === 'free-root') return { target: null, invalidReason: null };
   const dragRootIdSet = new Set(currentDrag.dragRoots);
 
   const worldRadius = FAR_THRESHOLD_PX / Math.max(camera.value.scale, 0.0001);
@@ -6787,10 +7740,6 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
   for (const nodeId of candidates) {
     if (isNodeInsideDraggedTree(nodeId, currentDrag, dragRootIdSet)) {
       invalidReason = 'intoDescendant';
-      continue;
-    }
-    if (getNodeRootId(nodeId) !== currentDrag.rootId) {
-      invalidReason = 'crossRoot';
       continue;
     }
     const rect = worldBoxes.value.get(nodeId);
@@ -6913,7 +7862,11 @@ function tickAutoPan(now: number) {
 
   if (active) {
     panByPixels(vx * dt, vy * dt);
-    updateDragDropTarget(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    if (dragState.value.dragKind === 'free-root') {
+      updateFreeRootDragPreview(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    } else {
+      updateDragDropTarget(dragState.value.cursorScreenX, dragState.value.cursorScreenY);
+    }
   }
 
   autoPanRafId = requestAnimationFrame(tickAutoPan);
@@ -7212,6 +8165,8 @@ function beginDragging(screenX: number, screenY: number) {
     return;
   }
   const dragRoots = normalized.finalTargets.map((target) => target.nodeId);
+  const dragKind = normalized.dragKind;
+  const freeRootEntry = dragKind === 'free-root' ? getMindRootEntryByNodeId(dragRoots[0] ?? null) : null;
   beginMindPerfOperationProbe({
     op: 'drag-node',
     label: '拖拽移动节点',
@@ -7235,6 +8190,7 @@ function beginDragging(screenX: number, screenY: number) {
       dragRootCount: dragRoots.length,
       filteredOutDescendantsCount: normalized.filteredOutDescendantsCount,
       rootId: normalized.rootId,
+      dragKind,
     });
   }
   const pointerId = interactionState.value.pointerId;
@@ -7243,12 +8199,17 @@ function beginDragging(screenX: number, screenY: number) {
   pauseSelectionUiSyncForDrag();
   setDragState({
     isDragging: true,
+    dragKind,
     dragRoots,
     dragRootTexts: dragRoots.map(getNodeLabel),
     dragRootTextLayouts: [],
     primaryDragRootId: candidate.primaryDragRootId ?? dragRoots[dragRoots.length - 1] ?? null,
     rootId: normalized.rootId,
-    draggedSubtreeNodeIds: new Set(dragRoots),
+    draggedSubtreeNodeIds: dragKind === 'free-root' ? new Set() : new Set(dragRoots),
+    previewWorldOffsetX: 0,
+    previewWorldOffsetY: 0,
+    freeRootBasePosX: dragKind === 'free-root' ? (freeRootEntry?.pos?.x ?? 0) : null,
+    freeRootBasePosY: dragKind === 'free-root' ? (freeRootEntry?.pos?.y ?? 0) : null,
     cursorScreenX: screenX,
     cursorScreenY: screenY,
     dropTarget: null,
@@ -7264,7 +8225,8 @@ function beginDragging(screenX: number, screenY: number) {
     lastScreenY: screenY,
   });
   addGlobalDragListeners();
-  requestRender();
+  if (dragKind === 'free-root') updateFreeRootDragPreview(screenX, screenY);
+  else requestRender();
   if (probe) {
     probe.dragStartSetupMs = performance.now() - dragStartedAt;
     noteDragPerfStep('drag-state-ready', {
@@ -7283,7 +8245,7 @@ function beginDragging(screenX: number, screenY: number) {
       dragRoots,
     });
   }
-  scheduleDragBootstrap(dragRoots);
+  scheduleDragBootstrap(dragRoots, dragKind);
   startAutoPanLoop();
 }
 
@@ -7325,21 +8287,60 @@ function finalizeDrop(reason = 'pointerup') {
   const probe = getActiveMindPerfProbe();
   const dragProbe = probe?.op === 'drag-node' ? probe : null;
   if (dragProbe) dragProbe.releaseStartedAt = startedAt;
+  const isFreeRootDrag = dragState.value.dragKind === 'free-root';
   const canUseLastValidTarget =
+    !isFreeRootDrag &&
     !dragState.value.dropTarget &&
     !!dragState.value.lastValidDropTarget &&
     (!dragState.value.invalidReason || dragState.value.invalidReason === 'tooFar' || dragState.value.invalidReason === 'pointerStateLost');
-  const stableTarget = dragState.value.dropTarget ?? (canUseLastValidTarget ? dragState.value.lastValidDropTarget : null);
-  const effectiveInvalidReason = stableTarget ? null : dragState.value.invalidReason ?? 'tooFar';
+  const stableTarget = isFreeRootDrag
+    ? null
+    : (dragState.value.dropTarget ?? (canUseLastValidTarget ? dragState.value.lastValidDropTarget : null));
+  const effectiveInvalidReason = isFreeRootDrag ? null : (stableTarget ? null : dragState.value.invalidReason ?? 'tooFar');
   const buildMoveCommandStartedAt = dragProbe ? performance.now() : 0;
-  const result =
-    stableTarget && !effectiveInvalidReason
+  const result = isFreeRootDrag
+    ? (() => {
+        const freeRootId = dragState.value.primaryDragRootId;
+        const baseX = dragState.value.freeRootBasePosX;
+        const baseY = dragState.value.freeRootBasePosY;
+        if (!freeRootId || baseX == null || baseY == null) {
+          return { command: null, reason: 'pointerStateLost', changed: false, beforeHash: null, afterHash: null };
+        }
+        const afterPos = {
+          x: baseX + dragState.value.previewWorldOffsetX,
+          y: baseY + dragState.value.previewWorldOffsetY,
+        };
+        const moved = afterPos.x !== baseX || afterPos.y !== baseY;
+        return {
+          command: moved
+            ? createMoveFreeRootCommand(
+                {
+                  getMind: () => getActiveMind(props.doc),
+                  setSelection,
+                  applyMutation: applyDocumentMutation,
+                },
+                {
+                  rootId: freeRootId,
+                  beforePos: { x: baseX, y: baseY },
+                  afterPos,
+                  previousSelection: snapshotSelection(),
+                  nextSelection: snapshotSelection(),
+                }
+              )
+            : null,
+          reason: moved ? null : 'noopSamePosition',
+          changed: moved,
+          beforeHash: `${baseX},${baseY}`,
+          afterHash: `${afterPos.x},${afterPos.y}`,
+        };
+      })()
+    : stableTarget && !effectiveInvalidReason
       ? buildMoveCommand(stableTarget)
       : {
           command: null,
-        reason: effectiveInvalidReason,
-        changed: false,
-        beforeHash: null,
+          reason: effectiveInvalidReason,
+          changed: false,
+          beforeHash: null,
           afterHash: null,
         };
   if (dragProbe) {
@@ -7500,7 +8501,7 @@ function createDeleteMutationOptions(targets: Array<{ parentId: string; deletedS
 }
 
 function isRootNode(nodeId: string) {
-  return nodeId === getRootNodeId();
+  return !!getMindRootEntryByNodeId(nodeId);
 }
 
 function formatCurrentDateLabel() {
@@ -7920,6 +8921,41 @@ function getNodeClipboardFallbackText(clipboardState: InternalClipboardState) {
   return `${NODE_CLIPBOARD_TEXT_PREFIX}${serializeNodeClipboardPayload(clipboardState)}`;
 }
 
+function normalizeNodePlainTextForSystemClipboard(text: string) {
+  return text.replace(/[\r\n]+/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildSystemClipboardTextFromSnapshot(snapshot: MindSubtreeSnapshot) {
+  const lines: string[] = [];
+  const nodes = snapshot.nodes ?? {};
+
+  const visit = (nodeId: string, depth: number) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    const children = getStructuralChildIds(node);
+    if (isSummaryNode(node)) {
+      children.forEach((childId) => visit(childId, depth));
+      return;
+    }
+    const plainText = normalizeNodePlainTextForSystemClipboard(getNodePlainText(node));
+    const nextDepth = plainText ? depth + 1 : depth;
+    if (plainText) {
+      lines.push(`${'\t'.repeat(Math.max(0, depth))}${plainText}`);
+    }
+    children.forEach((childId) => visit(childId, nextDepth));
+  };
+
+  visit(snapshot.rootId, 0);
+  return lines.join('\n');
+}
+
+function getNodeClipboardSystemText(clipboardState: InternalClipboardState) {
+  const blocks = clipboardState.items
+    .map((snapshot) => buildSystemClipboardTextFromSnapshot(snapshot))
+    .filter((text) => !!text);
+  return blocks.join('\n');
+}
+
 function resolvePreferredNodeClipboardState(
   externalClipboardState: InternalClipboardState | null,
   clipboardData?: DataTransfer | null
@@ -7929,6 +8965,14 @@ function resolvePreferredNodeClipboardState(
     const plainText = clipboardData?.getData('text/plain') ?? '';
     const hasExternalText = plainText.length > 0 && !plainText.startsWith(NODE_CLIPBOARD_TEXT_PREFIX);
     const hasExternalItems = Array.from(clipboardData?.items ?? []).some((item) => item.type !== 'text/plain');
+    if (
+      hasExternalText &&
+      internalClipboard.type !== 'empty' &&
+      lastCopiedNodeClipboardPlainText &&
+      plainText === lastCopiedNodeClipboardPlainText
+    ) {
+      return internalClipboard;
+    }
     if (hasExternalText || hasExternalItems) return null;
     return internalClipboard.type === 'empty' ? null : internalClipboard;
   }
@@ -7940,7 +8984,9 @@ function resolvePreferredNodeClipboardState(
 
 async function syncClipboardStateToSystemClipboard(clipboardState: InternalClipboardState) {
   if (clipboardState.type === 'empty') return;
-  await tools.copyText(getNodeClipboardFallbackText(clipboardState));
+  const plainText = getNodeClipboardSystemText(clipboardState);
+  lastCopiedNodeClipboardPlainText = plainText || null;
+  await tools.copyText(plainText);
 }
 
 function parseClipboardNodePayload(clipboardData: DataTransfer | null | undefined) {
@@ -7988,6 +9034,11 @@ function performCopy(nodeIds?: string[]) {
 
 function onWindowCopy(event: ClipboardEvent) {
   if (isTextEditingActive(event.target)) return;
+  if (allImagesSelected.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const selectedImageNodeId = getSelectedImageNodeId();
   if (selectedImageNodeId) {
     event.preventDefault();
@@ -8005,16 +9056,25 @@ function onWindowCopy(event: ClipboardEvent) {
   performCopy(targetIds);
   const clipboardState = getInternalClipboard();
   if (clipboardState.type === 'empty') return;
+  const systemClipboardText = getNodeClipboardSystemText(clipboardState);
+  lastCopiedNodeClipboardPlainText = systemClipboardText || null;
   event.preventDefault();
   event.stopPropagation();
   event.clipboardData?.setData(NODE_CLIPBOARD_MIME, serializeNodeClipboardPayload(clipboardState));
-  event.clipboardData?.setData('text/plain', getNodeClipboardFallbackText(clipboardState));
+  event.clipboardData?.setData('text/plain', systemClipboardText);
 }
 
 function createDeleteCommand(targetNodeId: string): Command | null {
-  if (isRootNode(targetNodeId)) return null;
+  if (isMainRootNode(targetNodeId)) return null;
   const nodes = getMindNodes();
   if (!nodes) return null;
+  const relatedRelationsDeleteCommand = createDeleteRelationsForNodeIdsCommand(collectSubtreeNodeIds(nodes, targetNodeId));
+  if (isFreeRootNode(targetNodeId)) {
+    return createCommandSequence('DeleteFreeRootWithRelationsCommand', [
+      relatedRelationsDeleteCommand,
+      createDeleteFreeRootCommand(targetNodeId),
+    ]);
+  }
   if (isSummaryNode(nodes[targetNodeId])) {
     const summaryHost = findSummaryHostInfo(targetNodeId);
     if (!summaryHost) return null;
@@ -8028,7 +9088,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       Math.max(0, siblingIds.indexOf(targetNodeId))
     );
     const deleteMutationOptions = createDeleteMutationOptions([{ parentId: summaryHost.parentId, deletedSnapshot }]);
-    return {
+    const summaryDeleteCommand: Command = {
       name: 'DeleteSummaryCommand',
       do: () => {
         const currentNodes = getMindNodes();
@@ -8085,6 +9145,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
         });
       },
     };
+    return createCommandSequence('DeleteSummaryWithRelationsCommand', [relatedRelationsDeleteCommand, summaryDeleteCommand]);
   }
   const parentInfo = findParentAndIndex(targetNodeId);
   if (!parentInfo) return null;
@@ -8105,7 +9166,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
   const afterChildren = beforeChildren.filter((childId) => childId !== targetNodeId);
   const afterSummaries = remapSummariesByChildren(beforeSummaries, beforeChildren, afterChildren);
 
-  return createDeleteSubtreeCommand(
+  const subtreeDeleteCommand = createDeleteSubtreeCommand(
     {
       getNodes: getMindNodes,
       setSingleSelected,
@@ -8133,6 +9194,7 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       },
     }
   );
+  return createCommandSequence('DeleteNodeWithRelationsCommand', [relatedRelationsDeleteCommand, subtreeDeleteCommand]);
 }
 
 function createBatchAddChildSelectionCommand(targetNodeIds: string[]): Command | null {
@@ -8446,11 +9508,38 @@ function createPasteTextLinesCommand(targetParentId: string, lines: string[]): C
   );
 }
 
+function getPasteTargetNodeIds() {
+  const selectedNodeIds = getSelectedNodeIds().filter(Boolean);
+  if (selectedNodeIds.length) return selectedNodeIds;
+  const primarySelectedId = getPrimarySelectedId();
+  return primarySelectedId ? [primarySelectedId] : [];
+}
+
+function createMultiTargetPasteTextLinesCommand(targetParentIds: string[], lines: string[]): Command | null {
+  if (!targetParentIds.length || !lines.length) return null;
+  return createCommandSequence(
+    'MultiTargetPasteTextLinesCommand',
+    targetParentIds.map((targetParentId) => createPasteTextLinesCommand(targetParentId, lines))
+  );
+}
+
 function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | null {
   const nodes = getMindNodes();
   if (!nodes || !targetNodeIds.length) return null;
+  const relatedRelationsDeleteCommand = createDeleteRelationsForNodeIdsCommand(
+    targetNodeIds.flatMap((nodeId) => collectSubtreeNodeIds(nodes, nodeId))
+  );
+  const freeRootIds = targetNodeIds.filter((nodeId) => isFreeRootNode(nodeId));
+  const regularTargetNodeIds = targetNodeIds.filter((nodeId) => !isFreeRootNode(nodeId));
+  const freeRootDeleteCommand = freeRootIds.length ? createBatchDeleteFreeRootSelectionCommand(freeRootIds) : null;
+  if (!regularTargetNodeIds.length) {
+    return createCommandSequence('BatchDeleteRelationsAndFreeRootsCommand', [
+      relatedRelationsDeleteCommand,
+      freeRootDeleteCommand,
+    ]);
+  }
 
-  const selectionOrderInfos = targetNodeIds
+  const selectionOrderInfos = regularTargetNodeIds
     .map((nodeId) => getSelectionTargetInfo(nodes, nodeId))
     .filter((value): value is NonNullable<typeof value> => !!value)
     .sort(compareSelectionTargetInfo);
@@ -8479,7 +9568,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       return b.indexInParent - a.indexInParent;
     });
 
-  if (!targetsForMutation.length) return null;
+  if (!targetsForMutation.length) return freeRootDeleteCommand;
 
   const primaryParent = primaryDeleteTarget?.parentId ? nodes[primaryDeleteTarget.parentId] : null;
   const siblingIds = primaryParent ? getStructuralChildIds(primaryParent) : [];
@@ -8541,7 +9630,7 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
     );
   });
 
-  return createBatchDeleteSubtreesCommand(
+  const regularDeleteCommand = createBatchDeleteSubtreesCommand(
     {
       getNodes: getMindNodes,
       setSelection,
@@ -8558,6 +9647,11 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       applyUndoState: (currentNodes) => applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes),
     }
   );
+  return createCommandSequence('BatchDeleteMixedSelectionCommand', [
+    relatedRelationsDeleteCommand,
+    regularDeleteCommand,
+    freeRootDeleteCommand,
+  ]);
 }
 
 function createBatchCutSelectionCommand(targetNodeIds: string[]): Command | null {
@@ -8601,8 +9695,37 @@ function createBatchPasteCommand(targetParentId: string, clipboardState: Interna
   );
 }
 
+function createMultiTargetBatchPasteCommand(targetParentIds: string[], clipboardState: InternalClipboardState): Command | null {
+  if (!targetParentIds.length) return null;
+  return createCommandSequence(
+    'MultiTargetBatchPasteCommand',
+    targetParentIds.map((targetParentId) => createBatchPasteCommand(targetParentId, clipboardState))
+  );
+}
+
 function createCutCommand(targetNodeId: string): Command | null {
-  if (isRootNode(targetNodeId)) return null;
+  if (isMainRootNode(targetNodeId)) return null;
+  if (isFreeRootNode(targetNodeId)) {
+    const nodes = getMindNodes();
+    if (!nodes) return null;
+    const snapshot = createSubtreeSnapshot(nodes, targetNodeId);
+    if (!snapshot) return null;
+    const clipboardPayload = createClipboardStateFromSnapshots([snapshot], [targetNodeId]);
+    const deleteCommand = createDeleteCommand(targetNodeId);
+    if (!deleteCommand || clipboardPayload.type === 'empty') return null;
+    return createCutSubtreeCommand(
+      {
+        setClipboard: setInternalClipboard,
+        debugEnabled: DEBUG_CANVAS_OVERLAY,
+      },
+      {
+        targetNodeId,
+        subtreeSize: snapshot.nodeIds.length,
+        clipboardPayload,
+        deleteCommand,
+      }
+    );
+  }
   const nodes = getMindNodes();
   if (!nodes) return null;
 
@@ -8660,6 +9783,14 @@ function createPasteCommand(targetParentId: string): Command | null {
       clipboardSnapshotSource: clipboardPayload.items[0],
       previousSelectionId,
     }
+  );
+}
+
+function createMultiTargetPasteCommand(targetParentIds: string[]): Command | null {
+  if (!targetParentIds.length) return null;
+  return createCommandSequence(
+    'MultiTargetPasteCommand',
+    targetParentIds.map((targetParentId) => createPasteCommand(targetParentId))
   );
 }
 
@@ -8982,6 +10113,16 @@ function rebuildSpatialCaches() {
   parentIndexByNodeId.value = buildParentIndex(getMindNodes());
   spatialIndex.rebuild(worldBoxes.value);
   rebuildEdgeCache(props.doc, worldBoxes.value);
+  rebuildRelationCache(props.doc, worldBoxes.value);
+  if (selectedRelationId.value && !findRelationById(selectedRelationId.value)) {
+    selectedRelationId.value = null;
+  }
+  if (allRelationsSelected.value && !getMindRelations().length) {
+    allRelationsSelected.value = false;
+  }
+  if (relationDraft.value.active && !canUseNodeForRelation(relationDraft.value.fromNodeId)) {
+    clearRelationDraft({ suppressRender: true });
+  }
 }
 
 // interaction（wheel only: zoom + platform-specific pan）
@@ -9189,6 +10330,16 @@ async function redrawAllInternal(
   } else {
     rebuildEdgeCache(props.doc, worldBoxes.value);
   }
+  rebuildRelationCache(props.doc, worldBoxes.value);
+  if (selectedRelationId.value && !findRelationById(selectedRelationId.value)) {
+    selectedRelationId.value = null;
+  }
+  if (allRelationsSelected.value && !getMindRelations().length) {
+    allRelationsSelected.value = false;
+  }
+  if (relationDraft.value.active && !canUseNodeForRelation(relationDraft.value.fromNodeId)) {
+    clearRelationDraft({ suppressRender: true });
+  }
   const edgeCacheMs = performance.now() - edgeCacheStartedAt;
   const edgesRebuildMs = performance.now() - edgesStartedAt;
 
@@ -9310,8 +10461,14 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
     { includeHidden: true }
   );
   const nextHoverId = nextCollapseTagHoverId ?? hitTest(screenX, screenY);
-  if (nextHoverId === hoverNodeId.value && nextCollapseTagHoverId === collapseTagHoverNodeId.value) return;
+  const nextHoverRelationId = nextHoverId ? null : hitTestRelation(screenX, screenY, camera.value);
+  if (
+    nextHoverId === hoverNodeId.value &&
+    nextCollapseTagHoverId === collapseTagHoverNodeId.value &&
+    nextHoverRelationId === hoverRelationId.value
+  ) return;
   hoverNodeId.value = nextHoverId;
+  hoverRelationId.value = nextHoverRelationId;
   collapseTagHoverNodeId.value = nextCollapseTagHoverId;
   const nextActiveTagNodeId = nextCollapseTagHoverId ?? nextHoverId;
   if (nextActiveTagNodeId) keepCollapseTagVisible(nextActiveTagNodeId);
@@ -9346,6 +10503,23 @@ function onCanvasPointerDown(event: PointerEvent) {
   const screenPoint = getPointerScreenPoint(event);
   if (!screenPoint) return;
   const downWorld = screenToWorld(camera.value, screenPoint.x, screenPoint.y);
+  if (relationDraft.value.active && isPrimaryPointerDown) {
+    event.preventDefault();
+    event.stopPropagation();
+    const draftHitNodeId = hitTest(screenPoint.x, screenPoint.y);
+    if (relationDraft.value.stage === 'source') {
+      const sourceNodeId = draftHitNodeId ?? createFreeRootAtScreenPoint(screenPoint.x, screenPoint.y);
+      if (sourceNodeId) {
+        startRelationDraftFromNode(sourceNodeId);
+      } else {
+        clearRelationDraft();
+      }
+      return;
+    }
+    const targetNodeId = draftHitNodeId ?? createFreeRootAtScreenPoint(screenPoint.x, screenPoint.y);
+    if (!finalizeRelationDraftAtTarget(targetNodeId)) clearRelationDraft();
+    return;
+  }
   const collapseTagNodeId = hitTestCollapseTag(
     collapseTagScreenMap.value,
     collapseTagActiveNodeIds.value,
@@ -9354,6 +10528,7 @@ function onCanvasPointerDown(event: PointerEvent) {
     { includeHidden: true }
   );
   const hitId = hitTest(screenPoint.x, screenPoint.y);
+  const hitRelationId = hitId ? null : hitTestRelation(screenPoint.x, screenPoint.y, camera.value);
   const hitImageNodeId = getImageTargetAtScreenPoint(screenPoint.x, screenPoint.y);
   const imageTarget = isSecondaryPointerDown ? null : getPrimarySelectedImageTarget(screenPoint.x, screenPoint.y);
 
@@ -9496,6 +10671,16 @@ function onCanvasPointerDown(event: PointerEvent) {
     return;
   }
 
+  if (hitRelationId) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearRelationDraft({ suppressRender: true });
+    setSelectedRelation(hitRelationId);
+    hoverRelationId.value = hitRelationId;
+    resetInteractionToIdle('pointerdown-relation');
+    return;
+  }
+
   interactionState.value = {
     mode: 'pointerDownBlank',
     pointerId: event.pointerId,
@@ -9513,15 +10698,26 @@ function onCanvasPointerDown(event: PointerEvent) {
     shouldClearSelectionOnClick: !(event.ctrlKey || event.metaKey || event.shiftKey),
     dragCandidate: null,
   };
+  if (selectedRelationId.value || allRelationsSelected.value) {
+    selectedRelationId.value = null;
+    allRelationsSelected.value = false;
+    pointerDownNeedsRender = true;
+  }
   logInteractionTransition('pointerdown-blank', 'pointerDownBlank', {
     shouldClearSelectionOnClick: !(event.ctrlKey || event.metaKey || event.shiftKey),
   });
   if (pointerDownNeedsRender) requestRender();
 }
 
-function onCanvasDoubleClick(event: MouseEvent) {
+async function onCanvasDoubleClick(event: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
+  if (relationDraft.value.active) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearRelationDraft();
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
@@ -9542,7 +10738,14 @@ function onCanvasDoubleClick(event: MouseEvent) {
   );
   if (collapseTagNodeId) return;
   const hitId = hitTest(screenX, screenY);
-  if (!hitId) return;
+  if (!hitId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const worldPoint = screenToWorld(camera.value, screenX, screenY);
+    const { command } = createFreeRootCommandAt(worldPoint);
+    executeCommand(command);
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
   beginMindPerfOperationProbe({
@@ -9586,15 +10789,55 @@ async function onCanvasContextMenu(event: MouseEvent) {
     return;
   }
   const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
+  const hitRelationId = hitId ? null : hitTestRelation(event.clientX - rect.left, event.clientY - rect.top, camera.value);
   if (!hitId) {
+    if (hitRelationId) {
+      event.preventDefault();
+      event.stopPropagation();
+      focusViewportWithoutScroll();
+      const action = await window.electronAPI.wm.popupMenu({
+        x: event.clientX,
+        y: event.clientY,
+        items: [{ id: 'delete-relation', label: '删除联系' }],
+      });
+      if (action === 'delete-relation') {
+        setSelectedRelation(hitRelationId, { suppressRender: true });
+        executeCommand(createDeleteRelationCommand(hitRelationId));
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     focusViewportWithoutScroll();
     const action = await window.electronAPI.wm.popupMenu({
       x: event.clientX,
       y: event.clientY,
-      items: [{ id: 'center-root-topic', label: '前往中心主题' }],
+      items: [
+        { id: 'insert-free-topic', label: '插入自由主题' },
+        { id: 'create-relation-from-blank', label: '连线' },
+        { id: 'expand-all', label: '全部展开' },
+        { id: 'collapse-all', label: '全部收起' },
+        buildBlankSelectionMenuItem(),
+        { id: 'center-root-topic', label: '前往中心主题' },
+      ],
     });
+    if (applyBlankSelectionMenuAction(action)) return;
+    if (action === 'insert-free-topic') {
+      createFreeRootAtScreenPoint(event.clientX - rect.left, event.clientY - rect.top);
+      return;
+    }
+    if (action === 'create-relation-from-blank') {
+      startRelationDraftWithoutSource();
+      return;
+    }
+    if (action === 'expand-all') {
+      await setCollapsedStateForSubtrees(getMainRootContextTargetNodeIds(), false);
+      return;
+    }
+    if (action === 'collapse-all') {
+      await setCollapsedStateForSubtrees(getMainRootContextTargetNodeIds(), true);
+      return;
+    }
     if (action === 'center-root-topic') {
       const rootNodeId = getRootNodeId();
       if (rootNodeId) {
@@ -9611,6 +10854,9 @@ async function onCanvasContextMenu(event: MouseEvent) {
   const isRootHit = isRootNode(hitId);
   const targetNodeIds = resolveContextMenuTargetNodeIds(hitId);
   const secrecyMenuItem = isRootHit ? buildRootSecrecyMenuItem(hitId) : null;
+  const relationMenuItem = canStartRelationFromNode(hitId)
+    ? { id: 'create-relation', label: '联系' }
+    : null;
   const summaryMenuItem = canCreateSummaryFromCurrentSelection(hitId)
     ? { id: 'create-summary', label: '概要' }
     : null;
@@ -9621,16 +10867,22 @@ async function onCanvasContextMenu(event: MouseEvent) {
       { id: 'expand-all', label: '全部展开' },
       { id: 'collapse-all', label: '全部收起' },
       ...(secrecyMenuItem ? [secrecyMenuItem] : []),
+      ...(relationMenuItem ? [relationMenuItem] : []),
       ...(summaryMenuItem ? [summaryMenuItem] : []),
     ],
   });
 
+  if (applyBlankSelectionMenuAction(action)) return;
   if (typeof action === 'string' && action.startsWith('secrecy-')) {
     applyRootSecrecyAction(hitId, action);
     return;
   }
   if (action === 'create-summary') {
     createSummaryFromCurrentSelection();
+    return;
+  }
+  if (action === 'create-relation') {
+    startRelationDraftFromNode(hitId);
     return;
   }
   if (action === 'expand-all') {
@@ -9646,6 +10898,24 @@ function onCanvasPointerMove(event: PointerEvent) {
   const screenPoint = getPointerScreenPoint(event);
   if (!screenPoint) return;
 
+  if (relationDraft.value.active) {
+    const nextHoverTargetNodeId = hitTest(screenPoint.x, screenPoint.y);
+    relationDraft.value = {
+      ...relationDraft.value,
+      hoverTargetNodeId:
+        nextHoverTargetNodeId &&
+        (relationDraft.value.stage === 'source' || nextHoverTargetNodeId !== relationDraft.value.fromNodeId)
+          ? nextHoverTargetNodeId
+          : null,
+      cursorScreenX: screenPoint.x,
+      cursorScreenY: screenPoint.y,
+    };
+    hoverRelationId.value = null;
+    hoverNodeId.value = relationDraft.value.hoverTargetNodeId;
+    requestRender();
+    return;
+  }
+
   if (imageInteraction.value?.resizing && imageInteraction.value.pointerId === event.pointerId) {
     updateImageCursor(screenPoint.x, screenPoint.y);
     updateImageResizePreview(screenPoint.x, screenPoint.y);
@@ -9655,6 +10925,7 @@ function onCanvasPointerMove(event: PointerEvent) {
   if (interactionState.value.pointerId == null || event.pointerId !== interactionState.value.pointerId) {
     updateHoverFromScreenPoint(screenPoint.x, screenPoint.y);
     if (collapseTagHoverNodeId.value) setCanvasCursor('pointer');
+    else if (hoverRelationId.value) setCanvasCursor('pointer');
     else updateImageHover(screenPoint.x, screenPoint.y);
     return;
   }
@@ -9714,12 +10985,14 @@ function onCanvasPointerMove(event: PointerEvent) {
   }
 
   if (interactionState.value.mode === 'draggingNodes') {
-    updateDragDropTarget(screenPoint.x, screenPoint.y);
+    if (dragState.value.dragKind === 'free-root') updateFreeRootDragPreview(screenPoint.x, screenPoint.y);
+    else updateDragDropTarget(screenPoint.x, screenPoint.y);
     return;
   }
 
   updateHoverFromScreenPoint(screenPoint.x, screenPoint.y);
   if (collapseTagHoverNodeId.value) setCanvasCursor('pointer');
+  else if (hoverRelationId.value) setCanvasCursor('pointer');
   else updateImageHover(screenPoint.x, screenPoint.y);
 }
 
@@ -9741,7 +11014,13 @@ function onCanvasPointerLeave() {
   }
   if (hoverNodeId.value) {
     hoverNodeId.value = null;
+    hoverRelationId.value = null;
     collapseTagHoverNodeId.value = null;
+    requestRender();
+    return;
+  }
+  if (hoverRelationId.value) {
+    hoverRelationId.value = null;
     requestRender();
     return;
   }
@@ -9889,44 +11168,50 @@ async function createPastedNodeImage(file: File): Promise<MindNodeImage> {
 
 async function onWindowPaste(event: ClipboardEvent) {
   const selectedNodeId = getPrimarySelectedId();
+  const pasteTargetNodeIds = getPasteTargetNodeIds();
   const clipboardData = event.clipboardData;
   const items = Array.from(clipboardData?.items ?? []);
   const nodeClipboardState = resolvePreferredNodeClipboardState(parseClipboardNodePayload(clipboardData), clipboardData);
   const editingTextActive = isTextEditingActive(event.target);
-  if (nodeClipboardState && selectedNodeId) {
+  if (nodeClipboardState && pasteTargetNodeIds.length) {
     event.preventDefault();
     event.stopPropagation();
     setInternalClipboard(nodeClipboardState);
     executeCommand(
       nodeClipboardState.type === 'multi-subtree'
-        ? createBatchPasteCommand(selectedNodeId, nodeClipboardState)
-        : createPasteCommand(selectedNodeId)
+        ? createMultiTargetBatchPasteCommand(pasteTargetNodeIds, nodeClipboardState)
+        : createMultiTargetPasteCommand(pasteTargetNodeIds)
     );
     return;
   }
   const imageItem = items.find((item) => item.type.startsWith('image/'));
-  if (imageItem && selectedNodeId) {
+  if (imageItem && pasteTargetNodeIds.length) {
     event.preventDefault();
     event.stopPropagation();
     const file = imageItem.getAsFile();
     if (!file) return;
-    const node = getNodeById(selectedNodeId);
-    if (!node) return;
     const afterImage = await createPastedNodeImage(file);
     executeCommand(
-      createSetNodeImageCommand(
-        {
-          getNodes: getMindNodes,
-          setSelection,
-          applyMutation: applyDocumentMutation,
-        },
-        {
-          nodeId: selectedNodeId,
-          beforeImage: cloneNodeImage(getNodeImage(node)),
-          afterImage,
-          previousSelection: snapshotSelection(),
-          nextSelection: { ids: [selectedNodeId], primaryId: selectedNodeId },
-        }
+      createCommandSequence(
+        'MultiTargetPasteImageCommand',
+        pasteTargetNodeIds.map((targetNodeId) => {
+          const node = getNodeById(targetNodeId);
+          if (!node) return null;
+          return createSetNodeImageCommand(
+            {
+              getNodes: getMindNodes,
+              setSelection,
+              applyMutation: applyDocumentMutation,
+            },
+            {
+              nodeId: targetNodeId,
+              beforeImage: cloneNodeImage(getNodeImage(node)),
+              afterImage: cloneNodeImage(afterImage),
+              previousSelection: snapshotSelection(),
+              nextSelection: { ids: [targetNodeId], primaryId: targetNodeId },
+            }
+          );
+        })
       )
     );
     return;
@@ -9942,7 +11227,7 @@ async function onWindowPaste(event: ClipboardEvent) {
   if (!lines.length) return;
   event.preventDefault();
   event.stopPropagation();
-  executeCommand(createPasteTextLinesCommand(selectedNodeId, lines));
+  executeCommand(createMultiTargetPasteTextLinesCommand(pasteTargetNodeIds, lines));
 }
 
 async function handleBeforeCloseRequest(key: string) {
@@ -10021,6 +11306,12 @@ function onWindowKeyDown(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     cancelInteraction('escape');
+    return;
+  }
+  if (relationDraft.value.active && event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    clearRelationDraft();
     return;
   }
   const lowerKey = event.key.toLowerCase();
@@ -10201,6 +11492,14 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isCopyShortcut) {
+    if (selectedRelationId.value || allRelationsSelected.value) {
+      return;
+    }
+    if (allImagesSelected.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (getSelectedImageNodeId()) {
       event.preventDefault();
       event.stopPropagation();
@@ -10226,6 +11525,20 @@ function onWindowKeyDown(event: KeyboardEvent) {
   }
 
   if (isCutShortcut) {
+    if (allRelationsSelected.value) {
+      executeCommand(createDeleteAllRelationsCommand());
+      return;
+    }
+    if (allImagesSelected.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteSelectedImage();
+      return;
+    }
+    if (selectedRelationId.value) {
+      executeCommand(createDeleteRelationCommand(selectedRelationId.value));
+      return;
+    }
     if (getSelectedImageNodeId()) {
       void cutSelectedImageToClipboard();
       return;
@@ -10247,6 +11560,16 @@ function onWindowKeyDown(event: KeyboardEvent) {
         ? createCutCommand(normalized.finalTargets[0].nodeId)
         : createBatchCutSelectionCommand(targetIds)
     );
+    return;
+  }
+
+  if (isDeleteShortcut && allRelationsSelected.value) {
+    executeCommand(createDeleteAllRelationsCommand());
+    return;
+  }
+
+  if (isDeleteShortcut && selectedRelationId.value) {
+    executeCommand(createDeleteRelationCommand(selectedRelationId.value));
     return;
   }
 
@@ -10506,6 +11829,13 @@ function onCompositionStart(event: CompositionEvent) {
   isComposing.value = true;
 }
 
+function trackGlobalPointerPosition(event: PointerEvent) {
+  lastGlobalPointerClient = {
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
 function onCompositionEnd(event: CompositionEvent) {
   if (event.target === pendingDirectTypeInputRef.value) return;
   isComposing.value = false;
@@ -10534,6 +11864,8 @@ onMounted(() => {
   window.addEventListener('paste', onWindowPaste, true);
   window.addEventListener('compositionstart', onCompositionStart, true);
   window.addEventListener('compositionend', onCompositionEnd, true);
+  window.addEventListener('pointermove', trackGlobalPointerPosition, true);
+  window.addEventListener('pointerdown', trackGlobalPointerPosition, true);
   window.addEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
   removeMindFontUpdateListener = window.electronAPI.on('amind:mind-fonts-updated', async (_event: any, payload: MindFontCatalogPayload) => {
     await applyMindFontCatalog(payload);
@@ -10735,6 +12067,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('paste', onWindowPaste, true);
   window.removeEventListener('compositionstart', onCompositionStart, true);
   window.removeEventListener('compositionend', onCompositionEnd, true);
+  window.removeEventListener('pointermove', trackGlobalPointerPosition, true);
+  window.removeEventListener('pointerdown', trackGlobalPointerPosition, true);
   window.removeEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
 });
 </script>

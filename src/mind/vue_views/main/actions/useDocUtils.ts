@@ -5,6 +5,7 @@ export const DEFAULT_ROOT_H_GAP = 44;
 const LEGACY_DEFAULT_ROOT_H_GAPS = new Set([60, 52]);
 export const DEFAULT_ROOT_V_GAP = 16;
 export const LEGACY_DEFAULT_ROOT_V_GAP = 18;
+type MindRootKind = 'main' | 'free';
 
 export function resolveRootHorizontalGap(hGap: unknown) {
     if (typeof hGap === 'number' && Number.isFinite(hGap)) {
@@ -48,11 +49,13 @@ export function createEmptyMindBoard(title = '中心主题', options: {
                 rootId,
                 pos: options.pos || { x: 200, y: 140 },
                 layout: { ...DEFAULT_ROOT_LAYOUT },
+                rootKind: 'main' as MindRootKind,
             },
         ],
         nodes: {
             [rootId]: createBoardRootNode(title, rootId),
         },
+        relations: [],
         view: {
             viewport: {},
         },
@@ -62,11 +65,90 @@ export function createEmptyMindBoard(title = '中心主题', options: {
     return board;
 }
 
+function normalizeBoardRoots(board: any) {
+    const roots = Array.isArray(board?.roots) ? board.roots : [];
+    for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index];
+        if (!root || typeof root !== 'object') continue;
+
+        if (typeof root.rootId !== 'string' || !root.rootId) {
+            root.rootId = `root-${index + 1}`;
+        }
+
+        const hasValidPos =
+            root.pos &&
+            typeof root.pos === 'object' &&
+            Number.isFinite(root.pos.x) &&
+            Number.isFinite(root.pos.y);
+        if (!hasValidPos) {
+            root.pos = { x: 200, y: 140 };
+        }
+
+        if (!root.layout || typeof root.layout !== 'object') {
+            root.layout = { ...DEFAULT_ROOT_LAYOUT };
+        } else {
+            if (root.layout.direction !== 'right') root.layout.direction = 'right';
+            if (!Number.isFinite(root.layout.hGap)) root.layout.hGap = DEFAULT_ROOT_H_GAP;
+            if (!Number.isFinite(root.layout.vGap)) root.layout.vGap = DEFAULT_ROOT_V_GAP;
+        }
+
+        const expectedRootKind: MindRootKind = index === 0 ? 'main' : 'free';
+        if (root.rootKind !== expectedRootKind) {
+            root.rootKind = expectedRootKind;
+        }
+    }
+}
+
+function normalizeBoardRelations(board: any) {
+    const nodes = board?.nodes && typeof board.nodes === 'object' ? board.nodes : {};
+    const rawRelations = Array.isArray(board?.relations) ? board.relations : [];
+    const normalizedRelations: any[] = [];
+    const seenPairKeys = new Set<string>();
+    rawRelations.forEach((relation: any, index: number) => {
+        if (!relation || typeof relation !== 'object') return;
+        const fromNodeId =
+            typeof relation.fromNodeId === 'string' && relation.fromNodeId.trim() ? relation.fromNodeId.trim() : null;
+        const toNodeId =
+            typeof relation.toNodeId === 'string' && relation.toNodeId.trim() ? relation.toNodeId.trim() : null;
+        if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+        if (!nodes[fromNodeId] || !nodes[toNodeId]) return;
+        const pairKey = [fromNodeId, toNodeId].sort().join('::');
+        if (seenPairKeys.has(pairKey)) return;
+        seenPairKeys.add(pairKey);
+        normalizedRelations.push({
+            id:
+                typeof relation.id === 'string' && relation.id.trim()
+                    ? relation.id.trim()
+                    : `relation-${index + 1}`,
+            fromNodeId,
+            toNodeId,
+            style: relation.style && typeof relation.style === 'object' ? relation.style : null,
+            label: typeof relation.label === 'string' ? relation.label : null,
+        });
+    });
+    const relationsUnchanged =
+        Array.isArray(board?.relations) &&
+        board.relations.length === normalizedRelations.length &&
+        board.relations.every((relation: any, index: number) => {
+            const normalized = normalizedRelations[index];
+            return !!normalized &&
+                relation?.id === normalized.id &&
+                relation?.fromNodeId === normalized.fromNodeId &&
+                relation?.toNodeId === normalized.toNodeId &&
+                (relation?.style ?? null) === normalized.style &&
+                (relation?.label ?? null) === normalized.label;
+        });
+    if (!relationsUnchanged) {
+        board.relations = normalizedRelations;
+    }
+}
+
 function ensureMindBoardShape(board: any, fallbackTitle: string, boardId: string) {
     if (!board || typeof board !== 'object') return createEmptyMindBoard(fallbackTitle, { id: boardId });
     board.id = typeof board.id === 'string' && board.id ? board.id : boardId;
     board.title = typeof board.title === 'string' && board.title.trim() ? board.title : fallbackTitle;
     if (!board.nodes || typeof board.nodes !== 'object') board.nodes = {};
+    if (!Array.isArray(board.relations)) board.relations = [];
     board.view = board.view || {};
     board.view.viewport = board.view.viewport || {};
 
@@ -80,9 +162,13 @@ function ensureMindBoardShape(board: any, fallbackTitle: string, boardId: string
                 rootId,
                 pos: { x: 200, y: 140 },
                 layout: { ...DEFAULT_ROOT_LAYOUT },
+                rootKind: 'main' as MindRootKind,
             },
         ];
     }
+
+    normalizeBoardRoots(board);
+    normalizeBoardRelations(board);
 
     const rootId = board.roots[0]?.rootId || 'root';
     if (!board.nodes[rootId]) {
@@ -135,6 +221,7 @@ export function ensureMultiMindDoc(doc: any): void {
             title: legacyTitle,
             roots: Array.isArray(doc.mind.roots) ? doc.mind.roots : [],
             nodes: doc.mind.nodes || {},
+            relations: Array.isArray(doc.mind.relations) ? doc.mind.relations : [],
             view: doc.mind.view || { viewport: {} },
         };
         doc.mind = {

@@ -401,6 +401,192 @@ function getTopicChildren(topic) {
     return Array.isArray(attached) ? attached : [];
 }
 
+function getTopicDetachedChildren(topic) {
+    const detached = topic?.children?.detached;
+    return Array.isArray(detached) ? detached : [];
+}
+
+function getTopicSummaryChildren(topic) {
+    const summary = topic?.children?.summary ?? topic?.children?.summaries;
+    return Array.isArray(summary) ? summary : [];
+}
+
+function toFiniteNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function getTopicPosition(topic, fallbackPos = DEFAULT_ROOT_POS) {
+    const position = topic?.position && typeof topic.position === 'object' ? topic.position : {};
+    const x = toFiniteNumber(position?.x ?? topic?.x);
+    const y = toFiniteNumber(position?.y ?? topic?.y);
+    return {
+        x: x ?? fallbackPos.x,
+        y: y ?? fallbackPos.y,
+    };
+}
+
+function parseSummaryRangeTokenList(value) {
+    if (typeof value === 'string') {
+        const numericMatch = value.trim().match(/^\((\d+),\s*(\d+)\)$/);
+        if (numericMatch) {
+            return {
+                startIndex: Number(numericMatch[1]),
+                endIndex: Number(numericMatch[2]),
+            };
+        }
+    }
+    if (Array.isArray(value) && value.length >= 2) {
+        const [startId, endId] = value;
+        return typeof startId === 'string' && typeof endId === 'string'
+            ? { startId, endId }
+            : null;
+    }
+    if (value && typeof value === 'object') {
+        const startId = typeof value.startId === 'string'
+            ? value.startId
+            : typeof value.beginId === 'string'
+                ? value.beginId
+                : null;
+        const endId = typeof value.endId === 'string'
+            ? value.endId
+            : typeof value.finishId === 'string'
+                ? value.finishId
+                : null;
+        return startId && endId ? { startId, endId } : null;
+    }
+    if (typeof value !== 'string') return null;
+    const tokens = value
+        .replace(/^[[(\s]+|[\])\s]+$/g, '')
+        .split(/[\s,]+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+    if (tokens.length === 2 && tokens.every((token) => /^\d+$/.test(token))) {
+        return {
+            startIndex: Number(tokens[0]),
+            endIndex: Number(tokens[1]),
+        };
+    }
+    return tokens.length >= 2 ? { startId: tokens[0], endId: tokens[tokens.length - 1] } : null;
+}
+
+function resolveSummaryRange(summaryEntry, attachedTopics) {
+    if (!summaryEntry || !attachedTopics.length) return null;
+    const numericStartIndex = Number(summaryEntry?.startIndex);
+    const numericEndIndex = Number(summaryEntry?.endIndex);
+    if (Number.isInteger(numericStartIndex) && Number.isInteger(numericEndIndex)) {
+        const maxIndex = attachedTopics.length - 1;
+        return {
+            startIndex: Math.max(0, Math.min(maxIndex, Math.min(numericStartIndex, numericEndIndex))),
+            endIndex: Math.max(0, Math.min(maxIndex, Math.max(numericStartIndex, numericEndIndex))),
+        };
+    }
+    const parsedRange = parseSummaryRangeTokenList(
+        summaryEntry?.range ?? summaryEntry?.topicRange ?? summaryEntry?.childrenRange ?? summaryEntry
+    );
+    if (!parsedRange) return null;
+    if (Number.isInteger(parsedRange.startIndex) && Number.isInteger(parsedRange.endIndex)) {
+        const maxIndex = attachedTopics.length - 1;
+        return {
+            startIndex: Math.max(0, Math.min(maxIndex, Math.min(parsedRange.startIndex, parsedRange.endIndex))),
+            endIndex: Math.max(0, Math.min(maxIndex, Math.max(parsedRange.startIndex, parsedRange.endIndex))),
+        };
+    }
+    const attachedTopicIds = attachedTopics.map((topic) => (typeof topic?.id === 'string' ? topic.id : null));
+    const startIndex = attachedTopicIds.indexOf(parsedRange.startId);
+    const endIndex = attachedTopicIds.indexOf(parsedRange.endId);
+    if (startIndex < 0 || endIndex < 0) return null;
+    return {
+        startIndex: Math.min(startIndex, endIndex),
+        endIndex: Math.max(startIndex, endIndex),
+    };
+}
+
+function buildRelationStyleFromXmind(relationship) {
+    const properties = relationship?.style?.properties && typeof relationship.style.properties === 'object'
+        ? relationship.style.properties
+        : relationship?.style && typeof relationship.style === 'object'
+            ? relationship.style
+            : {};
+    const style = {};
+    if (typeof properties['line-color'] === 'string' && properties['line-color']) {
+        style.stroke = properties['line-color'];
+    }
+    const lineWidth = Number.parseFloat(String(properties['line-width'] ?? ''));
+    if (Number.isFinite(lineWidth) && lineWidth > 0) {
+        style.strokeWidthPx = lineWidth;
+    }
+    const linePattern = typeof properties['line-pattern'] === 'string' ? properties['line-pattern'].toLowerCase() : '';
+    if (linePattern) {
+        style.dash = linePattern.includes('dash') ? 'dashed' : 'solid';
+    }
+    const arrowEndClass = typeof properties['arrow-end-class'] === 'string' ? properties['arrow-end-class'].toLowerCase() : '';
+    if (arrowEndClass) {
+        style.arrow = arrowEndClass.includes('triangle') || arrowEndClass.includes('arrow') ? 'end' : 'none';
+    }
+    return Object.keys(style).length ? style : null;
+}
+
+function extractRelationsFromSheet(sheet, topicIdToNodeId) {
+    const relationships = Array.isArray(sheet?.relationships) ? sheet.relationships : [];
+    const relationIds = new Set();
+    return relationships
+        .map((relationship) => {
+            const fromTopicId = typeof relationship?.end1Id === 'string'
+                ? relationship.end1Id
+                : typeof relationship?.sourceId === 'string'
+                    ? relationship.sourceId
+                    : null;
+            const toTopicId = typeof relationship?.end2Id === 'string'
+                ? relationship.end2Id
+                : typeof relationship?.targetId === 'string'
+                    ? relationship.targetId
+                    : null;
+            const fromNodeId = fromTopicId ? topicIdToNodeId.get(fromTopicId) : null;
+            const toNodeId = toTopicId ? topicIdToNodeId.get(toTopicId) : null;
+            if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return null;
+            const relationId = typeof relationship?.id === 'string' && relationship.id ? relationship.id : randomUUID();
+            if (relationIds.has(relationId)) return null;
+            relationIds.add(relationId);
+            return {
+                id: relationId,
+                fromNodeId,
+                toNodeId,
+                label: typeof relationship?.title === 'string' && relationship.title.trim() ? relationship.title.trim() : null,
+                style: buildRelationStyleFromXmind(relationship),
+            };
+        })
+        .filter(Boolean);
+}
+
+function formatSecrecyLabel(secrecy) {
+    if (!secrecy || typeof secrecy !== 'object') return '';
+    if (secrecy.level === 'secret') {
+        const durationMap = {
+            1: '一年',
+            2: '二年',
+            3: '三年',
+            4: '四年',
+            5: '五年',
+            6: '六年',
+            7: '七年',
+            8: '八年',
+            9: '九年',
+            10: '十年',
+        };
+        return secrecy.durationYears == null
+            ? '秘密▲'
+            : `秘密▲${durationMap[Number(secrecy.durationYears)] ?? '一年'}`;
+    }
+    if (secrecy.level === 'confidential') {
+        return '机密▲长期';
+    }
+    if (secrecy.level === 'top-secret') {
+        return `绝密▲${typeof secrecy.markedAt === 'string' ? secrecy.markedAt : ''}`.replace(/▲$/, '');
+    }
+    return '';
+}
+
 function createMarksFromXmindStyle(styleProperties = {}, inline = {}) {
     const textDecoration = [
         styleProperties['fo:text-decoration'],
@@ -560,8 +746,9 @@ function createDefaultBoard(boardIndex, title) {
         roots: [
             {
                 rootId: rootNode.id,
-                pos: { ...DEFAULT_ROOT_POS },
+                pos: getTopicPosition(rootTopic, DEFAULT_ROOT_POS),
                 layout: { ...DEFAULT_LAYOUT },
+                rootKind: 'main',
             },
         ],
         nodes: {
@@ -580,51 +767,106 @@ function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
         throw new Error(`Invalid XMind sheet at index ${boardIndex}: missing rootTopic`);
     }
     const boardId = `mind-${boardIndex + 1}`;
-    const rootNode = createNodeFromTopic(rootTopic, `画板 ${boardIndex + 1}`);
-    applyXmindMarkersToNode(rootTopic, rootNode);
-    rootNode.image = createNodeImageFromXmindTopic(rootTopic, resourceBytesMap);
-    const nodes = { [rootNode.id]: rootNode };
-    const queue = [{ topic: rootTopic, nodeId: rootNode.id }];
+    const nodes = {};
+    const topicIdToNodeId = new Map();
 
-    while (queue.length) {
-        const current = queue.shift();
-        const currentNode = nodes[current.nodeId];
-        if (!currentNode) continue;
-        const children = getTopicChildren(current.topic);
-        currentNode.children = [];
-        for (const childTopic of children) {
-            const childNode = createNodeFromTopic(childTopic);
-            applyXmindMarkersToNode(childTopic, childNode);
-            childNode.image = createNodeImageFromXmindTopic(childTopic, resourceBytesMap);
-            nodes[childNode.id] = childNode;
-            currentNode.children.push(childNode.id);
-            queue.push({ topic: childTopic, nodeId: childNode.id });
+    const visitTopic = (topic, options = {}) => {
+        const node = createNodeFromTopic(topic, options.fallbackTitle ?? '主题');
+        if (options.isSummary || topic?.class === 'summary') {
+            node.nodeKind = 'summary';
         }
-    }
+        applyXmindMarkersToNode(topic, node);
+        node.image = createNodeImageFromXmindTopic(topic, resourceBytesMap);
+        nodes[node.id] = node;
+        if (typeof topic?.id === 'string' && topic.id) {
+            topicIdToNodeId.set(topic.id, node.id);
+        }
+
+        const attachedTopics = getTopicChildren(topic);
+        node.children = attachedTopics.map((childTopic) => visitTopic(childTopic).id);
+
+        const summaryTopics = getTopicSummaryChildren(topic);
+        const summaryEntries = Array.isArray(topic?.summaries) ? topic.summaries : [];
+        const summaryMetas = [];
+        summaryTopics.forEach((summaryTopic, index) => {
+            const summaryNode = visitTopic(summaryTopic, { isSummary: true });
+            const matchedEntry = summaryEntries.find((entry) => {
+                const topicId = typeof entry?.topicId === 'string'
+                    ? entry.topicId
+                    : typeof entry?.summaryTopicId === 'string'
+                        ? entry.summaryTopicId
+                        : null;
+                return topicId === summaryTopic?.id;
+            }) ?? summaryEntries[index] ?? null;
+            const range = resolveSummaryRange(matchedEntry, attachedTopics);
+            if (!range) return;
+            summaryMetas.push({
+                id: typeof matchedEntry?.id === 'string' && matchedEntry.id ? matchedEntry.id : randomUUID(),
+                summaryNodeId: summaryNode.id,
+                startIndex: range.startIndex,
+                endIndex: range.endIndex,
+            });
+        });
+        if (summaryMetas.length) {
+            node.summaries = summaryMetas;
+        }
+        return node;
+    };
+
+    const rootNode = visitTopic(rootTopic, { fallbackTitle: `画板 ${boardIndex + 1}` });
+    const detachedTopics = [
+        ...getTopicDetachedChildren(rootTopic),
+        ...(Array.isArray(sheet?.floatingTopics) ? sheet.floatingTopics : []),
+    ];
+    const roots = [
+        {
+            rootId: rootNode.id,
+            pos: { ...DEFAULT_ROOT_POS },
+            layout: { ...DEFAULT_LAYOUT },
+            rootKind: 'main',
+        },
+    ];
+    detachedTopics.forEach((detachedTopic, index) => {
+        const detachedNode = visitTopic(detachedTopic);
+        roots.push({
+            rootId: detachedNode.id,
+            pos: getTopicPosition(detachedTopic, {
+                x: DEFAULT_ROOT_POS.x + 260 + index * 40,
+                y: DEFAULT_ROOT_POS.y + index * 120,
+            }),
+            layout: { ...DEFAULT_LAYOUT },
+            rootKind: 'free',
+        });
+    });
+    const relations = extractRelationsFromSheet(sheet, topicIdToNodeId);
 
     return {
         id: boardId,
         title: sanitizeTitle(sheet?.title, sanitizeTitle(rootTopic?.title, `画板 ${boardIndex + 1}`)),
-        roots: [
-            {
-                rootId: rootNode.id,
-                pos: { ...DEFAULT_ROOT_POS },
-                layout: { ...DEFAULT_LAYOUT },
-            },
-        ],
+        roots,
         nodes,
+        relations: relations.length ? relations : [],
         view: {
             viewport: {},
         },
         xmindMeta: {
             sheetId: typeof sheet?.id === 'string' && sheet.id ? sheet.id : null,
             revisionId: typeof sheet?.revisionId === 'string' && sheet.revisionId ? sheet.revisionId : null,
-            topicOverlapping: sheet?.topicOverlapping,
-            arrangeableLayerOrder: Array.isArray(sheet?.arrangeableLayerOrder) ? [...sheet.arrangeableLayerOrder] : null,
+            topicPositioning: typeof sheet?.topicPositioning === 'string' && sheet.topicPositioning
+                ? sheet.topicPositioning
+                : typeof sheet?.topicOverlapping === 'string' && sheet.topicOverlapping
+                    ? sheet.topicOverlapping
+                    : null,
             zones: Array.isArray(sheet?.zones) ? cloneJson(sheet.zones) : null,
             extensions: Array.isArray(sheet?.extensions) ? cloneJson(sheet.extensions) : null,
             theme: sheet?.theme && typeof sheet.theme === 'object' ? cloneJson(sheet.theme) : null,
             rootStructureClass: typeof rootTopic?.structureClass === 'string' ? rootTopic.structureClass : null,
+            rootPosition: rootTopic?.position && typeof rootTopic.position === 'object'
+                ? cloneJson(rootTopic.position)
+                : null,
+            rootCustomWidth: Number.isFinite(Number(rootTopic?.customWidth))
+                ? Number(rootTopic.customWidth)
+                : null,
         },
     };
 }
@@ -769,6 +1011,79 @@ function attachNodeImageToTopic(topic, node, resourceEntries) {
     };
 }
 
+function buildXmindRelationshipStyle(relation) {
+    const properties = {
+        'shape-class': 'org.xmind.relationshipShape.curved',
+        'arrow-begin-class': 'org.xmind.arrowShape.none',
+        'arrow-end-class': relation?.style?.arrow === 'none' ? 'org.xmind.arrowShape.none' : 'org.xmind.arrowShape.triangle',
+        'line-pattern': relation?.style?.dash === 'dashed' ? 'dash' : 'solid',
+    };
+    if (typeof relation?.style?.stroke === 'string' && relation.style.stroke) {
+        properties['line-color'] = relation.style.stroke;
+    }
+    if (Number.isFinite(Number(relation?.style?.strokeWidthPx)) && Number(relation.style.strokeWidthPx) > 0) {
+        properties['line-width'] = String(Number(relation.style.strokeWidthPx));
+    }
+    return {
+        id: randomUUID(),
+        properties,
+    };
+}
+
+function buildXmindRelationships(board, nodeIdMap) {
+    const relationships = Array.isArray(board?.relations) ? board.relations : [];
+    return relationships
+        .map((relation) => {
+            const fromNodeId = typeof relation?.fromNodeId === 'string' ? relation.fromNodeId : null;
+            const toNodeId = typeof relation?.toNodeId === 'string' ? relation.toNodeId : null;
+            if (!fromNodeId || !toNodeId || !board?.nodes?.[fromNodeId] || !board?.nodes?.[toNodeId]) return null;
+            const payload = {
+                id: randomUUID(),
+                end1Id: toXmindTopicId(fromNodeId, nodeIdMap),
+                end2Id: toXmindTopicId(toNodeId, nodeIdMap),
+            };
+            if (typeof relation?.label === 'string' && relation.label.trim()) {
+                payload.title = relation.label.trim();
+            }
+            const hasVisualStyle =
+                typeof relation?.style?.stroke === 'string' && relation.style.stroke
+                || Number.isFinite(Number(relation?.style?.strokeWidthPx))
+                || relation?.style?.dash === 'dashed'
+                || relation?.style?.arrow === 'none';
+            if (hasVisualStyle) {
+                payload.style = buildXmindRelationshipStyle(relation);
+            }
+            return payload;
+        })
+        .filter(Boolean);
+}
+
+function buildExportSecrecyFloatingTopics(board) {
+    const roots = Array.isArray(board?.roots) ? board.roots : [];
+    return roots
+        .map((root, index) => {
+            const rootNode = board?.nodes?.[root?.rootId];
+            const label = formatSecrecyLabel(rootNode?.secrecy);
+            if (!label) return null;
+            const basePos = root?.pos && typeof root.pos === 'object'
+                ? {
+                    x: toFiniteNumber(root.pos.x) ?? DEFAULT_ROOT_POS.x,
+                    y: toFiniteNumber(root.pos.y) ?? DEFAULT_ROOT_POS.y,
+                }
+                : DEFAULT_ROOT_POS;
+            return {
+                id: randomUUID(),
+                class: 'topic',
+                title: label,
+                position: {
+                    x: basePos.x,
+                    y: basePos.y - 120 - index * 20,
+                },
+            };
+        })
+        .filter(Boolean);
+}
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isValidUuid(value) {
@@ -799,14 +1114,24 @@ function escapeXml(value) {
         .replace(/'/g, '&apos;');
 }
 
-function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEntries = [], nodeIdMap) {
+function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEntries = [], nodeIdMap, options = {}) {
     const node = nodes?.[nodeId];
     const textPayload = buildXmindTextPayload(node, fallbackTitle);
     const topic = {
         id: toXmindTopicId(nodeId, nodeIdMap),
-        class: 'topic',
         title: textPayload.title,
     };
+    if (typeof options.className === 'string' && options.className) {
+        topic.class = options.className;
+    } else if (options.forceTopicClass === true) {
+        topic.class = 'topic';
+    }
+    if (options.position && Number.isFinite(options.position.x) && Number.isFinite(options.position.y)) {
+        topic.position = {
+            x: options.position.x,
+            y: options.position.y,
+        };
+    }
     if (textPayload.attributedTitle?.length) topic.attributedTitle = textPayload.attributedTitle;
     if (textPayload.style) topic.style = textPayload.style;
     const markerIdsByKey =
@@ -828,36 +1153,105 @@ function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEnt
     attachNodeImageToTopic(topic, node, resourceEntries);
 
     const childIds = Array.isArray(node?.children) ? node.children.filter((childId) => typeof childId === 'string' && !!nodes?.[childId]) : [];
+    if (childIds.length || Array.isArray(node?.summaries) && node.summaries.length) {
+        topic.children = {};
+    }
     if (childIds.length) {
-        topic.children = {
-            attached: childIds.map((childId) => buildTopicFromNode(nodes, childId, '主题', resourceEntries, nodeIdMap)),
-        };
+        topic.children.attached = childIds.map((childId) => buildTopicFromNode(nodes, childId, '主题', resourceEntries, nodeIdMap));
+    }
+    const summaries = Array.isArray(node?.summaries) ? node.summaries : [];
+    if (summaries.length) {
+        const summaryTopics = [];
+        const summaryEntries = [];
+        summaries.forEach((summary) => {
+            const summaryNodeId = typeof summary?.summaryNodeId === 'string' ? summary.summaryNodeId : null;
+            if (!summaryNodeId || !nodes?.[summaryNodeId]) return;
+            const startIndex = Number(summary?.startIndex);
+            const endIndex = Number(summary?.endIndex);
+            if (!Number.isInteger(startIndex) || !Number.isInteger(endIndex)) return;
+            const clampedStartIndex = Math.max(0, Math.min(childIds.length - 1, Math.min(startIndex, endIndex)));
+            const clampedEndIndex = Math.max(0, Math.min(childIds.length - 1, Math.max(startIndex, endIndex)));
+            if (clampedStartIndex > clampedEndIndex) return;
+            const summaryTopic = buildTopicFromNode(
+                nodes,
+                summaryNodeId,
+                '概要',
+                resourceEntries,
+                nodeIdMap
+            );
+            summaryTopics.push(summaryTopic);
+            summaryEntries.push({
+                id: randomUUID(),
+                topicId: summaryTopic.id,
+                range: `(${clampedStartIndex},${clampedEndIndex})`,
+            });
+        });
+        if (summaryTopics.length) {
+            topic.children.summary = summaryTopics;
+            topic.summaries = summaryEntries;
+        }
     }
     return topic;
 }
 
 function buildSheetFromBoard(board, index, resourceEntries) {
     const sheetMeta = board?.xmindMeta && typeof board.xmindMeta === 'object' ? board.xmindMeta : {};
-    const rootId = typeof board?.roots?.[0]?.rootId === 'string' ? board.roots[0].rootId : null;
+    const roots = Array.isArray(board?.roots) ? board.roots : [];
+    const mainRoot = roots.find((root) => root?.rootKind !== 'free' && typeof root?.rootId === 'string' && board?.nodes?.[root.rootId])
+        ?? roots.find((root) => typeof root?.rootId === 'string' && board?.nodes?.[root.rootId]);
+    const rootId = typeof mainRoot?.rootId === 'string' ? mainRoot.rootId : null;
     if (!rootId || !board?.nodes?.[rootId]) {
         throw new Error(`Cannot export board ${board?.id || index}: missing root node`);
     }
     // Shared map ensures every amind node ID maps to exactly one XMind UUID per export pass.
     const nodeIdMap = new Map();
-    const rootTopic = buildTopicFromNode(board.nodes, rootId, sanitizeTitle(board?.title, '主题'), resourceEntries, nodeIdMap);
+    const rootPosition = sheetMeta.rootPosition && typeof sheetMeta.rootPosition === 'object'
+        ? getTopicPosition({ position: sheetMeta.rootPosition }, mainRoot?.pos ?? DEFAULT_ROOT_POS)
+        : getTopicPosition(mainRoot, mainRoot?.pos ?? DEFAULT_ROOT_POS);
+    const rootTopic = buildTopicFromNode(
+        board.nodes,
+        rootId,
+        sanitizeTitle(board?.title, '主题'),
+        resourceEntries,
+        nodeIdMap,
+        {
+            forceTopicClass: true,
+            position: rootPosition,
+        }
+    );
     rootTopic.structureClass = typeof sheetMeta.rootStructureClass === 'string' && sheetMeta.rootStructureClass
         ? sheetMeta.rootStructureClass
         : 'org.xmind.ui.map.clockwise';
+    if (Number.isFinite(Number(sheetMeta.rootCustomWidth)) && Number(sheetMeta.rootCustomWidth) > 0) {
+        rootTopic.customWidth = Number(sheetMeta.rootCustomWidth);
+    }
+    const detachedTopics = roots
+        .filter((root) => root !== mainRoot && typeof root?.rootId === 'string' && board?.nodes?.[root.rootId])
+        .map((root) => buildTopicFromNode(
+            board.nodes,
+            root.rootId,
+            '自由主题',
+            resourceEntries,
+            nodeIdMap,
+            { position: getTopicPosition(root, root?.pos ?? DEFAULT_ROOT_POS) }
+        ));
+    const secrecyTopics = buildExportSecrecyFloatingTopics(board);
+    const allDetachedTopics = [...detachedTopics, ...secrecyTopics];
+    if (allDetachedTopics.length) {
+        rootTopic.children = rootTopic.children && typeof rootTopic.children === 'object' ? rootTopic.children : {};
+        rootTopic.children.detached = allDetachedTopics;
+    }
+    const relationships = buildXmindRelationships(board, nodeIdMap);
     return {
         id: typeof sheetMeta.sheetId === 'string' && sheetMeta.sheetId ? sheetMeta.sheetId : randomUUID(),
         revisionId: typeof sheetMeta.revisionId === 'string' && sheetMeta.revisionId ? sheetMeta.revisionId : randomUUID(),
         class: 'sheet',
         title: sanitizeTitle(board?.title, `画板 ${index + 1}`),
         rootTopic,
-        topicOverlapping: typeof sheetMeta.topicOverlapping === 'string' && sheetMeta.topicOverlapping ? sheetMeta.topicOverlapping : 'overlap',
-        arrangeableLayerOrder: Array.isArray(sheetMeta.arrangeableLayerOrder) && sheetMeta.arrangeableLayerOrder.length
-            ? cloneJson(sheetMeta.arrangeableLayerOrder)
-            : [rootTopic.id],
+        relationships,
+        topicPositioning: typeof sheetMeta.topicPositioning === 'string' && sheetMeta.topicPositioning
+            ? sheetMeta.topicPositioning
+            : 'fixed',
         extensions: Array.isArray(sheetMeta.extensions) && sheetMeta.extensions.length
             ? cloneJson(sheetMeta.extensions)
             : [
@@ -969,6 +1363,7 @@ export async function buildXmindBuffer(doc, thumbnailBuffer = null) {
     const { sheets, resourceEntries } = convertAmindDocToXmindWorkbook(doc);
     const zip = new JSZip();
     const thumbnailPath = 'Thumbnails/thumbnail.png';
+    const activeSheetId = typeof sheets?.[0]?.id === 'string' && sheets[0].id ? sheets[0].id : randomUUID();
     zip.file('content.json', JSON.stringify(sheets, null, 2), { compression: 'STORE' });
     zip.file('content.xml', buildCompatibilityContentXml(sheets), { compression: 'STORE' });
     zip.file('metadata.json', JSON.stringify({
@@ -977,7 +1372,8 @@ export async function buildXmindBuffer(doc, thumbnailBuffer = null) {
             name: 'AsyncTest Mind',
             version: '1.0.0',
         },
-        layoutEngineVersion: '4',
+        activeSheetId,
+        layoutEngineVersion: '3',
     }, null, 2), { compression: 'STORE' });
     zip.file('manifest.json', JSON.stringify({
         'file-entries': {

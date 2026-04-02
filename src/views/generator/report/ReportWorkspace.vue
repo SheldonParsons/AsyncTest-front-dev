@@ -42,12 +42,14 @@
           :excel-file="state.excelFile"
           :excel-parse-result="state.excelParseResult"
           :parsing-excel="state.parsingExcel"
-          @trigger-input="triggerInputAction"
-          @remove-amind-file="removeAmindFile"
-          @update-amind-docx-file-type="updateAmindDocxFileType"
-          @remove-excel-file="removeExcelFile"
-          @update-excel-sheet="updateExcelSelectedSheet"
-          @update-excel-column="updateExcelColumnMapping"
+           @trigger-input="triggerInputAction"
+           @remove-amind-file="removeAmindFile"
+           @update-amind-docx-file-type="updateAmindDocxFileType"
+           @toggle-amind-board="toggleAmindBoard"
+           @update-amind-include-free-nodes="updateAmindIncludeFreeNodes"
+           @remove-excel-file="removeExcelFile"
+           @update-excel-sheet="updateExcelSelectedSheet"
+           @update-excel-column="updateExcelColumnMapping"
           @exclude-excel-module="excludeExcelModule"
           @exclude-excel-owner="excludeExcelOwner"
           @toggle-excel-empty-module="toggleExcelEmptyModule"
@@ -128,19 +130,35 @@ const {
   testZentaoConnection,
   handleLoginSuccess,
   setAsyncTestProjectId,
-  addAmindFiles,
-  removeAmindFile,
-  updateAmindDocxFileType,
-  addExcelFile,
-  removeExcelFile,
+   addAmindFiles,
+   removeAmindFile,
+   updateAmindDocxFileType,
+   updateAmindSelectedBoards,
+   updateAmindIncludeFreeNodes,
+   addExcelFile,
+   removeExcelFile,
   updateExcelSelectedSheet,
   updateExcelColumnMapping,
   excludeExcelModule,
   excludeExcelOwner,
   toggleExcelEmptyModule,
   saveRecentExport,
-  startGenerationPreview,
-} = useReportWorkspaceState();
+   startGenerationPreview,
+ } = useReportWorkspaceState();
+
+function toggleAmindBoard(payload: { fileId: string; boardId: string }) {
+  const file = state.amindFiles.find((item) => item.id === payload.fileId);
+  if (!file) return;
+
+  const nextBoardIds = file.selectedBoardIds.includes(payload.boardId)
+    ? file.selectedBoardIds.filter((item) => item !== payload.boardId)
+    : [...file.selectedBoardIds, payload.boardId];
+
+  updateAmindSelectedBoards({
+    fileId: payload.fileId,
+    boardIds: nextBoardIds.length ? nextBoardIds : [payload.boardId],
+  });
+}
 
 const loginDialogRef = ref<any>(null);
 const recentExportsRef = ref<HTMLElement | null>(null);

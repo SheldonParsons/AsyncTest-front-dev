@@ -44,7 +44,9 @@
                         <span class="mind-header-shortcut-label">子分支</span>
                     </button>
                     <span class="mind-header-shortcut-divider" aria-hidden="true"></span>
-                    <button class="mind-header-shortcut-entry is-disabled" type="button" disabled>
+                    <button class="mind-header-shortcut-entry"
+                        :class="{ 'is-disabled': !nodeCountState.canCreateRelation }" type="button"
+                        :disabled="!nodeCountState.canCreateRelation" @click="onHeaderRelationClick">
                         <img class="mind-header-shortcut-icon" :src="connectIcon" alt="" />
                         <span class="mind-header-shortcut-label">连线</span>
                     </button>
@@ -53,10 +55,6 @@
                         :disabled="!nodeCountState.canCreateSummary" @click="onHeaderSummaryClick">
                         <img class="mind-header-shortcut-icon" :src="sumIcon" alt="" />
                         <span class="mind-header-shortcut-label">概要</span>
-                    </button>
-                    <button class="mind-header-shortcut-entry is-disabled" type="button" disabled>
-                        <img class="mind-header-shortcut-icon" :src="outerIcon" alt="" />
-                        <span class="mind-header-shortcut-label">外框</span>
                     </button>
                 </div>
             </div>
@@ -118,15 +116,15 @@ import nextNodeIcon from '@/mind/core/action_icon/next_node.svg'
 import childNodeIcon from '@/mind/core/action_icon/child_node.svg'
 import connectIcon from '@/mind/core/action_icon/connect.svg'
 import sumIcon from '@/mind/core/action_icon/sum.svg'
-import outerIcon from '@/mind/core/action_icon/outer.svg'
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants'
-import { ensureMultiMindDoc, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
+import { ensureMultiMindDoc, getActiveMind, getActiveMindId, listMindBoards } from '@/mind/vue_views/main/actions/useDocUtils'
+import { getNodePlainText } from '@/mind/core/nodeContent'
 import { ApiCheckProjectFileExists } from '@/api/project/index'
 import { ensureAmindFileName, getRemoteBinding, type MindRemoteBinding } from '@/mind/vue_views/remoteBinding'
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from '@/store'
-import { ClearServerCookie } from '@/api/layout/cookies'
+import { ApiCheckPermission, ClearServerCookie } from '@/api/layout/cookies'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
 
@@ -144,6 +142,7 @@ type MindMainExpose = {
     refreshSaveStatePresentation: () => void;
     triggerHeaderBranchAction: () => boolean;
     triggerHeaderChildBranchAction: () => boolean;
+    triggerHeaderRelationAction: () => boolean;
     triggerHeaderSummaryAction: () => boolean;
 };
 
@@ -171,6 +170,7 @@ let removeAuthLoginListener: (() => void) | null = null;
 const nodeCountState = ref({
     totalNodes: 0,
     selectedNodes: 0,
+    canCreateRelation: false,
     canCreateSummary: false,
 });
 const hasSelectedNodes = computed(() => nodeCountState.value.selectedNodes > 0);
@@ -181,9 +181,23 @@ const currentRemoteBinding = computed(() => getRemoteBinding(doc.value));
 const preferredBindingProjectId = computed(() =>
     `${currentRemoteBinding.value?.projectId ?? invalidRemoteBinding.value?.projectId ?? ""}`.trim()
 );
+function getLocalFileBaseName(filePathValue: string | null | undefined) {
+    if (!filePathValue) return '';
+    const fileName = String(filePathValue).split(/[\\/]/).filter(Boolean).pop() ?? '';
+    return fileName.replace(/\.[^.]+$/u, '').trim();
+}
+
+function getCurrentMainRootTitle() {
+    const activeMind = getActiveMind(doc.value);
+    const rootId = typeof activeMind?.roots?.[0]?.rootId === 'string' ? activeMind.roots[0].rootId : null;
+    const rootNode = rootId && activeMind?.nodes ? activeMind.nodes[rootId] : null;
+    const title = getNodePlainText(rootNode).trim();
+    return title || `${doc.value?.manifest?.title ?? saveState.value.displayName ?? '思维导图'}`.trim() || '思维导图';
+}
+
 const remoteBindingDefaultFileName = computed(() => {
-    const rawTitle = `${doc.value?.manifest?.title ?? saveState.value.displayName ?? "思维导图"}`.trim();
-    return ensureAmindFileName(rawTitle || '思维导图');
+    const localFileBaseName = getLocalFileBaseName(filePath.value);
+    return ensureAmindFileName(localFileBaseName || getCurrentMainRootTitle() || '思维导图');
 });
 onMounted(async () => {
     const qDocId = route.query.docId;
@@ -229,7 +243,7 @@ function updateSaveState(value: { isDirty: boolean; isSaving: boolean; displayNa
     saveState.value = value;
 }
 
-function updateNodeCountState(value: { totalNodes: number; selectedNodes: number; canCreateSummary?: boolean }) {
+function updateNodeCountState(value: { totalNodes: number; selectedNodes: number; canCreateSummary?: boolean; canCreateRelation?: boolean }) {
     nodeCountState.value = value;
 }
 
@@ -239,6 +253,10 @@ function onHeaderBranchClick() {
 
 function onHeaderChildBranchClick() {
     mindMainRef.value?.triggerHeaderChildBranchAction();
+}
+
+function onHeaderRelationClick() {
+    mindMainRef.value?.triggerHeaderRelationAction();
 }
 
 function onHeaderSummaryClick() {
@@ -286,6 +304,31 @@ function toast(title: string) {
 function checkLoginStatus() {
     const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag);
     return currentCookie !== false;
+}
+
+async function applyLoggedOutStateAndBroadcast() {
+    await ClearServerCookie();
+    applyLoggedOutState();
+    if (window.electronAPI?.wm?.broadcast) {
+        await window.electronAPI.wm.broadcast('auth:logout', { sourceWindow: windowKey.value || 'mind' });
+    }
+}
+
+async function ensureShareLoginReady() {
+    if (!checkLoginStatus()) {
+        await applyLoggedOutStateAndBroadcast();
+        loginDialogRef.value?.open();
+        return false;
+    }
+
+    const response: any = await ApiCheckPermission({});
+    if (response?.result === 0) {
+        await applyLoggedOutStateAndBroadcast();
+        loginDialogRef.value?.open();
+        return false;
+    }
+
+    return true;
 }
 
 async function getUserImage() {
@@ -356,10 +399,7 @@ async function validateCurrentRemoteBinding() {
 }
 
 async function onShareClick() {
-    if (!checkLoginStatus()) {
-        handleAvatarClick();
-        return;
-    }
+    if (!(await ensureShareLoginReady())) return;
     const ready = await validateCurrentRemoteBinding();
     if (!ready) return;
     remoteBindingDialogVisible.value = true;
@@ -480,8 +520,6 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
 .mind-container :deep(.mind-header-avatar-container),
 .mind-container :deep(.mind-header-user-action-btn),
 .mind-container :deep(.mind-header-action-item),
-.mind-container :deep(.mind-header-shortcuts),
-.mind-container :deep(.mind-header-shortcut-strip),
 .mind-container :deep(.mind-header-shortcut-entry) {
     -webkit-app-region: no-drag;
 }
@@ -678,14 +716,14 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
     .mind-header-shortcut-strip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: 1px;
         padding: 2px 0;
     }
 
     .mind-header-shortcut-entry {
-        width: 58px;
-        min-width: 58px;
-        padding: 5px 6px 4px;
+        width: 52px;
+        min-width: 52px;
+        padding: 5px 4px 4px;
         border: none;
         border-radius: 12px;
         background: transparent;
@@ -738,7 +776,7 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
     .mind-header-shortcut-divider {
         width: 1px;
         align-self: stretch;
-        margin: 3px 4px;
+        margin: 3px 2px;
         background: linear-gradient(180deg, rgba(148, 163, 184, 0), rgba(148, 163, 184, 0.55), rgba(148, 163, 184, 0));
     }
 

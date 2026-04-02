@@ -32,6 +32,33 @@
                 <div class="amind-file-copy">
                   <strong>{{ file.name }}</strong>
                   <span>{{ file.projectName }} / {{ file.path }}</span>
+                  <div class="amind-config-shell">
+                    <div class="amind-config-block">
+                      <span class="amind-config-label">统计 Tabs</span>
+                      <div v-if="file.boardOptions.length" class="amind-board-chip-list">
+                        <button
+                          v-for="option in file.boardOptions"
+                          :key="option.value"
+                          class="amind-board-chip"
+                          :class="{ 'is-active': file.selectedBoardIds.includes(option.value) }"
+                          type="button"
+                          @click="$emit('toggle-amind-board', { fileId: file.id, boardId: option.value })"
+                        >
+                          {{ option.label }}
+                        </button>
+                      </div>
+                      <div v-else class="amind-config-placeholder">默认统计第一个 Tab，解析后可切换多个 Tab。</div>
+                    </div>
+
+                    <label class="amind-free-toggle">
+                      <input
+                        :checked="file.includeFreeNodes"
+                        type="checkbox"
+                        @change="$emit('update-amind-include-free-nodes', { fileId: file.id, value: ($event.target as HTMLInputElement).checked })"
+                      />
+                      <span>统计自由节点上的数据</span>
+                    </label>
+                  </div>
                 </div>
                 <div class="amind-file-actions">
                   <label class="amind-file-format">
@@ -54,13 +81,13 @@
 
              <div v-if="amindParseResults.length" class="amind-result-list">
               <article v-for="result in amindParseResults" :key="result.fileId" class="amind-result-card" :class="{ 'is-error': result.status === 'error' }">
-                <div class="amind-result-head">
-                  <div>
-                    <h5>{{ result.fileName }}</h5>
-                    <p>{{ result.projectName }} · {{ result.boardTitle }}</p>
-                  </div>
-                  <span class="amind-result-badge" :class="{ 'is-error': result.status === 'error' }">
-                    {{ result.status === "success" ? "已解析" : "解析失败" }}
+                 <div class="amind-result-head">
+                   <div>
+                     <h5>{{ result.fileName }}</h5>
+                     <p>{{ result.projectName }} · {{ result.boardTitle }} · {{ result.includeFreeNodes ? "包含自由节点" : "仅主树" }}</p>
+                   </div>
+                   <span class="amind-result-badge" :class="{ 'is-error': result.status === 'error' }">
+                     {{ result.status === "success" ? "已解析" : "解析失败" }}
                   </span>
                 </div>
 
@@ -306,6 +333,8 @@ defineEmits<{
   "trigger-input": [inputKey: ReportInputKey];
   "remove-amind-file": [fileId: string];
   "update-amind-docx-file-type": [payload: { fileId: string; value: "xmind" | "amind" }];
+  "toggle-amind-board": [payload: { fileId: string; boardId: string }];
+  "update-amind-include-free-nodes": [payload: { fileId: string; value: boolean }];
   "remove-excel-file": [];
   "update-excel-sheet": [sheetName: string];
   "update-excel-column": [payload: { key: keyof ReportExcelColumnMapping; value: string }];
@@ -498,7 +527,7 @@ defineEmits<{
 
 .amind-file-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
 }
 
@@ -525,6 +554,7 @@ defineEmits<{
 
 .amind-file-copy {
   flex-direction: column;
+  flex: 1 1 auto;
 
   strong {
     color: #0f172a;
@@ -539,15 +569,99 @@ defineEmits<{
   }
 }
 
+.amind-config-shell {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.amind-config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.amind-config-label {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.amind-config-placeholder {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.amind-board-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.amind-board-chip {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.amind-board-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 23, 42, 0.18);
+  background: #f8fafc;
+}
+
+.amind-board-chip.is-active {
+  border-color: #111827;
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.14);
+}
+
+.amind-free-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.04);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  input {
+    margin: 0;
+    accent-color: #111827;
+  }
+}
+
 .amind-file-remove {
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  min-width: 52px;
   min-height: 28px;
   padding: 0 10px;
   border-radius: 9px;
-  background: #ffffff;
-  color: #111827;
+  background: rgba(254, 242, 242, 0.92);
+  color: #b91c1c;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     transform 0.18s ease,
@@ -558,9 +672,9 @@ defineEmits<{
 
 .amind-file-remove:hover {
   transform: translateY(-1px);
-  border-color: rgba(15, 23, 42, 0.18);
-  background: #f8fafc;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+  border-color: rgba(239, 68, 68, 0.32);
+  background: rgba(254, 226, 226, 0.98);
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.12);
 }
 
 .amind-result-head {
@@ -596,10 +710,20 @@ defineEmits<{
 
 .amind-result-card.is-error {
   border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(254, 242, 242, 0.7);
 }
 
 .excel-result-card.is-error {
   border-color: rgba(239, 68, 68, 0.24);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.amind-result-card:not(.is-error) {
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.excel-result-card:not(.is-error) {
+  background: rgba(248, 250, 252, 0.8);
 }
 
 .amind-result-grid {

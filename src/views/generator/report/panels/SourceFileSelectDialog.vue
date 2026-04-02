@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import FilesPage from "@/views/settings/source_management/files_child/files_index.vue";
 import GeneratorDropdown from "./GeneratorDropdown.vue";
 import type { ReportSelectOption } from "../types";
@@ -95,6 +95,15 @@ watch(
   () => props.projectId,
   (value) => {
     selectedProjectId.value = value;
+  }
+);
+
+watch(
+  () => props.modelValue,
+  async (visible) => {
+    if (!visible) return;
+    await nextTick();
+    await filesPageRef.value?.refresh_directory?.();
   }
 );
 

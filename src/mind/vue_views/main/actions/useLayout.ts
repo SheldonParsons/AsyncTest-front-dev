@@ -670,7 +670,14 @@ export function useLayout(
             const rootPos = root.pos || { x: 0, y: 0 };
             const hGap = resolveRootHorizontalGap(root.layout?.hGap ?? DEFAULT_ROOT_H_GAP);
             const vGap = resolveRootVerticalGap(root.layout?.vGap);
-            place(nodes, rootId, ctx, rootPos.x, rootPos.y, hGap, vGap);
+            if (root?.rootKind === 'free') {
+                const rootMeasure = measureNode(ctx, nodes?.[rootId], rootId);
+                const rootSubtreeHeight = subtreeHeight(nodes, rootId, ctx, vGap);
+                const anchoredTopY = rootPos.y - (rootSubtreeHeight - rootMeasure.bodyH) / 2;
+                place(nodes, rootId, ctx, rootPos.x, anchoredTopY, hGap, vGap);
+            } else {
+                place(nodes, rootId, ctx, rootPos.x, rootPos.y, hGap, vGap);
+            }
         }
         layoutSummaryNodes(nodes, ctx);
 

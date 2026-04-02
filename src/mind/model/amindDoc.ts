@@ -16,6 +16,7 @@ export type Root = {
     rootId: NodeId;
     pos: { x: number; y: number };     // 根节点锚点（世界坐标）
     layout: RootLayoutConfig;
+    rootKind?: 'main' | 'free';
 };
 
 export type TextRun = {
@@ -60,6 +61,23 @@ export type SummaryMeta = {
     endIndex: number;
 };
 
+export type MindRelationId = string;
+
+export type MindRelationStyle = {
+    stroke?: string;
+    strokeWidthPx?: number;
+    dash?: 'solid' | 'dashed';
+    arrow?: 'none' | 'end';
+};
+
+export type MindRelation = {
+    id: MindRelationId;
+    fromNodeId: NodeId;
+    toNodeId: NodeId;
+    style?: MindRelationStyle | null;
+    label?: string | null;
+};
+
 export type Node = {
     id: NodeId;
     parentId: NodeId | null;
@@ -86,6 +104,7 @@ export type AmindDoc = {
 
     roots: Root[];
     nodesById: Record<NodeId, Node>;
+    relations?: MindRelation[];
 
     view: {
         viewport: ViewportState;
