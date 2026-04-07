@@ -1595,7 +1595,8 @@ export function useDraw(
       const branchEntries = hiddenDraggedNodeIds
         ? edgeGroup.branchEntries.filter(({ childId }) => !hiddenDraggedNodeIds.has(childId) && !hiddenDraggedNodeIds.has(geom.parentId))
         : edgeGroup.branchEntries;
-      if (!branchEntries.length) return;
+      const canDrawTrunk = !!geom.trunkPathData && (!hiddenDraggedNodeIds || !hiddenDraggedNodeIds.has(geom.parentId));
+      if (!branchEntries.length && !canDrawTrunk) return;
       const branchStroke = multiplyColorAlpha(roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
       const trunkStroke = multiplyColorAlpha(roughStyle.colors.edges.trunkStroke, strokeAlphaFactor);
       let parentBranchCount = 0;
@@ -1614,10 +1615,10 @@ export function useDraw(
           return childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed';
         });
 
-      if (useRoughEdgesForGroup) {
+      if (canDrawTrunk && useRoughEdgesForGroup) {
         drawNativeSegment(targetCtx, geom.parentAnchor, geom.trunkJoin, trunkStroke, trunkLineWidth);
         drawNativeSegment(targetCtx, geom.trunkTop, geom.trunkBottom, trunkStroke, trunkLineWidth);
-      } else if (geom.trunkPath) {
+      } else if (canDrawTrunk && geom.trunkPath) {
         targetCtx.strokeStyle = trunkStroke;
         targetCtx.stroke(geom.trunkPath);
       }
