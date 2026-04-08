@@ -30,6 +30,7 @@ export type MindNodeTextStyleOverrides = {
   fontStyle?: 'normal' | 'italic';
   color?: string;
   textAlign?: RichTextAlign;
+  widthPx?: number;
 };
 
 export type MindNodeStyle = {

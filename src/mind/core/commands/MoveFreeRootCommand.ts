@@ -10,6 +10,7 @@ export type MoveFreeRootCommandContext = {
     reason: string,
     options?: {
       ensureVisibleNodeIds?: string[];
+      forceFullEdgeRebuild?: boolean;
       reuseDescendantCounts?: boolean;
       reuseParentIndex?: boolean;
       trustExistingNodeMeasureCache?: boolean;
@@ -50,6 +51,7 @@ export function createMoveFreeRootCommand(
     context.setSelection(selection.ids, selection.primaryId);
     void context.applyMutation(reason, {
       ensureVisibleNodeIds: [rootId],
+      forceFullEdgeRebuild: true,
       reuseDescendantCounts: true,
       reuseParentIndex: true,
       trustExistingNodeMeasureCache: true,

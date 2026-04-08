@@ -116,7 +116,11 @@ export function getNodeMinimumWidth(
 ) {
   const activeRichText = richText ?? getNodeRichText(node);
   const activeImage = image ?? getNodeImage(node);
-  return isRichTextFullyEmpty(activeRichText) && !activeImage ? EMPTY_NODE_MIN_W : NODE_MIN_W;
+  const oneCharMinWidth = Math.max(NODE_MIN_W, getNodeTextStyle(node).fontSizePx + NODE_PADDING_X);
+  return Math.max(
+    isRichTextFullyEmpty(activeRichText) && !activeImage ? EMPTY_NODE_MIN_W : NODE_MIN_W,
+    oneCharMinWidth
+  );
 }
 
 export function getNodeMinimumContentWidth(
@@ -129,6 +133,42 @@ export function getNodeMinimumContentWidth(
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+export function getNodePreferredContentWidth(
+  node: MindNodeLike | null | undefined,
+  richText?: RichTextDocument,
+  image?: MindNodeImage | null
+) {
+  const rawWidth = node?.style?.text?.widthPx;
+  if (!Number.isFinite(rawWidth)) return null;
+  const minContentWidth = getNodeMinimumContentWidth(node, richText, image);
+  return clamp(
+    Math.round(rawWidth as number),
+    minContentWidth,
+    Math.max(minContentWidth, NODE_W_HARD_MAX - NODE_PADDING_X)
+  );
+}
+
+export function resolveNodeContentWidthConstraint(
+  node: MindNodeLike | null | undefined,
+  richText?: RichTextDocument,
+  image?: MindNodeImage | null
+) {
+  const minContentWidth = getNodeMinimumContentWidth(node, richText, image);
+  const preferredContentWidth = getNodePreferredContentWidth(node, richText, image);
+  if (preferredContentWidth != null) {
+    return {
+      maxWidth: preferredContentWidth,
+      minContentWidth: preferredContentWidth,
+      preferredContentWidth,
+    };
+  }
+  return {
+    maxWidth: NODE_CONTENT_MAX_W,
+    minContentWidth,
+    preferredContentWidth: null,
+  };
 }
 
 const textVerticalMetricsCache = new Map<string, TextVerticalMetrics>();
@@ -378,10 +418,11 @@ export function measureNodeVisualLayout(
 ): NodeVisualLayout {
   const richText = options?.richText ?? getNodeRichText(node);
   const baseStyle = getNodeTextStyle(node, options);
+  const widthConstraint = resolveNodeContentWidthConstraint(node, richText);
   const textLayout = measureNodeTextLayout(ctx, richText, cache, {
-    maxWidth: options?.maxTextWidth ?? NODE_CONTENT_MAX_W,
+    maxWidth: options?.maxTextWidth ?? widthConstraint.maxWidth,
     baseStyle,
-    minContentWidth: getNodeMinimumContentWidth(node, richText),
+    minContentWidth: widthConstraint.minContentWidth,
   });
   const image = getNodeImage(node);
   const textGeometry = computeNodeTextGeometry(ctx, textLayout, baseStyle, image);
@@ -495,9 +536,10 @@ function previewRichLineAppend(
     };
   }
   const mergedWidth = measureRichSegmentTextWidth(ctx, previous.font, previous.text + segment.text);
+  const previousWidth = measureRichSegmentTextWidth(ctx, previous.font, previous.text);
   return {
     mergeWithPrevious: true,
-    addedWidth: mergedWidth - previous.width,
+    addedWidth: mergedWidth - previousWidth,
     mergedWidth,
   };
 }

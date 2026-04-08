@@ -41,6 +41,7 @@ export type NodeTextStyleOverrides = {
     fontStyle?: 'normal' | 'italic';
     color?: string;
     textAlign?: 'left' | 'center' | 'right';
+    widthPx?: number;
 };
 
 export type NodeStyle = {

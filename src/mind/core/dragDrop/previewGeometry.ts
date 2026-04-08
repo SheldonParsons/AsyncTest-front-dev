@@ -116,6 +116,14 @@ export function buildPreviewGeometry(params: BuildPreviewGeometryParams): Previe
   } else if (previewGeom.trunkTop && currentGeom?.trunkTop && previewGeom.trunkTop.y < currentGeom.trunkTop.y) {
     previewPathData = `${createLinePathData(currentGeom.trunkTop, previewGeom.trunkTop)} ${previewBranchPathData}`;
   }
+  const previewEdgeEndPoint = {
+    x: previewRect.x1,
+    y: previewMeta.endPoint.y,
+  };
+  previewPathData = previewPathData.replace(
+    /L\s-?\d+(?:\.\d+)?\s-?\d+(?:\.\d+)?\s*$/,
+    `L ${fmt(previewEdgeEndPoint.x)} ${fmt(previewEdgeEndPoint.y)}`
+  );
   const previewPath = new Path2D(previewPathData);
 
   return {
@@ -123,7 +131,7 @@ export function buildPreviewGeometry(params: BuildPreviewGeometryParams): Previe
     previewPath,
     previewPathData,
     startPoint: previewMeta.startPoint,
-    endPoint: previewMeta.endPoint,
+    endPoint: previewEdgeEndPoint,
     pathStartPoint: previewMeta.pathStartPoint,
     edgesConfig: {
       trunkStub: getTrunkStub(hGap),

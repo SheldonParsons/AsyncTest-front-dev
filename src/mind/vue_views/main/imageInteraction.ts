@@ -27,9 +27,9 @@ export type ImageInteractionState = {
   previewSize: ImageSize | null;
 };
 
-export const IMAGE_HANDLE_SIZE_PX = 10;
+export const IMAGE_HANDLE_SIZE_PX = 7;
 export const IMAGE_RESIZE_MIN_PX = 20;
-export const IMAGE_RESIZE_MAX_PX = 450;
+export const IMAGE_RESIZE_MAX_PX = 1600;
 export const IMAGE_OUTLINE_GAP_PX = 4;
 export const IMAGE_OUTLINE_RADIUS_PX = 8;
 

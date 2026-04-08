@@ -65,6 +65,7 @@ import {
   type ImageInteractionState,
   type ImageWorldRect,
 } from '../imageInteraction';
+import { type NodeWidthInteractionState } from '../nodeWidthInteraction';
 import { getInlineFont } from '@/mind/core/richText';
 import { buildRelationDraftPreview, type MindRelationGeom } from './useRelations';
 const DEBUG_VIEWPORT = '#f97316';
@@ -85,10 +86,6 @@ const ROUGH_SEAM_CAP_LINEWIDTH_FACTOR = 1.1;
 const NODE_CORNER_RADIUS = 10;
 const HOVER_OUTLINE_OFFSET_PX = 3;
 const SELECTED_OUTLINE_OFFSET_PX = 4;
-const DRAG_OVERLAY_MAX_WIDTH_PX = 500;
-const DRAG_OVERLAY_ROOT_GAP_PX = 12;
-const DRAG_OVERLAY_OFFSET_X_PX = 12;
-const DRAG_OVERLAY_OFFSET_Y_PX = 12;
 const COLLAPSE_TAG_FILL = '#D02F48';
 const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
 const COLLAPSE_TAG_STROKE = '#111111';
@@ -298,7 +295,8 @@ function drawCollapseTags(
   ctx: CanvasRenderingContext2D,
   collapseTags: Map<string, CollapseTagInfo>,
   activeNodeIds: ReadonlySet<string>,
-  hoverTagNodeId: string | null
+  hoverTagNodeId: string | null,
+  ghostNodeIds?: ReadonlySet<string> | null
 ) {
   ctx.font = COLLAPSE_TAG_FONT;
   ctx.textAlign = 'center';
@@ -308,6 +306,8 @@ function drawCollapseTags(
     const visible = tag.isCollapsed || activeNodeIds.has(tag.nodeId);
     if (!visible) continue;
     const hovered = hoverTagNodeId === tag.nodeId;
+    ctx.save();
+    if (ghostNodeIds?.has(tag.nodeId)) ctx.globalAlpha *= 0.35;
     if (tag.isCollapsed) {
       ctx.strokeStyle = COLLAPSE_TAG_STROKE;
       ctx.lineWidth = 1.5;
@@ -327,6 +327,7 @@ function drawCollapseTags(
     if (tag.isCollapsed) {
       ctx.fillStyle = COLLAPSE_TAG_TEXT;
       ctx.fillText(tag.label, tag.x + tag.width / 2, tag.y + tag.height / 2 + 0.5);
+      ctx.restore();
       continue;
     }
 
@@ -339,6 +340,7 @@ function drawCollapseTags(
     ctx.moveTo(tag.x + lineInset, centerY);
     ctx.lineTo(tag.x + tag.width - lineInset, centerY);
     ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -471,12 +473,9 @@ function drawImageHandles(
   strokeStyle: string
 ) {
   const handleRects = getImageHandleWorldRects(rect, cam.scale);
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = strokeStyle;
-  ctx.lineWidth = 1.5 / Math.max(cam.scale, 0.0001);
+  ctx.fillStyle = strokeStyle;
   (Object.values(handleRects) as ImageWorldRect[]).forEach((handleRect) => {
     ctx.fillRect(handleRect.x, handleRect.y, handleRect.width, handleRect.height);
-    ctx.strokeRect(handleRect.x, handleRect.y, handleRect.width, handleRect.height);
   });
 }
 
@@ -970,6 +969,7 @@ export function useDraw(
   dragState?: Ref<DragDropState>,
   editingNodeId?: Ref<string | null>,
   imageInteraction?: Ref<ImageInteractionState | null>,
+  nodeWidthInteraction?: Ref<NodeWidthInteractionState | null>,
   primarySelectedNodeId?: Ref<string | null>,
   editingWidthPreview?: Ref<{
     nodeId: string;
@@ -1575,14 +1575,18 @@ export function useDraw(
     let minBranchLen = Number.POSITIVE_INFINITY;
     let maxBranchLen = Number.NEGATIVE_INFINITY;
     const strokeAlphaFactor = getStrokeAlphaFactor(cam.scale);
+    const draggedOriginalNodeIds =
+      currentDragState?.isDragging
+        ? new Set([
+            ...currentDragState.dragRoots,
+            ...Array.from(currentDragState.draggedSubtreeNodeIds),
+          ])
+        : null;
     const strokeScreenWidthPx = getStrokeScreenWidthPx(cam.scale, roughStyle.strokeWidthPx);
     const edgeLineWidth = strokeScreenWidthPx / cam.scale;
     const trunkLineWidth = strokeScreenWidthPx / cam.scale;
     const overlapWorld = roughStyle.overlapPx / Math.max(cam.scale, 0.0001);
-    const hiddenDraggedNodeIds =
-      currentDragState?.isDragging && currentDragState.dragKind === 'free-root'
-        ? currentDragState.draggedSubtreeNodeIds
-        : null;
+    const hiddenDraggedNodeIds = null;
 
     function drawVisibleEdgeGroup(
       targetCtx: CanvasRenderingContext2D,
@@ -1603,7 +1607,6 @@ export function useDraw(
 
       targetCtx.save();
       if (translateX) targetCtx.translate(translateX, 0);
-      targetCtx.strokeStyle = branchStroke;
       targetCtx.lineWidth = edgeLineWidth;
       targetCtx.lineCap = 'round';
       targetCtx.lineJoin = 'round';
@@ -1615,12 +1618,19 @@ export function useDraw(
           return childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed';
         });
 
+      const trunkGhostAlpha = draggedOriginalNodeIds?.has(geom.parentId) ? 0.35 : 1;
       if (canDrawTrunk && useRoughEdgesForGroup) {
+        targetCtx.save();
+        if (trunkGhostAlpha !== 1) targetCtx.globalAlpha *= trunkGhostAlpha;
         drawNativeSegment(targetCtx, geom.parentAnchor, geom.trunkJoin, trunkStroke, trunkLineWidth);
         drawNativeSegment(targetCtx, geom.trunkTop, geom.trunkBottom, trunkStroke, trunkLineWidth);
+        targetCtx.restore();
       } else if (canDrawTrunk && geom.trunkPath) {
+        targetCtx.save();
+        if (trunkGhostAlpha !== 1) targetCtx.globalAlpha *= trunkGhostAlpha;
         targetCtx.strokeStyle = trunkStroke;
         targetCtx.stroke(geom.trunkPath);
+        targetCtx.restore();
       }
 
       for (const { childId, meta } of branchEntries) {
@@ -1628,6 +1638,7 @@ export function useDraw(
         const useRoughEdge =
           roughEnabled &&
           (childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed');
+        const branchGhostAlpha = draggedOriginalNodeIds?.has(childId) ? 0.35 : 1;
         if (useRoughEdge && roughRuntime.rc && roughRuntime.gen) {
           const branchPathData = geom.childBranchPathData.get(childId);
           if (!branchPathData) continue;
@@ -1640,13 +1651,19 @@ export function useDraw(
           );
           branchDrawable.options.stroke = branchStroke;
           branchDrawable.options.strokeWidth = edgeLineWidth;
+          targetCtx.save();
+          if (branchGhostAlpha !== 1) targetCtx.globalAlpha *= branchGhostAlpha;
           roughRuntime.rc.draw(branchDrawable);
           drawRoundedSeamCap(targetCtx, meta, branchStroke, edgeLineWidth, overlapWorld);
+          targetCtx.restore();
         } else {
           const branchPath = geom.childBranchPaths.get(childId);
           if (!branchPath) continue;
+          targetCtx.save();
+          if (branchGhostAlpha !== 1) targetCtx.globalAlpha *= branchGhostAlpha;
           targetCtx.strokeStyle = branchStroke;
           targetCtx.stroke(branchPath);
+          targetCtx.restore();
         }
         parentBranchCount += 1;
         if (collectStats) {
@@ -1736,12 +1753,12 @@ export function useDraw(
       targetCtx.restore();
     }
 
-    function drawVisibleNode(
-      targetCtx: CanvasRenderingContext2D,
-      id: string,
-      rect: WorldRect,
-      options?: { skipText?: boolean; clearRect?: WorldRect | null; isDraggedGhost?: boolean }
-    ) {
+      function drawVisibleNode(
+        targetCtx: CanvasRenderingContext2D,
+        id: string,
+        rect: WorldRect,
+        options?: { skipText?: boolean; clearRect?: WorldRect | null; isDraggedGhost?: boolean; draggedGhostAlpha?: number }
+      ) {
       const node = nodes[id];
       if (!node) return;
       const bodyRect = getNodeBodyWorldRect(node, rect);
@@ -1769,7 +1786,7 @@ export function useDraw(
         roughEnabled && (nodeDefaults.borderPreset === 'rough-solid' || nodeDefaults.borderPreset === 'rough-dashed');
 
       targetCtx.save();
-      if (options?.isDraggedGhost) targetCtx.globalAlpha *= 0.35;
+        if (options?.isDraggedGhost) targetCtx.globalAlpha *= options.draggedGhostAlpha ?? 0.35;
       if (shouldUseRoughFill && roughRuntime.rc && roughRuntime.gen) {
         const fillDrawable = getOrCreateNodeDrawable(
           roughRuntime,
@@ -2122,16 +2139,26 @@ export function useDraw(
       targetCtx.setTransform(1, 0, 0, 1, 0, 0);
     }
 
+      const dragBaseSignature = currentDragState?.isDragging
+        ? [
+            'drag',
+            currentDragState.dragKind,
+            currentDragState.primaryDragRootId ?? '',
+            currentDragState.dragRoots.join(','),
+            Array.from(currentDragState.draggedSubtreeNodeIds).sort().join(','),
+          ].join(':')
+        : 'drag:none';
       const baseSignature = [
-      c.width,
-      c.height,
-      cam.scale.toFixed(4),
-      cam.tx.toFixed(2),
-      cam.ty.toFixed(2),
-      editingNodeId?.value ?? '',
-      String(relationCacheVersion?.value ?? 0),
-      roughStyle.themeSignature,
-    ].join('|');
+        c.width,
+        c.height,
+        cam.scale.toFixed(4),
+        cam.tx.toFixed(2),
+        cam.ty.toFixed(2),
+        editingNodeId?.value ?? '',
+        String(relationCacheVersion?.value ?? 0),
+        roughStyle.themeSignature,
+        dragBaseSignature,
+      ].join('|');
     const baseCanvas = ensureBaseCanvas(basePaddingX, basePaddingY);
     const canUseZoomPreviewBase =
       isZoomPreviewActive &&
@@ -2339,13 +2366,15 @@ export function useDraw(
       const isHover = id === hoverNodeId.value;
       const isSelected = selectedIds.value.has(id);
       const imageState = imageInteraction?.value?.nodeId === id ? imageInteraction.value : null;
+      const nodeWidthState = nodeWidthInteraction?.value?.nodeId === id ? nodeWidthInteraction.value : null;
       const showImageAffordance = !editingNodeId?.value && !!imageState && primarySelectedNodeId?.value === id && isSelected;
+      const showNodeWidthAffordance = !editingNodeId?.value && primarySelectedNodeId?.value === id && isSelected;
       const isEditingPreview = editingNodeId?.value === id;
       const isWidthPreviewNode =
         !!activeEditingWidthPreview &&
         Math.abs(activePreviewDeltaX) > 0.01 &&
         activeEditingWidthPreview.subtreeNodeIds.has(id);
-      if (!isHover && !isSelected && !showImageAffordance && !isEditingPreview && !isWidthPreviewNode) continue;
+      if (!isHover && !isSelected && !showImageAffordance && !showNodeWidthAffordance && !isEditingPreview && !isWidthPreviewNode) continue;
       if (isEditingPreview) {
         drawVisibleNode(ctx, id, interactiveRect, { skipText: true });
       } else if (isWidthPreviewNode) {
@@ -2356,7 +2385,21 @@ export function useDraw(
         drawVisibleNode(ctx, id, interactiveRect, { clearRect: previewEraseRect });
       }
 
-      const outlineRect = expandRect(bodyRect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
+      const nodeWidthPreviewRect = nodeWidthState?.previewBodyRect ?? {
+        x: bodyRect.x1,
+        y: bodyRect.y1,
+        width: rectWidth(bodyRect),
+        height: rectHeight(bodyRect),
+      };
+      const baseOutlineRect = showNodeWidthAffordance
+        ? {
+          x1: nodeWidthPreviewRect.x,
+          y1: nodeWidthPreviewRect.y,
+          x2: nodeWidthPreviewRect.x + nodeWidthPreviewRect.width,
+          y2: nodeWidthPreviewRect.y + nodeWidthPreviewRect.height,
+        }
+        : bodyRect;
+      const outlineRect = expandRect(baseOutlineRect, HOVER_OUTLINE_OFFSET_PX / cam.scale);
 
       if (isSelected) {
         drawRoundedRectOutline(
@@ -2430,7 +2473,18 @@ export function useDraw(
         2 / Math.max(cam.scale, 0.0001)
       );
     }
-    drawCollapseTags(ctx, collapseTags.value, collapseTagActiveNodeIds.value, collapseTagHoverNodeId.value);
+    drawCollapseTags(
+      ctx,
+      collapseTags.value,
+      collapseTagActiveNodeIds.value,
+      collapseTagHoverNodeId.value,
+      currentDragState?.isDragging
+        ? new Set([
+            ...currentDragState.dragRoots,
+            ...Array.from(currentDragState.draggedSubtreeNodeIds),
+          ])
+        : null
+    );
     ctx.restore();
     drawMarqueeOverlay(
       ctx,
@@ -2439,7 +2493,7 @@ export function useDraw(
       roughStyle.colors.marquee.stroke,
       roughStyle.colors.marquee.fill
     );
-    drawDragOverlay(ctx, cam, currentDragState, d, nodeWorldBoxes, nodes);
+    drawDragOverlay(ctx, cam, currentDragState, d, nodeWorldBoxes, nodes, drawVisibleNode);
 
     const drawEnd = performance.now();
     sampleRoughCacheStats(roughRuntime, drawEnd);
@@ -2540,48 +2594,44 @@ function drawDragOverlay(
   dragState: DragDropState | undefined,
   doc: any,
   nodeWorldBoxes: WorldBoxes,
-  nodes: Record<string, any>
+  nodes: Record<string, any>,
+  drawDraggedNode: (
+    targetCtx: CanvasRenderingContext2D,
+    id: string,
+    rect: WorldRect,
+    options?: { skipText?: boolean; clearRect?: WorldRect | null; isDraggedGhost?: boolean; draggedGhostAlpha?: number }
+  ) => void
 ) {
   if (!dragState?.isDragging) return;
-  if (dragState.dragKind === 'free-root') {
+  const draggedRootIds = Array.from(new Set(dragState.dragRoots))
+    .filter((nodeId) => !!nodes[nodeId] && !!nodeWorldBoxes.get(nodeId))
+    .sort((a, b) => {
+      const rectA = nodeWorldBoxes.get(a);
+      const rectB = nodeWorldBoxes.get(b);
+      if (!rectA || !rectB) return 0;
+      return rectA.y1 - rectB.y1 || rectA.x1 - rectB.x1;
+    });
+  if (draggedRootIds.length && (dragState.previewWorldOffsetX !== 0 || dragState.previewWorldOffsetY !== 0)) {
     ctx.save();
-    const dpr = getCanvasDevicePixelRatio(ctx.canvas);
-    applyScreenTransform(ctx, dpr);
-    ctx.font = NODE_FONT;
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#111827';
-    const layouts =
-      dragState.dragRootTextLayouts.length
-        ? dragState.dragRootTextLayouts
-        : (dragState.dragRootTexts.length
-            ? dragState.dragRootTexts.map((text, index) => ({
-                nodeId: dragState.dragRoots[index] ?? dragState.primaryDragRootId ?? '',
-                text,
-                lines: text.split('\n'),
-                lineHeightPx: 18,
-              }))
-            : [
-                {
-                  nodeId: dragState.primaryDragRootId ?? '',
-                  text: getNodePlainText(nodes[dragState.primaryDragRootId ?? '']),
-                  lines: [getNodePlainText(nodes[dragState.primaryDragRootId ?? ''])],
-                  lineHeightPx: 18,
-                },
-              ]);
-    const startX = dragState.cursorScreenX + DRAG_OVERLAY_OFFSET_X_PX;
-    let currentY = dragState.cursorScreenY + DRAG_OVERLAY_OFFSET_Y_PX;
-    for (const layout of layouts) {
-      for (const line of layout.lines) {
-        ctx.fillText(line, startX, snapToDevicePixel(currentY, dpr), DRAG_OVERLAY_MAX_WIDTH_PX);
-        currentY += layout.lineHeightPx;
-      }
-      currentY += DRAG_OVERLAY_ROOT_GAP_PX;
-    }
+    applyWorldTransform(ctx, cam, getCanvasDevicePixelRatio(ctx.canvas));
+    draggedRootIds.forEach((nodeId) => {
+      const rect = nodeWorldBoxes.get(nodeId);
+      if (!rect) return;
+      drawDraggedNode(ctx, nodeId, {
+        x1: rect.x1 + dragState.previewWorldOffsetX,
+        y1: rect.y1 + dragState.previewWorldOffsetY,
+        x2: rect.x2 + dragState.previewWorldOffsetX,
+        y2: rect.y2 + dragState.previewWorldOffsetY,
+      }, {
+        isDraggedGhost: true,
+        draggedGhostAlpha: 0.58,
+      });
+    });
     ctx.restore();
-    return;
   }
 
   const canUseLastValidTarget =
+    dragState.dragKind !== 'free-root' &&
     !dragState.dropTarget &&
     !!dragState.lastValidDropTarget &&
     (!dragState.invalidReason ||
@@ -2594,15 +2644,15 @@ function drawDragOverlay(
       worldBoxes: nodeWorldBoxes,
       dropTarget: target,
       rootId: dragState.rootId,
-      previewWidth: 64 / Math.max(cam.scale, 0.0001),
-      previewHeight: 24 / Math.max(cam.scale, 0.0001),
+      previewWidth: 50,
+      previewHeight: 19,
     });
     if (previewGeometry) {
       ctx.save();
       applyWorldTransform(ctx, cam, getCanvasDevicePixelRatio(ctx.canvas));
-      ctx.strokeStyle = '#16a34a';
-      ctx.fillStyle = '#22c55e';
-      ctx.lineWidth = 2 / Math.max(cam.scale, 0.0001);
+      ctx.strokeStyle = 'rgb(22, 163, 74)';
+      ctx.fillStyle = 'rgb(34, 197, 94)';
+      ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       if (previewGeometry.previewPath) ctx.stroke(previewGeometry.previewPath);
@@ -2610,49 +2660,15 @@ function drawDragOverlay(
         ctx,
         previewGeometry.previewRect,
         Math.min(
-          8 / Math.max(cam.scale, 0.0001),
+          8,
           (previewGeometry.previewRect.y2 - previewGeometry.previewRect.y1) / 2
         ),
-        '#22c55e',
-        '#16a34a',
-        2 / Math.max(cam.scale, 0.0001)
+        'rgb(34, 197, 94)',
+        'rgb(22, 163, 74)',
+        2
       );
       ctx.restore();
     }
   }
 
-  ctx.save();
-  const dpr = getCanvasDevicePixelRatio(ctx.canvas);
-  applyScreenTransform(ctx, dpr);
-  ctx.font = NODE_FONT;
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#111827';
-  const layouts =
-    dragState.dragRootTextLayouts.length
-      ? dragState.dragRootTextLayouts
-      : (dragState.dragRootTexts.length
-          ? dragState.dragRootTexts.map((text, index) => ({
-              nodeId: dragState.dragRoots[index] ?? dragState.primaryDragRootId ?? '',
-              text,
-              lines: text.split('\n'),
-              lineHeightPx: 18,
-            }))
-          : [
-              {
-                nodeId: dragState.primaryDragRootId ?? '',
-                text: getNodePlainText(nodes[dragState.primaryDragRootId ?? '']),
-                lines: [getNodePlainText(nodes[dragState.primaryDragRootId ?? ''])],
-                lineHeightPx: 18,
-              },
-            ]);
-  const startX = dragState.cursorScreenX + DRAG_OVERLAY_OFFSET_X_PX;
-  let currentY = dragState.cursorScreenY + DRAG_OVERLAY_OFFSET_Y_PX;
-  for (const layout of layouts) {
-    for (const line of layout.lines) {
-      ctx.fillText(line, startX, snapToDevicePixel(currentY, dpr), DRAG_OVERLAY_MAX_WIDTH_PX);
-      currentY += layout.lineHeightPx;
-    }
-    currentY += DRAG_OVERLAY_ROOT_GAP_PX;
-  }
-  ctx.restore();
 }

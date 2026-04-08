@@ -47,8 +47,9 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
   wrapper.style.padding = '0';
   wrapper.style.border = '0';
   wrapper.style.whiteSpace = 'pre-wrap';
-  wrapper.style.overflowWrap = 'anywhere';
+  wrapper.style.overflowWrap = 'break-word';
   wrapper.style.wordBreak = 'break-word';
+  wrapper.style.lineBreak = 'auto';
   wrapper.style.hyphens = 'none';
 
   const root = document.createElement('div');
@@ -59,8 +60,9 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
   root.style.outline = 'none';
   root.style.background = 'transparent';
   root.style.whiteSpace = 'pre-wrap';
-  root.style.overflowWrap = 'anywhere';
+  root.style.overflowWrap = 'break-word';
   root.style.wordBreak = 'break-word';
+  root.style.lineBreak = 'auto';
   root.style.hyphens = 'none';
   root.style.fontFamily = style.fontFamily;
   root.style.fontSize = `${style.fontSizePx}px`;
@@ -74,6 +76,11 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
   paragraph.style.padding = '0';
   paragraph.style.minHeight = '0';
   paragraph.style.lineHeight = 'inherit';
+  paragraph.style.whiteSpace = 'pre-wrap';
+  paragraph.style.overflowWrap = 'break-word';
+  paragraph.style.wordBreak = 'break-word';
+  paragraph.style.lineBreak = 'auto';
+  paragraph.style.hyphens = 'none';
 
   const span = document.createElement('span');
   span.style.margin = '0';
@@ -81,8 +88,9 @@ export function getDomTextTopOffset(style: DomTextCalibrationStyle): number {
   span.style.border = '0';
   span.style.lineHeight = 'inherit';
   span.style.whiteSpace = 'pre-wrap';
-  span.style.overflowWrap = 'anywhere';
+  span.style.overflowWrap = 'break-word';
   span.style.wordBreak = 'break-word';
+  span.style.lineBreak = 'auto';
   span.style.hyphens = 'none';
   const textNode = document.createTextNode('Hg');
   span.appendChild(textNode);

@@ -12,7 +12,15 @@ export type DragDropState = {
   dragKind: 'subtree' | 'free-root';
   dragRoots: string[];
   dragRootTexts: string[];
-  dragRootTextLayouts: Array<{ nodeId: string; text: string; lines: string[]; lineHeightPx: number }>;
+  dragRootTextLayouts: Array<{
+    nodeId: string;
+    text: string;
+    lines: string[];
+    lineHeightPx: number;
+    font: string;
+    color: string;
+    maxWidthPx: number;
+  }>;
   primaryDragRootId: string | null;
   rootId: string | null;
   draggedSubtreeNodeIds: Set<string>;

@@ -9,7 +9,7 @@ import {
   type SerializedLexicalEditorState,
 } from './lexicalState';
 import type { MindSummaryMeta } from './summaryMeta';
-const MAX_NODE_IMAGE_WIDTH_PX = 450;
+const MAX_NODE_IMAGE_WIDTH_PX = 1600;
 
 export type MindNodeImage = null | {
   src: string;
@@ -49,6 +49,7 @@ export type MindNodeLike = {
       fontStyle?: 'normal' | 'italic';
       color?: string;
       textAlign?: 'left' | 'center' | 'right';
+      widthPx?: number;
     } | null;
   } | null;
   image?: MindNodeImage;

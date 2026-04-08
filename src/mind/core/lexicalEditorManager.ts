@@ -16,6 +16,7 @@ import {
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
   PASTE_COMMAND,
+  SELECTION_CHANGE_COMMAND,
   type PasteCommandType,
   type LexicalEditor,
 } from 'lexical';
@@ -33,6 +34,7 @@ type StartSessionOptions = {
   initialState: SerializedLexicalEditorState;
   mode: 'append' | 'replace';
   caretPlacement?: 'start' | 'end' | 'none';
+  selectAllText?: boolean;
   shouldFocus?: boolean;
   onChange?: (state: SerializedLexicalEditorState) => void;
   onCommit?: () => void;
@@ -60,6 +62,78 @@ let rootElement: HTMLElement | null = null;
 let pendingSession: StartSessionOptions | null = null;
 let pendingCaretTimeoutIds: number[] = [];
 let suppressControlledPasteUntil = 0;
+let syncingCollapsedSelectionFormats = false;
+const INHERITED_TEXT_FORMATS = [
+  ['bold', 'bold'],
+  ['italic', 'italic'],
+  ['underline', 'underline'],
+  ['strikethrough', 'strikethrough'],
+] as const;
+
+function getLastTextDescendant(node: any): any | null {
+  if (!node) return null;
+  if ($isTextNode(node)) return node;
+  if (!$isElementNode(node)) return null;
+  const childrenSize = typeof node.getChildrenSize === 'function' ? node.getChildrenSize() : 0;
+  for (let index = childrenSize - 1; index >= 0; index -= 1) {
+    const child = typeof node.getChildAtIndex === 'function' ? node.getChildAtIndex(index) : null;
+    const found = getLastTextDescendant(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getPreviousTextNode(node: any): any | null {
+  let current = node;
+  while (current) {
+    const previousSibling = typeof current.getPreviousSibling === 'function' ? current.getPreviousSibling() : null;
+    if (previousSibling) {
+      const found = getLastTextDescendant(previousSibling);
+      if (found) return found;
+    }
+    current = typeof current.getParent === 'function' ? current.getParent() : null;
+  }
+  return null;
+}
+
+function resolveCollapsedSelectionReferenceTextNode(selection: any) {
+  const anchorNode = selection?.anchor?.getNode?.();
+  const anchorOffset = typeof selection?.anchor?.offset === 'number' ? selection.anchor.offset : 0;
+  if (!anchorNode) return null;
+  if ($isTextNode(anchorNode)) {
+    if (anchorNode.getTextContentSize() === 0) return anchorNode;
+    if (anchorOffset > 0 && anchorNode.getTextContentSize() > 0) return anchorNode;
+    return getPreviousTextNode(anchorNode);
+  }
+  if ($isElementNode(anchorNode) && anchorOffset > 0) {
+    const child = anchorNode.getChildAtIndex(anchorOffset - 1);
+    const found = getLastTextDescendant(child);
+    if (found) return found;
+  }
+  return getPreviousTextNode(anchorNode);
+}
+
+function syncCollapsedSelectionTypingFormats() {
+  if (syncingCollapsedSelectionFormats) return false;
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false;
+  const referenceTextNode = resolveCollapsedSelectionReferenceTextNode(selection);
+  if (!referenceTextNode || !$isTextNode(referenceTextNode)) return false;
+  let changed = false;
+  syncingCollapsedSelectionFormats = true;
+  try {
+    for (const [selectionFormat, nodeFormat] of INHERITED_TEXT_FORMATS) {
+      const expected = referenceTextNode.hasFormat(nodeFormat);
+      const current = selection.hasFormat(selectionFormat);
+      if (current === expected) continue;
+      selection.formatText(selectionFormat);
+      changed = true;
+    }
+  } finally {
+    syncingCollapsedSelectionFormats = false;
+  }
+  return changed;
+}
 
 function isScrollableElement(element: HTMLElement) {
   const style = window.getComputedStyle(element);
@@ -131,42 +205,58 @@ function lockScrollTargets(targets: ScrollTarget[]) {
   requestAnimationFrame(tick);
 }
 
-function applyCaretPlacement(caretPlacement: 'start' | 'end' | 'none') {
+function applyCaretPlacementInUpdate(caretPlacement: 'start' | 'end' | 'none') {
   if (caretPlacement === 'none') return;
+  const root = $getRoot();
+  const block = caretPlacement === 'end' ? (root.getLastChild() ?? root) : (root.getFirstChild() ?? root);
+  if (block !== root && $isElementNode(block) && block.getChildrenSize() === 0) {
+    if (caretPlacement === 'end') block.selectEnd();
+    else block.selectStart();
+    return;
+  }
+  const textTarget =
+    block !== root
+      ? (caretPlacement === 'end' ? block.getLastDescendant() : block.getFirstDescendant())
+      : null;
+  if (textTarget && $isTextNode(textTarget)) {
+    if (textTarget.getTextContentSize() === 0) {
+      const parent = textTarget.getParent();
+      if (parent && $isElementNode(parent)) {
+        if (caretPlacement === 'end') parent.selectEnd();
+        else parent.selectStart();
+        return;
+      }
+    }
+    if (caretPlacement === 'end') textTarget.select(textTarget.getTextContentSize(), textTarget.getTextContentSize());
+    else textTarget.select(0, 0);
+    syncCollapsedSelectionTypingFormats();
+    return;
+  }
+  if (block !== root) {
+    if (caretPlacement === 'end') block.selectEnd();
+    else block.selectStart();
+    syncCollapsedSelectionTypingFormats();
+    return;
+  }
+  if (caretPlacement === 'end') root.selectEnd();
+  else root.selectStart();
+  syncCollapsedSelectionTypingFormats();
+}
+
+function applyInitialSelection(caretPlacement: 'start' | 'end' | 'none', selectAllText = false) {
   const editor = createSingletonEditor();
   editor.update(() => {
     const root = $getRoot();
-    const block = caretPlacement === 'end' ? (root.getLastChild() ?? root) : (root.getFirstChild() ?? root);
-    if (block !== root && $isElementNode(block) && block.getChildrenSize() === 0) {
-      if (caretPlacement === 'end') block.selectEnd();
-      else block.selectStart();
+    if (selectAllText && root.getChildrenSize() > 0) {
+      root.select(0, root.getChildrenSize());
       return;
     }
-    const textTarget =
-      block !== root
-        ? (caretPlacement === 'end' ? block.getLastDescendant() : block.getFirstDescendant())
-        : null;
-    if (textTarget && $isTextNode(textTarget)) {
-      if (textTarget.getTextContentSize() === 0) {
-        const parent = textTarget.getParent();
-        if (parent && $isElementNode(parent)) {
-          if (caretPlacement === 'end') parent.selectEnd();
-          else parent.selectStart();
-          return;
-        }
-      }
-      if (caretPlacement === 'end') textTarget.select(textTarget.getTextContentSize(), textTarget.getTextContentSize());
-      else textTarget.select(0, 0);
-      return;
-    }
-    if (block !== root) {
-      if (caretPlacement === 'end') block.selectEnd();
-      else block.selectStart();
-      return;
-    }
-    if (caretPlacement === 'end') root.selectEnd();
-    else root.selectStart();
+    applyCaretPlacementInUpdate(caretPlacement);
   });
+}
+
+function applyCaretPlacement(caretPlacement: 'start' | 'end' | 'none') {
+  applyInitialSelection(caretPlacement, false);
 }
 
 function clearPendingCaretRetry() {
@@ -174,22 +264,22 @@ function clearPendingCaretRetry() {
   pendingCaretTimeoutIds = [];
 }
 
-function focusEditor(caretPlacement: 'start' | 'end' | 'none' = 'end') {
+function focusEditor(caretPlacement: 'start' | 'end' | 'none' = 'end', options?: { selectAllText?: boolean }) {
   const editor = createSingletonEditor();
   const scrollTargets = captureScrollTargets(rootElement);
   focusRootWithoutScroll(rootElement);
   restoreScrollTargets(scrollTargets);
   editor.focus(() => {
-    applyCaretPlacement(caretPlacement);
+    applyInitialSelection(caretPlacement, options?.selectAllText ?? false);
     restoreScrollTargets(scrollTargets);
   }, { defaultSelection: 'rootStart' });
   restoreScrollTargets(scrollTargets);
   lockScrollTargets(scrollTargets);
   requestAnimationFrame(() => {
-    applyCaretPlacement(caretPlacement);
+    applyInitialSelection(caretPlacement, options?.selectAllText ?? false);
     restoreScrollTargets(scrollTargets);
     requestAnimationFrame(() => {
-      applyCaretPlacement(caretPlacement);
+      applyInitialSelection(caretPlacement, options?.selectAllText ?? false);
       restoreScrollTargets(scrollTargets);
     });
   });
@@ -293,7 +383,20 @@ function createSingletonEditor() {
     editor.registerUpdateListener(({ editorState }) => {
       latestState.value = editorState.toJSON() as SerializedLexicalEditorState;
       if (latestState.value) sessionCallbacks.onChange?.(latestState.value);
+      if (!syncingCollapsedSelectionFormats) {
+        editor.update(() => {
+          syncCollapsedSelectionTypingFormats();
+        });
+      }
     }),
+    editor.registerCommand(
+      SELECTION_CHANGE_COMMAND,
+      () => {
+        syncCollapsedSelectionTypingFormats();
+        return false;
+      },
+      COMMAND_PRIORITY_HIGH
+    ),
     editor.registerCommand(
       CONTROLLED_TEXT_INSERTION_COMMAND,
       (eventOrText) => handleControlledPlainTextInsertion(eventOrText),
@@ -358,13 +461,13 @@ function loadSession(options: StartSessionOptions) {
   editor.setEditorState(editorState);
   latestState.value = cloneLexicalState(options.initialState);
   if (options.shouldFocus !== false && rootElement) {
-    focusEditor(options.caretPlacement ?? 'end');
+    focusEditor(options.caretPlacement ?? 'end', { selectAllText: options.selectAllText ?? false });
   }
   requestAnimationFrame(() => {
     if (options.shouldFocus !== false) {
-      focusEditor(options.caretPlacement ?? 'end');
+      focusEditor(options.caretPlacement ?? 'end', { selectAllText: options.selectAllText ?? false });
     }
-    if (options.shouldFocus !== false && plainTextFromLexicalState(options.initialState).length === 0) {
+    if (options.shouldFocus !== false && !options.selectAllText && plainTextFromLexicalState(options.initialState).length === 0) {
       scheduleEmptyCaretRetry(options.caretPlacement ?? 'end');
     }
   });

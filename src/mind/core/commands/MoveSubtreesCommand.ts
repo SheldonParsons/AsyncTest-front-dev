@@ -26,6 +26,7 @@ export type MoveSubtreesCommandOptions = {
   invalidateSubtreeHeightNodeIds: string[];
   previousSelection: SelectionSnapshot;
   nextSelection: SelectionSnapshot;
+  forceFullEdgeRebuild?: boolean;
   applyDoState?: (nodes: MindNodes) => void;
   applyUndoState?: (nodes: MindNodes) => void;
 };
@@ -42,6 +43,7 @@ export function createMoveSubtreesCommand(
     invalidateSubtreeHeightNodeIds,
     previousSelection,
     nextSelection,
+    forceFullEdgeRebuild = false,
     applyDoState,
     applyUndoState,
   } = options;
@@ -66,6 +68,7 @@ export function createMoveSubtreesCommand(
         ensureVisibleNodeIds: movingRootIds,
         invalidateSubtreeHeightNodeIds,
         touchedParentIds,
+        forceFullEdgeRebuild,
         reuseDescendantCounts: true,
         trustExistingNodeMeasureCache: true,
         useLayoutChangedNodeIds: true,
@@ -81,6 +84,7 @@ export function createMoveSubtreesCommand(
         ensureVisibleNodeIds: previousSelection.ids,
         invalidateSubtreeHeightNodeIds,
         touchedParentIds,
+        forceFullEdgeRebuild,
         reuseDescendantCounts: true,
         trustExistingNodeMeasureCache: true,
         useLayoutChangedNodeIds: true,
@@ -96,6 +100,7 @@ export function createMoveSubtreesCommand(
         ensureVisibleNodeIds: movingRootIds,
         invalidateSubtreeHeightNodeIds,
         touchedParentIds,
+        forceFullEdgeRebuild,
         reuseDescendantCounts: true,
         trustExistingNodeMeasureCache: true,
         useLayoutChangedNodeIds: true,

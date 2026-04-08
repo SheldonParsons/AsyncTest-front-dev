@@ -53,16 +53,12 @@ const OPTICAL_GLYPH_Y_NUDGE_PX = -0.25;
 
 const estimatedGlyphTranslateYPx = computed(() => {
   if (!props.calibrationStyle) return 0;
-  return props.expectedGlyphTopPx - props.innerTranslateYpx - getDomTextTopOffset(props.calibrationStyle);
+  return props.expectedGlyphTopPx - getDomTextTopOffset(props.calibrationStyle);
 });
 
 const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   return {
     ...props.editorShellStyle,
-    top:
-      typeof props.editorShellStyle.top === 'string'
-        ? `calc(${props.editorShellStyle.top} + ${props.innerTranslateYpx}px)`
-        : props.editorShellStyle.top,
     overflow: 'visible',
   };
 });
@@ -123,16 +119,33 @@ function measureGlyphMetricsFromShell() {
 
 function alignEditorGlyphTop() {
   const actualGlyphMetrics = measureGlyphMetricsFromShell();
-  if (!actualGlyphMetrics) return false;
-  const targetGlyphCenterPx = props.expectedGlyphCenterPx - props.innerTranslateYpx;
-  dynamicGlyphTranslateYPx.value = targetGlyphCenterPx - actualGlyphMetrics.center + OPTICAL_GLYPH_Y_NUDGE_PX;
-  return true;
+  if (!actualGlyphMetrics) return null;
+  const targetGlyphCenterPx = props.expectedGlyphCenterPx + OPTICAL_GLYPH_Y_NUDGE_PX;
+  const deltaPx = targetGlyphCenterPx - actualGlyphMetrics.center;
+  if (Math.abs(deltaPx) <= 0.15) return 0;
+  dynamicGlyphTranslateYPx.value += deltaPx;
+  return Math.abs(deltaPx);
 }
 
 function scheduleGlyphAlignment() {
   clearGlyphAlignTimers();
   dynamicGlyphTranslateYPx.value = estimatedGlyphTranslateYPx.value + OPTICAL_GLYPH_Y_NUDGE_PX;
-  settleGlyphAlignment();
+  const runAlignmentPass = () => {
+    if (glyphAlignmentSettled) return;
+    const remainingErrorPx = alignEditorGlyphTop();
+    if (remainingErrorPx == null || remainingErrorPx <= 0.35) {
+      settleGlyphAlignment();
+    }
+  };
+  glyphAlignRafId = requestAnimationFrame(() => {
+    glyphAlignRafId = null;
+    runAlignmentPass();
+  });
+  glyphAlignTimeoutIds = [48, 120].map((delayMs) =>
+    window.setTimeout(() => {
+      runAlignmentPass();
+    }, delayMs)
+  );
 }
 
 function mountEditor() {
@@ -267,15 +280,16 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-  line-break: anywhere;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: auto;
   hyphens: none;
   color: inherit;
   font-family: inherit;
   font-size: inherit;
   font-style: inherit;
   font-weight: inherit;
+  letter-spacing: inherit;
   line-height: inherit;
   text-align: inherit;
   caret-color: currentColor;
@@ -291,19 +305,19 @@ onBeforeUnmount(() => {
 .lexical-editor-root :deep(p) {
   margin: 0;
   padding: 0;
-  min-height: 1em;
-  min-height: 1lh;
+  min-height: 0;
   color: inherit;
   font-family: inherit;
   font-size: inherit;
   font-style: inherit;
   font-weight: inherit;
+  letter-spacing: inherit;
   line-height: inherit;
   text-align: inherit;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-  line-break: anywhere;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: auto;
   hyphens: none;
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
@@ -311,11 +325,12 @@ onBeforeUnmount(() => {
 
 .lexical-editor-root :deep(span) {
   color: inherit;
+  letter-spacing: inherit;
   line-height: inherit;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-  line-break: anywhere;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-break: auto;
   hyphens: none;
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
