@@ -3,7 +3,7 @@
         :showComfirm="false" topMove="0px important" :closeOnClickModal="false"
         :closeOnPressEscape="!updateInfo.isForce && !downloading" cancel_title="暂不更新" @cancel="visible = false">
         <div class="update-dialog-content">
-            <div v-if="!downloading && !downloadComplete" :key="updateInfo.version" class="update-section">
+            <div v-if="showUpdateIntro" :key="updateInfo.version" class="update-section">
                 <div class="update-icon">
                     <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/app_logo/LOGO_DARK.png"
                         alt="Logo" />
@@ -37,7 +37,7 @@
                 </button>
             </div>
 
-            <div v-if="downloading && !downloadComplete" class="download-section">
+            <div v-if="showDownloadingSection" class="download-section">
                 <div class="download-animation">
                     <div class="download-icon">
                         <svg class="rotating" xmlns="http://www.w3.org/2000/svg" width="64" height="64"
@@ -85,6 +85,8 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import DialogAnimation from '@/components/common/general/dialog.vue';
 import { marked } from 'marked';
+
+const FORCE_DOWNLOAD_STATE_FOR_DEBUG = false;
 
 const dialogRef = ref<any>(null);
 const visible = ref(false);
@@ -135,6 +137,12 @@ const parsedDate = computed(() => {
     return updateInfo.value.publishDate || '最新版本';
 });
 
+const showUpdateIntro = computed(() => !FORCE_DOWNLOAD_STATE_FOR_DEBUG && !downloading.value && !downloadComplete.value);
+const showDownloadingSection = computed(() => {
+    if (downloadComplete.value) return false;
+    return FORCE_DOWNLOAD_STATE_FOR_DEBUG || downloading.value;
+});
+
 // --- 事件监听逻辑 ---
 
 let removeUpdateListener: any = null;
@@ -152,7 +160,27 @@ const stopPinging = () => {
     }
 };
 
+function openDebugDownloadDialog() {
+    updateInfo.value = {
+        version: '2.2.0-debug',
+        notes: 'debug download dialog preview',
+        isForce: false,
+        publishDate: '2026-04-10',
+    };
+    downloading.value = true;
+    downloadComplete.value = false;
+    percentage.value = 42;
+    visible.value = true;
+    nextTick(() => {
+        dialogRef.value?.open();
+    });
+}
+
 onMounted(() => {
+    if (FORCE_DOWNLOAD_STATE_FOR_DEBUG) {
+        openDebugDownloadDialog();
+    }
+
     if (window.electronAPI) {
         // 1. 发现更新
         removeUpdateListener = window.electronAPI.on('update-available', (event: any, info: any) => {
@@ -160,9 +188,9 @@ onMounted(() => {
             stopPinging();
 
             updateInfo.value = info;
-            downloading.value = false;
+            downloading.value = FORCE_DOWNLOAD_STATE_FOR_DEBUG;
             downloadComplete.value = false;
-            percentage.value = 0;
+            percentage.value = FORCE_DOWNLOAD_STATE_FOR_DEBUG ? 42 : 0;
 
             visible.value = true;
             nextTick(() => {
@@ -226,13 +254,17 @@ watch(visible, (newVal) => {
 .update-dialog-content {
     padding: 20px;
     min-width: 500px;
+    width: min(500px, calc(100vw - 48px));
+    max-width: 100%;
     min-height: 280px;
     max-height: 600px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 // 发现新版本样式
@@ -383,6 +415,8 @@ watch(visible, (newVal) => {
 .download-section {
     text-align: center;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 
     .download-animation {
         position: relative;
@@ -432,6 +466,8 @@ watch(visible, (newVal) => {
         width: 100%;
         padding: 0 20px;
         margin-bottom: 16px;
+        box-sizing: border-box;
+        overflow-x: hidden;
     }
 
     .download-tip {
@@ -633,6 +669,7 @@ watch(visible, (newVal) => {
 :deep(.modal) {
     max-height: 90vh;
     overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
 
@@ -654,6 +691,19 @@ watch(visible, (newVal) => {
             background: rgba(107, 114, 128, 0.7);
         }
     }
+}
+
+:deep(.el-progress) {
+    width: 100%;
+    max-width: 100%;
+}
+
+:deep(.el-progress-bar) {
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    padding-right: 0;
+    box-sizing: border-box;
 }
 </style>
 
