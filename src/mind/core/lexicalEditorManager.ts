@@ -8,6 +8,7 @@ import {
   $isElementNode,
   $isRangeSelection,
   $isTextNode,
+  $selectAll,
   COMMAND_PRIORITY_HIGH,
   CONTROLLED_TEXT_INSERTION_COMMAND,
   createEditor,
@@ -248,7 +249,7 @@ function applyInitialSelection(caretPlacement: 'start' | 'end' | 'none', selectA
   editor.update(() => {
     const root = $getRoot();
     if (selectAllText && root.getChildrenSize() > 0) {
-      root.select(0, root.getChildrenSize());
+      $selectAll();
       return;
     }
     applyCaretPlacementInUpdate(caretPlacement);

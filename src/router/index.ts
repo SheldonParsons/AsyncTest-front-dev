@@ -84,6 +84,11 @@ const routes = [
                 component: () => import('@/views/settings/source_management/async_executor.vue')
               },
               {
+                path: '/home/main/project/:project/settings/source/componenttest',
+                name: 'settings_componenttest',
+                component: () => import('@/views/settings/source_management/componenttest.vue')
+              },
+              {
                 path: '/home/main/project/:project/settings/source/usertoken',
                 name: 'settings_user_token',
                 component: () => import('@/views/settings/source_management/user_api_token.vue')

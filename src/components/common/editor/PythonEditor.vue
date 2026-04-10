@@ -63,7 +63,7 @@ onMounted(async () => {
   monacoCore.value = m;
   pythonLanguage.value = pythonDef.language;
   console.log(pythonLanguage.value);
-  
+
   await createLanguage();
 });
 
@@ -116,32 +116,70 @@ async function createLanguage() {
   // 创建编辑器实例
   instance = monacoCore.value.editor.create(dom.value, {
     model,
-    tabSize: 4,
-    fontSize: 14,
-    fixedOverflowWidgets: true,
     readOnly: props.disable,
+    fixedOverflowWidgets: true,
     automaticLayout: true,
+
+    tabSize: 4,
+    insertSpaces: true,
+    detectIndentation: false,
+
+    fontSize: 14,
+    lineHeight: 22,
     fontFamily: '"JetBrains Mono", monospace',
+    fontLigatures: true,
+
     scrollBeyondLastLine: false,
-    autoClosingBrackets: "always", // 确保开启自动闭合括号
-    formatOnType: true, // 开启键入时自动格式化
-    renderWhitespace: "all",
+    smoothScrolling: true,
+    cursorBlinking: "blink",
+    cursorSmoothCaretAnimation: "on",
+    mouseWheelZoom: true,
+
+    autoClosingBrackets: "always",
+    autoClosingQuotes: "always",
+    autoSurround: "languageDefined",
+
+    formatOnType: true,
+    formatOnPaste: true,
+
+    renderWhitespace: "selection",
+    renderControlCharacters: false,
+    roundedSelection: false,
+
+    bracketPairColorization: {
+      enabled: true,
+    },
+    guides: {
+      bracketPairs: true,
+      indentation: true,
+    },
+
+    quickSuggestions: {
+      other: true,
+      comments: false,
+      strings: true,
+    },
+    suggestOnTriggerCharacters: true,
+    parameterHints: {
+      enabled: true,
+    },
+    wordBasedSuggestions: "currentDocument",
+
     minimap: {
       enabled: false,
       maxColumn: 80,
       renderCharacters: true,
-      showSlider: "always", // "always" | "mouseover"
-      side: "right", // "right" | "left"
-      size: "fit", // "proportional" | "fill" | "fit"
+      showSlider: "mouseover",
+      side: "right",
+      size: "proportional",
     },
+
     scrollbar: {
-      // 垂直滚动条的宽度
-      verticalScrollbarSize: 6, // 默认是 10px，我们把它改小
-      // 水平滚动条的高度
+      verticalScrollbarSize: 6,
       horizontalScrollbarSize: 6,
-      // (可选) 滚动条箭头的尺寸
       arrowSize: 10,
-    }
+      alwaysConsumeMouseWheel: false,
+    },
   });
   instance.getDomNode().addEventListener('wheel', function (event: any) {
     const currentScrollTop = instance.getScrollTop();

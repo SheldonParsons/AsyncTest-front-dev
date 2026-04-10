@@ -184,6 +184,7 @@
     "eslint-plugin-promise": "^6.1.1",
     "eslint-plugin-vue": "^9.7.0",
     "parse-mind": "^1.0.2",
+    "pyright": "^1.1.408",
     "sass": "^1.55.0",
     "typescript": "^5.8.3",
     "vite": "^5.2.0",

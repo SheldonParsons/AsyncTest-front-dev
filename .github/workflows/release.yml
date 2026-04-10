@@ -29,10 +29,10 @@ jobs:
         arch: [x64, arm64]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
@@ -45,7 +45,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Cache Electron + electron-builder downloads (mac)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/Library/Caches/electron
@@ -306,10 +306,10 @@ jobs:
         variant: [public, internal]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
@@ -334,7 +334,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "ELECTRON_BUILDER_CACHE_DIR=$env:LOCALAPPDATA\electron-builder\Cache"
 
       - name: Cache Electron + electron-builder downloads (win)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ env.ELECTRON_CACHE_DIR }}

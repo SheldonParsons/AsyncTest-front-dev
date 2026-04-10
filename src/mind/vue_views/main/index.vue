@@ -635,6 +635,7 @@ import {
   getNodeMarkerItem,
   getNodeMarkerKeys,
   getNodeBodyWorldRect,
+  hitTestNodeMarker,
   measureNodeMarkerRow,
   nodeMarkerGroups,
   removeNodeMarker,
@@ -674,6 +675,8 @@ import {
 import {
   computeNodeTextGeometry,
   getNodeMinimumWidth,
+  isRichTextFullyEmpty,
+  measureNodeVisualLayout,
   resolveNodeContentWidthConstraint,
   getNodeTextStyle,
   measureTextVerticalMetrics,
@@ -1700,6 +1703,7 @@ const worldBoxes = ref<WorldBoxes>(new Map());
 const descendantCounts = ref<Map<string, number>>(new Map());
 const parentIndexByNodeId = ref<Map<string, { parentId: string; index: number }>>(new Map());
 const hoverNodeId = ref<string | null>(null);
+const hoveredMarker = ref<{ nodeId: string; index: number } | null>(null);
 const hoverRelationId = ref<string | null>(null);
 const collapseTagHoverNodeId = ref<string | null>(null);
 const collapseTagStickyNodeId = ref<string | null>(null);
@@ -1793,6 +1797,7 @@ const dragState = ref<DragDropState>({
   primaryDragRootId: null,
   rootId: null,
   draggedSubtreeNodeIds: new Set(),
+  blockedDropNodeIds: new Set(),
   previewWorldOffsetX: 0,
   previewWorldOffsetY: 0,
   freeRootBasePosX: null,
@@ -1926,6 +1931,7 @@ const { draw } = useDraw(
   relationCacheVersion,
   spatialIndex,
   hoverNodeId,
+  hoveredMarker,
   displaySelectedIds,
   selectedRelationId,
   allRelationsSelected,
@@ -3907,7 +3913,13 @@ function getNodeImageRect(nodeId: string) {
   const nodeRect = worldBoxes.value.get(nodeId);
   const imageSize = getNodeImageDisplaySize(nodeId);
   if (!nodeRect || !imageSize) return null;
-  return getNodeImageWorldRect(getNodeBodyWorldRect(getNodeById(nodeId), nodeRect), imageSize);
+  const node = getNodeById(nodeId);
+  const bodyRect = getNodeBodyWorldRect(node, nodeRect);
+  const miw = measureNodeMarkerRow(node).inlineWidth;
+  const contentRect = miw > 0
+    ? { x1: bodyRect.x1 + miw, y1: bodyRect.y1, x2: bodyRect.x2, y2: bodyRect.y2 }
+    : bodyRect;
+  return getNodeImageWorldRect(contentRect, imageSize);
 }
 
 function getNodeBodyRectForWidthInteraction(nodeId: string): NodeWidthPreviewRect | null {
@@ -4030,11 +4042,11 @@ function getNodeResizableMinWidth(nodeId: string) {
   if (!node) return NODE_PADDING_X + 1;
   const richText = getNodeRichText(node);
   const image = getNodeImage(node);
+  const markerIW = measureNodeMarkerRow(node).inlineWidth;
   return Math.max(
     getNodeMinimumWidth(node, richText, image),
-    measureNodeMarkerRow(node).width,
     (image?.width ?? 0) + NODE_PADDING_X
-  );
+  ) + markerIW;
 }
 
 function startNodeWidthResize(
@@ -4090,7 +4102,9 @@ function finishNodeWidthResize(commit: boolean, reason: string) {
     requestRender();
     return;
   }
-  const nextContentWidth = Math.max(1, Math.round(previewBodyRect.width - NODE_PADDING_X));
+  const resizeNode = getNodeById(nodeId);
+  const resizeMarkerIW = measureNodeMarkerRow(resizeNode).inlineWidth;
+  const nextContentWidth = Math.max(1, Math.round(previewBodyRect.width - NODE_PADDING_X - resizeMarkerIW));
   const command = createBatchNodePresentationCommand([nodeId], {
     name: 'BatchUpdateNodeWidthCommand',
     mutationReason: 'node-width-drag',
@@ -5345,20 +5359,19 @@ function getEditingTextBoxRectForNode(
   if (!nodeId || !node || !worldRect) return null;
   const rect = getNodeBodyWorldRect(node, worldRect);
   const image = getNodeImage(node);
+  const markerIW = measureNodeMarkerRow(node).inlineWidth;
   const activePreview = preview?.nodeId === nodeId ? preview : null;
   if (activePreview) {
-    const markerBandHeight = measureNodeMarkerRow(node).bandHeight;
-    const previewBodyHeight = Math.max(1, activePreview.computedNodeH - markerBandHeight);
     const previewBodyRect = {
       x1: rect.x1,
       y1: rect.y1,
       x2: rect.x1 + activePreview.computedNodeW,
-      y2: rect.y1 + previewBodyHeight,
+      y2: rect.y1 + activePreview.computedNodeH,
     };
     return {
-      x: previewBodyRect.x1 + NODE_TEXT_INSET_X,
+      x: previewBodyRect.x1 + NODE_TEXT_INSET_X + markerIW,
       y: previewBodyRect.y1 + activePreview.textLineBoxTop,
-      width: Math.max(1, activePreview.computedNodeW - NODE_TEXT_INSET_X * 2),
+      width: Math.max(1, activePreview.computedNodeW - NODE_TEXT_INSET_X * 2 - markerIW),
       height: activePreview.textLineBoxHeight,
     };
   }
@@ -5376,9 +5389,9 @@ function getEditingTextBoxRectForNode(
   });
   const textGeometry = computeNodeTextGeometry(ctx, textLayout, textStyle, image);
   return {
-    x: rect.x1 + NODE_TEXT_INSET_X,
+    x: rect.x1 + NODE_TEXT_INSET_X + markerIW,
     y: rect.y1 + textGeometry.textLineBoxTop,
-    width: Math.max(1, rect.x2 - rect.x1 - NODE_TEXT_INSET_X * 2),
+    width: Math.max(1, rect.x2 - rect.x1 - NODE_TEXT_INSET_X * 2 - markerIW),
     height: textGeometry.textLineBoxHeight,
   };
 }
@@ -6102,14 +6115,15 @@ function relayoutEditingPreviewNow() {
   });
   const textGeometry = computeNodeTextGeometry(ctx, measuredLayout, textStyle, image);
   const markerRow = measureNodeMarkerRow(node);
+  const relayoutMarkerIW = markerRow.inlineWidth;
   const minNodeWidth = getNodeMinimumWidth(node, liveRichText, image);
   const previousPreview = editingPreview.value?.nodeId === session.nodeId ? editingPreview.value : null;
   let computedNodeW = clampNodeDimension(
-    Math.max(Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X, markerRow.width),
-    Math.max(minNodeWidth, markerRow.width),
+    Math.max(measuredLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X + relayoutMarkerIW,
+    minNodeWidth,
     NODE_W_HARD_MAX
   );
-  let computedNodeH = textGeometry.contentBoxTop + textGeometry.contentBoxHeight + markerRow.bandHeight;
+  let computedNodeH = textGeometry.contentBoxTop + textGeometry.contentBoxHeight;
   if (computedNodeW > NODE_W_HARD_MAX || computedNodeH > NODE_H_HARD_MAX) {
     console.warn('node size clamped', { nodeId: session.nodeId, computedNodeW, computedNodeH });
     computedNodeW = Math.min(computedNodeW, NODE_W_HARD_MAX);
@@ -6224,13 +6238,14 @@ function startEditing(
     Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
   );
   const currentRect = worldBoxes.value.get(nodeId);
+  const editingMarkerIW = measureNodeMarkerRow(node).inlineWidth;
   const initialTextBoxRect = currentRect
     ? (() => {
       const bodyRect = getNodeBodyWorldRect(node, currentRect);
       return {
-        x: bodyRect.x1 + NODE_TEXT_INSET_X,
+        x: bodyRect.x1 + NODE_TEXT_INSET_X + editingMarkerIW,
         y: bodyRect.y1 + NODE_TEXT_INSET_Y,
-        width: Math.max(1, bodyRect.x2 - bodyRect.x1 - NODE_TEXT_INSET_X * 2),
+        width: Math.max(1, bodyRect.x2 - bodyRect.x1 - NODE_TEXT_INSET_X * 2 - editingMarkerIW),
         height: Math.max(1, bodyRect.y2 - bodyRect.y1 - NODE_TEXT_INSET_Y * 2),
       };
     })()
@@ -6254,7 +6269,7 @@ function startEditing(
   editingPreview.value = currentRect
     ? {
       nodeId,
-      measuredTextW: Math.max(1, currentRect.x2 - currentRect.x1 - NODE_PADDING_X),
+      measuredTextW: Math.max(1, currentRect.x2 - currentRect.x1 - NODE_PADDING_X - editingMarkerIW),
       measuredTextH: Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
       computedNodeW: Math.ceil(currentRect.x2 - currentRect.x1),
       computedNodeH: Math.ceil(currentRect.y2 - currentRect.y1),
@@ -6265,6 +6280,19 @@ function startEditing(
       textLineBoxHeight: initialTextBoxRect?.height ?? Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
     }
     : null;
+  // 对于仅含图片无文字的折叠节点，进入编辑时展开文字区域以便输入
+  if (editingPreview.value && currentRect && isRichTextFullyEmpty(nextRichText) && getNodeImage(node)) {
+    const ctx = canvasRef.value?.getContext('2d');
+    if (ctx) {
+      const expandedLayout = measureNodeVisualLayout(ctx, node, editingTextLayoutCache, { doc: props.doc, nodeId });
+      editingPreview.value = {
+        ...editingPreview.value,
+        computedNodeH: Math.ceil(expandedLayout.height),
+        textLineBoxTop: expandedLayout.textGeometry.textLineBoxTop,
+        textLineBoxHeight: expandedLayout.textGeometry.textLineBoxHeight,
+      };
+    }
+  }
   editingWidthPreview.value = currentRect && nodes
     ? {
       nodeId,
@@ -8058,6 +8086,7 @@ function scheduleDragBootstrap(dragRoots: string[], dragKind: DragDropState['dra
       const subtreeWarmupStartedAt = performance.now();
       const draggedSubtreeNodeIds =
         dragKind === 'free-root' ? collectDraggedDescendantIds(dragRoots) : collectDraggedSubtreeIds(dragRoots);
+      dragState.value.blockedDropNodeIds.forEach((nodeId) => draggedSubtreeNodeIds.add(nodeId));
       const subtreeWarmupMs = performance.now() - subtreeWarmupStartedAt;
       setDragState({
         draggedSubtreeNodeIds,
@@ -8165,6 +8194,7 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
   const nodes = getMindNodes();
   if (!currentDrag.isDragging || !nodes) return { target: null, invalidReason: null };
   const dragRootIdSet = new Set(currentDrag.dragRoots);
+  const blockedDropNodeIds = currentDrag.blockedDropNodeIds;
 
   const worldRadius = FAR_THRESHOLD_PX / Math.max(camera.value.scale, 0.0001);
   const worldPoint = screenToWorld(camera.value, screenX, screenY);
@@ -8180,12 +8210,17 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
   let invalidReason: string | null = 'tooFar';
 
   for (const nodeId of candidates) {
-    if (isNodeInsideDraggedTree(nodeId, currentDrag, dragRootIdSet)) {
-      invalidReason = 'intoDescendant';
-      continue;
-    }
     const rect = worldBoxes.value.get(nodeId);
     if (!rect) continue;
+    const pointerInsideCandidate = pointInRect(worldPoint, rect);
+    if (isNodeInsideDraggedTree(nodeId, currentDrag, dragRootIdSet)) {
+      if (pointerInsideCandidate) invalidReason = 'intoDescendant';
+      continue;
+    }
+    if (isBlockedByCompleteSummaryDrag(nodeId, blockedDropNodeIds)) {
+      if (pointerInsideCandidate) invalidReason = 'summaryTrailingDescendantBlocked';
+      continue;
+    }
     const topLeft = worldToScreen(camera.value, rect.x1, rect.y1);
     const bottomRight = worldToScreen(camera.value, rect.x2, rect.y2);
     const screenRect = { x1: topLeft.x, y1: topLeft.y, x2: bottomRight.x, y2: bottomRight.y };
@@ -8208,6 +8243,10 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
         invalidReason = 'intoDescendant';
         continue;
       }
+      if (isBlockedByCompleteSummaryDrag(parentInfo.parentId, blockedDropNodeIds)) {
+        invalidReason = 'summaryTrailingDescendantBlocked';
+        continue;
+      }
       candidate = {
         type: 'sibling-before',
         targetNodeId: nodeId,
@@ -8223,6 +8262,10 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
         invalidReason = 'intoDescendant';
         continue;
       }
+      if (isBlockedByCompleteSummaryDrag(parentInfo.parentId, blockedDropNodeIds)) {
+        invalidReason = 'summaryTrailingDescendantBlocked';
+        continue;
+      }
       candidate = {
         type: 'sibling-after',
         targetNodeId: nodeId,
@@ -8230,6 +8273,10 @@ function resolveDropTarget(screenX: number, screenY: number): { target: DragDrop
         toIndex: parentInfo.index + 1,
       };
     } else {
+      if (isBlockedByCompleteSummaryDrag(nodeId, blockedDropNodeIds)) {
+        invalidReason = 'summaryTrailingDescendantBlocked';
+        continue;
+      }
       candidate = {
         type: 'child',
         targetNodeId: nodeId,
@@ -8264,7 +8311,11 @@ function updateDragDropTarget(screenX: number, screenY: number) {
     previewWorldOffsetY: worldPoint.y - interactionState.value.downWorldY,
     dropTarget: target,
     lastValidDropTarget:
-      target && !invalidReason ? cloneDropTarget(target) : dragState.value.lastValidDropTarget,
+      target && !invalidReason
+        ? cloneDropTarget(target)
+        : !invalidReason || invalidReason === 'tooFar' || invalidReason === 'pointerStateLost'
+          ? dragState.value.lastValidDropTarget
+          : null,
     invalidReason,
   });
   requestRender();
@@ -8523,6 +8574,7 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
   const createCommandStartedAt = dragProbe ? performance.now() : 0;
   const previousMovingRootEntries = snapshotMindRootEntriesByNodeIds(movingRootIds);
   const beforeSummariesByParent = snapshotSummariesByParent(affectedParentIds);
+  const completeSummaryDragInfos = collectCompleteSummaryDragInfos(movingRootIds, beforeChildrenByParent);
   const afterSummariesByParent = new Map<string, MindSummaryMeta[]>();
   affectedParentIds.forEach((parentId) => {
     afterSummariesByParent.set(
@@ -8533,6 +8585,22 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
         afterChildrenByParent[parentId] ?? []
       )
     );
+  });
+  completeSummaryDragInfos.forEach((info) => {
+    if (info.sourceParentId === dropTarget.toParentId) return;
+    const nextChildren = afterChildrenByParent[dropTarget.toParentId] ?? [];
+    const nextIndexes = info.coveredNodeIds
+      .map((childId) => nextChildren.indexOf(childId))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    if (!nextIndexes.length) return;
+    const currentTargetSummaries = afterSummariesByParent.get(dropTarget.toParentId) ?? [];
+    currentTargetSummaries.push({
+      ...info.summary,
+      startIndex: nextIndexes[0],
+      endIndex: nextIndexes[nextIndexes.length - 1],
+    });
+    afterSummariesByParent.set(dropTarget.toParentId, currentTargetSummaries);
   });
   const command = createMoveSubtreesCommand(
     {
@@ -8739,7 +8807,7 @@ function buildMoveRootsToFreeTopicsCommand(): {
   };
 }
 
-function getPointerScreenPoint(event: PointerEvent) {
+function getPointerScreenPoint(event: Pick<PointerEvent, 'clientX' | 'clientY'>) {
   const canvas = canvasRef.value;
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
@@ -8747,6 +8815,17 @@ function getPointerScreenPoint(event: PointerEvent) {
     x: event.clientX - rect.left,
     y: event.clientY - rect.top,
   };
+}
+
+function syncDragPreviewToReleasePoint(event: Pick<PointerEvent, 'clientX' | 'clientY'>) {
+  if (interactionState.value.mode !== 'draggingNodes' || !dragState.value.isDragging) return;
+  const screenPoint = getPointerScreenPoint(event);
+  if (!screenPoint) return;
+  if (dragState.value.dragKind === 'free-root') {
+    updateFreeRootDragPreview(screenPoint.x, screenPoint.y);
+  } else {
+    updateDragDropTarget(screenPoint.x, screenPoint.y);
+  }
 }
 
 function capturePointer(pointerId: number, reason: string) {
@@ -8857,6 +8936,10 @@ function beginDragging(screenX: number, screenY: number) {
   const dragKind: DragDropState['dragKind'] =
     dragRoots.length === 1 && isFreeRootNode(dragRoots[0] ?? null) ? 'free-root' : normalized.dragKind;
   const freeRootEntry = dragKind === 'free-root' ? getMindRootEntryByNodeId(dragRoots[0] ?? null) : null;
+  const blockedDropNodeIds = collectCompleteSummaryBlockedNodeIds(dragRoots);
+  const draggedSubtreeNodeIds =
+    dragKind === 'free-root' ? collectDraggedDescendantIds(dragRoots) : collectDraggedSubtreeIds(dragRoots);
+  blockedDropNodeIds.forEach((nodeId) => draggedSubtreeNodeIds.add(nodeId));
   beginMindPerfOperationProbe({
     op: 'drag-node',
     label: '拖拽移动节点',
@@ -8895,7 +8978,8 @@ function beginDragging(screenX: number, screenY: number) {
     dragRootTextLayouts: [],
     primaryDragRootId: candidate.primaryDragRootId ?? dragRoots[dragRoots.length - 1] ?? null,
     rootId: normalized.rootId,
-    draggedSubtreeNodeIds: dragKind === 'free-root' ? new Set() : new Set(dragRoots),
+    draggedSubtreeNodeIds,
+    blockedDropNodeIds,
     previewWorldOffsetX: 0,
     previewWorldOffsetY: 0,
     freeRootBasePosX: dragKind === 'free-root' ? (freeRootEntry?.pos?.x ?? 0) : null,
@@ -8979,13 +9063,20 @@ function finalizeDrop(reason = 'pointerup') {
   const dragProbe = probe?.op === 'drag-node' ? probe : null;
   if (dragProbe) dragProbe.releaseStartedAt = startedAt;
   const isFreeRootDrag = dragState.value.dragKind === 'free-root';
+  const currentPreviewHasDropTarget = !!dragState.value.dropTarget;
   const canUseLastValidTarget =
     !isFreeRootDrag &&
     !dragState.value.dropTarget &&
     !!dragState.value.lastValidDropTarget &&
-    (!dragState.value.invalidReason || dragState.value.invalidReason === 'tooFar' || dragState.value.invalidReason === 'pointerStateLost');
+    (!dragState.value.invalidReason || dragState.value.invalidReason === 'pointerStateLost');
   const stableTarget = dragState.value.dropTarget ?? (canUseLastValidTarget ? dragState.value.lastValidDropTarget : null);
   const effectiveInvalidReason = stableTarget ? null : dragState.value.invalidReason ?? 'tooFar';
+  const isExplicitlyForbiddenFreeDrop =
+    effectiveInvalidReason === 'intoDescendant' || effectiveInvalidReason === 'summaryTrailingDescendantBlocked';
+  const canDropToFreeTopic =
+    !isFreeRootDrag &&
+    !stableTarget &&
+    !isExplicitlyForbiddenFreeDrop;
   const buildMoveCommandStartedAt = dragProbe ? performance.now() : 0;
   const result = isFreeRootDrag && !stableTarget
     ? (() => {
@@ -9025,15 +9116,23 @@ function finalizeDrop(reason = 'pointerup') {
       })()
     : stableTarget && !effectiveInvalidReason
       ? buildMoveCommand(stableTarget)
-      : !isFreeRootDrag
+      : canDropToFreeTopic
         ? buildMoveRootsToFreeTopicsCommand()
-      : {
-          command: null,
-          reason: effectiveInvalidReason,
-          changed: false,
-          beforeHash: null,
-          afterHash: null,
-        };
+        : {
+            command: null,
+            reason: effectiveInvalidReason,
+            changed: false,
+            beforeHash: null,
+            afterHash: null,
+          };
+  const shouldFallbackToFreeTopic =
+    !result.command &&
+    !isFreeRootDrag &&
+    !currentPreviewHasDropTarget &&
+    !isExplicitlyForbiddenFreeDrop &&
+    result.reason !== 'missingNodes' &&
+    result.reason !== 'pointerStateLost';
+  const finalResult = shouldFallbackToFreeTopic ? buildMoveRootsToFreeTopicsCommand() : result;
   if (dragProbe) {
     dragProbe.buildMoveCommandMs = performance.now() - buildMoveCommandStartedAt;
     dragProbe.finalDropTargetType = stableTarget?.type ?? null;
@@ -9044,11 +9143,11 @@ function finalizeDrop(reason = 'pointerup') {
       chosenDropTargetType: stableTarget?.type ?? null,
       toParentId: stableTarget?.toParentId ?? null,
       toIndex: stableTarget?.toIndex ?? null,
-      invalidReason: result.reason,
-      changed: result.changed,
+      invalidReason: finalResult.reason,
+      changed: finalResult.changed,
     });
   }
-  const isNoOp = !result.command;
+  const isNoOp = !finalResult.command;
   const rebuildScheduled = !isNoOp;
 
   if (DEBUG_CANVAS_OVERLAY) {
@@ -9064,14 +9163,15 @@ function finalizeDrop(reason = 'pointerup') {
       movingRootIds: dragState.value.dragRoots,
       toParentId: stableTarget?.toParentId ?? null,
       toIndex: stableTarget?.toIndex ?? null,
-      invalidReason: result.reason,
+      invalidReason: finalResult.reason,
       isNoOp,
-      noOpReason: isNoOp ? result.reason : null,
+      noOpReason: isNoOp ? finalResult.reason : null,
       executeCalled: !isNoOp,
       rebuildScheduled,
-      computedBeforeAfterChanged: result.changed,
-      beforeHash: result.beforeHash,
-      afterHash: result.afterHash,
+      computedBeforeAfterChanged: finalResult.changed,
+      beforeHash: finalResult.beforeHash,
+      afterHash: finalResult.afterHash,
+      fallbackToFreeTopic: shouldFallbackToFreeTopic,
       durationMs: Number((performance.now() - startedAt).toFixed(2)),
     });
   }
@@ -9086,16 +9186,16 @@ function finalizeDrop(reason = 'pointerup') {
       dragProbe.releaseToDropRenderedMs = dragProbe.releaseStartedAt
         ? performance.now() - dragProbe.releaseStartedAt
         : dragProbe.finalizeDropMs;
-      finishPendingDragPerfProbe(result.reason ?? reason, {
+      finishPendingDragPerfProbe(finalResult.reason ?? reason, {
         finalizeDropMs: roundPerfMs(dragProbe.finalizeDropMs),
         releaseToDropRenderedMs: roundPerfMs(dragProbe.releaseToDropRenderedMs),
-        noOpReason: result.reason,
+        noOpReason: finalResult.reason,
         });
       }
     const operationProbe = getActiveMindPerfOperationProbe();
     if (operationProbe?.op === 'drag-node') {
       finishMindPerfOperationProbe(operationProbe, 'fallback', {
-        fallbackReason: result.reason ?? reason,
+        fallbackReason: finalResult.reason ?? reason,
       });
     }
     return;
@@ -9104,11 +9204,11 @@ function finalizeDrop(reason = 'pointerup') {
     dragProbe.finalizeDropMs = performance.now() - startedAt;
     pushMindPerfAnchor(dragProbe, 'drag-command-dispatched', {
       finalizeDropMs: roundPerfMs(dragProbe.finalizeDropMs),
-      commandName: result.command.name,
+      commandName: finalResult.command.name,
       chosenDropTargetType: stableTarget?.type ?? null,
     });
   }
-  executeCommand(result.command);
+  executeCommand(finalResult.command);
 }
 
 function finalizeInteraction(
@@ -9517,6 +9617,85 @@ function remapSummariesByChildren(
     .filter((summary): summary is MindSummaryMeta => !!summary);
 }
 
+type CompleteSummaryDragInfo = {
+  sourceParentId: string;
+  summary: MindSummaryMeta;
+  coveredNodeIds: string[];
+  trailingSiblingNodeIds: string[];
+};
+
+function collectCompleteSummaryDragInfos(
+  movingRootIds: Iterable<string>,
+  beforeChildrenByParent?: Record<string, string[]>
+): CompleteSummaryDragInfo[] {
+  const nodes = getMindNodes();
+  if (!nodes) return [];
+  const movingRootIdSet = new Set(Array.from(movingRootIds).filter(Boolean));
+  if (!movingRootIdSet.size) return [];
+  const sourceParentIds = beforeChildrenByParent
+    ? Object.keys(beforeChildrenByParent)
+    : Array.from(
+        new Set(
+          [...movingRootIdSet]
+            .map((nodeId) => findParentAndIndex(nodeId)?.parentId ?? null)
+            .filter((parentId): parentId is string => !!parentId)
+        )
+      );
+  const infos: CompleteSummaryDragInfo[] = [];
+  sourceParentIds.forEach((parentId) => {
+    const parentNode = nodes[parentId];
+    if (!parentNode) return;
+    const beforeChildren = beforeChildrenByParent?.[parentId] ?? getRegularChildIds(parentNode);
+    getNodeSummaries(parentNode).forEach((summary) => {
+      const coveredNodeIds = beforeChildren.slice(summary.startIndex, summary.endIndex + 1).filter(Boolean);
+      if (!coveredNodeIds.length || !coveredNodeIds.every((childId) => movingRootIdSet.has(childId))) return;
+      infos.push({
+        sourceParentId: parentId,
+        summary: { ...summary },
+        coveredNodeIds,
+        trailingSiblingNodeIds: beforeChildren.slice(summary.endIndex + 1).filter(Boolean),
+      });
+    });
+  });
+  return infos;
+}
+
+function isNodeWithinAnySubtree(
+  nodeId: string,
+  ancestorNodeIds: Iterable<string>,
+  nextParentIndex: Map<string, { parentId: string; index: number }> = parentIndexByNodeId.value
+) {
+  const ancestorIdSet = new Set(Array.from(ancestorNodeIds).filter(Boolean));
+  if (!ancestorIdSet.size) return false;
+  let currentId: string | null = nodeId;
+  while (currentId) {
+    if (ancestorIdSet.has(currentId)) return true;
+    currentId = nextParentIndex.get(currentId)?.parentId ?? null;
+  }
+  return false;
+}
+
+function collectCompleteSummaryBlockedNodeIds(
+  movingRootIds: Iterable<string>,
+  beforeChildrenByParent?: Record<string, string[]>
+) {
+  const nodes = getMindNodes();
+  const blockedNodeIds = new Set<string>();
+  if (!nodes) return blockedNodeIds;
+  const summaryInfos = collectCompleteSummaryDragInfos(movingRootIds, beforeChildrenByParent);
+  summaryInfos.forEach((info) => {
+    collectSubtreeNodeIds(nodes, info.summary.summaryNodeId).forEach((nodeId) => blockedNodeIds.add(nodeId));
+  });
+  return blockedNodeIds;
+}
+
+function isBlockedByCompleteSummaryDrag(
+  targetNodeId: string,
+  blockedNodeIds: Set<string>
+) {
+  return blockedNodeIds.has(targetNodeId);
+}
+
 function snapshotSummariesByParent(parentIds: Iterable<string>) {
   const nodes = getMindNodes();
   const snapshots = new Map<string, MindSummaryMeta[]>();
@@ -9660,7 +9839,7 @@ function resolvePreferredNodeClipboardState(
       hasExternalText &&
       internalClipboard.type !== 'empty' &&
       lastCopiedNodeClipboardPlainText &&
-      plainText === lastCopiedNodeClipboardPlainText
+      plainText.replace(/\r\n/g, '\n') === lastCopiedNodeClipboardPlainText
     ) {
       return internalClipboard;
     }
@@ -11228,13 +11407,31 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
   );
   const nextHoverId = nextCollapseTagHoverId ?? hitTest(screenX, screenY);
   const nextHoverRelationId = nextHoverId ? null : hitTestRelation(screenX, screenY, camera.value);
+
+  // Detect marker hover within the hovered node
+  let nextHoveredMarker: { nodeId: string; index: number } | null = null;
+  if (nextHoverId && !nextCollapseTagHoverId) {
+    const bodyRect = worldBoxes.value.get(nextHoverId);
+    if (bodyRect) {
+      const worldPoint = screenToWorld(camera.value, screenX, screenY);
+      const node = getMindNodes()?.[nextHoverId];
+      const idx = hitTestNodeMarker(node, bodyRect, worldPoint.x, worldPoint.y);
+      if (idx >= 0) nextHoveredMarker = { nodeId: nextHoverId, index: idx };
+    }
+  }
+
+  const prevMarker = hoveredMarker.value;
+  const markerChanged = (prevMarker?.nodeId !== nextHoveredMarker?.nodeId) || (prevMarker?.index !== nextHoveredMarker?.index);
+
   if (
     nextHoverId === hoverNodeId.value &&
     nextCollapseTagHoverId === collapseTagHoverNodeId.value &&
-    nextHoverRelationId === hoverRelationId.value
+    nextHoverRelationId === hoverRelationId.value &&
+    !markerChanged
   ) return;
   hoverNodeId.value = nextHoverId;
   hoverRelationId.value = nextHoverRelationId;
+  hoveredMarker.value = nextHoveredMarker;
   collapseTagHoverNodeId.value = nextCollapseTagHoverId;
   const nextActiveTagNodeId = nextCollapseTagHoverId ?? nextHoverId;
   if (nextActiveTagNodeId) keepCollapseTagVisible(nextActiveTagNodeId);
@@ -11849,6 +12046,7 @@ function onCanvasPointerUp(event: PointerEvent) {
       mode: interactionState.value.mode,
     });
   }
+  syncDragPreviewToReleasePoint(event);
   finalizeInteraction('pointerup', { commitDrag: true, eventSource: 'canvas' });
 }
 
@@ -11896,6 +12094,7 @@ function onGlobalPointerUp(event: PointerEvent) {
       mode: interactionState.value.mode,
     });
   }
+  syncDragPreviewToReleasePoint(event);
   finalizeInteraction('global-pointerup', { commitDrag: true, eventSource: 'global' });
 }
 
@@ -11935,6 +12134,7 @@ function onGlobalMouseUp(event: MouseEvent) {
       pointerId: interactionState.value.pointerId,
     });
   }
+  syncDragPreviewToReleasePoint(event);
   finalizeInteraction('global-mouseup-fallback', { commitDrag: true, eventSource: 'global' });
 }
 

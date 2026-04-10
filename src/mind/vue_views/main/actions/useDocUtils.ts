@@ -3,7 +3,7 @@ import { toRaw } from 'vue';
 
 export const DEFAULT_ROOT_H_GAP = 44;
 const LEGACY_DEFAULT_ROOT_H_GAPS = new Set([60, 52]);
-export const DEFAULT_ROOT_V_GAP = 16;
+export const DEFAULT_ROOT_V_GAP = 10;
 export const LEGACY_DEFAULT_ROOT_V_GAP = 18;
 type MindRootKind = 'main' | 'free';
 
@@ -16,7 +16,7 @@ export function resolveRootHorizontalGap(hGap: unknown) {
 
 export function resolveRootVerticalGap(vGap: unknown) {
     if (typeof vGap === 'number' && Number.isFinite(vGap)) {
-        return vGap === LEGACY_DEFAULT_ROOT_V_GAP ? DEFAULT_ROOT_V_GAP : vGap;
+        return (vGap === LEGACY_DEFAULT_ROOT_V_GAP || vGap === 16) ? DEFAULT_ROOT_V_GAP : vGap;
     }
     return DEFAULT_ROOT_V_GAP;
 }

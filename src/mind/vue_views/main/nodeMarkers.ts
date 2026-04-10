@@ -19,9 +19,12 @@ export type NodeMarkerItem = {
   src: string;
 };
 
-export const NODE_MARKER_ICON_SIZE_PX = 18;
+export const NODE_MARKER_ICON_SIZE_PX = 15;
 export const NODE_MARKER_GAP_PX = 4;
 export const NODE_MARKER_BODY_GAP_PX = 8;
+export const NODE_MARKER_OVERLAP_RATIO = 0.2;
+export const NODE_MARKER_STEP_PX = Math.round(NODE_MARKER_ICON_SIZE_PX * (1 - NODE_MARKER_OVERLAP_RATIO));
+export const NODE_MARKER_HOVER_SCALE = 1.15;
 const NODE_MARKER_CHAR_COLLATOR = { numeric: true, sensitivity: 'base' } satisfies Intl.CollatorOptions;
 
 const markerIconModules = import.meta.glob('../../core/marker-icon/*/*.svg', {
@@ -117,27 +120,48 @@ export function measureNodeMarkerRow(node: MindNodeLike | null | undefined) {
       width: 0,
       height: 0,
       bandHeight: 0,
+      inlineWidth: 0,
     };
   }
 
-  const width =
-    markers.length * NODE_MARKER_ICON_SIZE_PX + Math.max(0, markers.length - 1) * NODE_MARKER_GAP_PX;
+  const width = NODE_MARKER_ICON_SIZE_PX + Math.max(0, markers.length - 1) * NODE_MARKER_STEP_PX;
   const height = NODE_MARKER_ICON_SIZE_PX;
   return {
     markers,
     width,
     height,
-    bandHeight: height + NODE_MARKER_BODY_GAP_PX,
+    bandHeight: 0,
+    inlineWidth: width + NODE_MARKER_BODY_GAP_PX,
   };
 }
 
-export function getNodeBodyWorldRect(node: MindNodeLike | null | undefined, rect: WorldRect): WorldRect {
-  const markerBandHeight = measureNodeMarkerRow(node).bandHeight;
-  if (markerBandHeight <= 0) return rect;
-  return {
-    x1: rect.x1,
-    y1: rect.y1,
-    x2: rect.x2,
-    y2: Math.max(rect.y1, rect.y2 - markerBandHeight),
-  };
+export function getNodeBodyWorldRect(_node: MindNodeLike | null | undefined, rect: WorldRect): WorldRect {
+  return rect;
+}
+
+/**
+ * Hit test markers drawn inside a node body.
+ * Returns the index of the topmost marker under (worldX, worldY), or -1.
+ * Earlier markers are visually on top (drawn last), so we check from index 0 first.
+ */
+export function hitTestNodeMarker(
+  node: MindNodeLike | null | undefined,
+  bodyRect: WorldRect,
+  worldX: number,
+  worldY: number
+): number {
+  const markers = resolveNodeMarkers(node);
+  if (!markers.length) return -1;
+  const bodyH = bodyRect.y2 - bodyRect.y1;
+  const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
+  const startX = bodyRect.x1 + 6; // NODE_TEXT_INSET_X
+  if (worldY < markerY || worldY > markerY + NODE_MARKER_ICON_SIZE_PX) return -1;
+  // Check from front (index 0, drawn on top) to back
+  for (let i = 0; i < markers.length; i++) {
+    const mx = startX + i * NODE_MARKER_STEP_PX;
+    if (worldX >= mx && worldX <= mx + NODE_MARKER_ICON_SIZE_PX) {
+      return i;
+    }
+  }
+  return -1;
 }

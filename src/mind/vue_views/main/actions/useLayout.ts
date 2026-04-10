@@ -163,16 +163,14 @@ export function useLayout(
                 }
                 return cached.result;
             }
-            const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId });
+            const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId, collapseEmptyText: true });
             const markerBandH = Math.max(0, layout.height - layout.bodyHeight);
             const result = {
                 w: layout.width,
                 h: layout.height,
                 bodyH: layout.bodyHeight,
                 markerBandH,
-                // marker band 只在 body 下方绘制；为了让 body center 继续作为布局与连线锚点，
-                // 需要在子树高度里额外给 marker band 预留同等的上侧空间。
-                subtreeH: layout.height + markerBandH,
+                subtreeH: layout.height,
             };
             nodeMeasureCache.set(node, {
                 nodeId: nodeId ?? null,
@@ -188,16 +186,14 @@ export function useLayout(
             if (perfMetrics) perfMetrics.measureNodeMs += performance.now() - startedAt;
             return result;
         }
-        const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId });
+        const layout = measureNodeVisualLayout(ctx, node, measureCache, { doc: props.doc, nodeId, collapseEmptyText: true });
         const markerBandH = Math.max(0, layout.height - layout.bodyHeight);
         const result = {
             w: layout.width,
             h: layout.height,
             bodyH: layout.bodyHeight,
             markerBandH,
-            // marker band 只在 body 下方绘制；为了让 body center 继续作为布局与连线锚点，
-            // 需要在子树高度里额外给 marker band 预留同等的上侧空间。
-            subtreeH: layout.height + markerBandH,
+            subtreeH: layout.height,
         };
         if (perfMetrics) perfMetrics.measureNodeMs += performance.now() - startedAt;
         return result;
@@ -251,7 +247,9 @@ export function useLayout(
             sum += boundaryPadding.before[index];
             sum += subtreeHeight(nodes, cid, ctx, vGap);
             sum += boundaryPadding.after[index];
-            if (index < children.length - 1) sum += vGap;
+            if (index < children.length - 1) {
+                sum += vGap;
+            }
         });
         const height = Math.max(subtreeH, sum);
         subtreeHeightCache.set(nodeId, height);
@@ -429,7 +427,7 @@ export function useLayout(
         const m = measureNode(ctx, n, nodeId);
         const sh = subtreeHeight(nodes, nodeId, ctx, vGap);
 
-        // 以 body center 作为布局对齐基准，marker band 只向下延伸。
+        // 将 body 居中于子树分配空间内，保证 body 中心 == 子树中心，从而连线锚点正确对齐
         const y = topY + (sh - m.bodyH) / 2;
         const nextBox = { x: nodeX, y, w: m.w, h: m.h };
         layoutLocal.set(nodeId, nextBox);
@@ -452,7 +450,9 @@ export function useLayout(
             childrenTotalHeight += boundaryPadding.before[index];
             childrenTotalHeight += child.height;
             childrenTotalHeight += boundaryPadding.after[index];
-            if (index < childHeights.length - 1) childrenTotalHeight += vGap;
+            if (index < childHeights.length - 1) {
+                childrenTotalHeight += vGap;
+            }
         });
 
         // 当父节点自身比 children block 更高时，children block 也要在该子树区域内垂直居中。
@@ -486,7 +486,9 @@ export function useLayout(
                 place(nodes, child.nodeId, ctx, childX, cursorY, hGap, vGap);
             }
             cursorY += child.height + boundaryPadding.after[index];
-            if (index < childHeights.length - 1) cursorY += vGap;
+            if (index < childHeights.length - 1) {
+                cursorY += vGap;
+            }
         });
         if (perfMetrics) perfMetrics.placeMs += performance.now() - startedAt;
     }

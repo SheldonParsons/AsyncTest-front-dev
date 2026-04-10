@@ -24,6 +24,7 @@ export type DragDropState = {
   primaryDragRootId: string | null;
   rootId: string | null;
   draggedSubtreeNodeIds: Set<string>;
+  blockedDropNodeIds: Set<string>;
   previewWorldOffsetX: number;
   previewWorldOffsetY: number;
   freeRootBasePosX: number | null;

@@ -75,4 +75,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectFiles: {
         saveCurrentFolderZip: (payload) => ipcRenderer.invoke('projectFiles:saveCurrentFolderZip', payload),
     },
+
+    lsp: {
+        start: () => ipcRenderer.invoke('lsp:start'),
+        stop: () => ipcRenderer.invoke('lsp:stop'),
+        status: () => ipcRenderer.invoke('lsp:status'),
+        didOpen: (payload) => ipcRenderer.invoke('lsp:didOpen', payload),
+        didChange: (payload) => ipcRenderer.invoke('lsp:didChange', payload),
+        didClose: (payload) => ipcRenderer.invoke('lsp:didClose', payload),
+        completion: (payload) => ipcRenderer.invoke('lsp:completion', payload),
+        hover: (payload) => ipcRenderer.invoke('lsp:hover', payload),
+        signatureHelp: (payload) => ipcRenderer.invoke('lsp:signatureHelp', payload),
+        definition: (payload) => ipcRenderer.invoke('lsp:definition', payload),
+    },
+
+    python: {
+        checkEnv: () => ipcRenderer.invoke('python:check-env'),
+        run: (payload) => ipcRenderer.invoke('python:run', payload),
+        stop: () => ipcRenderer.invoke('python:stop'),
+        selectBinary: () => ipcRenderer.invoke('python:select-binary'),
+        getConfig: () => ipcRenderer.invoke('python:get-config'),
+        resetBinary: () => ipcRenderer.invoke('python:reset-binary'),
+        onOutput: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('python:output', handler);
+            return () => ipcRenderer.removeListener('python:output', handler);
+        },
+        onExit: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('python:exit', handler);
+            return () => ipcRenderer.removeListener('python:exit', handler);
+        },
+    },
 });

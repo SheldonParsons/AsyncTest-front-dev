@@ -19,9 +19,9 @@ import { getMindNodeDefaultVisualStyle } from '../nodeStyles';
 import type { CollapseTagInfo } from '../collapseTags';
 import {
   getNodeBodyWorldRect,
-  NODE_MARKER_BODY_GAP_PX,
-  NODE_MARKER_GAP_PX,
   NODE_MARKER_ICON_SIZE_PX,
+  NODE_MARKER_STEP_PX,
+  NODE_MARKER_HOVER_SCALE,
   resolveNodeMarkers,
 } from '../nodeMarkers';
 import {
@@ -348,23 +348,62 @@ function drawNodeMarkers(
   ctx: CanvasRenderingContext2D,
   node: any,
   bodyRect: WorldRect,
-  getLoadedImage: (src: string) => HTMLImageElement | null
+  getLoadedImage: (src: string) => HTMLImageElement | null,
+  hoveredIndex?: number
 ) {
   const markers = resolveNodeMarkers(node);
   if (!markers.length) return;
 
-  const rowWidth =
-    markers.length * NODE_MARKER_ICON_SIZE_PX + Math.max(0, markers.length - 1) * NODE_MARKER_GAP_PX;
-  let cursorX = bodyRect.x1;
-  const markerY = bodyRect.y2 + NODE_MARKER_BODY_GAP_PX;
+  const bodyH = bodyRect.y2 - bodyRect.y1;
+  const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+  const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
+  const size = NODE_MARKER_ICON_SIZE_PX;
+  const hoverIdx = hoveredIndex ?? -1;
 
-  for (const marker of markers) {
-    const image = getLoadedImage(marker.src);
+  // Draw back-to-front: last marker first, earlier markers on top (drawn later).
+  // Skip the hovered marker in this pass — it will be drawn last on top.
+  for (let i = markers.length - 1; i >= 0; i--) {
+    if (i === hoverIdx) continue;
+    const image = getLoadedImage(markers[i].src);
     if (image) {
-      ctx.drawImage(image, cursorX, markerY, NODE_MARKER_ICON_SIZE_PX, NODE_MARKER_ICON_SIZE_PX);
+      const mx = startX + i * NODE_MARKER_STEP_PX;
+      ctx.drawImage(image, mx, markerY, size, size);
     }
-    cursorX += NODE_MARKER_ICON_SIZE_PX + NODE_MARKER_GAP_PX;
   }
+
+  // Draw hovered marker on top, slightly enlarged
+  if (hoverIdx >= 0 && hoverIdx < markers.length) {
+    const image = getLoadedImage(markers[hoverIdx].src);
+    if (image) {
+      const mx = startX + hoverIdx * NODE_MARKER_STEP_PX;
+      const hoverSize = size * NODE_MARKER_HOVER_SCALE;
+      const offset = (hoverSize - size) / 2;
+      ctx.drawImage(image, mx - offset, markerY - offset, hoverSize, hoverSize);
+    }
+  }
+}
+
+function drawHoveredNodeMarker(
+  ctx: CanvasRenderingContext2D,
+  node: any,
+  bodyRect: WorldRect,
+  getLoadedImage: (src: string) => HTMLImageElement | null,
+  hoveredIndex?: number
+) {
+  const markers = resolveNodeMarkers(node);
+  const hoverIdx = hoveredIndex ?? -1;
+  if (hoverIdx < 0 || hoverIdx >= markers.length) return;
+
+  const image = getLoadedImage(markers[hoverIdx].src);
+  if (!image) return;
+
+  const bodyH = bodyRect.y2 - bodyRect.y1;
+  const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+  const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
+  const mx = startX + hoverIdx * NODE_MARKER_STEP_PX;
+  const hoverSize = NODE_MARKER_ICON_SIZE_PX * NODE_MARKER_HOVER_SCALE;
+  const offset = (hoverSize - NODE_MARKER_ICON_SIZE_PX) / 2;
+  ctx.drawImage(image, mx - offset, markerY - offset, hoverSize, hoverSize);
 }
 
 function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect, label: string) {
@@ -953,6 +992,7 @@ export function useDraw(
   relationCacheVersion?: Ref<number>,
   spatialIndex: UniformGridSpatialIndex,
   hoverNodeId: Ref<string | null>,
+  hoveredMarker: Ref<{ nodeId: string; index: number } | null>,
   selectedIds: Ref<Set<string>>,
   selectedRelationId?: Ref<string | null>,
   allRelationsSelected?: Ref<boolean>,
@@ -1580,6 +1620,7 @@ export function useDraw(
         ? new Set([
             ...currentDragState.dragRoots,
             ...Array.from(currentDragState.draggedSubtreeNodeIds),
+            ...Array.from(currentDragState.blockedDropNodeIds ?? []),
           ])
         : null;
     const strokeScreenWidthPx = getStrokeScreenWidthPx(cam.scale, roughStyle.strokeWidthPx);
@@ -1847,13 +1888,17 @@ export function useDraw(
         drawRoundedRectShape(targetCtx, bodyRect, nodeCornerRadius, 'rgba(0,0,0,0)', 'rgba(0,0,0,0)', 0);
       }
 
-      const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id });
+      const visualLayout = measureNodeVisualLayout(targetCtx, node, drawTextCache, { doc: props.doc, nodeId: id, collapseEmptyText: true });
       const skipNodeText = !!options?.skipText;
+      const markerIW = visualLayout.markerInlineWidth;
 
       if (visualLayout.image?.src) {
         const loadedImage = getLoadedNodeImage(visualLayout.image.src);
         if (loadedImage) {
-          const imageRect = getNodeImageWorldRect(bodyRect, {
+          const contentRect = markerIW > 0
+            ? { x1: bodyRect.x1 + markerIW, y1: bodyRect.y1, x2: bodyRect.x2, y2: bodyRect.y2 }
+            : bodyRect;
+          const imageRect = getNodeImageWorldRect(contentRect, {
             w: visualLayout.image.width,
             h: visualLayout.image.height,
           });
@@ -1867,16 +1912,17 @@ export function useDraw(
         const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: id });
         targetCtx.textBaseline = 'top';
         let lineY = bodyRect.y1 + visualLayout.textGeometry.textGlyphTop;
-        const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2;
+        const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2 - markerIW;
+        const textLeftX = bodyRect.x1 + NODE_TEXT_INSET_X + markerIW;
         visualLayout.textLayout.richLines.forEach((line) => {
           const snappedLineY = snapWorldToDevicePixel(lineY, cam.scale, cam.ty, dpr);
           const effectiveAlign = line.align ?? textStyle.textAlign;
           const baseX =
             effectiveAlign === 'center'
-              ? bodyRect.x1 + NODE_TEXT_INSET_X + Math.max(0, (textRegionWidth - line.width) / 2)
+              ? textLeftX + Math.max(0, (textRegionWidth - line.width) / 2)
               : effectiveAlign === 'right'
                 ? bodyRect.x2 - NODE_TEXT_INSET_X - line.width
-                : bodyRect.x1 + NODE_TEXT_INSET_X;
+                : textLeftX;
           let cursorX = baseX;
           for (const segment of line.segments) {
             targetCtx.font =
@@ -1935,7 +1981,9 @@ export function useDraw(
           }
           lineY += line.height;
         });
-        drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage);
+        const hmk = hoveredMarker.value;
+        const markerHoverIdx = (hmk && hmk.nodeId === id) ? hmk.index : -1;
+        drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage, markerHoverIdx >= 0 ? markerHoverIdx : undefined);
       }
       drawRootSecrecyBadgeIfNeeded(targetCtx, rootNodeIds, id, node, bodyRect);
       targetCtx.restore();
@@ -1986,6 +2034,7 @@ export function useDraw(
           if (hiddenDraggedNodeIds?.has(summary.summaryNodeId)) continue;
           const summaryRect = nodeWorldBoxes.get(summary.summaryNodeId);
           if (!summaryRect) continue;
+          const summaryGhostAlpha = draggedOriginalNodeIds?.has(summary.summaryNodeId) ? 0.35 : 1;
           const coveredRect = resolveSummaryCoveredWorldRect(parentNode, summary.startIndex, summary.endIndex);
           if (!coveredRect) continue;
           const rangeTop = coveredRect.y1;
@@ -2014,6 +2063,8 @@ export function useDraw(
           const curveJoinBottomY = bottomY - curveDepthY;
           const midY = (curveJoinTopY + curveJoinBottomY) / 2;
 
+          targetCtx.save();
+          targetCtx.globalAlpha *= summaryGhostAlpha;
           targetCtx.beginPath();
           targetCtx.moveTo(braceNearX, topY);
           targetCtx.bezierCurveTo(
@@ -2039,6 +2090,7 @@ export function useDraw(
           targetCtx.moveTo(braceStemX, midY);
           targetCtx.lineTo(targetX, midY);
           targetCtx.stroke();
+          targetCtx.restore();
         }
       }
 
@@ -2112,6 +2164,7 @@ export function useDraw(
         const isDraggedGhost =
           currentDragState?.isDragging &&
           (currentDragState.draggedSubtreeNodeIds.has(id) ||
+            currentDragState.blockedDropNodeIds?.has(id) ||
             (currentDragState.dragKind === 'free-root' && currentDragState.primaryDragRootId === id));
         drawVisibleNode(targetCtx, id, rect, { isDraggedGhost });
       }
@@ -2146,6 +2199,7 @@ export function useDraw(
             currentDragState.primaryDragRootId ?? '',
             currentDragState.dragRoots.join(','),
             Array.from(currentDragState.draggedSubtreeNodeIds).sort().join(','),
+            Array.from(currentDragState.blockedDropNodeIds ?? []).sort().join(','),
           ].join(':')
         : 'drag:none';
       const baseSignature = [
@@ -2419,13 +2473,17 @@ export function useDraw(
         );
       }
       if (showImageAffordance) {
-        const visualLayout = measureNodeVisualLayout(ctx, node, drawTextCache, { doc: props.doc, nodeId: id });
+        const visualLayout = measureNodeVisualLayout(ctx, node, drawTextCache, { doc: props.doc, nodeId: id, collapseEmptyText: true });
         const imageSize =
           imageState?.previewSize ?? {
             w: visualLayout.image.width,
             h: visualLayout.image.height,
           };
-        const imageRect = getNodeImageWorldRect(bodyRect, imageSize);
+        const imgMarkerIW = visualLayout.markerInlineWidth;
+        const imgContentRect = imgMarkerIW > 0
+          ? { x1: bodyRect.x1 + imgMarkerIW, y1: bodyRect.y1, x2: bodyRect.x2, y2: bodyRect.y2 }
+          : bodyRect;
+        const imageRect = getNodeImageWorldRect(imgContentRect, imageSize);
         if (imageRect) {
           const imageOutlineGapWorld = IMAGE_OUTLINE_GAP_PX / Math.max(cam.scale, 0.0001);
           const imageOutlineRadiusWorld = IMAGE_OUTLINE_RADIUS_PX / Math.max(cam.scale, 0.0001);
@@ -2453,6 +2511,11 @@ export function useDraw(
           }
         }
       }
+      const hoveredMarkerEntry = hoveredMarker.value;
+      const hoveredMarkerIndex = isHover && hoveredMarkerEntry?.nodeId === id ? hoveredMarkerEntry.index : -1;
+      if (hoveredMarkerIndex >= 0) {
+        drawHoveredNodeMarker(ctx, node, bodyRect, getLoadedNodeImage, hoveredMarkerIndex);
+      }
     }
     for (const summaryNodeId of summaryOutlineNodeIds) {
       const rangeRect = resolveSummaryRangeOutlineRect(summaryNodeId);
@@ -2473,6 +2536,25 @@ export function useDraw(
         2 / Math.max(cam.scale, 0.0001)
       );
     }
+    if (currentDragState?.isDragging && currentDragState.blockedDropNodeIds?.size) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+      for (const nodeId of currentDragState.blockedDropNodeIds) {
+        const node = nodes[nodeId];
+        const rect = nodeWorldBoxes.get(nodeId);
+        if (!node || !rect || !rectIntersects(worldViewportRect, rect)) continue;
+        const bodyRect = getNodeBodyWorldRect(node, rect);
+        drawRoundedRectShape(
+          ctx,
+          bodyRect,
+          getNodeCornerRadius(bodyRect),
+          'rgba(255, 255, 255, 0.42)',
+          'rgba(255, 255, 255, 0)',
+          0
+        );
+      }
+      ctx.restore();
+    }
     drawCollapseTags(
       ctx,
       collapseTags.value,
@@ -2482,6 +2564,7 @@ export function useDraw(
         ? new Set([
             ...currentDragState.dragRoots,
             ...Array.from(currentDragState.draggedSubtreeNodeIds),
+            ...Array.from(currentDragState.blockedDropNodeIds ?? []),
           ])
         : null
     );
@@ -2634,9 +2717,7 @@ function drawDragOverlay(
     dragState.dragKind !== 'free-root' &&
     !dragState.dropTarget &&
     !!dragState.lastValidDropTarget &&
-    (!dragState.invalidReason ||
-      dragState.invalidReason === 'tooFar' ||
-      dragState.invalidReason === 'pointerStateLost');
+    (!dragState.invalidReason || dragState.invalidReason === 'pointerStateLost');
   const target = dragState.dropTarget ?? (canUseLastValidTarget ? dragState.lastValidDropTarget : null);
   if (target && dragState.rootId) {
     const previewGeometry = buildPreviewGeometry({

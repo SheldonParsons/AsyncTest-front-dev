@@ -4,7 +4,7 @@ import { ensureMindRoots, getActiveMind } from './actions/useDocUtils';
 import { useEdges } from './actions/useEdges';
 import { useLayout, type Box, type LayoutBounds } from './actions/useLayout';
 import { getNodeImageWorldRect } from './imageInteraction';
-import { getNodeBodyWorldRect } from './nodeMarkers';
+import { getNodeBodyWorldRect, resolveNodeMarkers, NODE_MARKER_ICON_SIZE_PX, NODE_MARKER_STEP_PX } from './nodeMarkers';
 import { getMindNodeDefaultVisualStyle } from './nodeStyles';
 import {
   getNodeTextStyle,
@@ -132,13 +132,13 @@ async function loadImage(src: string) {
 
 async function loadPreviewImages(doc: any) {
   const nodes = getActiveMind(doc)?.nodes ?? {};
-  const sources = Array.from(
-    new Set(
-      Object.values(nodes)
-        .map((node: any) => node?.image?.src)
-        .filter((src): src is string => typeof src === 'string' && src.length > 0)
-    )
+  const nodeSrcs = Object.values(nodes)
+    .map((node: any) => node?.image?.src)
+    .filter((src): src is string => typeof src === 'string' && src.length > 0);
+  const markerSrcs = Object.values(nodes).flatMap((node: any) =>
+    resolveNodeMarkers(node).map((m) => m.src)
   );
+  const sources = Array.from(new Set([...nodeSrcs, ...markerSrcs]));
   const imageEntries = await Promise.all(
     sources.map(async (src) => [src, await loadImage(src)] as const)
   );
@@ -229,11 +229,16 @@ export async function exportMindPreviewPng(doc: any) {
       drawRoundedRect(ctx, bodyRect, getNodeCornerRadius(bodyRect), fill, stroke, lineWidth);
     }
 
-    const visualLayout = measureNodeVisualLayout(ctx, node, textCache, { doc, nodeId });
+    const visualLayout = measureNodeVisualLayout(ctx, node, textCache, { doc, nodeId, collapseEmptyText: true });
+    const markerIW = visualLayout.markerInlineWidth;
+
     if (visualLayout.image?.src) {
       const loadedImage = imageMap.get(visualLayout.image.src);
+      const contentRect = markerIW > 0
+        ? { x1: bodyRect.x1 + markerIW, y1: bodyRect.y1, x2: bodyRect.x2, y2: bodyRect.y2 }
+        : bodyRect;
       const imageRect = loadedImage
-        ? getNodeImageWorldRect(bodyRect, {
+        ? getNodeImageWorldRect(contentRect, {
             w: visualLayout.image.width,
             h: visualLayout.image.height,
           })
@@ -243,18 +248,34 @@ export async function exportMindPreviewPng(doc: any) {
       }
     }
 
+    // Draw inline markers at left of body, vertically centered (back-to-front for overlap)
+    const resolvedMarkers = resolveNodeMarkers(node);
+    if (resolvedMarkers.length) {
+      const bodyH = bodyRect.y2 - bodyRect.y1;
+      const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+      const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
+      for (let i = resolvedMarkers.length - 1; i >= 0; i--) {
+        const mImg = imageMap.get(resolvedMarkers[i].src);
+        if (mImg) {
+          const mx = startX + i * NODE_MARKER_STEP_PX;
+          ctx.drawImage(mImg, mx, markerY, NODE_MARKER_ICON_SIZE_PX, NODE_MARKER_ICON_SIZE_PX);
+        }
+      }
+    }
+
     const textStyle = getNodeTextStyle(node, { doc, nodeId });
-    const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2;
+    const textRegionWidth = rectWidth(bodyRect) - NODE_TEXT_INSET_X * 2 - markerIW;
+    const textLeftX = bodyRect.x1 + NODE_TEXT_INSET_X + markerIW;
     let lineY = bodyRect.y1 + visualLayout.textGeometry.textGlyphTop;
     ctx.textBaseline = 'top';
     for (const line of visualLayout.textLayout.richLines) {
       const effectiveAlign = line.align ?? textStyle.textAlign;
       const baseX =
         effectiveAlign === 'center'
-          ? bodyRect.x1 + NODE_TEXT_INSET_X + Math.max(0, (textRegionWidth - line.width) / 2)
+          ? textLeftX + Math.max(0, (textRegionWidth - line.width) / 2)
           : effectiveAlign === 'right'
             ? bodyRect.x2 - NODE_TEXT_INSET_X - line.width
-            : bodyRect.x1 + NODE_TEXT_INSET_X;
+            : textLeftX;
       let cursorX = baseX;
       for (const segment of line.segments) {
         ctx.font =

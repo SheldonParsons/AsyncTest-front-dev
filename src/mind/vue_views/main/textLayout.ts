@@ -101,9 +101,10 @@ export type NodeVisualLayout = {
   textGeometry: NodeTextGeometry;
   textOffsetY: number;
   textHeight: number;
+  markerInlineWidth: number;
 };
 
-function isRichTextFullyEmpty(richText: RichTextDocument | null | undefined) {
+export function isRichTextFullyEmpty(richText: RichTextDocument | null | undefined) {
   return (richText?.blocks ?? []).every((block) =>
     (block.inlines ?? []).every((inline) => String(inline.text ?? '') === '')
   );
@@ -414,7 +415,7 @@ export function measureNodeVisualLayout(
   ctx: CanvasRenderingContext2D,
   node: MindNodeLike,
   cache?: Map<string, NodeTextLayout>,
-  options?: { richText?: RichTextDocument; maxTextWidth?: number; doc?: any; nodeId?: string | null }
+  options?: { richText?: RichTextDocument; maxTextWidth?: number; doc?: any; nodeId?: string | null; collapseEmptyText?: boolean }
 ): NodeVisualLayout {
   const richText = options?.richText ?? getNodeRichText(node);
   const baseStyle = getNodeTextStyle(node, options);
@@ -426,21 +427,36 @@ export function measureNodeVisualLayout(
   });
   const image = getNodeImage(node);
   const textGeometry = computeNodeTextGeometry(ctx, textLayout, baseStyle, image);
+
+  const shouldCollapseText = !!options?.collapseEmptyText && isRichTextFullyEmpty(richText) && !!image;
+  if (shouldCollapseText) {
+    textGeometry.imageBlockHeight = image!.height;
+    textGeometry.contentBoxTop = image!.height;
+    textGeometry.contentBoxHeight = 0;
+    textGeometry.textLineBoxTop = image!.height;
+    textGeometry.textLineBoxHeight = 0;
+    textGeometry.textGlyphTop = image!.height;
+    textGeometry.textGlyphHeight = 0;
+  }
+
   const markerRow = measureNodeMarkerRow(node);
+  const markerIW = markerRow.inlineWidth;
   const minNodeWidth = getNodeMinimumWidth(node, richText, image);
   const width = clamp(
-    Math.max(textLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X,
-    Math.max(minNodeWidth, markerRow.width),
+    Math.max(textLayout.contentWidth, image?.width ?? 0) + NODE_PADDING_X + markerIW,
+    minNodeWidth,
     NODE_W_HARD_MAX
   );
   const textOffsetY = textGeometry.textLineBoxTop;
   const textHeight = textGeometry.textLineBoxHeight;
-  const bodyHeight = clamp(
-    textGeometry.contentBoxTop + textGeometry.contentBoxHeight,
-    baseStyle.lineHeightPx + NODE_PADDING_Y,
-    NODE_H_HARD_MAX
-  );
-  const height = clamp(bodyHeight + markerRow.bandHeight, baseStyle.lineHeightPx + NODE_PADDING_Y, NODE_H_HARD_MAX);
+  const bodyHeight = shouldCollapseText
+    ? clamp(image!.height + NODE_PADDING_Y, baseStyle.lineHeightPx + NODE_PADDING_Y, NODE_H_HARD_MAX)
+    : clamp(
+      textGeometry.contentBoxTop + textGeometry.contentBoxHeight,
+      baseStyle.lineHeightPx + NODE_PADDING_Y,
+      NODE_H_HARD_MAX
+    );
+  const height = bodyHeight;
   return {
     textLayout,
     image,
@@ -450,6 +466,7 @@ export function measureNodeVisualLayout(
     textGeometry,
     textOffsetY,
     textHeight,
+    markerInlineWidth: markerIW,
   };
 }
 

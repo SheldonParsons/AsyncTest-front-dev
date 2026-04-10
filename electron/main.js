@@ -9,6 +9,8 @@ import { WindowManager } from './windowManager.js';
 import { initAmindMain } from './amind/ipcMain.node.js';
 import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
+import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
+import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -415,6 +417,8 @@ app.whenReady().then(async () => {
 
   initGeneratorMain();
   initProjectFilesMain();
+  initLspMain();
+  initPythonRunnerMain();
 
   await flushPendingOpenQueue();
 
@@ -449,6 +453,8 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', (event) => {
+  cleanupLsp();
+  cleanupPythonRunner();
   if (isQuitApproved || isQuittingForUpdate()) {
     isQuitting = true;
     return;
