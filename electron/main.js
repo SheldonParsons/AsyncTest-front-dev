@@ -11,6 +11,7 @@ import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
+import { initHarnessMain } from './harness/ipcMain.node.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -419,6 +420,7 @@ app.whenReady().then(async () => {
   initProjectFilesMain();
   initLspMain();
   initPythonRunnerMain();
+  initHarnessMain();
 
   await flushPendingOpenQueue();
 

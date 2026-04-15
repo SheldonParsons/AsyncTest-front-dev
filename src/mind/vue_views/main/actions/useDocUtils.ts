@@ -1,8 +1,8 @@
 import { ensureNodeContent, getNodePlainText } from '@/mind/core/nodeContent';
 import { toRaw } from 'vue';
 
-export const DEFAULT_ROOT_H_GAP = 44;
-const LEGACY_DEFAULT_ROOT_H_GAPS = new Set([60, 52]);
+export const DEFAULT_ROOT_H_GAP = 30;
+const LEGACY_DEFAULT_ROOT_H_GAPS = new Set([60, 52, 44]);
 export const DEFAULT_ROOT_V_GAP = 10;
 export const LEGACY_DEFAULT_ROOT_V_GAP = 18;
 type MindRootKind = 'main' | 'free';

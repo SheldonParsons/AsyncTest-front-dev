@@ -31,12 +31,12 @@
       <div><span>AsyncExecutor</span></div>
     </el-col>
   </el-row>
-  <el-row>
+  <!-- <el-row>
     <el-col :span="21" :offset="1" class="flex router-menu" @click="switchRouter('settings_componenttest')"
       :class="{ active: 'settings_componenttest' === activeLinkStyle }">
       <div><span>组件测试</span></div>
     </el-col>
-  </el-row>
+  </el-row> -->
   <el-row style="margin-bottom: 10px;margin-top: 20px;">
     <el-col :span="2" class="flex">
       <User />

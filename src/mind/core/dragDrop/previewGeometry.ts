@@ -45,7 +45,7 @@ function getRootLayout(doc: any, rootId: string) {
     ? activeMind.roots.find((entry: any) => entry?.rootId === rootId)
     : null;
   return {
-    hGap: root?.layout?.hGap ?? 60,
+    hGap: root?.layout?.hGap ?? 30,
     vGap: root?.layout?.vGap ?? 18,
   };
 }

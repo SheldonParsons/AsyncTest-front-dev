@@ -746,7 +746,7 @@ function createDefaultBoard(boardIndex, title) {
         roots: [
             {
                 rootId: rootNode.id,
-                pos: getTopicPosition(rootTopic, DEFAULT_ROOT_POS),
+                pos: { ...DEFAULT_ROOT_POS },
                 layout: { ...DEFAULT_LAYOUT },
                 rootKind: 'main',
             },

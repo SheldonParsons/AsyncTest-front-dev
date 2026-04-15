@@ -28,6 +28,16 @@ const routes = [
     path: '/generator',
     name: 'generator',
     component: () => import('@/views/generator/index.vue')
+  },
+  {
+    path: '/agentDashboard',
+    name: 'agentDashboard',
+    component: () => import('@/views/electron_views/agent/index.vue')
+  },
+  {
+    path: '/agent/chat',
+    name: 'agentChat',
+    component: () => import('@/views/electron_views/agent/chat/index.vue')
   }] : []),
   {
     path: '/login',

@@ -76,6 +76,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         saveCurrentFolderZip: (payload) => ipcRenderer.invoke('projectFiles:saveCurrentFolderZip', payload),
     },
 
+    harness: {
+        chatStream: (payload) => ipcRenderer.invoke('harness:chatStream', payload),
+        onChatStream: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('harness:chat-stream', handler);
+            return () => ipcRenderer.removeListener('harness:chat-stream', handler);
+        },
+    },
+
     lsp: {
         start: () => ipcRenderer.invoke('lsp:start'),
         stop: () => ipcRenderer.invoke('lsp:stop'),

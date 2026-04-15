@@ -43,6 +43,21 @@
           <p class="card-description">AsyncTest 生成工具</p>
         </div>
 
+        <!-- 进入 AsyncTest Agent（仅 localhost 环境显示） -->
+        <div v-if="isLocalhost" class="dashboard-card agent-card" @click="handleEnterAgent">
+          <div class="card-icon agent-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
+              <path d="M20 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M4 21v-2a4 4 0 0 1 3-3.87"/>
+              <circle cx="12" cy="17" r="1"/>
+              <path d="M12 14v2"/>
+            </svg>
+          </div>
+          <h3 class="card-title">Agent</h3>
+          <p class="card-description">AsyncTest Agent</p>
+        </div>
+
         <!-- 更多功能 -->
         <div class="dashboard-card dashboard-card-disabled" @click="handleMoreFeatures">
           <div class="card-icon">
@@ -67,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
@@ -77,6 +92,10 @@ import { ApiCheckPermission } from '@/api/layout/cookies'
 
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
+const isLocalhost = computed(() => {
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
+})
 
 const emit = defineEmits(['doubleCheckLoginStatus'])
 
@@ -120,6 +139,10 @@ const handleEnterMind = () => {
 
 const handleEnterGenerator = () => {
   router.push({ name: "generator" })
+}
+
+const handleEnterAgent = () => {
+  router.push({ name: "agentDashboard" })
 }
 
 // 更多功能
@@ -359,6 +382,39 @@ const handleLoginSuccess = () => {
 
     .card-description {
       color: #dbeafe;
+    }
+  }
+}
+
+.agent-card {
+  .agent-icon {
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+
+    svg {
+      color: #6366f1;
+    }
+  }
+
+  &:hover:not(.dashboard-card-disabled) {
+    border-color: #8b5cf6;
+    box-shadow: 0 8px 16px rgba(139, 92, 246, 0.14), 0 2px 4px rgba(139, 92, 246, 0.08);
+    background: linear-gradient(135deg, #2e1065 0%, #1e1b4b 100%);
+
+    .agent-icon {
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      transform: scale(1.05);
+
+      svg {
+        color: #ffffff;
+      }
+    }
+
+    .card-title {
+      color: #ffffff;
+    }
+
+    .card-description {
+      color: #ddd6fe;
     }
   }
 }
