@@ -767,6 +767,7 @@ const emit = defineEmits<{
   (event: 'nodeCountChange', value: { totalNodes: number; selectedNodes: number; canCreateSummary: boolean; canCreateRelation: boolean }): void;
   (event: 'toggleSearchPanel'): void;
   (event: 'toggleFormatPanel'): void;
+  (event: 'scaleChange', value: number): void;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
@@ -7773,6 +7774,13 @@ function resolveCurrentDraftCursorScreenPosition() {
   };
 }
 
+function zoomTo(scale: number) {
+  centerCamera(scale);
+  requestRender();
+}
+
+watch(() => camera.value.scale, (s) => { emit('scaleChange', s); });
+
 defineExpose({
   saveDocument,
   saveDocumentAs,
@@ -7786,6 +7794,7 @@ defineExpose({
   triggerHeaderChildBranchAction,
   triggerHeaderRelationAction,
   triggerHeaderSummaryAction,
+  zoomTo,
 });
 
 function findParentAndIndexFromNodes(nodeId: string) {

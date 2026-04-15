@@ -43,18 +43,15 @@
           <p class="card-description">AsyncTest 生成工具</p>
         </div>
 
-        <!-- 进入 AsyncTest Agent（仅 localhost 环境显示） -->
-        <div v-if="isLocalhost" class="dashboard-card agent-card" @click="handleEnterAgent">
-          <div class="card-icon agent-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
-              <path d="M20 21v-2a4 4 0 0 0-3-3.87"/>
-              <path d="M4 21v-2a4 4 0 0 1 3-3.87"/>
-              <circle cx="12" cy="17" r="1"/>
-              <path d="M12 14v2"/>
-            </svg>
+        <!-- 进入 AsyncTest AI（仅 localhost 环境显示） -->
+        <div v-if="isLocalhost" class="dashboard-card ai-card" @click="handleEnterAgent">
+          <div class="card-logo">
+            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full.svg"
+              alt="AsyncTest AI" />
+            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg"
+              alt="AsyncTest AI" />
           </div>
-          <h3 class="card-title">Agent</h3>
+          <h3 class="card-title">AsyncTest AI</h3>
           <p class="card-description">AsyncTest Agent</p>
         </div>
 
@@ -333,25 +330,7 @@ const handleLoginSuccess = () => {
 .mind-card {
   .card-logo {
     img {
-      filter: drop-shadow(0 1px 2px rgba(99, 102, 241, 0.1));
-    }
-  }
-
-  &:hover:not(.dashboard-card-disabled) {
-    border-color: #6366f1;
-    box-shadow: 0 8px 16px rgba(99, 102, 241, 0.12), 0 2px 4px rgba(99, 102, 241, 0.08);
-    background: linear-gradient(135deg, #1e1b4b 0%, #1e3a8a 100%);
-
-    &::before {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(79, 70, 229, 0.08) 100%);
-    }
-
-    .card-title {
-      color: #ffffff;
-    }
-
-    .card-description {
-      color: #d1d5db;
+      filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
 }
@@ -363,58 +342,19 @@ const handleLoginSuccess = () => {
     img {
       max-width: 82%;
       max-height: 82%;
-      filter: drop-shadow(0 1px 2px rgba(14, 165, 233, 0.14));
-    }
-  }
-
-  &:hover:not(.dashboard-card-disabled) {
-    border-color: #0ea5e9;
-    box-shadow: 0 8px 16px rgba(14, 165, 233, 0.14), 0 2px 4px rgba(14, 165, 233, 0.08);
-    background: linear-gradient(135deg, #082f49 0%, #0f172a 100%);
-
-    &::before {
-      background: linear-gradient(135deg, rgba(14, 165, 233, 0.06) 0%, rgba(2, 132, 199, 0.1) 100%);
-    }
-
-    .card-title {
-      color: #ffffff;
-    }
-
-    .card-description {
-      color: #dbeafe;
+      filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
 }
 
-.agent-card {
-  .agent-icon {
-    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+.ai-card {
+  .card-logo {
+    height: 42px;
 
-    svg {
-      color: #6366f1;
-    }
-  }
-
-  &:hover:not(.dashboard-card-disabled) {
-    border-color: #8b5cf6;
-    box-shadow: 0 8px 16px rgba(139, 92, 246, 0.14), 0 2px 4px rgba(139, 92, 246, 0.08);
-    background: linear-gradient(135deg, #2e1065 0%, #1e1b4b 100%);
-
-    .agent-icon {
-      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-      transform: scale(1.05);
-
-      svg {
-        color: #ffffff;
-      }
-    }
-
-    .card-title {
-      color: #ffffff;
-    }
-
-    .card-description {
-      color: #ddd6fe;
+    img {
+      max-width: 82%;
+      max-height: 82%;
+      filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
 }

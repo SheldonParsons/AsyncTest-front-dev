@@ -82,12 +82,13 @@
             :windowKey="windowKey" :show-search-panel="showSearchPanel" :show-format-panel="showFormatPanel"
             @filePathChange="changeFilePath"
             @saveStateChange="updateSaveState" @nodeCountChange="updateNodeCountState"
-            @toggleSearchPanel="toggleSearchPanel" @toggleFormatPanel="toggleFormatPanel">
+            @toggleSearchPanel="toggleSearchPanel" @toggleFormatPanel="toggleFormatPanel"
+            @scaleChange="onScaleChange">
         </MindMain>
         <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
             :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
-            :has-local-file-binding="!!filePath"
-            @switch-board="onSwitchBoard" @rename-board="onRenameBoard"></MindFooter>
+            :has-local-file-binding="!!filePath" :scale="currentScale"
+            @switch-board="onSwitchBoard" @rename-board="onRenameBoard" @zoom-to="onZoomTo"></MindFooter>
         <UserProfileDialog ref="userProfileDialogRef" />
         <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
             <LoginComponent :redirect-on-success="false" @loginSuccess="handleLoginSuccess" />
@@ -144,6 +145,7 @@ type MindMainExpose = {
     triggerHeaderChildBranchAction: () => boolean;
     triggerHeaderRelationAction: () => boolean;
     triggerHeaderSummaryAction: () => boolean;
+    zoomTo: (scale: number) => void;
 };
 
 const docId = ref<string>('');
@@ -177,6 +179,15 @@ const hasSelectedNodes = computed(() => nodeCountState.value.selectedNodes > 0);
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const mindBoards = computed(() => listMindBoards(doc.value));
 const activeBoardId = computed(() => getActiveMindId(doc.value));
+const currentScale = ref(1);
+
+function onScaleChange(scale: number) {
+    currentScale.value = scale;
+}
+
+function onZoomTo(scale: number) {
+    mindMainRef.value?.zoomTo(scale);
+}
 const currentRemoteBinding = computed(() => getRemoteBinding(doc.value));
 const preferredBindingProjectId = computed(() =>
     `${currentRemoteBinding.value?.projectId ?? invalidRemoteBinding.value?.projectId ?? ""}`.trim()
