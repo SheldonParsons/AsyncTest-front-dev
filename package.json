@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.3",
+  "version": "2.2.4",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：思维导图footer提供百分比缩放选项\",\"publishDate\":\"2026-04-15\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 修复缺陷：兼容旧版的xmind文件导入\\n#### 修复缺陷：生成测试报告选择amind文件时的网络跨域问题\\n#### 修复缺陷：自动化报告生成的BUG统计由不予解决转为延期处理\\n\\n#### 新增功能：文件管理增加修改目录/文件名入口(右键目录/文件名)\\n#### 新增功能：思维导图footer提供百分比缩放选项\",\"publishDate\":\"2026-04-16\"}"
     },
     "publish": [
       {

@@ -5213,6 +5213,7 @@ function createCollapsedStateCommand(
   options?: {
     name?: string;
     nextSelection?: SelectionSnapshot;
+    recursive?: boolean;
   }
 ): Command | null {
   if (!targetNodeIds.length) return null;
@@ -5221,6 +5222,8 @@ function createCollapsedStateCommand(
 
   const requestedTargetNodeIds = Array.from(new Set(targetNodeIds.filter(Boolean)));
   if (!requestedTargetNodeIds.length) return null;
+
+  const recursive = options?.recursive !== false;
 
   if (editingSession.value) {
     const editingNodeId = editingSession.value.nodeId;
@@ -5232,7 +5235,10 @@ function createCollapsedStateCommand(
 
   const changedStateByNodeId = new Map<string, { before: boolean; after: boolean }>();
   for (const targetNodeId of requestedTargetNodeIds) {
-    for (const currentNodeId of collectSubtreeNodeIds(nodes, targetNodeId)) {
+    const nodeIdsToProcess = recursive
+      ? collectSubtreeNodeIds(nodes, targetNodeId)
+      : [targetNodeId];
+    for (const currentNodeId of nodeIdsToProcess) {
       const currentNode = nodes[currentNodeId];
       const children = Array.isArray(currentNode?.children) ? currentNode.children : [];
       if (!currentNode || !children.length) continue;
@@ -11401,6 +11407,7 @@ async function toggleNodeCollapsed(nodeId: string) {
   const command = createCollapsedStateCommand([nodeId], nextCollapsed, {
     name: 'ToggleCollapsedCommand',
     nextSelection,
+    recursive: false,
   });
   executeCommand(command);
 }

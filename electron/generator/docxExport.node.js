@@ -246,7 +246,7 @@ function buildDefectSummaryText(payload, environment) {
   const buildLabel = resolveBuildLabel(payload);
   const severityText = buildSeveritySummaryText(bugSummary?.severity_mapping || {});
   const resolutionText = buildResolutionSummaryText(bugSummary?.resolution_mapping || {});
-  const willNotFixTitles = Object.values(bugSummary?.willnotfix_bugs || {}).filter(Boolean);
+  const postponedTitles = Object.values(bugSummary?.postponed_bugs || {}).filter(Boolean);
 
   const firstLineParts = [`【${envName}】${buildLabel}共发现${total}个问题`];
   if (severityText) {
@@ -257,8 +257,8 @@ function buildDefectSummaryText(payload, environment) {
   }
 
   let text = firstLineParts.join('，');
-  if (willNotFixTitles.length) {
-    text += `\n其中不予解决的BUG如下：\n${willNotFixTitles.join('\n')}`;
+  if (postponedTitles.length) {
+    text += `\n其中延期处理的BUG如下：\n${postponedTitles.join('\n')}`;
   }
   return text;
 }

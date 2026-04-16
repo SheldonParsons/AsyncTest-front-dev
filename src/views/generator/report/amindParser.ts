@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { ApiDownloadProjectFile } from "@/api/project/index";
 import type { ReportAmindParseResult, ReportAmindSourceFile, ReportSelectOption } from "./types";
 
 type AmindDoc = {
@@ -85,12 +86,19 @@ function resolveSelectedBoardIds(boardOptions: ReportSelectOption[], selectedBoa
 }
 
 export async function parseAmindFile(sourceFile: ReportAmindSourceFile): Promise<ReportAmindParseResult> {
-  const response = await fetch(sourceFile.downloadUrl);
-  if (!response.ok) {
-    throw new Error(`下载 amind 失败：${response.status}`);
-  }
+  let fileBuffer: ArrayBuffer;
 
-  const fileBuffer = await response.arrayBuffer();
+  if (sourceFile.backendFileId) {
+    const response = await ApiDownloadProjectFile({ id: sourceFile.backendFileId });
+    const blob: Blob = response.data;
+    fileBuffer = await blob.arrayBuffer();
+  } else {
+    const response = await fetch(sourceFile.downloadUrl);
+    if (!response.ok) {
+      throw new Error(`下载 amind 失败：${response.status}`);
+    }
+    fileBuffer = await response.arrayBuffer();
+  }
   const zip = await JSZip.loadAsync(fileBuffer);
   const manifestRaw = await zip.file("manifest.json")?.async("string");
   const mindRaw = await zip.file("mind.json")?.async("string");

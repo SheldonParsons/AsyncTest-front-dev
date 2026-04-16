@@ -137,6 +137,7 @@
                   class="entry-main entry-main-button"
                   type="button"
                   @click.stop="enterDirectory(row)"
+                  @contextmenu.stop="handleEntryContextMenu($event, row)"
                 >
                   <span class="entry-icon entry-icon-folder">
                     <el-icon><FolderOpened /></el-icon>
@@ -147,7 +148,7 @@
                   </span>
                 </button>
 
-                <div v-else class="entry-main">
+                <div v-else class="entry-main" @contextmenu.stop="handleEntryContextMenu($event, row)">
                   <span class="entry-icon" :class="row.iconSrc ? 'entry-icon-amind' : 'entry-icon-file'">
                     <img
                       v-if="row.iconSrc"
@@ -397,6 +398,46 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="contextMenuVisible"
+          class="files-context-menu"
+          :style="contextMenuStyle"
+          @click.stop
+        >
+          <button class="files-context-menu-item" type="button" @click="openRenameFromContextMenu">
+            重命名
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <DialogAnimation
+      ref="renameDialogRef"
+      title="重命名"
+      cancel_title="取消"
+      :confirm_title="renamingInProgress ? '保存中...' : '保存'"
+      :showCancel="!renamingInProgress"
+      :before_comfirm="submitRename"
+      :bgtype="'white'"
+      :topMove="'0% !important'"
+      :z-index="2600"
+    >
+      <div class="files-dialog-panel files-dialog-panel-compact">
+        <div class="files-dialog-block">
+          <label class="files-dialog-label">{{ renamingEntry?.kind === 'directory' ? '目录名称' : '文件名称' }}</label>
+          <el-input
+            v-model="renameNewName"
+            maxlength="200"
+            show-word-limit
+            :placeholder="renamingEntry?.kind === 'directory' ? '请输入目录名称' : '请输入文件名称'"
+            @keyup.enter="handleRenameEnter"
+          />
+        </div>
+      </div>
+    </DialogAnimation>
   </section>
 </template>
 
@@ -422,6 +463,7 @@ import {
   ApiGetProjectFolderMeta,
   ApiListProjectEntries,
   ApiUploadProjectEntries,
+  ApiRenameProjectEntry,
 } from "@/api/project/index";
 import amindFileIcon from "@/assets/img/amind.png";
 import { buildRemoteBindingFromTarget } from "@/mind/vue_views/remoteBinding";
@@ -493,6 +535,7 @@ const router = useRouter();
 const createDirectoryDialogRef = ref<any>(null);
 const uploadDialogRef = ref<any>(null);
 const folderExportDialogRef = ref<any>(null);
+const renameDialogRef = ref<any>(null);
 const multipleTableRef = ref<any>(null);
 const uploadRef = ref<UploadInstance | null>(null);
 
@@ -513,6 +556,13 @@ const folderExportMetaLoading = ref(false);
 const exportingCurrentFolderZip = ref(false);
 const folderExportMeta = ref<FolderExportMeta | null>(null);
 const convertCurrentFolderAmindToXmind = ref(false);
+
+const renamingEntry = ref<FileManagerEntry | null>(null);
+const renameNewName = ref("");
+const renamingInProgress = ref(false);
+const contextMenuVisible = ref(false);
+const contextMenuStyle = ref<{ left: string; top: string }>({ left: "0px", top: "0px" });
+const contextMenuEntry = ref<FileManagerEntry | null>(null);
 
 const UPLOAD_PROGRESS_MAX_BEFORE_RESPONSE = 95;
 
@@ -1241,19 +1291,18 @@ function isAmindEntry(entry: FileManagerEntry) {
 }
 
 async function openAmindEntry(entry: FileManagerEntry) {
-  if (!canOpenAmindInMindWindow.value || !isAmindEntry(entry) || !entry.downloadUrl || downloadingEntryKey.value) return;
+  const fileId = entry.raw?.id ?? entry.id;
+  if (!canOpenAmindInMindWindow.value || !isAmindEntry(entry) || !fileId || downloadingEntryKey.value) return;
   downloadingEntryKey.value = entry.selectionKey;
   try {
-    const response = await fetch(entry.downloadUrl);
-    if (!response.ok) {
-      throw new Error(`download failed: ${response.status}`);
-    }
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const response = await ApiDownloadProjectFile({ id: fileId });
+    const blob: Blob = response.data;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
     const remoteBinding = buildRemoteBindingFromTarget({
       projectId: projectId.value,
       projectName: "",
       folder: resolveEntryFolder(entry),
-      fileId: entry.raw?.id ?? entry.id,
+      fileId,
       fileName: entry.name,
       filePath: entry.path,
     });
@@ -1564,6 +1613,73 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
     multipleTableRef.value?.toggleRowSelection(row);
   }
 }
+
+function handleEntryContextMenu(event: MouseEvent, row: FileManagerEntry) {
+  event.preventDefault();
+  contextMenuEntry.value = row;
+  contextMenuStyle.value = { left: `${event.clientX}px`, top: `${event.clientY}px` };
+  contextMenuVisible.value = true;
+}
+
+function closeContextMenu() {
+  contextMenuVisible.value = false;
+  contextMenuEntry.value = null;
+}
+
+function openRenameFromContextMenu() {
+  if (!contextMenuEntry.value) return;
+  renamingEntry.value = contextMenuEntry.value;
+  renameNewName.value = contextMenuEntry.value.name;
+  closeContextMenu();
+  nextTick(() => renameDialogRef.value?.open?.());
+}
+
+async function submitRename() {
+  if (renamingInProgress.value || !renamingEntry.value) return false;
+  const entry = renamingEntry.value;
+  const newName = renameNewName.value.trim();
+  if (!newName) {
+    tools.message("名称不能为空", proxy, "error");
+    return false;
+  }
+  if (newName === entry.name) {
+    return true;
+  }
+  const fileId = entry.raw?.id ?? entry.id;
+  if (!fileId) {
+    tools.message("缺少文件 ID，无法重命名", proxy, "error");
+    return false;
+  }
+  renamingInProgress.value = true;
+  try {
+    const res: any = await ApiRenameProjectEntry({ id: fileId, name: newName });
+    if (!ensureApiSuccess(res, "重命名失败")) return false;
+    window.$toast?.({ title: "重命名成功", type: "success" });
+    await loadDirectory();
+    return true;
+  } catch (error: any) {
+    tools.message(error?.message || "重命名失败", proxy, "error");
+    return false;
+  } finally {
+    renamingInProgress.value = false;
+    renamingEntry.value = null;
+  }
+}
+
+function handleRenameEnter() {
+  if (!renamingInProgress.value) {
+    submitRename().then((ok) => { if (ok) renameDialogRef.value?.close?.(); });
+  }
+}
+
+function onDocumentClick() {
+  if (contextMenuVisible.value) closeContextMenu();
+}
+
+document.addEventListener("click", onDocumentClick);
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onDocumentClick);
+});
 </script>
 
 <style scoped lang="scss">
@@ -1962,6 +2078,7 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
 }
 
 .entry-main-button {
@@ -2432,5 +2549,44 @@ function handleRowClick(row: FileManagerEntry, _column: any, event: Event) {
   .files-picker-actions {
     justify-content: flex-start;
   }
+}
+</style>
+
+<style lang="scss">
+.files-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 120px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  .files-context-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    font-size: 13px;
+    color: #1d1d1f;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: #f5f5f7;
+    }
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.12s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

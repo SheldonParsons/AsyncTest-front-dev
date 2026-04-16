@@ -4,6 +4,7 @@ import { http } from "@/utils/http";
 const PROJECT_FILE_ENDPOINT = "/project/file";
 const PROJECT_CREATE_DIRECTORY_ENDPOINT = `${PROJECT_FILE_ENDPOINT}/create_dir`;
 const PROJECT_DELETE_DIRECTORY_ENDPOINT = `${PROJECT_FILE_ENDPOINT}/delete_dir`;
+const PROJECT_RENAME_ENTRY_ENDPOINT = `${PROJECT_FILE_ENDPOINT}/rename`;
 
 // 获取项目列表
 export function ApiGetProjects(params: any): Promise<String> {
@@ -161,6 +162,14 @@ export function ApiDownloadProjectFile(params: { id: number | string }) {
 export function ApiCheckProjectFileExists(params: any): Promise<String> {
   return new Promise((resolve) => {
     http.httpGet(`${PROJECT_FILE_ENDPOINT}/exists`, params).then((res: any) => {
+      resolve(res);
+    });
+  });
+}
+
+export function ApiRenameProjectEntry(data: { id: number | string; name: string }): Promise<String> {
+  return new Promise((resolve) => {
+    http.httpPost(PROJECT_RENAME_ENTRY_ENDPOINT, data).then((res: any) => {
       resolve(res);
     });
   });

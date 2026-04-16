@@ -108,6 +108,7 @@ export type ReportZendaoRunResult = {
 
 export type ReportAmindSourceFile = {
   id: string;
+  backendFileId: string | number | null;
   projectId: string;
   projectName: string;
   name: string;
@@ -123,6 +124,7 @@ export type ReportAmindSourceFile = {
 
 export type ReportExcelSourceFile = {
   id: string;
+  backendFileId: string | number | null;
   projectId: string;
   projectName: string;
   name: string;

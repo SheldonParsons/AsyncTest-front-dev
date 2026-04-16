@@ -1282,17 +1282,221 @@ function buildCompatibilityContentXml(sheets) {
     return `<?xml version="1.0" encoding="UTF-8" standalone="no"?><xmap-content xmlns="urn:xmind:xmap:xmlns:content:2.0" xmlns:fo="http://www.w3.org/1999/XSL/Format" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xlink="http://www.w3.org/1999/xlink" modified-by="AsyncTest Mind" timestamp="${timestamp}" version="2.0">${xmlSheets}</xmap-content>`;
 }
 
+// ── Legacy XMind 8 XML parser ──────────────────────────────────────────────
+// Converts content.xml (XMind 8 / Vana / legacy format) into the same JSON
+// array-of-sheets structure that the new content.json uses, so the rest of
+// the import pipeline works unchanged.
+
+function parseXmindLegacyXml(xmlString) {
+    // Minimal streaming XML parser – no external dependency needed.
+    // We only need to extract the tree of <sheet> → <topic> with their
+    // attributes, <title> text, <marker-ref> markers, and <children>/<topics>.
+
+    const SELF_CLOSING = /<([a-zA-Z][\w:-]*)((?:\s+[^>]*?)?)\/>/g;
+    const normalized = xmlString.replace(SELF_CLOSING, '<$1$2></$1>');
+
+    // Simple DOM-like parse using regex (sufficient for well-formed XMind XML)
+    const tagRe = /<\/?([a-zA-Z][\w:-]*)([^>]*)>/g;
+    const attrRe = /([\w:-]+)\s*=\s*"([^"]*)"/g;
+
+    const stack = [];
+    let root = null;
+    let textBuf = '';
+    let lastIndex = 0;
+
+    let m;
+    while ((m = tagRe.exec(normalized)) !== null) {
+        const rawText = normalized.slice(lastIndex, m.index);
+        lastIndex = m.index + m[0].length;
+
+        if (stack.length > 0 && rawText.trim()) {
+            textBuf += rawText;
+        }
+
+        const isClose = m[0][1] === '/';
+        const tagName = m[1];
+        const attrStr = m[2];
+
+        if (isClose) {
+            const node = stack.pop();
+            if (!node) continue;
+            if (textBuf.trim()) {
+                node.text = textBuf.trim();
+            }
+            textBuf = '';
+            if (stack.length > 0) {
+                const parent = stack[stack.length - 1];
+                if (!parent.childNodes) parent.childNodes = [];
+                parent.childNodes.push(node);
+            } else {
+                root = node;
+            }
+        } else {
+            const attrs = {};
+            let am;
+            while ((am = attrRe.exec(attrStr)) !== null) {
+                attrs[am[1]] = am[2];
+            }
+            stack.push({ tag: tagName, attrs, childNodes: [], text: '' });
+            textBuf = '';
+        }
+    }
+
+    if (!root) throw new Error('Invalid XMind legacy XML: could not parse root element');
+
+    // Helper to find child elements by tag
+    function findChildren(node, tag) {
+        return (node?.childNodes || []).filter((c) => c.tag === tag);
+    }
+    function findChild(node, tag) {
+        return findChildren(node, tag)[0] ?? null;
+    }
+    function getTitle(node) {
+        const titleNode = findChild(node, 'title');
+        return titleNode?.text || '';
+    }
+
+    // Convert an XML <topic> node to the JSON topic structure
+    function convertTopic(xmlTopic) {
+        const topic = {
+            id: xmlTopic.attrs?.id || randomUUID(),
+            title: getTitle(xmlTopic),
+        };
+
+        // structureClass
+        if (xmlTopic.attrs?.['structure-class']) {
+            topic.structureClass = xmlTopic.attrs['structure-class'];
+        }
+
+        // branch folded
+        if (xmlTopic.attrs?.branch === 'folded') {
+            topic.branch = 'folded';
+        }
+
+        // markers (marker-refs → markers array matching JSON format)
+        const markerRefsNode = findChild(xmlTopic, 'marker-refs');
+        if (markerRefsNode) {
+            const refs = findChildren(markerRefsNode, 'marker-ref');
+            if (refs.length) {
+                topic.markers = refs
+                    .map((r) => ({ markerId: r.attrs?.['marker-id'] || '' }))
+                    .filter((r) => r.markerId);
+            }
+        }
+
+        // image
+        const imageNode = findChild(xmlTopic, 'xhtml:img');
+        if (imageNode?.attrs?.['xhtml:src']) {
+            topic.image = { src: imageNode.attrs['xhtml:src'] };
+            if (imageNode.attrs?.['svg:width']) topic.image.width = parseInt(imageNode.attrs['svg:width'], 10) || undefined;
+            if (imageNode.attrs?.['svg:height']) topic.image.height = parseInt(imageNode.attrs['svg:height'], 10) || undefined;
+        }
+
+        // notes (plain text)
+        const notesNode = findChild(xmlTopic, 'notes');
+        if (notesNode) {
+            const plainNode = findChild(notesNode, 'plain');
+            if (plainNode?.text) {
+                topic.notes = { plain: { content: plainNode.text } };
+            }
+        }
+
+        // labels
+        const labelsNode = findChild(xmlTopic, 'labels');
+        if (labelsNode) {
+            const labelItems = findChildren(labelsNode, 'label');
+            if (labelItems.length) {
+                topic.labels = labelItems.map((l) => l.text).filter(Boolean);
+            }
+        }
+
+        // href
+        if (xmlTopic.attrs?.['xlink:href']) {
+            topic.href = xmlTopic.attrs['xlink:href'];
+        }
+
+        // position
+        if (xmlTopic.attrs?.['svg:x'] || xmlTopic.attrs?.['svg:y']) {
+            topic.position = {};
+            if (xmlTopic.attrs['svg:x']) topic.position.x = parseInt(xmlTopic.attrs['svg:x'], 10);
+            if (xmlTopic.attrs['svg:y']) topic.position.y = parseInt(xmlTopic.attrs['svg:y'], 10);
+        }
+
+        // children
+        const childrenNode = findChild(xmlTopic, 'children');
+        if (childrenNode) {
+            const topicsGroups = findChildren(childrenNode, 'topics');
+            const children = {};
+            for (const group of topicsGroups) {
+                const type = group.attrs?.type || 'attached';
+                const childTopics = findChildren(group, 'topic').map(convertTopic);
+                if (childTopics.length) {
+                    children[type] = childTopics;
+                }
+            }
+            if (Object.keys(children).length) {
+                topic.children = children;
+            }
+        }
+
+        return topic;
+    }
+
+    // Extract sheets
+    const sheetNodes = findChildren(root, 'sheet');
+    if (!sheetNodes.length) {
+        throw new Error('Invalid XMind legacy XML: no sheets found');
+    }
+
+    return sheetNodes.map((sheetNode) => {
+        const rootTopicNode = findChild(sheetNode, 'topic');
+        if (!rootTopicNode) {
+            throw new Error('Invalid XMind legacy XML: sheet missing root topic');
+        }
+        const sheet = {
+            id: sheetNode.attrs?.id || randomUUID(),
+            title: getTitle(sheetNode),
+            rootTopic: convertTopic(rootTopicNode),
+        };
+
+        // relationships
+        const relNode = findChild(sheetNode, 'relationships');
+        if (relNode) {
+            const rels = findChildren(relNode, 'relationship');
+            if (rels.length) {
+                sheet.relationships = rels.map((r) => ({
+                    id: r.attrs?.id || randomUUID(),
+                    title: getTitle(r),
+                    end1Id: r.attrs?.end1 || '',
+                    end2Id: r.attrs?.end2 || '',
+                }));
+            }
+        }
+
+        return sheet;
+    });
+}
+
 export async function readXmindWorkbook(filePath) {
     const abs = path.resolve(filePath);
     const buf = await fs.readFile(abs);
     const zip = await JSZip.loadAsync(buf);
-    const contentRaw = await zip.file('content.json')?.async('string');
-    if (!contentRaw) {
-        throw new Error('Invalid .xmind: missing content.json');
+
+    // Try new format first (content.json), then legacy XML (content.xml)
+    const contentJsonRaw = await zip.file('content.json')?.async('string');
+    let workbook;
+    if (contentJsonRaw) {
+        workbook = JSON.parse(contentJsonRaw);
+    } else {
+        const contentXmlRaw = await zip.file('content.xml')?.async('string');
+        if (!contentXmlRaw) {
+            throw new Error('Invalid .xmind: missing content.json and content.xml');
+        }
+        workbook = parseXmindLegacyXml(contentXmlRaw);
     }
-    const workbook = JSON.parse(contentRaw);
+
     if (!Array.isArray(workbook) || !workbook.length) {
-        throw new Error('Invalid .xmind: content.json is empty');
+        throw new Error('Invalid .xmind: workbook is empty');
     }
     const resourceBytesMap = new Map();
     for (const [name, entry] of Object.entries(zip.files)) {

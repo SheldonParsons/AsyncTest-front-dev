@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { ApiDownloadProjectFile } from "@/api/project/index";
 import { EMPTY_MODULE_LABEL } from "./types";
 import type {
   ReportExcelColumnMapping,
@@ -150,12 +151,19 @@ function resolveSheet(workbook: ExcelWorkbookSnapshot, sheetName?: string) {
 }
 
 export async function loadExcelWorkbook(sourceFile: ReportExcelSourceFile): Promise<ExcelWorkbookSnapshot> {
-  const response = await fetch(sourceFile.downloadUrl);
-  if (!response.ok) {
-    throw new Error(`下载 Excel 失败：${response.status}`);
-  }
+  let fileBuffer: ArrayBuffer;
 
-  const fileBuffer = await response.arrayBuffer();
+  if (sourceFile.backendFileId) {
+    const response = await ApiDownloadProjectFile({ id: sourceFile.backendFileId });
+    const blob: Blob = response.data;
+    fileBuffer = await blob.arrayBuffer();
+  } else {
+    const response = await fetch(sourceFile.downloadUrl);
+    if (!response.ok) {
+      throw new Error(`下载 Excel 失败：${response.status}`);
+    }
+    fileBuffer = await response.arrayBuffer();
+  }
   const workbook = XLSX.read(fileBuffer, { type: "array" });
   const sheetNames = Array.isArray(workbook.SheetNames) ? workbook.SheetNames.filter((item) => !!item) : [];
   if (!sheetNames.length) {

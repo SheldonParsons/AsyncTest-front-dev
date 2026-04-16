@@ -821,6 +821,7 @@ export function useReportWorkspaceState() {
 
     return {
       id: `${project.value}::${path || name}`,
+      backendFileId: rawFile?.id ?? null,
       projectId: project.value,
       projectName: project.label,
       name,
@@ -858,6 +859,7 @@ export function useReportWorkspaceState() {
 
     return {
       id: `${project.value}::${path || name}`,
+      backendFileId: rawFile?.id ?? null,
       projectId: project.value,
       projectName: project.label,
       name,
