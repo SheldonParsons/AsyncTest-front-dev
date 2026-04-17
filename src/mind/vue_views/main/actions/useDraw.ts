@@ -1981,10 +1981,10 @@ export function useDraw(
           }
           lineY += line.height;
         });
-        const hmk = hoveredMarker.value;
-        const markerHoverIdx = (hmk && hmk.nodeId === id) ? hmk.index : -1;
-        drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage, markerHoverIdx >= 0 ? markerHoverIdx : undefined);
       }
+      const hmk = hoveredMarker.value;
+      const markerHoverIdx = (hmk && hmk.nodeId === id) ? hmk.index : -1;
+      drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage, markerHoverIdx >= 0 ? markerHoverIdx : undefined);
       drawRootSecrecyBadgeIfNeeded(targetCtx, rootNodeIds, id, node, bodyRect);
       targetCtx.restore();
     }

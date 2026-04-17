@@ -139,7 +139,7 @@
           </svg>
           <p class="kbe-main-empty-text">选择左侧节点开始编辑</p>
         </div>
-        <NodeEditor v-else :node="selectedNode" :kb-id="kbId" @saved="onNodeSaved" />
+        <CanvasEditor v-else :node="selectedNode" :kb-id="kbId" @save="onCanvasSave" />
       </template>
 
       <!-- Wiki -->
@@ -212,14 +212,14 @@
 import { ref, computed, reactive, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  getKB, getKBByProject, getTree, createNode, deleteNode as deleteNodeApi,
+  getKB, getKBByProject, getTree, createNode, updateNode, deleteNode as deleteNodeApi,
   compileWiki, getWikiDirectory, getWikiPage,
   listTemplates, createTemplate, deleteTemplate,
 } from './api'
 import type { KnowledgeBase, KBNode, WikiDirectoryItem, KBTemplate } from '@/types/knowledge'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import TreeNode from './components/TreeNode.vue'
-import NodeEditor from './components/NodeEditor.vue'
+import CanvasEditor from './components/CanvasEditor.vue'
 import TemplateEditor from './components/TemplateEditor.vue'
 
 const router = useRouter()
@@ -337,9 +337,22 @@ onMounted(async () => {
     projects.value = []
   }
 
+  await loadKBData()
+})
+
+watch(kbId, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    loadKBData()
+  }
+})
+
+async function loadKBData() {
+  selectedNodeId.value = null
+  selectedWikiPath.value = null
+  selectedWikiContent.value = null
+  selectedTemplateId.value = null
   try {
     kb.value = await getKB(kbId.value)
-    // Set current project from KB's project_id
     if (kb.value?.project_id) {
       currentProjectId.value = kb.value.project_id
     }
@@ -347,7 +360,9 @@ onMounted(async () => {
     window.$toast({ title: e.message || '加载失败', type: 'error' })
   }
   loadTree()
-})
+  if (currentView.value === 'wiki') loadWikiDir()
+  if (currentView.value === 'template') loadTemplates()
+}
 
 watch(currentView, (v) => {
   if (v === 'wiki') loadWikiDir()
@@ -417,6 +432,15 @@ async function handleDeleteNode(nodeId: string) {
 }
 
 function onNodeSaved() { loadTree() }
+
+async function onCanvasSave(contentData: any) {
+  if (!selectedNode.value) return
+  try {
+    await updateNode(kbId.value, selectedNode.value.id, { content: contentData })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '保存失败', type: 'error' })
+  }
+}
 
 async function loadWikiDir() {
   try { wikiDir.value = await getWikiDirectory(kbId.value) } catch { wikiDir.value = [] }

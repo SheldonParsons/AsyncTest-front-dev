@@ -7549,6 +7549,30 @@ async function exportXmind() {
   }
 }
 
+async function exportMarkdown() {
+  if (!props.doc || !props.docId || isSaving.value) return false;
+  try {
+    clearPersistTimer();
+    if (editingSession.value) commitEditingSession();
+    await flushPendingDocumentMutation();
+    ensureMultiMindDoc(props.doc);
+    writeViewportToDoc();
+    const plain = toPlainDoc(props.doc);
+    await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+    const defaultPath = `${getExportXmindBaseName(plain, props.filePath)}.md`;
+    const result = await window.electronAPI.amind.exportMarkdownDialog({
+      docId: props.docId,
+      defaultPath,
+    });
+    return !!result?.filePath;
+  } catch (error) {
+    console.error('[mind-export-markdown]', error);
+    const title = error instanceof Error ? error.message : '导出 Markdown 失败';
+    window.$toast({ title, type: 'error' });
+    return false;
+  }
+}
+
 async function switchMindBoard(boardId: string) {
   if (!props.doc) return false;
   const activeBoardId = getActiveMind(props.doc)?.id ?? null;
@@ -7791,6 +7815,7 @@ defineExpose({
   saveDocument,
   saveDocumentAs,
   exportXmind,
+  exportMarkdown,
   switchMindBoard,
   renameMindBoard,
   updateRemoteBindingState,
@@ -12220,7 +12245,7 @@ async function onWindowPaste(event: ClipboardEvent) {
   const items = Array.from(clipboardData?.items ?? []);
   const nodeClipboardState = resolvePreferredNodeClipboardState(parseClipboardNodePayload(clipboardData), clipboardData);
   const editingTextActive = isTextEditingActive(event.target);
-  if (nodeClipboardState && pasteTargetNodeIds.length) {
+  if (nodeClipboardState && pasteTargetNodeIds.length && !editingTextActive) {
     event.preventDefault();
     event.stopPropagation();
     setInternalClipboard(nodeClipboardState);

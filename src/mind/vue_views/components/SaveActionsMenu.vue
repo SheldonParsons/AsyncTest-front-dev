@@ -49,7 +49,7 @@
 
           <li
             class="save-actions-item save-actions-item--submenu"
-            :class="{ 'is-disabled': !canExportXmind }"
+            :class="{ 'is-disabled': !canExportAny }"
             @mouseenter="handleExportEnter"
           >
             <span class="save-actions-label">导出</span>
@@ -65,9 +65,17 @@
                 <ul class="save-actions-submenu-list">
                   <li
                     class="save-actions-submenu-item"
+                    :class="{ 'is-disabled': !canExportXmind }"
                     @click.stop="handleAction('exportXmind')"
                   >
                     Xmind
+                  </li>
+                  <li
+                    class="save-actions-submenu-item"
+                    :class="{ 'is-disabled': !canExportMarkdown }"
+                    @click.stop="handleAction('exportMarkdown')"
+                  >
+                    Markdown
                   </li>
                 </ul>
               </div>
@@ -132,12 +140,14 @@ const props = withDefaults(defineProps<{
   canSaveAs?: boolean;
   canOpenFolder?: boolean;
   canExportXmind?: boolean;
+  canExportMarkdown?: boolean;
   recentPaths?: string[];
 }>(), {
   canSave: true,
   canSaveAs: true,
   canOpenFolder: false,
   canExportXmind: true,
+  canExportMarkdown: true,
   recentPaths: () => [],
 });
 
@@ -148,6 +158,7 @@ const emit = defineEmits<{
   (event: 'quickNew'): void;
   (event: 'openLocal'): void;
   (event: 'exportXmind'): void;
+  (event: 'exportMarkdown'): void;
   (event: 'openRecent', filePath: string): void;
   (event: 'menuOpen'): void;
 }>();
@@ -156,6 +167,7 @@ const open = ref(false);
 const rootRef = ref<HTMLElement | null>(null);
 const activeSubmenu = ref<'recent' | 'export' | null>(null);
 const dropdownPosition = ref({ top: 0, left: 0 });
+const canExportAny = computed(() => props.canExportXmind || props.canExportMarkdown);
 
 const dropdownStyle = computed(() => ({
   top: `${dropdownPosition.value.top}px`,
@@ -187,16 +199,17 @@ async function toggleMenu() {
   }
 }
 
-function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal' | 'exportXmind') {
+function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal' | 'exportXmind' | 'exportMarkdown') {
   if ((action === 'save' && !props.canSave) || (action === 'saveAs' && !props.canSaveAs)) return;
   if (action === 'openFolder' && !props.canOpenFolder) return;
   if (action === 'exportXmind' && !props.canExportXmind) return;
+  if (action === 'exportMarkdown' && !props.canExportMarkdown) return;
   closeMenu();
   emit(action);
 }
 
 function handleExportEnter() {
-  if (!props.canExportXmind) {
+  if (!canExportAny.value) {
     activeSubmenu.value = null;
     return;
   }

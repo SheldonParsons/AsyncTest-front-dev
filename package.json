@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.6",
+  "version": "2.2.7",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 修复缺陷：修复自动生成报告中下载文件直接从OSS获取文件的问题\",\"publishDate\":\"2026-04-17\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：Mrakdown导入导出（导入入口：打开本地文件，导出入口：思维导入窗口header下拉）\\n#### 修复缺陷：修复复制节点后进入编辑模式进行粘贴，没有提取内容进行粘贴的问题\\n#### 修复缺陷：修复进入编辑后标记不显示的问题\",\"publishDate\":\"2026-04-17\"}"
     },
     "publish": [
       {
