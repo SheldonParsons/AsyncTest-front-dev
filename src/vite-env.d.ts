@@ -45,6 +45,11 @@ export interface IElectronAPI {
       convertedCount?: number;
       failedAmindFiles?: Array<{ path: string; message: string }>;
     }>;
+  },
+  harness: {
+    chatStream: (payload: { message: string; model?: string }) => Promise<{ requestId: string }>;
+    onChatStream: (callback: (data: any) => void) => () => void;
+    request: (method: string, path: string, body?: any) => Promise<{ status: number; data: any; error?: string }>;
   }
 }
 

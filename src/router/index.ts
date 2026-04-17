@@ -38,6 +38,16 @@ const routes = [
     path: '/agent/chat',
     name: 'agentChat',
     component: () => import('@/views/electron_views/agent/chat/index.vue')
+  },
+  {
+    path: '/agent/knowledge',
+    name: 'agentKnowledgeList',
+    component: () => import('@/views/electron_views/agent/knowledge/index.vue')
+  },
+  {
+    path: '/agent/knowledge/:kbId',
+    name: 'agentKnowledgeEditor',
+    component: () => import('@/views/electron_views/agent/knowledge/editor.vue')
   }] : []),
   {
     path: '/login',

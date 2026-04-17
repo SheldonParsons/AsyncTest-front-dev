@@ -35,6 +35,19 @@ async function resetTempRoot() {
   await ensureDirectory(GENERATOR_TEMP_ROOT);
 }
 
+async function downloadFileFromBackend(backendFileId, auth, targetPath) {
+  const url = `${auth.baseURL}/project/file/download?id=${backendFileId}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `token=${auth.token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`下载文件失败：${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(targetPath, buffer);
+  return { path: targetPath, size: buffer.length };
+}
+
 async function downloadFileToPath(url, targetPath) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -49,7 +62,8 @@ async function downloadFileToPath(url, targetPath) {
   };
 }
 
-async function persistSourceFileList(files, tempDir, subDirName) {
+async function persistSourceFileList(files, tempDir, subDirName, auth) {
+  console.log('[DOCX-DEBUG][main] persistSourceFileList auth:', JSON.stringify(auth));
   const targetDir = path.join(tempDir, subDirName);
   await ensureDirectory(targetDir);
 
@@ -59,7 +73,10 @@ async function persistSourceFileList(files, tempDir, subDirName) {
     const ext = path.extname(file?.name || '') || '';
     const baseName = sanitizeFileNamePart(path.basename(file?.name || `file-${index + 1}`, ext));
     const targetPath = path.join(targetDir, `${String(index + 1).padStart(2, '0')}_${baseName}${ext}`);
-    const downloadResult = await downloadFileToPath(file.downloadUrl, targetPath);
+    console.log(`[DOCX-DEBUG][main] file[${index}] backendFileId=${file.backendFileId}, hasAuth=${!!auth}, willUseBackend=${!!(file.backendFileId && auth)}`);
+    const downloadResult = file.backendFileId && auth
+      ? await downloadFileFromBackend(file.backendFileId, auth, targetPath)
+      : await downloadFileToPath(file.downloadUrl, targetPath);
     persisted.push({
       ...file,
       tempPath: downloadResult.path,
@@ -70,7 +87,8 @@ async function persistSourceFileList(files, tempDir, subDirName) {
   return persisted;
 }
 
-async function persistAmindFileList(files, tempDir) {
+async function persistAmindFileList(files, tempDir, auth) {
+  console.log('[DOCX-DEBUG][main] persistAmindFileList auth:', JSON.stringify(auth));
   const targetDir = path.join(tempDir, 'amind');
   await ensureDirectory(targetDir);
 
@@ -79,7 +97,10 @@ async function persistAmindFileList(files, tempDir) {
     const file = files[index];
     const originalBaseName = sanitizeFileNamePart(path.basename(file?.name || `amind-${index + 1}`, '.amind'));
     const originalTempPath = await buildUniquePath(targetDir, `${originalBaseName}.amind`);
-    const originalDownload = await downloadFileToPath(file.downloadUrl, originalTempPath);
+    console.log(`[DOCX-DEBUG][main] amind[${index}] backendFileId=${file.backendFileId}, hasAuth=${!!auth}, willUseBackend=${!!(file.backendFileId && auth)}`);
+    const originalDownload = file.backendFileId && auth
+      ? await downloadFileFromBackend(file.backendFileId, auth, originalTempPath)
+      : await downloadFileToPath(file.downloadUrl, originalTempPath);
 
     const { doc } = await readAmindFile(originalTempPath);
     const xmindTempPath = await buildUniquePath(targetDir, `${originalBaseName}.xmind`);
@@ -106,7 +127,7 @@ async function persistZendaoCache(zendaoPayload, tempDir) {
   return persistZendaoArtifacts(zendaoPayload, targetDir);
 }
 
-export async function prepareGeneratorCacheWorkspace({ targetPath, payload }) {
+export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth }) {
   await resetTempRoot();
 
   const tempDir = path.join(GENERATOR_TEMP_ROOT, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -115,8 +136,8 @@ export async function prepareGeneratorCacheWorkspace({ targetPath, payload }) {
   await ensureDirectory(tempDir);
   await ensureDirectory(path.dirname(snapshotPath));
 
-  const persistedAmindFiles = await persistAmindFileList(payload?.amindFiles || [], tempDir);
-  const persistedExcelFiles = payload?.excelFile ? await persistSourceFileList([payload.excelFile], tempDir, 'excel') : [];
+  const persistedAmindFiles = await persistAmindFileList(payload?.amindFiles || [], tempDir, auth);
+  const persistedExcelFiles = payload?.excelFile ? await persistSourceFileList([payload.excelFile], tempDir, 'excel', auth) : [];
   const persistedZendao = await persistZendaoCache(payload?.zendao, tempDir);
 
   const snapshot = {

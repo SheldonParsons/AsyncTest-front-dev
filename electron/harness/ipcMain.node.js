@@ -11,6 +11,9 @@
 
 import { ipcMain } from 'electron';
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { app } from 'electron';
 
 const HARNESS_BASE = 'http://localhost:7777';
 
@@ -140,5 +143,74 @@ export function initHarnessMain() {
     });
 
     return { requestId };
+  });
+
+  // Generic HTTP proxy — forwards any request to HarnessEngineering backend
+  ipcMain.handle('harness:request', async (_event, { method, path, body }) => {
+    return new Promise((resolve) => {
+      const url = new URL(`${HARNESS_BASE}${path}`);
+      const payload = body != null ? JSON.stringify(body) : null;
+      const options = {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: method || 'GET',
+        headers: {
+          'Accept': 'application/json',
+          ...(payload ? {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          } : {}),
+        },
+      };
+
+      const req = http.request(options, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf-8');
+          try {
+            const data = raw ? JSON.parse(raw) : null;
+            resolve({ status: res.statusCode, data });
+          } catch {
+            resolve({ status: res.statusCode, data: raw });
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        resolve({ status: 0, data: null, error: err.message || 'Network error' });
+      });
+
+      if (payload) req.write(payload);
+      req.end();
+    });
+  });
+
+  // ─── Persistent key-value store in userData ───
+  const storeFile = path.join(app.getPath('userData'), 'harness-settings.json');
+
+  function readStore() {
+    try {
+      return JSON.parse(fs.readFileSync(storeFile, 'utf-8'));
+    } catch {
+      return {};
+    }
+  }
+
+  function writeStore(data) {
+    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  ipcMain.handle('harness:storeGet', (_event, key) => {
+    const store = readStore();
+    return store[key] ?? null;
+  });
+
+  ipcMain.handle('harness:storeSet', (_event, key, value) => {
+    const store = readStore();
+    store[key] = value;
+    writeStore(store);
+    return true;
   });
 }

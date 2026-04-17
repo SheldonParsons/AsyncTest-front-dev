@@ -30,12 +30,12 @@
           <div class="card-logo">
             <img
               class="logo-default"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark_new.svg"
               alt="Generator"
             />
             <img
               class="logo-hover"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light_new.svg"
               alt="Generator"
             />
           </div>
@@ -340,8 +340,8 @@ const handleLoginSuccess = () => {
     height: 42px;
 
     img {
-      max-width: 82%;
-      max-height: 82%;
+      max-width: 70%;
+      max-height: 70%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
@@ -352,8 +352,8 @@ const handleLoginSuccess = () => {
     height: 42px;
 
     img {
-      max-width: 82%;
-      max-height: 82%;
+      max-width: 70%;
+      max-height: 70%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }

@@ -154,6 +154,21 @@ function isBlank(value: unknown) {
   return `${value ?? ""}`.trim().length === 0;
 }
 
+function resolveBackendAuth(): { baseURL: string; token: string } | null {
+  const token = asyncTest.cookies.getCookie(GlobalStatus.cookieTag);
+  if (!token) return null;
+  const isElectron = typeof window !== "undefined" && window.navigator.userAgent.toLowerCase().includes("electron");
+  let baseURL: string;
+  if (import.meta.env.DEV) {
+    baseURL = isElectron ? "http://localhost:6001" : "/api";
+  } else if (import.meta.env.PROD && isElectron) {
+    baseURL = import.meta.env.VITE_API_URL;
+  } else {
+    baseURL = "/server";
+  }
+  return { baseURL, token: `${token}` };
+}
+
 function readPersistedDraft() {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(REPORT_STORAGE_KEY);
@@ -1670,8 +1685,13 @@ export function useReportWorkspaceState() {
       const zendaoCache = await runZendaoForGeneration();
       pushLog("info", "开始生成测试报告", "正在按启用环境生成 DOCX 报告。", "generate");
       const payload = buildGeneratorCachePayload(zendaoCache as ReportZendaoRunResult);
+      const auth = resolveBackendAuth();
+      console.log("[DOCX-DEBUG] resolveBackendAuth =>", JSON.stringify(auth));
+      console.log("[DOCX-DEBUG] amindFiles backendFileIds =>", payload?.amindFiles?.map((f: any) => f.backendFileId));
+      console.log("[DOCX-DEBUG] excelFile backendFileId =>", payload?.excelFile?.backendFileId);
       const result = await window.electronAPI.generator.exportDocxPackage({
         payload,
+        auth,
       });
       markStep("generate", "success");
       applyRecentExports(result?.recentExports || [], true);

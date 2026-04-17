@@ -161,7 +161,9 @@ export function initGeneratorMain() {
   });
 
   ipcMain.handle('generator:exportDocxPackage', async (_event, payload = {}) => {
-    const workspace = await prepareGeneratorCacheWorkspace({ payload: payload?.payload, targetPath: payload?.targetPath });
+    console.log('[DOCX-DEBUG][ipc] auth received:', JSON.stringify(payload?.auth));
+    console.log('[DOCX-DEBUG][ipc] payload keys:', Object.keys(payload || {}));
+    const workspace = await prepareGeneratorCacheWorkspace({ payload: payload?.payload, targetPath: payload?.targetPath, auth: payload?.auth });
     const packageResult = await exportEnvironmentReportPackage({
       tempDir: workspace.tempDir,
       payload: workspace.snapshot,

@@ -35,6 +35,21 @@
         <span class="agent-feature-arrow">→</span>
       </article>
 
+      <article class="agent-feature-card" @click="enterKnowledge">
+        <div class="agent-feature-icon agent-feature-icon--kb">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            <line x1="8" y1="7" x2="16" y2="7" />
+            <line x1="8" y1="11" x2="13" y2="11" />
+          </svg>
+        </div>
+        <h3 class="agent-feature-title">知识库</h3>
+        <p class="agent-feature-desc">构建目录式知识体系，服务于智能测试生成</p>
+        <span class="agent-feature-arrow">→</span>
+      </article>
+
       <article class="agent-feature-card agent-feature-card--disabled">
         <div class="agent-feature-icon">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -58,6 +73,10 @@ const router = useRouter()
 
 function enterChat() {
   router.push({ name: 'agentChat' })
+}
+
+function enterKnowledge() {
+  router.push({ name: 'agentKnowledgeList' })
 }
 </script>
 
@@ -181,6 +200,11 @@ function enterChat() {
   justify-content: center;
   background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
   color: #6366f1;
+
+  &--kb {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    color: #16a34a;
+  }
 }
 
 .agent-feature-title {

@@ -83,6 +83,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.on('harness:chat-stream', handler);
             return () => ipcRenderer.removeListener('harness:chat-stream', handler);
         },
+        request: (method, path, body) => ipcRenderer.invoke('harness:request', { method, path, body }),
+        storeGet: (key) => ipcRenderer.invoke('harness:storeGet', key),
+        storeSet: (key, value) => ipcRenderer.invoke('harness:storeSet', key, value),
     },
 
     lsp: {
