@@ -30,12 +30,12 @@
           <div class="card-logo">
             <img
               class="logo-default"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark_new.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark_new_1.svg"
               alt="Generator"
             />
             <img
               class="logo-hover"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light_new.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light_new_1.svg"
               alt="Generator"
             />
           </div>

@@ -5,6 +5,7 @@ import { AMIND_EXT } from './constants.js';
 import { buildAmindBuffer, createEmptyDoc, readAmindAsset, readAmindBuffer, readAmindFile, writeAmindFile } from './amindFileService.node.js';
 import { readXmindAsAmindDoc, writeXmindFile } from './xmindFileService.node.js';
 import { docToMarkdown, markdownToDoc, readMarkdownFile, writeMarkdownFile } from './markdownService.node.js';
+import { docToJson, jsonToDoc, readJsonFile, writeJsonFile } from './jsonService.node.js';
 import { createAmindAssetCache } from './amindAssetCache.node.js';
 import { createRecentStore } from './recentStore.js';
 import { createDocStore } from './docStore.node.js';
@@ -292,6 +293,26 @@ export function initAmindMain({ userDataPath, windowManager }) {
     };
   }
 
+  async function importJsonFileInWindow(filePath) {
+    const { path: abs, content } = await readJsonFile(filePath);
+    const doc = jsonToDoc(content, path.basename(abs));
+    migrateLegacyMindStyles(doc);
+    await mindFontService.normalizeDocFonts(doc);
+    const docId = newDocId();
+    docStore.create(docId, { doc, filePath: null, windowKey: null });
+    await openMindWindow({
+      docId,
+      filePath: null,
+      title: buildImportWindowTitle(doc?.manifest?.title || path.basename(abs, '.json')),
+    });
+    return {
+      reused: false,
+      docId,
+      filePath: null,
+      importedFrom: abs,
+    };
+  }
+
   // ===== IPC =====
 
   ipcMain.handle('amind:new', async (event, payload = {}) => {
@@ -417,10 +438,11 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: 'Mind Files', extensions: [AMIND_EXT.slice(1), 'xmind', 'md'] },
+        { name: 'Mind Files', extensions: [AMIND_EXT.slice(1), 'xmind', 'md', 'json'] },
         { name: 'AsyncTest Mind', extensions: [AMIND_EXT.slice(1)] },
         { name: 'XMind', extensions: ['xmind'] },
         { name: 'Markdown', extensions: ['md'] },
+        { name: 'JSON', extensions: ['json'] },
       ],
     });
     if (canceled || !filePaths?.[0]) return null;
@@ -430,6 +452,9 @@ export function initAmindMain({ userDataPath, windowManager }) {
     }
     if (selectedPath.toLowerCase().endsWith('.md')) {
       return await importMarkdownFileInWindow(selectedPath);
+    }
+    if (selectedPath.toLowerCase().endsWith('.json')) {
+      return await importJsonFileInWindow(selectedPath);
     }
     return await openFileInWindow(selectedPath);
   });
@@ -483,6 +508,18 @@ export function initAmindMain({ userDataPath, windowManager }) {
     if (canceled || !filePath) return null;
     const mdContent = docToMarkdown(entry.doc);
     const result = await writeMarkdownFile(filePath, mdContent);
+    return { docId, filePath: result.path };
+  });
+
+  ipcMain.handle('amind:exportJsonDialog', async (event, { docId, defaultPath }) => {
+    const entry = docStore.mustGet(docId);
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: defaultPath || '思维导图.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePath) return null;
+    const jsonContent = docToJson(entry.doc);
+    const result = await writeJsonFile(filePath, jsonContent);
     return { docId, filePath: result.path };
   });
 

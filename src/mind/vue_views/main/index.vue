@@ -1202,6 +1202,9 @@ function flushPendingDirectTypeToEditor(text: string) {
   const nextText = text;
   clearPendingDirectTypeSeed();
   if (!nextText) {
+    if (editingSession.value && editingSession.value.nodeId === pending.nodeId) {
+      cancelEditingSession();
+    }
     focusViewportWithoutScroll();
     return;
   }
@@ -6849,7 +6852,6 @@ function createFreeRootCommandAt(position: { x: number; y: number }) {
       editingNodeId.value = null;
       restorePreviousSelection();
       void applyDocumentMutation('history:undo-create-free-root', {
-        ensureVisibleNodeId: resolveFallbackSelection(previousSelection.primaryId),
         removedNodeIds: [newNodeId],
         reuseDescendantCounts: true,
         reuseParentIndex: true,
@@ -7573,6 +7575,30 @@ async function exportMarkdown() {
   }
 }
 
+async function exportJson() {
+  if (!props.doc || !props.docId || isSaving.value) return false;
+  try {
+    clearPersistTimer();
+    if (editingSession.value) commitEditingSession();
+    await flushPendingDocumentMutation();
+    ensureMultiMindDoc(props.doc);
+    writeViewportToDoc();
+    const plain = toPlainDoc(props.doc);
+    await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+    const defaultPath = `${getExportXmindBaseName(plain, props.filePath)}.json`;
+    const result = await window.electronAPI.amind.exportJsonDialog({
+      docId: props.docId,
+      defaultPath,
+    });
+    return !!result?.filePath;
+  } catch (error) {
+    console.error('[mind-export-json]', error);
+    const title = error instanceof Error ? error.message : '导出 JSON 失败';
+    window.$toast({ title, type: 'error' });
+    return false;
+  }
+}
+
 async function switchMindBoard(boardId: string) {
   if (!props.doc) return false;
   const activeBoardId = getActiveMind(props.doc)?.id ?? null;
@@ -7816,6 +7842,7 @@ defineExpose({
   saveDocumentAs,
   exportXmind,
   exportMarkdown,
+  exportJson,
   switchMindBoard,
   renameMindBoard,
   updateRemoteBindingState,

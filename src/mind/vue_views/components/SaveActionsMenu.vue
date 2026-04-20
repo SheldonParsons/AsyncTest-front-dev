@@ -77,6 +77,13 @@
                   >
                     Markdown
                   </li>
+                  <li
+                    class="save-actions-submenu-item"
+                    :class="{ 'is-disabled': !canExportJson }"
+                    @click.stop="handleAction('exportJson')"
+                  >
+                    JSON
+                  </li>
                 </ul>
               </div>
             </transition>
@@ -141,6 +148,7 @@ const props = withDefaults(defineProps<{
   canOpenFolder?: boolean;
   canExportXmind?: boolean;
   canExportMarkdown?: boolean;
+  canExportJson?: boolean;
   recentPaths?: string[];
 }>(), {
   canSave: true,
@@ -148,6 +156,7 @@ const props = withDefaults(defineProps<{
   canOpenFolder: false,
   canExportXmind: true,
   canExportMarkdown: true,
+  canExportJson: true,
   recentPaths: () => [],
 });
 
@@ -159,6 +168,7 @@ const emit = defineEmits<{
   (event: 'openLocal'): void;
   (event: 'exportXmind'): void;
   (event: 'exportMarkdown'): void;
+  (event: 'exportJson'): void;
   (event: 'openRecent', filePath: string): void;
   (event: 'menuOpen'): void;
 }>();
@@ -167,7 +177,7 @@ const open = ref(false);
 const rootRef = ref<HTMLElement | null>(null);
 const activeSubmenu = ref<'recent' | 'export' | null>(null);
 const dropdownPosition = ref({ top: 0, left: 0 });
-const canExportAny = computed(() => props.canExportXmind || props.canExportMarkdown);
+const canExportAny = computed(() => props.canExportXmind || props.canExportMarkdown || props.canExportJson);
 
 const dropdownStyle = computed(() => ({
   top: `${dropdownPosition.value.top}px`,
@@ -199,11 +209,12 @@ async function toggleMenu() {
   }
 }
 
-function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal' | 'exportXmind' | 'exportMarkdown') {
+function handleAction(action: 'save' | 'saveAs' | 'openFolder' | 'quickNew' | 'openLocal' | 'exportXmind' | 'exportMarkdown' | 'exportJson') {
   if ((action === 'save' && !props.canSave) || (action === 'saveAs' && !props.canSaveAs)) return;
   if (action === 'openFolder' && !props.canOpenFolder) return;
   if (action === 'exportXmind' && !props.canExportXmind) return;
   if (action === 'exportMarkdown' && !props.canExportMarkdown) return;
+  if (action === 'exportJson' && !props.canExportJson) return;
   closeMenu();
   emit(action);
 }

@@ -26,9 +26,11 @@
                         :can-save-as="!!docId && !saveState.isSaving" :can-open-folder="!!filePath"
                         :can-export-xmind="!!docId && !saveState.isSaving"
                         :can-export-markdown="!!docId && !saveState.isSaving"
+                        :can-export-json="!!docId && !saveState.isSaving"
                         :recent-paths="recentPaths" @save="onSaveClick" @saveAs="onSaveAsClick"
                         @openFolder="onOpenFolderClick" @quickNew="onQuickNewClick" @openLocal="onOpenLocalClick"
                         @exportXmind="onExportXmindClick" @exportMarkdown="onExportMarkdownClick"
+                        @exportJson="onExportJsonClick"
                         @openRecent="onOpenRecentClick" @menuOpen="loadRecentPaths" />
                     <span v-if="saveState.isSaving" class="mind-header-saving-indicator">保存中...</span>
                 </div>
@@ -139,6 +141,7 @@ type MindMainExpose = {
     saveDocumentAs: () => Promise<boolean>;
     exportXmind: () => Promise<boolean>;
     exportMarkdown: () => Promise<boolean>;
+    exportJson: () => Promise<boolean>;
     switchMindBoard: (boardId: string) => Promise<boolean>;
     renameMindBoard: (boardId: string, title: string) => Promise<boolean>;
     updateRemoteBindingState: (binding: MindRemoteBinding | null) => Promise<boolean>;
@@ -304,6 +307,10 @@ function onExportXmindClick() {
 
 function onExportMarkdownClick() {
     void mindMainRef.value?.exportMarkdown();
+}
+
+function onExportJsonClick() {
+    void mindMainRef.value?.exportJson();
 }
 
 async function loadRecentPaths() {
