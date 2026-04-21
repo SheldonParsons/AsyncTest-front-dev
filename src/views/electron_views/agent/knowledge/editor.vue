@@ -2,22 +2,21 @@
   <div class="kb-editor">
     <!-- Sidebar: nav + tree/list -->
     <aside class="kbe-sidebar">
-      <!-- Back + title -->
-      <div class="kbe-sidebar-top">
+      <!-- Project Switcher (with back button inline) -->
+      <div class="kbe-project-switch">
         <button class="kbe-back-btn" @click="goBack" title="返回">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <span class="kbe-kb-name">{{ kb?.name || '加载中…' }}</span>
-      </div>
-
-      <!-- Project Switcher -->
-      <div class="kbe-project-switch">
-        <select v-model="currentProjectId" class="kbe-project-select" @change="onProjectChange">
-          <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
+        <CustomSelect
+          v-model="currentProjectId"
+          :options="projects.map((p: any) => ({ value: p.id, label: p.name }))"
+          placeholder="选择项目"
+          @change="onProjectChange"
+          style="-webkit-app-region: no-drag; flex: 1; min-width: 0;"
+        />
       </div>
 
       <!-- View switcher (segmented control) -->
@@ -35,8 +34,8 @@
       <!-- Sidebar sub-header (context-specific) -->
       <div class="kbe-sidebar-subheader">
         <template v-if="currentView === 'raw'">
-          <span class="kbe-sidebar-label">节点树</span>
-          <button class="kbe-icon-btn" @click="addRootNode" title="添加根节点">
+          <span class="kbe-sidebar-label">知识树</span>
+          <button class="kbe-icon-btn" @click="addRootNode" title="添加知识">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -44,7 +43,7 @@
           </button>
         </template>
         <template v-else-if="currentView === 'wiki'">
-          <span class="kbe-sidebar-label">Wiki 目录</span>
+          <span class="kbe-sidebar-label">知识</span>
           <button class="kbe-icon-btn" @click="handleCompile" :disabled="compiling" title="编译">
             <svg v-if="!compiling" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -82,6 +81,7 @@
               :selected-id="selectedNodeId"
               @select="selectNode"
               @add-child="addChildNode"
+              @rename="handleRenameNode"
               @delete="handleDeleteNode"
             />
           </div>
@@ -139,7 +139,7 @@
           </svg>
           <p class="kbe-main-empty-text">选择左侧节点开始编辑</p>
         </div>
-        <CanvasEditor v-else :node="selectedNode" :kb-id="kbId" @save="onCanvasSave" />
+        <CanvasEditor v-else ref="canvasEditorRef" :node="selectedNode" :kb-id="kbId" @save="onCanvasSave" @dirty-changed="canvasDirty = $event" />
       </template>
 
       <!-- Wiki -->
@@ -205,6 +205,21 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Unsaved Changes Dialog (3-button) -->
+    <Teleport to="body">
+      <div v-if="unsavedDialog.visible" class="kbe-dialog-mask">
+        <div class="kbe-dialog">
+          <h2 class="kbe-dialog-title">有未保存的修改</h2>
+          <p class="kbe-dialog-desc">当前知识有未保存的内容，是否在离开前保存？</p>
+          <div class="kbe-dialog-actions kbe-dialog-actions--3">
+            <button class="kbe-dialog-cancel" @click="resolveUnsavedDialog('cancel')">取消</button>
+            <button class="kbe-dialog-cancel" @click="resolveUnsavedDialog('discard')">不保存</button>
+            <button class="kbe-dialog-confirm" @click="resolveUnsavedDialog('save')">保存</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -226,6 +241,10 @@ const router = useRouter()
 const route = useRoute()
 const kbId = computed(() => Number(route.params.kbId))
 const electron = (window as any).electron
+
+// ─── Canvas dirty tracking ───
+const canvasEditorRef = ref<{ save: () => Promise<void> } | null>(null)
+const canvasDirty = ref(false)
 
 // ─── Projects ───
 const projects = ref<any[]>([])
@@ -274,14 +293,19 @@ const inputDialog = reactive({
   resolve: null as ((val: string | null) => void) | null,
 })
 
-function showInputDialog(title: string, placeholder = ''): Promise<string | null> {
+function showInputDialog(title: string, placeholder = '', initialValue = ''): Promise<string | null> {
   return new Promise((resolve) => {
     inputDialog.visible = true
     inputDialog.title = title
     inputDialog.placeholder = placeholder
-    inputDialog.value = ''
+    inputDialog.value = initialValue
     inputDialog.resolve = resolve
-    nextTick(() => inputDialogRef.value?.focus())
+    nextTick(() => {
+      if (inputDialogRef.value) {
+        inputDialogRef.value.focus()
+        inputDialogRef.value.select()
+      }
+    })
   })
 }
 
@@ -326,6 +350,38 @@ function cancelConfirmDialog() {
   confirmDialog.visible = false
   confirmDialog.resolve?.(false)
   confirmDialog.resolve = null
+}
+
+// ─── Unsaved Changes Dialog ───
+const unsavedDialog = reactive({
+  visible: false,
+  resolve: null as ((val: 'save' | 'discard' | 'cancel') => void) | null,
+})
+
+function showUnsavedDialog(): Promise<'save' | 'discard' | 'cancel'> {
+  return new Promise((resolve) => {
+    unsavedDialog.visible = true
+    unsavedDialog.resolve = resolve
+  })
+}
+
+function resolveUnsavedDialog(val: 'save' | 'discard' | 'cancel') {
+  unsavedDialog.visible = false
+  unsavedDialog.resolve?.(val)
+  unsavedDialog.resolve = null
+}
+
+async function checkUnsaved(): Promise<boolean> {
+  if (!canvasDirty.value) return true
+  const result = await showUnsavedDialog()
+  if (result === 'save') {
+    await canvasEditorRef.value?.save()
+    return true
+  } else if (result === 'discard') {
+    canvasDirty.value = false
+    return true
+  }
+  return false
 }
 
 onMounted(async () => {
@@ -391,10 +447,14 @@ function findNode(nodes: KBNode[], id: string): KBNode | null {
   return null
 }
 
-function selectNode(id: string) { selectedNodeId.value = id }
+async function selectNode(id: string) {
+  if (!(await checkUnsaved())) return
+  selectedNodeId.value = id
+}
 
 async function addRootNode() {
-  const name = await showInputDialog('添加根节点', '输入节点名称')
+  if (!(await checkUnsaved())) return
+  const name = await showInputDialog('添加知识', '输入节点名称')
   if (!name) return
   try {
     await createNode(kbId.value, { name, type: 'directory' })
@@ -406,7 +466,8 @@ async function addRootNode() {
 }
 
 async function addChildNode(parentId: string) {
-  const name = await showInputDialog('添加子节点', '输入节点名称')
+  if (!(await checkUnsaved())) return
+  const name = await showInputDialog('添加知识', '输入节点名称')
   if (!name) return
   try {
     await createNode(kbId.value, { name, parent_id: parentId, type: 'directory' })
@@ -414,6 +475,20 @@ async function addChildNode(parentId: string) {
     window.$toast({ title: '已添加', type: 'success' })
   } catch (e: any) {
     window.$toast({ title: e.message || '添加失败', type: 'error' })
+  }
+}
+
+async function handleRenameNode(nodeId: string) {
+  const node = findNode(tree.value, nodeId)
+  if (!node) return
+  const name = await showInputDialog('重命名知识', node.name, node.name)
+  if (!name || name === node.name) return
+  try {
+    await updateNode(kbId.value, nodeId, { name })
+    await loadTree()
+    window.$toast({ title: '已重命名', type: 'success' })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '重命名失败', type: 'error' })
   }
 }
 
@@ -503,14 +578,19 @@ async function onTemplateConfirmDelete(tmpl: KBTemplate) {
   }
 }
 
-async function onProjectChange() {
-  if (!currentProjectId.value) return
+async function onProjectChange(newId: any) {
+  if (!newId) return
+  const prevId = kb.value?.project_id
+  if (!(await checkUnsaved())) {
+    // Revert CustomSelect value back to previous project
+    if (prevId) currentProjectId.value = prevId
+    return
+  }
   try {
-    const project = projects.value.find((p: any) => p.id === currentProjectId.value)
-    const newKb = await getKBByProject(currentProjectId.value, project?.name)
-    // Persist to electron userData
+    const project = projects.value.find((p: any) => p.id === newId)
+    const newKb = await getKBByProject(newId, project?.name)
     if (electron?.harness?.storeSet) {
-      await electron.harness.storeSet('kb_project_id', currentProjectId.value)
+      await electron.harness.storeSet('kb_project_id', newId)
     }
     router.replace({ name: 'agentKnowledgeEditor', params: { kbId: String(newKb.id) } })
   } catch (e: any) {
@@ -518,7 +598,10 @@ async function onProjectChange() {
   }
 }
 
-function goBack() { router.push({ name: 'agentDashboard' }) }
+async function goBack() {
+  if (!(await checkUnsaved())) return
+  router.push({ name: 'agentDashboard' })
+}
 </script>
 
 <style lang="scss" scoped>
@@ -550,15 +633,41 @@ $accent: #1d1d1f;
   flex-direction: column;
   background: $bg-sidebar;
   border-right: 1px solid $border-color;
+  position: relative;
+  overflow: hidden;
+
+  // Subtle flowing gradient overlay
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: linear-gradient(
+      135deg,
+      rgba(120, 160, 255, 0.07) 0%,
+      rgba(180, 130, 255, 0.05) 30%,
+      rgba(100, 200, 220, 0.06) 60%,
+      rgba(120, 160, 255, 0.07) 100%
+    );
+    background-size: 300% 300%;
+    animation: kb-sidebar-flow 12s ease infinite;
+  }
+
+  // All sidebar content must be above the overlay
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
-.kbe-sidebar-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 14px 10px;
-  -webkit-app-region: drag;
+@keyframes kb-sidebar-flow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
+
+// (kbe-sidebar-top removed — back button now lives in kbe-project-switch)
 
 .kbe-back-btn {
   -webkit-app-region: no-drag;
@@ -580,45 +689,13 @@ $accent: #1d1d1f;
   }
 }
 
-.kbe-kb-name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.224px;
-  color: $text-primary;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-// Project switcher
+// Project switcher (now includes back button inline)
 .kbe-project-switch {
-  padding: 0 12px 10px;
-}
-
-.kbe-project-select {
-  width: 100%;
-  padding: 7px 10px;
-  border: 1px solid $border-color;
-  border-radius: 8px;
-  background: $bg-page;
-  font-size: 12px;
-  font-weight: 500;
-  color: $text-primary;
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-  letter-spacing: -0.12px;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%231d1d1f' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
-
-  &:focus {
-    border-color: $accent;
-  }
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 12px 10px;
+  -webkit-app-region: drag;
 }
 
 // View switcher
@@ -907,6 +984,10 @@ $accent: #1d1d1f;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.kbe-dialog-actions--3 {
+  justify-content: flex-end;
 }
 
 .kbe-dialog-cancel {

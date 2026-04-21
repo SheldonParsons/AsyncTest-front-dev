@@ -9,9 +9,9 @@
       @click="$emit('select', node.id)"
       @contextmenu.prevent="showContext = !showContext"
     >
-      <!-- Expand toggle -->
+      <!-- Expand toggle: only show chevron when node has actual children -->
       <button
-        v-if="isDirectory"
+        v-if="hasChildren"
         class="tree-node-toggle"
         @click.stop="expanded = !expanded"
       >
@@ -28,12 +28,9 @@
 
       <!-- Icon -->
       <span class="tree-node-icon">
-        <svg v-if="isDirectory" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 7v14"/>
+          <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>
         </svg>
       </span>
 
@@ -42,7 +39,13 @@
 
       <!-- Context actions (on hover) -->
       <div class="tree-node-actions">
-        <button v-if="isDirectory" class="tree-node-action" @click.stop="$emit('add-child', node.id)" title="添加子节点">
+        <button class="tree-node-action" @click.stop="$emit('rename', node.id)" title="重命名">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button v-if="isDirectory" class="tree-node-action" @click.stop="$emit('add-child', node.id)" title="添加知识">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -65,6 +68,7 @@
         :selected-id="selectedId"
         @select="$emit('select', $event)"
         @add-child="$emit('add-child', $event)"
+        @rename="$emit('rename', $event)"
         @delete="$emit('delete', $event)"
       />
     </div>
@@ -84,12 +88,14 @@ const props = defineProps<{
 defineEmits<{
   (e: 'select', id: string): void
   (e: 'add-child', parentId: string): void
+  (e: 'rename', id: string): void
   (e: 'delete', id: string): void
 }>()
 
 const expanded = ref(true)
 const showContext = ref(false)
-const isDirectory = computed(() => props.node.type === 'directory' || (props.node.children && props.node.children.length > 0))
+const hasChildren = computed(() => !!(props.node.children && props.node.children.length > 0))
+const isDirectory = computed(() => props.node.type === 'directory' || hasChildren.value)
 </script>
 
 <style lang="scss" scoped>

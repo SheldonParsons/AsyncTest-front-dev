@@ -9307,6 +9307,7 @@ function finalizeInteraction(
     } else if (mode === 'marqueeSelecting') {
       finishMarqueeSelection();
     } else if (mode === 'panningCanvas') {
+      suppressCanvasContextMenuUntil = performance.now() + 300;
       focusViewportWithoutScroll();
     } else if (mode === 'draggingNodes') {
       if (options.commitDrag === false) {

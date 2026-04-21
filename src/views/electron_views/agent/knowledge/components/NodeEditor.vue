@@ -3,11 +3,10 @@
     <!-- Header -->
     <div class="node-editor-header">
       <div class="node-editor-header-left">
-        <span :class="['node-type-badge', `node-type-badge--${form.type}`]">{{ typeLabel }}</span>
         <input
           v-model="form.name"
           class="node-name-input"
-          placeholder="节点名称"
+          placeholder="知识名称"
           @blur="autoSave"
         />
       </div>
@@ -16,121 +15,26 @@
       </button>
     </div>
 
-    <!-- Basic Info -->
+    <!-- Description -->
     <section class="node-section">
-      <h3 class="node-section-title">基本信息</h3>
-      <div class="node-field-row">
-        <div class="node-field">
-          <label class="node-field-label">类型</label>
-          <select v-model="form.type" class="node-field-select" @change="autoSave">
-            <option value="directory">目录</option>
-            <option value="page">页面</option>
-            <option value="component">组件</option>
-            <option value="standalone">独立页面</option>
-          </select>
-        </div>
-      </div>
-      <div class="node-field">
-        <label class="node-field-label">描述</label>
-        <textarea
-          v-model="form.description"
-          class="node-field-textarea"
-          placeholder="描述该节点的用途和内容"
-          rows="3"
-          @blur="autoSave"
-        />
-      </div>
-    </section>
-
-    <!-- Zones -->
-    <section class="node-section">
-      <div class="node-section-header">
-        <h3 class="node-section-title">页面区域</h3>
-        <button class="node-section-add" @click="addZone">+ 添加区域</button>
-      </div>
-      <div v-if="form.content.zones.length === 0" class="node-section-empty">
-        <p>暂无区域定义</p>
-      </div>
-      <div v-else class="node-zones">
-        <div v-for="(zone, i) in form.content.zones" :key="i" class="node-zone-card">
-          <div class="node-zone-header">
-            <input v-model="zone.name" class="node-zone-name" placeholder="区域名称" @blur="autoSave" />
-            <select v-model="zone.type" class="node-zone-type" @change="autoSave">
-              <option value="tab">Tab</option>
-              <option value="section">Section</option>
-              <option value="area">Area</option>
-              <option value="toolbar">Toolbar</option>
-              <option value="form">Form</option>
-              <option value="table">Table</option>
-              <option value="custom">Custom</option>
-            </select>
-            <button class="node-zone-delete" @click="removeZone(i)">×</button>
-          </div>
-          <textarea
-            v-model="zone.description"
-            class="node-zone-desc"
-            placeholder="区域描述"
-            rows="2"
-            @blur="autoSave"
-          />
-          <input v-model="zone.position" class="node-zone-position" placeholder="位置（如：顶部、左侧等）" @blur="autoSave" />
-        </div>
-      </div>
-    </section>
-
-    <!-- Interactions -->
-    <section class="node-section">
-      <div class="node-section-header">
-        <h3 class="node-section-title">交互</h3>
-        <button class="node-section-add" @click="addInteraction">+ 添加交互</button>
-      </div>
-      <div v-if="form.content.interactions.length === 0" class="node-section-empty">
-        <p>暂无交互定义</p>
-      </div>
-      <div v-else class="node-interactions">
-        <div v-for="(ix, i) in form.content.interactions" :key="i" class="node-interaction-card">
-          <div class="node-interaction-row">
-            <input v-model="ix.element" class="node-ix-element" placeholder="触发元素" @blur="autoSave" />
-            <select v-model="ix.trigger" class="node-ix-trigger" @change="autoSave">
-              <option value="click">点击</option>
-              <option value="hover">悬停</option>
-              <option value="input">输入</option>
-              <option value="submit">提交</option>
-              <option value="custom">自定义</option>
-            </select>
-            <button class="node-zone-delete" @click="removeInteraction(i)">×</button>
-          </div>
-          <textarea
-            v-model="ix.description"
-            class="node-ix-desc"
-            placeholder="交互描述"
-            rows="2"
-            @blur="autoSave"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- Business Rules -->
-    <section class="node-section">
-      <h3 class="node-section-title">业务规则</h3>
+      <h3 class="node-section-title">描述</h3>
       <textarea
-        v-model="form.content.business_rules"
-        class="node-field-textarea node-field-textarea--tall"
-        placeholder="描述业务规则、校验逻辑、权限控制等"
-        rows="5"
+        v-model="form.description"
+        class="node-field-textarea"
+        placeholder="描述该知识的用途和内容"
+        rows="4"
         @blur="autoSave"
       />
     </section>
 
-    <!-- Notes -->
+    <!-- Business Rules -->
     <section class="node-section">
       <h3 class="node-section-title">补充说明</h3>
       <textarea
         v-model="form.content.notes"
-        class="node-field-textarea"
-        placeholder="其他补充信息"
-        rows="3"
+        class="node-field-textarea node-field-textarea--tall"
+        placeholder="其他补充信息、规则、注意事项等"
+        rows="6"
         @blur="autoSave"
       />
     </section>
@@ -138,9 +42,9 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { updateNode } from '../api'
-import type { KBNode, KBNodeContent, KBZone, KBInteraction } from '@/types/knowledge'
+import type { KBNode, KBNodeContent } from '@/types/knowledge'
 
 const props = defineProps<{
   node: KBNode
@@ -156,34 +60,19 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 const form = reactive({
   name: '',
-  type: 'page' as string,
   description: '',
   content: {
-    zones: [] as KBZone[],
-    interactions: [] as KBInteraction[],
-    business_rules: '',
     notes: '',
   } as KBNodeContent,
 })
 
-const typeLabel = computed(() => {
-  const labels: Record<string, string> = {
-    directory: '目录',
-    page: '页面',
-    component: '组件',
-    standalone: '独立',
-  }
-  return labels[form.type] || form.type
-})
-
 watch(() => props.node, (n) => {
   form.name = n.name
-  form.type = n.type || 'page'
   form.description = n.description || ''
   form.content = {
-    zones: n.content?.zones ? JSON.parse(JSON.stringify(n.content.zones)) : [],
-    interactions: n.content?.interactions ? JSON.parse(JSON.stringify(n.content.interactions)) : [],
-    business_rules: n.content?.business_rules || '',
+    zones: [],
+    interactions: [],
+    business_rules: '',
     notes: n.content?.notes || '',
   }
 }, { immediate: true })
@@ -199,7 +88,7 @@ async function save() {
   try {
     await updateNode(props.kbId, props.node.id, {
       name: form.name,
-      type: form.type,
+      type: 'directory',
       description: form.description,
       content: form.content,
     })
@@ -209,37 +98,6 @@ async function save() {
   } finally {
     saving.value = false
   }
-}
-
-function addZone() {
-  form.content.zones.push({
-    id: crypto.randomUUID(),
-    name: '',
-    type: 'section',
-    description: '',
-    position: '',
-    fields: [],
-  })
-}
-
-function removeZone(i: number) {
-  form.content.zones.splice(i, 1)
-  autoSave()
-}
-
-function addInteraction() {
-  form.content.interactions.push({
-    id: crypto.randomUUID(),
-    element: '',
-    trigger: 'click',
-    description: '',
-    result: { type: 'action' },
-  })
-}
-
-function removeInteraction(i: number) {
-  form.content.interactions.splice(i, 1)
-  autoSave()
 }
 </script>
 

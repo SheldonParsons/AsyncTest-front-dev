@@ -30,7 +30,7 @@ export interface KnowledgeBaseUpdatePayload {
 
 // ─── 节点 ───────────────────────────────────────────
 
-export type KBNodeType = 'directory' | 'page' | 'component' | 'standalone'
+export type KBNodeType = 'directory'
 
 export interface KBNode {
   id: string
@@ -50,7 +50,7 @@ export interface KBNodeCreatePayload {
   id?: string
   parent_id: string | null
   name: string
-  type: KBNodeType
+  type?: KBNodeType
   description?: string
   sort_order?: number
   content?: KBNodeContent
@@ -72,39 +72,7 @@ export interface KBNodeMovePayload {
 // ─── 节点内容 ───────────────────────────────────────
 
 export interface KBNodeContent {
-  zones?: KBZone[]
-  interactions?: KBInteraction[]
-  business_rules?: string
   notes?: string
-}
-
-export interface KBZone {
-  id: string
-  name: string
-  type: 'tab' | 'section' | 'area' | 'toolbar' | 'form' | 'table' | 'custom'
-  description: string
-  position?: string
-  fields?: KBZoneField[]
-}
-
-export interface KBZoneField {
-  id: string
-  name: string
-  description?: string
-}
-
-export interface KBInteraction {
-  id: string
-  element: string
-  trigger: 'click' | 'doubleClick' | 'hover' | 'contextMenu' | 'custom'
-  description: string
-  result: KBInteractionResult
-}
-
-export interface KBInteractionResult {
-  type: 'navigate' | 'dialog' | 'drawer' | 'expand' | 'popup' | 'action' | 'custom'
-  description?: string
-  ref_node_id?: string
 }
 
 // ─── Wiki ───────────────────────────────────────────

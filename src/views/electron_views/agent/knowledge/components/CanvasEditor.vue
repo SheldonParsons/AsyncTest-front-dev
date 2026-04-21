@@ -3,6 +3,7 @@
     <!-- Toolbar -->
     <div class="ce-toolbar">
       <div class="ce-toolbar-left">
+        <span v-if="isDirty" class="ce-dirty-dot" title="有未保存的修改" />
         <span class="ce-node-name">{{ node.name }}</span>
         <span class="ce-node-type">{{ typeLabels[node.type] || node.type }}</span>
       </div>
@@ -61,29 +62,23 @@
             `ce-block--${block.type}`,
             { 'ce-block--selected': selectedBlockId === block.id },
             { 'ce-block--editing': editingBlockId === block.id },
+            { 'ce-block--transitioning': transitioningBlockId === block.id },
           ]"
           :style="{
             left: block.layout.x + 'px',
             top: block.layout.y + 'px',
             width: block.layout.w + 'px',
             height: block.layout.h + 'px',
+            '--block-accent': blockTypeAccents[block.type] || '#1d1d1f',
           }"
+          @pointerdown.capture="selectBlock(block.id)"
         >
           <!-- Block header — drag handle area -->
-          <div class="ce-block-header" @pointerdown.stop="onHeaderPointerDown($event, block)">
-            <span :class="['ce-block-type-dot', `ce-block-type-dot--${block.type}`]" />
+          <div class="ce-block-header" @pointerdown.stop="onHeaderPointerDown($event, block)" @dblclick.stop="onHeaderDblClick(block)">
             <span class="ce-block-name">{{ block.name || '未命名' }}</span>
             <div class="ce-block-actions">
-              <select
-                class="ce-block-type-select"
-                :value="block.type"
-                @change="onBlockTypeChange(block, ($event.target as HTMLSelectElement).value)"
-                @pointerdown.stop
-              >
-                <option v-for="bt in blockTypes" :key="bt.value" :value="bt.value">{{ bt.label }}</option>
-              </select>
               <button
-                v-show="!isDragging"
+                v-show="!isDragging || isResizing"
                 class="ce-block-edit-btn"
                 @click.stop="openPanel(block.id)"
                 @pointerdown.stop
@@ -111,32 +106,21 @@
                 autofocus
               />
             </div>
-            <div v-else class="ce-block-body ce-block-body--preview" @pointerdown.stop @click.stop="startEditingContent(block.id)">
+            <div v-else class="ce-block-body ce-block-body--preview" @pointerdown.stop @click.stop="openMdDialog(block.id)">
               <p v-if="block.content" class="ce-block-content-text">{{ block.content }}</p>
-              <p v-else class="ce-block-placeholder">点击编辑内容…</p>
+              <p v-else class="ce-block-placeholder">点击查看内容…</p>
             </div>
           </template>
 
           <!-- Block body: Compact mode -->
           <template v-else>
-            <div class="ce-block-body ce-block-body--compact" @pointerdown.stop @click.stop="startEditingContent(block.id)">
+            <div class="ce-block-body ce-block-body--compact" @pointerdown.stop @click.stop="openMdDialog(block.id)">
               <p class="ce-block-summary">{{ block.summary || block.content?.slice(0, 60) || '—' }}</p>
             </div>
           </template>
 
-          <!-- Block footer: refs & images count -->
-          <div class="ce-block-footer">
-            <span v-if="block.refs.length" class="ce-block-badge" title="引用">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              {{ block.refs.length }}
-            </span>
-            <span v-if="block.images.length" class="ce-block-badge" title="图片">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-              {{ block.images.length }}
-            </span>
-          </div>
-
-          <!-- Resize handles: left, bottom, bottom-right -->
+          <!-- Resize handles -->
+          <div class="ce-resize ce-resize--top" @pointerdown.stop="onResizePointerDown($event, block, 'top')" />
           <div class="ce-resize ce-resize--left" @pointerdown.stop="onResizePointerDown($event, block, 'left')" />
           <div class="ce-resize ce-resize--bottom" @pointerdown.stop="onResizePointerDown($event, block, 'bottom')" />
           <div class="ce-resize ce-resize--br" @pointerdown.stop="onResizePointerDown($event, block, 'br')" />
@@ -145,76 +129,139 @@
       </div>
     </div>
 
-    <!-- Detail Panel (slide-in from right) -->
-    <Transition name="ce-panel-slide">
-      <div v-if="panelBlockId && panelBlock" class="ce-panel">
-        <div class="ce-panel-header">
-          <h3 class="ce-panel-title">{{ panelBlock.name || '未命名' }}</h3>
-          <button class="ce-panel-close" @click="panelBlockId = null">×</button>
-        </div>
-        <div class="ce-panel-body">
-          <div class="ce-panel-field">
-            <label class="ce-panel-label">名称</label>
-            <input class="ce-panel-input" v-model="panelBlock.name" @input="debouncedSave" />
-          </div>
-          <div class="ce-panel-field">
-            <label class="ce-panel-label">类型</label>
-            <select class="ce-panel-select" v-model="panelBlock.type" @change="debouncedSave">
-              <option v-for="bt in blockTypes" :key="bt.value" :value="bt.value">{{ bt.label }}</option>
-            </select>
-          </div>
-          <div class="ce-panel-field">
-            <label class="ce-panel-label">需求描述</label>
-            <textarea class="ce-panel-textarea" v-model="panelBlock.content" rows="6" placeholder="输入需求内容…" @input="debouncedSave" />
-          </div>
-          <div class="ce-panel-field">
-            <label class="ce-panel-label">摘要 <span class="ce-panel-hint">（画布缩略显示用）</span></label>
-            <input class="ce-panel-input" v-model="panelBlock.summary" placeholder="可选" @input="debouncedSave" />
-          </div>
+    <!-- Edit Dialog (centered modal) -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div v-if="panelBlockId && panelBlock" class="ce-edit-overlay" @click.self="panelBlockId = null">
+          <div class="ce-edit-dialog" role="dialog" aria-modal="true">
+            <!-- Dialog header -->
+            <div class="ce-edit-dialog-header">
+              <div class="ce-edit-dialog-title-row">
+                <span class="ce-edit-dialog-accent" :style="{ background: blockTypeAccents[panelDraft.type] || '#1d1d1f' }"></span>
+                <h2 class="ce-edit-dialog-title">编辑 {{ panelDraft.name || '未命名' }}</h2>
+              </div>
+              <button class="ce-edit-dialog-close" @click="panelBlockId = null" aria-label="关闭">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <!-- Dialog body -->
+            <div class="ce-edit-dialog-body">
+              <!-- Name + Type row -->
+              <div class="ce-edit-row">
+                <div class="ce-edit-field ce-edit-field--grow">
+                  <label class="ce-edit-label">名称</label>
+                  <input class="ce-edit-input" v-model="panelDraft.name" placeholder="未命名" />
+                </div>
+                <div class="ce-edit-field ce-edit-field--type">
+                  <label class="ce-edit-label">类型</label>
+                  <CustomSelect
+                    v-model="panelDraft.type"
+                    :options="blockTypes.map(bt => ({ value: bt.value, label: bt.label, color: blockTypeAccents[bt.value] }))"
+                  />
+                </div>
+              </div>
 
-          <!-- References -->
-          <div class="ce-panel-section">
-            <div class="ce-panel-section-header">
-              <span class="ce-panel-label">引用节点</span>
-              <button class="ce-panel-add-btn" @click="addRef(panelBlock)">+ 添加</button>
-            </div>
-            <div v-if="panelBlock.refs.length === 0" class="ce-panel-empty">暂无引用</div>
-            <div v-for="(r, i) in panelBlock.refs" :key="r.id" class="ce-panel-ref-card">
-              <input class="ce-panel-input ce-panel-input--sm" v-model="r.targetNodeId" placeholder="目标节点 ID" @input="debouncedSave" />
-              <input class="ce-panel-input ce-panel-input--sm" v-model="r.trigger" placeholder="触发方式 (click)" @input="debouncedSave" />
-              <input class="ce-panel-input ce-panel-input--sm" v-model="r.condition" placeholder="条件 (可选)" @input="debouncedSave" />
-              <input class="ce-panel-input ce-panel-input--sm" v-model="r.description" placeholder="说明 (可选)" @input="debouncedSave" />
-              <button class="ce-panel-ref-delete" @click="removeRef(panelBlock, i)">×</button>
-            </div>
-          </div>
+              <!-- Knowledge description: split Monaco editor / preview -->
+              <div class="ce-edit-field ce-edit-field--expand">
+                <label class="ce-edit-label">知识描述</label>
+                <div class="ce-edit-split">
+                  <div class="ce-edit-split-pane ce-edit-split-pane--editor">
+                    <div class="ce-edit-split-label">编辑 · Markdown</div>
+                    <div ref="mdMonacoContainer" class="ce-edit-monaco"></div>
+                  </div>
+                  <div class="ce-edit-split-divider"></div>
+                  <div class="ce-edit-split-pane ce-edit-split-pane--preview">
+                    <div class="ce-edit-split-label">预览</div>
+                    <div class="ce-edit-md-preview">
+                      <div v-if="panelMdHtml" class="ce-md-content" v-html="panelMdHtml"></div>
+                      <div v-else class="ce-edit-preview-empty">在左侧输入内容…</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-          <!-- Images -->
-          <div class="ce-panel-section">
-            <div class="ce-panel-section-header">
-              <span class="ce-panel-label">参考图片</span>
-              <button class="ce-panel-add-btn" @click="addImage(panelBlock)">+ 添加</button>
-            </div>
-            <div v-if="panelBlock.images.length === 0" class="ce-panel-empty">暂无图片</div>
-            <div v-for="(img, i) in panelBlock.images" :key="img.id" class="ce-panel-img-card">
-              <img v-if="img.url" :src="img.url" class="ce-panel-img-thumb" />
-              <div class="ce-panel-img-info">
-                <span class="ce-panel-img-name">{{ img.name || '未命名' }}</span>
-                <button class="ce-panel-ref-delete" @click="removeImage(panelBlock, i)">×</button>
+              <!-- References -->
+              <div class="ce-edit-section">
+                <div class="ce-edit-section-header">
+                  <span class="ce-edit-label">引用节点</span>
+                  <button class="ce-edit-add-btn" @click="addDraftRef">+ 添加</button>
+                </div>
+                <div v-if="panelDraft.refs.length === 0" class="ce-edit-empty">暂无引用</div>
+                <div v-for="(r, i) in panelDraft.refs" :key="r.id" class="ce-edit-ref-card">
+                  <div class="ce-edit-ref-grid">
+                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.targetNodeId" placeholder="目标节点 ID" />
+                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.trigger" placeholder="触发方式 (click)" />
+                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.condition" placeholder="条件 (可选)" />
+                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.description" placeholder="说明 (可选)" />
+                  </div>
+                  <button class="ce-edit-ref-delete" @click="removeDraftRef(i)" title="删除">×</button>
+                </div>
+              </div>
+
+              <!-- Images -->
+              <div class="ce-edit-section">
+                <div class="ce-edit-section-header">
+                  <span class="ce-edit-label">参考图片</span>
+                  <button class="ce-edit-add-btn" @click="addDraftImage">+ 添加</button>
+                </div>
+                <div v-if="panelDraft.images.length === 0" class="ce-edit-empty">暂无图片</div>
+                <div v-for="(img, i) in panelDraft.images" :key="img.id" class="ce-edit-img-card">
+                  <img v-if="img.url" :src="img.url" class="ce-edit-img-thumb" />
+                  <div class="ce-edit-img-info">
+                    <span class="ce-edit-img-name">{{ img.name || '未命名' }}</span>
+                    <button class="ce-edit-ref-delete" @click="removeDraftImage(i)">×</button>
+                  </div>
+                </div>
               </div>
             </div>
+            <!-- Dialog footer -->
+            <div class="ce-edit-dialog-footer">
+              <button class="ce-edit-footer-close" @click="panelBlockId = null">关闭</button>
+              <button class="ce-edit-footer-save" @click="savePanelDraft">保存</button>
+            </div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
+    <!-- Markdown preview dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div v-if="mdDialogBlock" class="ce-md-overlay" @click.self="closeMdDialog" @keydown.esc="closeMdDialog">
+          <div class="ce-md-dialog" role="dialog" aria-modal="true">
+            <div class="ce-md-dialog-header">
+              <div class="ce-md-dialog-title-row">
+                <span class="ce-md-dialog-accent" :style="{ background: blockTypeAccents[mdDialogBlock.type] || '#1d1d1f' }"></span>
+                <h2 class="ce-md-dialog-title">{{ mdDialogBlock.name || '未命名' }}</h2>
+                <span class="ce-md-dialog-type">{{ blockTypeLabels[mdDialogBlock.type] || mdDialogBlock.type }}</span>
+              </div>
+              <button class="ce-md-dialog-close" @click="closeMdDialog" aria-label="关闭">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <div class="ce-md-dialog-body">
+              <div v-if="mdDialogHtml" class="ce-md-content" v-html="mdDialogHtml"></div>
+              <div v-else class="ce-md-empty">暂无内容</div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick } from 'vue'
+import { marked } from 'marked'
 import type { KBNode } from '@/types/knowledge'
 import {
   type KBBlock,
   type KBBlockType,
+  type KBBlockRef,
+  type KBBlockImage,
   type KBNodeContentV1,
   createEmptyContent,
   createBlock,
@@ -228,19 +275,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'save', content: KBNodeContentV1): void
+  (e: 'dirty-changed', dirty: boolean): void
 }>()
 
 // ─── Constants ───
 
 const SNAP_THRESHOLD = 8
 const SNAP_GAP = 4
+const GRID_SIZE = 20
 const MIN_W = 120
-const MIN_H = 60
+const MIN_H = 80
 const CANVAS_PADDING = 200
-const CANVAS_INSET = 8
+const CANVAS_INSET = GRID_SIZE  // one grid cell margin on left/top/right
+
+function snapToGrid(v: number): number {
+  return Math.round(v / GRID_SIZE) * GRID_SIZE
+}
 
 const typeLabels: Record<string, string> = {
-  directory: '目录', page: '页面', component: '组件', standalone: '独立',
+  directory: '知识', page: '页面', component: '组件', standalone: '独立',
 }
 
 const blockTypes: { value: KBBlockType; label: string }[] = [
@@ -253,11 +306,31 @@ const blockTypes: { value: KBBlockType; label: string }[] = [
   { value: 'custom', label: '自定义' },
 ]
 
+const blockTypeLabels: Record<string, string> = {
+  region: '区域', button: '按钮', field: '字段', form: '表单',
+  list: '列表', text: '文本', custom: '自定义',
+}
+
+const blockTypeAccents: Record<string, string> = {
+  region:  '#0071e3',
+  button:  '#bf5af2',
+  field:   '#34c759',
+  form:    '#ff9f0a',
+  list:    '#5ac8fa',
+  text:    '#8e8e93',
+  custom:  '#ff453a',
+}
+
 // ─── State ───
 
 const containerRef = ref<HTMLElement | null>(null)
 const canvasWrapRef = ref<HTMLElement | null>(null)
 const contentTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const mdMonacoContainer = ref<HTMLElement | null>(null)
+
+let mdMonacoInstance: any = null
+let mdMonacoModel: any = null
+let mdMonacoSyncing = false
 
 const content = reactive<KBNodeContentV1>(createEmptyContent())
 const displayMode = ref<'full' | 'compact'>('full')
@@ -266,9 +339,20 @@ const selectedBlockId = ref<string | null>(null)
 const editingBlockId = ref<string | null>(null)
 const editField = ref<'name' | 'content' | null>(null)
 const panelBlockId = ref<string | null>(null)
+const mdDialogBlockId = ref<string | null>(null)
+
+// Draft state for the edit dialog (decoupled from the actual block)
+const panelDraft = reactive<{
+  name: string; type: KBBlockType; content: string
+  refs: KBBlockRef[]; images: KBBlockImage[]
+}>({ name: '', type: 'region', content: '', refs: [], images: [] })
 
 const isDragging = ref(false)
+const isResizing = ref(false)
 const saving = ref(false)
+const isDirty = ref(false)
+const transitioningBlockId = ref<string | null>(null)
+const preExpandLayouts = new Map<string, { x: number; w: number }>()
 
 // Snap guide lines (visible during drag)
 const snapGuideX = ref<number | null>(null)
@@ -284,6 +368,21 @@ const panelBlock = computed(() => {
   return content.blocks.find(b => b.id === panelBlockId.value) || null
 })
 
+const panelMdHtml = computed(() => {
+  return marked.parse(panelDraft.content || '') as string
+})
+
+const mdDialogBlock = computed(() => {
+  if (!mdDialogBlockId.value) return null
+  return content.blocks.find(b => b.id === mdDialogBlockId.value) || null
+})
+
+const mdDialogHtml = computed(() => {
+  const c = mdDialogBlock.value?.content
+  if (!c) return ''
+  return marked.parse(c) as string
+})
+
 // ─── Sync from prop ───
 
 watch(() => props.node, (n) => {
@@ -294,24 +393,39 @@ watch(() => props.node, (n) => {
   selectedBlockId.value = null
   editingBlockId.value = null
   panelBlockId.value = null
+  isDirty.value = false
 }, { immediate: true })
 
 // ─── Save ───
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-
-function debouncedSave() {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => save(), 800)
+function markDirty() {
+  if (!isDirty.value) {
+    isDirty.value = true
+    emit('dirty-changed', true)
+  }
 }
 
 async function save() {
-  if (saveTimer) clearTimeout(saveTimer)
   saving.value = true
   content.canvas = { zoom: 1, panX: 0, panY: 0 }
   emit('save', JSON.parse(JSON.stringify(content)))
   await new Promise(r => setTimeout(r, 200))
   saving.value = false
+  isDirty.value = false
+  emit('dirty-changed', false)
+  window.$toast({ title: '保存成功', type: 'success' })
+}
+
+defineExpose({ save })
+
+// ─── Markdown dialog ───
+
+function openMdDialog(id: string) {
+  mdDialogBlockId.value = id
+}
+
+function closeMdDialog() {
+  mdDialogBlockId.value = null
 }
 
 // ─── Block CRUD ───
@@ -321,14 +435,14 @@ function addBlock() {
   const scrollX = wrap ? wrap.scrollLeft : 0
   const scrollY = wrap ? wrap.scrollTop : 0
   const maxY = content.blocks.reduce((max, b) => Math.max(max, b.layout.y + b.layout.h), 0)
-  const block = createBlock('新块', 'region', Math.round(scrollX + CANVAS_INSET), Math.round(Math.max(maxY + SNAP_GAP + CANVAS_INSET, scrollY + CANVAS_INSET)))
+  const block = createBlock('新块', 'region', snapToGrid(scrollX + CANVAS_INSET), snapToGrid(Math.max(maxY + CANVAS_INSET, scrollY + CANVAS_INSET)))
   // Prevent overlap on creation
-  while (content.blocks.some(b => blocksOverlap(block.layout, b.layout))) {
-    block.layout.y += 10
+  while (content.blocks.some(b => rectsOverlap(block.layout, b.layout, 0))) {
+    block.layout.y += GRID_SIZE
   }
   content.blocks.push(block)
   selectedBlockId.value = block.id
-  debouncedSave()
+  markDirty()
 }
 
 function deleteBlock(id: string) {
@@ -338,17 +452,55 @@ function deleteBlock(id: string) {
     if (selectedBlockId.value === id) selectedBlockId.value = null
     if (editingBlockId.value === id) editingBlockId.value = null
     if (panelBlockId.value === id) panelBlockId.value = null
-    debouncedSave()
+    markDirty()
   }
 }
 
 function onBlockTypeChange(block: KBBlock, value: string) {
   block.type = value as KBBlockType
-  debouncedSave()
+  markDirty()
 }
 
 function openPanel(blockId: string) {
   panelBlockId.value = panelBlockId.value === blockId ? null : blockId
+}
+
+async function savePanelDraft() {
+  const block = content.blocks.find(b => b.id === panelBlockId.value)
+  if (!block) return
+  block.name = panelDraft.name
+  block.type = panelDraft.type
+  block.content = panelDraft.content
+  block.refs = JSON.parse(JSON.stringify(panelDraft.refs))
+  block.images = JSON.parse(JSON.stringify(panelDraft.images))
+  panelBlockId.value = null
+  await save()
+}
+
+function addDraftRef() {
+  panelDraft.refs.push({ id: crypto.randomUUID(), targetNodeId: '', trigger: 'click', condition: '', description: '' })
+}
+function removeDraftRef(index: number) { panelDraft.refs.splice(index, 1) }
+
+function addDraftImage() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      panelDraft.images.push({ id: crypto.randomUUID(), url: reader.result as string, name: file.name })
+    }
+    reader.readAsDataURL(file)
+  }
+  input.click()
+}
+function removeDraftImage(index: number) { panelDraft.images.splice(index, 1) }
+
+function selectBlock(id: string) {
+  selectedBlockId.value = id
 }
 
 // ─── Inline editing ───
@@ -366,19 +518,130 @@ function startEditingContent(blockId: string) {
 function stopEditingField() {
   editingBlockId.value = null
   editField.value = null
-  debouncedSave()
+  markDirty()
 }
 
-// ─── Overlap detection ───
+// ─── Monaco editor for panel ───
+
+async function initPanelMonaco() {
+  if (!mdMonacoContainer.value) return
+  const m = await import('monaco-editor/esm/vs/editor/editor.main')
+  await import('monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution')
+
+  // Define a clean light theme once
+  m.editor.defineTheme('ce-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'keyword.md', foreground: '0071e3' },
+      { token: 'string.link.md', foreground: '0071e3' },
+      { token: 'comment.md', foreground: '8e8e93' },
+      { token: 'strong.md', foreground: '1d1d1f', fontStyle: 'bold' },
+      { token: 'emphasis.md', foreground: '1d1d1f', fontStyle: 'italic' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1d1d1f',
+      'editor.lineHighlightBackground': '#f5f5f700',
+      'editor.selectionBackground': '#0071e330',
+      'editorLineNumber.foreground': '#c7c7cc',
+      'editorLineNumber.activeForeground': '#8e8e93',
+      'editorCursor.foreground': '#1d1d1f',
+      'editor.inactiveSelectionBackground': '#0071e318',
+      'editorIndentGuide.background': '#f2f2f7',
+      'editorGutter.background': '#f8f8f8',
+      'scrollbarSlider.background': '#00000012',
+      'scrollbarSlider.hoverBackground': '#00000020',
+    },
+  })
+
+  mdMonacoModel = m.editor.createModel(panelDraft.content || '', 'markdown')
+  mdMonacoInstance = m.editor.create(mdMonacoContainer.value, {
+    model: mdMonacoModel,
+    theme: 'ce-light',
+    automaticLayout: true,
+    fontSize: 13,
+    lineHeight: 21,
+    fontFamily: "'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace",
+    fontLigatures: false,
+    wordWrap: 'on',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    smoothScrolling: true,
+    lineNumbers: 'on',
+    glyphMargin: false,
+    folding: false,
+    lineDecorationsWidth: 0,
+    renderLineHighlight: 'none',
+    overviewRulerBorder: false,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+    padding: { top: 12, bottom: 12 },
+    suggest: { showWords: false },
+    quickSuggestions: false,
+    cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    renderWhitespace: 'none',
+  })
+
+  mdMonacoInstance.onDidChangeModelContent(() => {
+    if (mdMonacoSyncing) return
+    const val = mdMonacoInstance.getValue()
+    if (panelDraft.content !== val) {
+      panelDraft.content = val
+      // Draft changes don't mark canvas dirty
+    }
+  })
+}
+
+function disposePanelMonaco() {
+  if (mdMonacoInstance) { mdMonacoInstance.dispose(); mdMonacoInstance = null }
+  if (mdMonacoModel) { mdMonacoModel.dispose(); mdMonacoModel = null }
+}
+
+// Watch panelBlockId to open/close Monaco and populate draft
+watch(panelBlockId, async (newId, oldId) => {
+  if (oldId && !newId) {
+    disposePanelMonaco()
+    return
+  }
+  if (newId) {
+    const block = content.blocks.find(b => b.id === newId)
+    if (!block) return
+    // Populate draft from block
+    panelDraft.name = block.name
+    panelDraft.type = block.type
+    panelDraft.content = block.content || ''
+    panelDraft.refs = JSON.parse(JSON.stringify(block.refs || []))
+    panelDraft.images = JSON.parse(JSON.stringify(block.images || []))
+    disposePanelMonaco()
+    await nextTick()
+    await nextTick()
+    await initPanelMonaco()
+  }
+}, { flush: 'post' })
+
+// Keep Monaco in sync when panelDraft.content changes externally
+watch(() => panelDraft.content, (val) => {
+  if (!mdMonacoInstance || val === undefined) return
+  if (mdMonacoInstance.getValue() !== val) {
+    mdMonacoSyncing = true
+    mdMonacoInstance.setValue(val)
+    mdMonacoSyncing = false
+  }
+})
+
+// ─── Overlap detection (enforces SNAP_GAP minimum distance) ───
 
 interface Rect { x: number; y: number; w: number; h: number }
 
-function blocksOverlap(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+function rectsOverlap(a: Rect, b: Rect, gap: number): boolean {
+  return a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y
 }
 
 function wouldOverlap(rect: Rect, excludeId: string): boolean {
-  return content.blocks.some(b => b.id !== excludeId && blocksOverlap(rect, b.layout))
+  return content.blocks.some(b => b.id !== excludeId && rectsOverlap(rect, b.layout, 0))
 }
 
 // ─── Snap logic ───
@@ -399,9 +662,6 @@ function findSnap(
       const d = Math.abs(edge - target)
       if (d < bestDist) {
         bestDist = d
-        best = { value: target - edge + edges[0], guide: target }
-        // For the first edge in the array, snap shifts are relative
-        // Recalculate: shift = target - edge, then newPos = origPos + shift
         best = { value: edges[0] + (target - edge), guide: target }
       }
     }
@@ -409,8 +669,9 @@ function findSnap(
   return best
 }
 
+// Move snap: targets are gap-offset positions (my edge → maintain SNAP_GAP from neighbor)
 function collectSnapTargetsX(excludeId: string): number[] {
-  const targets = [CANVAS_INSET] // left wall with inset
+  const targets = [CANVAS_INSET]
   for (const b of content.blocks) {
     if (b.id === excludeId) continue
     targets.push(b.layout.x - SNAP_GAP, b.layout.x + b.layout.w + SNAP_GAP)
@@ -419,7 +680,7 @@ function collectSnapTargetsX(excludeId: string): number[] {
 }
 
 function collectSnapTargetsY(excludeId: string): number[] {
-  const targets = [CANVAS_INSET] // top wall with inset
+  const targets = [CANVAS_INSET]
   for (const b of content.blocks) {
     if (b.id === excludeId) continue
     targets.push(b.layout.y - SNAP_GAP, b.layout.y + b.layout.h + SNAP_GAP)
@@ -429,7 +690,7 @@ function collectSnapTargetsY(excludeId: string): number[] {
 
 // ─── Drag state ───
 
-type ResizeEdge = 'left' | 'right' | 'bottom' | 'br'
+type ResizeEdge = 'left' | 'right' | 'bottom' | 'top' | 'br'
 
 let dragState: {
   type: 'move' | 'resize'
@@ -500,6 +761,55 @@ function onHeaderPointerDown(e: PointerEvent, block: KBBlock) {
   window.addEventListener('pointerup', onPointerUp)
 }
 
+function onHeaderDblClick(block: KBBlock) {
+  const wrap = canvasWrapRef.value
+  if (!wrap) return
+  const maxRight = wrap.clientWidth - CANVAS_INSET
+
+  // Find the usable horizontal band for this block considering neighbors on the same row
+  let bandLeft = CANVAS_INSET
+  let bandRight = maxRight
+  for (const b of content.blocks) {
+    if (b.id === block.id) continue
+    // Check vertical overlap (same row)
+    if (b.layout.y < block.layout.y + block.layout.h && b.layout.y + b.layout.h > block.layout.y) {
+      const bRight = b.layout.x + b.layout.w
+      if (bRight <= block.layout.x) {
+        // Block is to the left (touching or gap) — use its right edge as our left boundary
+        bandLeft = Math.max(bandLeft, bRight)
+      } else if (b.layout.x >= block.layout.x + block.layout.w) {
+        // Block is to the right — use its left edge as our right boundary
+        bandRight = Math.min(bandRight, b.layout.x)
+      }
+    }
+  }
+
+  // All block edges are grid-aligned; CANVAS_INSET is also GRID_SIZE.
+  // No extra snapping needed — bandLeft is already a grid multiple, bandRight = maxRight exactly.
+
+  const isAtMax = block.layout.x === bandLeft && block.layout.w === bandRight - bandLeft
+
+  if (isAtMax && preExpandLayouts.has(block.id)) {
+    const saved = preExpandLayouts.get(block.id)!
+    preExpandLayouts.delete(block.id)
+    transitioningBlockId.value = block.id
+    block.layout.x = saved.x
+    block.layout.w = saved.w
+    markDirty()
+    setTimeout(() => { transitioningBlockId.value = null }, 300)
+  } else {
+    const newW = bandRight - bandLeft
+    if (newW >= MIN_W) {
+      preExpandLayouts.set(block.id, { x: block.layout.x, w: block.layout.w })
+      transitioningBlockId.value = block.id
+      block.layout.x = bandLeft
+      block.layout.w = newW
+      markDirty()
+      setTimeout(() => { transitioningBlockId.value = null }, 300)
+    }
+  }
+}
+
 function onResizePointerDown(e: PointerEvent, block: KBBlock, edge: ResizeEdge) {
   if (e.button !== 0) return
   selectedBlockId.value = block.id
@@ -520,6 +830,7 @@ function onResizePointerDown(e: PointerEvent, block: KBBlock, edge: ResizeEdge) 
     suppressSnapY: false,
   }
   isDragging.value = true
+  isResizing.value = true
   lastPointerX = e.clientX
   lastPointerY = e.clientY
   window.addEventListener('pointermove', onPointerMove)
@@ -539,34 +850,19 @@ function applyDragUpdate() {
   const dy = (lastPointerY - dragState.startY) + scrollDY
 
   if (dragState.type === 'move') {
-    let newX = Math.max(CANVAS_INSET, Math.round(dragState.origX + dx))
-    let newY = Math.max(CANVAS_INSET, Math.round(dragState.origY + dy))
+    let newX = snapToGrid(Math.max(CANVAS_INSET, dragState.origX + dx))
+    let newY = snapToGrid(Math.max(CANVAS_INSET, dragState.origY + dy))
 
     // Clamp right edge
     if (newX + block.layout.w > maxRight) newX = maxRight - block.layout.w
-
-    const targetsX = collectSnapTargetsX(block.id)
-    const targetsY = collectSnapTargetsY(block.id)
-    let gx: number | null = null
-    let gy: number | null = null
-
-    const snapX = findSnap([newX, newX + block.layout.w], targetsX, SNAP_THRESHOLD, dragState.suppressSnapX)
-    if (snapX) { newX = snapX.value; gx = snapX.guide }
-
-    const snapY = findSnap([newY, newY + block.layout.h], targetsY, SNAP_THRESHOLD, dragState.suppressSnapY)
-    if (snapY) { newY = snapY.value; gy = snapY.guide }
-
     newX = Math.max(CANVAS_INSET, newX)
     newY = Math.max(CANVAS_INSET, newY)
-    if (newX + block.layout.w > maxRight) newX = maxRight - block.layout.w
 
-    const candidate: Rect = { x: newX, y: newY, w: block.layout.w, h: block.layout.h }
-    if (!wouldOverlap(candidate, block.id)) {
-      block.layout.x = newX
-      block.layout.y = newY
-      snapGuideX.value = gx
-      snapGuideY.value = gy
-    }
+    // Free movement during drag — no overlap check here
+    block.layout.x = newX
+    block.layout.y = newY
+    snapGuideX.value = null
+    snapGuideY.value = null
 
   } else if (dragState.type === 'resize') {
     const edge = dragState.edge!
@@ -574,19 +870,29 @@ function applyDragUpdate() {
     let newY = dragState.origY
     let newW = dragState.origW
     let newH = dragState.origH
+    const origRight = dragState.origX + dragState.origW
+    const origBottom = dragState.origY + dragState.origH
 
     if (edge === 'left') {
-      const rawX = Math.max(CANVAS_INSET, Math.round(dragState.origX + dx))
-      newW = dragState.origW + (dragState.origX - rawX)
-      if (newW >= MIN_W) { newX = rawX } else { newW = MIN_W; newX = dragState.origX + dragState.origW - MIN_W }
+      newX = snapToGrid(Math.max(CANVAS_INSET, dragState.origX + dx))
+      newW = origRight - newX
+      if (newW < MIN_W) { newW = MIN_W; newX = origRight - newW }
     } else if (edge === 'right') {
-      newW = Math.max(MIN_W, Math.round(dragState.origW + dx))
+      const rawRight = snapToGrid(origRight + dx)
+      newW = Math.max(MIN_W, rawRight - newX)
       if (newX + newW > maxRight) newW = maxRight - newX
+    } else if (edge === 'top') {
+      newY = snapToGrid(Math.max(CANVAS_INSET, dragState.origY + dy))
+      newH = origBottom - newY
+      if (newH < MIN_H) { newH = MIN_H; newY = origBottom - newH }
     } else if (edge === 'bottom') {
-      newH = Math.max(MIN_H, Math.round(dragState.origH + dy))
+      const rawBottom = snapToGrid(origBottom + dy)
+      newH = Math.max(MIN_H, rawBottom - newY)
     } else { // br
-      newW = Math.max(MIN_W, Math.round(dragState.origW + dx))
-      newH = Math.max(MIN_H, Math.round(dragState.origH + dy))
+      const rawRight = snapToGrid(origRight + dx)
+      const rawBottom = snapToGrid(origBottom + dy)
+      newW = Math.max(MIN_W, rawRight - newX)
+      newH = Math.max(MIN_H, rawBottom - newY)
       if (newX + newW > maxRight) newW = maxRight - newX
     }
 
@@ -597,6 +903,8 @@ function applyDragUpdate() {
       block.layout.w = newW
       block.layout.h = newH
     }
+    snapGuideX.value = null
+    snapGuideY.value = null
   }
 }
 
@@ -615,11 +923,29 @@ function onPointerMove(e: PointerEvent) {
 
 function onPointerUp() {
   stopAutoScroll()
-  if (dragState && isDragging.value) debouncedSave()
+
+  if (dragState && isDragging.value && dragState.type === 'move') {
+    const block = content.blocks.find(b => b.id === dragState!.blockId)
+    if (block) {
+      const candidate: Rect = { x: block.layout.x, y: block.layout.y, w: block.layout.w, h: block.layout.h }
+      if (wouldOverlap(candidate, block.id)) {
+        // Bounce back to original position with transition
+        transitioningBlockId.value = block.id
+        block.layout.x = dragState.origX
+        block.layout.y = dragState.origY
+        setTimeout(() => { transitioningBlockId.value = null }, 320)
+      } else {
+        markDirty()
+      }
+    }
+  } else if (dragState && isDragging.value) {
+    markDirty()
+  }
+
   dragState = null
   snapGuideX.value = null
   snapGuideY.value = null
-  setTimeout(() => { isDragging.value = false }, 50)
+  setTimeout(() => { isDragging.value = false; isResizing.value = false }, 50)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
 }
@@ -668,9 +994,9 @@ function autoScrollTick() {
 
 function addRef(block: KBBlock) {
   block.refs.push({ id: crypto.randomUUID(), targetNodeId: '', trigger: 'click', condition: '', description: '' })
-  debouncedSave()
+  markDirty()
 }
-function removeRef(block: KBBlock, index: number) { block.refs.splice(index, 1); debouncedSave() }
+function removeRef(block: KBBlock, index: number) { block.refs.splice(index, 1); markDirty() }
 
 function addImage(block: KBBlock) {
   const input = document.createElement('input')
@@ -682,34 +1008,51 @@ function addImage(block: KBBlock) {
     const reader = new FileReader()
     reader.onload = () => {
       block.images.push({ id: crypto.randomUUID(), url: reader.result as string, name: file.name })
-      debouncedSave()
+      markDirty()
     }
     reader.readAsDataURL(file)
   }
   input.click()
 }
-function removeImage(block: KBBlock, index: number) { block.images.splice(index, 1); debouncedSave() }
+function removeImage(block: KBBlock, index: number) { block.images.splice(index, 1); markDirty() }
 
 // ─── Cleanup ───
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    closeMdDialog()
+    panelBlockId.value = null
+  }
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    save()
+  }
+}
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('keydown', onKeyDown)
+  disposePanelMonaco()
   stopAutoScroll()
 })
+
+window.addEventListener('keydown', onKeyDown)
 </script>
 
 <style lang="scss" scoped>
 $bg-page: #ffffff;
 $bg-sidebar: #f5f5f7;
 $bg-hover: #eaeaec;
+$bg-block: #ffffff;
+$bg-block-header: rgba(0, 0, 0, 0.025);
 $text-primary: #1d1d1f;
-$text-secondary: rgba(0, 0, 0, 0.55);
-$text-tertiary: rgba(0, 0, 0, 0.35);
-$border-color: rgba(0, 0, 0, 0.08);
+$text-secondary: rgba(0, 0, 0, 0.52);
+$text-tertiary: rgba(0, 0, 0, 0.32);
+$border-color: rgba(0, 0, 0, 0.11);
 $accent: #1d1d1f;
-$block-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-$block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
+$block-shadow: none;
+$block-shadow-selected: none;
 
 .canvas-editor {
   position: relative;
@@ -742,6 +1085,15 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   gap: 8px;
   flex: 1;
   min-width: 0;
+}
+
+.ce-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f5a623;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
 }
 
 .ce-node-name {
@@ -790,7 +1142,7 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   &--active {
     background: $bg-page;
     color: $text-primary;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    border: 1px solid $border-color;
   }
 
   &:hover:not(&--active) {
@@ -846,8 +1198,10 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   overflow-x: hidden;
   overflow-y: auto;
   position: relative;
-  background:
-    radial-gradient(circle, rgba(0,0,0,0.04) 1px, transparent 1px);
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
 }
 
@@ -883,28 +1237,34 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
 
 .ce-block {
   position: absolute;
-  background: $bg-page;
+  box-sizing: border-box;
+  background: $bg-block;
   border: 1px solid $border-color;
-  border-radius: 8px;
-  box-shadow: $block-shadow;
+  border-top: 3px solid var(--block-accent, rgba(0, 0, 0, 0.15));
+  border-radius: 0 0 8px 8px;
   cursor: default;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: border-color 0.12s;
   user-select: none;
   overflow: visible;
 
-  &:hover {
-    border-color: rgba(0, 0, 0, 0.15);
+  &:hover:not(.ce-block--selected) {
+    border-color: rgba(0, 0, 0, 0.22);
+    border-top-color: var(--block-accent, rgba(0, 0, 0, 0.22));
   }
 
   &--selected {
-    border-color: $accent;
-    box-shadow: $block-shadow-selected;
+    border-color: rgba(0, 0, 0, 0.38);
+    border-top: 3px solid var(--block-accent, #1d1d1f);
   }
 
   &--editing {
     cursor: text;
+  }
+
+  &--transitioning {
+    transition: left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
 
@@ -912,7 +1272,7 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
 .ce-block-edit-btn {
   width: 22px;
   height: 22px;
-  border: 1px solid $border-color;
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 5px;
   background: $bg-page;
   color: $text-tertiary;
@@ -938,29 +1298,15 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 6px;
-  min-height: 30px;
+  padding: 6px 10px 5px;
+  min-height: 28px;
   cursor: grab;
+  background: $bg-block-header;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 
   &:active {
     cursor: grabbing;
   }
-}
-
-.ce-block-type-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: $text-tertiary;
-
-  &--region { background: #1d1d1f; }
-  &--button { background: #6e6e73; }
-  &--field { background: #86868b; }
-  &--form { background: #515154; }
-  &--list { background: #3a3a3c; }
-  &--text { background: #aeaeb2; }
-  &--custom { background: #48484a; }
 }
 
 .ce-block-name {
@@ -973,7 +1319,6 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  cursor: text;
 }
 
 .ce-block-name-input {
@@ -1002,18 +1347,6 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   .ce-block--selected & {
     opacity: 1;
   }
-}
-
-.ce-block-type-select {
-  padding: 2px 4px;
-  border: 1px solid $border-color;
-  border-radius: 4px;
-  font-size: 10px;
-  color: $text-secondary;
-  background: $bg-sidebar;
-  outline: none;
-  font-family: inherit;
-  cursor: pointer;
 }
 
 .ce-block-delete {
@@ -1046,12 +1379,12 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   flex-direction: column;
 
   &--preview {
-    cursor: text;
+    cursor: pointer;
   }
 
   &--compact {
     padding: 0 10px 8px;
-    cursor: text;
+    cursor: pointer;
   }
 }
 
@@ -1099,25 +1432,6 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   overflow: auto;
 }
 
-.ce-block-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 6px;
-  min-height: 0;
-}
-
-.ce-block-badge {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  color: $text-tertiary;
-  letter-spacing: -0.08px;
-
-  svg { opacity: 0.6; }
-}
-
 // ─── Resize handles ───
 
 .ce-resize {
@@ -1145,6 +1459,14 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
     right: 0;
     width: 5px;
     cursor: ew-resize;
+  }
+
+  &--top {
+    left: 8px;
+    right: 8px;
+    top: 0;
+    height: 5px;
+    cursor: ns-resize;
   }
 
   &--bottom {
@@ -1176,93 +1498,119 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   }
 }
 
-// ─── Detail Panel ───
+// ─── Edit Dialog ───
 
-.ce-panel {
-  position: absolute;
-  top: 44px;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  background: $bg-page;
-  border-left: 1px solid $border-color;
-  z-index: 20;
+.ce-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.ce-edit-dialog {
+  background: #fff;
+  border-radius: 16px;
+  width: calc(100vw - 80px);
+  height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
 }
 
-.ce-panel-slide-enter-active,
-.ce-panel-slide-leave-active {
-  transition: transform 0.2s ease;
-}
-
-.ce-panel-slide-enter-from,
-.ce-panel-slide-leave-to {
-  transform: translateX(100%);
-}
-
-.ce-panel-header {
+.ce-edit-dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid $border-color;
+  flex-shrink: 0;
+  gap: 12px;
 }
 
-.ce-panel-title {
+.ce-edit-dialog-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ce-edit-dialog-accent {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ce-edit-dialog-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: $text-primary;
-  letter-spacing: -0.224px;
+  letter-spacing: -0.3px;
 }
 
-.ce-panel-close {
-  width: 24px;
-  height: 24px;
+.ce-edit-dialog-close {
+  width: 28px;
+  height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: $text-tertiary;
-  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
 
   &:hover { background: $bg-hover; color: $text-primary; }
 }
 
-.ce-panel-body {
+.ce-edit-dialog-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 14px 16px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.ce-panel-field { margin-bottom: 14px; }
+.ce-edit-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
 
-.ce-panel-label {
-  display: block;
+.ce-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  &--grow { flex: 1; min-width: 0; }
+  &--type { flex-shrink: 0; width: 110px; }
+  &--expand { flex: 1; min-height: 0; }
+}
+
+.ce-edit-label {
   font-size: 11px;
   font-weight: 600;
   color: $text-tertiary;
   letter-spacing: 0.2px;
   text-transform: uppercase;
-  margin-bottom: 5px;
 }
 
-.ce-panel-hint {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: -0.08px;
-}
-
-.ce-panel-input {
+.ce-edit-input {
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border: 1px solid $border-color;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   color: $text-primary;
   background: $bg-sidebar;
@@ -1270,98 +1618,147 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   font-family: inherit;
   letter-spacing: -0.12px;
   box-sizing: border-box;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 
-  &:focus { border-color: $accent; background: $bg-page; }
-  &--sm { padding: 5px 8px; font-size: 12px; margin-bottom: 4px; }
+  &:focus { border-color: rgba(0,0,0,0.3); background: #fff; }
+  &--sm { padding: 6px 8px; font-size: 12px; }
 }
 
-.ce-panel-select {
-  @extend .ce-panel-input;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
+// ─── Split editor / preview ───
+
+.ce-edit-split {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.ce-panel-textarea {
-  @extend .ce-panel-input;
-  resize: vertical;
-  line-height: 1.5;
-  min-height: 80px;
+.ce-edit-split-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  &--editor { border-right: 1px solid $border-color; }
 }
 
-.ce-panel-section { margin-bottom: 16px; }
+.ce-edit-split-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: $text-tertiary;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 7px 12px 6px;
+  border-bottom: 1px solid $border-color;
+  background: $bg-sidebar;
+  flex-shrink: 0;
+}
 
-.ce-panel-section-header {
+.ce-edit-monaco {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ce-edit-md-preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #fff;
+}
+
+.ce-edit-preview-empty {
+  font-size: 13px;
+  color: $text-tertiary;
+  font-style: italic;
+}
+
+// ─── Refs / Images sections ───
+
+.ce-edit-section { display: flex; flex-direction: column; gap: 6px; }
+
+.ce-edit-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
 }
 
-.ce-panel-add-btn {
+.ce-edit-add-btn {
   border: none;
   background: transparent;
   font-size: 12px;
-  color: $accent;
+  color: $text-secondary;
   cursor: pointer;
   padding: 0;
   letter-spacing: -0.12px;
 
-  &:hover { opacity: 0.7; }
+  &:hover { color: $text-primary; }
 }
 
-.ce-panel-empty {
+.ce-edit-empty {
   font-size: 12px;
   color: $text-tertiary;
-  padding: 8px 0;
+  padding: 4px 0;
 }
 
-.ce-panel-ref-card {
-  padding: 8px;
-  border-radius: 6px;
+.ce-edit-ref-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
   background: $bg-sidebar;
-  margin-bottom: 6px;
-  position: relative;
+  border: 1px solid $border-color;
 }
 
-.ce-panel-ref-delete {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 18px;
-  height: 18px;
+.ce-edit-ref-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ce-edit-ref-delete {
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: $text-tertiary;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
 
   &:hover { background: rgba(255, 59, 48, 0.08); color: #ff3b30; }
 }
 
-.ce-panel-img-card {
+.ce-edit-img-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 6px;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
   background: $bg-sidebar;
-  margin-bottom: 6px;
+  border: 1px solid $border-color;
 }
 
-.ce-panel-img-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 4px;
+.ce-edit-img-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
-.ce-panel-img-info {
+.ce-edit-img-info {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1369,11 +1766,245 @@ $block-shadow-selected: 0 2px 12px rgba(0, 0, 0, 0.14);
   justify-content: space-between;
 }
 
-.ce-panel-img-name {
+.ce-edit-img-name {
   font-size: 12px;
   color: $text-secondary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+// ─── Edit Dialog Footer ───
+
+.ce-edit-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid $border-color;
+  flex-shrink: 0;
+}
+
+.ce-edit-footer-close {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: $bg-sidebar;
+  color: $text-primary;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+  &:hover { background: $bg-hover; }
+}
+
+.ce-edit-footer-save {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #1d1d1f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+  &:hover { background: #333; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ─── Markdown Preview Dialog ───
+
+.ce-md-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.ce-md-dialog {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 960px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.ce-md-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.ce-md-dialog-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ce-md-dialog-accent {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ce-md-dialog-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: $text-primary;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ce-md-dialog-type {
+  font-size: 11px;
+  font-weight: 500;
+  color: $text-tertiary;
+  background: $bg-sidebar;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ce-md-dialog-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: $text-tertiary;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+
+  &:hover { background: $bg-hover; color: $text-primary; }
+}
+
+.ce-md-dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+.ce-md-empty {
+  font-size: 14px;
+  color: $text-tertiary;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.ce-md-content {
+  font-size: 14px;
+  line-height: 1.75;
+  color: $text-primary;
+  letter-spacing: -0.14px;
+
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4) {
+    margin: 1.2em 0 0.4em;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+    color: $text-primary;
+    &:first-child { margin-top: 0; }
+  }
+  :deep(h1) { font-size: 22px; }
+  :deep(h2) { font-size: 18px; }
+  :deep(h3) { font-size: 15px; }
+  :deep(h4) { font-size: 13px; }
+
+  :deep(p) { margin: 0 0 0.9em; &:last-child { margin-bottom: 0; } }
+
+  :deep(code) {
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+    font-size: 12.5px;
+    background: $bg-sidebar;
+    border: 1px solid $border-color;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  :deep(pre) {
+    background: #f5f5f7;
+    border: 1px solid $border-color;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0.8em 0;
+    code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+    }
+  }
+
+  :deep(ul), :deep(ol) {
+    margin: 0 0 0.9em;
+    padding-left: 1.5em;
+    li { margin-bottom: 0.3em; }
+  }
+
+  :deep(blockquote) {
+    margin: 0.8em 0;
+    padding: 10px 16px;
+    border-left: 3px solid rgba(0, 0, 0, 0.12);
+    background: $bg-sidebar;
+    border-radius: 0 6px 6px 0;
+    color: $text-secondary;
+  }
+
+  :deep(a) { color: #0071e3; text-decoration: none; &:hover { text-decoration: underline; } }
+
+  :deep(hr) {
+    border: none;
+    border-top: 1px solid $border-color;
+    margin: 1.2em 0;
+  }
+
+  :deep(table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0.8em 0;
+    th, td {
+      border: 1px solid $border-color;
+      padding: 7px 12px;
+      text-align: left;
+    }
+    th { background: $bg-sidebar; font-weight: 600; }
+    tr:hover td { background: rgba(0,0,0,0.015); }
+  }
+}
+
+.ce-dialog-fade-enter-active { transition: opacity 0.18s ease; }
+.ce-dialog-fade-leave-active { transition: opacity 0.14s ease; }
+.ce-dialog-fade-enter-from,
+.ce-dialog-fade-leave-to { opacity: 0; }
+.ce-dialog-fade-enter-active .ce-md-dialog,
+.ce-dialog-fade-enter-active .ce-edit-dialog { transition: transform 0.18s ease; }
+.ce-dialog-fade-enter-from .ce-md-dialog,
+.ce-dialog-fade-enter-from .ce-edit-dialog { transform: scale(0.96) translateY(8px); }
 </style>

@@ -16,6 +16,7 @@ import './assets/css/preset.scss'
 
 import { createSSRstore, key } from './store'
 import AstLoading from './components/common/general/loading.vue'
+import CustomSelect from './components/common/general/CustomSelect.vue'
 
 
 async function bootstrap() {
@@ -53,6 +54,7 @@ async function bootstrap() {
   }
 
   app.component('AstLoading', AstLoading)
+  app.component('CustomSelect', CustomSelect)
 
   app.provide(ZINDEX_INJECTION_KEY, {
     current: 0,
