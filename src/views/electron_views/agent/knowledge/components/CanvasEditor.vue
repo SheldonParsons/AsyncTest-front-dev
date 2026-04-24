@@ -28,19 +28,27 @@
         </button>
       </div>
       <div class="ce-toolbar-right">
-        <button class="ce-tool-btn" @click="addBlock" title="添加块">
+        <button class="ce-tool-btn" @click="onRefresh" :disabled="saving" title="刷新">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+        <button v-if="displayMode === 'full'" class="ce-tool-btn" @click="addBlock" title="添加块">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
         </button>
-        <button class="ce-tool-btn ce-tool-btn--save" @click="save" :disabled="saving" title="保存">
-          {{ saving ? '…' : '保存' }}
+        <button v-if="displayMode === 'full'" class="ce-tool-btn ce-tool-btn--save" @click="save" :disabled="saving" :title="saving ? saveStatusText : '保存'">
+          {{ saving ? (saveStatusText || '…') : '保存' }}
         </button>
       </div>
     </div>
 
-    <!-- Canvas -->
+    <!-- Canvas (full mode only) -->
     <div
+      v-if="displayMode === 'full'"
       class="ce-canvas-wrap"
       ref="canvasWrapRef"
       @pointerdown="onCanvasPointerDown"
@@ -63,6 +71,7 @@
             { 'ce-block--selected': selectedBlockId === block.id },
             { 'ce-block--editing': editingBlockId === block.id },
             { 'ce-block--transitioning': transitioningBlockId === block.id },
+            { 'ce-block--incomplete': !(block.content || '').trim() || !(block.summary || '').trim() },
           ]"
           :style="{
             left: block.layout.x + 'px',
@@ -75,7 +84,15 @@
         >
           <!-- Block header — drag handle area -->
           <div class="ce-block-header" @pointerdown.stop="onHeaderPointerDown($event, block)" @dblclick.stop="onHeaderDblClick(block)">
-            <span class="ce-block-name">{{ block.name || '未命名' }}</span>
+            <span class="ce-block-name">
+              {{ block.name || '未命名' }}
+              <span v-if="staleBlockIds.has(block.id)" class="ce-stale-dot" title="内容已修改，块摘要陈旧" />
+              <span
+                v-else-if="!(block.content || '').trim() || !(block.summary || '').trim()"
+                class="ce-block-incomplete-tag"
+                :title="!(block.content || '').trim() ? '尚未填写知识描述' : '尚未生成摘要（保存时自动生成）'"
+              >{{ !(block.content || '').trim() ? '缺内容' : '缺摘要' }}</span>
+            </span>
             <div class="ce-block-actions">
               <button
                 v-show="!isDragging || isResizing"
@@ -129,6 +146,62 @@
       </div>
     </div>
 
+    <!-- Summary document (compact mode) -->
+    <div v-else class="ce-summary-doc-wrap">
+      <article class="ce-summary-doc">
+        <header class="ce-summary-doc-header">
+          <h1 class="ce-summary-doc-title">{{ node.name }}</h1>
+          <span class="ce-summary-doc-type">{{ typeLabels[node.type] || node.type }}</span>
+        </header>
+
+        <section class="ce-summary-doc-section">
+          <h2 class="ce-summary-doc-h2">节点摘要</h2>
+          <div v-if="hasNodeSummary" class="ce-md-content" v-html="nodeSummaryDocHtml"></div>
+          <div v-else class="ce-summary-doc-warn">
+            <div class="ce-summary-doc-warn-text">
+              <span class="ce-summary-doc-warn-icon">!</span>
+              <span>节点尚未生成摘要，建议先生成节点摘要以获得完整概览</span>
+            </div>
+            <button class="ce-summary-doc-warn-btn" @click="openNodeSummaryDialog">生成节点摘要</button>
+          </div>
+        </section>
+
+        <section v-if="summaryDocBlocks.length" class="ce-summary-doc-section">
+          <h2 class="ce-summary-doc-h2">块内容（{{ summaryDocBlocks.length }}）</h2>
+          <article
+            v-for="block in summaryDocBlocks"
+            :key="block.id"
+            class="ce-summary-block"
+          >
+            <header class="ce-summary-block-header">
+              <span class="ce-summary-block-accent" :style="{ background: blockTypeAccents[block.type] || '#1d1d1f' }"></span>
+              <h3 class="ce-summary-block-name">{{ block.name || '未命名' }}</h3>
+              <span class="ce-summary-block-type" :style="{ color: blockTypeAccents[block.type] || '#1d1d1f' }">
+                {{ blockTypeLabels[block.type] || block.type }}
+              </span>
+            </header>
+            <div v-if="block.summary && block.summary.trim()" class="ce-summary-block-summary">
+              <div class="ce-summary-block-label">摘要</div>
+              <div class="ce-md-content" v-html="renderMd(block.summary)"></div>
+            </div>
+            <div v-else class="ce-summary-block-summary ce-summary-block-summary--empty">
+              <div class="ce-summary-block-label">摘要</div>
+              <p class="ce-summary-doc-empty">尚未生成块摘要</p>
+            </div>
+            <div v-if="block.content && block.content.trim()" class="ce-summary-block-content">
+              <div class="ce-summary-block-label">内容</div>
+              <div class="ce-md-content" v-html="renderMd(block.content)"></div>
+            </div>
+            <div v-else class="ce-summary-block-content ce-summary-block-content--empty">
+              <div class="ce-summary-block-label">内容</div>
+              <p class="ce-summary-doc-empty">无内容</p>
+            </div>
+          </article>
+        </section>
+        <p v-else class="ce-summary-doc-empty ce-summary-doc-empty--center">该节点暂无块</p>
+      </article>
+    </div>
+
     <!-- Edit Dialog (centered modal) -->
     <Teleport to="body">
       <Transition name="ce-dialog-fade">
@@ -163,18 +236,68 @@
                 </div>
               </div>
 
+              <!-- Block summary section -->
+              <div class="ce-edit-field">
+                <div class="ce-edit-summary-wrap">
+                  <div class="ce-edit-split-label-row">
+                    <span>摘要</span>
+                    <div class="ce-ai-toolbar">
+                      <button
+                        class="ce-ai-btn ce-ai-btn--text"
+                        @click="summaryViewMode = summaryViewMode === 'edit' ? 'preview' : 'edit'"
+                        :title="summaryViewMode === 'edit' ? '切换到预览' : '切换到编辑'"
+                      >{{ summaryViewMode === 'edit' ? '预览' : '编辑' }}</button>
+                    </div>
+                  </div>
+                  <div class="ce-edit-summary-area">
+                    <div v-show="summaryViewMode === 'edit'" ref="summaryMonacoContainer" class="ce-edit-summary-monaco"></div>
+                    <div v-show="summaryViewMode === 'preview'" class="ce-edit-summary-preview">
+                      <div v-if="summaryMdHtml" class="ce-md-content" v-html="summaryMdHtml"></div>
+                      <div v-else class="ce-edit-preview-empty">暂无摘要…</div>
+                    </div>
+                  </div>
+                  <p v-if="!panelDraft.summary?.trim()" class="ce-edit-summary-hint">
+                    摘要为空时，保存后将自动生成摘要
+                  </p>
+                </div>
+              </div>
+
               <!-- Knowledge description: split Monaco editor / preview -->
               <div class="ce-edit-field ce-edit-field--expand">
                 <label class="ce-edit-label">知识描述</label>
                 <div class="ce-edit-split">
                   <div class="ce-edit-split-pane ce-edit-split-pane--editor">
-                    <div class="ce-edit-split-label">编辑 · Markdown</div>
+                    <div class="ce-edit-split-label-row">
+                      <span>编辑 · Markdown</span>
+                      <div class="ce-ai-toolbar">
+                        <button
+                          v-if="polishOriginal !== null && polishState !== 'streaming'"
+                          class="ce-ai-btn ce-ai-btn--text"
+                          @click="showCompareDialog = true"
+                          title="对比原文与 AI 优化版本"
+                        >对比</button>
+                        <button
+                          v-if="polishOriginal !== null && polishState !== 'streaming'"
+                          class="ce-ai-btn ce-ai-btn--text"
+                          @click="restoreOriginal"
+                          title="还原为原始内容"
+                        >还原</button>
+                        <button
+                          class="ce-ai-btn ce-ai-btn--icon"
+                          :class="{ 'is-streaming': polishState === 'streaming' }"
+                          @click="polishWithAI"
+                          title="AI 优化 Markdown"
+                        >
+                          <img src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg" class="ce-ai-icon" alt="AI" />
+                        </button>
+                      </div>
+                    </div>
                     <div ref="mdMonacoContainer" class="ce-edit-monaco"></div>
                   </div>
                   <div class="ce-edit-split-divider"></div>
                   <div class="ce-edit-split-pane ce-edit-split-pane--preview">
                     <div class="ce-edit-split-label">预览</div>
-                    <div class="ce-edit-md-preview">
+                    <div class="ce-edit-md-preview" @click="onMdLinkClick">
                       <div v-if="panelMdHtml" class="ce-md-content" v-html="panelMdHtml"></div>
                       <div v-else class="ce-edit-preview-empty">在左侧输入内容…</div>
                     </div>
@@ -182,23 +305,7 @@
                 </div>
               </div>
 
-              <!-- References -->
-              <div class="ce-edit-section">
-                <div class="ce-edit-section-header">
-                  <span class="ce-edit-label">引用节点</span>
-                  <button class="ce-edit-add-btn" @click="addDraftRef">+ 添加</button>
-                </div>
-                <div v-if="panelDraft.refs.length === 0" class="ce-edit-empty">暂无引用</div>
-                <div v-for="(r, i) in panelDraft.refs" :key="r.id" class="ce-edit-ref-card">
-                  <div class="ce-edit-ref-grid">
-                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.targetNodeId" placeholder="目标节点 ID" />
-                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.trigger" placeholder="触发方式 (click)" />
-                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.condition" placeholder="条件 (可选)" />
-                    <input class="ce-edit-input ce-edit-input--sm" v-model="r.description" placeholder="说明 (可选)" />
-                  </div>
-                  <button class="ce-edit-ref-delete" @click="removeDraftRef(i)" title="删除">×</button>
-                </div>
-              </div>
+              <!-- References removed — use block content to describe relationships -->
 
               <!-- Images -->
               <div class="ce-edit-section">
@@ -242,9 +349,99 @@
                 </svg>
               </button>
             </div>
-            <div class="ce-md-dialog-body">
+            <div class="ce-md-dialog-body" @click="onMdLinkClick">
+              <template v-if="mdDialogBlock?.summary">
+                <div class="ce-md-summary-block">
+                  <span class="ce-md-summary-label">摘要</span>
+                  <div class="ce-md-content" v-html="mdDialogSummaryHtml"></div>
+                </div>
+                <div class="ce-md-divider"></div>
+              </template>
               <div v-if="mdDialogHtml" class="ce-md-content" v-html="mdDialogHtml"></div>
               <div v-else class="ce-md-empty">暂无内容</div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+    <!-- AI Compare dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div v-if="showCompareDialog" class="ce-compare-overlay" @click.self="showCompareDialog = false" @keydown.esc="showCompareDialog = false">
+          <div class="ce-compare-dialog" role="dialog" aria-modal="true">
+            <div class="ce-compare-header">
+              <h2 class="ce-compare-title">对比：原始内容 vs AI 优化</h2>
+              <button class="ce-md-dialog-close" @click="showCompareDialog = false" aria-label="关闭">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <div class="ce-compare-body">
+              <div class="ce-compare-pane">
+                <div class="ce-compare-pane-label">原始内容</div>
+                <div class="ce-compare-pane-content ce-md-content" v-html="compareOriginalHtml"></div>
+              </div>
+              <div class="ce-compare-divider"></div>
+              <div class="ce-compare-pane">
+                <div class="ce-compare-pane-label">AI 优化</div>
+                <div class="ce-compare-pane-content ce-md-content" v-html="compareAiHtml"></div>
+              </div>
+            </div>
+            <div class="ce-compare-footer">
+              <button class="ce-edit-footer-close" @click="showCompareDialog = false">关闭</button>
+              <button class="ce-edit-footer-close" @click="restoreOriginal(); showCompareDialog = false">还原原始内容</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+    <!-- Node summary dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div
+          v-if="showNodeSummaryDialog"
+          class="ce-md-dialog-overlay"
+          @click.self="showNodeSummaryDialog = false"
+          @keydown.esc="showNodeSummaryDialog = false"
+        >
+          <div class="ce-md-dialog" role="dialog" aria-modal="true" style="max-width:760px;">
+            <div class="ce-md-dialog-header">
+              <h2 class="ce-md-dialog-title">
+                节点摘要 · {{ node.name }}
+                <span v-if="hasNodeSummary && nodeStale" class="ce-stale-badge">陈旧</span>
+                <span v-else-if="!hasNodeSummary" class="ce-stale-badge ce-stale-badge--empty">未生成</span>
+              </h2>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <button class="ce-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'edit' }" @click="nodeSummaryViewMode = 'edit'">编辑</button>
+                <button class="ce-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'preview' }" @click="nodeSummaryViewMode = 'preview'">预览</button>
+                <button class="ce-md-dialog-close" @click="showNodeSummaryDialog = false" aria-label="关闭">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="ce-md-dialog-body" style="padding:0;">
+              <textarea
+                v-if="nodeSummaryViewMode === 'edit'"
+                class="ce-block-textarea"
+                style="width:100%; min-height:320px; padding:16px; border:none; outline:none; resize:vertical; font-family:inherit; font-size:13px; line-height:1.6;"
+                v-model="nodeSummaryDraft"
+                :readonly="nodeSummaryState === 'streaming'"
+                placeholder="点击下方“生成摘要”由 AI 自动生成；或手工输入。"
+              />
+              <div v-else class="ce-md-content" style="padding:16px;" v-html="nodeSummaryHtml"></div>
+            </div>
+            <div class="ce-compare-footer">
+              <button
+                class="ce-edit-footer-close"
+                @click="generateNodeSummary"
+                :disabled="nodeSummaryState === 'streaming'"
+              >
+                {{ nodeSummaryState === 'streaming' ? '生成中…' : (hasNodeSummary ? '重新生成' : '生成摘要') }}
+              </button>
+              <button class="ce-edit-footer-close" @click="showNodeSummaryDialog = false">关闭</button>
             </div>
           </div>
         </div>
@@ -257,12 +454,13 @@
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { marked } from 'marked'
 import type { KBNode } from '@/types/knowledge'
+import { generateBlockSummaryHttp } from '../api'
 import {
   type KBBlock,
   type KBBlockType,
-  type KBBlockRef,
   type KBBlockImage,
   type KBNodeContentV1,
+  SCHEMA_VERSION,
   createEmptyContent,
   createBlock,
   migrateLegacyContent,
@@ -276,6 +474,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'save', content: KBNodeContentV1): void
   (e: 'dirty-changed', dirty: boolean): void
+  (e: 'summary-updated'): void
+  (e: 'refresh'): void
 }>()
 
 // ─── Constants ───
@@ -293,7 +493,7 @@ function snapToGrid(v: number): number {
 }
 
 const typeLabels: Record<string, string> = {
-  directory: '知识', page: '页面', component: '组件', standalone: '独立',
+  directory: '知识', page: '页面', component: '组件', standalone: '独立', module: '模块', shared: '共享资产',
 }
 
 const blockTypes: { value: KBBlockType; label: string }[] = [
@@ -344,12 +544,102 @@ const mdDialogBlockId = ref<string | null>(null)
 // Draft state for the edit dialog (decoupled from the actual block)
 const panelDraft = reactive<{
   name: string; type: KBBlockType; content: string
-  refs: KBBlockRef[]; images: KBBlockImage[]
-}>({ name: '', type: 'region', content: '', refs: [], images: [] })
+  images: KBBlockImage[]; summary: string
+}>({ name: '', type: 'region', content: '', images: [], summary: '' })
+
+// AI polish state
+const polishState = ref<'idle' | 'streaming' | 'done'>('idle')
+const polishOriginal = ref<string | null>(null)
+const showCompareDialog = ref(false)
+
+// Summary section state
+const summaryViewMode = ref<'edit' | 'preview'>('edit')
+const summaryState = ref<'idle' | 'streaming'>('idle')
+const summaryMonacoContainer = ref<HTMLElement | null>(null)
+let summaryMonacoInstance: any = null
+let summaryMonacoModel: any = null
+let summaryMonacoSyncing = false
+
+// ─── Node summary state ───
+const showNodeSummaryDialog = ref(false)
+const nodeSummaryDraft = ref('')
+const nodeSummaryState = ref<'idle' | 'streaming'>('idle')
+const nodeSummaryViewMode = ref<'edit' | 'preview'>('edit')
+
+const nodeSummaryHtml = computed(() => marked.parse(nodeSummaryDraft.value || '') as string)
+
+// ─── Staleness detection ───
+// Block stale = sha256(block.content) !== block.summary_content_hash (when summary exists)
+const staleBlockIds = ref<Set<string>>(new Set())
+
+async function sha256Hex(text: string): Promise<string> {
+  const buf = new TextEncoder().encode(text || '')
+  const hash = await crypto.subtle.digest('SHA-256', buf)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+let staleRecomputeToken = 0
+async function recomputeBlockStale() {
+  const token = ++staleRecomputeToken
+  const next = new Set<string>()
+  for (const b of content.blocks) {
+    if (!b.summary || !b.summary_content_hash) continue
+    const h = await sha256Hex(b.content || '')
+    if (h !== b.summary_content_hash) next.add(b.id)
+  }
+  if (token === staleRecomputeToken) staleBlockIds.value = next
+}
+
+watch(
+  () => content.blocks.map(b => `${b.id}:${(b.content || '').length}:${b.summary_content_hash || ''}:${b.summary || ''}`).join('|'),
+  () => recomputeBlockStale(),
+  { immediate: true },
+)
+
+// Node stale = max(child blocks.summary_updated_at) > node.summary_updated_at
+const nodeStale = computed(() => {
+  const updates = content.blocks
+    .map(b => b.summary_updated_at)
+    .filter(Boolean) as string[]
+  if (!updates.length) return false
+  const maxBlock = updates.sort().slice(-1)[0]
+  const nodeAt = props.node?.summary_updated_at
+  if (!nodeAt) return true
+  return maxBlock > nodeAt
+})
+
+const hasNodeSummary = computed(() => !!(props.node?.summary && props.node.summary.trim()))
+
+const summaryMdHtml = computed(() => marked.parse(panelDraft.summary || '') as string)
+
+const nodeSummaryDocHtml = computed(() => marked.parse(props.node?.summary || '') as string)
+
+const summaryDocBlocks = computed(() => {
+  return [...content.blocks].sort((a, b) => {
+    const ay = a.layout?.y ?? 0
+    const by = b.layout?.y ?? 0
+    if (ay !== by) return ay - by
+    const ax = a.layout?.x ?? 0
+    const bx = b.layout?.x ?? 0
+    return ax - bx
+  })
+})
+
+function renderMd(src: string): string {
+  return marked.parse(src || '') as string
+}
+
+const compareOriginalHtml = computed(() =>
+  polishOriginal.value ? marked.parse(polishOriginal.value) as string : ''
+)
+const compareAiHtml = computed(() =>
+  polishState.value !== 'idle' ? marked.parse(panelDraft.content || '') as string : ''
+)
 
 const isDragging = ref(false)
 const isResizing = ref(false)
 const saving = ref(false)
+const saveStatusText = ref('')
 const isDirty = ref(false)
 const transitioningBlockId = ref<string | null>(null)
 const preExpandLayouts = new Map<string, { x: number; w: number }>()
@@ -383,17 +673,37 @@ const mdDialogHtml = computed(() => {
   return marked.parse(c) as string
 })
 
+const mdDialogSummaryHtml = computed(() => {
+  const s = mdDialogBlock.value?.summary
+  if (!s) return ''
+  return marked.parse(s) as string
+})
+
+function onMdLinkClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const anchor = target.closest('a') as HTMLAnchorElement | null
+  if (!anchor) return
+  const href = anchor.getAttribute('href')
+  if (!href) return
+  e.preventDefault()
+  e.stopPropagation()
+  window.electronAPI.openExternal(href)
+}
+
 // ─── Sync from prop ───
 
 watch(() => props.node, (n) => {
-  const parsed = n.content ? migrateLegacyContent(n.content) : createEmptyContent()
-  content.schema_version = parsed.schema_version
-  content.blocks = parsed.blocks
+  const parsed = n?.content ? migrateLegacyContent(n.content) : createEmptyContent()
+  content.schema_version = parsed.schema_version ?? SCHEMA_VERSION
+  content.blocks = Array.isArray(parsed.blocks) ? parsed.blocks : []
   content.canvas = parsed.canvas || { zoom: 1, panX: 0, panY: 0 }
   selectedBlockId.value = null
   editingBlockId.value = null
   panelBlockId.value = null
   isDirty.value = false
+  nodeSummaryDraft.value = n?.summary || ''
+  nodeSummaryState.value = 'idle'
+  showNodeSummaryDialog.value = false
 }, { immediate: true })
 
 // ─── Save ───
@@ -408,12 +718,59 @@ function markDirty() {
 async function save() {
   saving.value = true
   content.canvas = { zoom: 1, panX: 0, panY: 0 }
+
+  // 1) Identify blocks that need summary auto-generation:
+  //    content non-empty AND (summary empty OR content hash ≠ stored hash)
+  const needSummary: { id: string; contentHash: string }[] = []
+  for (const b of content.blocks) {
+    const c = (b.content || '').trim()
+    if (!c) continue
+    const h = await sha256Hex(b.content || '')
+    const hasSummary = !!(b.summary && b.summary.trim())
+    if (!hasSummary || h !== (b.summary_content_hash || '')) {
+      needSummary.push({ id: b.id, contentHash: h })
+    }
+  }
+
+  // 2) Persist canvas content first (so new blocks exist server-side with their IDs).
+  saveStatusText.value = '保存中…'
   emit('save', JSON.parse(JSON.stringify(content)))
   await new Promise(r => setTimeout(r, 200))
+
+  // 3) For each block needing summary, call HTTP endpoint serially.
+  if (needSummary.length && props.node?.id && props.kbId) {
+    for (let i = 0; i < needSummary.length; i++) {
+      const { id, contentHash } = needSummary[i]
+      saveStatusText.value = `生成摘要 ${i + 1}/${needSummary.length}`
+      try {
+        const res = await generateBlockSummaryHttp(props.kbId, props.node.id, id)
+        const block = content.blocks.find(b => b.id === id)
+        if (block) {
+          block.summary = res.summary
+          block.summary_content_hash = contentHash
+          block.summary_updated_at = new Date().toISOString()
+        }
+      } catch (e: any) {
+        console.error('[block summary auto-gen failed]', id, e)
+      }
+    }
+    // Refresh tree so parents see fresh block summaries.
+    emit('refresh')
+  }
+
+  saveStatusText.value = ''
   saving.value = false
   isDirty.value = false
   emit('dirty-changed', false)
   window.$toast({ title: '保存成功', type: 'success' })
+}
+
+function onRefresh() {
+  if (isDirty.value) {
+    const ok = confirm('当前有未保存的修改，刷新将丢失这些修改。是否继续？')
+    if (!ok) return
+  }
+  emit('refresh')
 }
 
 defineExpose({ save })
@@ -426,6 +783,63 @@ function openMdDialog(id: string) {
 
 function closeMdDialog() {
   mdDialogBlockId.value = null
+}
+
+// ─── AI Markdown Polish ───
+
+async function polishWithAI() {
+  if (polishState.value === 'streaming') {
+    window.$toast({ title: 'AI 正在生成中，请稍候', type: 'info' })
+    return
+  }
+  const textContent = panelDraft.content.trim()
+  if (!textContent) {
+    window.$toast({ title: '请先编写内容', type: 'info' })
+    return
+  }
+  // Save original before overwriting
+  polishOriginal.value = panelDraft.content
+  polishState.value = 'streaming'
+  // Disable Monaco during streaming
+  if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: true })
+  // Clear current content
+  panelDraft.content = ''
+
+  let unsubscribe: (() => void) | null = null
+  try {
+    unsubscribe = (window as any).electronAPI.harness.onPolishStream((data: any) => {
+      if (data.type === 'chunk') {
+        panelDraft.content += data.content
+      } else if (data.type === 'done') {
+        polishState.value = 'done'
+        if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
+        unsubscribe && unsubscribe()
+      } else if (data.type === 'error') {
+        window.$toast({ title: data.error || 'AI 优化失败', type: 'error' })
+        panelDraft.content = polishOriginal.value || ''
+        polishOriginal.value = null
+        polishState.value = 'idle'
+        if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
+        unsubscribe && unsubscribe()
+      }
+    })
+    await (window as any).electronAPI.harness.polishMarkdown({ content: textContent })
+  } catch (e: any) {
+    window.$toast({ title: 'AI 优化失败', type: 'error' })
+    panelDraft.content = polishOriginal.value || ''
+    polishOriginal.value = null
+    polishState.value = 'idle'
+    if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
+    unsubscribe && unsubscribe()
+  }
+}
+
+function restoreOriginal() {
+  if (polishOriginal.value === null) return
+  panelDraft.content = polishOriginal.value
+  polishOriginal.value = null
+  polishState.value = 'idle'
+  showCompareDialog.value = false
 }
 
 // ─── Block CRUD ───
@@ -471,16 +885,13 @@ async function savePanelDraft() {
   block.name = panelDraft.name
   block.type = panelDraft.type
   block.content = panelDraft.content
-  block.refs = JSON.parse(JSON.stringify(panelDraft.refs))
+  block.summary = panelDraft.summary
   block.images = JSON.parse(JSON.stringify(panelDraft.images))
   panelBlockId.value = null
-  await save()
+  isDirty.value = true
+  emit('dirty-changed', true)
+  recomputeBlockStale()
 }
-
-function addDraftRef() {
-  panelDraft.refs.push({ id: crypto.randomUUID(), targetNodeId: '', trigger: 'click', condition: '', description: '' })
-}
-function removeDraftRef(index: number) { panelDraft.refs.splice(index, 1) }
 
 function addDraftImage() {
   const input = document.createElement('input')
@@ -583,6 +994,8 @@ async function initPanelMonaco() {
     cursorBlinking: 'smooth',
     cursorSmoothCaretAnimation: 'on',
     renderWhitespace: 'none',
+    renderValidationDecorations: 'off',
+    bracketPairColorization: { enabled: false },
   })
 
   mdMonacoInstance.onDidChangeModelContent(() => {
@@ -600,10 +1013,190 @@ function disposePanelMonaco() {
   if (mdMonacoModel) { mdMonacoModel.dispose(); mdMonacoModel = null }
 }
 
+// ─── Monaco editor for summary ───
+
+async function initSummaryMonaco() {
+  if (!summaryMonacoContainer.value) return
+  const m = await import('monaco-editor/esm/vs/editor/editor.main')
+  await import('monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution')
+
+  // Re-use the same ce-light theme (defineTheme is idempotent)
+  m.editor.defineTheme('ce-light', {
+    base: 'vs', inherit: true,
+    rules: [
+      { token: 'keyword.md', foreground: '0071e3' },
+      { token: 'string.link.md', foreground: '0071e3' },
+      { token: 'comment.md', foreground: '8e8e93' },
+      { token: 'strong.md', foreground: '1d1d1f', fontStyle: 'bold' },
+      { token: 'emphasis.md', foreground: '1d1d1f', fontStyle: 'italic' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1d1d1f',
+      'editor.lineHighlightBackground': '#f5f5f700',
+      'editor.selectionBackground': '#0071e330',
+      'editorLineNumber.foreground': '#c7c7cc',
+      'editorLineNumber.activeForeground': '#8e8e93',
+      'editorCursor.foreground': '#1d1d1f',
+      'editor.inactiveSelectionBackground': '#0071e318',
+      'editorIndentGuide.background': '#f2f2f7',
+      'editorGutter.background': '#f8f8f8',
+      'scrollbarSlider.background': '#00000012',
+      'scrollbarSlider.hoverBackground': '#00000020',
+    },
+  })
+
+  summaryMonacoModel = m.editor.createModel(panelDraft.summary || '', 'markdown')
+  summaryMonacoInstance = m.editor.create(summaryMonacoContainer.value, {
+    model: summaryMonacoModel,
+    theme: 'ce-light',
+    automaticLayout: true,
+    fontSize: 13,
+    lineHeight: 21,
+    fontFamily: "'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace",
+    fontLigatures: false,
+    wordWrap: 'on',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    smoothScrolling: true,
+    lineNumbers: 'on',
+    glyphMargin: false,
+    folding: false,
+    lineDecorationsWidth: 4,
+    renderLineHighlight: 'none',
+    overviewRulerBorder: false,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+    padding: { top: 10, bottom: 10 },
+    suggest: { showWords: false },
+    quickSuggestions: false,
+    cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    renderWhitespace: 'none',
+    renderValidationDecorations: 'off',
+    bracketPairColorization: { enabled: false },
+  })
+
+  summaryMonacoInstance.onDidChangeModelContent(() => {
+    if (summaryMonacoSyncing) return
+    const val = summaryMonacoInstance.getValue()
+    if (panelDraft.summary !== val) panelDraft.summary = val
+  })
+}
+
+function disposeSummaryMonaco() {
+  if (summaryMonacoInstance) { summaryMonacoInstance.dispose(); summaryMonacoInstance = null }
+  if (summaryMonacoModel) { summaryMonacoModel.dispose(); summaryMonacoModel = null }
+}
+
+// ─── Generate block summary ───
+
+async function generateBlockSummary() {
+  if (summaryState.value === 'streaming') {
+    window.$toast({ title: 'AI 正在生成摘要，请稍候', type: 'info' })
+    return
+  }
+  const block = content.blocks.find(b => b.id === panelBlockId.value)
+  if (!block || !props.node) {
+    window.$toast({ title: '无法确定块信息', type: 'error' })
+    return
+  }
+  const kbId = props.node.kb_id
+  if (!kbId) {
+    window.$toast({ title: '未找到知识库 ID', type: 'error' })
+    return
+  }
+
+  summaryState.value = 'streaming'
+  if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: true })
+  panelDraft.summary = ''
+
+  let unsubscribe: (() => void) | null = null
+  try {
+    unsubscribe = (window as any).electronAPI.harness.onBlockSummaryStream((data: any) => {
+      if (data.type === 'chunk') {
+        panelDraft.summary += data.content
+      } else if (data.type === 'done') {
+        summaryState.value = 'idle'
+        if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+        unsubscribe?.()
+      } else if (data.type === 'error') {
+        window.$toast({ title: data.error || '摘要生成失败', type: 'error' })
+        summaryState.value = 'idle'
+        if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+        unsubscribe?.()
+      }
+    })
+    await (window as any).electronAPI.harness.generateBlockSummary({
+      kbId,
+      nodeId: props.node.id,
+      blockId: block.id,
+      content: panelDraft.content,
+    })
+  } catch (e: any) {
+    window.$toast({ title: '摘要生成失败', type: 'error' })
+    summaryState.value = 'idle'
+    if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+    unsubscribe?.()
+  }
+}
+
+// ─── Generate node summary ───
+
+function openNodeSummaryDialog() {
+  nodeSummaryDraft.value = props.node?.summary || ''
+  showNodeSummaryDialog.value = true
+}
+
+async function generateNodeSummary() {
+  if (nodeSummaryState.value === 'streaming') {
+    window.$toast({ title: 'AI 正在生成节点摘要，请稍候', type: 'info' })
+    return
+  }
+  if (!props.node || !props.kbId) return
+
+  nodeSummaryState.value = 'streaming'
+  nodeSummaryDraft.value = ''
+
+  let unsubscribe: (() => void) | null = null
+  try {
+    unsubscribe = (window as any).electronAPI.harness.onNodeSummaryStream((data: any) => {
+      if (data.type === 'chunk') {
+        nodeSummaryDraft.value += data.content
+      } else if (data.type === 'done') {
+        nodeSummaryState.value = 'idle'
+        unsubscribe?.()
+        // Refresh parent so node.summary / summary_updated_at propagate.
+        emit('summary-updated')
+      } else if (data.type === 'error') {
+        window.$toast({ title: data.error || '节点摘要生成失败', type: 'error' })
+        nodeSummaryState.value = 'idle'
+        unsubscribe?.()
+      }
+    })
+    await (window as any).electronAPI.harness.generateNodeSummary({
+      kbId: props.kbId,
+      nodeId: props.node.id,
+    })
+  } catch (e: any) {
+    window.$toast({ title: '节点摘要生成失败', type: 'error' })
+    nodeSummaryState.value = 'idle'
+    unsubscribe?.()
+  }
+}
+
 // Watch panelBlockId to open/close Monaco and populate draft
 watch(panelBlockId, async (newId, oldId) => {
   if (oldId && !newId) {
     disposePanelMonaco()
+    disposeSummaryMonaco()
+    // Reset AI polish state when dialog closes
+    polishOriginal.value = null
+    polishState.value = 'idle'
+    showCompareDialog.value = false
+    summaryViewMode.value = 'edit'
+    summaryState.value = 'idle'
     return
   }
   if (newId) {
@@ -613,12 +1206,14 @@ watch(panelBlockId, async (newId, oldId) => {
     panelDraft.name = block.name
     panelDraft.type = block.type
     panelDraft.content = block.content || ''
-    panelDraft.refs = JSON.parse(JSON.stringify(block.refs || []))
+    panelDraft.summary = block.summary || ''
     panelDraft.images = JSON.parse(JSON.stringify(block.images || []))
     disposePanelMonaco()
+    disposeSummaryMonaco()
     await nextTick()
     await nextTick()
     await initPanelMonaco()
+    await initSummaryMonaco()
   }
 }, { flush: 'post' })
 
@@ -629,6 +1224,16 @@ watch(() => panelDraft.content, (val) => {
     mdMonacoSyncing = true
     mdMonacoInstance.setValue(val)
     mdMonacoSyncing = false
+  }
+})
+
+// Keep summary Monaco in sync when panelDraft.summary changes externally (e.g. streaming)
+watch(() => panelDraft.summary, (val) => {
+  if (!summaryMonacoInstance || val === undefined) return
+  if (summaryMonacoInstance.getValue() !== val) {
+    summaryMonacoSyncing = true
+    summaryMonacoInstance.setValue(val)
+    summaryMonacoSyncing = false
   }
 })
 
@@ -990,13 +1595,7 @@ function autoScrollTick() {
   autoScrollRAF = requestAnimationFrame(autoScrollTick)
 }
 
-// ─── Refs & Images ───
-
-function addRef(block: KBBlock) {
-  block.refs.push({ id: crypto.randomUUID(), targetNodeId: '', trigger: 'click', condition: '', description: '' })
-  markDirty()
-}
-function removeRef(block: KBBlock, index: number) { block.refs.splice(index, 1); markDirty() }
+// ─── Images ───
 
 function addImage(block: KBBlock) {
   const input = document.createElement('input')
@@ -1034,6 +1633,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('keydown', onKeyDown)
   disposePanelMonaco()
+  disposeSummaryMonaco()
   stopAutoScroll()
 })
 
@@ -1094,6 +1694,69 @@ $block-shadow-selected: none;
   background: #f5a623;
   flex-shrink: 0;
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
+}
+
+.ce-stale-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #f5a623;
+  vertical-align: middle;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.2);
+}
+
+.ce-block-incomplete-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 159, 10, 0.12);
+  color: #b96a00;
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.3;
+  vertical-align: middle;
+}
+
+.ce-edit-summary-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #8a4a00;
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.22);
+  border-radius: 6px;
+  padding: 6px 10px;
+  line-height: 1.4;
+}
+
+.ce-empty-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #c7c7cc;
+  vertical-align: middle;
+}
+
+.ce-stale-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: #f5a623;
+  border-radius: 4px;
+  vertical-align: middle;
+
+  &--empty {
+    background: #c7c7cc;
+  }
 }
 
 .ce-node-name {
@@ -1299,7 +1962,7 @@ $block-shadow-selected: none;
   align-items: center;
   gap: 6px;
   padding: 6px 10px 5px;
-  min-height: 28px;
+  min-height: 22px;
   cursor: grab;
   background: $bg-block-header;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
@@ -1595,7 +2258,12 @@ $block-shadow-selected: none;
 
   &--grow { flex: 1; min-width: 0; }
   &--type { flex-shrink: 0; width: 110px; }
-  &--expand { flex: 1; min-height: 0; }
+  &--expand {
+    height: 320px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
 }
 
 .ce-edit-label {
@@ -1651,9 +2319,181 @@ $block-shadow-selected: none;
   color: $text-tertiary;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  padding: 7px 12px 6px;
+  padding: 0 12px;
   border-bottom: 1px solid $border-color;
   background: $bg-sidebar;
+  flex-shrink: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+.ce-edit-split-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid $border-color;
+  background: $bg-sidebar;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: $text-tertiary;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  height: 30px;
+}
+
+.ce-ai-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ce-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 5px;
+  background: transparent;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &--text {
+    font-size: 11px;
+    font-weight: 500;
+    color: $text-secondary;
+    padding: 3px 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    height: 22px;
+    background: transparent;
+
+    &:hover:not(:disabled) {
+      background: rgba(0,0,0,0.06);
+      color: $text-primary;
+    }
+  }
+
+  &--icon {
+    width: 26px;
+    height: 26px;
+    padding: 3px;
+    background: #000;
+    border-radius: 6px;
+
+    &:hover:not(:disabled) {
+      background: #222;
+      transform: scale(1.05);
+    }
+
+    &.is-streaming {
+      animation: ce-ai-pulse 1.2s ease-in-out infinite;
+    }
+  }
+}
+
+.ce-ai-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+@keyframes ce-ai-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Compare Dialog ─── */
+
+.ce-compare-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.ce-compare-dialog {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.22), 0 8px 24px rgba(0,0,0,0.1);
+  width: calc(100vw - 80px);
+  max-width: 1200px;
+  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ce-compare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+
+.ce-compare-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin: 0;
+}
+
+.ce-compare-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.ce-compare-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ce-compare-pane-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: $text-tertiary;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  background: $bg-sidebar;
+  flex-shrink: 0;
+}
+
+.ce-compare-pane-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.ce-compare-divider {
+  width: 1px;
+  background: rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+
+.ce-compare-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(0,0,0,0.08);
   flex-shrink: 0;
 }
 
@@ -1661,6 +2501,40 @@ $block-shadow-selected: none;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+// ─── Summary section ───
+
+.ce-edit-summary-wrap {
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100px;
+  flex-shrink: 0;
+}
+
+.ce-edit-summary-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ce-edit-summary-monaco {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ce-edit-summary-preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  background: #fff;
 }
 
 .ce-edit-md-preview {
@@ -1702,24 +2576,6 @@ $block-shadow-selected: none;
   font-size: 12px;
   color: $text-tertiary;
   padding: 4px 0;
-}
-
-.ce-edit-ref-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 8px;
-  background: $bg-sidebar;
-  border: 1px solid $border-color;
-}
-
-.ce-edit-ref-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  min-width: 0;
 }
 
 .ce-edit-ref-delete {
@@ -1916,6 +2772,34 @@ $block-shadow-selected: none;
   padding: 40px 0;
 }
 
+.ce-md-summary-block {
+  background: #f8f8f8;
+  border-radius: 8px;
+  padding: 14px 16px 12px;
+  margin-bottom: 8px;
+
+  .ce-md-summary-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  .ce-md-content {
+    font-size: 13px;
+    color: $text-secondary;
+  }
+}
+
+.ce-md-divider {
+  height: 1px;
+  background: $border-color;
+  margin: 16px 0;
+}
+
 .ce-md-content {
   font-size: 14px;
   line-height: 1.75;
@@ -2007,4 +2891,207 @@ $block-shadow-selected: none;
 .ce-dialog-fade-enter-active .ce-edit-dialog { transition: transform 0.18s ease; }
 .ce-dialog-fade-enter-from .ce-md-dialog,
 .ce-dialog-fade-enter-from .ce-edit-dialog { transform: scale(0.96) translateY(8px); }
+
+// ─── Summary document (compact mode) ───
+.ce-summary-doc-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #fbfbfd 0%, #f5f5f7 100%);
+  padding: 32px 24px 64px;
+}
+
+.ce-summary-doc {
+  max-width: 760px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid $border-color;
+  border-radius: 14px;
+  padding: 36px 40px 44px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+.ce-summary-doc-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid $border-color;
+  margin-bottom: 24px;
+}
+
+.ce-summary-doc-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: $text-primary;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.ce-summary-doc-type {
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-secondary;
+  background: $bg-sidebar;
+  border: 1px solid $border-color;
+  padding: 2px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.ce-summary-doc-section {
+  margin-bottom: 32px;
+  &:last-child { margin-bottom: 0; }
+}
+
+.ce-summary-doc-h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 14px;
+}
+
+.ce-summary-doc-empty {
+  margin: 0;
+  font-size: 13px;
+  color: #9b9b9f;
+  font-style: italic;
+}
+
+.ce-summary-doc-empty--center {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.ce-summary-doc-warn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.28);
+  border-radius: 10px;
+}
+
+.ce-summary-doc-warn-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #8a4a00;
+  flex: 1;
+  min-width: 0;
+}
+
+.ce-summary-doc-warn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff9f0a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ce-summary-doc-warn-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: #1d1d1f;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.08s;
+
+  &:hover { background: #000; }
+  &:active { transform: scale(0.97); }
+}
+
+.ce-summary-block {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  background: #fcfcfd;
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  &:last-child { margin-bottom: 0; }
+}
+
+.ce-summary-block-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+}
+
+.ce-summary-block-accent {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ce-summary-block-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: $text-primary;
+  word-break: break-word;
+}
+
+.ce-summary-block-type {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+}
+
+.ce-summary-block-summary,
+.ce-summary-block-content {
+  margin-top: 12px;
+  &:first-of-type { margin-top: 0; }
+}
+
+.ce-summary-block-summary {
+  padding: 10px 14px;
+  background: rgba(0, 113, 227, 0.04);
+  border-left: 3px solid rgba(0, 113, 227, 0.4);
+  border-radius: 0 6px 6px 0;
+}
+
+.ce-summary-block-summary--empty,
+.ce-summary-block-content--empty {
+  background: transparent;
+  border-left: none;
+  padding: 0;
+}
+
+.ce-summary-block-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: $text-secondary;
+  margin-bottom: 6px;
+}
 </style>

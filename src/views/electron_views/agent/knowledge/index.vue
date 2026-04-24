@@ -31,7 +31,7 @@ const router = useRouter()
 const checking = ref(true)
 const noProjects = ref(false)
 
-const electron = (window as any).electron
+const electronAPI = (window as any).electronAPI
 
 onMounted(async () => {
   try {
@@ -39,18 +39,19 @@ onMounted(async () => {
     const projects = res.results || []
 
     if (projects.length === 0) {
+      window.$toast({ title: '请先加入一个项目，知识库需要关联项目', type: 'info' })
       noProjects.value = true
       checking.value = false
       return
     }
 
-    // Try to restore saved project
+    // Try to restore saved project from user space
     let savedId: number | null = null
-    if (electron?.harness?.storeGet) {
-      savedId = await electron.harness.storeGet('kb_project_id')
-    }
+    try {
+      savedId = await electronAPI?.harness?.storeGet('kb_project_id')
+    } catch {}
 
-    // Validate saved project still exists in user's projects
+    // Validate saved project still exists in user's project list
     let targetProject = savedId ? projects.find((p: any) => p.id === savedId) : null
     if (!targetProject) {
       targetProject = projects[0]
@@ -58,9 +59,9 @@ onMounted(async () => {
 
     // Get or create KB for this project and navigate
     const kb = await getKBByProject(targetProject.id, targetProject.name)
-    if (electron?.harness?.storeSet) {
-      await electron.harness.storeSet('kb_project_id', targetProject.id)
-    }
+    try {
+      await electronAPI?.harness?.storeSet('kb_project_id', targetProject.id)
+    } catch {}
     router.replace({ name: 'agentKnowledgeEditor', params: { kbId: String(kb.id) } })
   } catch (e: any) {
     window.$toast({ title: e.message || '加载失败', type: 'error' })

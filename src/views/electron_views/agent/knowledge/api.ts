@@ -61,6 +61,9 @@ export function createNode(kbId: number, data: {
   parent_id?: string | null;
   name: string;
   type?: string;
+  subtype?: string | null;
+  tree?: 'business' | 'asset';
+  expected_inbound?: boolean;
   description?: string;
   sort_order?: number;
   content?: KBNodeContent;
@@ -71,6 +74,9 @@ export function createNode(kbId: number, data: {
 export function updateNode(kbId: number, nodeId: string, data: {
   name?: string;
   type?: string;
+  subtype?: string | null;
+  tree?: 'business' | 'asset';
+  expected_inbound?: boolean;
   description?: string;
   sort_order?: number;
   content?: KBNodeContent;
@@ -87,6 +93,12 @@ export function moveNode(kbId: number, nodeId: string, data: {
   sort_order?: number;
 }): Promise<KBNode> {
   return request('PUT', `/kb/${kbId}/node/${nodeId}/move`, data)
+}
+
+// ─── Block summary (non-streaming, persists server-side) ───
+
+export function generateBlockSummaryHttp(kbId: number, nodeId: string, blockId: string): Promise<{ summary: string }> {
+  return request('POST', `/kb/${kbId}/node/${nodeId}/block/${blockId}/summary`)
 }
 
 // ─── Wiki ────────────────────────────────────────

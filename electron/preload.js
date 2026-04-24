@@ -85,6 +85,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.on('harness:chat-stream', handler);
             return () => ipcRenderer.removeListener('harness:chat-stream', handler);
         },
+        polishMarkdown: (payload) => ipcRenderer.invoke('harness:polishMarkdown', payload),
+        onPolishStream: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('harness:polish-stream', handler);
+            return () => ipcRenderer.removeListener('harness:polish-stream', handler);
+        },
+        generateBlockSummary: (payload) => ipcRenderer.invoke('harness:generateBlockSummary', payload),
+        onBlockSummaryStream: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('harness:block-summary-stream', handler);
+            return () => ipcRenderer.removeListener('harness:block-summary-stream', handler);
+        },
+        generateNodeSummary: (payload) => ipcRenderer.invoke('harness:generateNodeSummary', payload),
+        onNodeSummaryStream: (callback) => {
+            const handler = (event, data) => callback(data);
+            ipcRenderer.on('harness:node-summary-stream', handler);
+            return () => ipcRenderer.removeListener('harness:node-summary-stream', handler);
+        },
         request: (method, path, body) => ipcRenderer.invoke('harness:request', { method, path, body }),
         storeGet: (key) => ipcRenderer.invoke('harness:storeGet', key),
         storeSet: (key, value) => ipcRenderer.invoke('harness:storeSet', key, value),

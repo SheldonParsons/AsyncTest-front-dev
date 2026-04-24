@@ -20,8 +20,10 @@ const HARNESS_BASE = 'http://localhost:7777';
 /**
  * Stream POST: sends request, parses SSE `data: {"delta":"..."}` events,
  * and forwards each delta to webContents via IPC.
+ *
+ * @param {string} ipcEvent - The IPC event name to send chunks to.
  */
-function postStream(url, payload, webContents, requestId) {
+function postStream(url, payload, webContents, requestId, ipcEvent = 'harness:chat-stream') {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
     const parsed = new URL(url);
@@ -43,7 +45,7 @@ function postStream(url, payload, webContents, requestId) {
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf-8');
-          webContents.send('harness:chat-stream', {
+          webContents.send(ipcEvent, {
             requestId,
             type: 'error',
             error: `HTTP ${res.statusCode}: ${raw.slice(0, 200)}`,
@@ -72,26 +74,22 @@ function postStream(url, payload, webContents, requestId) {
           if (data === '[DONE]') {
             if (!doneSent) {
               doneSent = true;
-              webContents.send('harness:chat-stream', { requestId, type: 'done' });
+              webContents.send(ipcEvent, { requestId, type: 'done' });
             }
           } else {
             try {
               const parsed = JSON.parse(data);
-              const delta = parsed.delta ?? '';
-              if (delta) {
-                webContents.send('harness:chat-stream', {
-                  requestId,
-                  type: 'chunk',
-                  content: delta,
-                });
+              if (parsed.error) {
+                webContents.send(ipcEvent, { requestId, type: 'error', error: parsed.error });
+              } else {
+                const delta = parsed.delta ?? '';
+                if (delta) {
+                  webContents.send(ipcEvent, { requestId, type: 'chunk', content: delta });
+                }
               }
             } catch {
               // Non-JSON line — send raw
-              webContents.send('harness:chat-stream', {
-                requestId,
-                type: 'chunk',
-                content: data,
-              });
+              webContents.send(ipcEvent, { requestId, type: 'chunk', content: data });
             }
           }
         }
@@ -99,7 +97,7 @@ function postStream(url, payload, webContents, requestId) {
 
       res.on('end', () => {
         if (!doneSent && !webContents.isDestroyed()) {
-          webContents.send('harness:chat-stream', { requestId, type: 'done' });
+          webContents.send(ipcEvent, { requestId, type: 'done' });
         }
         resolve({ status: res.statusCode });
       });
@@ -107,7 +105,7 @@ function postStream(url, payload, webContents, requestId) {
 
     req.on('error', (err) => {
       if (!webContents.isDestroyed()) {
-        webContents.send('harness:chat-stream', {
+        webContents.send(ipcEvent, {
           requestId,
           type: 'error',
           error: err.message || 'Network error',
@@ -122,7 +120,7 @@ function postStream(url, payload, webContents, requestId) {
 }
 
 export function initHarnessMain() {
-  // Streaming chat — returns requestId immediately, sends chunks via IPC events
+  // ─── Streaming chat ───────────────────────────────────────────────────────
   ipcMain.handle('harness:chatStream', async (event, payload) => {
     const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const webContents = event.sender;
@@ -132,12 +130,11 @@ export function initHarnessMain() {
       { message: payload.message, model: payload.model },
       webContents,
       requestId,
+      'harness:chat-stream',
     ).catch((err) => {
       if (!webContents.isDestroyed()) {
         webContents.send('harness:chat-stream', {
-          requestId,
-          type: 'error',
-          error: err.message || 'Stream failed',
+          requestId, type: 'error', error: err.message || 'Stream failed',
         });
       }
     });
@@ -145,7 +142,73 @@ export function initHarnessMain() {
     return { requestId };
   });
 
-  // Generic HTTP proxy — forwards any request to HarnessEngineering backend
+  // ─── Streaming block summary ──────────────────────────────────────────────
+  ipcMain.handle('harness:generateBlockSummary', async (event, { kbId, nodeId, blockId, content }) => {
+    const requestId = `block_summary_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const webContents = event.sender;
+
+    postStream(
+      `${HARNESS_BASE}/kb/${kbId}/node/${nodeId}/block/${blockId}/summary/stream`,
+      { content: content ?? null },
+      webContents,
+      requestId,
+      'harness:block-summary-stream',
+    ).catch((err) => {
+      if (!webContents.isDestroyed()) {
+        webContents.send('harness:block-summary-stream', {
+          requestId, type: 'error', error: err.message || 'Stream failed',
+        });
+      }
+    });
+
+    return { requestId };
+  });
+
+  // ─── Streaming node summary ───────────────────────────────────────────────
+  ipcMain.handle('harness:generateNodeSummary', async (event, { kbId, nodeId }) => {
+    const requestId = `node_summary_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const webContents = event.sender;
+
+    postStream(
+      `${HARNESS_BASE}/kb/${kbId}/node/${nodeId}/summary/stream`,
+      {},
+      webContents,
+      requestId,
+      'harness:node-summary-stream',
+    ).catch((err) => {
+      if (!webContents.isDestroyed()) {
+        webContents.send('harness:node-summary-stream', {
+          requestId, type: 'error', error: err.message || 'Stream failed',
+        });
+      }
+    });
+
+    return { requestId };
+  });
+
+  // ─── Streaming markdown polish ────────────────────────────────────────────
+  ipcMain.handle('harness:polishMarkdown', async (event, { content, model }) => {
+    const requestId = `polish_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const webContents = event.sender;
+
+    postStream(
+      `${HARNESS_BASE}/kb/polish-markdown`,
+      { content, model },
+      webContents,
+      requestId,
+      'harness:polish-stream',
+    ).catch((err) => {
+      if (!webContents.isDestroyed()) {
+        webContents.send('harness:polish-stream', {
+          requestId, type: 'error', error: err.message || 'Stream failed',
+        });
+      }
+    });
+
+    return { requestId };
+  });
+
+  // ─── Generic HTTP proxy ───────────────────────────────────────────────────
   ipcMain.handle('harness:request', async (_event, { method, path, body }) => {
     return new Promise((resolve) => {
       const url = new URL(`${HARNESS_BASE}${path}`);
@@ -187,15 +250,12 @@ export function initHarnessMain() {
     });
   });
 
-  // ─── Persistent key-value store in userData ───
+  // ─── Persistent key-value store in userData ───────────────────────────────
   const storeFile = path.join(app.getPath('userData'), 'harness-settings.json');
 
   function readStore() {
-    try {
-      return JSON.parse(fs.readFileSync(storeFile, 'utf-8'));
-    } catch {
-      return {};
-    }
+    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); }
+    catch { return {}; }
   }
 
   function writeStore(data) {
@@ -203,8 +263,7 @@ export function initHarnessMain() {
   }
 
   ipcMain.handle('harness:storeGet', (_event, key) => {
-    const store = readStore();
-    return store[key] ?? null;
+    return readStore()[key] ?? null;
   });
 
   ipcMain.handle('harness:storeSet', (_event, key, value) => {

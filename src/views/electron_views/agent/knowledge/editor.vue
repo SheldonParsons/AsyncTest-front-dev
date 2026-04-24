@@ -35,7 +35,7 @@
       <div class="kbe-sidebar-subheader">
         <template v-if="currentView === 'raw'">
           <span class="kbe-sidebar-label">知识树</span>
-          <button class="kbe-icon-btn" @click="addRootNode" title="添加知识">
+          <button class="kbe-icon-btn" @click="addRootNode" title="新建节点">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -63,18 +63,36 @@
         </template>
       </div>
 
+      <!-- Tree-kind tabs (业务树 / 资产树), only visible in raw view -->
+      <div v-if="currentView === 'raw'" class="kbe-tree-tabs">
+        <button
+          :class="['kbe-tree-tab', { 'kbe-tree-tab--active': currentTree === 'business' }]"
+          @click="switchTree('business')"
+        >
+          业务树
+          <span class="kbe-tree-tab-count">{{ treeCounts.business }}</span>
+        </button>
+        <button
+          :class="['kbe-tree-tab', { 'kbe-tree-tab--active': currentTree === 'asset' }]"
+          @click="switchTree('asset')"
+        >
+          资产树
+          <span class="kbe-tree-tab-count">{{ treeCounts.asset }}</span>
+        </button>
+      </div>
+
       <!-- Sidebar body -->
       <div class="kbe-sidebar-body">
         <!-- Raw tree -->
         <template v-if="currentView === 'raw'">
           <div v-if="treeLoading" class="kbe-sidebar-loading"><div class="kbe-spinner" /></div>
-          <div v-else-if="tree.length === 0" class="kbe-sidebar-empty">
-            <p>暂无节点</p>
+          <div v-else-if="visibleTree.length === 0" class="kbe-sidebar-empty">
+            <p>{{ currentTree === 'business' ? '业务树为空' : '资产树为空' }}</p>
             <button class="kbe-text-btn" @click="addRootNode">添加第一个节点</button>
           </div>
           <div v-else class="kbe-tree-list">
             <TreeNode
-              v-for="node in tree"
+              v-for="node in visibleTree"
               :key="node.id"
               :node="node"
               :depth="0"
@@ -139,7 +157,35 @@
           </svg>
           <p class="kbe-main-empty-text">选择左侧节点开始编辑</p>
         </div>
-        <CanvasEditor v-else ref="canvasEditorRef" :node="selectedNode" :kb-id="kbId" @save="onCanvasSave" @dirty-changed="canvasDirty = $event" />
+        <CanvasEditor
+          v-else-if="selectedNode.type === 'page' || selectedNode.type === 'module' || selectedNode.type === 'directory' || selectedNode.type === 'shared'"
+          ref="editorRef"
+          :node="selectedNode"
+          :kb-id="kbId"
+          @save="onCanvasSave"
+          @dirty-changed="editorDirty = $event"
+          @summary-updated="loadTree"
+          @refresh="loadTree"
+        />
+        <NavEditor
+          v-else-if="selectedNode.type === 'nav'"
+          ref="editorRef"
+          :node="selectedNode"
+          :kb-id="kbId"
+          @saved="loadTree"
+          @dirty-changed="editorDirty = $event"
+        />
+        <RuleEditor
+          v-else-if="selectedNode.type === 'rule'"
+          ref="editorRef"
+          :node="selectedNode"
+          :kb-id="kbId"
+          @saved="loadTree"
+          @dirty-changed="editorDirty = $event"
+        />
+        <div v-else class="kbe-main-empty">
+          <p class="kbe-main-empty-text">未知节点类型: {{ selectedNode.type }}</p>
+        </div>
       </template>
 
       <!-- Wiki -->
@@ -220,6 +266,8 @@
         </div>
       </div>
     </Teleport>
+    <!-- Create Node Wizard -->
+    <CreateNodeWizard ref="wizardRef" />
   </div>
 </template>
 
@@ -235,16 +283,26 @@ import type { KnowledgeBase, KBNode, WikiDirectoryItem, KBTemplate } from '@/typ
 import { ApiGetJoinProjects } from '@/api/project/index'
 import TreeNode from './components/TreeNode.vue'
 import CanvasEditor from './components/CanvasEditor.vue'
+import NavEditor from './components/NavEditor.vue'
+import RuleEditor from './components/RuleEditor.vue'
 import TemplateEditor from './components/TemplateEditor.vue'
+import CreateNodeWizard from './components/CreateNodeWizard.vue'
 
 const router = useRouter()
 const route = useRoute()
 const kbId = computed(() => Number(route.params.kbId))
-const electron = (window as any).electron
+const electronAPI = (window as any).electronAPI
 
-// ─── Canvas dirty tracking ───
-const canvasEditorRef = ref<{ save: () => Promise<void> } | null>(null)
-const canvasDirty = ref(false)
+// ─── Editor dirty tracking (works for any node-type editor) ───
+const editorRef = ref<{ save: () => Promise<void> } | null>(null)
+const editorDirty = ref(false)
+
+// ─── Create-node wizard ───
+const wizardRef = ref<InstanceType<typeof CreateNodeWizard> | null>(null)
+
+// ─── Tree filter (business / asset) ───
+type TreeKind = 'business' | 'asset'
+const currentTree = ref<TreeKind>('business')
 
 // ─── Projects ───
 const projects = ref<any[]>([])
@@ -372,13 +430,13 @@ function resolveUnsavedDialog(val: 'save' | 'discard' | 'cancel') {
 }
 
 async function checkUnsaved(): Promise<boolean> {
-  if (!canvasDirty.value) return true
+  if (!editorDirty.value) return true
   const result = await showUnsavedDialog()
   if (result === 'save') {
-    await canvasEditorRef.value?.save()
+    await editorRef.value?.save()
     return true
   } else if (result === 'discard') {
-    canvasDirty.value = false
+    editorDirty.value = false
     return true
   }
   return false
@@ -436,6 +494,42 @@ async function loadTree() {
   }
 }
 
+// ─── Tree filter (Phase 4.7 — business / asset) ───
+function nodeMatchesTree(n: KBNode, kind: TreeKind): boolean {
+  // Default missing/legacy nodes to business so existing data still shows up.
+  return (n.tree || 'business') === kind
+}
+function filterTree(nodes: KBNode[], kind: TreeKind): KBNode[] {
+  return nodes
+    .filter(n => nodeMatchesTree(n, kind))
+    .map(n => ({
+      ...n,
+      children: n.children ? filterTree(n.children, kind) : [],
+    }))
+}
+function countTree(nodes: KBNode[], kind: TreeKind): number {
+  let total = 0
+  for (const n of nodes) {
+    if (nodeMatchesTree(n, kind)) total += 1
+    if (n.children?.length) total += countTree(n.children, kind)
+  }
+  return total
+}
+const visibleTree = computed(() => filterTree(tree.value, currentTree.value))
+const treeCounts = computed(() => ({
+  business: countTree(tree.value, 'business'),
+  asset: countTree(tree.value, 'asset'),
+}))
+async function switchTree(kind: TreeKind) {
+  if (kind === currentTree.value) return
+  if (!(await checkUnsaved())) return
+  currentTree.value = kind
+  // If the currently selected node lives in the other tree, deselect it.
+  if (selectedNode.value && (selectedNode.value.tree || 'business') !== kind) {
+    selectedNodeId.value = null
+  }
+}
+
 function findNode(nodes: KBNode[], id: string): KBNode | null {
   for (const n of nodes) {
     if (n.id === id) return n
@@ -454,10 +548,19 @@ async function selectNode(id: string) {
 
 async function addRootNode() {
   if (!(await checkUnsaved())) return
-  const name = await showInputDialog('添加知识', '输入节点名称')
-  if (!name) return
+  const result = await wizardRef.value?.open({
+    parentTree: currentTree.value,
+    defaultTree: currentTree.value,
+  })
+  if (!result) return
   try {
-    await createNode(kbId.value, { name, type: 'directory' })
+    await createNode(kbId.value, {
+      name: result.name,
+      type: result.type,
+      subtype: result.subtype,
+      tree: result.tree,
+      expected_inbound: result.expected_inbound,
+    })
     await loadTree()
     window.$toast({ title: '已添加', type: 'success' })
   } catch (e: any) {
@@ -467,10 +570,23 @@ async function addRootNode() {
 
 async function addChildNode(parentId: string) {
   if (!(await checkUnsaved())) return
-  const name = await showInputDialog('添加知识', '输入节点名称')
-  if (!name) return
+  const parent = findNode(tree.value, parentId)
+  const parentTree = (parent?.tree || currentTree.value) as TreeKind
+  const result = await wizardRef.value?.open({
+    parentName: parent?.name || '',
+    parentTree,
+    defaultTree: parentTree,
+  })
+  if (!result) return
   try {
-    await createNode(kbId.value, { name, parent_id: parentId, type: 'directory' })
+    await createNode(kbId.value, {
+      name: result.name,
+      parent_id: parentId,
+      type: result.type,
+      subtype: result.subtype,
+      tree: result.tree,
+      expected_inbound: result.expected_inbound,
+    })
     await loadTree()
     window.$toast({ title: '已添加', type: 'success' })
   } catch (e: any) {
@@ -512,6 +628,7 @@ async function onCanvasSave(contentData: any) {
   if (!selectedNode.value) return
   try {
     await updateNode(kbId.value, selectedNode.value.id, { content: contentData })
+    await loadTree()
   } catch (e: any) {
     window.$toast({ title: e.message || '保存失败', type: 'error' })
   }
@@ -589,9 +706,7 @@ async function onProjectChange(newId: any) {
   try {
     const project = projects.value.find((p: any) => p.id === newId)
     const newKb = await getKBByProject(newId, project?.name)
-    if (electron?.harness?.storeSet) {
-      await electron.harness.storeSet('kb_project_id', newId)
-    }
+    try { await electronAPI?.harness?.storeSet('kb_project_id', newId) } catch {}
     router.replace({ name: 'agentKnowledgeEditor', params: { kbId: String(newKb.id) } })
   } catch (e: any) {
     window.$toast({ title: e.message || '切换失败', type: 'error' })
@@ -627,8 +742,8 @@ $accent: #1d1d1f;
 // ─── Sidebar ───
 
 .kbe-sidebar {
-  width: 260px;
-  min-width: 260px;
+  width: 300px;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   background: $bg-sidebar;
@@ -705,6 +820,48 @@ $accent: #1d1d1f;
   padding: 3px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.06);
+}
+
+// Tree-kind tabs (业务 / 资产)
+.kbe-tree-tabs {
+  display: flex;
+  margin: 0 12px 8px;
+  gap: 4px;
+}
+.kbe-tree-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: $text-secondary;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover { background: rgba(0, 0, 0, 0.04); color: $text-primary; }
+
+  &--active {
+    background: #fff;
+    color: $text-primary;
+    border-color: $border-color;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+}
+.kbe-tree-tab-count {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  color: $text-secondary;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
 }
 
 .kbe-view-btn {

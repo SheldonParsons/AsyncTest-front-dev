@@ -30,7 +30,13 @@ export interface KnowledgeBaseUpdatePayload {
 
 // ─── 节点 ───────────────────────────────────────────
 
-export type KBNodeType = 'directory'
+// Phase 4.7 — Five canonical node types. `directory` retained as legacy alias
+// for any cached payloads that haven't been migrated through the backend yet.
+export type KBNodeType = 'page' | 'module' | 'nav' | 'rule' | 'shared' | 'directory'
+
+export type KBNavSubtype = 'menu' | 'tab' | 'card' | 'drawer' | 'section' | 'custom' | 'category'
+
+export type KBTreeKind = 'business' | 'asset'
 
 export interface KBNode {
   id: string
@@ -38,9 +44,14 @@ export interface KBNode {
   parent_id: string | null
   name: string
   type: KBNodeType
+  subtype?: KBNavSubtype | null
+  tree?: KBTreeKind
+  expected_inbound?: boolean
   description: string
   sort_order: number
   content: KBNodeContent
+  summary?: string | null
+  summary_updated_at?: string | null
   children?: KBNode[]
   created_at: string
   updated_at: string
@@ -51,6 +62,9 @@ export interface KBNodeCreatePayload {
   parent_id: string | null
   name: string
   type?: KBNodeType
+  subtype?: KBNavSubtype | null
+  tree?: KBTreeKind
+  expected_inbound?: boolean
   description?: string
   sort_order?: number
   content?: KBNodeContent
@@ -59,6 +73,9 @@ export interface KBNodeCreatePayload {
 export interface KBNodeUpdatePayload {
   name?: string
   type?: KBNodeType
+  subtype?: KBNavSubtype | null
+  tree?: KBTreeKind
+  expected_inbound?: boolean
   description?: string
   sort_order?: number
   content?: KBNodeContent

@@ -19,14 +19,6 @@ export type KBBlockType =
   | 'text'      // 纯文本描述
   | 'custom'    // 自定义
 
-export interface KBBlockRef {
-  id: string
-  targetNodeId: string        // 引用的 KB 节点 ID
-  trigger: string             // 触发方式：click / condition / load / ...
-  condition?: string          // 可选条件描述，如 "role=admin"
-  description?: string        // 简要说明
-}
-
 export interface KBBlockImage {
   id: string
   url: string                 // 文件路径或 base64
@@ -40,13 +32,16 @@ export interface KBBlock {
   type: KBBlockType
   content: string             // 主文本内容（需求描述）
   summary?: string            // 短摘要（用于模式 B 画布缩略显示）
+  summary_content_hash?: string  // SHA-256 of content at the moment summary was generated; used for stale detection
+  summary_updated_at?: string    // ISO timestamp of the last summary write
+  sort_order?: number            // server-assigned ordering hint
   layout: {
     x: number
     y: number
     w: number
     h: number
   }
-  refs: KBBlockRef[]
+  refs?: never       // removed — use block content to describe relationships
   images: KBBlockImage[]
 }
 
@@ -85,7 +80,6 @@ export function createBlock(
     content: '',
     summary: '',
     layout: { x, y, w: 280, h: 120 },
-    refs: [],
     images: [],
   }
 }
@@ -112,7 +106,6 @@ export function migrateLegacyContent(legacy: any): KBNodeContentV1 {
         content: zone.description || '',
         summary: zone.position || '',
         layout: { x: 40, y, w: 280, h: 120 },
-        refs: [],
         images: [],
       })
       y += 140
@@ -122,15 +115,6 @@ export function migrateLegacyContent(legacy: any): KBNodeContentV1 {
   // Convert interactions → button blocks
   if (Array.isArray(legacy?.interactions)) {
     for (const ix of legacy.interactions) {
-      const refs: KBBlockRef[] = []
-      if (ix.result?.ref_node_id) {
-        refs.push({
-          id: crypto.randomUUID(),
-          targetNodeId: ix.result.ref_node_id,
-          trigger: ix.trigger || 'click',
-          description: ix.result.description || '',
-        })
-      }
       blocks.push({
         id: ix.id || crypto.randomUUID(),
         name: ix.element || '交互',
@@ -138,7 +122,6 @@ export function migrateLegacyContent(legacy: any): KBNodeContentV1 {
         content: ix.description || '',
         summary: `${ix.trigger || 'click'}`,
         layout: { x: 360, y: blocks.length * 140 + 40, w: 200, h: 100 },
-        refs,
         images: [],
       })
     }
@@ -152,7 +135,6 @@ export function migrateLegacyContent(legacy: any): KBNodeContentV1 {
       type: 'text',
       content: legacy.business_rules,
       layout: { x: 40, y, w: 520, h: 160 },
-      refs: [],
       images: [],
     })
     y += 180
@@ -166,7 +148,6 @@ export function migrateLegacyContent(legacy: any): KBNodeContentV1 {
       type: 'text',
       content: legacy.notes,
       layout: { x: 40, y, w: 520, h: 120 },
-      refs: [],
       images: [],
     })
   }
