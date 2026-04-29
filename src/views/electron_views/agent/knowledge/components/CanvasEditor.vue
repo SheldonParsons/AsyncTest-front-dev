@@ -205,7 +205,7 @@
     <!-- Edit Dialog (centered modal) -->
     <Teleport to="body">
       <Transition name="ce-dialog-fade">
-        <div v-if="panelBlockId && panelBlock" class="ce-edit-overlay" @click.self="panelBlockId = null">
+        <div v-if="panelBlockId && panelBlock" class="ce-edit-overlay">
           <div class="ce-edit-dialog" role="dialog" aria-modal="true">
             <!-- Dialog header -->
             <div class="ce-edit-dialog-header">
@@ -270,6 +270,24 @@
                     <div class="ce-edit-split-label-row">
                       <span>编辑 · Markdown</span>
                       <div class="ce-ai-toolbar">
+                        <CustomSelect
+                          v-model="selectedContentTemplateId"
+                          class="ce-template-select"
+                          :options="contentTemplateOptions"
+                          placeholder="Prompt 模板"
+                          size="sm"
+                        />
+                        <button
+                          class="ce-ai-btn ce-ai-btn--text"
+                          :disabled="!selectedContentTemplateId"
+                          @click="applyContentTemplate"
+                          title="引用 Prompt 模板"
+                        >引用</button>
+                        <button
+                          class="ce-ai-btn ce-ai-btn--text"
+                          @click="openListFormDialog"
+                          title="使用表单生成知识描述"
+                        >表单生成</button>
                         <button
                           v-if="polishOriginal !== null && polishState !== 'streaming'"
                           class="ce-ai-btn ce-ai-btn--text"
@@ -332,6 +350,317 @@
         </div>
       </Transition>
     </Teleport>
+    <!-- List form prompt dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div v-if="showListFormDialog" class="ce-form-overlay">
+          <div class="ce-form-dialog" role="dialog" aria-modal="true">
+		            <header class="ce-form-header">
+		              <div class="ce-form-header-title">
+	                <p>表单型 Prompt 模板</p>
+	                <h2>{{ formKind === 'search' ? '搜索知识描述' : '列表知识描述' }}</h2>
+	              </div>
+	              <div class="ce-form-kind-tabs">
+	                <button :class="{ 'is-active': formKind === 'list' }" @click="switchFormKind('list')">列表</button>
+	                <button :class="{ 'is-active': formKind === 'search' }" @click="switchFormKind('search')">搜索</button>
+	              </div>
+            </header>
+            <div class="ce-form-body">
+              <Transition name="ce-form-pane-swap" mode="out-in">
+	              <section v-if="formKind === 'list'" key="list-form" class="ce-form-pane">
+                <div class="ce-form-grid">
+	                  <label class="ce-form-grid-wide ce-purpose-field">
+	                    <span>总体功能描述</span>
+	                    <ExpandableTextarea v-model="listFormDraft.purpose" placeholder="总结这个列表展示的内容，它是如何被统计展现出来的" />
+	                  </label>
+	                </div>
+
+                <section class="ce-field-section">
+	                  <header>
+	                    <div>
+	                      <span>列表字段</span>
+	                      <p>同名列会被视为同一列下的多段内容，按钮、跳转、权限等直接写进字段描述。</p>
+	                    </div>
+	                    <button @click="addListField">+ 添加字段</button>
+	                  </header>
+                  <div class="ce-field-list ce-list-field-list">
+                    <div v-if="!listFormDraft.fields.length" class="ce-field-empty">暂无字段，点击“添加字段”开始录入。</div>
+	                    <article v-for="(field, fieldIndex) in listFormDraft.fields" :key="fieldIndex" class="ce-field-card" :data-field-index="fieldIndex">
+	                      <div class="ce-field-card-head">
+	                        <strong>{{ field.name || '未命名字段' }}</strong>
+	                        <button type="button" class="ce-danger-text-btn" @click="removeListField(fieldIndex)">删除</button>
+	                      </div>
+                      <div class="ce-field-grid">
+	                        <label>
+	                          <span>列名称</span>
+	                          <div class="ce-column-name-row">
+	                            <input
+                                v-model="field.name"
+                                :disabled="isFixedListColumn(field)"
+                                placeholder="例如：用户名 / 操作"
+                              />
+	                            <CustomSelect
+	                              v-if="columnNameOptions.length"
+	                              class="ce-column-name-select"
+	                              :model-value="field.name"
+	                              :options="columnNameOptions"
+	                              placeholder="已有列"
+	                              size="sm"
+	                              @change="selectExistingColumnName(field, $event)"
+	                            />
+	                          </div>
+	                        </label>
+	                        <label>
+	                          <span>列类型</span>
+                          <CustomSelect
+                            v-model="field.column_type"
+                            :options="columnTypeOptions"
+	                            placeholder="普通字段"
+                            @change="onListColumnTypeChange(field, $event)"
+	                          />
+	                        </label>
+	                        <label v-if="field.column_type === 'custom'">
+	                          <span>自定义列类型</span>
+	                          <input v-model="field.custom_column_type" placeholder="例如：组合信息 / 业务标签 / 复合操作" />
+	                        </label>
+	                        <label class="ce-field-wide">
+	                          <div class="ce-desc-label-row">
+                              <span>字段描述</span>
+                              <button type="button" class="ce-control-insert-btn" @click.prevent="openControlDescriptionDialog(fieldIndex)">
+                                + 内置控件
+                              </button>
+                            </div>
+	                          <ExpandableTextarea v-model="field.description" placeholder="用自然语言描述这个列里展示什么。如果它是按钮或链接，也在这里说明点击后的页面、面板、接口、权限、确认、反馈等业务规则。" />
+	                        </label>
+	                      </div>
+	                    </article>
+	                  </div>
+                </section>
+
+                <section class="ce-optional-section">
+	                  <header>
+		                    <div>
+		                      <span>可选说明</span>
+		                      <p>按需补充分页、排序、空状态、权限等规则。</p>
+		                    </div>
+		                    <div>
+		                      <button v-if="!optionalSections.header_description" @click="addOptionalSection('header_description')">+ 表头区域功能</button>
+		                      <button v-if="!optionalSections.default_sort" @click="addOptionalSection('default_sort')">+ 默认排序</button>
+		                      <button v-if="!optionalSections.empty_state" @click="addOptionalSection('empty_state')">+ 空数据说明</button>
+	                      <button v-if="!optionalSections.permission" @click="addOptionalSection('permission')">+ 权限说明</button>
+	                      <button v-if="!optionalSections.pagination_detail" @click="addOptionalSection('pagination_detail')">+ 分页说明</button>
+	                    </div>
+		                  </header>
+		                  <div class="ce-optional-grid ce-list-optional-list">
+		                    <div v-if="!hasListOptionalSections" class="ce-optional-empty">暂无可选说明，点击上方按钮按需补充规则。</div>
+			                    <div v-if="optionalSections.header_description" class="ce-optional-item" data-optional-key="header_description">
+		                      <div class="ce-optional-label">
+		                        <span>表头区域功能</span>
+			                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeOptionalSection('header_description')" title="删除表头区域功能">
+		                          删除
+		                        </button>
+		                      </div>
+		                      <ExpandableTextarea v-model="listFormDraft.header_description" placeholder="顶部除字段外的其他功能" />
+			                    </div>
+			                    <div v-if="optionalSections.default_sort" class="ce-optional-item" data-optional-key="default_sort">
+		                      <div class="ce-optional-label">
+		                        <span>默认排序</span>
+			                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeOptionalSection('default_sort')" title="删除默认排序">
+		                          删除
+		                        </button>
+		                      </div>
+		                      <ExpandableTextarea v-model="listFormDraft.default_sort" placeholder="例如：创建时间倒序，置顶数据优先展示" />
+			                    </div>
+			                    <div v-if="optionalSections.empty_state" class="ce-optional-item" data-optional-key="empty_state">
+		                      <div class="ce-optional-label">
+		                        <span>空数据说明</span>
+			                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeOptionalSection('empty_state')" title="删除空数据说明">
+		                          删除
+		                        </button>
+		                      </div>
+		                      <ExpandableTextarea v-model="listFormDraft.empty_state" placeholder="例如：无数据时展示暂无用户，并提供创建入口" />
+			                    </div>
+			                    <div v-if="optionalSections.permission" class="ce-optional-item" data-optional-key="permission">
+		                      <div class="ce-optional-label">
+		                        <span>权限说明</span>
+			                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeOptionalSection('permission')" title="删除权限说明">
+		                          删除
+		                        </button>
+		                      </div>
+		                      <ExpandableTextarea v-model="listFormDraft.permission" placeholder="例如：拥有用户查看权限可见，操作按钮受编辑权限控制" />
+			                    </div>
+			                    <div v-if="optionalSections.pagination_detail" class="ce-optional-item" data-optional-key="pagination_detail">
+		                      <div class="ce-optional-label">
+		                        <span>分页功能说明</span>
+			                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeOptionalSection('pagination_detail')" title="删除分页功能说明">
+		                          删除
+		                        </button>
+		                      </div>
+		                      <ExpandableTextarea v-model="listFormDraft.pagination_detail" placeholder="例如：默认每页 20 条，支持切换每页条数，翻页保留查询条件" />
+			                    </div>
+	                  </div>
+                </section>
+
+                <label class="ce-form-extra">
+                  <span>补充说明</span>
+                  <ExpandableTextarea v-model="listFormDraft.extra" placeholder="补充其他不能表格化表达的信息" />
+                </label>
+              </section>
+	              <section v-else key="search-form" class="ce-form-pane">
+	                <div class="ce-form-grid">
+	                  <label class="ce-form-grid-wide ce-purpose-field">
+	                    <span>总体功能描述</span>
+	                    <ExpandableTextarea v-model="searchFormDraft.purpose" placeholder="描述这个搜索用于筛选什么数据，以及筛选条件如何影响下方内容" />
+	                  </label>
+	                </div>
+
+	                <section class="ce-field-section">
+	                  <header>
+	                    <div>
+	                      <span>搜索条件</span>
+	                      <p>控件类型只作为辅助标记，复杂校验、默认值、数据来源、联动关系都写进条件描述。</p>
+	                    </div>
+	                    <button @click="addSearchField">+ 添加条件</button>
+	                  </header>
+	                  <div class="ce-field-list ce-search-field-list">
+	                    <div v-if="!searchFormDraft.fields.length" class="ce-field-empty">暂无搜索条件，点击“添加条件”开始录入。</div>
+	                    <article v-for="(field, fieldIndex) in searchFormDraft.fields" :key="fieldIndex" class="ce-field-card" :data-field-index="fieldIndex">
+	                      <div class="ce-field-card-head">
+	                        <strong>{{ field.name || '未命名条件' }}</strong>
+	                        <button type="button" class="ce-danger-text-btn" @click="removeSearchField(fieldIndex)">删除</button>
+	                      </div>
+	                      <div class="ce-field-grid">
+	                        <label>
+	                          <span>条件名称</span>
+	                          <input v-model="field.name" placeholder="例如：账号名称 / 状态 / 创建时间" />
+	                        </label>
+	                        <label>
+	                          <span>控件类型</span>
+	                          <CustomSelect
+	                            v-model="field.control_type"
+	                            :options="searchControlTypeOptions"
+	                            placeholder="字符串输入"
+	                          />
+	                        </label>
+	                        <label v-if="field.control_type === 'custom'">
+	                          <span>自定义控件类型</span>
+	                          <input v-model="field.custom_control_type" placeholder="例如：组织选择器 / 级联选择 / 组合条件" />
+	                        </label>
+	                        <label class="ce-field-wide">
+	                          <span>条件描述</span>
+	                          <ExpandableTextarea v-model="field.description" placeholder="用自然语言描述这个条件怎么填写、默认值、校验、联动、模糊/精确匹配、数据来源等规则。" />
+	                        </label>
+	                      </div>
+	                    </article>
+	                  </div>
+	                </section>
+
+	                <section class="ce-optional-section">
+	                  <header>
+	                    <div>
+	                      <span>可选动作</span>
+	                      <p>按需补充查询、重置等动作规则。</p>
+	                    </div>
+	                    <div>
+	                      <button v-if="!searchOptionalSections.query_action" @click="addSearchOptionalSection('query_action')">+ 查询类动作</button>
+	                      <button v-if="!searchOptionalSections.reset_action" @click="addSearchOptionalSection('reset_action')">+ 重置类动作</button>
+	                    </div>
+	                  </header>
+	                  <div class="ce-optional-grid ce-search-optional-list">
+	                    <div v-if="!hasSearchOptionalSections" class="ce-optional-empty">暂无可选动作，点击上方按钮按需补充动作规则。</div>
+		                    <div v-if="searchOptionalSections.query_action" class="ce-optional-item" data-optional-key="query_action">
+	                      <div class="ce-optional-label">
+	                        <span>查询类动作</span>
+		                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeSearchOptionalSection('query_action')" title="删除查询类动作">
+	                          删除
+	                        </button>
+	                      </div>
+		                      <div class="ce-action-input-group">
+		                        <span>动作名称</span>
+		                        <input v-model="searchFormDraft.query_action_name" placeholder="例如：查询 / 搜索 / 筛选" />
+		                      </div>
+		                      <div class="ce-action-input-group">
+		                        <span>动作描述</span>
+		                        <ExpandableTextarea v-model="searchFormDraft.query_action_description" placeholder="描述点击后如何按当前条件刷新列表、校验条件、保留分页等规则" />
+		                      </div>
+		                    </div>
+		                    <div v-if="searchOptionalSections.reset_action" class="ce-optional-item" data-optional-key="reset_action">
+	                      <div class="ce-optional-label">
+	                        <span>重置类动作</span>
+		                        <button type="button" class="ce-optional-delete" @click.stop.prevent="removeSearchOptionalSection('reset_action')" title="删除重置类动作">
+	                          删除
+	                        </button>
+	                      </div>
+		                      <div class="ce-action-input-group">
+		                        <span>动作名称</span>
+		                        <input v-model="searchFormDraft.reset_action_name" placeholder="例如：重置 / 清空 / 重置条件" />
+		                      </div>
+		                      <div class="ce-action-input-group">
+		                        <span>动作描述</span>
+		                        <ExpandableTextarea v-model="searchFormDraft.reset_action_description" placeholder="描述点击后清空哪些条件、是否恢复默认值、是否立即刷新结果等规则" />
+		                      </div>
+		                    </div>
+	                  </div>
+	                </section>
+
+	                <label class="ce-form-extra">
+	                  <span>补充说明</span>
+	                  <ExpandableTextarea v-model="searchFormDraft.extra" placeholder="补充其他不能结构化表达的信息" />
+	                </label>
+	              </section>
+              </Transition>
+	              <aside class="ce-form-preview">
+                <Transition name="ce-form-preview-swap" mode="out-in">
+	                <div v-if="formKind === 'search'" key="search-preview" class="ce-search-visual">
+	                  <div class="ce-list-visual-title">
+	                    <strong>{{ panelDraft.name || '搜索预览' }}</strong>
+	                    <span>搜索</span>
+	                  </div>
+	                  <div v-if="searchFormDraft.fields.length" class="ce-preview-chip-list">
+	                    <button v-for="(field, idx) in searchFormDraft.fields" :key="idx" type="button" class="ce-preview-chip" @click="scrollToFieldCard('.ce-search-field-list', Number(idx))">
+	                      {{ field.name || '未命名条件' }}
+	                    </button>
+	                  </div>
+	                  <p v-else class="ce-list-visual-empty">添加搜索条件后可查看搜索形态。</p>
+	                  <div v-if="searchOptionalSections.query_action || searchOptionalSections.reset_action" class="ce-search-visual-actions">
+	                    <button v-if="searchOptionalSections.query_action">{{ searchFormDraft.query_action_name || '查询' }}</button>
+	                    <button v-if="searchOptionalSections.reset_action" class="is-secondary">{{ searchFormDraft.reset_action_name || '重置' }}</button>
+	                  </div>
+	                </div>
+	                <div v-else key="list-preview" class="ce-list-visual">
+	                  <div class="ce-list-visual-title">
+	                    <strong>{{ panelDraft.name || '列表预览' }}</strong>
+	                    <span>列表</span>
+	                  </div>
+	                  <div v-if="listFormDraft.fields.length" class="ce-preview-chip-list">
+	                    <button v-for="(field, idx) in listFormDraft.fields" :key="idx" type="button" class="ce-preview-chip" @click="scrollToFieldCard('.ce-list-field-list', Number(idx))">
+	                      {{ listFieldPreviewLabel(field) }}
+	                    </button>
+	                  </div>
+		                  <p v-else class="ce-list-visual-empty">添加字段后可查看列表形态。</p>
+		                </div>
+                </Transition>
+		                <div class="ce-form-preview-header">
+		                  <span>知识描述预览</span>
+		                  <button @click="renderPromptForm" :disabled="formRendering">
+		                    {{ formRendering ? '生成中…' : '生成' }}
+		                  </button>
+                </div>
+                <pre>{{ listFormPreview || '点击“生成”查看知识描述预览' }}</pre>
+              </aside>
+            </div>
+	            <footer class="ce-form-footer">
+	              <button class="ce-edit-footer-close" @click="closePromptFormDialog">取消</button>
+	              <button class="ce-edit-footer-save" @click="applyPromptFormToDraft">生成到知识描述</button>
+	            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+    <ControlDescriptionDialog
+      v-model="showControlDescriptionDialog"
+      @insert="insertControlDescription"
+    />
     <!-- Markdown preview dialog -->
     <Teleport to="body">
       <Transition name="ce-dialog-fade">
@@ -453,8 +782,16 @@
 <script lang="ts" setup>
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { marked } from 'marked'
-import type { KBNode } from '@/types/knowledge'
-import { generateBlockSummaryHttp } from '../api'
+import { streamHarnessSse } from '@/api/harness'
+import type { KBNode, KBPromptFormSource, KBTemplate } from '@/types/knowledge'
+import ControlDescriptionDialog from '@/components/common/general/ControlDescriptionDialog.vue'
+import {
+  generateBlockSummaryHttp,
+  getBlockFormSource,
+  listTemplates,
+  renderTemplate,
+  saveBlockFormSource,
+} from '../api'
 import {
   type KBBlock,
   type KBBlockType,
@@ -465,6 +802,7 @@ import {
   createBlock,
   migrateLegacyContent,
 } from '../schema'
+import ExpandableTextarea from './ExpandableTextarea.vue'
 
 const props = defineProps<{
   node: KBNode
@@ -551,6 +889,56 @@ const panelDraft = reactive<{
 const polishState = ref<'idle' | 'streaming' | 'done'>('idle')
 const polishOriginal = ref<string | null>(null)
 const showCompareDialog = ref(false)
+const promptTemplates = ref<KBTemplate[]>([])
+const selectedContentTemplateId = ref('')
+const formSources = reactive<Record<string, KBPromptFormSource | null>>({})
+const dirtyFormSourceBlockIds = ref<Set<string>>(new Set())
+const showListFormDialog = ref(false)
+const showControlDescriptionDialog = ref(false)
+const controlDescriptionTargetFieldIndex = ref<number | null>(null)
+const formKind = ref<'list' | 'search'>('list')
+const formRendering = ref(false)
+const listFormPreview = ref('')
+const formPreviewByKind = reactive<Record<'list' | 'search', string>>({
+  list: '',
+  search: '',
+})
+
+const listFormDraft = reactive<any>({
+  kind: 'list',
+  purpose: '',
+  header_description: '',
+  pagination_detail: '',
+  default_sort: '',
+  empty_state: '',
+  permission: '',
+  fields: [],
+  extra: '',
+})
+
+const optionalSections = reactive({
+  header_description: false,
+  default_sort: false,
+  empty_state: false,
+  permission: false,
+  pagination_detail: false,
+})
+
+const searchFormDraft = reactive<any>({
+  kind: 'search',
+  purpose: '',
+  fields: [],
+  query_action_name: '',
+  query_action_description: '',
+  reset_action_name: '',
+  reset_action_description: '',
+  extra: '',
+})
+
+const searchOptionalSections = reactive({
+  query_action: false,
+  reset_action: false,
+})
 
 // Summary section state
 const summaryViewMode = ref<'edit' | 'preview'>('edit')
@@ -662,6 +1050,82 @@ const panelMdHtml = computed(() => {
   return marked.parse(panelDraft.content || '') as string
 })
 
+const contentTemplates = computed(() =>
+  promptTemplates.value.filter(t => t.status !== 'disabled' && t.kind === 'text')
+)
+
+const contentTemplateOptions = computed(() =>
+  contentTemplates.value.map(t => ({
+    value: String(t.id),
+    label: `${t.name} · ${templateTargetLabel(t.target)}`,
+  }))
+)
+
+const columnTypeOptions = [
+  { value: '', label: '普通字段' },
+  { value: 'operation', label: '操作字段' },
+  { value: 'selection', label: '勾选' },
+  { value: 'sequence', label: '序号' },
+  { value: 'custom', label: '自定义' },
+]
+
+const SELECTION_COLUMN_DESCRIPTION = '该列用于批量选择列表数据。默认不勾选，表头位置显示全选/取消全选复选框控件，用于选择或取消选择当前页可操作的数据行；行内显示复选框，用于选择当前行数据。已禁用或无权限操作的数据不可被勾选。切换分页、筛选条件或刷新列表时，清空所有复选框的勾选，还原默认。'
+const SEQUENCE_COLUMN_DESCRIPTION = '该列展示当前页内的数据序号，从当前页第一条数据开始按展示顺序递增。切换分页、重新查询或刷新列表后，序号按当前页结果重新计算。'
+
+const searchControlTypeOptions = [
+  { value: '', label: '字符串输入' },
+  { value: 'select', label: '下拉选择' },
+  { value: 'date', label: '日期/时间' },
+  { value: 'range', label: '范围输入' },
+  { value: 'tree', label: '树/组织选择' },
+  { value: 'custom', label: '自定义' },
+]
+
+const columnNameOptions = computed(() => {
+  const names = new Set<string>()
+  for (const field of listFormDraft.fields || []) {
+    const name = String(field?.name || '').trim()
+    if (name) names.add(name)
+  }
+  return Array.from(names).map(name => ({ value: name, label: name }))
+})
+
+const hasListOptionalSections = computed(() =>
+  optionalSections.header_description ||
+  optionalSections.default_sort ||
+  optionalSections.empty_state ||
+  optionalSections.permission ||
+  optionalSections.pagination_detail
+)
+
+const hasSearchOptionalSections = computed(() =>
+  searchOptionalSections.query_action ||
+  searchOptionalSections.reset_action
+)
+
+function searchControlTypeLabel(field: any) {
+  if (field?.control_type === 'custom') return String(field?.custom_control_type || '').trim() || '自定义'
+  return searchControlTypeOptions.find(opt => opt.value === field?.control_type)?.label || '字符串输入'
+}
+
+function isFixedListColumn(field: any) {
+  return field?.column_type === 'selection' || field?.column_type === 'sequence'
+}
+
+function listFieldPreviewLabel(field: any) {
+  if (field?.column_type === 'selection') return '勾选列：全选/行勾选'
+  if (field?.column_type === 'sequence') return '序号列：当前页序号'
+  return field?.name || '未命名字段'
+}
+
+function templateTargetLabel(target?: string) {
+  return ({
+    block_knowledge_description: '块知识描述',
+    navigation_description: '导航说明',
+    node_description: '节点说明',
+  } as Record<string, string>)[target || ''] || '通用'
+}
+
 const mdDialogBlock = computed(() => {
   if (!mdDialogBlockId.value) return null
   return content.blocks.find(b => b.id === mdDialogBlockId.value) || null
@@ -736,6 +1200,7 @@ async function save() {
   saveStatusText.value = '保存中…'
   emit('save', JSON.parse(JSON.stringify(content)))
   await new Promise(r => setTimeout(r, 200))
+  await persistDirtyFormSources()
 
   // 3) For each block needing summary, call HTTP endpoint serially.
   if (needSummary.length && props.node?.id && props.kbId) {
@@ -805,32 +1270,29 @@ async function polishWithAI() {
   // Clear current content
   panelDraft.content = ''
 
-  let unsubscribe: (() => void) | null = null
   try {
-    unsubscribe = (window as any).electronAPI.harness.onPolishStream((data: any) => {
-      if (data.type === 'chunk') {
-        panelDraft.content += data.content
-      } else if (data.type === 'done') {
+    await streamHarnessSse('/kb/polish-markdown', { content: textContent }, {
+      onChunk: (content) => {
+        panelDraft.content += content
+      },
+      onDone: () => {
         polishState.value = 'done'
         if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
-        unsubscribe && unsubscribe()
-      } else if (data.type === 'error') {
-        window.$toast({ title: data.error || 'AI 优化失败', type: 'error' })
+      },
+      onError: (message) => {
+        window.$toast({ title: message || 'AI 优化失败', type: 'error' })
         panelDraft.content = polishOriginal.value || ''
         polishOriginal.value = null
         polishState.value = 'idle'
         if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
-        unsubscribe && unsubscribe()
-      }
+      },
     })
-    await (window as any).electronAPI.harness.polishMarkdown({ content: textContent })
   } catch (e: any) {
     window.$toast({ title: 'AI 优化失败', type: 'error' })
     panelDraft.content = polishOriginal.value || ''
     polishOriginal.value = null
     polishState.value = 'idle'
     if (mdMonacoInstance) mdMonacoInstance.updateOptions({ readOnly: false })
-    unsubscribe && unsubscribe()
   }
 }
 
@@ -840,6 +1302,366 @@ function restoreOriginal() {
   polishOriginal.value = null
   polishState.value = 'idle'
   showCompareDialog.value = false
+}
+
+async function loadPromptTemplates() {
+  if (promptTemplates.value.length) return
+  try {
+    promptTemplates.value = await listTemplates(props.kbId)
+    if (selectedContentTemplateId.value && !contentTemplates.value.some(t => String(t.id) === selectedContentTemplateId.value)) {
+      selectedContentTemplateId.value = ''
+    }
+  } catch {
+    promptTemplates.value = []
+  }
+}
+
+async function applyContentTemplate() {
+  const templateId = Number(selectedContentTemplateId.value)
+  if (!templateId) return
+  try {
+    const result = await renderTemplate(props.kbId, {
+      template_id: templateId,
+      target: 'block_knowledge_description',
+      mode: 'text',
+      data: {
+        name: panelDraft.name,
+        block_name: panelDraft.name,
+        block_type: blockTypeLabels[panelDraft.type] || panelDraft.type,
+        node_name: props.node.name,
+      },
+    })
+    if (!result.content?.trim()) return
+    panelDraft.content = panelDraft.content?.trim()
+      ? `${panelDraft.content.trim()}\n\n${result.content.trim()}`
+      : result.content.trim()
+  } catch (e: any) {
+    window.$toast?.({ title: e.message || '引用 Prompt 模板失败', type: 'error' })
+  }
+}
+
+async function loadBlockFormSource(blockId: string) {
+  for (const kind of ['list', 'search'] as const) {
+    const key = formSourceKey(blockId, kind)
+    if (Object.prototype.hasOwnProperty.call(formSources, key)) continue
+    try {
+      formSources[key] = await getBlockFormSource(props.kbId, blockId, kind)
+    } catch {
+      formSources[key] = null
+    }
+  }
+}
+
+function openListFormDialog() {
+  const blockId = panelBlockId.value
+  const preferredKind = panelDraft.type === 'field' ? 'search' : 'list'
+  formPreviewByKind.list = hydrateActiveFormFromSource(blockId, 'list')
+  formPreviewByKind.search = hydrateActiveFormFromSource(blockId, 'search')
+  formKind.value = preferredKind
+  listFormPreview.value = formPreviewByKind[preferredKind]
+  showListFormDialog.value = true
+}
+
+function formSourceKey(blockId: string, kind: 'list' | 'search') {
+  return `${blockId}:${kind}`
+}
+
+function hydrateActiveFormFromSource(blockId: string | null, kind: 'list' | 'search') {
+  const source = blockId ? formSources[formSourceKey(blockId, kind)] : null
+  if (kind === 'search') {
+    hydrateSearchFormDraft(source?.data || {
+      purpose: '',
+      fields: [],
+    })
+  } else {
+    hydrateListFormDraft(source?.data || {
+    purpose: '',
+    fields: [],
+  })
+  }
+  return source?.generated_content || ''
+}
+
+function switchFormKind(kind: 'list' | 'search') {
+  formPreviewByKind[formKind.value] = listFormPreview.value
+  formKind.value = kind
+  listFormPreview.value = formPreviewByKind[kind] || ''
+}
+
+function resetPromptFormDialogDrafts() {
+  hydrateListFormDraft({
+    purpose: '',
+    fields: [],
+  })
+  hydrateSearchFormDraft({
+    purpose: '',
+    fields: [],
+  })
+  formPreviewByKind.list = ''
+  formPreviewByKind.search = ''
+  listFormPreview.value = ''
+  formKind.value = 'list'
+}
+
+function closePromptFormDialog() {
+  showControlDescriptionDialog.value = false
+  controlDescriptionTargetFieldIndex.value = null
+  showListFormDialog.value = false
+  resetPromptFormDialogDrafts()
+}
+
+function hydrateListFormDraft(data: Record<string, any>) {
+  listFormDraft.kind = 'list'
+  listFormDraft.purpose = data.purpose || ''
+  listFormDraft.header_description = data.header_description || ''
+  listFormDraft.pagination_detail = data.pagination_detail || ''
+  listFormDraft.default_sort = data.default_sort || ''
+  listFormDraft.empty_state = data.empty_state || ''
+  listFormDraft.permission = data.permission || ''
+  listFormDraft.fields = Array.isArray(data.fields) ? JSON.parse(JSON.stringify(data.fields)) : []
+  listFormDraft.extra = data.extra || ''
+  optionalSections.header_description = !!listFormDraft.header_description
+  optionalSections.default_sort = !!listFormDraft.default_sort
+  optionalSections.empty_state = !!listFormDraft.empty_state
+  optionalSections.permission = !!listFormDraft.permission
+  optionalSections.pagination_detail = !!listFormDraft.pagination_detail
+}
+
+function snapshotListFormData() {
+  return JSON.parse(JSON.stringify({
+    kind: 'list',
+    purpose: listFormDraft.purpose,
+    header_description: listFormDraft.header_description,
+    pagination_detail: listFormDraft.pagination_detail,
+    default_sort: listFormDraft.default_sort,
+    empty_state: listFormDraft.empty_state,
+    permission: listFormDraft.permission,
+    fields: listFormDraft.fields,
+    extra: listFormDraft.extra,
+  }))
+}
+
+function hydrateSearchFormDraft(data: Record<string, any>) {
+  searchFormDraft.kind = 'search'
+  searchFormDraft.purpose = data.purpose || ''
+  searchFormDraft.fields = Array.isArray(data.fields) ? JSON.parse(JSON.stringify(data.fields)) : []
+  searchFormDraft.query_action_name = data.query_action_name || ''
+  searchFormDraft.query_action_description = data.query_action_description || ''
+  searchFormDraft.reset_action_name = data.reset_action_name || ''
+  searchFormDraft.reset_action_description = data.reset_action_description || ''
+  searchFormDraft.extra = data.extra || ''
+  searchOptionalSections.query_action = !!(searchFormDraft.query_action_name || searchFormDraft.query_action_description)
+  searchOptionalSections.reset_action = !!(searchFormDraft.reset_action_name || searchFormDraft.reset_action_description)
+}
+
+function snapshotSearchFormData() {
+  return JSON.parse(JSON.stringify({
+    kind: 'search',
+    purpose: searchFormDraft.purpose,
+    fields: searchFormDraft.fields,
+    query_action_name: searchFormDraft.query_action_name,
+    query_action_description: searchFormDraft.query_action_description,
+    reset_action_name: searchFormDraft.reset_action_name,
+    reset_action_description: searchFormDraft.reset_action_description,
+    extra: searchFormDraft.extra,
+  }))
+}
+
+function snapshotPromptFormData() {
+  return formKind.value === 'search' ? snapshotSearchFormData() : snapshotListFormData()
+}
+
+function addListField() {
+  listFormDraft.fields.push({
+    name: '',
+    column_type: '',
+    custom_column_type: '',
+    description: '',
+  })
+  scrollToNewFieldCard('.ce-list-field-list')
+}
+
+function removeListField(index: number | string) {
+  listFormDraft.fields.splice(Number(index), 1)
+}
+
+function selectExistingColumnName(field: any, value: string | number) {
+  if (isFixedListColumn(field)) return
+  const selectedName = String(value)
+  const source = (listFormDraft.fields || []).find((item: any) =>
+    item !== field &&
+    String(item?.name || '').trim() === selectedName &&
+    (item?.column_type || item?.custom_column_type)
+  ) || (listFormDraft.fields || []).find((item: any) =>
+    item !== field &&
+    String(item?.name || '').trim() === selectedName
+  )
+  field.name = selectedName
+  if (source) {
+    field.column_type = source.column_type || ''
+    field.custom_column_type = source.custom_column_type || ''
+  }
+}
+
+function onListColumnTypeChange(field: any, value: string | number) {
+  const type = String(value)
+  if (type === 'selection') {
+    field.name = '勾选'
+    field.custom_column_type = ''
+    field.description = SELECTION_COLUMN_DESCRIPTION
+    return
+  }
+  if (type === 'sequence') {
+    field.name = '序号'
+    field.custom_column_type = ''
+    field.description = SEQUENCE_COLUMN_DESCRIPTION
+    return
+  }
+  if (type !== 'custom') {
+    field.custom_column_type = ''
+  }
+}
+
+function openControlDescriptionDialog(fieldIndex: number | string) {
+  controlDescriptionTargetFieldIndex.value = Number(fieldIndex)
+  showControlDescriptionDialog.value = true
+}
+
+function insertControlDescription(text: string) {
+  const index = controlDescriptionTargetFieldIndex.value
+  if (index == null) return
+  const field = listFormDraft.fields?.[index]
+  if (!field) return
+  const current = String(field.description || '').trim()
+  field.description = current ? `${current}\n${text}` : text
+}
+
+function removeOptionalSection(key: 'header_description' | 'default_sort' | 'empty_state' | 'permission' | 'pagination_detail') {
+  optionalSections[key] = false
+  listFormDraft[key] = ''
+}
+
+function addOptionalSection(key: 'header_description' | 'default_sort' | 'empty_state' | 'permission' | 'pagination_detail') {
+  optionalSections[key] = true
+  scrollToOptionalItem('.ce-list-optional-list', key)
+}
+
+function addSearchField() {
+  searchFormDraft.fields.push({
+    name: '',
+    control_type: '',
+    custom_control_type: '',
+    description: '',
+  })
+  scrollToNewFieldCard('.ce-search-field-list')
+}
+
+async function scrollToNewFieldCard(listSelector: string) {
+  await nextTick()
+  const cards = document.querySelectorAll(`${listSelector} .ce-field-card`)
+  const card = cards[cards.length - 1] as HTMLElement | undefined
+  card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+async function scrollToOptionalItem(listSelector: string, key: string) {
+  await nextTick()
+  const item = document.querySelector(`${listSelector} .ce-optional-item[data-optional-key="${key}"]`) as HTMLElement | null
+  item?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+function scrollToFieldCard(listSelector: string, index: number) {
+  const card = document.querySelector(`${listSelector} .ce-field-card[data-field-index="${index}"]`) as HTMLElement | null
+  card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+function removeSearchField(index: number | string) {
+  searchFormDraft.fields.splice(Number(index), 1)
+}
+
+function removeSearchOptionalSection(key: 'query_action' | 'reset_action') {
+  searchOptionalSections[key] = false
+  if (key === 'query_action') {
+    searchFormDraft.query_action_name = ''
+    searchFormDraft.query_action_description = ''
+  } else {
+    searchFormDraft.reset_action_name = ''
+    searchFormDraft.reset_action_description = ''
+  }
+}
+
+function addSearchOptionalSection(key: 'query_action' | 'reset_action') {
+  searchOptionalSections[key] = true
+  scrollToOptionalItem('.ce-search-optional-list', key)
+}
+
+async function renderPromptForm() {
+  formRendering.value = true
+  try {
+    const result = await renderTemplate(props.kbId, {
+      target: 'block_knowledge_description',
+      mode: 'form',
+      data: snapshotPromptFormData(),
+    })
+    listFormPreview.value = result.content || ''
+    formPreviewByKind[formKind.value] = listFormPreview.value
+    if (result.warnings?.length) {
+      window.$toast?.({ title: result.warnings.join('；'), type: 'info' })
+    }
+  } catch (e: any) {
+    window.$toast?.({ title: e.message || '生成知识描述失败', type: 'error' })
+  } finally {
+    formRendering.value = false
+  }
+}
+
+async function applyPromptFormToDraft() {
+  if (!listFormPreview.value.trim()) {
+    await renderPromptForm()
+  }
+  if (!listFormPreview.value.trim()) return
+  panelDraft.type = formKind.value === 'search' ? 'region' : 'list'
+  panelDraft.content = listFormPreview.value.trim()
+  const blockId = panelBlockId.value
+  if (blockId) {
+    const key = formSourceKey(blockId, formKind.value)
+    formSources[key] = {
+      id: formSources[key]?.id || '',
+      kb_id: props.kbId,
+      target_type: 'block',
+      target_id: blockId,
+      node_id: props.node.id,
+      block_id: blockId,
+      template_id: null,
+      template_version: 1,
+      kind: formKind.value,
+      data: snapshotPromptFormData(),
+      generated_content: listFormPreview.value.trim(),
+    }
+    const next = new Set(dirtyFormSourceBlockIds.value)
+    next.add(key)
+    dirtyFormSourceBlockIds.value = next
+  }
+  closePromptFormDialog()
+}
+
+async function persistDirtyFormSources() {
+  if (!dirtyFormSourceBlockIds.value.size) return
+  for (const key of dirtyFormSourceBlockIds.value) {
+    const source = formSources[key]
+    if (!source) continue
+    try {
+      await saveBlockFormSource(props.kbId, source.block_id || source.target_id, {
+        template_id: source.template_id,
+        template_version: source.template_version,
+        kind: source.kind,
+        data: source.data,
+        generated_content: source.generated_content,
+      })
+    } catch (e) {
+      console.error('[save block form source failed]', key, e)
+    }
+  }
+  dirtyFormSourceBlockIds.value = new Set()
 }
 
 // ─── Block CRUD ───
@@ -1112,33 +1934,29 @@ async function generateBlockSummary() {
   if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: true })
   panelDraft.summary = ''
 
-  let unsubscribe: (() => void) | null = null
   try {
-    unsubscribe = (window as any).electronAPI.harness.onBlockSummaryStream((data: any) => {
-      if (data.type === 'chunk') {
-        panelDraft.summary += data.content
-      } else if (data.type === 'done') {
-        summaryState.value = 'idle'
-        if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
-        unsubscribe?.()
-      } else if (data.type === 'error') {
-        window.$toast({ title: data.error || '摘要生成失败', type: 'error' })
-        summaryState.value = 'idle'
-        if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
-        unsubscribe?.()
-      }
-    })
-    await (window as any).electronAPI.harness.generateBlockSummary({
-      kbId,
-      nodeId: props.node.id,
-      blockId: block.id,
-      content: panelDraft.content,
-    })
+    await streamHarnessSse(
+      `/kb/${kbId}/node/${props.node.id}/block/${block.id}/summary/stream`,
+      { content: panelDraft.content },
+      {
+        onChunk: (content) => {
+          panelDraft.summary += content
+        },
+        onDone: () => {
+          summaryState.value = 'idle'
+          if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+        },
+        onError: (message) => {
+          window.$toast({ title: message || '摘要生成失败', type: 'error' })
+          summaryState.value = 'idle'
+          if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+        },
+      },
+    )
   } catch (e: any) {
     window.$toast({ title: '摘要生成失败', type: 'error' })
     summaryState.value = 'idle'
     if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
-    unsubscribe?.()
   }
 }
 
@@ -1159,30 +1977,28 @@ async function generateNodeSummary() {
   nodeSummaryState.value = 'streaming'
   nodeSummaryDraft.value = ''
 
-  let unsubscribe: (() => void) | null = null
   try {
-    unsubscribe = (window as any).electronAPI.harness.onNodeSummaryStream((data: any) => {
-      if (data.type === 'chunk') {
-        nodeSummaryDraft.value += data.content
-      } else if (data.type === 'done') {
-        nodeSummaryState.value = 'idle'
-        unsubscribe?.()
-        // Refresh parent so node.summary / summary_updated_at propagate.
-        emit('summary-updated')
-      } else if (data.type === 'error') {
-        window.$toast({ title: data.error || '节点摘要生成失败', type: 'error' })
-        nodeSummaryState.value = 'idle'
-        unsubscribe?.()
-      }
-    })
-    await (window as any).electronAPI.harness.generateNodeSummary({
-      kbId: props.kbId,
-      nodeId: props.node.id,
-    })
+    await streamHarnessSse(
+      `/kb/${props.kbId}/node/${props.node.id}/summary/stream`,
+      {},
+      {
+        onChunk: (content) => {
+          nodeSummaryDraft.value += content
+        },
+        onDone: () => {
+          nodeSummaryState.value = 'idle'
+          // Refresh parent so node.summary / summary_updated_at propagate.
+          emit('summary-updated')
+        },
+        onError: (message) => {
+          window.$toast({ title: message || '节点摘要生成失败', type: 'error' })
+          nodeSummaryState.value = 'idle'
+        },
+      },
+    )
   } catch (e: any) {
     window.$toast({ title: '节点摘要生成失败', type: 'error' })
     nodeSummaryState.value = 'idle'
-    unsubscribe?.()
   }
 }
 
@@ -1197,9 +2013,13 @@ watch(panelBlockId, async (newId, oldId) => {
     showCompareDialog.value = false
     summaryViewMode.value = 'edit'
     summaryState.value = 'idle'
+    if (showListFormDialog.value) closePromptFormDialog()
+    selectedContentTemplateId.value = ''
     return
   }
   if (newId) {
+    await loadPromptTemplates()
+    await loadBlockFormSource(newId)
     const block = content.blocks.find(b => b.id === newId)
     if (!block) return
     // Populate draft from block
@@ -1619,8 +2439,12 @@ function removeImage(block: KBBlock, index: number) { block.images.splice(index,
 
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
+    if (showListFormDialog.value || panelBlockId.value) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
     closeMdDialog()
-    panelBlockId.value = null
   }
   if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault()
@@ -2350,6 +3174,10 @@ $block-shadow-selected: none;
   gap: 4px;
 }
 
+.ce-template-select {
+  width: 128px;
+}
+
 .ce-ai-btn {
   display: inline-flex;
   align-items: center;
@@ -2667,6 +3495,813 @@ $block-shadow-selected: none;
   transition: background 0.12s;
   &:hover { background: #333; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ─── Form Prompt Dialog ───
+
+.ce-form-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 34px;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.ce-form-dialog {
+  width: min(1320px, calc(100vw - 68px));
+  height: min(860px, calc(100vh - 68px));
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, .22);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ce-form-header {
+  height: 62px;
+  padding: 0 18px 0 22px;
+  border-bottom: 1px solid $border-color;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+
+  p,
+  h2 {
+    margin: 0;
+  }
+
+  p {
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+
+  h2 {
+    font-size: 16px;
+  }
+}
+
+.ce-form-header-title {
+  min-width: 0;
+}
+
+.ce-form-close {
+  justify-self: end;
+}
+
+.ce-form-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
+  padding: 16px;
+  background:
+    linear-gradient(90deg, rgba(29, 29, 31, .035) 1px, transparent 1px),
+    linear-gradient(#f7f7f8, #f2f2f4);
+  background-size: 22px 22px, auto;
+  overflow: hidden;
+}
+
+.ce-form-pane {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 4px 2px 2px;
+  overscroll-behavior: contain;
+}
+
+.ce-form-grid {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  background: #fff;
+  border: 1px solid rgba(29, 29, 31, .14);
+  border-left: 3px solid #6b7280;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 10px 24px rgba(0, 0, 0, .035);
+
+  label {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+
+    button {
+      border: none;
+      background: transparent;
+      color: #ff3b30;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0;
+    }
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    border: 1px solid $border-color;
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+    resize: vertical;
+  }
+}
+
+.ce-form-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.ce-purpose-field {
+  span {
+    color: $text-primary;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  textarea {
+    min-height: 104px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  textarea:focus {
+    border-color: rgba(29, 29, 31, .42);
+    box-shadow: 0 0 0 3px rgba(29, 29, 31, .06);
+  }
+}
+
+.ce-form-extra {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid rgba(29, 29, 31, .14);
+  border-left: 3px solid #9ca3af;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .035);
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+
+  input,
+  textarea {
+    width: 100%;
+    border: 1px solid $border-color;
+    border-radius: 7px;
+    padding: 8px 9px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  input {
+    border: 1px solid $border-color;
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+  }
+}
+
+.ce-optional-section,
+.ce-field-section {
+  background: #fff;
+  border: 1px solid rgba(29, 29, 31, .14);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .035), 0 8px 18px rgba(0, 0, 0, .025);
+}
+
+.ce-optional-section {
+  border-left: 3px solid #9ca3af;
+  flex-shrink: 0;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.ce-optional-grid {
+  min-height: 0;
+  overflow: visible;
+}
+
+.ce-optional-empty {
+  grid-column: 1 / -1;
+  padding: 28px;
+  color: $text-tertiary;
+  text-align: center;
+  font-size: 12px;
+}
+
+.ce-field-section {
+  border-left: 3px solid #52525b;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.ce-optional-section > header {
+  position: sticky;
+  top: -1px;
+  z-index: 8;
+  margin-top: -1px;
+  border-top: 1px solid rgba(29, 29, 31, .14);
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #fff 0%, #fff 70%, #f8f8f9 100%);
+}
+
+.ce-optional-section > header,
+.ce-field-section > header {
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(180deg, #fff, #f8f8f9);
+
+  span {
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  p {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+
+  button {
+    height: 26px;
+    border: none;
+    border-radius: 7px;
+    background: #1d1d1f;
+    color: #fff;
+    padding: 0 9px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}
+
+.ce-optional-section > header,
+.ce-field-section > header {
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
+.ce-field-section > header {
+  position: sticky;
+  top: -1px;
+  z-index: 8;
+  margin-top: -1px;
+  border-top: 1px solid rgba(29, 29, 31, .14);
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #fff 0%, #fff 70%, #f8f8f9 100%);
+}
+
+.ce-optional-section > header > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button {
+    background: #f2f2f7;
+    color: $text-secondary;
+  }
+}
+
+.ce-optional-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .ce-optional-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid rgba(0, 0, 0, .12);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .03);
+    animation: ce-field-card-in .22s ease both;
+  }
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+
+  .ce-optional-label {
+    min-height: 38px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid rgba(0, 0, 0, .06);
+    background: #fafafa;
+
+    span {
+      font-size: 13px;
+      font-weight: 600;
+      color: $text-primary;
+    }
+  }
+
+  input,
+  textarea {
+    width: 100%;
+    border: 1px solid $border-color;
+    border-radius: 7px;
+    padding: 8px 9px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+    background: #fff;
+  }
+
+  textarea {
+    resize: none;
+  }
+}
+
+.ce-optional-item > .kb-expandable-textarea,
+.ce-optional-item > .ce-action-input-group {
+  padding: 14px;
+}
+
+.ce-optional-item > .ce-action-input-group + .ce-action-input-group {
+  padding-top: 0;
+}
+
+.ce-action-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+}
+
+.ce-optional-delete {
+  @extend .ce-danger-text-btn;
+}
+
+.ce-danger-text-btn {
+  height: 24px;
+  min-width: 42px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 59, 48, .24);
+  border-radius: 6px;
+  background: rgba(255, 59, 48, .08);
+  color: #d70015;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background .15s ease,
+    border-color .15s ease,
+    color .15s ease;
+
+  &:hover {
+    background: #ff3b30;
+    border-color: #ff3b30;
+    color: #fff;
+  }
+}
+
+.ce-field-empty {
+  padding: 28px;
+  color: $text-tertiary;
+  text-align: center;
+  font-size: 12px;
+}
+
+.ce-field-list {
+  overflow: visible;
+  overscroll-behavior: contain;
+}
+
+.ce-field-card {
+  margin: 14px;
+  border: 1px solid rgba(0, 0, 0, .12);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .03);
+  animation: ce-field-card-in .22s ease both;
+}
+
+.ce-field-card-head {
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fafafa;
+
+  strong {
+    font-size: 13px;
+    color: $text-primary;
+  }
+
+  button { flex-shrink: 0; }
+}
+
+@keyframes ce-field-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ce-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    border: 1px solid $border-color;
+    border-radius: 7px;
+    padding: 0 9px;
+    min-height: 34px;
+    font-size: 12px;
+    font-family: inherit;
+    box-sizing: border-box;
+    resize: vertical;
+  }
+
+  textarea {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+}
+
+.ce-field-wide {
+  grid-column: 1 / -1;
+}
+
+.ce-desc-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ce-control-insert-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(29, 29, 31, .14);
+  border-radius: 7px;
+  background: #fff;
+  color: rgba(29, 29, 31, .76);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background .15s ease,
+    border-color .15s ease,
+    color .15s ease;
+
+  &:hover {
+    border-color: #1d1d1f;
+    background: #1d1d1f;
+    color: #fff;
+  }
+}
+
+.ce-column-name-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+
+  input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.ce-column-name-select {
+  width: 104px;
+  flex-shrink: 0;
+
+  :deep(.csel-trigger) {
+    min-height: 34px;
+    height: 34px;
+  }
+}
+
+.ce-form-preview {
+  min-height: 0;
+  background: #fff;
+  border: 1px solid rgba(29, 29, 31, .16);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 10px 24px rgba(0, 0, 0, .04);
+}
+
+.ce-list-visual {
+  flex-shrink: 0;
+  padding: 14px;
+  border-bottom: 1px solid $border-color;
+  background: #fafafa;
+}
+
+.ce-list-visual-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+
+  strong {
+    font-size: 13px;
+    color: $text-primary;
+  }
+
+  span {
+    font-size: 11px;
+    color: $text-tertiary;
+    background: #f2f2f7;
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+}
+
+.ce-preview-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ce-preview-chip {
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  background: #fff;
+  color: $text-primary;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color .15s ease,
+    background .15s ease,
+    box-shadow .15s ease;
+
+  &:hover {
+    border-color: rgba(29, 29, 31, .22);
+    background: #f7f7f8;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+  }
+}
+
+.ce-list-visual-empty {
+  margin: 0;
+  color: $text-tertiary;
+  font-size: 12px;
+  border: 1px dashed $border-color;
+  border-radius: 8px;
+  padding: 22px 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.ce-form-kind-tabs {
+  justify-self: center;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(29, 29, 31, .1);
+  border-radius: 10px;
+  background: #f3f3f4;
+
+  button {
+    height: 28px;
+    border: none;
+    border-radius: 7px;
+    min-width: 58px;
+    padding: 0 14px;
+    background: transparent;
+    color: $text-secondary;
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      background .16s ease,
+      color .16s ease,
+      box-shadow .16s ease,
+      transform .16s ease;
+
+    &.is-active {
+      background: #fff;
+      color: $text-primary;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, .11);
+      transform: translateY(-1px);
+    }
+  }
+}
+
+.ce-form-pane-swap-enter-active,
+.ce-form-pane-swap-leave-active {
+  transition:
+    opacity .18s ease,
+    transform .18s ease;
+}
+
+.ce-form-pane-swap-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.ce-form-pane-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.ce-form-preview-swap-enter-active,
+.ce-form-preview-swap-leave-active {
+  transition:
+    opacity .16s ease,
+    transform .16s ease;
+}
+
+.ce-form-preview-swap-enter-from {
+  opacity: 0;
+  transform: translateX(5px);
+}
+
+.ce-form-preview-swap-leave-to {
+  opacity: 0;
+  transform: translateX(-5px);
+}
+
+.ce-search-visual {
+  flex-shrink: 0;
+  padding: 14px;
+  border-bottom: 1px solid $border-color;
+  background: #fafafa;
+}
+
+.ce-search-visual-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+
+  button {
+    height: 28px;
+    border: none;
+    border-radius: 7px;
+    padding: 0 12px;
+    background: #1d1d1f;
+    color: #fff;
+    font-size: 12px;
+
+    &.is-secondary {
+      background: #f2f2f7;
+      color: $text-secondary;
+    }
+  }
+}
+
+.ce-form-preview-header {
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid $border-color;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+
+  button {
+    height: 26px;
+    border: none;
+    border-radius: 7px;
+    background: #1d1d1f;
+    color: #fff;
+    padding: 0 10px;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.ce-form-preview pre {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: $text-secondary;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ce-form-footer {
+  height: 56px;
+  padding: 0 18px;
+  border-top: 1px solid $border-color;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 // ─── Markdown Preview Dialog ───

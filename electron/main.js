@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, shell, clipboard } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,8 @@ let isQuitting = false;
 let isQuitApproved = false;
 let pendingAppQuitPromise = null;
 let mainCloseRequestedFromRenderer = false;
+let mindNodesClipboardPayload = null;
+let mindNodesClipboardText = null;
 
 // amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
 let amindMain = null;
@@ -257,6 +259,21 @@ ipcMain.on('open-url', (event, url) => {
 });
 ipcMain.handle('ping', async () => 'pong');
 
+ipcMain.handle('clipboard:writeMindNodes', async (event, { text, payload } = {}) => {
+  if (typeof payload !== 'string' || !payload) return false;
+  const plainText = typeof text === 'string' ? text : '';
+  clipboard.writeText(plainText);
+  mindNodesClipboardText = plainText;
+  mindNodesClipboardPayload = payload;
+  return true;
+});
+
+ipcMain.handle('clipboard:readMindNodes', async () => {
+  if (!mindNodesClipboardPayload) return null;
+  if (clipboard.readText() !== mindNodesClipboardText) return null;
+  return mindNodesClipboardPayload;
+});
+
 ipcMain.on('set-traffic-lights', (event, visible) => {
   if (mainWindow && process.platform === 'darwin') {
     mainWindow.setWindowButtonVisibility(visible);
@@ -279,7 +296,8 @@ ipcMain.handle('wm:open', async (event, options) => {
   };
 
   const win = await windowManager.createOrFocus(key, config);
-  if (!existedBefore) {
+  const shouldKeepMainVisible = key === 'admin-debug-console' || opts.hideMainOnOpen === false;
+  if (!existedBefore && !shouldKeepMainVisible) {
     windowManager.hide('main');
   }
   return { key, id: win.id };

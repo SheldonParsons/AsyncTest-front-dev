@@ -32,6 +32,10 @@ export interface IElectronAPI {
   invoke: (event: any) => void;
   wm: any,
   platform: any,
+  mindClipboard?: {
+    writeNodeClipboard: (payload: { text: string; payload: string }) => Promise<boolean>;
+    readNodeClipboard: () => Promise<string | null>;
+  },
   amind: any,
   generator: any,
   projectFiles?: {
@@ -47,9 +51,8 @@ export interface IElectronAPI {
     }>;
   },
   harness: {
-    chatStream: (payload: { message: string; model?: string }) => Promise<{ requestId: string }>;
-    onChatStream: (callback: (data: any) => void) => () => void;
-    request: (method: string, path: string, body?: any) => Promise<{ status: number; data: any; error?: string }>;
+    storeGet: (key: string) => Promise<any>;
+    storeSet: (key: string, value: any) => Promise<boolean>;
   }
 }
 

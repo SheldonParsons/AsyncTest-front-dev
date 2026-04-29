@@ -33,6 +33,7 @@
 
       <!-- Type badge: nav subtype 中文 / module 标识 / rule / shared -->
       <span v-if="node.type === 'nav' && node.subtype" class="tree-node-badge">{{ navSubtypeLabel }}</span>
+      <span v-else-if="node.type === 'page'" class="tree-node-badge tree-node-badge--page">页面</span>
       <span v-else-if="node.type === 'module'" class="tree-node-badge tree-node-badge--module">模块</span>
       <span v-else-if="node.type === 'rule'" class="tree-node-badge tree-node-badge--rule">规则</span>
       <span v-else-if="node.type === 'shared'" class="tree-node-badge tree-node-badge--shared">共享</span>
@@ -224,6 +225,11 @@ $text-tertiary: rgba(0, 0, 0, 0.35);
   &--module {
     background: rgba(108, 99, 255, 0.12);
     color: #6c63ff;
+  }
+
+  &--page {
+    background: rgba(52, 199, 89, 0.12);
+    color: #1f8f3a;
   }
 
   &--rule {

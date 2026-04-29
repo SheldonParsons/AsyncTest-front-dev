@@ -13,9 +13,10 @@
       <div class="ne-meta-row">
         <label class="ne-meta">
           <span class="ne-meta-label">导航类型</span>
-          <AppSelect
+          <CustomSelect
             v-model="form.subtype"
             :options="subtypeOptions"
+            size="sm"
             @change="markDirty"
           />
         </label>
@@ -33,7 +34,19 @@
 
     <section class="ne-body">
       <div class="ne-section">
-        <label class="ne-label">导航说明</label>
+        <div class="ne-label-row">
+          <label class="ne-label">导航说明</label>
+          <div class="ne-template-tools">
+            <CustomSelect
+              v-model="selectedTemplateId"
+              class="ne-template-select"
+              :options="navigationTemplateOptions"
+              placeholder="选择 Prompt 模板"
+              size="sm"
+            />
+            <button class="ne-template-btn" :disabled="!selectedTemplateId" @click="applyTemplate">引用</button>
+          </div>
+        </div>
         <textarea
           v-model="form.description"
           class="ne-textarea"
@@ -47,15 +60,15 @@
       </div>
 
       <div class="ne-section">
-        <label class="ne-label">子节点（导航项）</label>
+        <label class="ne-label">子节点</label>
         <div v-if="children.length === 0" class="ne-empty">
           <p>暂无子节点</p>
-          <p class="ne-empty-sub">在左侧侧栏点击 "+" 给当前节点添加子节点，每个子节点对应一个菜单项 / Tab / 卡片。</p>
+          <p class="ne-empty-sub">在左侧侧栏点击 "+" 给当前节点添加子节点。</p>
         </div>
         <ul v-else class="ne-children">
           <li v-for="c in children" :key="c.id" class="ne-child">
             <span class="ne-child-name">{{ c.name }}</span>
-            <span class="ne-child-type">{{ typeLabel(c.type) }}</span>
+            <span class="ne-child-type">{{ childTypeLabel(c) }}</span>
           </li>
         </ul>
       </div>
@@ -70,10 +83,9 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, computed, watch } from 'vue'
-import type { KBNode, KBNavSubtype, KBTreeKind } from '@/types/knowledge'
-import { updateNode } from '../api'
-import AppSelect from '@/components/common/select/AppSelect.vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import type { KBNode, KBNavSubtype, KBTreeKind, KBTemplate } from '@/types/knowledge'
+import { listTemplates, renderTemplate, updateNode } from '../api'
 
 const props = defineProps<{
   node: KBNode
@@ -105,6 +117,8 @@ const form = reactive({
 
 const dirty = ref(false)
 const saving = ref(false)
+const templates = ref<KBTemplate[]>([])
+const selectedTemplateId = ref('')
 
 const subtypeLabel = computed(() =>
   NAV_SUBTYPES.find(s => s.key === form.subtype)?.label || form.subtype
@@ -121,9 +135,45 @@ const subtypeOptions = computed(() =>
 )
 
 const children = computed(() => props.node.children || [])
+const enabledTextTemplates = computed(() =>
+  templates.value.filter(t => t.status !== 'disabled' && t.kind === 'text')
+)
+const navigationTemplates = computed(() =>
+  enabledTextTemplates.value
+)
+const navigationTemplateOptions = computed(() =>
+  navigationTemplates.value.map(t => ({
+    value: String(t.id),
+    label: `${t.name} · ${templateTargetLabel(t.target)}`,
+  }))
+)
 
-function typeLabel(t: string) {
-  return ({ page: '页面', module: '模块', nav: '导航', rule: '规则', shared: '共享' } as Record<string, string>)[t] || t
+onMounted(loadTemplates)
+
+async function loadTemplates() {
+  try {
+    templates.value = await listTemplates(props.kbId)
+    if (selectedTemplateId.value && !navigationTemplates.value.some(t => String(t.id) === selectedTemplateId.value)) {
+      selectedTemplateId.value = ''
+    }
+  } catch {
+    templates.value = []
+  }
+}
+
+function templateTargetLabel(target?: string) {
+  return ({
+    block_knowledge_description: '块知识描述',
+    navigation_description: '导航说明',
+    node_description: '节点说明',
+  } as Record<string, string>)[target || ''] || '通用'
+}
+
+function childTypeLabel(node: KBNode) {
+  const base = ({ page: '页面', module: '模块', nav: '导航', rule: '规则', shared: '共享' } as Record<string, string>)[node.type] || node.type
+  if (node.type !== 'nav') return base
+  const subtype = NAV_SUBTYPES.find(s => s.key === node.subtype)?.label || node.subtype
+  return subtype ? `${base} · ${subtype}` : base
 }
 
 function markDirty() {
@@ -133,12 +183,38 @@ function markDirty() {
   }
 }
 
+async function applyTemplate() {
+  const templateId = Number(selectedTemplateId.value)
+  if (!templateId) return
+  try {
+    const result = await renderTemplate(props.kbId, {
+      template_id: templateId,
+      target: 'navigation_description',
+      mode: 'text',
+      data: {
+        name: form.name,
+        node_name: form.name,
+        subtype: subtypeLabel.value,
+      },
+    })
+    if (!result.content?.trim()) return
+    form.description = form.description?.trim()
+      ? `${form.description.trim()}\n\n${result.content.trim()}`
+      : result.content.trim()
+    markDirty()
+  } catch (e: any) {
+    window.$toast?.({ title: e.message || '引用 Prompt 模板失败', type: 'error' })
+  }
+}
+
 watch(() => props.node.id, () => {
   // Switching nodes — reset form from incoming props.
   form.name = props.node.name
   form.description = props.node.description || ''
   form.subtype = (props.node.subtype || 'section') as KBNavSubtype
   form.tree = (props.node.tree || 'business') as KBTreeKind
+  selectedTemplateId.value = ''
+  loadTemplates()
   dirty.value = false
   emit('dirty-changed', false)
 })
@@ -223,9 +299,34 @@ $text-secondary: rgba(0, 0, 0, 0.55);
 
 .ne-body { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 24px; }
 .ne-section { display: flex; flex-direction: column; gap: 8px; }
+.ne-label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
 .ne-label {
   font-size: 11.5px; font-weight: 600; color: $text-secondary;
   letter-spacing: 0.4px; text-transform: uppercase;
+}
+.ne-template-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ne-template-select {
+  width: 168px;
+}
+.ne-template-btn {
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: $text-primary;
+  color: #fff;
+  font-size: 12px;
+  padding: 0 10px;
+  cursor: pointer;
+  &:disabled { opacity: .4; cursor: not-allowed; }
 }
 .ne-textarea {
   border: 1px solid $border; border-radius: 8px; padding: 10px 12px;

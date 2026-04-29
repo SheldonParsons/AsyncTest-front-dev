@@ -53,8 +53,8 @@
           </button>
         </template>
         <template v-else>
-          <span class="kbe-sidebar-label">模板列表</span>
-          <button class="kbe-icon-btn" @click="addTemplate" title="添加模板">
+          <span class="kbe-sidebar-label">Prompt 模板</span>
+          <button class="kbe-icon-btn" @click="addTemplate" title="添加 Prompt 模板">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -126,8 +126,8 @@
         <!-- Template list -->
         <template v-else>
           <div v-if="templates.length === 0" class="kbe-sidebar-empty">
-            <p>暂无模板</p>
-            <button class="kbe-text-btn" @click="addTemplate">创建第一个模板</button>
+            <p>暂无 Prompt 模板</p>
+            <button class="kbe-text-btn" @click="addTemplate">创建第一个 Prompt 模板</button>
           </div>
           <div v-else class="kbe-item-list">
             <div
@@ -211,7 +211,7 @@
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" />
           </svg>
-          <p class="kbe-main-empty-text">选择左侧模板开始编辑</p>
+          <p class="kbe-main-empty-text">选择左侧 Prompt 模板开始编辑</p>
         </div>
         <TemplateEditor v-else :template="selectedTemplate" :kb-id="kbId" @saved="onTemplateSaved" @deleted="onTemplateDeleted" @confirm-delete="onTemplateConfirmDelete" />
       </template>
@@ -312,7 +312,7 @@ type ViewMode = 'raw' | 'wiki' | 'template'
 const views: { key: ViewMode; label: string }[] = [
   { key: 'raw', label: '原始数据' },
   { key: 'wiki', label: 'Wiki' },
-  { key: 'template', label: '模板/规范' },
+  { key: 'template', label: 'Prompt 模板' },
 ]
 const currentView = ref<ViewMode>('raw')
 
@@ -668,10 +668,17 @@ async function loadTemplates() {
 function selectTemplate(tmpl: KBTemplate) { selectedTemplateId.value = tmpl.id }
 
 async function addTemplate() {
-  const name = await showInputDialog('添加模板', '输入模板名称')
+  const name = await showInputDialog('添加 Prompt 模板', '输入 Prompt 模板名称')
   if (!name) return
   try {
-    const tmpl = await createTemplate(kbId.value, { name })
+    const tmpl = await createTemplate(kbId.value, {
+      name,
+      type: 'prompt',
+      kind: 'text',
+      target: 'block_knowledge_description',
+      status: 'enabled',
+      content: '',
+    })
     await loadTemplates()
     selectedTemplateId.value = tmpl.id
     window.$toast({ title: '已创建', type: 'success' })
@@ -684,7 +691,7 @@ function onTemplateSaved() { loadTemplates() }
 function onTemplateDeleted() { selectedTemplateId.value = null; loadTemplates() }
 
 async function onTemplateConfirmDelete(tmpl: KBTemplate) {
-  const ok = await showConfirmDialog('删除模板', `确定删除模板「${tmpl.name}」？此操作不可恢复。`)
+  const ok = await showConfirmDialog('删除 Prompt 模板', `确定删除 Prompt 模板「${tmpl.name}」？此操作不可恢复。`)
   if (!ok) return
   try {
     await deleteTemplate(kbId.value, tmpl.id)

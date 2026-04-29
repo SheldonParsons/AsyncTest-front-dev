@@ -6,14 +6,23 @@
       <commonHeader ref="commonHeaderRef" style="height: inherit;" @up="upZIndex" class="ui-layer" />
     </div>
     <router-view v-if="flag" class="main-router" @doubleCheckLoginStatus="check_login_status" />
+    <button
+      v-if="isMainWindow && route.path !== '/login'"
+      class="admin-debug-entry"
+      title="调试台"
+      @click="goDebugConsole"
+    >
+      <el-icon><Monitor /></el-icon>
+    </button>
     <ToastView ref="toastRef" />
     <UpdateDialog v-if="isMainWindow"></UpdateDialog>
   </div>
 </template>
 <script setup lang="ts">
 import commonHeader from "./components/layout/headers/commonHeader.vue";
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { onMounted, ref, computed } from "vue";
+import { Monitor } from '@element-plus/icons-vue'
 import ToastView from '@/views/api/public_dialog/motion_dev_component/toast_animation.vue'
 import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
 
@@ -23,6 +32,7 @@ const isMainWindow = computed(() => (route.query.windowKey || 'main') === 'main'
 const toastRef = ref()
 const commonHeaderRef = ref()
 const route = useRoute()
+const router = useRouter()
 const flag = ref(false);
 
 onMounted(() => {
@@ -53,6 +63,25 @@ function switchWindowBtn(open: boolean) {
 function upZIndex(flag: boolean) {
   upHeaderZIndex.value = flag;
 }
+
+function goDebugConsole() {
+  if (isElectron && window.electronAPI?.wm?.open) {
+    window.electronAPI.wm.open({
+      key: 'admin-debug-console',
+      title: 'Admin Debug Console',
+      route: '/admin/debug',
+      width: 1280,
+      height: 820,
+      minWidth: 1040,
+      minHeight: 680,
+      parentKey: null,
+      hideMainOnOpen: false,
+      closeBehavior: 'close',
+    })
+    return
+  }
+  router.push({ name: 'adminDebugConsole' })
+}
 </script>
 
 <style lang="scss">
@@ -77,5 +106,27 @@ function upZIndex(flag: boolean) {
   -webkit-app-region: no-drag;
   border-bottom: 1px solid #dcdfe6;
   z-index: 100;
+}
+
+.admin-debug-entry {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1000;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 118, 110, .24);
+  background: #111827;
+  color: #ecfeff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .22);
+  -webkit-app-region: no-drag;
+}
+
+.admin-debug-entry:hover {
+  background: #0f766e;
 }
 </style>

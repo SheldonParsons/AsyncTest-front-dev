@@ -98,8 +98,9 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { streamHarnessSse } from '@/api/harness'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -125,10 +126,6 @@ const scrollAnchorRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const chatSessions = ref<ChatSession[]>([])
 const activeSessionIndex = ref(-1)
-
-// Current streaming request ID
-let currentRequestId: string | null = null
-let removeStreamListener: (() => void) | null = null
 
 const canSend = computed(() => inputText.value.trim().length > 0 && !isStreaming.value)
 
@@ -180,37 +177,28 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const result = await window.electronAPI.harness.chatStream({ message: text })
-    currentRequestId = result.requestId
+    await streamHarnessSse('/chat', { message: text }, {
+      onChunk: (content) => {
+        assistantMsg.content += content
+        scrollToBottom(false)
+      },
+      onDone: () => {
+        assistantMsg.streaming = false
+        isStreaming.value = false
+        scrollToBottom()
+        updateSessionTitle()
+      },
+      onError: (message) => {
+        assistantMsg.content += message || '请求出错'
+        assistantMsg.streaming = false
+        isStreaming.value = false
+        scrollToBottom()
+      },
+    })
   } catch (err: any) {
-    assistantMsg.content = '连接失败，请确认 Harness 后端已启动。'
+    assistantMsg.content = '连接失败，请确认 Django 后端已启动。'
     assistantMsg.streaming = false
     isStreaming.value = false
-    scrollToBottom()
-  }
-}
-
-// Handle stream events from Electron
-function handleStreamEvent(data: any) {
-  if (!currentRequestId || data.requestId !== currentRequestId) return
-
-  const lastMsg = messages.value[messages.value.length - 1]
-  if (!lastMsg || lastMsg.role !== 'assistant') return
-
-  if (data.type === 'chunk') {
-    lastMsg.content += data.content
-    scrollToBottom(false)
-  } else if (data.type === 'done') {
-    lastMsg.streaming = false
-    isStreaming.value = false
-    currentRequestId = null
-    scrollToBottom()
-    updateSessionTitle()
-  } else if (data.type === 'error') {
-    lastMsg.content += data.error || '请求出错'
-    lastMsg.streaming = false
-    isStreaming.value = false
-    currentRequestId = null
     scrollToBottom()
   }
 }
@@ -239,7 +227,6 @@ function startNewChat() {
   }
   messages.value = []
   activeSessionIndex.value = -1
-  currentRequestId = null
   isStreaming.value = false
   nextTick(() => inputRef.value?.focus())
 }
@@ -260,13 +247,7 @@ function goBack() {
 
 // Lifecycle
 onMounted(() => {
-  removeStreamListener = window.electronAPI.harness.onChatStream(handleStreamEvent)
   nextTick(() => inputRef.value?.focus())
-})
-
-onBeforeUnmount(() => {
-  removeStreamListener?.()
-  removeStreamListener = null
 })
 </script>
 

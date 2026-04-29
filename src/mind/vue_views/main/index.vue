@@ -9924,6 +9924,11 @@ async function syncClipboardStateToSystemClipboard(clipboardState: InternalClipb
   if (clipboardState.type === 'empty') return;
   const plainText = getNodeClipboardSystemText(clipboardState);
   lastCopiedNodeClipboardPlainText = plainText || null;
+  const payload = serializeNodeClipboardPayload(clipboardState);
+  if (window.electronAPI?.mindClipboard?.writeNodeClipboard) {
+    const success = await window.electronAPI.mindClipboard.writeNodeClipboard({ text: plainText, payload });
+    if (success) return;
+  }
   await tools.copyText(plainText);
 }
 
@@ -9934,6 +9939,12 @@ function parseClipboardNodePayload(clipboardData: DataTransfer | null | undefine
   const plainText = clipboardData.getData('text/plain');
   if (!plainText.startsWith(NODE_CLIPBOARD_TEXT_PREFIX)) return null;
   return deserializeNodeClipboardPayload(plainText.slice(NODE_CLIPBOARD_TEXT_PREFIX.length));
+}
+
+async function readElectronNodeClipboardPayload() {
+  if (!window.electronAPI?.mindClipboard?.readNodeClipboard) return null;
+  const raw = await window.electronAPI.mindClipboard.readNodeClipboard();
+  return deserializeNodeClipboardPayload(raw);
 }
 
 function normalizeSelectedTargets(options?: { allowRoot?: boolean; collapseToRootIfSelected?: boolean }) {
@@ -12271,7 +12282,9 @@ async function onWindowPaste(event: ClipboardEvent) {
   const pasteTargetNodeIds = getPasteTargetNodeIds();
   const clipboardData = event.clipboardData;
   const items = Array.from(clipboardData?.items ?? []);
-  const nodeClipboardState = resolvePreferredNodeClipboardState(parseClipboardNodePayload(clipboardData), clipboardData);
+  const clipboardEventNodeState = parseClipboardNodePayload(clipboardData);
+  const electronNodeState = clipboardEventNodeState ? null : await readElectronNodeClipboardPayload();
+  const nodeClipboardState = resolvePreferredNodeClipboardState(clipboardEventNodeState ?? electronNodeState, clipboardData);
   const editingTextActive = isTextEditingActive(event.target);
   if (nodeClipboardState && pasteTargetNodeIds.length && !editingTextActive) {
     event.preventDefault();

@@ -48,6 +48,11 @@ const routes = [
     path: '/agent/knowledge/:kbId',
     name: 'agentKnowledgeEditor',
     component: () => import('@/views/electron_views/agent/knowledge/editor.vue')
+  },
+  {
+    path: '/admin/debug',
+    name: 'adminDebugConsole',
+    component: () => import('@/views/electron_views/admin/debug/index.vue')
   }] : []),
   {
     path: '/login',

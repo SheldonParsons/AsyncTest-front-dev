@@ -4,14 +4,13 @@
       <input
         v-model="form.name"
         class="tmpl-name-input"
-        placeholder="模板名称"
+        placeholder="Prompt 模板名称"
         @blur="autoSave"
       />
-      <select v-model="form.type" class="tmpl-type-select" @change="autoSave">
-        <option value="prompt">提示词</option>
-        <option value="rule">规则</option>
-        <option value="format">格式</option>
-      </select>
+      <CustomSelect v-model="form.type" class="tmpl-type-select" :options="typeOptions" size="sm" @change="autoSave" />
+      <CustomSelect v-model="form.kind" class="tmpl-type-select" :options="kindOptions" size="sm" @change="autoSave" />
+      <CustomSelect v-model="form.target" class="tmpl-target-select" :options="targetOptions" size="sm" @change="autoSave" />
+      <CustomSelect v-model="form.status" class="tmpl-type-select" :options="statusOptions" size="sm" @change="autoSave" />
       <div class="tmpl-editor-actions">
         <button class="tmpl-save-btn" @click="save" :disabled="saving">
           {{ saving ? '保存中…' : '保存' }}
@@ -23,7 +22,7 @@
     <textarea
       v-model="form.content"
       class="tmpl-content-area"
-      placeholder="在此编辑模板内容…"
+      placeholder="在此编辑 Prompt 模板内容。可使用 {{name}} 这样的变量占位。"
       @blur="autoSave"
     />
   </div>
@@ -48,15 +47,43 @@ const emit = defineEmits<{
 const saving = ref(false)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+const typeOptions = [
+  { value: 'prompt', label: 'Prompt' },
+  { value: 'rule', label: '规则' },
+  { value: 'format', label: '格式' },
+]
+
+const kindOptions = [
+  { value: 'text', label: '文本型' },
+  { value: 'form', label: '表单型' },
+]
+
+const targetOptions = [
+  { value: 'block_knowledge_description', label: '块知识描述' },
+  { value: 'navigation_description', label: '导航说明' },
+  { value: 'node_description', label: '节点说明' },
+]
+
+const statusOptions = [
+  { value: 'enabled', label: '启用' },
+  { value: 'disabled', label: '停用' },
+]
+
 const form = reactive({
   name: '',
   type: 'prompt' as string,
+  kind: 'text' as 'text' | 'form',
+  target: 'block_knowledge_description',
+  status: 'enabled',
   content: '',
 })
 
 watch(() => props.template, (t) => {
   form.name = t.name
   form.type = t.type || 'prompt'
+  form.kind = t.kind || 'text'
+  form.target = t.target || 'block_knowledge_description'
+  form.status = t.status || 'enabled'
   form.content = t.content || ''
 }, { immediate: true })
 
@@ -72,6 +99,10 @@ async function save() {
     await updateTemplate(props.kbId, props.template.id, {
       name: form.name,
       type: form.type,
+      kind: form.kind,
+      target: form.target,
+      status: form.status,
+      schema: props.template.schema || {},
       content: form.content,
     })
     emit('saved')
@@ -127,19 +158,14 @@ $accent: #1d1d1f;
   }
 }
 
-.tmpl-type-select {
-  padding: 6px 10px;
-  border: 1px solid $border-color;
-  border-radius: 8px;
-  font-size: 12px;
-  color: $text-secondary;
-  background: $bg-sidebar;
-  outline: none;
-  font-family: inherit;
+.tmpl-type-select,
+.tmpl-target-select {
+  flex-shrink: 0;
+  width: 96px;
+}
 
-  &:focus {
-    border-color: $accent;
-  }
+.tmpl-target-select {
+  width: 144px;
 }
 
 .tmpl-editor-actions {
