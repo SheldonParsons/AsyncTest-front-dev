@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.9",
+  "version": "2.2.10",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 缺陷修复：优化Windows系统下拖拽和右键菜单出现的时机冲突的问题\",\"publishDate\":\"2026-04-21\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 缺陷修复：修复跨窗口剪贴丢失节点结构的问题\",\"publishDate\":\"2026-04-29\"}"
     },
     "publish": [
       {
