@@ -34,6 +34,8 @@ export interface KBBlock {
   summary?: string            // 短摘要（用于模式 B 画布缩略显示）
   summary_content_hash?: string  // SHA-256 of content at the moment summary was generated; used for stale detection
   summary_updated_at?: string    // ISO timestamp of the last summary write
+  concept_extract_content_hash?: string // SHA-256 of content at the moment concept extraction was run
+  concept_extract_updated_at?: string   // ISO timestamp of the last concept extraction run
   sort_order?: number            // server-assigned ordering hint
   layout: {
     x: number

@@ -90,10 +90,31 @@
               <span
                 v-else-if="!(block.content || '').trim() || !(block.summary || '').trim()"
                 class="ce-block-incomplete-tag"
-                :title="!(block.content || '').trim() ? '尚未填写知识描述' : '尚未生成摘要（保存时自动生成）'"
+                :title="!(block.content || '').trim() ? '尚未填写知识描述' : '尚未生成摘要（需手动生成）'"
               >{{ !(block.content || '').trim() ? '缺内容' : '缺摘要' }}</span>
+              <span
+                v-if="conceptExtractionTagText(block)"
+                class="ce-block-concept-missing-tag"
+                :title="conceptExtractionTagTitle(block)"
+              >{{ conceptExtractionTagText(block) }}</span>
             </span>
             <div class="ce-block-actions">
+              <button
+                v-show="!isDragging || isResizing"
+                class="ce-block-summary-btn"
+                :class="{ 'ce-block-summary-btn--loading': generatingBlockSummaryIds.has(block.id) }"
+                :disabled="generatingBlockSummaryIds.has(block.id) || !(block.content || '').trim()"
+                @click.stop="generateBlockSummaryForBlock(block)"
+                @pointerdown.stop
+                :title="generatingBlockSummaryIds.has(block.id) ? '正在生成摘要' : '生成块摘要'"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <path d="M14 2v6h6"/>
+                  <path d="M8 13h8"/>
+                  <path d="M8 17h5"/>
+                </svg>
+              </button>
               <button
                 v-show="!isDragging || isResizing"
                 class="ce-block-edit-btn"
@@ -155,7 +176,12 @@
         </header>
 
         <section class="ce-summary-doc-section">
-          <h2 class="ce-summary-doc-h2">节点摘要</h2>
+          <div class="ce-summary-doc-section-head">
+            <h2 class="ce-summary-doc-h2">节点摘要</h2>
+            <button class="ce-summary-doc-link-btn" @click="openNodeSummaryDialog">
+              {{ hasNodeSummary ? '管理摘要' : '生成摘要' }}
+            </button>
+          </div>
           <div v-if="hasNodeSummary" class="ce-md-content" v-html="nodeSummaryDocHtml"></div>
           <div v-else class="ce-summary-doc-warn">
             <div class="ce-summary-doc-warn-text">
@@ -244,6 +270,12 @@
                     <div class="ce-ai-toolbar">
                       <button
                         class="ce-ai-btn ce-ai-btn--text"
+                        :disabled="summaryState === 'streaming'"
+                        @click="generateBlockSummary"
+                        title="显式生成当前块摘要"
+                      >{{ summaryState === 'streaming' ? '生成中…' : '生成摘要' }}</button>
+                      <button
+                        class="ce-ai-btn ce-ai-btn--text"
                         @click="summaryViewMode = summaryViewMode === 'edit' ? 'preview' : 'edit'"
                         :title="summaryViewMode === 'edit' ? '切换到预览' : '切换到编辑'"
                       >{{ summaryViewMode === 'edit' ? '预览' : '编辑' }}</button>
@@ -256,9 +288,6 @@
                       <div v-else class="ce-edit-preview-empty">暂无摘要…</div>
                     </div>
                   </div>
-                  <p v-if="!panelDraft.summary?.trim()" class="ce-edit-summary-hint">
-                    摘要为空时，保存后将自动生成摘要
-                  </p>
                 </div>
               </div>
 
@@ -288,6 +317,18 @@
                           @click="openListFormDialog"
                           title="使用表单生成知识描述"
                         >表单生成</button>
+                        <button
+                          class="ce-ai-btn ce-ai-btn--text"
+                          :disabled="conceptExtractState === 'running'"
+                          @click="extractConceptsFromDraft"
+                          title="显式提取当前块中的概念定义"
+                        >{{ conceptExtractState === 'running' ? '分析中…' : '分析概念影响' }}</button>
+                        <button
+                          class="ce-ai-btn ce-ai-btn--text"
+                          :disabled="conceptExtractState === 'running'"
+                          @click="openConceptImpactHistory"
+                          title="查看当前块最近一次概念影响分析记录"
+                        >概念影响记录</button>
                         <button
                           v-if="polishOriginal !== null && polishState !== 'streaming'"
                           class="ce-ai-btn ce-ai-btn--text"
@@ -725,25 +766,266 @@
         </div>
       </Transition>
     </Teleport>
+    <!-- Concept extraction progress dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div
+          v-if="showConceptExtractDialog"
+          class="ce-concept-dialog-overlay"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="ce-concept-dialog">
+            <header class="ce-concept-dialog-header">
+              <div>
+                <p>{{ conceptRunTitle }}</p>
+                <h2>{{ conceptDialogTitle }}</h2>
+              </div>
+              <button
+                class="ce-md-dialog-close"
+                :disabled="conceptExtractState === 'running'"
+                @click="showConceptExtractDialog = false"
+                aria-label="关闭"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </header>
+            <div ref="conceptExtractDialogBodyRef" class="ce-concept-dialog-body">
+              <TransitionGroup name="ce-log-card" tag="div" class="ce-concept-dialog-list">
+                <div
+                  v-for="(log, logIndex) in conceptExtractLogs"
+                  :key="log._key"
+                  :class="[
+                    'ce-concept-dialog-item',
+                    `is-${log.type || 'progress'}`,
+                    { 'is-latest': conceptExtractState === 'running' && logIndex === conceptExtractLogs.length - 1 },
+                  ]"
+                >
+                  <span>{{ log.seq || logIndex + 1 }}</span>
+                  <div>
+                    <strong>{{ log.message }}</strong>
+                    <em v-if="formatLogDuration(log)">{{ formatLogDuration(log) }}</em>
+                    <p v-if="conceptLogSummary(log)">{{ conceptLogSummary(log) }}</p>
+                  </div>
+                </div>
+              </TransitionGroup>
+              <div v-if="!conceptExtractLogs.length" class="ce-concept-dialog-empty">等待后端响应…</div>
+              <section v-if="conceptImpactResult" class="ce-impact-result">
+                <div v-if="conceptImpactReadOnly" class="ce-impact-readonly-note">
+                  最近一次分析记录仅用于回看；如需继续处理，请基于当前块内容重新分析。
+                </div>
+                <details
+                  v-if="hasConceptImpactDebug"
+                  class="ce-impact-debug"
+                >
+                  <summary>
+                    调试信息
+                    <span>{{ conceptImpactDebugSummary }}</span>
+                  </summary>
+                  <div class="ce-impact-debug-grid">
+                    <section>
+                      <h4>候选概念</h4>
+                      <div v-if="!conceptImpactResult.concept_candidates?.length" class="ce-impact-debug-empty">暂无候选概念。</div>
+                      <article
+                        v-for="(candidate, idx) in conceptImpactResult.concept_candidates"
+                        :key="`${candidate.candidate_id || candidate.name || idx}-${idx}`"
+                      >
+                        <strong>{{ candidate.name || candidate.candidate_name || '未命名候选' }}</strong>
+                        <p v-if="candidate.definition_candidate">{{ candidate.definition_candidate }}</p>
+                        <p v-if="candidate.usage_in_block"><b>块内使用：</b>{{ candidate.usage_in_block }}</p>
+                        <p v-if="candidate.evidence"><b>证据：</b>{{ candidate.evidence }}</p>
+                      </article>
+                    </section>
+                    <section>
+                      <h4>分片评分</h4>
+                      <div v-if="!conceptImpactResult.chunk_scoring_summary?.enabled" class="ce-impact-debug-empty">分片评分未启用或无正式概念可评分。</div>
+                      <template v-else>
+                        <p class="ce-impact-debug-meta">
+                          扫描 {{ conceptImpactResult.chunk_scoring_summary.formal_concept_count || 0 }} 个正式概念，
+                          {{ conceptImpactResult.chunk_scoring_summary.chunk_count || 0 }} 个分片，
+                          命中 {{ conceptImpactResult.chunk_scoring_summary.match_count || 0 }} 条。
+                        </p>
+                        <article
+                          v-for="match in conceptImpactTopChunkMatches"
+                          :key="`${match.candidate_id}-${match.concept_id}-${match.chunk_index}`"
+                        >
+                          <strong>{{ match.candidate_name || match.candidate_id }} → {{ match.concept_name || match.concept_id }}</strong>
+                          <p>{{ match.relation }} / {{ Math.round(Number(match.score || 0)) }} 分</p>
+                          <p v-if="match.reason">{{ match.reason }}</p>
+                        </article>
+                      </template>
+                    </section>
+                    <section>
+                      <h4>质量检查</h4>
+                      <div v-if="!conceptImpactResult.quality_check" class="ce-impact-debug-empty">暂无质量检查。</div>
+                      <template v-else>
+                        <p class="ce-impact-debug-meta">
+                          {{ conceptImpactResult.quality_check.overall_status || 'unknown' }}：
+                          {{ conceptImpactResult.quality_check.summary || '无摘要' }}
+                        </p>
+                        <article
+                          v-for="(issue, idx) in conceptImpactResult.quality_check.issues || []"
+                          :key="idx"
+                        >
+                          <strong>{{ issue.severity || 'warning' }} · {{ issue.type || 'issue' }}</strong>
+                          <p>{{ issue.message || issue.suggestion || JSON.stringify(issue) }}</p>
+                          <p v-if="issue.evidence"><b>证据：</b>{{ issue.evidence }}</p>
+                        </article>
+                      </template>
+                    </section>
+                  </div>
+                </details>
+                <nav class="ce-impact-tabs">
+                  <button
+                    v-for="tab in conceptImpactTabs"
+                    :key="tab.key"
+                    :class="{ active: conceptImpactActiveTab === tab.key }"
+                    @click="conceptImpactActiveTab = tab.key"
+                  >{{ tab.label }}</button>
+                </nav>
+
+                <div v-if="conceptImpactActiveTab === 'mentions'" class="ce-impact-panel">
+                  <div v-if="!conceptImpactResult.mention_inventory?.length" class="ce-impact-empty">暂无提及项。</div>
+                  <article v-for="(mention, idx) in conceptImpactResult.mention_inventory" :key="`${mention.name || idx}-${idx}`" class="ce-impact-card">
+                    <header>
+                      <span>{{ mention.initial_kind || 'unknown' }}</span>
+                      <strong>{{ mention.name || mention.raw_text || '未命名提及项' }}</strong>
+                    </header>
+                    <p v-if="mention.reason">{{ mention.reason }}</p>
+                    <p v-if="mention.evidence"><b>证据：</b>{{ mention.evidence }}</p>
+                  </article>
+                </div>
+
+                <div v-else-if="conceptImpactActiveTab === 'decisions'" class="ce-impact-panel">
+                  <div v-if="!visibleConceptDecisions(conceptImpactResult.decisions).length" class="ce-impact-empty">暂无概念决策。</div>
+                  <article v-for="decision in visibleConceptDecisions(conceptImpactResult.decisions)" :key="decision.id" class="ce-impact-card">
+                    <header>
+                      <span>{{ decisionTypeLabel(decision.decision_type) }}</span>
+                      <strong>{{ decisionDisplayTitle(decision) }}</strong>
+                      <em>{{ decision.status }}</em>
+                    </header>
+                    <div class="ce-impact-concept-pair">
+                      <div>
+                        <b>提取候选</b>
+                        <span>{{ decision.suggested_concept_name || '无候选名称' }}</span>
+                      </div>
+                      <div v-if="decision.target_concept_id || decision.target_concept_name">
+                        <b>匹配正式概念</b>
+                        <span>{{ decision.target_concept?.name || decision.target_concept_name || decision.target_concept_id }}</span>
+                      </div>
+                    </div>
+                    <p v-if="decision.suggested_definition" class="ce-impact-candidate"><b>候选定义：</b>{{ decision.suggested_definition }}</p>
+                    <p v-if="decision.reason">{{ decision.reason }}</p>
+                    <p v-if="decision.evidence"><b>证据：</b>{{ decision.evidence }}</p>
+                    <p v-if="decision.risk"><b>风险：</b>{{ decision.risk }}</p>
+                    <div class="ce-impact-actions" v-if="decision.status === 'pending' && !conceptImpactReadOnly">
+                      <button
+                        class="secondary"
+                        :disabled="isConceptDecisionBusy(decision.id)"
+                        @click="openConceptDecisionDetail(decision)"
+                      >查看概念内容</button>
+                      <button
+                        :class="{ loading: applyingConceptDecisionIds.has(decision.id) }"
+                        :disabled="isConceptDecisionBusy(decision.id)"
+                        @click="confirmConceptDecision(decision)"
+                      >{{ applyingConceptDecisionIds.has(decision.id) ? conceptDecisionApplyingText(decision) : '确认执行' }}</button>
+                      <button
+                        class="danger"
+                        :class="{ loading: ignoringConceptDecisionIds.has(decision.id) }"
+                        :disabled="isConceptDecisionBusy(decision.id)"
+                        @click="dismissConceptDecision(decision)"
+                      >{{ ignoringConceptDecisionIds.has(decision.id) ? '忽略中…' : '忽略' }}</button>
+                    </div>
+                    <div class="ce-impact-actions" v-else>
+                      <button class="secondary" @click="openConceptDecisionDetail(decision)">查看概念内容</button>
+                    </div>
+                  </article>
+                </div>
+
+                <div v-else-if="conceptImpactActiveTab === 'relations'" class="ce-impact-panel">
+                  <div v-if="!conceptImpactResult.relations?.length" class="ce-impact-empty">暂无块概念关系。</div>
+                  <article v-for="relation in conceptImpactResult.relations" :key="relation.id" class="ce-impact-card">
+                    <header>
+                      <span>{{ relationTypeLabel(relation.relation_type) }}</span>
+                      <strong>{{ relation.concept_name }}</strong>
+                      <em>{{ relation.status }}</em>
+                    </header>
+                    <p v-if="relation.usage_summary">{{ relation.usage_summary }}</p>
+                    <p v-if="relation.evidence"><b>证据：</b>{{ relation.evidence }}</p>
+                  </article>
+                  <div class="ce-impact-actions" v-if="!conceptImpactReadOnly && conceptImpactResult.relations?.some(item => item.status === 'pending')">
+                    <button @click="confirmConceptRelations">确认写入关系</button>
+                  </div>
+                </div>
+
+                <div v-else class="ce-impact-panel">
+                  <div v-if="!conceptImpactResult.rewrite_suggestion" class="ce-impact-empty">暂无块重组建议。</div>
+                  <article v-else class="ce-impact-card ce-impact-rewrite">
+                    <header>
+                      <span>无损重组</span>
+                      <strong>{{ conceptImpactResult.rewrite_suggestion.status }}</strong>
+                    </header>
+                    <p v-if="conceptImpactResult.rewrite_suggestion.risk"><b>风险：</b>{{ conceptImpactResult.rewrite_suggestion.risk }}</p>
+                    <div class="ce-impact-markdown" v-html="renderMd(conceptImpactResult.rewrite_suggestion.suggested_content || '')"></div>
+                    <details v-if="conceptImpactResult.rewrite_suggestion.diff">
+                      <summary>查看 diff</summary>
+                      <pre>{{ conceptImpactResult.rewrite_suggestion.diff }}</pre>
+                    </details>
+                    <div class="ce-impact-checklist" v-if="conceptImpactResult.rewrite_suggestion.preserved_facts_checklist?.length">
+                      <strong>信息保留检查</strong>
+                      <ul>
+                        <li v-for="(item, idx) in conceptImpactResult.rewrite_suggestion.preserved_facts_checklist" :key="idx">
+                          {{ item.fact || item.evidence || JSON.stringify(item) }}
+                        </li>
+                      </ul>
+                    </div>
+                    <div class="ce-impact-actions" v-if="conceptImpactResult.rewrite_suggestion.status === 'pending' && !conceptImpactReadOnly">
+                      <button @click="confirmRewriteSuggestion(conceptImpactResult.rewrite_suggestion)">应用重组</button>
+                      <button class="danger" @click="dismissRewriteSuggestion(conceptImpactResult.rewrite_suggestion)">忽略</button>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </div>
+            <footer class="ce-concept-dialog-footer">
+              <button
+                class="ce-edit-footer-ai"
+                :disabled="conceptExtractState === 'running'"
+                @click="rerunConceptImpactAnalysis"
+              >重新分析</button>
+              <button
+                class="ce-edit-footer-close"
+                :disabled="conceptExtractState === 'running'"
+                @click="showConceptExtractDialog = false"
+              >关闭</button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
     <!-- Node summary dialog -->
     <Teleport to="body">
       <Transition name="ce-dialog-fade">
         <div
           v-if="showNodeSummaryDialog"
-          class="ce-md-dialog-overlay"
+          class="ce-md-overlay"
           @click.self="showNodeSummaryDialog = false"
           @keydown.esc="showNodeSummaryDialog = false"
         >
           <div class="ce-md-dialog" role="dialog" aria-modal="true" style="max-width:760px;">
             <div class="ce-md-dialog-header">
               <h2 class="ce-md-dialog-title">
-                节点摘要 · {{ node.name }}
+                {{ nodeSummaryTarget === 'self' ? '节点摘要' : '子树索引摘要' }} · {{ node.name }}
                 <span v-if="hasNodeSummary && nodeStale" class="ce-stale-badge">陈旧</span>
                 <span v-else-if="!hasNodeSummary" class="ce-stale-badge ce-stale-badge--empty">未生成</span>
               </h2>
               <div style="display:flex;gap:6px;align-items:center;">
-                <button class="ce-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'edit' }" @click="nodeSummaryViewMode = 'edit'">编辑</button>
-                <button class="ce-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'preview' }" @click="nodeSummaryViewMode = 'preview'">预览</button>
+                <button class="ce-mode-btn ce-node-summary-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryTarget === 'self' }" @click="switchNodeSummaryTarget('self')">本节点</button>
+                <button class="ce-mode-btn ce-node-summary-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryTarget === 'subtree' }" @click="switchNodeSummaryTarget('subtree')">子树索引</button>
+                <button class="ce-mode-btn ce-node-summary-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'edit' }" @click="nodeSummaryViewMode = 'edit'">编辑</button>
+                <button class="ce-mode-btn ce-node-summary-mode-btn" :class="{ 'ce-mode-btn--active': nodeSummaryViewMode === 'preview' }" @click="nodeSummaryViewMode = 'preview'">预览</button>
                 <button class="ce-md-dialog-close" @click="showNodeSummaryDialog = false" aria-label="关闭">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                     <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -751,26 +1033,111 @@
                 </button>
               </div>
             </div>
-            <div class="ce-md-dialog-body" style="padding:0;">
+            <div class="ce-md-dialog-body ce-node-summary-dialog-body">
               <textarea
                 v-if="nodeSummaryViewMode === 'edit'"
-                class="ce-block-textarea"
-                style="width:100%; min-height:320px; padding:16px; border:none; outline:none; resize:vertical; font-family:inherit; font-size:13px; line-height:1.6;"
+                class="ce-block-textarea ce-node-summary-textarea"
                 v-model="nodeSummaryDraft"
                 :readonly="nodeSummaryState === 'streaming'"
-                placeholder="点击下方“生成摘要”由 AI 自动生成；或手工输入。"
+                :placeholder="nodeSummaryTarget === 'self' ? '点击下方“生成摘要”由 AI 自动生成；或手工输入。' : '点击下方“生成子树索引摘要”生成当前节点整棵子树的召回路标。'"
               />
-              <div v-else class="ce-md-content" style="padding:16px;" v-html="nodeSummaryHtml"></div>
+              <div v-else-if="nodeSummaryDraft.trim()" class="ce-md-content ce-node-summary-preview" v-html="nodeSummaryHtml"></div>
+              <div v-else class="ce-node-summary-empty">
+                {{ nodeSummaryTarget === 'self' ? '当前节点摘要为空。可以点击下方“生成摘要”，或切换到编辑手工填写。' : '当前子树索引摘要为空。可以点击下方“生成子树索引摘要”。' }}
+              </div>
             </div>
             <div class="ce-compare-footer">
+              <span class="ce-node-summary-status" :class="{ 'ce-node-summary-status--running': nodeSummaryState === 'streaming' }">
+                {{ nodeSummaryStatusText }}
+              </span>
               <button
                 class="ce-edit-footer-close"
                 @click="generateNodeSummary"
                 :disabled="nodeSummaryState === 'streaming'"
               >
-                {{ nodeSummaryState === 'streaming' ? '生成中…' : (hasNodeSummary ? '重新生成' : '生成摘要') }}
+                {{ nodeSummaryState === 'streaming' ? '生成中…' : (nodeSummaryTarget === 'self' ? (hasNodeSummary ? '重新生成' : '生成摘要') : '生成子树索引摘要') }}
               </button>
               <button class="ce-edit-footer-close" @click="showNodeSummaryDialog = false">关闭</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Concept decision detail dialog -->
+    <Teleport to="body">
+      <Transition name="ce-dialog-fade">
+        <div
+          v-if="showConceptDecisionDetailDialog && selectedConceptDecision"
+          class="ce-md-dialog-overlay ce-concept-detail-overlay"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="ce-md-dialog ce-concept-detail-dialog">
+            <div class="ce-md-dialog-header">
+              <div class="ce-md-dialog-title-row">
+                <span class="ce-md-dialog-accent" style="background:#111"></span>
+                <h2 class="ce-md-dialog-title">概念决策详情</h2>
+                <span class="ce-md-dialog-type">{{ decisionTypeLabel(selectedConceptDecision.decision_type) }}</span>
+              </div>
+              <button class="ce-md-dialog-close" @click="closeConceptDecisionDetail" aria-label="关闭">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div class="ce-md-dialog-body ce-concept-detail-body">
+              <section class="ce-concept-detail-column">
+                <header>
+                  <span>提取候选</span>
+                  <strong>{{ selectedConceptDecision.suggested_concept_name || '无候选名称' }}</strong>
+                </header>
+                <div class="ce-concept-detail-field" v-if="selectedConceptDecision.suggested_definition">
+                  <b>候选定义</b>
+                  <div class="ce-md-content" v-html="renderMd(selectedConceptDecision.suggested_definition || '')"></div>
+                </div>
+                <div class="ce-concept-detail-field" v-if="selectedConceptDecision.suggested_summary">
+                  <b>Summary</b>
+                  <p>{{ selectedConceptDecision.suggested_summary }}</p>
+                </div>
+                <div class="ce-concept-detail-field" v-if="selectedConceptDecision.suggested_scope">
+                  <b>适用范围</b>
+                  <p>{{ selectedConceptDecision.suggested_scope }}</p>
+                </div>
+                <div class="ce-concept-detail-field" v-if="selectedConceptDecision.suggested_notes">
+                  <b>备注</b>
+                  <div class="ce-md-content" v-html="renderMd(selectedConceptDecision.suggested_notes || '')"></div>
+                </div>
+                <div class="ce-concept-detail-field" v-if="selectedConceptDecision.evidence">
+                  <b>原文证据</b>
+                  <p>{{ selectedConceptDecision.evidence }}</p>
+                </div>
+              </section>
+              <section class="ce-concept-detail-column">
+                <header>
+                  <span>匹配正式概念</span>
+                  <strong>{{ selectedConceptDecision.target_concept?.name || selectedConceptDecision.target_concept_name || '未匹配正式概念' }}</strong>
+                </header>
+                <template v-if="selectedConceptDecision.target_concept?.official_variant">
+                  <div class="ce-concept-detail-field">
+                    <b>正式定义</b>
+                    <div class="ce-md-content" v-html="renderMd(selectedConceptDecision.target_concept.official_variant.definition || '')"></div>
+                  </div>
+                  <div class="ce-concept-detail-field" v-if="selectedConceptDecision.target_concept.official_variant.summary">
+                    <b>Summary</b>
+                    <p>{{ selectedConceptDecision.target_concept.official_variant.summary }}</p>
+                  </div>
+                  <div class="ce-concept-detail-field" v-if="selectedConceptDecision.target_concept.official_variant.scope">
+                    <b>适用范围</b>
+                    <p>{{ selectedConceptDecision.target_concept.official_variant.scope }}</p>
+                  </div>
+                  <div class="ce-concept-detail-field" v-if="selectedConceptDecision.target_concept.official_variant.notes">
+                    <b>备注</b>
+                    <div class="ce-md-content" v-html="renderMd(selectedConceptDecision.target_concept.official_variant.notes || '')"></div>
+                  </div>
+                </template>
+                <div v-else class="ce-impact-empty">没有匹配到正式概念内容。</div>
+              </section>
             </div>
           </div>
         </div>
@@ -783,14 +1150,33 @@
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { marked } from 'marked'
 import { streamHarnessSse } from '@/api/harness'
-import type { KBNode, KBPromptFormSource, KBTemplate } from '@/types/knowledge'
+import type {
+  KBBlockRewriteSuggestion,
+  KBConcept,
+  KBConceptBlockRelation,
+  KBConceptDecision,
+  KBConceptImpactAnalysisResult,
+  KBNode,
+  KBPromptFormSource,
+  KBTemplate,
+} from '@/types/knowledge'
 import ControlDescriptionDialog from '@/components/common/general/ControlDescriptionDialog.vue'
 import {
-  generateBlockSummaryHttp,
+  applyBlockConceptRelations,
+  applyConceptDecision,
+  applyRewriteSuggestion,
   getBlockFormSource,
+  getNodeSubtreeSummary,
+  ignoreConceptDecision,
+  ignoreRewriteSuggestion,
+  listBlockConceptDecisions,
+  listBlockConceptRelations,
+  listBlockRewriteSuggestions,
+  listConcepts,
   listTemplates,
   renderTemplate,
   saveBlockFormSource,
+  updateNode,
 } from '../api'
 import {
   type KBBlock,
@@ -814,6 +1200,7 @@ const emit = defineEmits<{
   (e: 'dirty-changed', dirty: boolean): void
   (e: 'summary-updated'): void
   (e: 'refresh'): void
+  (e: 'concepts-updated'): void
 }>()
 
 // ─── Constants ───
@@ -831,7 +1218,7 @@ function snapToGrid(v: number): number {
 }
 
 const typeLabels: Record<string, string> = {
-  directory: '知识', page: '页面', component: '组件', standalone: '独立', module: '模块', shared: '共享资产',
+  directory: '知识', page: '页面', component: '组件', standalone: '独立', module: '模块', shared: '共享资产', concept: '概念',
 }
 
 const blockTypes: { value: KBBlockType; label: string }[] = [
@@ -882,8 +1269,8 @@ const mdDialogBlockId = ref<string | null>(null)
 // Draft state for the edit dialog (decoupled from the actual block)
 const panelDraft = reactive<{
   name: string; type: KBBlockType; content: string
-  images: KBBlockImage[]; summary: string
-}>({ name: '', type: 'region', content: '', images: [], summary: '' })
+  images: KBBlockImage[]; summary: string; summary_content_hash: string
+}>({ name: '', type: 'region', content: '', images: [], summary: '', summary_content_hash: '' })
 
 // AI polish state
 const polishState = ref<'idle' | 'streaming' | 'done'>('idle')
@@ -943,6 +1330,61 @@ const searchOptionalSections = reactive({
 // Summary section state
 const summaryViewMode = ref<'edit' | 'preview'>('edit')
 const summaryState = ref<'idle' | 'streaming'>('idle')
+const generatingBlockSummaryIds = ref(new Set<string>())
+const conceptExtractedBlockIds = ref(new Set<string>())
+const staleConceptExtractBlockIds = ref(new Set<string>())
+const conceptExtractBaselineHashes = ref(new Map<string, string>())
+const conceptExtractState = ref<'idle' | 'running'>('idle')
+type ConceptExtractLog = { _key: string; seq?: number; type?: string; stage?: string; message: string; payload?: any }
+const conceptExtractLogs = ref<ConceptExtractLog[]>([])
+let conceptExtractLogSeq = 0
+const conceptRunTitle = ref('概念影响分析')
+const showConceptExtractDialog = ref(false)
+const conceptExtractDialogBodyRef = ref<HTMLElement | null>(null)
+const conceptImpactResult = ref<KBConceptImpactAnalysisResult | null>(null)
+const conceptImpactReadOnly = ref(false)
+const conceptImpactActiveTab = ref<'mentions' | 'decisions' | 'relations' | 'rewrite'>('mentions')
+const conceptImpactTabs = [
+  { key: 'decisions' as const, label: '概念决策' },
+  { key: 'relations' as const, label: '块关系' },
+  { key: 'rewrite' as const, label: '块重组建议' },
+]
+const hasConceptImpactDebug = computed(() => {
+  const result = conceptImpactResult.value
+  if (!result) return false
+  return !!(
+    result.concept_candidates?.length
+    || result.chunk_scoring_summary
+    || result.chunk_scores?.length
+    || result.global_rerank
+    || result.quality_check
+  )
+})
+const conceptImpactTopChunkMatches = computed(() => {
+  const records = conceptImpactResult.value?.chunk_scores || []
+  const matches = records.flatMap(record => Array.isArray(record.matches) ? record.matches : [])
+  return matches
+    .filter(item => item && typeof item === 'object')
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 12)
+})
+const conceptImpactDebugSummary = computed(() => {
+  const result = conceptImpactResult.value
+  if (!result) return ''
+  const candidateCount = result.concept_candidates?.length || 0
+  const chunkCount = Number(result.chunk_scoring_summary?.chunk_count || 0)
+  const matchCount = Number(result.chunk_scoring_summary?.match_count || 0)
+  const issueCount = Array.isArray(result.quality_check?.issues) ? result.quality_check.issues.length : 0
+  return `候选 ${candidateCount}，分片 ${chunkCount}，命中 ${matchCount}，风险 ${issueCount}`
+})
+const showConceptDecisionDetailDialog = ref(false)
+const selectedConceptDecision = ref<KBConceptDecision | null>(null)
+const applyingConceptDecisionIds = ref(new Set<string>())
+const ignoringConceptDecisionIds = ref(new Set<string>())
+const conceptDialogTitle = computed(() => {
+  if (conceptExtractState.value === 'running') return '正在执行'
+  return conceptImpactReadOnly.value ? '最近一次分析记录' : '执行完成'
+})
 const summaryMonacoContainer = ref<HTMLElement | null>(null)
 let summaryMonacoInstance: any = null
 let summaryMonacoModel: any = null
@@ -953,8 +1395,42 @@ const showNodeSummaryDialog = ref(false)
 const nodeSummaryDraft = ref('')
 const nodeSummaryState = ref<'idle' | 'streaming'>('idle')
 const nodeSummaryViewMode = ref<'edit' | 'preview'>('edit')
+const nodeSummaryTarget = ref<'self' | 'subtree'>('self')
+const nodeSummaryPhase = ref('')
+const nodeSummaryElapsedSeconds = ref(0)
+const nodeSummaryReceivedChars = ref(0)
+let nodeSummaryTimer: ReturnType<typeof setInterval> | null = null
 
 const nodeSummaryHtml = computed(() => marked.parse(nodeSummaryDraft.value || '') as string)
+const nodeSummaryStatusText = computed(() => {
+  if (nodeSummaryState.value === 'streaming') {
+    const phase = nodeSummaryPhase.value || (nodeSummaryTarget.value === 'self'
+      ? '正在生成本节点摘要'
+      : '正在准备子树摘要输入')
+    const received = nodeSummaryReceivedChars.value ? `，已接收 ${nodeSummaryReceivedChars.value} 字` : ''
+    return `${phase} · ${nodeSummaryElapsedSeconds.value}s${received}`
+  }
+  return nodeSummaryTarget.value === 'self'
+    ? '本节点摘要只总结当前节点直接包含的块。'
+    : '子树索引摘要用于让上层节点能召回到深层内容。'
+})
+
+function startNodeSummaryProgress(initialPhase: string) {
+  stopNodeSummaryProgress()
+  nodeSummaryPhase.value = initialPhase
+  nodeSummaryElapsedSeconds.value = 0
+  nodeSummaryReceivedChars.value = 0
+  nodeSummaryTimer = setInterval(() => {
+    nodeSummaryElapsedSeconds.value += 1
+  }, 1000)
+}
+
+function stopNodeSummaryProgress() {
+  if (nodeSummaryTimer) {
+    clearInterval(nodeSummaryTimer)
+    nodeSummaryTimer = null
+  }
+}
 
 // ─── Staleness detection ───
 // Block stale = sha256(block.content) !== block.summary_content_hash (when summary exists)
@@ -967,6 +1443,7 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 let staleRecomputeToken = 0
+let conceptStaleRecomputeToken = 0
 async function recomputeBlockStale() {
   const token = ++staleRecomputeToken
   const next = new Set<string>()
@@ -981,6 +1458,12 @@ async function recomputeBlockStale() {
 watch(
   () => content.blocks.map(b => `${b.id}:${(b.content || '').length}:${b.summary_content_hash || ''}:${b.summary || ''}`).join('|'),
   () => recomputeBlockStale(),
+  { immediate: true },
+)
+
+watch(
+  () => content.blocks.map(b => `${b.id}:${b.content || ''}:${b.concept_extract_content_hash || ''}`).join('|'),
+  () => recomputeConceptExtractionStale(),
   { immediate: true },
 )
 
@@ -1012,6 +1495,73 @@ const summaryDocBlocks = computed(() => {
     return ax - bx
   })
 })
+
+function conceptExtractionTagText(block: KBBlock) {
+  if (!(block.content || '').trim()) return ''
+  if (staleConceptExtractBlockIds.value.has(block.id)) return '需分析'
+  if (!block.concept_extract_content_hash && !conceptExtractedBlockIds.value.has(block.id)) return '未分析'
+  return ''
+}
+
+function conceptExtractionTagTitle(block: KBBlock) {
+  if (staleConceptExtractBlockIds.value.has(block.id)) return '块内容已修改，需要重新分析概念影响'
+  return '当前块尚未执行过概念影响分析'
+}
+
+async function loadConceptExtractionIndex() {
+  if (!props.kbId) return
+  try {
+    const concepts = await listConcepts(props.kbId)
+    const next = new Set<string>()
+    for (const concept of concepts as KBConcept[]) {
+      for (const variant of concept.variants || []) {
+        if (variant.source_block_id && variant.status !== 'false_positive') {
+          next.add(variant.source_block_id)
+        }
+      }
+    }
+    conceptExtractedBlockIds.value = next
+    await refreshConceptExtractionBaselines()
+    recomputeConceptExtractionStale()
+  } catch (e) {
+    console.error('[load concept extraction index failed]', e)
+  }
+}
+
+async function refreshConceptExtractionBaselines() {
+  const next = new Map(conceptExtractBaselineHashes.value)
+  for (const block of content.blocks) {
+    if (block.concept_extract_content_hash || !conceptExtractedBlockIds.value.has(block.id) || next.has(block.id)) continue
+    next.set(block.id, await sha256Hex(block.content || ''))
+  }
+  conceptExtractBaselineHashes.value = next
+}
+
+async function recomputeConceptExtractionStale() {
+  const token = ++conceptStaleRecomputeToken
+  const next = new Set<string>()
+  for (const block of content.blocks) {
+    const text = block.content || ''
+    const baselineHash = block.concept_extract_content_hash || conceptExtractBaselineHashes.value.get(block.id)
+    if (!text.trim() || !baselineHash) continue
+    const hash = await sha256Hex(text)
+    if (hash !== baselineHash) next.add(block.id)
+  }
+  if (token === conceptStaleRecomputeToken) staleConceptExtractBlockIds.value = next
+}
+
+async function markBlockConceptExtracted(block: KBBlock, sourceContent?: string) {
+  const hash = await sha256Hex(sourceContent ?? block.content ?? '')
+  block.concept_extract_content_hash = hash
+  block.concept_extract_updated_at = new Date().toISOString()
+  const baselines = new Map(conceptExtractBaselineHashes.value)
+  baselines.set(block.id, hash)
+  conceptExtractBaselineHashes.value = baselines
+  const extracted = new Set(conceptExtractedBlockIds.value)
+  extracted.add(block.id)
+  conceptExtractedBlockIds.value = extracted
+  await recomputeConceptExtractionStale()
+}
 
 function renderMd(src: string): string {
   return marked.parse(src || '') as string
@@ -1156,19 +1706,28 @@ function onMdLinkClick(e: MouseEvent) {
 
 // ─── Sync from prop ───
 
-watch(() => props.node, (n) => {
+watch(() => props.node, (n, oldNode) => {
+  const sameNodeRefresh = Boolean(n?.id && oldNode?.id && n.id === oldNode.id)
   const parsed = n?.content ? migrateLegacyContent(n.content) : createEmptyContent()
   content.schema_version = parsed.schema_version ?? SCHEMA_VERSION
   content.blocks = Array.isArray(parsed.blocks) ? parsed.blocks : []
   content.canvas = parsed.canvas || { zoom: 1, panX: 0, panY: 0 }
   selectedBlockId.value = null
   editingBlockId.value = null
-  panelBlockId.value = null
+  if (!sameNodeRefresh) panelBlockId.value = null
   isDirty.value = false
-  nodeSummaryDraft.value = n?.summary || ''
+  if (!sameNodeRefresh || !showNodeSummaryDialog.value) {
+    nodeSummaryDraft.value = n?.summary || ''
+  }
   nodeSummaryState.value = 'idle'
-  showNodeSummaryDialog.value = false
+  if (!sameNodeRefresh) showNodeSummaryDialog.value = false
+  conceptExtractBaselineHashes.value = new Map()
+  loadConceptExtractionIndex()
 }, { immediate: true })
+
+watch(() => props.kbId, () => {
+  loadConceptExtractionIndex()
+})
 
 // ─── Save ───
 
@@ -1183,45 +1742,10 @@ async function save() {
   saving.value = true
   content.canvas = { zoom: 1, panX: 0, panY: 0 }
 
-  // 1) Identify blocks that need summary auto-generation:
-  //    content non-empty AND (summary empty OR content hash ≠ stored hash)
-  const needSummary: { id: string; contentHash: string }[] = []
-  for (const b of content.blocks) {
-    const c = (b.content || '').trim()
-    if (!c) continue
-    const h = await sha256Hex(b.content || '')
-    const hasSummary = !!(b.summary && b.summary.trim())
-    if (!hasSummary || h !== (b.summary_content_hash || '')) {
-      needSummary.push({ id: b.id, contentHash: h })
-    }
-  }
-
-  // 2) Persist canvas content first (so new blocks exist server-side with their IDs).
   saveStatusText.value = '保存中…'
   emit('save', JSON.parse(JSON.stringify(content)))
   await new Promise(r => setTimeout(r, 200))
   await persistDirtyFormSources()
-
-  // 3) For each block needing summary, call HTTP endpoint serially.
-  if (needSummary.length && props.node?.id && props.kbId) {
-    for (let i = 0; i < needSummary.length; i++) {
-      const { id, contentHash } = needSummary[i]
-      saveStatusText.value = `生成摘要 ${i + 1}/${needSummary.length}`
-      try {
-        const res = await generateBlockSummaryHttp(props.kbId, props.node.id, id)
-        const block = content.blocks.find(b => b.id === id)
-        if (block) {
-          block.summary = res.summary
-          block.summary_content_hash = contentHash
-          block.summary_updated_at = new Date().toISOString()
-        }
-      } catch (e: any) {
-        console.error('[block summary auto-gen failed]', id, e)
-      }
-    }
-    // Refresh tree so parents see fresh block summaries.
-    emit('refresh')
-  }
 
   saveStatusText.value = ''
   saving.value = false
@@ -1702,17 +2226,31 @@ function openPanel(blockId: string) {
 }
 
 async function savePanelDraft() {
-  const block = content.blocks.find(b => b.id === panelBlockId.value)
+  const block = applyPanelDraftToBlock()
   if (!block) return
+  panelBlockId.value = null
+}
+
+function applyPanelDraftToBlock() {
+  const block = content.blocks.find(b => b.id === panelBlockId.value)
+  if (!block) return null
   block.name = panelDraft.name
   block.type = panelDraft.type
   block.content = panelDraft.content
   block.summary = panelDraft.summary
+  block.summary_content_hash = panelDraft.summary_content_hash
   block.images = JSON.parse(JSON.stringify(panelDraft.images))
-  panelBlockId.value = null
   isDirty.value = true
   emit('dirty-changed', true)
   recomputeBlockStale()
+  return block
+}
+
+async function persistCurrentNodeContent() {
+  await persistDirtyFormSources()
+  await updateNode(props.kbId, props.node.id, { content: JSON.parse(JSON.stringify(content)) })
+  isDirty.value = false
+  emit('dirty-changed', false)
 }
 
 function addDraftImage() {
@@ -1924,47 +2462,487 @@ async function generateBlockSummary() {
     window.$toast({ title: '无法确定块信息', type: 'error' })
     return
   }
-  const kbId = props.node.kb_id
-  if (!kbId) {
-    window.$toast({ title: '未找到知识库 ID', type: 'error' })
+  await generateBlockSummaryForBlock(block, { fromPanel: true })
+}
+
+function setBlockSummaryGenerating(blockId: string, generating: boolean) {
+  const next = new Set(generatingBlockSummaryIds.value)
+  if (generating) next.add(blockId)
+  else next.delete(blockId)
+  generatingBlockSummaryIds.value = next
+}
+
+async function generateBlockSummaryForBlock(block: KBBlock, options: { fromPanel?: boolean; silent?: boolean } = {}) {
+  if (generatingBlockSummaryIds.value.has(block.id)) {
+    window.$toast({ title: '该块摘要正在生成，请稍候', type: 'info' })
+    return
+  }
+  if (!props.node?.id || !props.kbId) {
+    window.$toast({ title: '无法确定知识库或节点信息', type: 'error' })
+    return
+  }
+  const sourceContent = options.fromPanel ? panelDraft.content : (block.content || '')
+  if (!sourceContent.trim()) {
+    window.$toast({ title: '请先填写知识描述', type: 'info' })
     return
   }
 
-  summaryState.value = 'streaming'
-  if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: true })
-  panelDraft.summary = ''
+  if (options.fromPanel) {
+    applyPanelDraftToBlock()
+  }
+  if (isDirty.value || options.fromPanel) {
+    await persistCurrentNodeContent()
+  }
+
+  const isPanelBlock = panelBlockId.value === block.id
+  setBlockSummaryGenerating(block.id, true)
+  if (options.fromPanel) {
+    summaryState.value = 'streaming'
+    if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: true })
+  }
+  if (isPanelBlock) {
+    panelDraft.summary = ''
+  }
+  block.summary = ''
+  let streamError = ''
 
   try {
     await streamHarnessSse(
-      `/kb/${kbId}/node/${props.node.id}/block/${block.id}/summary/stream`,
-      { content: panelDraft.content },
+      `/kb/${props.kbId}/node/${props.node.id}/block/${block.id}/summary/stream`,
+      { content: sourceContent },
       {
-        onChunk: (content) => {
-          panelDraft.summary += content
-        },
-        onDone: () => {
-          summaryState.value = 'idle'
-          if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+        onChunk: (chunk) => {
+          block.summary = `${block.summary || ''}${chunk}`
+          if (isPanelBlock) {
+            panelDraft.summary = block.summary
+          }
         },
         onError: (message) => {
-          window.$toast({ title: message || '摘要生成失败', type: 'error' })
-          summaryState.value = 'idle'
-          if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+          streamError = message || '摘要生成失败'
         },
       },
     )
+    if (streamError) throw new Error(streamError)
+    const hash = await sha256Hex(sourceContent || '')
+    block.summary_content_hash = hash
+    block.summary_updated_at = new Date().toISOString()
+    if (isPanelBlock) {
+      panelDraft.summary = block.summary || ''
+      panelDraft.summary_content_hash = hash
+    }
+    recomputeBlockStale()
+    emit('summary-updated')
   } catch (e: any) {
-    window.$toast({ title: '摘要生成失败', type: 'error' })
-    summaryState.value = 'idle'
-    if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+    if (!options.silent) {
+      window.$toast({ title: e.message || '摘要生成失败', type: 'error' })
+    }
+    if (options.silent) throw e
+  } finally {
+    setBlockSummaryGenerating(block.id, false)
+    if (options.fromPanel) {
+      summaryState.value = 'idle'
+      if (summaryMonacoInstance) summaryMonacoInstance.updateOptions({ readOnly: false })
+    }
+  }
+}
+
+async function extractConceptsFromDraft() {
+  if (conceptExtractState.value === 'running') return
+  const block = applyPanelDraftToBlock()
+  if (!block || !props.node?.id || !props.kbId) {
+    window.$toast({ title: '无法确定块信息', type: 'error' })
+    return
+  }
+  if (!panelDraft.content.trim()) {
+    window.$toast({ title: '请先编写知识描述', type: 'info' })
+    return
+  }
+  startConceptRun('概念影响分析')
+  let finalResult: any = null
+  let streamError = ''
+  try {
+    appendConceptExtractLog({
+      type: 'progress',
+      stage: 'save_draft',
+      message: '保存当前块草稿，确保后端可以读取该块',
+    })
+    await persistCurrentNodeContent()
+    await streamHarnessSse(
+      `/kb/${props.kbId}/block/${block.id}/concept-impact/analyze/stream`,
+      { content: panelDraft.content },
+      {
+        onEvent: (event) => {
+          if (!event || typeof event !== 'object') return
+          if (event.type === 'result') {
+            finalResult = event.payload?.result
+            conceptImpactResult.value = finalResult || null
+          } else if (event.type === 'error') {
+            streamError = event.message || '分析概念影响失败'
+          }
+          if (event.message) appendConceptExtractLog(event)
+        },
+        onError: (message) => {
+          streamError = message || '分析概念影响失败'
+        },
+      },
+    )
+    if (streamError) throw new Error(streamError)
+    await markBlockConceptExtracted(block, panelDraft.content)
+    await persistCurrentNodeContent()
+    await loadConceptExtractionIndex()
+    const result = finalResult || { decisions: [], relations: [], decision_count: 0, relation_count: 0 }
+    window.$toast({
+      title: formatConceptImpactToast(result),
+      type: result.decision_count || result.relation_count ? 'success' : 'info',
+    })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '分析概念影响失败', type: 'error' })
+  } finally {
+    conceptExtractState.value = 'idle'
+  }
+}
+
+function startConceptRun(title: string, options: { readOnly?: boolean } = {}) {
+  conceptRunTitle.value = title
+  conceptExtractState.value = options.readOnly ? 'idle' : 'running'
+  conceptExtractLogs.value = []
+  conceptImpactResult.value = null
+  conceptImpactReadOnly.value = !!options.readOnly
+  conceptImpactActiveTab.value = 'decisions'
+  conceptExtractLogSeq = 0
+  showConceptExtractDialog.value = true
+}
+
+async function openConceptImpactHistory() {
+  const block = panelBlock.value
+  if (!block || !props.kbId) {
+    window.$toast({ title: '无法确定块信息', type: 'error' })
+    return
+  }
+  startConceptRun('最近一次概念影响记录', { readOnly: true })
+  try {
+    appendConceptExtractLog({
+      type: 'progress',
+      stage: 'history_load',
+      message: '正在读取当前块最近一次概念影响记录',
+    })
+    const [decisions, relations, rewrites] = await Promise.all([
+      listBlockConceptDecisions(props.kbId, block.id, 'all'),
+      listBlockConceptRelations(props.kbId, block.id, 'all'),
+      listBlockRewriteSuggestions(props.kbId, block.id, 'all'),
+    ])
+    conceptImpactResult.value = {
+      decisions,
+      relations,
+      rewrite_suggestion: rewrites[0] || null,
+      decision_count: visibleConceptDecisions(decisions).length,
+      relation_count: relations.length,
+    }
+    appendConceptExtractLog({
+      type: 'result',
+      stage: 'history_loaded',
+      message: visibleConceptDecisions(decisions).length || relations.length || rewrites.length
+        ? '最近一次概念影响记录读取完成'
+        : '当前块暂无概念影响记录，可点击“重新分析”生成',
+      payload: {
+        decision_count: visibleConceptDecisions(decisions).length,
+        relation_count: relations.length,
+        rewrite_count: rewrites.length,
+      },
+    })
+  } catch (e: any) {
+    appendConceptExtractLog({
+      type: 'error',
+      stage: 'history_error',
+      message: e.message || '读取概念影响记录失败',
+    })
+    window.$toast({ title: e.message || '读取概念影响记录失败', type: 'error' })
+  }
+}
+
+async function rerunConceptImpactAnalysis() {
+  if (conceptExtractState.value === 'running') return
+  await extractConceptsFromDraft()
+}
+
+function appendConceptExtractLog(event: any, options: { scroll?: boolean } = {}) {
+  conceptExtractLogs.value.push({
+    _key: `${Date.now()}-${conceptExtractLogSeq++}`,
+    seq: event.seq,
+    type: event.type,
+    stage: event.stage,
+    message: event.message,
+    payload: event.payload,
+  })
+  if (options.scroll === false) return
+  scrollConceptExtractDialogToBottom()
+}
+
+async function scrollConceptExtractDialogToBottom() {
+  await nextTick()
+  const el = conceptExtractDialogBodyRef.value
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+}
+
+function conceptLogSummary(log: { payload?: any }) {
+  const payload = log.payload || {}
+  if (payload.model) return `模型：${payload.model}`
+  if (typeof payload.mention_count === 'number') return `提及项：${payload.mention_count} 个`
+  if (typeof payload.candidate_count === 'number') return `候选概念：${payload.candidate_count} 个`
+  if (typeof payload.missing_candidate_count === 'number') return `补充候选：${payload.missing_candidate_count} 个`
+  if (payload.summary?.chunk_count) return `分片：${payload.summary.chunk_count}，命中：${payload.summary.match_count || 0}`
+  if (payload.quality_check?.overall_status) return `质量：${payload.quality_check.overall_status}`
+  if (typeof payload.issue_count === 'number') return `质量风险：${payload.issue_count} 个`
+  if (payload.mentions?.length) return `提及项：${payload.mentions.map((item: any) => item.name || item.raw_text).filter(Boolean).slice(0, 8).join('、')}`
+  if (payload.candidate_names?.length) return `候选：${payload.candidate_names.join('、')}`
+  if (payload.candidate_name) return payload.candidate_name
+  if (payload.match?.match_status) return `判断：${payload.match.match_status}`
+  if (payload.response_markdown) return `${payload.response_markdown}`.slice(0, 80)
+  if (payload.raw_response) return `${payload.raw_response}`.slice(0, 80)
+  return ''
+}
+
+function formatLogDuration(log: { payload?: any }) {
+  const value = log.payload?.elapsed_ms ?? log.payload?.llm_elapsed_ms ?? log.payload?.duration_ms
+  if (typeof value !== 'number' || !Number.isFinite(value)) return ''
+  if (value < 1000) return `LLM 用时 ${Math.round(value)}ms`
+  return `LLM 用时 ${(value / 1000).toFixed(value < 10000 ? 1 : 0)}s`
+}
+
+function formatConceptExtractToast(result: {
+  created?: Array<{ status?: string; match_status?: string; updated?: boolean }>
+  count?: number
+  new_count?: number
+  duplicate_count?: number
+  supplement_count?: number
+  conflict_count?: number
+  replacement_count?: number
+  false_positive_count?: number
+}) {
+  const items = result.created || []
+  if (!items.length && !result.false_positive_count) return '未发现明确概念定义'
+  const createdCount = result.new_count ?? items.filter(item => (item.match_status || item.status) === 'new').length
+  const duplicateCount = result.duplicate_count ?? items.filter(item => (item.match_status || item.status) === 'duplicate').length
+  const supplementCount = result.supplement_count ?? items.filter(item => (item.match_status || item.status) === 'supplement').length
+  const conflictCount = result.conflict_count ?? items.filter(item => (item.match_status || item.status) === 'conflict').length
+  const replacementCount = result.replacement_count ?? items.filter(item => (item.match_status || item.status) === 'replacement').length
+  const falsePositiveCount = result.false_positive_count || 0
+  const parts = [
+    createdCount ? `新增 tag ${createdCount}` : '',
+    duplicateCount ? `重复 ${duplicateCount}` : '',
+    supplementCount ? `补充 ${supplementCount}` : '',
+    conflictCount ? `冲突 ${conflictCount}` : '',
+    replacementCount ? `替代 ${replacementCount}` : '',
+    falsePositiveCount ? `误提取 ${falsePositiveCount}` : '',
+  ].filter(Boolean)
+  return `概念提取完成：${parts.join('，') || `生成 tag ${result.count || items.length} 个`}`
+}
+
+function formatConceptImpactToast(result: {
+  decisions?: KBConceptDecision[]
+  relations?: KBConceptBlockRelation[]
+  decision_count?: number
+  relation_count?: number
+}) {
+  const decisionCount = visibleConceptDecisions(result.decisions || []).length || result.decision_count || 0
+  const relationCount = result.relation_count ?? result.relations?.length ?? 0
+  if (!decisionCount && !relationCount) return '未发现需要处理的概念影响'
+  return `概念影响分析完成：决策 ${decisionCount}，关系 ${relationCount}`
+}
+
+function visibleConceptDecisions(decisions: KBConceptDecision[] = []) {
+  return decisions.filter(item => item.decision_type !== 'no_concept_change')
+}
+
+function decisionTypeLabel(type: string) {
+  const map: Record<string, string> = {
+    create_concept: '新增概念',
+    update_concept: '更新概念',
+    replace_concept: '替换概念',
+    deprecate_concept: '废弃概念',
+    no_concept_change: '仅记录关系',
+    ignore: '忽略',
+  }
+  return map[type] || type
+}
+
+function decisionDisplayTitle(decision: KBConceptDecision) {
+  const candidate = decision.suggested_concept_name || ''
+  const target = decision.target_concept?.name || decision.target_concept_name || ''
+  if (candidate && target && candidate !== target) return `${candidate} → ${target}`
+  return candidate || target || '未命名概念'
+}
+
+function openConceptDecisionDetail(decision: KBConceptDecision) {
+  selectedConceptDecision.value = decision
+  showConceptDecisionDetailDialog.value = true
+}
+
+function closeConceptDecisionDetail() {
+  showConceptDecisionDetailDialog.value = false
+  selectedConceptDecision.value = null
+}
+
+function updateConceptDecisionBusySet(target: 'apply' | 'ignore', id: string, busy: boolean) {
+  const source = target === 'apply' ? applyingConceptDecisionIds : ignoringConceptDecisionIds
+  const next = new Set(source.value)
+  if (busy) next.add(id)
+  else next.delete(id)
+  source.value = next
+}
+
+function isConceptDecisionBusy(id: string) {
+  return applyingConceptDecisionIds.value.has(id) || ignoringConceptDecisionIds.value.has(id)
+}
+
+function conceptDecisionUsesLlm(decision: KBConceptDecision) {
+  return ['update_concept', 'replace_concept', 'deprecate_concept'].includes(decision.decision_type)
+}
+
+function conceptDecisionApplyingText(decision: KBConceptDecision) {
+  if (conceptDecisionUsesLlm(decision)) return '合并中…'
+  if (decision.decision_type === 'create_concept') return '创建中…'
+  return '处理中…'
+}
+
+function relationTypeLabel(type: string) {
+  const map: Record<string, string> = {
+    defines: '定义',
+    uses: '使用',
+    mentions: '提到',
+    references_source: '引用来源',
+    affected_by_replacement: '替换影响',
+  }
+  return map[type] || type
+}
+
+async function confirmConceptDecision(decision: KBConceptDecision) {
+  if (isConceptDecisionBusy(decision.id)) return
+  updateConceptDecisionBusySet('apply', decision.id, true)
+  appendConceptExtractLog({
+    type: conceptDecisionUsesLlm(decision) ? 'llm' : 'progress',
+    stage: 'decision_apply_start',
+    message: conceptDecisionUsesLlm(decision)
+      ? `正在合并概念：${decisionDisplayTitle(decision)}`
+      : `正在执行概念决策：${decisionDisplayTitle(decision)}`,
+    payload: {
+      decision_type: decision.decision_type,
+      candidate: decision.suggested_concept_name,
+      target: decision.target_concept?.name || decision.target_concept_name,
+    },
+  }, { scroll: false })
+  try {
+    const updated = await applyConceptDecision(props.kbId, decision.id)
+    patchConceptImpactDecision(updated)
+    appendConceptExtractLog({
+      type: 'result',
+      stage: 'decision_apply_done',
+      message: `概念决策已执行：${decisionDisplayTitle(updated)}`,
+      payload: { decision_type: updated.decision_type, status: updated.status },
+    }, { scroll: false })
+    emit('concepts-updated')
+    window.$toast({ title: '概念决策已执行', type: 'success' })
+  } catch (e: any) {
+    appendConceptExtractLog({
+      type: 'error',
+      stage: 'decision_apply_error',
+      message: e.message || '执行概念决策失败',
+    }, { scroll: false })
+    window.$toast({ title: e.message || '执行概念决策失败', type: 'error' })
+  } finally {
+    updateConceptDecisionBusySet('apply', decision.id, false)
+  }
+}
+
+async function dismissConceptDecision(decision: KBConceptDecision) {
+  if (isConceptDecisionBusy(decision.id)) return
+  updateConceptDecisionBusySet('ignore', decision.id, true)
+  try {
+    const updated = await ignoreConceptDecision(props.kbId, decision.id)
+    patchConceptImpactDecision(updated)
+    window.$toast({ title: '概念决策已忽略', type: 'info' })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '忽略概念决策失败', type: 'error' })
+  } finally {
+    updateConceptDecisionBusySet('ignore', decision.id, false)
+  }
+}
+
+function patchConceptImpactDecision(updated: KBConceptDecision) {
+  if (!conceptImpactResult.value) return
+  conceptImpactResult.value.decisions = conceptImpactResult.value.decisions.map(item => (
+    item.id === updated.id ? updated : item
+  ))
+}
+
+async function confirmConceptRelations() {
+  const result = conceptImpactResult.value
+  if (!result) return
+  try {
+    const pending = result.relations.filter(item => item.status === 'pending')
+    if (!pending.length) return
+    const updated = await applyBlockConceptRelations(props.kbId, pending[0].block_id, pending.map(item => item.id))
+    const map = new Map(updated.map(item => [item.id, item]))
+    result.relations = result.relations.map(item => map.get(item.id) || item)
+    window.$toast({ title: '块概念关系已写入', type: 'success' })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '写入块概念关系失败', type: 'error' })
+  }
+}
+
+async function confirmRewriteSuggestion(suggestion: KBBlockRewriteSuggestion) {
+  try {
+    const updated = await applyRewriteSuggestion(props.kbId, suggestion.id)
+    if (conceptImpactResult.value) conceptImpactResult.value.rewrite_suggestion = updated
+    const block = content.blocks.find(item => item.id === updated.block_id)
+    if (block) {
+      block.content = updated.suggested_content
+      await markBlockConceptExtracted(block, updated.suggested_content)
+      if (panelBlockId.value === block.id) panelDraft.content = updated.suggested_content
+      markDirty()
+    }
+    window.$toast({ title: '块重组建议已应用', type: 'success' })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '应用块重组建议失败', type: 'error' })
+  }
+}
+
+async function dismissRewriteSuggestion(suggestion: KBBlockRewriteSuggestion) {
+  try {
+    const updated = await ignoreRewriteSuggestion(props.kbId, suggestion.id)
+    if (conceptImpactResult.value) conceptImpactResult.value.rewrite_suggestion = updated
+    window.$toast({ title: '块重组建议已忽略', type: 'info' })
+  } catch (e: any) {
+    window.$toast({ title: e.message || '忽略块重组建议失败', type: 'error' })
   }
 }
 
 // ─── Generate node summary ───
 
 function openNodeSummaryDialog() {
+  nodeSummaryTarget.value = 'self'
   nodeSummaryDraft.value = props.node?.summary || ''
   showNodeSummaryDialog.value = true
+}
+
+async function switchNodeSummaryTarget(target: 'self' | 'subtree') {
+  if (nodeSummaryState.value === 'streaming') return
+  nodeSummaryTarget.value = target
+  if (target === 'self') {
+    nodeSummaryDraft.value = props.node?.summary || ''
+    return
+  }
+  nodeSummaryDraft.value = ''
+  if (!props.node?.id || !props.kbId) return
+  try {
+    const cache = await getNodeSubtreeSummary(props.kbId, props.node.id)
+    if (nodeSummaryTarget.value === 'subtree') {
+      nodeSummaryDraft.value = cache?.content || ''
+    }
+  } catch {
+    if (nodeSummaryTarget.value === 'subtree') nodeSummaryDraft.value = ''
+  }
 }
 
 async function generateNodeSummary() {
@@ -1976,29 +2954,46 @@ async function generateNodeSummary() {
 
   nodeSummaryState.value = 'streaming'
   nodeSummaryDraft.value = ''
+  startNodeSummaryProgress(
+    nodeSummaryTarget.value === 'self'
+      ? '正在连接后端生成本节点摘要'
+      : '正在连接后端生成子树索引摘要',
+  )
 
   try {
     await streamHarnessSse(
-      `/kb/${props.kbId}/node/${props.node.id}/summary/stream`,
+      nodeSummaryTarget.value === 'self'
+        ? `/kb/${props.kbId}/node/${props.node.id}/summary/stream`
+        : `/kb/${props.kbId}/node/${props.node.id}/subtree-summary/stream`,
       {},
       {
+        onEvent: (event) => {
+          if (event?.stage) nodeSummaryPhase.value = String(event.stage)
+        },
         onChunk: (content) => {
           nodeSummaryDraft.value += content
+          nodeSummaryReceivedChars.value += content.length
+          nodeSummaryPhase.value = nodeSummaryTarget.value === 'self'
+            ? '正在接收本节点摘要'
+            : '正在接收子树索引摘要'
         },
         onDone: () => {
           nodeSummaryState.value = 'idle'
+          stopNodeSummaryProgress()
           // Refresh parent so node.summary / summary_updated_at propagate.
           emit('summary-updated')
         },
         onError: (message) => {
           window.$toast({ title: message || '节点摘要生成失败', type: 'error' })
           nodeSummaryState.value = 'idle'
+          stopNodeSummaryProgress()
         },
       },
     )
   } catch (e: any) {
     window.$toast({ title: '节点摘要生成失败', type: 'error' })
     nodeSummaryState.value = 'idle'
+    stopNodeSummaryProgress()
   }
 }
 
@@ -2027,6 +3022,7 @@ watch(panelBlockId, async (newId, oldId) => {
     panelDraft.type = block.type
     panelDraft.content = block.content || ''
     panelDraft.summary = block.summary || ''
+    panelDraft.summary_content_hash = block.summary_content_hash || ''
     panelDraft.images = JSON.parse(JSON.stringify(block.images || []))
     disposePanelMonaco()
     disposeSummaryMonaco()
@@ -2459,6 +3455,7 @@ onBeforeUnmount(() => {
   disposePanelMonaco()
   disposeSummaryMonaco()
   stopAutoScroll()
+  stopNodeSummaryProgress()
 })
 
 window.addEventListener('keydown', onKeyDown)
@@ -2541,6 +3538,20 @@ $block-shadow-selected: none;
   border: 1px solid rgba(255, 159, 10, 0.35);
   font-size: 10px;
   font-weight: 500;
+  line-height: 1.3;
+  vertical-align: middle;
+}
+
+.ce-block-concept-missing-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #9a5b00;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1.3;
   vertical-align: middle;
 }
@@ -2635,6 +3646,15 @@ $block-shadow-selected: none;
   &:hover:not(&--active) {
     color: $text-secondary;
   }
+}
+
+.ce-node-summary-mode-btn {
+  width: auto;
+  min-width: 48px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .ce-toolbar-right {
@@ -2755,8 +3775,9 @@ $block-shadow-selected: none;
   }
 }
 
-// Edit button — inline in header, next to type select
-.ce-block-edit-btn {
+// Header action buttons
+.ce-block-edit-btn,
+.ce-block-summary-btn {
   width: 22px;
   height: 22px;
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -2779,6 +3800,16 @@ $block-shadow-selected: none;
     color: $text-primary;
     background: $bg-sidebar;
   }
+
+  &:disabled {
+    cursor: default;
+    color: rgba(0, 0, 0, 0.22);
+    background: rgba(0, 0, 0, 0.03);
+  }
+}
+
+.ce-block-summary-btn--loading svg {
+  animation: ce-ai-pulse 1s ease-in-out infinite;
 }
 
 .ce-block-header {
@@ -2904,6 +3935,7 @@ $block-shadow-selected: none;
 }
 
 .ce-block-textarea {
+  box-sizing: border-box;
   width: 100%;
   flex: 1;
   border: none;
@@ -2917,6 +3949,80 @@ $block-shadow-selected: none;
   letter-spacing: -0.12px;
   min-height: 0;
   overflow: auto;
+}
+
+.ce-node-summary-dialog-body {
+  padding: 0;
+  min-height: 360px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ce-node-summary-textarea {
+  display: block;
+  min-height: 360px;
+  padding: 18px 20px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow: auto;
+}
+
+.ce-node-summary-preview {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 360px;
+  padding: 18px 20px;
+  overflow: auto;
+  word-break: break-word;
+}
+
+.ce-node-summary-empty {
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+  color: $text-tertiary;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  background: #fafafa;
+}
+
+.ce-node-summary-status {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+  color: $text-tertiary;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ce-node-summary-status--running {
+  color: $text-primary;
+}
+
+.ce-node-summary-status--running::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: #34c759;
+  animation: ce-summary-pulse 1.2s ease-in-out infinite;
+  vertical-align: 1px;
+}
+
+@keyframes ce-summary-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 // ─── Resize handles ───
@@ -3233,9 +4339,620 @@ $block-shadow-selected: none;
   display: block;
 }
 
+.ce-concept-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ce-concept-dialog {
+  width: min(980px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 80px));
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ce-concept-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+
+  p {
+    margin: 0 0 3px;
+    color: $text-tertiary;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  h2 {
+    margin: 0;
+    color: $text-primary;
+    font-size: 16px;
+    font-weight: 700;
+  }
+}
+
+.ce-concept-dialog-body {
+  padding: 12px 18px 14px;
+  overflow-y: auto;
+}
+
+.ce-concept-dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ce-concept-dialog-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 8px;
+  background: #fafafa;
+  transform-origin: top center;
+
+  > span {
+    color: $text-tertiary;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  strong {
+    display: block;
+    color: $text-primary;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  em {
+    display: inline-block;
+    margin-top: 4px;
+    color: #7a4c00;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 4px 0 0;
+    color: $text-secondary;
+    font-size: 12px;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+}
+
+.ce-concept-dialog-item.is-llm {
+  border-color: rgba(0, 113, 227, 0.18);
+  background: rgba(0, 113, 227, 0.04);
+}
+
+.ce-concept-dialog-item.is-result {
+  border-color: rgba(23, 114, 69, 0.18);
+  background: rgba(23, 114, 69, 0.05);
+}
+
+.ce-concept-dialog-item.is-error {
+  border-color: rgba(180, 35, 24, 0.18);
+  background: rgba(180, 35, 24, 0.05);
+}
+
+.ce-concept-dialog-item.is-latest:not(.is-result):not(.is-error) {
+  animation: ce-log-active-surface 1.6s ease-in-out infinite;
+}
+
+.ce-log-row-enter-active,
+.ce-log-card-enter-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    background-color 420ms ease,
+    border-color 420ms ease;
+}
+
+.ce-log-row-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.ce-log-card-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.992);
+}
+
+.ce-log-row-enter-to,
+.ce-log-card-enter-to {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ce-log-row-move,
+.ce-log-card-move {
+  transition: transform 180ms ease;
+}
+
+.ce-concept-dialog-empty {
+  padding: 24px;
+  text-align: center;
+  color: $text-tertiary;
+  font-size: 13px;
+}
+
+.ce-impact-result {
+  margin-top: 14px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+  padding-top: 12px;
+}
+
+.ce-impact-readonly-note {
+  margin-bottom: 10px;
+  border: 1px solid rgba(122, 76, 0, 0.18);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #7a4c00;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 9px 10px;
+}
+
+.ce-impact-debug {
+  margin-bottom: 12px;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 9px;
+  background: #fafafa;
+  overflow: hidden;
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    color: $text-primary;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 10px 12px;
+
+    span {
+      color: $text-tertiary;
+      font-size: 11px;
+      font-weight: 700;
+    }
+  }
+}
+
+.ce-impact-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  padding: 10px;
+
+  section {
+    min-width: 0;
+    border: 1px solid rgba(0,0,0,0.07);
+    border-radius: 8px;
+    background: #fff;
+    padding: 9px;
+  }
+
+  h4 {
+    margin: 0 0 8px;
+    color: $text-primary;
+    font-size: 12px;
+  }
+
+  article {
+    border-top: 1px solid rgba(0,0,0,0.06);
+    padding: 8px 0;
+
+    &:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+  }
+
+  strong {
+    display: block;
+    color: $text-primary;
+    font-size: 12px;
+    word-break: break-word;
+  }
+
+  p {
+    margin: 4px 0 0;
+    color: $text-secondary;
+    font-size: 11px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+}
+
+.ce-impact-debug-empty,
+.ce-impact-debug-meta {
+  color: $text-tertiary;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ce-impact-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+
+  button {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 7px;
+    background: #f6f6f6;
+    color: $text-secondary;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 10px;
+
+    &.active {
+      background: #111;
+      border-color: #111;
+      color: #fff;
+    }
+  }
+}
+
+.ce-impact-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ce-impact-empty {
+  padding: 18px;
+  border: 1px dashed rgba(0,0,0,0.14);
+  border-radius: 8px;
+  color: $text-tertiary;
+  font-size: 13px;
+  text-align: center;
+}
+
+.ce-impact-card {
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 9px;
+  background: #fff;
+  padding: 11px 12px;
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 7px;
+
+    span {
+      flex-shrink: 0;
+      border-radius: 999px;
+      background: #111;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 7px;
+    }
+
+    strong {
+      flex: 1;
+      min-width: 0;
+      color: $text-primary;
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    em {
+      color: $text-tertiary;
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 700;
+    }
+  }
+
+  p {
+    margin: 5px 0 0;
+    color: $text-secondary;
+    font-size: 12px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+}
+
+.ce-impact-concept-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 6px;
+
+  div {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 7px;
+    background: #fafafa;
+    padding: 7px 8px;
+    min-width: 0;
+  }
+
+  b {
+    display: block;
+    margin-bottom: 3px;
+    color: $text-tertiary;
+    font-size: 11px;
+  }
+
+  span {
+    color: $text-primary;
+    font-size: 12px;
+    font-weight: 700;
+    word-break: break-word;
+  }
+}
+
+.ce-impact-candidate {
+  border-left: 3px solid #111;
+  padding-left: 8px;
+}
+
+.ce-impact-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+
+  button {
+    border: none;
+    border-radius: 7px;
+    background: #111;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 10px;
+    transition:
+      transform 0.12s ease,
+      background-color 0.12s ease,
+      border-color 0.12s ease,
+      opacity 0.12s ease;
+
+    &:hover:not(:disabled) {
+      background: #2a2a2d;
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px) scale(0.985);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+    }
+
+    &.loading {
+      position: relative;
+      padding-left: 24px;
+
+      &::before {
+        content: "";
+        position: absolute;
+        left: 9px;
+        top: 50%;
+        width: 9px;
+        height: 9px;
+        margin-top: -5px;
+        border-radius: 999px;
+        border: 2px solid rgba(255,255,255,0.42);
+        border-top-color: #fff;
+        animation: ce-spin 0.72s linear infinite;
+      }
+    }
+
+    &.danger {
+      background: #b42318;
+
+      &:hover:not(:disabled) {
+        background: #9f1f17;
+      }
+    }
+
+    &.secondary {
+      background: #f3f4f6;
+      color: $text-primary;
+      border: 1px solid rgba(0,0,0,0.08);
+
+      &:hover:not(:disabled) {
+        background: #e9eaee;
+        border-color: rgba(0,0,0,0.16);
+      }
+    }
+  }
+}
+
+.ce-concept-detail-dialog {
+  max-width: 1040px;
+  height: min(760px, calc(100vh - 64px));
+  max-height: calc(100vh - 64px);
+}
+
+.ce-concept-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ce-concept-detail-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ce-concept-detail-column {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 9px;
+  background: #fff;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+
+  > header {
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    background: #fafafa;
+    padding: 11px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+
+    span {
+      display: block;
+      color: $text-tertiary;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    strong {
+      color: $text-primary;
+      font-size: 14px;
+      word-break: break-word;
+    }
+  }
+}
+
+.ce-concept-detail-field {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  > b {
+    display: block;
+    color: $text-primary;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  p {
+    margin: 0;
+    color: $text-secondary;
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+.ce-impact-markdown {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfbfb;
+  color: $text-primary;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ce-impact-rewrite {
+  details {
+    margin-top: 10px;
+
+    summary {
+      cursor: pointer;
+      color: $text-secondary;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    pre {
+      max-height: 260px;
+      overflow: auto;
+      margin: 8px 0 0;
+      padding: 10px;
+      border-radius: 8px;
+      background: #111;
+      color: #f6f6f6;
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+  }
+}
+
+.ce-impact-checklist {
+  margin-top: 10px;
+  color: $text-secondary;
+  font-size: 12px;
+
+  ul {
+    margin: 6px 0 0 18px;
+    padding: 0;
+  }
+}
+
+.ce-concept-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+
 @keyframes ce-ai-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+@keyframes ce-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ce-log-active-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.58;
+  }
+}
+
+@keyframes ce-log-active-surface {
+  0%, 100% {
+    border-color: rgba(0,0,0,0.07);
+    background: #fafafa;
+  }
+  50% {
+    border-color: rgba(0, 113, 227, 0.2);
+    background: rgba(0, 113, 227, 0.035);
+  }
 }
 
 /* ─── Compare Dialog ─── */
@@ -3495,6 +5212,29 @@ $block-shadow-selected: none;
   transition: background 0.12s;
   &:hover { background: #333; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.ce-edit-footer-ai {
+  padding: 8px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+
+  &:hover {
+    background: #f7f7f8;
+    border-color: rgba(0, 0, 0, 0.22);
+  }
+
+  &:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+  }
 }
 
 // ─── Form Prompt Dialog ───
@@ -4580,6 +6320,36 @@ $block-shadow-selected: none;
 .ce-summary-doc-section {
   margin-bottom: 32px;
   &:last-child { margin-bottom: 0; }
+}
+
+.ce-summary-doc-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+
+  .ce-summary-doc-h2 {
+    margin: 0;
+  }
+}
+
+.ce-summary-doc-link-btn {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  background: #fff;
+  color: $text-primary;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  transition: background 0.12s, border-color 0.12s;
+
+  &:hover {
+    background: $bg-sidebar;
+    border-color: rgba(0, 0, 0, 0.18);
+  }
 }
 
 .ce-summary-doc-h2 {

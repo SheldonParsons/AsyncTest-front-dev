@@ -6,6 +6,11 @@ import { buildCanvasFont } from '@/mind/core/text/font';
 import type { RichTextAlign } from '@/mind/core/richText';
 import { getMindPlatformDefaultFontFamily } from '@/mind/fontRegistry.js';
 import { getActiveMind } from './actions/useDocUtils';
+import {
+  getMindColorSchemeStyleForRole,
+  resolveMindDocumentColorSchemeKey,
+  type MindColorSchemeLayerStyle,
+} from './colorSchemes';
 
 const DEFAULT_FONT_FAMILY = getMindPlatformDefaultFontFamily(
   typeof window !== 'undefined' ? window.electronAPI?.platform : undefined
@@ -48,6 +53,7 @@ export type MindNodeDefaultVisualStyle = {
   stroke: string;
   fillPreset: MindNodeFillPreset;
   borderPreset: MindNodeBorderPreset;
+  strokeWidthPx?: number;
   textColor: string;
   fontSizePx: number;
   fontWeight: number;
@@ -57,6 +63,14 @@ export type MindNodeDefaultVisualStyle = {
   roughNodeOptions: Pick<Options, 'fillStyle' | 'fillWeight' | 'hachureGap' | 'hachureAngle'>;
   cacheKey: string;
 };
+
+type BranchIndexCacheEntry = {
+  doc: any;
+  activeMind: any;
+  map: Map<string, number | null>;
+};
+
+let branchIndexCache: BranchIndexCacheEntry | null = null;
 
 const DENSE_HAND_DRAWN_FILL = {
   fillStyle: 'hachure',
@@ -225,10 +239,106 @@ function buildInheritedFontFamilyTextStyle(
   };
 }
 
-function resolveBaseVisualStyle(role: MindNodeRole, renderStylePreset: MindDocumentRenderStylePreset) {
-  if (role === 'root') return ROOT_STYLE;
-  if (role === 'secondary') return renderStylePreset === 'clean' ? CLEAN_SECONDARY_STYLE : ROUGH_SECONDARY_STYLE;
-  return renderStylePreset === 'clean' ? CLEAN_DEFAULT_STYLE : ROUGH_DEFAULT_STYLE;
+function mergeColorSchemeIntoVisualStyle(
+  baseStyle: MindNodeDefaultVisualStyle,
+  schemeStyle: MindColorSchemeLayerStyle
+): MindNodeDefaultVisualStyle {
+  const fillPreset = schemeStyle.fillPreset ?? baseStyle.fillPreset;
+  const borderPreset = schemeStyle.borderPreset ?? baseStyle.borderPreset;
+  return {
+    ...baseStyle,
+    fill: schemeStyle.fill,
+    stroke: schemeStyle.stroke,
+    fillPreset,
+    borderPreset,
+    ...(Number.isFinite(schemeStyle.strokeWidthPx) ? { strokeWidthPx: Number(schemeStyle.strokeWidthPx) } : {}),
+    hasBorder: borderPreset !== 'none',
+    textColor: schemeStyle.textColor,
+    fontSizePx: Number.isFinite(schemeStyle.fontSizePx) ? Number(schemeStyle.fontSizePx) : baseStyle.fontSizePx,
+    fontWeight: Number.isFinite(schemeStyle.fontWeight) ? Number(schemeStyle.fontWeight) : baseStyle.fontWeight,
+    roughNodeOptions: ROUGH_FILL_OPTIONS_BY_PRESET[fillPreset],
+    cacheKey: [
+      baseStyle.cacheKey,
+      `schemeFill:${schemeStyle.fill}`,
+      `schemeStroke:${schemeStyle.stroke}`,
+      `schemeText:${schemeStyle.textColor}`,
+      `schemeFillPreset:${fillPreset}`,
+      `schemeBorderPreset:${borderPreset}`,
+      `schemeStrokeWidth:${schemeStyle.strokeWidthPx ?? 'theme'}`,
+      `schemeFontSize:${schemeStyle.fontSizePx ?? 'theme'}`,
+      `schemeFontWeight:${schemeStyle.fontWeight ?? 'theme'}`,
+    ].join('|'),
+  };
+}
+
+export function clearMindNodeStyleCache(doc?: any) {
+  if (!doc || branchIndexCache?.doc === doc) branchIndexCache = null;
+}
+
+function buildMindNodeBranchIndexMap(doc: any): Map<string, number | null> {
+  const activeMind = getActiveMind(doc);
+  const branchIndexByNodeId = new Map<string, number | null>();
+  const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+  const nodes = activeMind?.nodes ?? {};
+
+  for (const root of roots) {
+    const rootId = root?.rootId;
+    if (!rootId || !nodes[rootId]) continue;
+    branchIndexByNodeId.set(rootId, null);
+    const childIds = Array.isArray(nodes[rootId]?.children) ? nodes[rootId].children : [];
+    childIds.forEach((childId: string, index: number) => {
+      const stack = [childId];
+      while (stack.length) {
+        const currentId = stack.pop();
+        if (typeof currentId !== 'string' || !nodes[currentId]) continue;
+        branchIndexByNodeId.set(currentId, index);
+        const currentChildren = Array.isArray(nodes[currentId]?.children) ? nodes[currentId].children : [];
+        stack.push(...currentChildren);
+      }
+    });
+  }
+
+  Object.keys(nodes).forEach((nodeId) => {
+    if (!branchIndexByNodeId.has(nodeId)) branchIndexByNodeId.set(nodeId, null);
+  });
+
+  return branchIndexByNodeId;
+}
+
+export function getMindNodeBranchIndex(doc: any, nodeId: string | null | undefined): number | null {
+  if (!doc || !nodeId) return null;
+  const activeMind = getActiveMind(doc);
+  if (!branchIndexCache || branchIndexCache.doc !== doc || branchIndexCache.activeMind !== activeMind) {
+    branchIndexCache = {
+      doc,
+      activeMind,
+      map: buildMindNodeBranchIndexMap(doc),
+    };
+  }
+  return branchIndexCache.map.get(nodeId) ?? null;
+}
+
+function resolveBaseVisualStyle(
+  role: MindNodeRole,
+  renderStylePreset: MindDocumentRenderStylePreset,
+  doc?: any,
+  branchIndex?: number | null
+) {
+  const baseStyle =
+    role === 'root'
+      ? ROOT_STYLE
+      : role === 'secondary'
+        ? renderStylePreset === 'clean'
+          ? CLEAN_SECONDARY_STYLE
+          : ROUGH_SECONDARY_STYLE
+        : renderStylePreset === 'clean'
+          ? CLEAN_DEFAULT_STYLE
+          : ROUGH_DEFAULT_STYLE;
+  const schemeKey = resolveMindDocumentColorSchemeKey(doc);
+  return mergeColorSchemeIntoVisualStyle(
+    baseStyle,
+    getMindColorSchemeStyleForRole(schemeKey, role, { branchIndex })
+  );
 }
 
 function resolveNodePath(doc: any, nodeId: string | null | undefined): string[] | null {
@@ -264,32 +374,38 @@ function resolveNodePath(doc: any, nodeId: string | null | undefined): string[] 
 function getDefaultShapeOverridesForDepth(
   depth: number,
   renderStylePreset: MindDocumentRenderStylePreset,
-  parentShape: NonNullable<NodeStyle['shape']> | null
+  parentShape: NonNullable<NodeStyle['shape']> | null,
+  doc?: any,
+  branchIndex?: number | null
 ): NonNullable<NodeStyle['shape']> {
   if (depth === 0) {
+    const visual = resolveBaseVisualStyle('root', renderStylePreset, doc, branchIndex);
     return {
-      fill: ROOT_STYLE.fill,
-      stroke: ROOT_STYLE.stroke,
-      fillPreset: ROOT_STYLE.fillPreset,
-      borderPreset: ROOT_STYLE.borderPreset,
+      fill: visual.fill,
+      stroke: visual.stroke,
+      fillPreset: visual.fillPreset,
+      borderPreset: visual.borderPreset,
+      strokeWidthPx: visual.strokeWidthPx,
     };
   }
   if (depth === 1) {
-    const visual = resolveBaseVisualStyle('secondary', renderStylePreset);
+    const visual = resolveBaseVisualStyle('secondary', renderStylePreset, doc, branchIndex);
     return {
       fill: visual.fill,
       stroke: visual.stroke,
       fillPreset: visual.fillPreset,
       borderPreset: visual.borderPreset,
+      strokeWidthPx: visual.strokeWidthPx,
     };
   }
   if (depth === 2) {
-    const visual = resolveBaseVisualStyle('default', renderStylePreset);
+    const visual = resolveBaseVisualStyle('default', renderStylePreset, doc, branchIndex);
     return {
       fill: visual.fill,
       stroke: visual.stroke,
       fillPreset: visual.fillPreset,
       borderPreset: visual.borderPreset,
+      strokeWidthPx: visual.strokeWidthPx,
     };
   }
   return {
@@ -304,20 +420,23 @@ function getDefaultShapeOverridesForDepth(
 function getDefaultTextOverridesForDepth(
   depth: number,
   renderStylePreset: MindDocumentRenderStylePreset,
-  parentText: NonNullable<NodeStyle['text']> | null
+  parentText: NonNullable<NodeStyle['text']> | null,
+  doc?: any,
+  branchIndex?: number | null
 ): NonNullable<NodeStyle['text']> {
   if (depth === 0) {
+    const visual = resolveBaseVisualStyle('root', renderStylePreset, doc, branchIndex);
     return {
       fontFamily: DEFAULT_FONT_FAMILY,
-      fontSizePx: ROOT_STYLE.fontSizePx,
-      fontWeight: ROOT_STYLE.fontWeight,
-      fontStyle: ROOT_STYLE.fontStyle,
-      color: ROOT_STYLE.textColor,
-      textAlign: ROOT_STYLE.textAlign,
+      fontSizePx: visual.fontSizePx,
+      fontWeight: visual.fontWeight,
+      fontStyle: visual.fontStyle,
+      color: visual.textColor,
+      textAlign: visual.textAlign,
     };
   }
   if (depth === 1) {
-    const visual = resolveBaseVisualStyle('secondary', renderStylePreset);
+    const visual = resolveBaseVisualStyle('secondary', renderStylePreset, doc, branchIndex);
     return {
       fontFamily: parentText?.fontFamily ?? DEFAULT_FONT_FAMILY,
       fontSizePx: visual.fontSizePx,
@@ -328,12 +447,13 @@ function getDefaultTextOverridesForDepth(
     };
   }
   if (depth === 2) {
+    const visual = resolveBaseVisualStyle('default', renderStylePreset, doc, branchIndex);
     return {
       fontFamily: parentText?.fontFamily ?? DEFAULT_FONT_FAMILY,
       fontSizePx: 16,
       fontWeight: ROUGH_DEFAULT_STYLE.fontWeight,
       fontStyle: ROUGH_DEFAULT_STYLE.fontStyle,
-      color: ROUGH_DEFAULT_STYLE.textColor,
+      color: visual.textColor,
       textAlign: ROUGH_DEFAULT_STYLE.textAlign,
     };
   }
@@ -361,8 +481,9 @@ function resolveEffectiveNodeStyleForInsert(doc: any, nodeId: string | null | un
 
   path.forEach((currentId, depth) => {
     const nodeStyle = nodes[currentId]?.style ?? null;
-    const baseShape = getDefaultShapeOverridesForDepth(depth, renderStylePreset, parentShape);
-    const baseText = getDefaultTextOverridesForDepth(depth, renderStylePreset, parentText);
+    const branchIndex = depth > 0 ? getMindNodeBranchIndex(doc, currentId) : null;
+    const baseShape = getDefaultShapeOverridesForDepth(depth, renderStylePreset, parentShape, doc, branchIndex);
+    const baseText = getDefaultTextOverridesForDepth(depth, renderStylePreset, parentText, doc, branchIndex);
     effectiveShape = {
       ...baseShape,
       ...(nodeStyle?.shape ?? {}),
@@ -386,7 +507,8 @@ function resolveEffectiveNodeStyleForInsert(doc: any, nodeId: string | null | un
 export function getMindNodeDefaultVisualStyle(doc: any, nodeId: string | null | undefined): MindNodeDefaultVisualStyle {
   const role = getMindNodeRole(doc, nodeId);
   const renderStylePreset = resolveMindDocumentRenderStylePreset(doc);
-  const baseStyle = resolveBaseVisualStyle(role, renderStylePreset);
+  const branchIndex = getMindNodeBranchIndex(doc, nodeId);
+  const baseStyle = resolveBaseVisualStyle(role, renderStylePreset, doc, branchIndex);
   const shapeStyle = getNodeStyleOverrides(doc, nodeId)?.shape ?? null;
   const fillPreset = shapeStyle?.fillPreset ?? baseStyle.fillPreset;
   const borderPreset = shapeStyle?.borderPreset ?? baseStyle.borderPreset;
@@ -453,13 +575,14 @@ export function createInitialNodeStyleForRole(role: MindNodeRole): NodeStyle {
 
 export function createInitialNodeStyleForRoleWithDoc(role: MindNodeRole, doc: any): NodeStyle {
   const renderStylePreset = resolveMindDocumentRenderStylePreset(doc);
-  const visual = resolveBaseVisualStyle(role, renderStylePreset);
+  const visual = resolveBaseVisualStyle(role, renderStylePreset, doc);
   return {
     shape: {
       fill: visual.fill,
       stroke: visual.stroke,
       fillPreset: visual.fillPreset,
       borderPreset: visual.borderPreset,
+      strokeWidthPx: visual.strokeWidthPx,
     },
     text: {
       fontFamily: DEFAULT_FONT_FAMILY,
@@ -487,7 +610,7 @@ export function createInitialNodeStyleForInsert(options: {
   const parentText = parentEffectiveStyle?.text ?? (options.parentId ? getNodeStyleOverrides(options.doc, options.parentId)?.text ?? null : null);
 
   if (!options.parentId) {
-    visual = resolveBaseVisualStyle(role, renderStylePreset);
+    visual = resolveBaseVisualStyle(role, renderStylePreset, options.doc);
     shape = {
       fill: visual.fill,
       stroke: visual.stroke,
@@ -497,23 +620,29 @@ export function createInitialNodeStyleForInsert(options: {
   } else {
     const parentRole = getMindNodeRole(options.doc, options.parentId);
     if (parentRole === 'root') {
-      visual = resolveBaseVisualStyle('secondary', renderStylePreset);
+      const activeMind = getActiveMind(options.doc);
+      const nodes = activeMind?.nodes ?? {};
+      const siblingIds = Array.isArray(nodes[options.parentId]?.children) ? nodes[options.parentId].children : [];
+      const branchIndex = Number.isFinite(options.insertIndex) ? options.insertIndex ?? siblingIds.length : siblingIds.length;
+      visual = resolveBaseVisualStyle('secondary', renderStylePreset, options.doc, branchIndex);
       shape = {
         fill: visual.fill,
         stroke: visual.stroke,
         fillPreset: visual.fillPreset,
         borderPreset: visual.borderPreset,
+        strokeWidthPx: visual.strokeWidthPx,
       };
     } else if (parentRole === 'secondary') {
-      visual = resolveBaseVisualStyle('default', renderStylePreset);
+      visual = resolveBaseVisualStyle('default', renderStylePreset, options.doc, getMindNodeBranchIndex(options.doc, options.parentId));
       shape = {
         fill: visual.fill,
         stroke: visual.stroke,
         fillPreset: visual.fillPreset,
         borderPreset: visual.borderPreset,
+        strokeWidthPx: visual.strokeWidthPx,
       };
     } else {
-      visual = resolveBaseVisualStyle('default', renderStylePreset);
+      visual = resolveBaseVisualStyle('default', renderStylePreset, options.doc, getMindNodeBranchIndex(options.doc, options.parentId));
       shape = {
         fill: parentEffectiveStyle?.shape.fill ?? visual.fill,
         stroke: parentEffectiveStyle?.shape.stroke ?? visual.stroke,
@@ -530,39 +659,46 @@ export function createInitialNodeStyleForInsert(options: {
       : role === 'secondary'
         ? ROUGH_SECONDARY_STYLE
         : ROUGH_DEFAULT_STYLE;
+  const roleVisual = !options.parentId ? visual : null;
 
   if (!options.parentId) {
     text = {
       fontFamily: DEFAULT_FONT_FAMILY,
-      fontSizePx: textBase.fontSizePx,
-      fontWeight: textBase.fontWeight,
-      fontStyle: textBase.fontStyle,
-      color: textBase.textColor,
-      textAlign: textBase.textAlign,
+      fontSizePx: roleVisual?.fontSizePx ?? textBase.fontSizePx,
+      fontWeight: roleVisual?.fontWeight ?? textBase.fontWeight,
+      fontStyle: roleVisual?.fontStyle ?? textBase.fontStyle,
+      color: roleVisual?.textColor ?? textBase.textColor,
+      textAlign: roleVisual?.textAlign ?? textBase.textAlign,
     };
   } else {
     const parentRole = getMindNodeRole(options.doc, options.parentId);
     if (parentRole === 'root') {
+      const activeMind = getActiveMind(options.doc);
+      const nodes = activeMind?.nodes ?? {};
+      const siblingIds = Array.isArray(nodes[options.parentId]?.children) ? nodes[options.parentId].children : [];
+      const branchIndex = Number.isFinite(options.insertIndex) ? options.insertIndex ?? siblingIds.length : siblingIds.length;
+      const secondaryVisual = resolveBaseVisualStyle('secondary', renderStylePreset, options.doc, branchIndex);
       text = buildInheritedFontFamilyTextStyle(
         {
           fontFamily: DEFAULT_FONT_FAMILY,
-          fontSizePx: ROUGH_SECONDARY_STYLE.fontSizePx,
-          fontWeight: ROUGH_SECONDARY_STYLE.fontWeight,
-          fontStyle: ROUGH_SECONDARY_STYLE.fontStyle,
-          color: ROUGH_SECONDARY_STYLE.textColor,
-          textAlign: ROUGH_SECONDARY_STYLE.textAlign,
+          fontSizePx: secondaryVisual.fontSizePx,
+          fontWeight: secondaryVisual.fontWeight,
+          fontStyle: secondaryVisual.fontStyle,
+          color: secondaryVisual.textColor,
+          textAlign: secondaryVisual.textAlign,
         },
         parentText
       );
     } else if (parentRole === 'secondary') {
+      const defaultVisual = resolveBaseVisualStyle('default', renderStylePreset, options.doc, getMindNodeBranchIndex(options.doc, options.parentId));
       text = buildInheritedFontFamilyTextStyle(
         {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSizePx: 16,
-          fontWeight: ROUGH_DEFAULT_STYLE.fontWeight,
-          fontStyle: ROUGH_DEFAULT_STYLE.fontStyle,
-          color: ROUGH_DEFAULT_STYLE.textColor,
-          textAlign: ROUGH_DEFAULT_STYLE.textAlign,
+          fontWeight: defaultVisual.fontWeight,
+          fontStyle: defaultVisual.fontStyle,
+          color: defaultVisual.textColor,
+          textAlign: defaultVisual.textAlign,
         },
         parentText
       );

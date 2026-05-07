@@ -77,6 +77,7 @@ export async function streamHarnessSse(
   body: Record<string, unknown>,
   handlers: {
     onChunk?: (content: string) => void
+    onEvent?: (event: any) => void
     onDone?: () => void
     onError?: (message: string) => void
   } = {},
@@ -116,7 +117,7 @@ export async function streamHarnessSse(
 
   const handleLine = (line: string) => {
     const trimmed = line.trim()
-    if (!trimmed || !trimmed.startsWith('data:')) return
+    if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) return
     const data = trimmed.slice(5).trim()
     if (data === '[DONE]') {
       done = true
@@ -125,6 +126,7 @@ export async function streamHarnessSse(
     }
     try {
       const parsed = JSON.parse(data)
+      handlers.onEvent?.(parsed)
       if (parsed.error) {
         done = true
         handlers.onError?.(String(parsed.error))

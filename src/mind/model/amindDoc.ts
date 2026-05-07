@@ -79,6 +79,14 @@ export type MindRelation = {
     label?: string | null;
 };
 
+export type AmindManifest = {
+    title?: string;
+    updatedAt?: string | null;
+    renderStylePreset?: 'clean' | 'rough';
+    colorSchemeKey?: string;
+    [key: string]: unknown;
+};
+
 export type Node = {
     id: NodeId;
     parentId: NodeId | null;
@@ -102,6 +110,7 @@ export type Node = {
 
 export type AmindDoc = {
     version: number;
+    manifest?: AmindManifest;
 
     roots: Root[];
     nodesById: Record<NodeId, Node>;

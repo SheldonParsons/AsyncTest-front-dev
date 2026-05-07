@@ -16,6 +16,7 @@ import type { BranchMeta, ParentEdgeCacheStats, ParentEdgeGeom } from './useEdge
 import { DEBUG_CANVAS_OVERLAY, DEBUG_SPATIAL, DEBUG_SPATIAL_LOG, DEBUG_SPATIAL_SHOW_CELL_COUNTS, ROUGH_STYLE } from '../constants';
 import { formatCamera, formatWorldRect } from '../diagnostics';
 import { getMindNodeDefaultVisualStyle } from '../nodeStyles';
+import { getMindColorSchemeStyleForRole, resolveMindDocumentColorSchemeKey } from '../colorSchemes';
 import type { CollapseTagInfo } from '../collapseTags';
 import {
   getNodeBodyWorldRect,
@@ -86,10 +87,6 @@ const ROUGH_SEAM_CAP_LINEWIDTH_FACTOR = 1.1;
 const NODE_CORNER_RADIUS = 10;
 const HOVER_OUTLINE_OFFSET_PX = 3;
 const SELECTED_OUTLINE_OFFSET_PX = 4;
-const COLLAPSE_TAG_FILL = '#D02F48';
-const COLLAPSE_TAG_FILL_HOVER = '#DB5A6E';
-const COLLAPSE_TAG_STROKE = '#111111';
-const COLLAPSE_TAG_TEXT = '#FFFFFF';
 const COLLAPSE_TAG_FONT = '700 11px "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
 const ROOT_SECRECY_TEXT = '#ffffff';
 const ROOT_SECRECY_STROKE = '#111111';
@@ -243,6 +240,7 @@ type DrawStats = {
 type VisibleEdgeGroup = {
   geom: ParentEdgeGeom;
   branchEntries: Array<{ childId: string; meta: BranchMeta }>;
+  colorSourceChildId?: string | null;
 };
 
 function rectWidth(rect: WorldRect) {
@@ -291,8 +289,27 @@ function drawScreenRoundedRect(
   ctx.closePath();
 }
 
+function isTransparentCanvasColor(color: string | null | undefined) {
+  if (!color) return true;
+  const normalized = color.replace(/\s+/g, '').toLowerCase();
+  return normalized === 'transparent' || normalized === 'rgba(0,0,0,0)' || normalized === 'rgba(255,255,255,0)';
+}
+
+function resolveCollapseTagColors(doc: any, nodeId: string, hovered: boolean) {
+  const visual = getMindNodeDefaultVisualStyle(doc, nodeId);
+  const stroke = isTransparentCanvasColor(visual.stroke) ? visual.fill : visual.stroke;
+  const fill = isTransparentCanvasColor(visual.fill) ? stroke : visual.fill;
+  const text = visual.textColor || DEFAULT_TEXT;
+  return {
+    fill: hovered ? stroke : fill,
+    stroke,
+    text,
+  };
+}
+
 function drawCollapseTags(
   ctx: CanvasRenderingContext2D,
+  doc: any,
   collapseTags: Map<string, CollapseTagInfo>,
   activeNodeIds: ReadonlySet<string>,
   hoverTagNodeId: string | null,
@@ -306,10 +323,11 @@ function drawCollapseTags(
     const visible = tag.isCollapsed || activeNodeIds.has(tag.nodeId);
     if (!visible) continue;
     const hovered = hoverTagNodeId === tag.nodeId;
+    const colors = resolveCollapseTagColors(doc, tag.nodeId, hovered);
     ctx.save();
     if (ghostNodeIds?.has(tag.nodeId)) ctx.globalAlpha *= 0.35;
     if (tag.isCollapsed) {
-      ctx.strokeStyle = COLLAPSE_TAG_STROKE;
+      ctx.strokeStyle = colors.stroke;
       ctx.lineWidth = 1.5;
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -318,14 +336,14 @@ function drawCollapseTags(
       ctx.stroke();
     }
     drawScreenRoundedRect(ctx, tag.x, tag.y, tag.width, tag.height, tag.radius);
-    ctx.fillStyle = hovered ? COLLAPSE_TAG_FILL_HOVER : COLLAPSE_TAG_FILL;
+    ctx.fillStyle = colors.fill;
     ctx.fill();
-    ctx.strokeStyle = COLLAPSE_TAG_STROKE;
+    ctx.strokeStyle = colors.stroke;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     if (tag.isCollapsed) {
-      ctx.fillStyle = COLLAPSE_TAG_TEXT;
+      ctx.fillStyle = colors.text;
       ctx.fillText(tag.label, tag.x + tag.width / 2, tag.y + tag.height / 2 + 0.5);
       ctx.restore();
       continue;
@@ -333,7 +351,7 @@ function drawCollapseTags(
 
     const centerY = tag.y + tag.height / 2;
     const lineInset = 7;
-    ctx.strokeStyle = COLLAPSE_TAG_TEXT;
+    ctx.strokeStyle = colors.text;
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -406,7 +424,12 @@ function drawHoveredNodeMarker(
   ctx.drawImage(image, mx - offset, markerY - offset, hoverSize, hoverSize);
 }
 
-function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect, label: string) {
+function drawRootSecrecyBadge(
+  ctx: CanvasRenderingContext2D,
+  bodyRect: WorldRect,
+  label: string,
+  colors?: { fill?: string; stroke?: string; text?: string }
+) {
   const bodyWidth = rectWidth(bodyRect);
   const availableWidth = Math.max(26, bodyWidth - 4);
   const badgeHeight = 15;
@@ -440,13 +463,13 @@ function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect
       y2: badgeY + badgeHeight,
     },
     radius,
-    ROOT_SECRECY_FILL,
-    ROOT_SECRECY_STROKE,
+    colors?.fill ?? ROOT_SECRECY_FILL,
+    colors?.stroke ?? ROOT_SECRECY_STROKE,
     1
   );
 
   ctx.font = `600 ${fontSize}px "Source Han Serif SC", "STSong", "Songti SC", serif`;
-  ctx.fillStyle = ROOT_SECRECY_TEXT;
+  ctx.fillStyle = colors?.text ?? ROOT_SECRECY_TEXT;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   const textY = badgeY + badgeHeight / 2 + 0.15;
@@ -456,6 +479,7 @@ function drawRootSecrecyBadge(ctx: CanvasRenderingContext2D, bodyRect: WorldRect
 
 function drawRootSecrecyBadgeIfNeeded(
   ctx: CanvasRenderingContext2D,
+  doc: any,
   rootNodeIds: Set<string>,
   id: string,
   node: any,
@@ -464,7 +488,12 @@ function drawRootSecrecyBadgeIfNeeded(
   if (!rootNodeIds.has(id)) return;
   const secrecyLabel = formatNodeSecrecyLabel(getNodeSecrecy(node));
   if (!secrecyLabel) return;
-  drawRootSecrecyBadge(ctx, bodyRect, secrecyLabel);
+  const badgeStyle = getMindColorSchemeStyleForRole(resolveMindDocumentColorSchemeKey(doc), 'secondary', { branchIndex: 0 });
+  drawRootSecrecyBadge(ctx, bodyRect, secrecyLabel, {
+    fill: badgeStyle.fill || ROOT_SECRECY_FILL,
+    stroke: badgeStyle.borderPreset === 'none' ? badgeStyle.fill : badgeStyle.stroke || ROOT_SECRECY_STROKE,
+    text: badgeStyle.textColor || ROOT_SECRECY_TEXT,
+  });
 }
 
 function snapToDevicePixel(value: number, dpr: number) {
@@ -1388,7 +1417,11 @@ export function useDraw(
           branchEntries.push({ childId, meta });
         }
         if (!branchEntries.length && !geom.trunkPathData) continue;
-        visibleEdgeGroups.push({ geom, branchEntries });
+        visibleEdgeGroups.push({
+          geom,
+          branchEntries,
+          colorSourceChildId: branchEntries[0]?.childId ?? geom.branchMeta.keys().next().value ?? null,
+        });
         visibleEdgeShapeCount += branchEntries.length + (geom.trunkPathData ? 1 : 0);
       }
 
@@ -1642,8 +1675,14 @@ export function useDraw(
         : edgeGroup.branchEntries;
       const canDrawTrunk = !!geom.trunkPathData && (!hiddenDraggedNodeIds || !hiddenDraggedNodeIds.has(geom.parentId));
       if (!branchEntries.length && !canDrawTrunk) return;
-      const branchStroke = multiplyColorAlpha(roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
-      const trunkStroke = multiplyColorAlpha(roughStyle.colors.edges.trunkStroke, strokeAlphaFactor);
+      const firstBranchVisual = edgeGroup.colorSourceChildId
+        ? getMindNodeDefaultVisualStyle(props.doc, edgeGroup.colorSourceChildId)
+        : null;
+      const parentVisual = getMindNodeDefaultVisualStyle(props.doc, geom.parentId);
+      const trunkStroke = multiplyColorAlpha(
+        firstBranchVisual?.stroke || parentVisual.stroke || roughStyle.colors.edges.trunkStroke,
+        strokeAlphaFactor
+      );
       let parentBranchCount = 0;
 
       targetCtx.save();
@@ -1676,6 +1715,7 @@ export function useDraw(
 
       for (const { childId, meta } of branchEntries) {
         const childVisual = getMindNodeDefaultVisualStyle(props.doc, childId);
+        const branchStroke = multiplyColorAlpha(childVisual.stroke || roughStyle.colors.edges.branchStroke, strokeAlphaFactor);
         const useRoughEdge =
           roughEnabled &&
           (childVisual.borderPreset === 'rough-solid' || childVisual.borderPreset === 'rough-dashed');
@@ -1985,7 +2025,7 @@ export function useDraw(
       const hmk = hoveredMarker.value;
       const markerHoverIdx = (hmk && hmk.nodeId === id) ? hmk.index : -1;
       drawNodeMarkers(targetCtx, node, bodyRect, getLoadedNodeImage, markerHoverIdx >= 0 ? markerHoverIdx : undefined);
-      drawRootSecrecyBadgeIfNeeded(targetCtx, rootNodeIds, id, node, bodyRect);
+      drawRootSecrecyBadgeIfNeeded(targetCtx, props.doc, rootNodeIds, id, node, bodyRect);
       targetCtx.restore();
     }
 
@@ -2150,8 +2190,8 @@ export function useDraw(
 
       targetCtx.save();
       targetCtx.setTransform(cam.scale * dpr, 0, 0, cam.scale * dpr, (cam.tx + offsetX) * dpr, (cam.ty + offsetY) * dpr);
-      for (const { geom, branchEntries } of renderVisibleEdgeGroups) {
-        drawVisibleEdgeGroup(targetCtx, { geom, branchEntries });
+      for (const { geom, branchEntries, colorSourceChildId } of renderVisibleEdgeGroups) {
+        drawVisibleEdgeGroup(targetCtx, { geom, branchEntries, colorSourceChildId });
       }
       drawVisibleSummaries(targetCtx, baseWorldViewportRect);
       drawVisibleRelations(targetCtx, renderVisibleRelationGeoms);
@@ -2557,6 +2597,7 @@ export function useDraw(
     }
     drawCollapseTags(
       ctx,
+      props.doc,
       collapseTags.value,
       collapseTagActiveNodeIds.value,
       collapseTagHoverNodeId.value,

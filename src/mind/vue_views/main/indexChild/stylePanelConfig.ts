@@ -5,6 +5,8 @@ import type { MindNodeBorderPreset, MindNodeFillPreset } from '../nodeStyles';
 
 export const styleColorSwatches = [
   '#ffffff',
+  'rgba(0, 0, 0, 0)',
+  '#000000',
   '#EEEEEE',
   '#111111',
   '#eab308',

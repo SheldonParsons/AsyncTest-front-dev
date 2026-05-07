@@ -12,7 +12,8 @@
           <button
             v-for="t in availableTypes"
             :key="t.key"
-            :class="['kbw-type', { 'kbw-type--active': form.type === t.key }]"
+            :class="['kbw-type', { 'kbw-type--active': form.type === t.key, 'kbw-type--disabled': t.disabled }]"
+            :disabled="t.disabled"
             @click="pickType(t.key)"
           >
             <div class="kbw-type-ico" v-html="t.icon" />
@@ -109,11 +110,12 @@ const form = reactive({
   name: '',
 })
 
-const TYPES: { key: KBNodeType; label: string; desc: string; icon: string }[] = [
+const TYPES: { key: KBNodeType; label: string; desc: string; icon: string; disabled?: boolean }[] = [
   { key: 'module', label: '模块', desc: '业务大类，组织一组页面', icon: svgFolder() },
   { key: 'page', label: '页面', desc: '具体页面，包含 UI 块', icon: svgPage() },
   { key: 'nav', label: '导航', desc: '菜单/标签/卡片等导航形态', icon: svgNav() },
-  { key: 'rule', label: '规则', desc: '可被引用的纯文字规则', icon: svgRule() },
+  { key: 'concept', label: '概念', desc: '可复用的业务概念定义', icon: svgConcept() },
+  { key: 'rule', label: '规则', desc: '规则功能暂未开放', icon: svgRule(), disabled: true },
   { key: 'shared', label: '共享', desc: '复用片段（按钮/字段集合）', icon: svgShared() },
 ]
 
@@ -130,9 +132,9 @@ const NAV_SUBTYPES_ASSET: { key: KBNavSubtype; label: string }[] = [
 ]
 
 const availableTypes = computed(() => {
-  // Asset-tree parent: rule / shared / nav (asset-tree nav is classification only).
+  // Concept library: concept can be created; rule is visible but disabled for later.
   if (parentTree.value === 'asset') {
-    return TYPES.filter(t => t.key === 'rule' || t.key === 'shared' || t.key === 'nav')
+    return TYPES.filter(t => t.key === 'concept' || t.key === 'rule')
   }
   // Business-tree parent: page / module / nav. rule & shared belong on the asset tree.
   return TYPES.filter(t => t.key === 'page' || t.key === 'module' || t.key === 'nav')
@@ -157,7 +159,7 @@ const subtypeHint = computed(() => {
     case 'drawer': return '抽屉式弹层，从屏幕侧边滑出。'
     case 'section': return '通用区段，用于分组无明确导航控件的子节点。'
     case 'custom': return '自定义导航形态，请在节点描述中说明交互方式。'
-    case 'category': return '资产树分类节点。仅作为人类索引/归类，不会被作为引用目标。'
+    case 'category': return '概念库分类节点。仅作为人类索引/归类，不会被作为引用目标。'
     default: return '选择一个 nav subtype，可加速元数据查询。'
   }
 })
@@ -171,7 +173,7 @@ const canConfirm = computed(() => {
 
 watch(() => form.type, (t) => {
   // Strict tree binding for typed nodes; nav inherits parent tree (no UI override).
-  if (t === 'rule' || t === 'shared') form.tree = 'asset'
+  if (t === 'rule' || t === 'shared' || t === 'concept') form.tree = 'asset'
   else if (t === 'page' || t === 'module') form.tree = 'business'
   else if (t === 'nav') form.tree = parentTree.value || 'business'
 
@@ -190,6 +192,8 @@ function syncNavSubtype() {
 }
 
 function pickType(t: KBNodeType) {
+  const item = availableTypes.value.find(item => item.key === t)
+  if (item?.disabled) return
   form.type = t
   const tree = parentTree.value || 'business'
   lastTypeByTree[tree] = t
@@ -207,6 +211,9 @@ function svgNav() {
 function svgRule() {
   return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 0 8H4z"/><path d="M4 12h16a4 4 0 0 1 0 8H4z"/></svg>'
 }
+function svgConcept() {
+  return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M9 10a3 3 0 1 1 5 2.2c-.9.6-1.2 1.1-1.2 2.3"/><path d="M12 18h.01"/></svg>'
+}
 function svgShared() {
   return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><line x1="8" y1="8" x2="11" y2="16"/><line x1="16" y1="8" x2="13" y2="16"/></svg>'
 }
@@ -223,7 +230,7 @@ function open(opts: OpenOptions = {}): Promise<CreateNodeWizardResult | null> {
   parentTree.value = opts.parentTree || null
   // Default type: explicit option > last picked for this tree (if still allowed) > first available.
   const allowed = (parentTree.value === 'asset'
-    ? (['rule', 'shared', 'nav'] as KBNodeType[])
+    ? (['concept'] as KBNodeType[])
     : (['page', 'module', 'nav'] as KBNodeType[]))
   const treeKey: KBTreeKind = parentTree.value || 'business'
   const remembered = lastTypeByTree[treeKey]
@@ -296,6 +303,12 @@ $border: rgba(0, 0, 0, 0.08);
   padding: 10px 12px; border-radius: 10px; border: 1px solid $border;
   background: #fafafa; cursor: pointer; transition: all 0.15s; text-align: left;
   &:hover:not(.kbw-type--active) { background: #f0f0f2; border-color: rgba(0,0,0,0.16); }
+  &--disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+    filter: grayscale(0.2);
+    &:hover { background: #fafafa; border-color: $border; }
+  }
   &--active, &--active:hover {
     background: #1d1d1f; border-color: #1d1d1f; color: #fff;
     .kbw-type-desc { color: rgba(255,255,255,0.65); }

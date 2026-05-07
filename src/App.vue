@@ -7,7 +7,7 @@
     </div>
     <router-view v-if="flag" class="main-router" @doubleCheckLoginStatus="check_login_status" />
     <button
-      v-if="isMainWindow && route.path !== '/login'"
+      v-if="showAdminDebugEntry"
       class="admin-debug-entry"
       title="调试台"
       @click="goDebugConsole"
@@ -29,6 +29,12 @@ import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
 const upHeaderZIndex = ref(false);
 const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
 const isMainWindow = computed(() => (route.query.windowKey || 'main') === 'main');
+const showAdminDebugEntry = computed(() => {
+  if (!isMainWindow.value) {
+    return false
+  }
+  return route.path === '/agentDashboard' || route.path.startsWith('/agent/')
+})
 const toastRef = ref()
 const commonHeaderRef = ref()
 const route = useRoute()

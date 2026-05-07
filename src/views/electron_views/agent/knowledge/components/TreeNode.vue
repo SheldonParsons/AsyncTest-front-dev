@@ -37,6 +37,10 @@
       <span v-else-if="node.type === 'module'" class="tree-node-badge tree-node-badge--module">模块</span>
       <span v-else-if="node.type === 'rule'" class="tree-node-badge tree-node-badge--rule">规则</span>
       <span v-else-if="node.type === 'shared'" class="tree-node-badge tree-node-badge--shared">共享</span>
+      <span
+        v-if="conceptStatusLabel"
+        :class="['tree-node-badge', 'tree-node-badge--concept-state', `tree-node-badge--concept-state-${conceptStatusKind}`]"
+      >{{ conceptStatusLabel }}</span>
       <!-- Rule no-inbound warn -->
       <span
         v-if="node.type === 'rule' && node.expected_inbound !== false && stale"
@@ -104,7 +108,7 @@ const showContext = ref(false)
 const hasChildren = computed(() => !!(props.node.children && props.node.children.length > 0))
 
 // Phase 4.7 — only `rule` is leaf-only. All other types may have children.
-const canHaveChildren = computed(() => props.node.type !== 'rule')
+const canHaveChildren = computed(() => !['rule', 'concept'].includes(props.node.type))
 
 // Phase 4.7 — rule "stale" indicator: expected to be referenced but currently
 // has no inbound. Backend computes inbound count; until that lands, we proxy
@@ -115,6 +119,7 @@ const TYPE_ICONS: Record<string, string> = {
   module:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   page:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="14 3 14 9 20 9"/></svg>',
   nav:       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="14" y2="18"/></svg>',
+  concept:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M9 10a3 3 0 1 1 5 2.2c-.9.6-1.2 1.1-1.2 2.3"/><path d="M12 18h.01"/></svg>',
   rule:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 0 8H4z"/><path d="M4 12h16a4 4 0 0 1 0 8H4z"/></svg>',
   shared:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><line x1="8" y1="8" x2="11" y2="16"/><line x1="16" y1="8" x2="13" y2="16"/></svg>',
   directory: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -133,6 +138,30 @@ const NAV_SUBTYPE_LABELS: Record<string, string> = {
 const navSubtypeLabel = computed(() =>
   props.node.subtype ? (NAV_SUBTYPE_LABELS[props.node.subtype] || props.node.subtype) : ''
 )
+
+const conceptPayload = computed(() => {
+  const content = props.node.content as any
+  const concept = content?.concept
+  return concept && typeof concept === 'object' ? concept : {}
+})
+
+const conceptStatusKind = computed(() => {
+  if (props.node.type !== 'concept') return ''
+  if (conceptPayload.value.source_status === 'missing') return 'missing'
+  const status = conceptPayload.value.status || 'active'
+  return status === 'active' ? '' : status
+})
+
+const CONCEPT_STATUS_LABELS: Record<string, string> = {
+  pending: '待确认',
+  new: '新增',
+  supplement: '补充',
+  duplicate: '重复',
+  conflict: '冲突',
+  replacement: '替代',
+  missing: '来源失效',
+}
+const conceptStatusLabel = computed(() => CONCEPT_STATUS_LABELS[conceptStatusKind.value] || '')
 </script>
 
 <style lang="scss" scoped>
@@ -237,6 +266,11 @@ $text-tertiary: rgba(0, 0, 0, 0.35);
     color: #d97706;
   }
 
+  &--concept {
+    background: rgba(0, 113, 227, 0.11);
+    color: #075ea8;
+  }
+
   &--shared {
     background: rgba(5, 150, 105, 0.12);
     color: #059669;
@@ -247,6 +281,36 @@ $text-tertiary: rgba(0, 0, 0, 0.35);
     color: #d97706;
     font-weight: 700;
     padding: 1px 6px;
+  }
+
+  &--concept-state {
+    font-weight: 700;
+  }
+
+  &--concept-state-pending {
+    background: rgba(255, 149, 0, 0.16);
+    color: #b45309;
+  }
+
+  &--concept-state-new {
+    background: rgba(255, 149, 0, 0.16);
+    color: #b45309;
+  }
+
+  &--concept-state-supplement {
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+  }
+
+  &--concept-state-duplicate {
+    background: rgba(100, 116, 139, 0.14);
+    color: #475569;
+  }
+
+  &--concept-state-conflict,
+  &--concept-state-missing {
+    background: rgba(220, 38, 38, 0.12);
+    color: #b42318;
   }
 }
 

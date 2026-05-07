@@ -27,6 +27,7 @@ copilot*.md
 
 CLAUDE.md
 .claude/
+graphify-out/
 .agents
 .opencode
 

@@ -264,6 +264,7 @@ function appendDevSeedNodes(board, rootId, seedOptions = {}) {
 
 function createEmptyMindBoard(title, { id, seedConfig, seedNodeCount } = {}) {
     const rootId = 'root';
+    const defaultChildIds = seedConfig || seedNodeCount ? [] : ['root-child-1', 'root-child-2', 'root-child-3', 'root-child-4'];
     const board = {
         id,
         title,
@@ -279,12 +280,20 @@ function createEmptyMindBoard(title, { id, seedConfig, seedNodeCount } = {}) {
             },
         ],
         nodes: {
-            [rootId]: { id: rootId, text: title, children: [], images: [] },
+            [rootId]: { id: rootId, text: title, children: [...defaultChildIds], images: [] },
         },
         view: {
             viewport: {},
         },
     };
+    defaultChildIds.forEach((childId, index) => {
+        board.nodes[childId] = {
+            id: childId,
+            text: `分支主题 ${index + 1}`,
+            children: [],
+            images: [],
+        };
+    });
 
     appendDevSeedNodes(board, rootId, { seedConfig, seedNodeCount });
     return board;
@@ -312,6 +321,7 @@ export function createEmptyDoc(title = '思维导图', options = {}) {
             updatedAt: now,
             title,
             renderStylePreset: 'clean',
+            colorSchemeKey: 'rainbow',
         },
 
         mind: {

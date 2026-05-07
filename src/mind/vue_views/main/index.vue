@@ -242,6 +242,10 @@
             @click="formatPanelTab = 'mark'">
             标记
           </button>
+          <button class="format-panel-tab" :class="{ 'is-active': formatPanelTab === 'theme' }" type="button"
+            @click="formatPanelTab = 'theme'">
+            主题
+          </button>
         </div>
         <div class="format-panel-body" :class="{ 'is-disabled': !hasSelectedNodes }">
           <div v-if="formatPanelTab === 'style'" class="style-panel" @pointerdown.prevent @mousedown.prevent>
@@ -273,7 +277,7 @@
                       <ColorSwatchPickerItem v-for="color in styleFillColorSwatches" :key="`fill-${color}`"
                         :value="color" as-child>
                         <button class="style-color-item" type="button">
-                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <span class="style-color-swatch" :style="getColorSwatchStyle(color)" />
                           <ColorSwatchPickerItemIndicator as-child>
                             <span class="style-color-indicator">✓</span>
                           </ColorSwatchPickerItemIndicator>
@@ -307,7 +311,7 @@
                       <ColorSwatchPickerItem v-for="color in styleOutlineColorSwatches" :key="`border-${color}`"
                         :value="color" as-child>
                         <button class="style-color-item" type="button">
-                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <span class="style-color-swatch" :style="getColorSwatchStyle(color)" />
                           <ColorSwatchPickerItemIndicator as-child>
                             <span class="style-color-indicator">✓</span>
                           </ColorSwatchPickerItemIndicator>
@@ -386,7 +390,7 @@
                       <ColorSwatchPickerItem v-for="color in styleOutlineColorSwatches" :key="`text-${color}`"
                         :value="color" as-child>
                         <button class="style-color-item" type="button">
-                          <span class="style-color-swatch" :style="{ backgroundColor: color }" />
+                          <span class="style-color-swatch" :style="getColorSwatchStyle(color)" />
                           <ColorSwatchPickerItemIndicator as-child>
                             <span class="style-color-indicator">✓</span>
                           </ColorSwatchPickerItemIndicator>
@@ -453,6 +457,66 @@
               </button>
             </div>
           </div>
+          <div v-if="formatPanelTab === 'theme'" class="theme-panel" @pointerdown.prevent @mousedown.prevent>
+            <section class="style-section">
+              <div class="style-section-header">
+                <h3 class="style-section-title">配色方案</h3>
+              </div>
+              <div class="theme-card-grid">
+                <button
+                  v-for="scheme in allColorSchemes"
+                  :key="scheme.key"
+                  class="theme-card"
+                  type="button"
+                  :title="scheme.name"
+                  @click="onColorSchemeSelect(scheme.key)"
+                >
+                  <span class="theme-preview" aria-hidden="true">
+                    <span class="theme-preview-strip">
+                      <span
+                        v-for="(color, colorIndex) in getThemePreviewPalette(scheme)"
+                        :key="`${scheme.key}-preview-${colorIndex}`"
+                        class="theme-preview-swatch"
+                        :style="{ backgroundColor: color }"
+                      />
+                    </span>
+                    <span class="theme-preview-glow" />
+                  </span>
+                  <span class="theme-card-copy">
+                    <span class="theme-card-title">{{ scheme.name }}</span>
+                    <span class="theme-card-description">{{ scheme.description }}</span>
+                  </span>
+                  <span
+                    v-if="scheme.custom"
+                    class="theme-card-action theme-card-edit"
+                    role="button"
+                    tabindex="0"
+                    title="编辑自定义方案"
+                    @click.stop="showCustomColorSchemeComingSoon"
+                    @keydown.enter.stop.prevent="showCustomColorSchemeComingSoon"
+                    @keydown.space.stop.prevent="showCustomColorSchemeComingSoon"
+                  >
+                    编辑
+                  </span>
+                  <span
+                    v-if="scheme.custom"
+                    class="theme-card-action theme-card-delete"
+                    role="button"
+                    tabindex="0"
+                    title="删除自定义方案"
+                    @click.stop="deleteCustomColorScheme(scheme.key)"
+                    @keydown.enter.stop.prevent="deleteCustomColorScheme(scheme.key)"
+                    @keydown.space.stop.prevent="deleteCustomColorScheme(scheme.key)"
+                  >
+                    删除
+                  </span>
+                </button>
+              </div>
+              <button class="theme-custom-button" type="button" @click="showCustomColorSchemeComingSoon">
+                自定义配色方案
+              </button>
+            </section>
+          </div>
           <div v-if="formatPanelTab === 'mark' && !hasSelectedNodes" class="format-panel-body-mask"
             aria-hidden="true" />
           <div v-if="formatPanelTab === 'style' && !hasSelectedNodes" class="format-panel-body-mask"
@@ -460,6 +524,166 @@
         </div>
       </aside>
     </div>
+
+    <Teleport to="body">
+      <transition name="mind-close-dialog-fade">
+        <div
+          v-if="customSchemeDialogOpen"
+          class="theme-dialog-overlay"
+          @click="closeCustomColorSchemeDialog"
+        >
+          <div class="theme-dialog" @click.stop @pointerdown.stop>
+            <div class="theme-dialog-header">
+              <div>
+                <h2 class="theme-dialog-title">自定义配色方案</h2>
+                <p class="theme-dialog-subtitle">配置根节点、二级节点和其他节点的默认视觉样式</p>
+              </div>
+              <button class="theme-dialog-close" type="button" @click="closeCustomColorSchemeDialog">×</button>
+            </div>
+
+            <label class="theme-dialog-name">
+              <span>方案名称</span>
+              <input v-model="customSchemeName" type="text" maxlength="24" />
+            </label>
+
+            <div class="theme-layer-grid">
+              <section
+                v-for="role in customThemeRoles"
+                :key="role.key"
+                class="theme-layer-editor"
+              >
+                <div class="theme-layer-heading">
+                  <span>{{ role.label }}</span>
+                  <span class="theme-layer-sample" :style="getCustomThemeLayerSampleStyle(role.key)">Aa</span>
+                </div>
+
+                <div class="theme-layer-row">
+                  <span>填充</span>
+                  <div class="theme-layer-options">
+                    <button
+                      v-for="option in styleFillOptions"
+                      :key="`${role.key}-fill-${option.key}`"
+                      class="theme-layer-chip"
+                      :class="{ 'is-selected': customSchemeDraft[role.key].fillPreset === option.key }"
+                      type="button"
+                      @click="setCustomThemeLayerValue(role.key, 'fillPreset', option.key)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="theme-layer-row">
+                  <span>边框</span>
+                  <div class="theme-layer-options">
+                    <button
+                      v-for="option in styleBorderOptions"
+                      :key="`${role.key}-border-${option.key}`"
+                      class="theme-layer-chip"
+                      :class="{ 'is-selected': customSchemeDraft[role.key].borderPreset === option.key }"
+                      type="button"
+                      @click="setCustomThemeLayerValue(role.key, 'borderPreset', option.key)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="theme-layer-row">
+                  <span>颜色</span>
+                  <div class="theme-layer-color-tabs">
+                    <button
+                      v-for="target in customThemeColorTargets"
+                      :key="`${role.key}-${target.key}`"
+                      class="theme-layer-color-button"
+                      :class="{ 'is-selected': customSchemeActiveColorTarget[role.key] === target.key }"
+                      type="button"
+                      @click="customSchemeActiveColorTarget[role.key] = target.key"
+                    >
+                      <span
+                        class="theme-layer-color-dot"
+                        :style="getColorSwatchStyle(customSchemeDraft[role.key][target.key])"
+                      />
+                      {{ target.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="theme-layer-slider-stack">
+                  <ColorSliderRoot
+                    :model-value="getSliderColorModel(getCustomThemeActiveColor(role.key))"
+                    class="style-color-slider"
+                    color-space="hsl"
+                    channel="hue"
+                    @update:model-value="(color) => setCustomThemeActiveColor(role.key, String(color))"
+                    @change="(color) => setCustomThemeActiveColor(role.key, color)"
+                    @change-end="(color) => setCustomThemeActiveColor(role.key, color)"
+                  >
+                    <ColorSliderTrack class="style-color-slider-track">
+                      <ColorSliderThumb class="style-color-slider-thumb" />
+                    </ColorSliderTrack>
+                  </ColorSliderRoot>
+                  <div class="theme-layer-quick-colors">
+                    <button
+                      v-for="quickColor in customThemeQuickColors"
+                      :key="`${role.key}-quick-${quickColor.key}`"
+                      class="theme-layer-quick-color"
+                      type="button"
+                      :title="quickColor.label"
+                      @click="setCustomThemeActiveColor(role.key, quickColor.value)"
+                    >
+                      <span :style="getColorSwatchStyle(quickColor.value)" />
+                      {{ quickColor.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="theme-layer-row is-compact">
+                  <span>线条粗细</span>
+                  <div class="theme-layer-options">
+                    <button
+                      v-for="option in styleStrokeWidthOptions"
+                      :key="`${role.key}-width-${option.key}`"
+                      class="theme-layer-chip"
+                      :class="{ 'is-selected': customSchemeDraft[role.key].strokeWidthPx === mapBorderWidthKeyToStrokeWidth(option.key) }"
+                      type="button"
+                      @click="setCustomThemeLayerValue(role.key, 'strokeWidthPx', mapBorderWidthKeyToStrokeWidth(option.key))"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="theme-layer-row is-compact">
+                  <span>字号</span>
+                  <div class="theme-layer-options">
+                    <button
+                      v-for="size in styleFontSizes"
+                      :key="`${role.key}-font-${size}`"
+                      class="theme-layer-chip"
+                      :class="{ 'is-selected': customSchemeDraft[role.key].fontSizePx === size }"
+                      type="button"
+                      @click="setCustomThemeLayerValue(role.key, 'fontSizePx', size)"
+                    >
+                      {{ size }}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="theme-dialog-actions">
+              <button class="theme-dialog-button is-ghost" type="button" @click="closeCustomColorSchemeDialog">
+                取消
+              </button>
+              <button class="theme-dialog-button is-primary" type="button" @click="saveCustomColorScheme">
+                {{ customSchemeEditingKey ? '保存修改并应用' : '保存并应用' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
 
     <Teleport to="body">
       <transition name="mind-close-dialog-fade">
@@ -545,13 +769,16 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import {
   type AcceptableValue,
+  ColorSliderRoot,
+  ColorSliderThumb,
+  ColorSliderTrack,
   ColorSwatchPickerItem,
   ColorSwatchPickerItemIndicator,
   ColorSwatchPickerRoot,
 } from 'reka-ui';
 import { $forEachSelectedTextNode, $patchStyleText } from '@lexical/selection';
 import { $getSelection, $isRangeSelection, FORMAT_ELEMENT_COMMAND, FORMAT_TEXT_COMMAND } from 'lexical';
-import { getInternalClipboard, internalClipboardState, setInternalClipboard, type InternalClipboardState } from '@/mind/core/clipboard';
+import { clearInternalClipboard, getInternalClipboard, internalClipboardState, setInternalClipboard, type InternalClipboardState } from '@/mind/core/clipboard';
 import { createBatchAddChildCommand, type SelectionSnapshot } from '@/mind/core/commands/BatchAddChildCommand';
 import { createBatchAddParentCommand } from '@/mind/core/commands/BatchAddParentCommand';
 import { createBatchAddSiblingCommand } from '@/mind/core/commands/BatchAddSiblingCommand';
@@ -608,7 +835,6 @@ import {
 import { richTextFromPlain } from '@/mind/core/richText';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, type SelectionTargetInfo } from '@/mind/core/selection/normalizeSelection';
 import { getNodeSummaries, getRegularChildIds, getStructuralChildIds, hasSummaryRange, isSummaryNode, setNodeSummaries, type MindSummaryMeta } from '@/mind/core/summaryMeta';
-import { getMindPlatformDefaultFontFamily } from '@/mind/fontRegistry.js';
 import { DEFAULT_ROOT_H_GAP, DEFAULT_ROOT_V_GAP, ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
@@ -639,6 +865,7 @@ import {
   measureNodeMarkerRow,
   nodeMarkerGroups,
   removeNodeMarker,
+  resolveNodeMarkers,
   upsertNodeMarker,
 } from './nodeMarkers';
 import {
@@ -723,7 +950,17 @@ import { useSaveFlow } from './indexChild/useSaveFlow';
 import { exportMindPreviewPng } from './exportPreview';
 import mindLogo from '@/mind/core/action_icon/mind.svg';
 import type { MindNodeRole } from './nodeStyles';
-import { createInitialNodeStyleForInsert, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
+import { clearMindNodeStyleCache, createInitialNodeStyleForInsert, getMindNodeDefaultVisualStyle, getMindNodeRole } from './nodeStyles';
+import {
+  getMindColorScheme,
+  getMindColorSchemeStyleForRole,
+  getAllMindColorSchemes,
+  loadCustomMindColorSchemes,
+  saveCustomMindColorSchemes,
+  type MindColorScheme,
+  type MindColorSchemeKey,
+  type MindColorSchemeLayerStyle,
+} from './colorSchemes';
 import { getCurrentRoughTheme } from '@/mind/rendering/roughTheme';
 import { ApiCheckProjectFileExists, ApiUploadProjectEntries } from '@/api/project/index';
 import {
@@ -852,7 +1089,7 @@ const searchMarkerEmptyState = computed(() =>
 );
 let searchTextQueryDebounceTimerId: number | null = null;
 let searchResultResizeObserver: ResizeObserver | null = null;
-const formatPanelTab = ref<'style' | 'mark'>('style');
+const formatPanelTab = ref<'style' | 'mark' | 'theme'>('style');
 const isMarkerDeleteMode = ref(false);
 const markerPanelGroups = nodeMarkerGroups;
 const hasSelectedNodes = computed(() => selectedIds.value.size > 0);
@@ -863,6 +1100,47 @@ const selectedBorderColor = ref<string>('#111111');
 const selectedBorderWidthKey = ref<(typeof styleStrokeWidthOptions)[number]['key']>('medium');
 const selectedFontKey = ref<StyleFontKey>('platform-default');
 const selectedFontSize = ref<(typeof styleFontSizes)[number]>(18);
+type CustomThemeRoleKey = 'root' | 'secondary' | 'default';
+type CustomThemeColorTargetKey = 'fill' | 'stroke' | 'textColor';
+type EditableColorSchemeLayerStyle = Required<Pick<MindColorSchemeLayerStyle, 'fill' | 'stroke' | 'textColor'>> & {
+  fillPreset: StyleFillPresetKey;
+  borderPreset: StyleBorderPresetKey;
+  strokeWidthPx: number;
+  fontSizePx: number;
+};
+const customThemeRoles = [
+  { key: 'root', label: '根节点' },
+  { key: 'secondary', label: '二级节点' },
+  { key: 'default', label: '其他节点' },
+] as const;
+const customThemeColorTargets = [
+  { key: 'fill', label: '填充' },
+  { key: 'stroke', label: '边框' },
+  { key: 'textColor', label: '字体' },
+] as const;
+const customThemeQuickColors = [
+  { key: 'black', label: '黑色', value: '#000000' },
+  { key: 'transparent', label: '透明', value: 'rgba(0, 0, 0, 0)' },
+  { key: 'white', label: '白色', value: '#ffffff' },
+] as const;
+const customColorSchemes = ref<MindColorScheme[]>(loadCustomMindColorSchemes());
+const allColorSchemes = computed(() => {
+  customColorSchemes.value;
+  return getAllMindColorSchemes();
+});
+const customSchemeDialogOpen = ref(false);
+const customSchemeName = ref('我的配色');
+const customSchemeEditingKey = ref<string | null>(null);
+const customSchemeDraft = ref<Record<CustomThemeRoleKey, EditableColorSchemeLayerStyle>>({
+  root: createEditableLayerFromScheme(getMindColorScheme('rainbow').root, 'root'),
+  secondary: createEditableLayerFromScheme(getMindColorScheme('rainbow').secondary, 'secondary'),
+  default: createEditableLayerFromScheme(getMindColorScheme('rainbow').default, 'default'),
+});
+const customSchemeActiveColorTarget = ref<Record<CustomThemeRoleKey, CustomThemeColorTargetKey>>({
+  root: 'fill',
+  secondary: 'fill',
+  default: 'fill',
+});
 
 type MindFontFaceEntry = {
   variant: 'regular' | 'bold';
@@ -1738,6 +2016,13 @@ const editingPreview = ref<null | {
   lineCount: number;
   textLineBoxTop: number;
   textLineBoxHeight: number;
+}>(null);
+const editingTextBoxAnchor = ref<null | {
+  nodeId: string;
+  x: number;
+  y: number;
+  width: number;
+  textAlign: RichTextAlign;
 }>(null);
 const editingWidthPreview = ref<null | {
   nodeId: string;
@@ -4450,6 +4735,7 @@ function createBatchNodePresentationCommand(
     includeMarkers?: boolean;
     includeSecrecy?: boolean;
     includeLexical?: boolean;
+    ensureVisible?: boolean;
     updateDraftNode: (draftNode: any, nodeId: string) => void;
   }
 ): Command | null {
@@ -4491,9 +4777,280 @@ function createBatchNodePresentationCommand(
       afterSnapshots: filteredAfterSnapshots,
       previousSelection: selection,
       nextSelection: selection,
-      ensureVisibleNodeIds: changedNodeIds,
+      ensureVisibleNodeIds: options.ensureVisible === false ? [] : changedNodeIds,
     }
   );
+}
+
+function getThemePreviewPalette(scheme: MindColorScheme) {
+  if (scheme.branches?.length) {
+    return [scheme.root.fill, ...scheme.branches.flatMap((branch) => [branch.secondary.fill, branch.default.fill])];
+  }
+  return [scheme.root.fill, scheme.secondary.fill, scheme.default.fill];
+}
+
+function getRoleFallbackFontSize(role: CustomThemeRoleKey) {
+  if (role === 'root') return 36;
+  if (role === 'secondary') return 18;
+  return 14;
+}
+
+function createEditableLayerFromScheme(
+  layer: MindColorSchemeLayerStyle,
+  role: CustomThemeRoleKey
+): EditableColorSchemeLayerStyle {
+  return {
+    fill: layer.fill,
+    stroke: layer.stroke,
+    textColor: layer.textColor,
+    fillPreset: (layer.fillPreset ?? 'solid') as StyleFillPresetKey,
+    borderPreset: (layer.borderPreset ?? 'clean') as StyleBorderPresetKey,
+    strokeWidthPx: Number.isFinite(layer.strokeWidthPx) ? Number(layer.strokeWidthPx) : 2,
+    fontSizePx: Number.isFinite(layer.fontSizePx) ? Number(layer.fontSizePx) : getRoleFallbackFontSize(role),
+  };
+}
+
+function cloneEditableLayer(layer: EditableColorSchemeLayerStyle): EditableColorSchemeLayerStyle {
+  return { ...layer };
+}
+
+function openCustomColorSchemeDialog(sourceScheme?: MindColorScheme) {
+  const source = sourceScheme ?? getMindColorScheme('rainbow');
+  customSchemeEditingKey.value = source.custom ? source.key : null;
+  customSchemeName.value = source.custom ? source.name : '我的配色';
+  customSchemeDraft.value = {
+    root: createEditableLayerFromScheme(source.root, 'root'),
+    secondary: createEditableLayerFromScheme(source.secondary, 'secondary'),
+    default: createEditableLayerFromScheme(source.default, 'default'),
+  };
+  customSchemeActiveColorTarget.value = {
+    root: 'fill',
+    secondary: 'fill',
+    default: 'fill',
+  };
+  customSchemeDialogOpen.value = true;
+}
+
+function closeCustomColorSchemeDialog() {
+  customSchemeDialogOpen.value = false;
+  customSchemeEditingKey.value = null;
+}
+
+function showCustomColorSchemeComingSoon() {
+  window.$toast?.({ title: '测试阶段，敬请期待', type: 'info' });
+}
+
+function getCustomThemeActiveColor(role: CustomThemeRoleKey) {
+  const target = customSchemeActiveColorTarget.value[role];
+  return customSchemeDraft.value[role][target];
+}
+
+function setCustomThemeActiveColor(role: CustomThemeRoleKey, color: string) {
+  const target = customSchemeActiveColorTarget.value[role];
+  customSchemeDraft.value[role] = {
+    ...customSchemeDraft.value[role],
+    [target]: color,
+  };
+}
+
+function setCustomThemeLayerValue<K extends keyof EditableColorSchemeLayerStyle>(
+  role: CustomThemeRoleKey,
+  key: K,
+  value: EditableColorSchemeLayerStyle[K]
+) {
+  customSchemeDraft.value[role] = {
+    ...customSchemeDraft.value[role],
+    [key]: value,
+  };
+}
+
+function buildCustomThemeFillPreviewStyle(layer: EditableColorSchemeLayerStyle): CSSProperties {
+  const baseFillStyle = layer.fillPreset === 'none'
+    ? getColorSwatchStyle('rgba(0, 0, 0, 0)')
+    : getColorSwatchStyle(layer.fill);
+  if (layer.fillPreset === 'solid' || layer.fillPreset === 'none') return baseFillStyle;
+
+  const color = isTransparentColorValue(layer.fill) ? 'rgba(15, 23, 42, 0.28)' : layer.fill;
+  if (layer.fillPreset === 'rough-cross') {
+    return {
+      backgroundColor: '#ffffff',
+      backgroundImage:
+        `repeating-linear-gradient(45deg, ${color} 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, ${color} 0 2px, transparent 2px 7px)`,
+    };
+  }
+  if (layer.fillPreset === 'rough-dots') {
+    return {
+      backgroundColor: '#ffffff',
+      backgroundImage: `radial-gradient(circle, ${color} 0 2px, transparent 2px)`,
+      backgroundSize: '8px 8px',
+    };
+  }
+  return {
+    backgroundColor: '#ffffff',
+    backgroundImage: `repeating-linear-gradient(-24deg, transparent 0 5px, ${color} 5px 8px, transparent 8px 13px)`,
+  };
+}
+
+function getCustomThemeLayerSampleStyle(role: CustomThemeRoleKey) {
+  const layer = customSchemeDraft.value[role];
+  const fillStyle = buildCustomThemeFillPreviewStyle(layer);
+  return {
+    ...fillStyle,
+    borderColor: layer.borderPreset === 'none' ? 'transparent' : layer.stroke,
+    borderStyle: layer.borderPreset === 'rough-dashed' ? 'dashed' : 'solid',
+    color: layer.textColor,
+    fontSize: `${Math.max(12, Math.min(32, layer.fontSizePx))}px`,
+    borderWidth: layer.borderPreset === 'none' ? '0px' : `${Math.max(1, Math.min(8, layer.strokeWidthPx))}px`,
+  };
+}
+
+function buildCustomColorSchemeFromDraft(): MindColorScheme {
+  const name = customSchemeName.value.trim() || '我的配色';
+  const key = customSchemeEditingKey.value ?? `custom:${Date.now().toString(36)}`;
+  return {
+    key,
+    name,
+    description: '本地自定义',
+    root: cloneEditableLayer(customSchemeDraft.value.root),
+    secondary: cloneEditableLayer(customSchemeDraft.value.secondary),
+    default: cloneEditableLayer(customSchemeDraft.value.default),
+    custom: true,
+  };
+}
+
+function saveCustomColorScheme() {
+  const scheme = buildCustomColorSchemeFromDraft();
+  const nextSchemes = customSchemeEditingKey.value
+    ? customColorSchemes.value.map((item) => (item.key === customSchemeEditingKey.value ? scheme : item))
+    : [...customColorSchemes.value, scheme];
+  saveCustomMindColorSchemes(nextSchemes);
+  customColorSchemes.value = loadCustomMindColorSchemes();
+  customSchemeDialogOpen.value = false;
+  customSchemeEditingKey.value = null;
+  onColorSchemeSelect(scheme.key);
+}
+
+function deleteCustomColorScheme(key: string) {
+  const nextSchemes = customColorSchemes.value.filter((scheme) => scheme.key !== key);
+  saveCustomMindColorSchemes(nextSchemes);
+  customColorSchemes.value = loadCustomMindColorSchemes();
+}
+
+function buildColorSchemeBranchIndexMap() {
+  const activeMind = getActiveMind(props.doc);
+  const nodes = activeMind?.nodes ?? {};
+  const branchIndexByNodeId = new Map<string, number | null>();
+  const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
+
+  roots.forEach((root: any) => {
+    const rootId = typeof root?.rootId === 'string' ? root.rootId : null;
+    if (!rootId || !nodes[rootId]) return;
+    branchIndexByNodeId.set(rootId, null);
+    const childIds = Array.isArray(nodes[rootId]?.children) ? nodes[rootId].children : [];
+    childIds.forEach((childId: string, index: number) => {
+      const stack = [childId];
+      while (stack.length) {
+        const currentId = stack.pop();
+        if (typeof currentId !== 'string' || !nodes[currentId]) continue;
+        branchIndexByNodeId.set(currentId, index);
+        const currentChildren = Array.isArray(nodes[currentId]?.children) ? nodes[currentId].children : [];
+        stack.push(...currentChildren);
+      }
+    });
+  });
+
+  Object.keys(nodes).forEach((nodeId) => {
+    if (!branchIndexByNodeId.has(nodeId)) branchIndexByNodeId.set(nodeId, null);
+  });
+
+  return branchIndexByNodeId;
+}
+
+function applyColorSchemeStyleToDraftNode(
+  draftNode: any,
+  role: MindNodeRole,
+  scheme: MindColorScheme,
+  branchIndex: number | null
+) {
+  const layerStyle = getMindColorSchemeStyleForRole(scheme, role, { branchIndex });
+  const style = ensureNodeStyleContainers(draftNode);
+  const shape = { ...(style.shape ?? {}) };
+  const text = { ...(style.text ?? {}) };
+
+  shape.fill = layerStyle.fill;
+  shape.stroke = layerStyle.stroke;
+  shape.fillPreset = layerStyle.fillPreset ?? shape.fillPreset;
+  shape.borderPreset = layerStyle.borderPreset ?? shape.borderPreset;
+  if (Number.isFinite(layerStyle.strokeWidthPx)) shape.strokeWidthPx = Number(layerStyle.strokeWidthPx);
+  text.color = layerStyle.textColor;
+  if (Number.isFinite(layerStyle.fontSizePx)) text.fontSizePx = Number(layerStyle.fontSizePx);
+  if (Number.isFinite(layerStyle.fontWeight)) text.fontWeight = Number(layerStyle.fontWeight);
+
+  style.shape = shape;
+  style.text = text;
+  setNodeLexicalState(
+    draftNode,
+    updateLexicalStateTextMarks(getNodeLexicalState(draftNode), (marks) => {
+      marks.color = layerStyle.textColor;
+      if (Number.isFinite(layerStyle.fontSizePx)) marks.fontSize = Number(layerStyle.fontSizePx);
+      if (Number.isFinite(layerStyle.fontWeight)) {
+        if (Number(layerStyle.fontWeight) >= 700) marks.bold = true;
+        else delete marks.bold;
+      }
+    })
+  );
+}
+
+function createColorSchemeCommand(key: MindColorSchemeKey): Command | null {
+  const activeMind = getActiveMind(props.doc);
+  const nodes = activeMind?.nodes ?? {};
+  const nodeIds = Object.keys(nodes);
+  if (!props.doc || !nodeIds.length) return null;
+
+  const scheme = getMindColorScheme(key);
+  const branchIndexByNodeId = buildColorSchemeBranchIndexMap();
+  const selection = snapshotSelection();
+  const nodeCommand = createBatchNodePresentationCommand(nodeIds, {
+    name: 'ApplyMindColorSchemeCommand',
+    mutationReason: 'mind-color-scheme',
+    includeStyle: true,
+    includeLexical: true,
+    ensureVisible: false,
+    updateDraftNode: (draftNode, nodeId) => {
+      applyColorSchemeStyleToDraftNode(
+        draftNode,
+        getMindNodeRole(props.doc, nodeId),
+        scheme,
+        branchIndexByNodeId.get(nodeId) ?? null
+      );
+    },
+  });
+
+  if (!nodeCommand) return null;
+
+  return {
+    name: 'ApplyMindColorSchemeCommand',
+    do: () => {
+      nodeCommand.do();
+      setSelection(selection.ids, selection.primaryId);
+      scheduleStylePanelSync();
+    },
+    undo: () => {
+      nodeCommand.undo();
+      setSelection(selection.ids, selection.primaryId);
+      scheduleStylePanelSync();
+    },
+    redo: () => {
+      nodeCommand.redo();
+      setSelection(selection.ids, selection.primaryId);
+      scheduleStylePanelSync();
+    },
+  };
+}
+
+function onColorSchemeSelect(key: MindColorSchemeKey) {
+  executeCommand(createColorSchemeCommand(key));
+  focusViewportElementWithoutScroll();
 }
 
 function normalizeInlineMarks(marks: RichTextMarks | undefined) {
@@ -4568,8 +5125,55 @@ function withActiveLexicalRangeSelection(
   return applied;
 }
 
+function isTransparentColorValue(color: string | null | undefined) {
+  if (!color) return false;
+  const normalized = color.replace(/\s+/g, '').toLowerCase();
+  return normalized === 'transparent' || normalized === 'rgba(0,0,0,0)' || normalized === 'rgba(255,255,255,0)';
+}
+
+function parseHexColor(color: string | null | undefined) {
+  if (typeof color !== 'string') return null;
+  const normalized = color.trim();
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(normalized);
+  if (!match) return null;
+  const raw = match[1].length === 3
+    ? match[1].split('').map((char) => `${char}${char}`).join('')
+    : match[1];
+  return {
+    r: Number.parseInt(raw.slice(0, 2), 16),
+    g: Number.parseInt(raw.slice(2, 4), 16),
+    b: Number.parseInt(raw.slice(4, 6), 16),
+  };
+}
+
+function isAchromaticHexColor(color: string | null | undefined) {
+  const rgb = parseHexColor(color);
+  if (!rgb) return false;
+  const max = Math.max(rgb.r, rgb.g, rgb.b);
+  const min = Math.min(rgb.r, rgb.g, rgb.b);
+  return max - min < 6 || max < 12 || min > 243;
+}
+
+function getSliderColorModel(color: string | null | undefined) {
+  if (!color || isTransparentColorValue(color) || isAchromaticHexColor(color)) return '#ef4444';
+  return color;
+}
+
 function normalizePickerColorValue(value: AcceptableValue | undefined) {
   return typeof value === 'string' ? value : null;
+}
+
+function getColorSwatchStyle(color: string | null | undefined): CSSProperties {
+  if (isTransparentColorValue(color)) {
+    return {
+      backgroundColor: '#ffffff',
+      backgroundImage:
+        'linear-gradient(45deg, #cbd5e1 25%, transparent 25%), linear-gradient(-45deg, #cbd5e1 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #cbd5e1 75%), linear-gradient(-45deg, transparent 75%, #cbd5e1 75%)',
+      backgroundSize: '8px 8px',
+      backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
+    };
+  }
+  return { backgroundColor: color || '#ffffff' };
 }
 
 function getActiveLexicalToggleState(key: StyleTextToggleKey) {
@@ -4787,6 +5391,28 @@ async function onMarkerTileClick(markerKey: string) {
       updateDraftNode: (draftNode) => {
         if (isMarkerDeleteMode.value) removeNodeMarker(draftNode, markerKey);
         else upsertNodeMarker(draftNode, markerKey);
+      },
+    })
+  );
+}
+
+function collectContextMarkerDeleteTargetNodeIds(fallbackNodeId: string) {
+  const nodes = getMindNodes();
+  if (!nodes) return [];
+  const selectedNodeIds = Array.from(selectedIds.value).filter((nodeId) => !!nodes[nodeId]);
+  if (selectedNodeIds.length) return selectedNodeIds;
+  return nodes[fallbackNodeId] ? [fallbackNodeId] : [];
+}
+
+function deleteContextMarker(markerKey: string, fallbackNodeId: string) {
+  executeCommand(
+    createBatchNodePresentationCommand(collectContextMarkerDeleteTargetNodeIds(fallbackNodeId), {
+      name: 'BatchRemoveNodeMarkerCommand',
+      mutationReason: 'node-remove-marker',
+      includeMarkers: true,
+      ensureVisible: false,
+      updateDraftNode: (draftNode) => {
+        removeNodeMarker(draftNode, markerKey);
       },
     })
   );
@@ -5573,9 +6199,24 @@ const editingTextBoxRect = computed(() => {
 const editingScreenTextBoxRect = computed(() => {
   const textBoxRect = editingTextBoxRect.value;
   if (!textBoxRect) return null;
+  const session = editingSession.value;
+  const anchor = session && editingTextBoxAnchor.value?.nodeId === session.nodeId
+    ? editingTextBoxAnchor.value
+    : null;
+  let worldX = textBoxRect.x;
+  if (anchor) {
+    if (anchor.textAlign === 'center') {
+      worldX = anchor.x + anchor.width / 2 - textBoxRect.width / 2;
+    } else if (anchor.textAlign === 'right') {
+      worldX = anchor.x + anchor.width - textBoxRect.width;
+    } else {
+      worldX = anchor.x;
+    }
+  }
+  const worldY = anchor?.y ?? textBoxRect.y;
   return {
-    x: textBoxRect.x * camera.value.scale + camera.value.tx,
-    y: textBoxRect.y * camera.value.scale + camera.value.ty,
+    x: worldX * camera.value.scale + camera.value.tx,
+    y: worldY * camera.value.scale + camera.value.ty,
     width: Math.max(1, textBoxRect.width * camera.value.scale),
     height: Math.max(1, textBoxRect.height * camera.value.scale),
   };
@@ -5599,8 +6240,9 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     position: 'absolute',
     left: `${textBoxRect.x}px`,
     top: `${textBoxRect.y}px`,
-    width: `${textBoxRect.width}px`,
+    width: `${textBoxRect.width + 2}px`,
     height: `${constrainedHeightPx}px`,
+    minHeight: `${constrainedHeightPx}px`,
     maxHeight: `${viewportSafeHeightPx}px`,
     fontFamily: textStyle.fontFamily,
     fontSize: `${textStyle.fontSizePx * scale}px`,
@@ -5612,8 +6254,8 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     margin: '0',
     border: '0',
     outline: 'none',
-    overflowX: 'hidden',
-    overflowY: shouldScrollVertically ? 'auto' : 'hidden',
+    overflowX: 'visible',
+    overflowY: shouldScrollVertically ? 'auto' : 'visible',
     overscrollBehavior: 'contain',
     background: 'transparent',
     color: textStyle.color,
@@ -6248,6 +6890,7 @@ function startEditing(
     Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
   );
   const currentRect = worldBoxes.value.get(nodeId);
+  const initialTextStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
   const editingMarkerIW = measureNodeMarkerRow(node).inlineWidth;
   const initialTextBoxRect = currentRect
     ? (() => {
@@ -6288,6 +6931,15 @@ function startEditing(
         ? Math.max(0, initialTextBoxRect.y - getNodeBodyWorldRect(node, currentRect).y1)
         : NODE_TEXT_INSET_Y,
       textLineBoxHeight: initialTextBoxRect?.height ?? Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
+    }
+    : null;
+  editingTextBoxAnchor.value = initialTextBoxRect
+    ? {
+      nodeId,
+      x: initialTextBoxRect.x,
+      y: initialTextBoxRect.y,
+      width: initialTextBoxRect.width,
+      textAlign: initialTextStyle.textAlign,
     }
     : null;
   // 对于仅含图片无文字的折叠节点，进入编辑时展开文字区域以便输入
@@ -6361,6 +7013,7 @@ function stopEditingSession() {
   editingDraftRichText.value = getNodeRichText(null);
   editingDisplayLexicalState.value = getNodeLexicalState(null);
   editingWidthPreview.value = null;
+  editingTextBoxAnchor.value = null;
   editingNodeId.value = null;
   lexicalEditorManager.stopSession();
   clearEditingPreviewLayout();
@@ -6644,6 +7297,7 @@ async function applyDocumentMutation(
       rootAnchorSnapshots?: Array<{ rootId: string; bodyRect: { x1: number; y1: number; x2: number; y2: number } }>;
   }
 ) {
+  clearMindNodeStyleCache(props.doc);
   const releaseDocWatchSuppression = holdLocalDocWatchSuppression();
   pendingMutationReason = reason;
   pendingMutationShouldMarkDirty = pendingMutationShouldMarkDirty || options?.markDirty !== false;
@@ -6763,27 +7417,7 @@ function createSummaryNodeRecord(nodeId: string, parentId: string, insertIndex: 
 }
 
 function createFreeTopicNodeRecord(nodeId: string) {
-  const node = createNodeRecord(nodeId, FREE_TOPIC_DEFAULT_TEXT, 'root');
-  node.style = {
-    shape: {
-      ...(node.style?.shape ?? {}),
-      fill: '#D9D9D9',
-      stroke: 'rgba(0, 0, 0, 0)',
-      fillPreset: 'solid',
-      borderPreset: 'none',
-    },
-    text: {
-      ...(node.style?.text ?? {}),
-      fontFamily: getMindPlatformDefaultFontFamily(
-        typeof window !== 'undefined' ? window.electronAPI?.platform : undefined
-      ),
-      fontSizePx: 24,
-      fontWeight: 400,
-      fontStyle: 'normal',
-      color: '#111111',
-    },
-  };
-  return node;
+  return createNodeRecord(nodeId, FREE_TOPIC_DEFAULT_TEXT, 'root');
 }
 
 function createFreeRootCommandAt(position: { x: number; y: number }) {
@@ -9894,32 +10528,6 @@ function getNodeClipboardSystemText(clipboardState: InternalClipboardState) {
   return blocks.join('\n');
 }
 
-function resolvePreferredNodeClipboardState(
-  externalClipboardState: InternalClipboardState | null,
-  clipboardData?: DataTransfer | null
-) {
-  const internalClipboard = getInternalClipboard();
-  if (!externalClipboardState) {
-    const plainText = clipboardData?.getData('text/plain') ?? '';
-    const hasExternalText = plainText.length > 0 && !plainText.startsWith(NODE_CLIPBOARD_TEXT_PREFIX);
-    const hasExternalItems = Array.from(clipboardData?.items ?? []).some((item) => item.type !== 'text/plain');
-    if (
-      hasExternalText &&
-      internalClipboard.type !== 'empty' &&
-      lastCopiedNodeClipboardPlainText &&
-      plainText.replace(/\r\n/g, '\n') === lastCopiedNodeClipboardPlainText
-    ) {
-      return internalClipboard;
-    }
-    if (hasExternalText || hasExternalItems) return null;
-    return internalClipboard.type === 'empty' ? null : internalClipboard;
-  }
-  if (internalClipboard.type === 'empty') return externalClipboardState;
-  const externalCreatedAt = externalClipboardState.createdAt ?? 0;
-  const internalCreatedAt = internalClipboard.createdAt ?? 0;
-  return internalCreatedAt >= externalCreatedAt ? internalClipboard : externalClipboardState;
-}
-
 async function syncClipboardStateToSystemClipboard(clipboardState: InternalClipboardState) {
   if (clipboardState.type === 'empty') return;
   const plainText = getNodeClipboardSystemText(clipboardState);
@@ -9945,6 +10553,19 @@ async function readElectronNodeClipboardPayload() {
   if (!window.electronAPI?.mindClipboard?.readNodeClipboard) return null;
   const raw = await window.electronAPI.mindClipboard.readNodeClipboard();
   return deserializeNodeClipboardPayload(raw);
+}
+
+function getNativeSelectedText() {
+  if (typeof window === 'undefined') return '';
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed) return '';
+  return selection.toString().trim();
+}
+
+function clearNodeClipboardStateForNativeCopy() {
+  clearInternalClipboard();
+  lastCopiedNodeClipboardPlainText = null;
+  requestRender();
 }
 
 function normalizeSelectedTargets(options?: { allowRoot?: boolean; collapseToRootIfSelected?: boolean }) {
@@ -9983,6 +10604,10 @@ function performCopy(nodeIds?: string[]) {
 
 function onWindowCopy(event: ClipboardEvent) {
   if (isTextEditingActive(event.target)) return;
+  if (getNativeSelectedText()) {
+    clearNodeClipboardStateForNativeCopy();
+    return;
+  }
   if (allImagesSelected.value) {
     event.preventDefault();
     event.stopPropagation();
@@ -10425,15 +11050,71 @@ function createBatchAddParentSelectionCommand(targetInfosInput: SelectionTargetI
   return command;
 }
 
-function createPasteTextLinesCommand(targetParentId: string, lines: string[]): Command | null {
+type ParsedPasteTextLine = {
+  text: string;
+  level: number;
+};
+
+function measurePasteLineIndent(rawLine: string) {
+  const leadingWhitespace = rawLine.match(/^[\t ]*/)?.[0] ?? '';
+  let column = 0;
+  for (const char of leadingWhitespace) {
+    if (char === '\t') column += 4 - (column % 4);
+    else column += 1;
+  }
+  return column;
+}
+
+function parseIndentedPasteTextLines(plainText: string): ParsedPasteTextLine[] {
+  const rawLines = plainText.split(/\r\n|\n|\r/).filter((line) => line.trim().length > 0);
+  const indentStack: number[] = [];
+  return rawLines.map((rawLine) => {
+    const indentColumn = measurePasteLineIndent(rawLine);
+    if (!indentStack.length) {
+      indentStack.push(indentColumn);
+    } else if (indentColumn > indentStack[indentStack.length - 1]) {
+      indentStack.push(indentColumn);
+    } else {
+      while (indentStack.length > 1 && indentColumn < indentStack[indentStack.length - 1]) {
+        indentStack.pop();
+      }
+      if (indentColumn !== indentStack[indentStack.length - 1]) {
+        indentStack[indentStack.length - 1] = indentColumn;
+      }
+    }
+    return {
+      text: rawLine.trim(),
+      level: Math.max(0, indentStack.length - 1),
+    };
+  });
+}
+
+function createPasteTextLinesCommand(targetParentId: string, lines: ParsedPasteTextLine[]): Command | null {
   if (!lines.length) return null;
   const nodes = getMindNodes();
   const parentChildrenCount = Array.isArray(nodes?.[targetParentId]?.children) ? nodes?.[targetParentId]?.children.length : 0;
   const newNodeIds = lines.map(() => createNodeId());
-  const lineByNodeId = Object.fromEntries(newNodeIds.map((nodeId, index) => [nodeId, lines[index]]));
+  const lineByNodeId = Object.fromEntries(newNodeIds.map((nodeId, index) => [nodeId, lines[index]?.text ?? NEW_NODE_TEXT]));
   const insertContextByNodeId = new Map<string, { parentId: string; insertIndex: number }>();
+  const parentIds: string[] = [];
   newNodeIds.forEach((nodeId, index) => {
-    insertContextByNodeId.set(nodeId, { parentId: targetParentId, insertIndex: parentChildrenCount + index });
+    const line = lines[index];
+    let parentId = targetParentId;
+    for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+      if ((lines[previousIndex]?.level ?? 0) < line.level) {
+        parentId = newNodeIds[previousIndex];
+        break;
+      }
+    }
+    const previousSiblingCount = lines
+      .slice(0, index)
+      .filter((previousLine, previousIndex) => previousLine.level === line.level && parentIds[previousIndex] === parentId)
+      .length;
+    insertContextByNodeId.set(nodeId, {
+      parentId,
+      insertIndex: parentId === targetParentId ? parentChildrenCount + previousSiblingCount : previousSiblingCount,
+    });
+    parentIds.push(parentId);
   });
   return createBatchAddChildCommand(
     {
@@ -10445,12 +11126,12 @@ function createPasteTextLinesCommand(targetParentId: string, lines: string[]): C
         createNodeRecord(
           nodeId,
           lineByNodeId[nodeId] ?? NEW_NODE_TEXT,
-          resolveNewChildRole(targetParentId),
+          resolveNewChildRole(insertContextByNodeId.get(nodeId)?.parentId ?? targetParentId),
           insertContextByNodeId.get(nodeId)
         ),
     },
     {
-      parentIds: Array.from({ length: lines.length }, () => targetParentId),
+      parentIds,
       newNodeIds,
       previousSelection: snapshotSelection(),
     }
@@ -10466,7 +11147,7 @@ function getPasteTargetNodeIds() {
   return primarySelectedId ? [primarySelectedId] : [];
 }
 
-function createMultiTargetPasteTextLinesCommand(targetParentIds: string[], lines: string[]): Command | null {
+function createMultiTargetPasteTextLinesCommand(targetParentIds: string[], lines: ParsedPasteTextLine[]): Command | null {
   if (!targetParentIds.length || !lines.length) return null;
   return createCommandSequence(
     'MultiTargetPasteTextLinesCommand',
@@ -11444,6 +12125,21 @@ function hitTest(screenX: number, screenY: number): string | null {
   return hitId;
 }
 
+function getMarkerHitAtScreenPoint(screenX: number, screenY: number) {
+  const nodeId = hitTest(screenX, screenY);
+  if (!nodeId) return null;
+  const bodyRect = worldBoxes.value.get(nodeId);
+  if (!bodyRect) return null;
+  const node = getMindNodes()?.[nodeId];
+  if (!node) return null;
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  const markerIndex = hitTestNodeMarker(node, bodyRect, worldPoint.x, worldPoint.y);
+  if (markerIndex < 0) return null;
+  const marker = resolveNodeMarkers(node)[markerIndex];
+  if (!marker) return null;
+  return { nodeId, markerKey: marker.key };
+}
+
 async function toggleNodeCollapsed(nodeId: string) {
   const nodes = getMindNodes();
   const node = nodes?.[nodeId];
@@ -11830,7 +12526,24 @@ async function onCanvasContextMenu(event: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
-  const hitImageNodeId = getImageTargetAtScreenPoint(event.clientX - rect.left, event.clientY - rect.top);
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+  const markerHit = getMarkerHitAtScreenPoint(screenX, screenY);
+  if (markerHit) {
+    event.preventDefault();
+    event.stopPropagation();
+    focusViewportWithoutScroll();
+    const action = await window.electronAPI.wm.popupMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [{ id: 'delete-marker', label: '删除' }],
+    });
+    if (action === 'delete-marker') {
+      deleteContextMarker(markerHit.markerKey, markerHit.nodeId);
+    }
+    return;
+  }
+  const hitImageNodeId = getImageTargetAtScreenPoint(screenX, screenY);
   const selectedImageNodeId = getSelectedImageNodeId();
   if (selectedImageNodeId && hitImageNodeId === selectedImageNodeId) {
     event.preventDefault();
@@ -11846,8 +12559,8 @@ async function onCanvasContextMenu(event: MouseEvent) {
     }
     return;
   }
-  const hitId = hitTest(event.clientX - rect.left, event.clientY - rect.top);
-  const hitRelationId = hitId ? null : hitTestRelation(event.clientX - rect.left, event.clientY - rect.top, camera.value);
+  const hitId = hitTest(screenX, screenY);
+  const hitRelationId = hitId ? null : hitTestRelation(screenX, screenY, camera.value);
   if (!hitId) {
     if (hitRelationId) {
       event.preventDefault();
@@ -11881,7 +12594,7 @@ async function onCanvasContextMenu(event: MouseEvent) {
     });
     if (applyBlankSelectionMenuAction(action)) return;
     if (action === 'insert-free-topic') {
-      createFreeRootAtScreenPoint(event.clientX - rect.left, event.clientY - rect.top);
+      createFreeRootAtScreenPoint(screenX, screenY);
       return;
     }
     if (action === 'create-relation-from-blank') {
@@ -12283,9 +12996,11 @@ async function onWindowPaste(event: ClipboardEvent) {
   const clipboardData = event.clipboardData;
   const items = Array.from(clipboardData?.items ?? []);
   const clipboardEventNodeState = parseClipboardNodePayload(clipboardData);
-  const electronNodeState = clipboardEventNodeState ? null : await readElectronNodeClipboardPayload();
-  const nodeClipboardState = resolvePreferredNodeClipboardState(clipboardEventNodeState ?? electronNodeState, clipboardData);
   const editingTextActive = isTextEditingActive(event.target);
+  const imageItem = items.find((item) => item.type.startsWith('image/'));
+  const plainText = clipboardData?.getData('text/plain') ?? '';
+  const electronNodeState = clipboardEventNodeState || imageItem ? null : await readElectronNodeClipboardPayload();
+  const nodeClipboardState = clipboardEventNodeState ?? electronNodeState;
   if (nodeClipboardState && pasteTargetNodeIds.length && !editingTextActive) {
     event.preventDefault();
     event.stopPropagation();
@@ -12297,7 +13012,6 @@ async function onWindowPaste(event: ClipboardEvent) {
     );
     return;
   }
-  const imageItem = items.find((item) => item.type.startsWith('image/'));
   if (imageItem && pasteTargetNodeIds.length) {
     event.preventDefault();
     event.stopPropagation();
@@ -12335,11 +13049,7 @@ async function onWindowPaste(event: ClipboardEvent) {
 
   if (editingTextActive) return;
   if (!selectedNodeId) return;
-  const plainText = clipboardData?.getData('text/plain') ?? '';
-  const lines = plainText
-    .split(/\r\n|\n|\r/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines = parseIndentedPasteTextLines(plainText);
   if (!lines.length) return;
   event.preventDefault();
   event.stopPropagation();
@@ -14052,6 +14762,86 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.style-more-color-button {
+  align-self: flex-start;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.style-color-slider-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(203, 213, 225, 0.82);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.style-color-slider-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.style-color-slider-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.style-color-slider {
+  display: block;
+  width: 100%;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.style-color-slider-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #ff0000 0%,
+    #ffff00 17%,
+    #00ff00 33%,
+    #00ffff 50%,
+    #0000ff 67%,
+    #ff00ff 83%,
+    #ff0000 100%
+  );
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.1),
+    0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.style-color-slider-thumb {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: #0f172a;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, 0.24);
+}
+
 .style-color-item {
   position: relative;
   width: 100%;
@@ -14499,6 +15289,379 @@ onBeforeUnmount(() => {
   background: rgba(208, 47, 72, 0.14);
   border-color: rgba(208, 47, 72, 0.3);
   transform: translateY(-1px);
+}
+
+.theme-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.theme-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.98) 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.theme-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 23, 42, 0.26);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.theme-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  background: #ffffff;
+}
+
+.theme-preview-strip {
+  position: absolute;
+  inset: 7px;
+  display: flex;
+  overflow: hidden;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.08),
+    0 5px 12px rgba(15, 23, 42, 0.08);
+}
+
+.theme-preview-swatch {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.theme-preview-glow {
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 58%);
+  pointer-events: none;
+}
+
+.theme-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.theme-card-title {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.theme-card-description {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.theme-card-action {
+  position: absolute;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.96);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.theme-card-edit {
+  right: 42px;
+  color: #2563eb;
+}
+
+.theme-card-delete {
+  right: 8px;
+  color: #dc2626;
+}
+
+.theme-custom-button {
+  width: 100%;
+  height: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.theme-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.theme-dialog {
+  width: min(980px, calc(100vw - 48px));
+  max-height: min(820px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.99);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.theme-dialog-header,
+.theme-dialog-actions,
+.theme-layer-heading,
+.theme-layer-row,
+.theme-layer-color-tabs {
+  display: flex;
+  align-items: center;
+}
+
+.theme-dialog-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.theme-dialog-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.theme-dialog-subtitle {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-dialog-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.theme-dialog-name {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.theme-dialog-name input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 8px;
+  outline: none;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.theme-layer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.theme-layer-editor {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.theme-layer-heading {
+  justify-content: space-between;
+  gap: 10px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.theme-layer-sample {
+  min-width: 72px;
+  height: 44px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-style: solid;
+  border-radius: 8px;
+  font-weight: 900;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.theme-layer-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.theme-layer-row.is-compact {
+  gap: 6px;
+}
+
+.theme-layer-options,
+.theme-layer-color-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-layer-chip,
+.theme-layer-color-button {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.theme-layer-chip.is-selected,
+.theme-layer-color-button.is-selected {
+  border-color: rgba(15, 23, 42, 0.78);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.1);
+}
+
+.theme-layer-color-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-layer-color-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+}
+
+.theme-layer-slider-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.theme-layer-quick-colors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.theme-layer-quick-color {
+  min-width: 0;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #334155;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.theme-layer-quick-color span {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 999px;
+}
+
+.theme-dialog-actions {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.theme-dialog-button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.theme-dialog-button.is-ghost {
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  background: #ffffff;
+  color: #334155;
+}
+
+.theme-dialog-button.is-primary {
+  border: 1px solid rgba(15, 23, 42, 0.88);
+  background: #0f172a;
+  color: #ffffff;
+}
+
+@media (max-width: 860px) {
+  .theme-layer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .marker-panel.is-disabled .marker-mode-switch,

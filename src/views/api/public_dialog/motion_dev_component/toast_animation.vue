@@ -1,10 +1,10 @@
 <template>
     <teleport to="body">
-        <div class="toast-container">
+        <div :class="['toast-container', `toast-container--${position}`]">
             <Toast.Provider v-if="isVisible">
                 <Toast.Root :duration="duration" :force-mount="true" :as-child="true">
                     <AnimatePresence mode="wait">
-                        <motion.div class="toast-root" :initial="{ opacity: 0, x: 100 }" :animate="{ opacity: 1, x: 0 }"
+                        <motion.div class="toast-root" :initial="motionInitial" :animate="{ opacity: 1, x: 0 }"
                             :exit="{ opacity: 0, scale: 0.9 }" :drag="'x'" :drag-elastic="0.1"
                             :drag-constraints="{ left: 0 }">
                             <Toast.Title class="toast-title">{{ title }}</Toast.Title>
@@ -26,7 +26,7 @@
 </template>
 <!-- src/components/ToastView.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { motion, AnimatePresence } from 'motion-v'
 // @ts-ignore
 import { Toast } from 'reka-ui/namespaced'
@@ -37,6 +37,8 @@ const actionText = ref('')
 const type = ref('info')
 const duration = ref(3000)
 const currentTime = ref('')
+const position = ref<'bottom-right' | 'bottom-left'>('bottom-right')
+const motionInitial = computed(() => ({ opacity: 0, x: position.value === 'bottom-left' ? -100 : 100 }))
 
 function formatDate(date: Date) {
     return new Intl.DateTimeFormat('en-US', {
@@ -54,6 +56,7 @@ function showToast(options: {
     actionText?: string,
     type?: string,
     duration?: number
+    position?: 'bottom-right' | 'bottom-left'
 }) {
     // 合并默认值
     const merged = {
@@ -61,6 +64,7 @@ function showToast(options: {
         actionText: '关闭',
         type: 'success',
         duration: 3000,
+        position: 'bottom-right' as const,
         ...options
     }
 
@@ -85,6 +89,7 @@ function showToast(options: {
         actionText.value = merged.actionText
         type.value = merged.type
         duration.value = merged.duration
+        position.value = merged.position
         currentTime.value = formatDate(new Date())
         isVisible.value = true
 
@@ -109,11 +114,18 @@ defineExpose({ showToast })
 <style>
 .toast-container {
     position: fixed;
-    right: 0px;
     bottom: 0px;
     z-index: 9999;
     /* 👈 足够高，确保盖过 el-dialog 的遮罩层 */
     /* 其他样式 */
+}
+
+.toast-container--bottom-right {
+    right: 0px;
+}
+
+.toast-container--bottom-left {
+    left: 0px;
 }
 
 .toast-viewport {

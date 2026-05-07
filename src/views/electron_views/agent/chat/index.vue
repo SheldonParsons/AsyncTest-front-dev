@@ -173,31 +173,62 @@ async function sendMessage() {
   // Add streaming assistant placeholder
   const assistantMsg: Message = { role: 'assistant', content: '', streaming: true }
   messages.value.push(assistantMsg)
+  const assistantIndex = messages.value.length - 1
   isStreaming.value = true
   scrollToBottom()
+
+  const patchAssistantMessage = (patch: Partial<Message>) => {
+    const current = messages.value[assistantIndex]
+    if (!current) return
+    messages.value[assistantIndex] = { ...current, ...patch }
+  }
+  let pendingAssistantContent = ''
+  let flushScheduled = false
+  const flushAssistantContent = () => {
+    flushScheduled = false
+    if (!pendingAssistantContent) return
+    const current = messages.value[assistantIndex]
+    const nextContent = `${current?.content || ''}${pendingAssistantContent}`
+    pendingAssistantContent = ''
+    patchAssistantMessage({ content: nextContent })
+    scrollToBottom(false)
+  }
+  const appendAssistantContent = (content: string) => {
+    pendingAssistantContent += content
+    if (flushScheduled) return
+    flushScheduled = true
+    requestAnimationFrame(flushAssistantContent)
+  }
 
   try {
     await streamHarnessSse('/chat', { message: text }, {
       onChunk: (content) => {
-        assistantMsg.content += content
-        scrollToBottom(false)
+        appendAssistantContent(content)
       },
       onDone: () => {
-        assistantMsg.streaming = false
+        flushAssistantContent()
+        patchAssistantMessage({ streaming: false })
         isStreaming.value = false
         scrollToBottom()
         updateSessionTitle()
       },
       onError: (message) => {
-        assistantMsg.content += message || '请求出错'
-        assistantMsg.streaming = false
+        flushAssistantContent()
+        const current = messages.value[assistantIndex]
+        patchAssistantMessage({
+          content: `${current?.content || ''}${message || '请求出错'}`,
+          streaming: false,
+        })
         isStreaming.value = false
         scrollToBottom()
       },
     })
   } catch (err: any) {
-    assistantMsg.content = '连接失败，请确认 Django 后端已启动。'
-    assistantMsg.streaming = false
+    flushAssistantContent()
+    patchAssistantMessage({
+      content: '连接失败，请确认 Django 后端已启动。',
+      streaming: false,
+    })
     isStreaming.value = false
     scrollToBottom()
   }

@@ -1,21 +1,30 @@
 /**
  * Knowledge Base API — calls Django same-origin HarnessEngineering endpoints.
  */
-import { harnessRequest } from '@/api/harness'
+import { harnessRequest, streamHarnessSse } from '@/api/harness'
 import type {
   KnowledgeBase,
+  KBChatRetrieval,
+  KBChatMessageRecord,
+  KBChatSession,
+  KBChatSource,
   KBNodeMetadataPayload,
   KBOutlineCache,
   KBRefCandidate,
   KBNode,
   KBNodeContent,
-  WikiDirectoryItem,
-  WikiPage,
   KBTemplate,
   KBPromptFormSource,
   KBPromptTemplateRenderResult,
   KBTermDictItem,
   KBTermIndexItem,
+  KBConceptPendingItem,
+  KBConceptExtractResult,
+  KBConcept,
+  KBConceptImpactEvent,
+  KBBlockRewriteSuggestion,
+  KBConceptBlockRelation,
+  KBConceptDecision,
 } from '@/types/knowledge'
 
 const request = harnessRequest
@@ -201,24 +210,214 @@ export function getOutline(kbId: number, params: {
   return request('GET', `/kb/${kbId}/outline${suffix}`)
 }
 
+export function getNodeSubtreeSummary(kbId: number, nodeId: string): Promise<KBOutlineCache> {
+  return request('GET', `/kb/${kbId}/node/${nodeId}/subtree-summary`)
+}
+
+export function getKBSummary(kbId: number): Promise<KBOutlineCache> {
+  return request('GET', `/kb/${kbId}/summary`)
+}
+
+export function saveKBSummary(kbId: number, content: string): Promise<KBOutlineCache> {
+  return request('PUT', `/kb/${kbId}/summary`, { content })
+}
+
+export function getSystemSummary(): Promise<KBOutlineCache> {
+  return request('GET', '/kb/system-summary')
+}
+
 // ─── Block summary (non-streaming, persists server-side) ───
 
 export function generateBlockSummaryHttp(kbId: number, nodeId: string, blockId: string): Promise<{ summary: string }> {
   return request('POST', `/kb/${kbId}/node/${nodeId}/block/${blockId}/summary`)
 }
 
-// ─── Wiki ────────────────────────────────────────
-
-export function compileWiki(kbId: number): Promise<{ compiled: number }> {
-  return request('POST', `/kb/${kbId}/compile`)
+export function extractBlockConcepts(kbId: number, nodeId: string, blockId: string, content?: string): Promise<KBConceptExtractResult> {
+  return request('POST', `/kb/${kbId}/node/${nodeId}/block/${blockId}/concepts/extract`, { content })
 }
 
-export function getWikiDirectory(kbId: number): Promise<WikiDirectoryItem[]> {
-  return request('GET', `/kb/${kbId}/wiki`)
+export function startBlockConceptExtractTask(kbId: number, nodeId: string, blockId: string, content?: string): Promise<{
+  trace_id: string;
+  status: string;
+  events: any[];
+}> {
+  return request('POST', `/kb/${kbId}/node/${nodeId}/block/${blockId}/concepts/extract/task`, { content })
 }
 
-export function getWikiPage(kbId: number, path: string): Promise<WikiPage> {
-  return request('GET', `/kb/${kbId}/wiki/${encodeURIComponent(path)}`)
+export function getTaskTrace(traceId: string): Promise<{
+  trace_id: string;
+  status: 'running' | 'done' | 'error' | string;
+  events: any[];
+}> {
+  return request('GET', `/debug/task-traces?trace_id=${encodeURIComponent(traceId)}`)
+}
+
+export function listPendingConcepts(kbId: number): Promise<KBConceptPendingItem[]> {
+  return request('GET', `/kb/${kbId}/concepts/pending`)
+}
+
+export function listConcepts(kbId: number): Promise<KBConcept[]> {
+  return request('GET', `/kb/${kbId}/concepts`)
+}
+
+export function createConcept(kbId: number, data: {
+  name: string;
+  aliases?: string[];
+  definition?: string;
+  summary?: string;
+  scope?: string;
+  notes?: string;
+}): Promise<KBConcept> {
+  return request('POST', `/kb/${kbId}/concepts`, data)
+}
+
+export function updateConcept(kbId: number, conceptId: string, data: {
+  name?: string;
+  aliases?: string[];
+  variant_id?: string;
+  definition?: string;
+  summary?: string;
+  scope?: string;
+  notes?: string;
+}): Promise<KBConcept> {
+  return request('PUT', `/kb/${kbId}/concept/${conceptId}`, data)
+}
+
+export function polishConceptVariant(kbId: number, conceptId: string, variantId: string, data: {
+  name?: string;
+  definition: string;
+}): Promise<{ definition: string }> {
+  return request('POST', `/kb/${kbId}/concept/${conceptId}/variant/${variantId}/polish`, data)
+}
+
+export function deleteConcept(kbId: number, conceptId: string): Promise<void> {
+  return request('DELETE', `/kb/${kbId}/concept/${conceptId}`)
+}
+
+export function resolveConceptVariant(kbId: number, conceptId: string, variantId: string, data: {
+  action: 'ignore' | 'mark_false_positive' | 'promote_to_formal' | 'merge_to_formal';
+}): Promise<KBConcept> {
+  return request('POST', `/kb/${kbId}/concept/${conceptId}/variant/${variantId}/resolve`, data)
+}
+
+export function listConceptImpactEvents(kbId: number, params: {
+  status?: string;
+  concept_id?: string;
+} = {}): Promise<KBConceptImpactEvent[]> {
+  const qs = new URLSearchParams()
+  if (params.status) qs.set('status', params.status)
+  if (params.concept_id) qs.set('concept_id', params.concept_id)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request('GET', `/kb/${kbId}/concept-impact-events${suffix}`)
+}
+
+export function reviewConceptImpactEvent(kbId: number, eventId: string): Promise<KBConceptImpactEvent> {
+  return request('POST', `/kb/${kbId}/concept-impact-events/${eventId}/review`, {})
+}
+
+export function resolveConceptImpactEvent(kbId: number, eventId: string, data: {
+  action: 'apply' | 'ignore';
+  proposal?: Record<string, any>;
+}): Promise<KBConceptImpactEvent> {
+  return request('POST', `/kb/${kbId}/concept-impact-events/${eventId}/resolve`, data)
+}
+
+export function listBlockConceptDecisions(kbId: number, blockId: string, status = 'pending'): Promise<KBConceptDecision[]> {
+  return request('GET', `/kb/${kbId}/block/${blockId}/concept-decisions?status=${encodeURIComponent(status)}`)
+}
+
+export function applyConceptDecision(kbId: number, decisionId: string, data: Record<string, any> = {}): Promise<KBConceptDecision> {
+  return request('POST', `/kb/${kbId}/concept-decisions/${decisionId}/apply`, data)
+}
+
+export function ignoreConceptDecision(kbId: number, decisionId: string): Promise<KBConceptDecision> {
+  return request('POST', `/kb/${kbId}/concept-decisions/${decisionId}/ignore`, {})
+}
+
+export function listBlockConceptRelations(kbId: number, blockId: string, status = 'pending'): Promise<KBConceptBlockRelation[]> {
+  return request('GET', `/kb/${kbId}/block/${blockId}/concept-relations?status=${encodeURIComponent(status)}`)
+}
+
+export function applyBlockConceptRelations(kbId: number, blockId: string, relationIds?: string[]): Promise<KBConceptBlockRelation[]> {
+  return request('POST', `/kb/${kbId}/block/${blockId}/concept-relations/apply`, relationIds ? { relation_ids: relationIds } : {})
+}
+
+export function listBlockRewriteSuggestions(kbId: number, blockId: string, status = 'pending'): Promise<KBBlockRewriteSuggestion[]> {
+  return request('GET', `/kb/${kbId}/block/${blockId}/rewrite-suggestions?status=${encodeURIComponent(status)}`)
+}
+
+export function applyRewriteSuggestion(kbId: number, suggestionId: string): Promise<KBBlockRewriteSuggestion> {
+  return request('POST', `/kb/${kbId}/rewrite-suggestions/${suggestionId}/apply`, {})
+}
+
+export function ignoreRewriteSuggestion(kbId: number, suggestionId: string): Promise<KBBlockRewriteSuggestion> {
+  return request('POST', `/kb/${kbId}/rewrite-suggestions/${suggestionId}/ignore`, {})
+}
+
+export function resolveConcept(kbId: number, conceptId: string, data: {
+  action: 'accept' | 'ignore' | 'merge';
+  name?: string;
+  aliases?: string[];
+  definition?: string;
+  concept_summary?: string;
+  scope?: string;
+  notes?: string;
+}): Promise<KBConceptPendingItem | { ok: boolean; deleted?: boolean }> {
+  return request('POST', `/kb/${kbId}/concept/${conceptId}/resolve`, data)
+}
+
+// ─── Knowledge chat ───────────────────────────────
+
+export interface KBChatStreamHandlers {
+  onSession?: (session: KBChatSession, event: Record<string, any>) => void
+  onStage?: (event: Record<string, any>) => void
+  onRetrieval?: (retrieval: KBChatRetrieval, event: Record<string, any>) => void
+  onSources?: (sources: KBChatSource[], event: Record<string, any>) => void
+  onClarification?: (message: string, event: Record<string, any>) => void
+  onChunk?: (content: string) => void
+  onFinal?: (event: Record<string, any>) => void
+  onError?: (message: string) => void
+}
+
+export async function streamKnowledgeChat(
+  kbId: number,
+  message: string,
+  handlers: KBChatStreamHandlers = {},
+  sessionId?: string,
+): Promise<void> {
+  const url = sessionId ? `/kb/${kbId}/chat/sessions/${sessionId}/stream` : `/kb/${kbId}/chat/stream`
+  await streamHarnessSse(
+    url,
+    { message, session_id: sessionId },
+    {
+      onEvent: (event) => {
+        if (event?.type === 'session') handlers.onSession?.(event.session || {}, event)
+        if (event?.type === 'stage') handlers.onStage?.(event)
+        if (event?.type === 'retrieval') handlers.onRetrieval?.(event.retrieval || {}, event)
+        if (event?.type === 'sources') handlers.onSources?.(event.sources || [], event)
+        if (event?.type === 'clarification') handlers.onClarification?.(String(event.message || ''), event)
+        if (event?.type === 'final') handlers.onFinal?.(event)
+      },
+      onChunk: handlers.onChunk,
+      onError: handlers.onError,
+    },
+  )
+}
+
+export function listChatSessions(kbId: number): Promise<KBChatSession[]> {
+  return request('GET', `/kb/${kbId}/chat/sessions`)
+}
+
+export function createChatSession(kbId: number, data: { title?: string } = {}): Promise<KBChatSession> {
+  return request('POST', `/kb/${kbId}/chat/sessions`, data)
+}
+
+export function listChatMessages(kbId: number, sessionId: string): Promise<KBChatMessageRecord[]> {
+  return request('GET', `/kb/${kbId}/chat/sessions/${sessionId}`)
+}
+
+export function deleteChatSession(kbId: number, sessionId: string): Promise<{ ok: boolean }> {
+  return request('DELETE', `/kb/${kbId}/chat/sessions/${sessionId}`)
 }
 
 // ─── Templates ───────────────────────────────────

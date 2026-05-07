@@ -25,9 +25,19 @@ const DEFAULT_ROOT_LAYOUT = { direction: 'right', hGap: DEFAULT_ROOT_H_GAP, vGap
 const DEFAULT_BOARD_ORDER = ['mind-1', 'mind-2', 'mind-3'] as const;
 const BOARD_NODE_CONTENT_NORMALIZED = Symbol('board-node-content-normalized');
 
-function createBoardRootNode(title: string, rootId = 'root') {
+function createBoardRootNode(title: string, rootId = 'root', includeDefaultChildren = false) {
     return {
         id: rootId,
+        text: { plain: title },
+        children: includeDefaultChildren ? ['root-child-1', 'root-child-2', 'root-child-3', 'root-child-4'] : [],
+        images: [],
+        image: null,
+    };
+}
+
+function createBoardChildNode(title: string, nodeId: string) {
+    return {
+        id: nodeId,
         text: { plain: title },
         children: [],
         images: [],
@@ -53,7 +63,11 @@ export function createEmptyMindBoard(title = '中心主题', options: {
             },
         ],
         nodes: {
-            [rootId]: createBoardRootNode(title, rootId),
+            [rootId]: createBoardRootNode(title, rootId, true),
+            'root-child-1': createBoardChildNode('分支主题 1', 'root-child-1'),
+            'root-child-2': createBoardChildNode('分支主题 2', 'root-child-2'),
+            'root-child-3': createBoardChildNode('分支主题 3', 'root-child-3'),
+            'root-child-4': createBoardChildNode('分支主题 4', 'root-child-4'),
         },
         relations: [],
         view: {
@@ -62,6 +76,9 @@ export function createEmptyMindBoard(title = '中心主题', options: {
     };
 
     ensureNodeContent(board.nodes[rootId], title);
+    for (const childId of board.nodes[rootId].children) {
+        ensureNodeContent(board.nodes[childId]);
+    }
     return board;
 }
 

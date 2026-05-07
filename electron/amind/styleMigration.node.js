@@ -183,6 +183,12 @@ function migrateBoardNodes(board) {
 export function migrateLegacyMindStyles(doc) {
   if (!doc) return doc;
   doc.manifest = doc.manifest && typeof doc.manifest === 'object' ? doc.manifest : {};
+  if (typeof doc.manifest.colorSchemeKey === 'string' && doc.manifest.colorSchemeKey.trim()) {
+    return doc;
+  }
+  if (typeof doc.manifest.renderStylePreset === 'string' && doc.manifest.renderStylePreset.trim()) {
+    return doc;
+  }
   doc.manifest.renderStylePreset = 'clean';
   ensureBoardList(doc).forEach((board) => migrateBoardNodes(board));
   return doc;

@@ -68,22 +68,35 @@ async function toRendererEntry(entry) {
 
 export function createRecentStore({ userDataPath }) {
     const storePath = path.join(userDataPath, 'recent-amind.json');
+    const backupStorePath = path.join(userDataPath, 'recent-amind.backup.json');
     const previewDir = path.join(userDataPath, 'amind-previews');
 
     async function loadEntries() {
-        try {
-            const raw = await fs.readFile(storePath, 'utf8');
+        const readEntries = async (targetPath) => {
+            const raw = await fs.readFile(targetPath, 'utf8');
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) return [];
             return dedupeEntries(parsed);
+        };
+        try {
+            return await readEntries(storePath);
         } catch {
-            return [];
+            try {
+                return await readEntries(backupStorePath);
+            } catch {
+                return [];
+            }
         }
     }
 
     async function saveEntries(entries) {
         const next = dedupeEntries(entries);
         await fs.mkdir(path.dirname(storePath), { recursive: true });
+        try {
+            await fs.copyFile(storePath, backupStorePath);
+        } catch {
+            // No previous recent list yet.
+        }
         await fs.writeFile(storePath, JSON.stringify(next, null, 2), 'utf8');
         return next;
     }
@@ -169,6 +182,7 @@ export function createRecentStore({ userDataPath }) {
         savePreview,
         createPreviewPath,
         storePath,
+        backupStorePath,
         previewDir,
     };
 }

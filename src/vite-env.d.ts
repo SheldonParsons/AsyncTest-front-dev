@@ -59,7 +59,7 @@ export interface IElectronAPI {
 declare global {
   interface Window {
     electronAPI: IElectronAPI;
-    $toast: (options: { title: string; type?: string }) => void;
+    $toast: (options: { title: string; type?: string; position?: 'bottom-right' | 'bottom-left'; duration?: number; actionText?: string }) => void;
     $updateHeaderLoginStatus: () => void;
   }
 }

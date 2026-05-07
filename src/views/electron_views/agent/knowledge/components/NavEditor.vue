@@ -22,7 +22,7 @@
         </label>
         <span class="ne-meta ne-meta--readonly">
           <span class="ne-meta-label">所属树</span>
-          <span class="ne-meta-value">{{ form.tree === 'asset' ? '资产树' : '业务树' }}</span>
+          <span class="ne-meta-value">{{ form.tree === 'asset' ? '概念库' : '业务树' }}</span>
         </span>
         <button
           class="ne-save"
@@ -74,9 +74,29 @@
       </div>
 
       <div class="ne-section ne-summary">
-        <label class="ne-label">Summary（自动生成）</label>
-        <pre v-if="props.node.summary" class="ne-summary-pre">{{ props.node.summary }}</pre>
-        <p v-else class="ne-empty-sub">尚未生成 summary。在 Phase 6 / Outline 编译阶段会自动生成目录索引式 summary。</p>
+        <div class="ne-label-row">
+          <label class="ne-label">Summary</label>
+          <div class="ne-summary-tools">
+            <button
+              :class="['ne-summary-tab', { active: summaryTarget === 'self' }]"
+              @click="switchSummaryTarget('self')"
+            >本节点</button>
+            <button
+              :class="['ne-summary-tab', { active: summaryTarget === 'subtree' }]"
+              @click="switchSummaryTarget('subtree')"
+            >子树索引</button>
+            <button class="ne-template-btn" :disabled="summaryState === 'streaming'" @click="generateSummary">
+              {{ summaryState === 'streaming' ? '生成中…' : '生成' }}
+            </button>
+          </div>
+        </div>
+        <div class="ne-summary-status" :class="{ 'ne-summary-status--running': summaryState === 'streaming' }">
+          {{ summaryStatusText }}
+        </div>
+        <div v-if="summaryDraft.trim()" class="ne-summary-preview" v-html="summaryHtml"></div>
+        <p v-else class="ne-empty-sub">
+          {{ summaryTarget === 'self' ? '尚未生成导航节点 summary。' : '尚未生成子树索引 summary。' }}
+        </p>
       </div>
     </section>
   </div>
@@ -84,8 +104,10 @@
 
 <script lang="ts" setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { marked } from 'marked'
+import { streamHarnessSse } from '@/api/harness'
 import type { KBNode, KBNavSubtype, KBTreeKind, KBTemplate } from '@/types/knowledge'
-import { listTemplates, renderTemplate, updateNode } from '../api'
+import { getNodeSubtreeSummary, listTemplates, renderTemplate, updateNode } from '../api'
 
 const props = defineProps<{
   node: KBNode
@@ -105,7 +127,7 @@ const NAV_SUBTYPES: { key: KBNavSubtype; label: string }[] = [
   { key: 'drawer', label: '抽屉' },
   { key: 'section', label: '区段' },
   { key: 'custom', label: '自定义' },
-  { key: 'category', label: '分类（资产树）' },
+  { key: 'category', label: '分类（概念库）' },
 ]
 
 const form = reactive({
@@ -119,10 +141,26 @@ const dirty = ref(false)
 const saving = ref(false)
 const templates = ref<KBTemplate[]>([])
 const selectedTemplateId = ref('')
+const summaryTarget = ref<'self' | 'subtree'>('self')
+const summaryDraft = ref(props.node.summary || '')
+const summaryState = ref<'idle' | 'loading' | 'streaming'>('idle')
+const summaryPhase = ref('')
+const summaryReceivedChars = ref(0)
 
 const subtypeLabel = computed(() =>
   NAV_SUBTYPES.find(s => s.key === form.subtype)?.label || form.subtype
 )
+const summaryHtml = computed(() => marked.parse(summaryDraft.value || '') as string)
+const summaryStatusText = computed(() => {
+  if (summaryState.value === 'loading') return '正在读取摘要…'
+  if (summaryState.value === 'streaming') {
+    const received = summaryReceivedChars.value ? `，已接收 ${summaryReceivedChars.value} 字` : ''
+    return `${summaryPhase.value || '正在生成摘要'}${received}`
+  }
+  return summaryTarget.value === 'self'
+    ? '本节点 summary 描述导航形态、直接子节点结构和导航规则。'
+    : '子树索引 summary 描述该导航下所有可下钻的业务范围和召回线索。'
+})
 
 const availableSubtypes = computed(() =>
   form.tree === 'asset'
@@ -158,6 +196,62 @@ async function loadTemplates() {
     }
   } catch {
     templates.value = []
+  }
+}
+
+async function switchSummaryTarget(target: 'self' | 'subtree') {
+  if (summaryState.value === 'streaming') return
+  summaryTarget.value = target
+  if (target === 'self') {
+    summaryDraft.value = props.node.summary || ''
+    return
+  }
+  summaryState.value = 'loading'
+  try {
+    const cache = await getNodeSubtreeSummary(props.kbId, props.node.id)
+    if (summaryTarget.value === 'subtree') summaryDraft.value = cache?.content || ''
+  } catch {
+    if (summaryTarget.value === 'subtree') summaryDraft.value = ''
+  } finally {
+    summaryState.value = 'idle'
+  }
+}
+
+async function generateSummary() {
+  if (summaryState.value === 'streaming') return
+  summaryState.value = 'streaming'
+  summaryDraft.value = ''
+  summaryReceivedChars.value = 0
+  summaryPhase.value = summaryTarget.value === 'self'
+    ? '正在生成导航节点 summary'
+    : '正在生成导航子树索引 summary'
+  try {
+    let streamError = ''
+    await streamHarnessSse(
+      summaryTarget.value === 'self'
+        ? `/kb/${props.kbId}/node/${props.node.id}/summary/stream`
+        : `/kb/${props.kbId}/node/${props.node.id}/subtree-summary/stream`,
+      {},
+      {
+        onEvent: (event) => {
+          if (event?.stage) summaryPhase.value = String(event.stage)
+        },
+        onChunk: (content) => {
+          summaryDraft.value += content
+          summaryReceivedChars.value += content.length
+        },
+        onError: (message) => {
+          streamError = message || '摘要生成失败'
+        },
+      },
+    )
+    if (streamError) throw new Error(streamError)
+    emit('summary-updated')
+    window.$toast?.({ title: '摘要已生成', type: 'success' })
+  } catch (e: any) {
+    window.$toast?.({ title: e.message || '摘要生成失败', type: 'error' })
+  } finally {
+    summaryState.value = 'idle'
   }
 }
 
@@ -214,6 +308,8 @@ watch(() => props.node.id, () => {
   form.subtype = (props.node.subtype || 'section') as KBNavSubtype
   form.tree = (props.node.tree || 'business') as KBTreeKind
   selectedTemplateId.value = ''
+  summaryTarget.value = 'self'
+  summaryDraft.value = props.node.summary || ''
   loadTemplates()
   dirty.value = false
   emit('dirty-changed', false)
@@ -314,6 +410,26 @@ $text-secondary: rgba(0, 0, 0, 0.55);
   gap: 6px;
   align-items: center;
 }
+.ne-summary-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ne-summary-tab {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid $border;
+  border-radius: 7px;
+  background: #fff;
+  color: $text-secondary;
+  font-size: 12px;
+  cursor: pointer;
+  &.active {
+    background: $text-primary;
+    border-color: $text-primary;
+    color: #fff;
+  }
+}
 .ne-template-select {
   width: 168px;
 }
@@ -352,9 +468,59 @@ $text-secondary: rgba(0, 0, 0, 0.55);
   padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, 0.05);
 }
 
-.ne-summary-pre {
-  margin: 0; padding: 12px 14px; background: #f5f5f7; border-radius: 8px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px;
-  color: $text-primary; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+.ne-summary-status {
+  color: $text-secondary;
+  font-size: 11.5px;
+  line-height: 1.5;
+  &--running {
+    color: $text-primary;
+  }
+  &--running::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 7px;
+    border-radius: 999px;
+    background: #34c759;
+    animation: ne-summary-pulse 1.2s ease-in-out infinite;
+    vertical-align: 1px;
+  }
+}
+.ne-summary-preview {
+  padding: 14px 16px;
+  background: #f5f5f7;
+  border-radius: 8px;
+  color: $text-primary;
+  font-size: 12.5px;
+  line-height: 1.65;
+  word-break: break-word;
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3) {
+    margin: 14px 0 6px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  :deep(h1:first-child),
+  :deep(h2:first-child),
+  :deep(h3:first-child) {
+    margin-top: 0;
+  }
+  :deep(p),
+  :deep(ul),
+  :deep(ol) {
+    margin: 0 0 8px;
+  }
+  :deep(ul),
+  :deep(ol) {
+    padding-left: 20px;
+  }
+}
+
+@keyframes ne-summary-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
 }
 </style>

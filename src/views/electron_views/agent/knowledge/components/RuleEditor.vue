@@ -13,7 +13,7 @@
         />
       </div>
       <div class="re-meta-row">
-        <span class="re-tree-tag">资产树</span>
+        <span class="re-tree-tag">概念库</span>
         <label v-if="props.node.type === 'rule'" class="re-checkbox">
           <input type="checkbox" v-model="form.expected_inbound" @change="markDirty" />
           <span>期望被引用</span>
