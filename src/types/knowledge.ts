@@ -515,4 +515,107 @@ export interface KBChatMessageRecord {
   created_at?: string | null
 }
 
-export type KBEditorViewMode = 'raw' | 'chat' | 'template'
+// ─── AI 工具注册中心 ────────────────────────────────
+
+export type KBAIToolType = 'python_script' | 'http_reference' | string
+export type KBToolTreeNodeType = 'folder' | 'tool' | string
+export type KBAIToolParamType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'json' | string
+
+export interface KBAIToolInputParam {
+  name: string
+  type: KBAIToolParamType
+  required?: boolean
+  default?: any
+  description?: string
+}
+
+export interface KBAITool {
+  id: string
+  kb_id: number
+  name: string
+  tool_type: KBAIToolType
+  description: string
+  enabled: boolean
+  input_schema: KBAIToolInputParam[]
+  test_arguments?: Record<string, any>
+  output_description: string
+  timeout_seconds: number
+  script_code?: string
+  http_reference?: Record<string, any>
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface KBToolTreeNode {
+  id: string
+  kb_id: number
+  parent_id?: string | null
+  tool_id?: string | null
+  name: string
+  node_type: KBToolTreeNodeType
+  sort_order: number
+  description: string
+  subtree_summary?: string
+  summary_updated_at?: string | null
+  summary_content_hash?: string | null
+  summary_stale?: boolean
+  tool?: KBAITool | null
+  children?: KBToolTreeNode[]
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface KBAIToolTestResult {
+  ok: boolean
+  return_value?: any
+  stdout?: string
+  stderr?: string
+  error?: string
+  elapsed_ms?: number
+  arguments?: Record<string, any>
+  tool?: KBAITool
+}
+
+export interface KBAIToolParamInferResult {
+  params: KBAIToolInputParam[]
+  warning?: string
+  model?: string
+}
+
+export interface KBAIToolTextInferResult {
+  content: string
+  warning?: string
+  model?: string
+}
+
+export interface KBChatToolConfirmation {
+  id: string
+  kb_id: number
+  session_id: string
+  user_id?: number
+  tool_id: string
+  tool_name: string
+  arguments: Record<string, any>
+  reason: string
+  question?: string
+  retrieval?: KBChatRetrieval
+  sources?: KBChatSource[]
+  status: 'pending' | 'approved' | 'cancelled' | 'expired' | 'failed' | string
+  tool?: KBAITool | null
+  tool_chain?: Array<{
+    step_id?: string
+    tool_id: string
+    tool_name?: string
+    arguments?: Record<string, any>
+    reason?: string
+    risk_level?: 'low' | 'high' | string
+    requires_confirmation?: boolean
+    depends_on?: string[]
+  }>
+  tool_results?: Array<Record<string, any>>
+  allow_high_risk_in_session?: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type KBEditorViewMode = 'raw' | 'chat' | 'template' | 'tool'

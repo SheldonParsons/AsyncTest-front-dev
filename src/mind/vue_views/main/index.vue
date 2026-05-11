@@ -3155,6 +3155,7 @@ const THUMB_RATIO_AT_MIN_SCALE = 0.25;
 const THUMB_RATIO_AT_INITIAL_SCALE = 0.4;
 const THUMB_RATIO_AT_MAX_SCALE = 0.5;
 const DRAG_START_THRESHOLD_PX = 5;
+const NODE_WIDTH_COMMIT_THRESHOLD_PX = 2;
 const FAR_THRESHOLD_PX = 80;
 const DROP_CHILD_ZONE_RATIO = 0.44;
 const DROP_SIBLING_ZONE_PX = 18;
@@ -4381,13 +4382,20 @@ function updateNodeWidthResizePreview(screenX: number, screenY: number) {
   requestRender();
 }
 
+function hasCommittedNodeWidthResizeChange(state: NodeWidthInteractionState) {
+  if (!state.startBodyRect || !state.previewBodyRect) return false;
+  const widthDeltaScreen = Math.abs(state.previewBodyRect.width - state.startBodyRect.width) * camera.value.scale;
+  const xDeltaScreen = Math.abs(state.previewBodyRect.x - state.startBodyRect.x) * camera.value.scale;
+  return Math.max(widthDeltaScreen, xDeltaScreen) >= NODE_WIDTH_COMMIT_THRESHOLD_PX;
+}
+
 function finishNodeWidthResize(commit: boolean, reason: string) {
   const current = nodeWidthInteraction.value;
   if (!current) return;
   const nodeId = current.nodeId;
   const previewBodyRect = current.previewBodyRect;
   clearNodeWidthInteraction(reason);
-  if (!commit || !previewBodyRect) {
+  if (!commit || !previewBodyRect || !hasCommittedNodeWidthResizeChange(current)) {
     requestRender();
     return;
   }

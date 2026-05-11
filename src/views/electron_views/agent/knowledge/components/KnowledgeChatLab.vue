@@ -101,7 +101,130 @@
               </Transition>
             </div>
 
-            <div v-if="message.role === 'assistant'" class="kbc-answer" v-html="renderMarkdown(message.content || '正在组织答案…')"></div>
+            <div v-if="message.role === 'assistant' && message.toolConfirmation" class="kbc-tool-confirm">
+              <div class="kbc-tool-confirm-head">
+                <span>待确认 Calling</span>
+                <strong>{{ message.toolConfirmation.tool_name || message.toolConfirmation.tool?.name || '未命名工具' }}</strong>
+              </div>
+              <p v-if="message.toolConfirmation.reason" class="kbc-tool-confirm-reason">{{ message.toolConfirmation.reason }}</p>
+              <div v-if="message.toolConfirmation.tool_chain?.length" class="kbc-tool-chain">
+                <div
+                  v-for="(step, index) in message.toolConfirmation.tool_chain"
+                  :key="`${message.id}-chain-${index}-${step.tool_id}`"
+                  class="kbc-tool-chain-step"
+                  :class="{ 'is-high-risk': step.risk_level === 'high' }"
+                >
+                  <i>{{ index + 1 }}</i>
+                  <div>
+                    <strong>{{ step.tool_name || step.tool_id }}</strong>
+                    <p>{{ step.reason || (step.risk_level === 'high' ? '高风险工具步骤' : '工具步骤') }}</p>
+                  </div>
+                  <em>{{ step.risk_level === 'high' ? '高风险' : '低风险' }}</em>
+                </div>
+              </div>
+              <div class="kbc-tool-args">
+                <label
+                  v-for="param in confirmationParams(message)"
+                  :key="`${message.id}-${param.name}`"
+                  class="kbc-tool-arg"
+                >
+                  <span>
+                    {{ param.description || param.name }}
+                    <em v-if="param.required">必填</em>
+                  </span>
+                  <input
+                    v-if="param.type !== 'boolean'"
+                    v-model="message.toolArgumentDraft![param.name]"
+                    :type="isSensitiveParam(param.name) ? 'password' : 'text'"
+                    :placeholder="param.name"
+                    :disabled="message.toolConfirmation.status !== 'pending' || running"
+                  />
+                  <select
+                    v-else
+                    v-model="message.toolArgumentDraft![param.name]"
+                    :disabled="message.toolConfirmation.status !== 'pending' || running"
+                  >
+                    <option :value="true">true</option>
+                    <option :value="false">false</option>
+                  </select>
+                </label>
+                <label
+                  v-for="name in extraArgumentNames(message)"
+                  :key="`${message.id}-${name}`"
+                  class="kbc-tool-arg"
+                >
+                  <span>{{ name }}</span>
+                  <input
+                    v-model="message.toolArgumentDraft![name]"
+                    :type="isSensitiveParam(name) ? 'password' : 'text'"
+                    :disabled="message.toolConfirmation.status !== 'pending' || running"
+                  />
+                </label>
+              </div>
+              <div class="kbc-tool-confirm-foot">
+                <small>确认后才会执行脚本。你可以先修改参数，取消则不会调用工具。</small>
+                <label v-if="hasHighRiskStep(message) && message.toolConfirmation.status === 'pending'" class="kbc-tool-risk-pass">
+                  <input v-model="message.approveHighRiskInSession" type="checkbox" :disabled="running" />
+                  <span>本会话后续高风险步骤也放行</span>
+                </label>
+                <div v-if="message.toolConfirmation.status === 'pending'" class="kbc-tool-confirm-actions">
+                  <button type="button" class="kbc-tool-btn kbc-tool-btn--ghost" :disabled="running" @click="cancelPendingTool(message)">取消调用</button>
+                  <button type="button" class="kbc-tool-btn" :disabled="running" @click="approvePendingTool(message)">确认执行</button>
+                </div>
+                <strong v-else class="kbc-tool-status">{{ confirmationStatusText(message.toolConfirmation.status) }}</strong>
+              </div>
+            </div>
+
+            <div v-if="message.role === 'assistant' && message.clarifications?.length" class="kbc-clarify-stack">
+              <div
+                v-for="clarification in message.clarifications"
+                :key="clarification.id"
+                class="kbc-clarify-card"
+              >
+                <div class="kbc-clarify-head">
+                  <span>需要你决定</span>
+                  <strong>{{ clarificationTitle(clarification.type) }}</strong>
+                </div>
+                <p>{{ clarification.message }}</p>
+                <div v-if="clarification.selected" class="kbc-clarify-selected">
+                  <span>已选择</span>
+                  <strong>{{ clarification.selected }}</strong>
+                </div>
+                <div v-if="clarification.suggestions.length" class="kbc-clarify-options">
+                  <button
+                    v-for="item in clarification.suggestions"
+                    :key="`${clarification.id}-${item}`"
+                    type="button"
+                    :disabled="running || Boolean(clarification.selected)"
+                    @click="replyToClarification(item, message, clarification.id)"
+                  >
+                    {{ item }}
+                  </button>
+                </div>
+                <div class="kbc-clarify-custom">
+                  <textarea
+                    v-model="clarification.draft"
+                    :disabled="running || Boolean(clarification.selected)"
+                    rows="2"
+                    placeholder="也可以直接输入你的决定，例如：可以，就按当前账号可见范围查询"
+                    @keydown.enter.exact.prevent="replyToClarification(clarification.draft, message, clarification.id)"
+                  ></textarea>
+                  <button
+                    type="button"
+                    :disabled="running || Boolean(clarification.selected) || !clarification.draft.trim()"
+                    @click="replyToClarification(clarification.draft, message, clarification.id)"
+                  >
+                    继续
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="message.role === 'assistant' && (message.content || (!message.toolConfirmation && !message.clarifications?.length))"
+              class="kbc-answer"
+              v-html="renderMarkdown(message.content || '正在组织答案…')"
+            ></div>
             <span v-if="running && message.id === activeAssistantId" class="kbc-typing-caret"></span>
             <p v-if="message.role === 'user'">{{ message.content }}</p>
 
@@ -147,10 +270,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
-import type { KBChatMessageRecord, KBChatRetrieval, KBChatSession, KBChatSource } from '@/types/knowledge'
-import { deleteChatSession, listChatMessages, listChatSessions, streamKnowledgeChat } from '../api'
+import type { KBChatMessageRecord, KBChatRetrieval, KBChatSession, KBChatSource, KBChatToolConfirmation, KBAIToolInputParam } from '@/types/knowledge'
+import { approveToolConfirmationStream, cancelToolConfirmation, deleteChatSession, listChatMessages, listChatSessions, listPendingToolConfirmations, streamKnowledgeChat } from '../api'
 
 marked.setOptions({
   gfm: true,
@@ -164,15 +287,28 @@ const props = defineProps<{
 
 type ChatRole = 'user' | 'assistant'
 
+interface ChatClarification {
+  id: string
+  message: string
+  type: string
+  suggestions: string[]
+  draft: string
+  selected?: string
+}
+
 interface ChatMessage {
   id: string
   role: ChatRole
   content: string
   sources?: KBChatSource[]
   retrieval?: KBChatRetrieval
-  debugEvents?: Array<{ text: string }>
+  debugEvents?: Array<{ text: string; type?: string }>
   processExpanded?: boolean
   processDone?: boolean
+  toolConfirmation?: KBChatToolConfirmation | null
+  toolArgumentDraft?: Record<string, any>
+  approveHighRiskInSession?: boolean
+  clarifications?: ChatClarification[]
 }
 
 const quickQuestions = [
@@ -197,6 +333,9 @@ const scrollRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const activeAssistantId = ref('')
 const aiLogoUrl = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg'
+let threadMutationObserver: MutationObserver | null = null
+let autoScrollFrame = 0
+let autoScrollTimer = 0
 
 const statusText = computed(() => {
   if (running.value) return currentPhase.value || '正在准备回答'
@@ -218,14 +357,103 @@ function pushDebug(message: ChatMessage | null, text: string) {
   if (!message.debugEvents) message.debugEvents = []
   message.debugEvents.push({ text })
   if (message.processExpanded !== false) message.processExpanded = true
-  scrollToBottom()
+  scheduleRunningScrollToBottom()
+}
+
+function createArgumentDraft(confirmation: KBChatToolConfirmation) {
+  const draftArgs: Record<string, any> = { ...(confirmation.arguments || {}) }
+  ;(confirmation.tool?.input_schema || []).forEach((param) => {
+    if (draftArgs[param.name] === undefined && param.default !== undefined) {
+      draftArgs[param.name] = param.default
+    }
+  })
+  return draftArgs
+}
+
+function confirmationParams(message: ChatMessage): KBAIToolInputParam[] {
+  return message.toolConfirmation?.tool?.input_schema || []
+}
+
+function extraArgumentNames(message: ChatMessage) {
+  const schemaNames = new Set(confirmationParams(message).map((param) => param.name))
+  return Object.keys(message.toolArgumentDraft || {}).filter((name) => !schemaNames.has(name))
+}
+
+function isSensitiveParam(name: string) {
+  return /(password|token|access_token|secret|key|authorization|auth)/i.test(name || '')
+}
+
+function confirmationStatusText(status: string) {
+  if (status === 'approved') return '已确认执行'
+  if (status === 'cancelled') return '已取消'
+  if (status === 'failed') return '执行失败'
+  if (status === 'expired') return '已过期'
+  return status || '已处理'
+}
+
+function hasHighRiskStep(message: ChatMessage) {
+  return Boolean(message.toolConfirmation?.tool_chain?.some((step) => step.risk_level === 'high'))
+}
+
+function clarificationTitle(type?: string) {
+  if (type === 'missing_arguments') return '补充参数'
+  if (type === 'tool_scope') return '确认查询口径'
+  if (type === 'tool_account') return '选择账号范围'
+  return '补充信息'
+}
+
+function confirmationToChat(confirmation: KBChatToolConfirmation): ChatMessage {
+  return {
+    id: `tool-confirm-${confirmation.id}`,
+    role: 'assistant',
+    content: '',
+    sources: confirmation.sources || [],
+    retrieval: confirmation.retrieval,
+    debugEvents: [{ text: `等待确认工具调用：${confirmation.tool_name || confirmation.tool?.name || confirmation.tool_id}` }],
+    processExpanded: false,
+    processDone: true,
+    toolConfirmation: confirmation,
+    toolArgumentDraft: createArgumentDraft(confirmation),
+    approveHighRiskInSession: Boolean(confirmation.allow_high_risk_in_session),
+  }
+}
+
+function waitFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+function forceScrollToBottom() {
+  const el = scrollRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+}
+
+function scheduleRunningScrollToBottom() {
+  if (!running.value) return
+  if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame)
+  if (autoScrollTimer) window.clearTimeout(autoScrollTimer)
+  autoScrollFrame = requestAnimationFrame(() => {
+    autoScrollFrame = requestAnimationFrame(() => {
+      autoScrollFrame = 0
+      forceScrollToBottom()
+    })
+  })
+  autoScrollTimer = window.setTimeout(() => {
+    autoScrollTimer = 0
+    forceScrollToBottom()
+  }, 260)
 }
 
 async function scrollToBottom(smooth = true) {
   await nextTick()
+  await waitFrame()
   const el = scrollRef.value
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  await waitFrame()
+  const latest = scrollRef.value
+  if (!latest) return
+  latest.scrollTo({ top: latest.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
 }
 
 function resizeInput() {
@@ -248,6 +476,26 @@ function clearConversation() {
 
 onMounted(() => {
   loadSessions()
+  nextTick(() => {
+    if (!scrollRef.value || typeof MutationObserver === 'undefined') return
+    threadMutationObserver = new MutationObserver(() => {
+      scheduleRunningScrollToBottom()
+    })
+    threadMutationObserver.observe(scrollRef.value, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    })
+  })
+})
+
+onBeforeUnmount(() => {
+  threadMutationObserver?.disconnect()
+  threadMutationObserver = null
+  if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame)
+  if (autoScrollTimer) window.clearTimeout(autoScrollTimer)
 })
 
 watch(() => props.kbId, () => {
@@ -277,8 +525,23 @@ async function selectSession(sessionId: string, skipSame = true) {
   if (running.value) return
   if (skipSame && activeSessionId.value === sessionId) return
   activeSessionId.value = sessionId
-  const rows = await listChatMessages(props.kbId, sessionId)
-  messages.value = rows.map(messageRecordToChat)
+  const [rows, pendingConfirmations] = await Promise.all([
+    listChatMessages(props.kbId, sessionId),
+    listPendingToolConfirmations(props.kbId, sessionId),
+  ])
+  messages.value = chatRowsToMessages(rows)
+  pendingConfirmations.forEach((confirmation) => {
+    const latest = messages.value[messages.value.length - 1]
+    if (isOpenClarificationMessage(latest)) {
+      latest.toolConfirmation = confirmation
+      latest.toolArgumentDraft = createArgumentDraft(confirmation)
+      latest.approveHighRiskInSession = Boolean(confirmation.allow_high_risk_in_session)
+      latest.processExpanded = false
+      latest.processDone = true
+    } else {
+      messages.value.push(confirmationToChat(confirmation))
+    }
+  })
   await scrollToBottom(false)
 }
 
@@ -328,21 +591,79 @@ async function removeSession(sessionId: string) {
 }
 
 function messageRecordToChat(row: KBChatMessageRecord): ChatMessage {
-  const events = (row.debug_events || [])
+  const rawEvents = row.debug_events || []
+  const eventTypes = new Set(rawEvents.map((event) => String(event.type || '')))
+  const events = rawEvents
     .map((event) => ({
+      type: String(event.type || ''),
       text: String(event.text || event.stage || event.message || event.type || '').trim(),
     }))
     .filter((event) => event.text)
+  const isOpenClarification = row.role !== 'user' && eventTypes.has('clarification') && !eventTypes.has('final')
+  const clarificationEvent = rawEvents.find((event) => String(event.type || '') === 'clarification')
+  const clarificationPayload = clarificationEvent?.payload || {}
   return {
     id: row.id,
     role: row.role === 'user' ? 'user' : 'assistant',
-    content: row.content || '',
+    content: isOpenClarification ? '' : (row.content || ''),
     sources: row.sources || [],
     retrieval: row.retrieval,
     debugEvents: events,
     processExpanded: false,
     processDone: true,
+    clarifications: isOpenClarification
+      ? [{
+          id: `${row.id}-clarification`,
+          message: row.content || String(clarificationEvent?.stage || ''),
+          type: String(clarificationPayload.clarification_type || ''),
+          suggestions: Array.isArray(clarificationPayload.suggested_replies)
+            ? clarificationPayload.suggested_replies.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+            : [],
+          draft: '',
+        }]
+      : undefined,
   }
+}
+
+function isOpenClarificationMessage(message: ChatMessage | undefined) {
+  if (!message || message.role !== 'assistant') return false
+  const eventTypes = new Set((message.debugEvents || []).map((event) => event.type || ''))
+  return eventTypes.has('clarification') && !eventTypes.has('final')
+}
+
+function chatRowsToMessages(rows: KBChatMessageRecord[]) {
+  const result: ChatMessage[] = []
+  rows.forEach((row) => {
+    const current = messageRecordToChat(row)
+    const latest = result[result.length - 1]
+    if (current.role === 'assistant' && isOpenClarificationMessage(latest) && !isOpenClarificationMessage(current)) {
+      latest.content = current.content
+      latest.sources = current.sources
+      latest.retrieval = current.retrieval
+      latest.debugEvents = [...(latest.debugEvents || []), ...(current.debugEvents || [])]
+      latest.clarifications = undefined
+      latest.processDone = true
+      latest.processExpanded = false
+      return
+    }
+    result.push(current)
+  })
+  return result
+}
+
+async function replyToClarification(value: string, message?: ChatMessage, clarificationId?: string) {
+  const text = (value || '').trim()
+  if (!text || running.value) return
+  if (message?.clarifications?.length) {
+    const clarification = message.clarifications.find((item) => item.id === clarificationId) || message.clarifications[message.clarifications.length - 1]
+    clarification.selected = text
+    clarification.draft = ''
+  }
+  await send({
+    questionOverride: text,
+    showUserMessage: false,
+    continuationMessage: message,
+  })
 }
 
 function upsertSession(session: KBChatSession) {
@@ -368,6 +689,114 @@ function formatSessionTime(value?: string | null) {
   })
 }
 
+async function approvePendingTool(message: ChatMessage) {
+  const confirmation = message.toolConfirmation
+  if (!confirmation || confirmation.status !== 'pending' || running.value) return
+  running.value = true
+  activeAssistantId.value = message.id
+  currentPhase.value = '确认执行工具'
+  message.processExpanded = true
+  message.processDone = false
+  pushDebug(message, '用户已确认，准备执行工具')
+  try {
+    await approveToolConfirmationStream(props.kbId, confirmation.id, {
+      ...(message.toolArgumentDraft || {}),
+      __approve_high_risk_in_session: Boolean(message.approveHighRiskInSession),
+    }, {
+      onStage: (event) => {
+        const stage = String(event.stage || '执行中')
+        currentPhase.value = stage
+        const model = event.model ? ` · ${event.model}` : ''
+        pushDebug(message, `${stage}${model}`)
+      },
+      onToolEvent: (event) => {
+        const type = String(event.type || '')
+        if (type === 'tool_call') {
+          const tool = event.tool || {}
+          pushDebug(message, `调用工具：${tool.tool_name || tool.tool_id || '未命名工具'}`)
+          return
+        }
+        if (type === 'tool_result') {
+          const result = event.result || {}
+          const toolName = result.tool?.name || confirmation.tool_name || '工具'
+          pushDebug(message, `${toolName} 执行完成 · ${result.elapsed_ms || 0}ms`)
+          return
+        }
+        if (type === 'tool_error') {
+          pushDebug(message, `工具执行失败：${event.message || event.stage || '未知错误'}`)
+          return
+        }
+        pushDebug(message, String(event.stage || event.message || '工具流程执行中'))
+      },
+      onToolConfirmationRequired: (nextConfirmation) => {
+        message.toolConfirmation = nextConfirmation
+        message.toolArgumentDraft = createArgumentDraft(nextConfirmation)
+        message.approveHighRiskInSession = Boolean(nextConfirmation.allow_high_risk_in_session)
+        message.processDone = true
+        message.processExpanded = true
+        pushDebug(message, `等待二次确认：${nextConfirmation.tool_name || nextConfirmation.tool?.name || nextConfirmation.tool_id}`)
+      },
+      onChunk: (chunk) => {
+        message.content += chunk
+        scrollToBottom()
+      },
+      onFinal: (event) => {
+        if (!message.content && event.answer) message.content = String(event.answer)
+        if (Array.isArray(event.sources)) message.sources = event.sources
+        if (event.retrieval) message.retrieval = event.retrieval
+        if (message.toolConfirmation) message.toolConfirmation.status = 'approved'
+        message.processDone = true
+        message.processExpanded = false
+        pushDebug(message, '回答完成')
+      },
+      onError: (errorMessage) => {
+        throw new Error(errorMessage || '工具执行失败')
+      },
+    })
+    if (message.toolConfirmation) message.toolConfirmation.status = 'approved'
+    message.processDone = true
+    message.processExpanded = false
+    await loadSessions(activeSessionId.value)
+  } catch (error: any) {
+    message.content = message.content || `工具执行失败：${error?.message || String(error)}`
+    if (message.toolConfirmation) message.toolConfirmation.status = 'failed'
+    message.processDone = true
+    message.processExpanded = true
+    pushDebug(message, `错误：${error?.message || String(error)}`)
+  } finally {
+    running.value = false
+    activeAssistantId.value = ''
+    currentPhase.value = ''
+    await scrollToBottom()
+  }
+}
+
+async function cancelPendingTool(message: ChatMessage) {
+  const confirmation = message.toolConfirmation
+  if (!confirmation || confirmation.status !== 'pending' || running.value) return
+  running.value = true
+  activeAssistantId.value = message.id
+  currentPhase.value = '取消工具调用'
+  try {
+    const next = await cancelToolConfirmation(props.kbId, confirmation.id)
+    message.toolConfirmation = next
+    message.toolArgumentDraft = createArgumentDraft(next)
+    message.approveHighRiskInSession = Boolean(next.allow_high_risk_in_session)
+    message.content = `已取消工具调用：${next.tool_name || next.tool?.name || next.tool_id}。本次没有执行工具。`
+    message.processDone = true
+    message.processExpanded = false
+    pushDebug(message, '用户取消工具调用，未执行工具')
+    await loadSessions(activeSessionId.value)
+  } catch (error: any) {
+    pushDebug(message, `取消失败：${error?.message || String(error)}`)
+  } finally {
+    running.value = false
+    activeAssistantId.value = ''
+    currentPhase.value = ''
+    await scrollToBottom()
+  }
+}
+
 function toggleProcess(message: ChatMessage) {
   message.processExpanded = !message.processExpanded
 }
@@ -378,16 +807,22 @@ function processSummary(message: ChatMessage) {
   return message.processDone ? `${count} 步，已完成` : `${count} 步`
 }
 
-async function send() {
-  const question = draft.value.trim()
+async function send(options: {
+  questionOverride?: string
+  showUserMessage?: boolean
+  continuationMessage?: ChatMessage
+} = {}) {
+  const question = (options.questionOverride ?? draft.value).trim()
   if (!question || running.value) return
 
-  draft.value = ''
+  if (!options.questionOverride) draft.value = ''
   running.value = true
   currentPhase.value = '连接后端'
 
-  messages.value.push({ id: makeId(), role: 'user', content: question })
-  const assistant: ChatMessage = {
+  if (options.showUserMessage !== false) {
+    messages.value.push({ id: makeId(), role: 'user', content: question })
+  }
+  const assistant: ChatMessage = options.continuationMessage || {
     id: makeId(),
     role: 'assistant',
     content: '',
@@ -396,11 +831,18 @@ async function send() {
     processExpanded: true,
     processDone: false,
   }
-  messages.value.push(assistant)
+  assistant.content = ''
+  assistant.processExpanded = true
+  assistant.processDone = false
+  assistant.toolConfirmation = null
+  if (!options.continuationMessage) assistant.clarifications = []
+  if (!options.continuationMessage) {
+    messages.value.push(assistant)
+  }
   activeAssistantId.value = assistant.id
   const assistantIndex = messages.value.length - 1
   const updateAssistant = (updater: (message: ChatMessage) => void) => {
-    const current = messages.value[assistantIndex]
+    const current = options.continuationMessage || messages.value[assistantIndex]
     if (!current) return
     updater(current)
   }
@@ -430,9 +872,63 @@ async function send() {
         updateAssistant((message) => { message.sources = sources })
         pushDebug(assistant, `最终引用来源：${sources.length} 个来源`)
       },
-      onClarification: (message) => {
-        updateAssistant((item) => { item.content += message })
+      onClarification: (message, event) => {
+        const suggestions = Array.isArray(event?.suggested_replies)
+          ? event.suggested_replies.map((item: unknown) => String(item || '').trim()).filter(Boolean).slice(0, 3)
+          : []
+        updateAssistant((item) => {
+          item.content = ''
+          item.clarifications = [
+            ...(item.clarifications || []),
+            {
+              id: makeId(),
+              message,
+              type: String(event?.clarification_type || ''),
+              suggestions,
+              draft: '',
+            },
+          ]
+          item.toolConfirmation = null
+          item.processDone = true
+          item.processExpanded = false
+        })
         pushDebug(assistant, '需要用户补充确认')
+      },
+      onToolEvent: (event) => {
+        const type = String(event.type || '')
+        if (type === 'tool_candidates') {
+          const candidates = event.candidates || {}
+          const count = Array.isArray(candidates.candidate_tool_ids) ? candidates.candidate_tool_ids.length : 0
+          pushDebug(assistant, `工具发现完成：候选工具 ${count} 个`)
+          return
+        }
+        if (type === 'tool_call') {
+          const tool = event.tool || {}
+          pushDebug(assistant, `调用工具：${tool.tool_name || tool.tool_id || '未命名工具'}`)
+          return
+        }
+        if (type === 'tool_result') {
+          const result = event.result || {}
+          const toolName = result.tool?.name || '工具'
+          pushDebug(assistant, `${toolName} 执行完成 · ${result.elapsed_ms || 0}ms`)
+          return
+        }
+        if (type === 'tool_error') {
+          pushDebug(assistant, `工具执行失败：${event.message || event.stage || '未知错误'}`)
+          return
+        }
+        pushDebug(assistant, String(event.stage || event.message || '工具流程执行中'))
+      },
+      onToolConfirmationRequired: (confirmation) => {
+        updateAssistant((message) => {
+          message.content = ''
+          message.toolConfirmation = confirmation
+          message.toolArgumentDraft = createArgumentDraft(confirmation)
+          message.approveHighRiskInSession = Boolean(confirmation.allow_high_risk_in_session)
+          message.processDone = true
+          message.processExpanded = false
+        })
+        pushDebug(assistant, `等待确认工具调用：${confirmation.tool_name || confirmation.tool?.name || confirmation.tool_id}`)
       },
       onChunk: (chunk) => {
         updateAssistant((message) => { message.content += chunk })
@@ -452,7 +948,7 @@ async function send() {
       onError: (message) => {
         throw new Error(message || '问答失败')
       },
-    }, sessionId)
+    }, sessionId, { continuation: options.showUserMessage === false })
     updateAssistant((message) => {
       message.processDone = true
       message.processExpanded = false
@@ -478,7 +974,10 @@ async function send() {
 .kbc {
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: block;
+  overflow: hidden;
   background:
     linear-gradient(135deg, rgba(247, 248, 250, 0.92), rgba(255, 255, 255, 0.98)),
     #f6f7f8;
@@ -647,9 +1146,13 @@ async function send() {
     }
   }
 
-  &--draft {
+  &--draft:not(.active) {
     span {
-      color: #ffffff;
+      color: #20242a;
+    }
+
+    small {
+      color: #8a929b;
     }
   }
 
@@ -731,8 +1234,11 @@ async function send() {
 .kbc-main {
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   background: #f8f9fb;
 }
 
@@ -776,7 +1282,10 @@ async function send() {
 
 .kbc-thread {
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 18px max(34px, calc((100% - 1080px) / 2)) 28px;
 }
 
@@ -822,6 +1331,8 @@ async function send() {
 }
 
 .kbc-message {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 12px;
@@ -884,6 +1395,11 @@ async function send() {
 
 .kbc-bubble {
   min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 14px 16px;
   border-radius: 10px;
   box-shadow: 0 10px 30px rgba(16, 20, 24, 0.06);
@@ -891,12 +1407,15 @@ async function send() {
   p {
     margin: 0;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     line-height: 1.55;
     font-size: 14px;
   }
 }
 
 .kbc-process {
+  order: 0;
   margin: -2px 0 14px;
   border: 1px solid rgba(20, 23, 27, 0.08);
   border-radius: 10px;
@@ -958,10 +1477,12 @@ async function send() {
 }
 
 .kbc-typing-caret {
+  order: 2;
+  align-self: flex-start;
   display: inline-block;
   width: 8px;
   height: 18px;
-  margin-left: 2px;
+  margin: 2px 0 12px 2px;
   vertical-align: text-bottom;
   border-radius: 3px;
   background: #111316;
@@ -969,10 +1490,17 @@ async function send() {
 }
 
 .kbc-answer {
+  order: 3;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+
   :deep(p) {
     margin: 0 0 10px;
     line-height: 1.72;
     font-size: 14px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   :deep(ul),
@@ -984,6 +1512,8 @@ async function send() {
   :deep(li) {
     margin: 4px 0;
     line-height: 1.65;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   :deep(strong) {
@@ -991,10 +1521,12 @@ async function send() {
   }
 
   :deep(table) {
+    display: block;
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin: 10px 0 14px;
-    overflow: hidden;
+    overflow-x: auto;
     border-radius: 8px;
     box-shadow: 0 0 0 1px rgba(20, 23, 27, 0.1);
     font-size: 13px;
@@ -1007,6 +1539,8 @@ async function send() {
     line-height: 1.55;
     text-align: left;
     vertical-align: top;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   :deep(th) {
@@ -1023,18 +1557,462 @@ async function send() {
   :deep(tr:nth-child(even) td) {
     background: #fafbfc;
   }
+
+  :deep(pre) {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    border-radius: 8px;
+    background: #111316;
+    color: #f5f7fa;
+    padding: 12px;
+  }
+
+  :deep(code) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
 
-.kbc-sources {
+.kbc-tool-confirm {
+  order: 2;
+  margin-bottom: 12px;
+  border: 1px solid rgba(17, 19, 22, 0.1);
+  border-radius: 10px;
+  background: #fbfcfd;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  overflow: hidden;
+}
+
+.kbc-tool-confirm-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(17, 19, 22, 0.08);
+  background: #f3f5f7;
+
+  span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #111316;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  strong {
+    min-width: 0;
+    color: #15171a;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.kbc-tool-confirm-reason {
+  margin: 0;
+  padding: 10px 12px 0;
+  color: #4c535c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.kbc-tool-chain {
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.kbc-tool-chain-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid rgba(20, 23, 27, 0.08);
+  border-radius: 9px;
+  background: #fff;
+  padding: 8px 9px;
+
+  i {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background: #111316;
+    color: #fff;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+  }
+
+  div {
+    min-width: 0;
+  }
+
+  strong,
+  p {
+    margin: 0;
+  }
+
+  strong {
+    display: block;
+    color: #15171a;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  p {
+    margin-top: 3px;
+    color: #747d87;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  em {
+    border-radius: 999px;
+    background: #edf7ee;
+    color: #28733b;
+    padding: 3px 7px;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+  }
+
+  &.is-high-risk {
+    border-color: rgba(194, 65, 12, 0.2);
+
+    em {
+      background: #fff1e8;
+      color: #c2410c;
+    }
+  }
+}
+
+.kbc-tool-args {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.kbc-tool-arg {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+
+  span {
+    min-width: 0;
+    color: #2f353c;
+    font-size: 12px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  em {
+    margin-left: 6px;
+    color: #c2410c;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+  }
+
+  input,
+  select {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    box-sizing: border-box;
+    border: 1px solid rgba(20, 23, 27, 0.12);
+    border-radius: 8px;
+    background: #fff;
+    color: #15171a;
+    font-size: 12px;
+    outline: none;
+    padding: 0 10px;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+
+    &:focus {
+      border-color: rgba(17, 19, 22, 0.38);
+      box-shadow: 0 0 0 3px rgba(17, 19, 22, 0.08);
+    }
+
+    &:disabled {
+      background: #f2f4f6;
+      color: #7b838d;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.kbc-tool-confirm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(17, 19, 22, 0.06);
+
+  small {
+    min-width: 0;
+    color: #747d87;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+}
+
+.kbc-tool-risk-pass {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #30363d;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+
+  input {
+    width: 14px;
+    height: 14px;
+    accent-color: #111316;
+  }
+}
+
+.kbc-tool-confirm-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kbc-tool-btn {
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #111316;
+  color: #fff;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+
+  &:hover:not(:disabled) {
+    background: #242930;
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &--ghost {
+    border: 1px solid rgba(20, 23, 27, 0.12);
+    background: #fff;
+    color: #2f353c;
+
+    &:hover:not(:disabled) {
+      background: #f2f4f6;
+    }
+  }
+}
+
+.kbc-tool-status {
+  flex: 0 0 auto;
+  color: #4b535c;
+  font-size: 12px;
+}
+
+.kbc-clarify-stack {
+  order: 1;
+}
+
+.kbc-clarify-card {
+  margin-bottom: 12px;
+  border: 1px solid rgba(17, 19, 22, 0.12);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(17, 19, 22, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  p {
+    margin: 0;
+    padding: 12px 14px 10px;
+    color: #2d333a;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+}
+
+.kbc-clarify-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(17, 19, 22, 0.08);
+  background: #f1f3f5;
+
+  span {
+    border-radius: 999px;
+    background: #111316;
+    color: #fff;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  strong {
+    color: #15171a;
+    font-size: 13px;
+  }
+}
+
+.kbc-clarify-options {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  padding: 0 14px 12px;
+
+  button {
+    min-height: 30px;
+    border: 1px solid rgba(17, 19, 22, 0.12);
+    border-radius: 999px;
+    background: #fff;
+    color: #20252b;
+    padding: 0 11px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: rgba(17, 19, 22, 0.28);
+      background: #f6f7f8;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.kbc-clarify-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 12px;
+  border: 1px solid rgba(33, 150, 83, 0.18);
+  border-radius: 9px;
+  background: #f0faf3;
+  padding: 8px 10px;
+
+  span {
+    flex: 0 0 auto;
+    color: #28733b;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  strong {
+    min-width: 0;
+    color: #1f3d2a;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+}
+
+.kbc-clarify-custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: end;
+  padding: 0 14px 14px;
+
+  textarea {
+    width: 100%;
+    min-width: 0;
+    resize: vertical;
+    box-sizing: border-box;
+    border: 1px solid rgba(17, 19, 22, 0.12);
+    border-radius: 9px;
+    background: #fff;
+    color: #15171a;
+    padding: 9px 10px;
+    font-size: 12px;
+    line-height: 1.55;
+    outline: none;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+
+    &:focus {
+      border-color: rgba(17, 19, 22, 0.4);
+      box-shadow: 0 0 0 3px rgba(17, 19, 22, 0.08);
+    }
+  }
+
+  button {
+    height: 36px;
+    border: 0;
+    border-radius: 9px;
+    background: #111316;
+    color: #fff;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: transform 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+
+    &:hover:not(:disabled) {
+      background: #252a31;
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.kbc-sources {
+  order: 4;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  gap: 8px;
+  margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid rgba(20, 23, 27, 0.08);
 }
 
+.kbc-clarify-stack + .kbc-sources,
+.kbc-tool-confirm + .kbc-sources {
+  margin-top: 18px;
+}
+
 .kbc-source {
+  min-width: 0;
   border: 1px solid rgba(20, 23, 27, 0.08);
   background: #f6f7f8;
   border-radius: 8px;
@@ -1072,6 +2050,9 @@ async function send() {
 }
 
 .kbc-compose {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 7px max(24px, calc((100% - 1080px) / 2)) 14px;
   border-top: 1px solid rgba(20, 23, 27, 0.06);
   background: rgba(250, 251, 252, 0.78);
@@ -1101,6 +2082,9 @@ async function send() {
 }
 
 .kbc-input-wrap {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -1210,6 +2194,19 @@ async function send() {
 
   .kbc-input-wrap {
     gap: 8px;
+  }
+
+  .kbc-tool-args {
+    grid-template-columns: 1fr;
+  }
+
+  .kbc-tool-confirm-foot {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kbc-tool-confirm-actions {
+    justify-content: flex-end;
   }
 
   .kbc-send {

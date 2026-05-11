@@ -56,8 +56,11 @@
         <template v-else-if="currentView === 'chat'">
           <span class="kbe-sidebar-label">Wiki</span>
         </template>
+        <template v-else-if="currentView === 'tool'">
+          <span class="kbe-sidebar-label">工具</span>
+        </template>
         <template v-else>
-          <span class="kbe-sidebar-label">Prompt 模板</span>
+          <span class="kbe-sidebar-label">Prompt</span>
           <button class="kbe-icon-btn" @click="addTemplate" title="添加 Prompt 模板">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -116,6 +119,11 @@
         <!-- Wiki session list is rendered here by the chat component. -->
         <template v-else-if="currentView === 'chat'">
           <div id="kb-chat-session-host" class="kbe-chat-session-host"></div>
+        </template>
+
+        <!-- Tool tree is rendered here by the tool registry component. -->
+        <template v-else-if="currentView === 'tool'">
+          <div id="kb-tool-tree-host" class="kbe-tool-tree-host"></div>
         </template>
 
         <!-- Template list -->
@@ -201,6 +209,11 @@
       <!-- Chat Lab -->
       <template v-else-if="currentView === 'chat'">
         <KnowledgeChatLab :kb-id="kbId" :kb-name="kb?.name || ''" />
+      </template>
+
+      <!-- Tool Registry -->
+      <template v-else-if="currentView === 'tool'">
+        <ToolRegistry :kb-id="kbId" />
       </template>
 
       <!-- Templates -->
@@ -348,6 +361,7 @@ import ConceptEditor from './components/ConceptEditor.vue'
 import TemplateEditor from './components/TemplateEditor.vue'
 import CreateNodeWizard from './components/CreateNodeWizard.vue'
 import KnowledgeChatLab from './components/KnowledgeChatLab.vue'
+import ToolRegistry from './components/ToolRegistry.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -369,11 +383,12 @@ const currentTree = ref<TreeKind>('business')
 const projects = ref<any[]>([])
 const currentProjectId = ref<number | null>(null)
 
-type ViewMode = 'raw' | 'chat' | 'template'
+type ViewMode = 'raw' | 'chat' | 'template' | 'tool'
 const views: { key: ViewMode; label: string }[] = [
   { key: 'raw', label: '原始数据' },
   { key: 'chat', label: 'Wiki' },
-  { key: 'template', label: 'Prompt 模板' },
+  { key: 'tool', label: 'Tools' },
+  { key: 'template', label: 'Prompt' },
 ]
 const currentView = ref<ViewMode>('raw')
 
@@ -1248,7 +1263,8 @@ $accent: #1d1d1f;
   padding: 0 6px 8px;
 }
 
-.kbe-chat-session-host {
+.kbe-chat-session-host,
+.kbe-tool-tree-host {
   height: 100%;
   min-height: 0;
 }

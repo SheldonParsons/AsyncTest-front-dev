@@ -101,22 +101,6 @@
             <div class="ce-block-actions">
               <button
                 v-show="!isDragging || isResizing"
-                class="ce-block-summary-btn"
-                :class="{ 'ce-block-summary-btn--loading': generatingBlockSummaryIds.has(block.id) }"
-                :disabled="generatingBlockSummaryIds.has(block.id) || !(block.content || '').trim()"
-                @click.stop="generateBlockSummaryForBlock(block)"
-                @pointerdown.stop
-                :title="generatingBlockSummaryIds.has(block.id) ? '正在生成摘要' : '生成块摘要'"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <path d="M14 2v6h6"/>
-                  <path d="M8 13h8"/>
-                  <path d="M8 17h5"/>
-                </svg>
-              </button>
-              <button
-                v-show="!isDragging || isResizing"
                 class="ce-block-edit-btn"
                 @click.stop="openPanel(block.id)"
                 @pointerdown.stop
@@ -2876,6 +2860,14 @@ function patchConceptImpactDecision(updated: KBConceptDecision) {
   ))
 }
 
+function conceptRelationMergeKey(relation: KBConceptBlockRelation) {
+  return [
+    relation.relation_type || '',
+    relation.concept_id || '',
+    (relation.concept_name || '').trim().toLowerCase(),
+  ].join('::')
+}
+
 async function confirmConceptRelations() {
   const result = conceptImpactResult.value
   if (!result) return
@@ -2883,8 +2875,17 @@ async function confirmConceptRelations() {
     const pending = result.relations.filter(item => item.status === 'pending')
     if (!pending.length) return
     const updated = await applyBlockConceptRelations(props.kbId, pending[0].block_id, pending.map(item => item.id))
-    const map = new Map(updated.map(item => [item.id, item]))
-    result.relations = result.relations.map(item => map.get(item.id) || item)
+    const updatedById = new Map(updated.map(item => [item.id, item]))
+    const updatedByMergeKey = new Map(updated.map(item => [conceptRelationMergeKey(item), item]))
+    const seen = new Set<string>()
+    result.relations = result.relations
+      .map(item => updatedById.get(item.id) || updatedByMergeKey.get(conceptRelationMergeKey(item)) || item)
+      .filter(item => {
+        const key = `${item.id || conceptRelationMergeKey(item)}::${item.status}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
     window.$toast({ title: '块概念关系已写入', type: 'success' })
   } catch (e: any) {
     window.$toast({ title: e.message || '写入块概念关系失败', type: 'error' })

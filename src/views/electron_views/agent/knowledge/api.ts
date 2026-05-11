@@ -8,6 +8,7 @@ import type {
   KBChatMessageRecord,
   KBChatSession,
   KBChatSource,
+  KBChatToolConfirmation,
   KBNodeMetadataPayload,
   KBOutlineCache,
   KBRefCandidate,
@@ -25,6 +26,11 @@ import type {
   KBBlockRewriteSuggestion,
   KBConceptBlockRelation,
   KBConceptDecision,
+  KBAITool,
+  KBAIToolParamInferResult,
+  KBAIToolTestResult,
+  KBAIToolTextInferResult,
+  KBToolTreeNode,
 } from '@/types/knowledge'
 
 const request = harnessRequest
@@ -374,6 +380,8 @@ export interface KBChatStreamHandlers {
   onRetrieval?: (retrieval: KBChatRetrieval, event: Record<string, any>) => void
   onSources?: (sources: KBChatSource[], event: Record<string, any>) => void
   onClarification?: (message: string, event: Record<string, any>) => void
+  onToolEvent?: (event: Record<string, any>) => void
+  onToolConfirmationRequired?: (confirmation: KBChatToolConfirmation, event: Record<string, any>) => void
   onChunk?: (content: string) => void
   onFinal?: (event: Record<string, any>) => void
   onError?: (message: string) => void
@@ -384,11 +392,12 @@ export async function streamKnowledgeChat(
   message: string,
   handlers: KBChatStreamHandlers = {},
   sessionId?: string,
+  options: { continuation?: boolean } = {},
 ): Promise<void> {
   const url = sessionId ? `/kb/${kbId}/chat/sessions/${sessionId}/stream` : `/kb/${kbId}/chat/stream`
   await streamHarnessSse(
     url,
-    { message, session_id: sessionId },
+    { message, session_id: sessionId, continuation: Boolean(options.continuation) },
     {
       onEvent: (event) => {
         if (event?.type === 'session') handlers.onSession?.(event.session || {}, event)
@@ -396,6 +405,11 @@ export async function streamKnowledgeChat(
         if (event?.type === 'retrieval') handlers.onRetrieval?.(event.retrieval || {}, event)
         if (event?.type === 'sources') handlers.onSources?.(event.sources || [], event)
         if (event?.type === 'clarification') handlers.onClarification?.(String(event.message || ''), event)
+        if (event?.type === 'tool_confirmation_required') {
+          handlers.onToolConfirmationRequired?.(event.confirmation || {}, event)
+        } else if (String(event?.type || '').startsWith('tool_')) {
+          handlers.onToolEvent?.(event)
+        }
         if (event?.type === 'final') handlers.onFinal?.(event)
       },
       onChunk: handlers.onChunk,
@@ -418,6 +432,113 @@ export function listChatMessages(kbId: number, sessionId: string): Promise<KBCha
 
 export function deleteChatSession(kbId: number, sessionId: string): Promise<{ ok: boolean }> {
   return request('DELETE', `/kb/${kbId}/chat/sessions/${sessionId}`)
+}
+
+export function listPendingToolConfirmations(kbId: number, sessionId: string): Promise<KBChatToolConfirmation[]> {
+  return request('GET', `/kb/${kbId}/chat/sessions/${sessionId}/pending-tool-confirmations`)
+}
+
+export function cancelToolConfirmation(kbId: number, confirmationId: string): Promise<KBChatToolConfirmation> {
+  return request('POST', `/kb/${kbId}/chat/tool-confirmations/${confirmationId}/cancel`)
+}
+
+export function approveToolConfirmationStream(
+  kbId: number,
+  confirmationId: string,
+  argumentsPayload: Record<string, any>,
+  handlers: KBChatStreamHandlers = {},
+): Promise<void> {
+  return streamHarnessSse(
+    `/kb/${kbId}/chat/tool-confirmations/${confirmationId}/approve/stream`,
+    { arguments: argumentsPayload },
+    {
+      onEvent: (event) => {
+        if (event?.type === 'stage') handlers.onStage?.(event)
+        if (event?.type === 'tool_confirmation_required') {
+          handlers.onToolConfirmationRequired?.(event.confirmation || {}, event)
+        } else if (String(event?.type || '').startsWith('tool_')) {
+          handlers.onToolEvent?.(event)
+        }
+        if (event?.type === 'final') handlers.onFinal?.(event)
+      },
+      onChunk: handlers.onChunk,
+      onError: handlers.onError,
+    },
+  )
+}
+
+// ─── AI Tool Registry ─────────────────────────────
+
+export function getToolTree(kbId: number): Promise<KBToolTreeNode[]> {
+  return request('GET', `/kb/${kbId}/tool-tree`)
+}
+
+export function createToolTreeNode(kbId: number, data: {
+  parent_id?: string | null
+  name: string
+  node_type: 'folder' | 'tool'
+  description?: string
+  tool?: Partial<KBAITool>
+}): Promise<KBToolTreeNode> {
+  return request('POST', `/kb/${kbId}/tool-tree/node`, data)
+}
+
+export function updateToolTreeNode(kbId: number, nodeId: string, data: {
+  name?: string
+  description?: string
+  subtree_summary?: string
+  summary_content_hash?: string
+}): Promise<KBToolTreeNode> {
+  return request('PUT', `/kb/${kbId}/tool-tree/node/${nodeId}`, data)
+}
+
+export function deleteToolTreeNode(kbId: number, nodeId: string): Promise<{ ok: boolean }> {
+  return request('DELETE', `/kb/${kbId}/tool-tree/node/${nodeId}`)
+}
+
+export function moveToolTreeNode(kbId: number, nodeId: string, data: {
+  parent_id?: string | null
+  sort_order?: number
+}): Promise<KBToolTreeNode> {
+  return request('PUT', `/kb/${kbId}/tool-tree/node/${nodeId}/move`, data)
+}
+
+export function listAITools(kbId: number): Promise<KBAITool[]> {
+  return request('GET', `/kb/${kbId}/tools`)
+}
+
+export function updateAITool(kbId: number, toolId: string, data: Partial<KBAITool>): Promise<KBAITool> {
+  return request('PUT', `/kb/${kbId}/tools/${toolId}`, data)
+}
+
+export function deleteAITool(kbId: number, toolId: string): Promise<{ ok: boolean }> {
+  return request('DELETE', `/kb/${kbId}/tools/${toolId}`)
+}
+
+export function testAITool(kbId: number, toolId: string, argumentsPayload: Record<string, any>): Promise<KBAIToolTestResult> {
+  return request('POST', `/kb/${kbId}/tools/${toolId}/test`, { arguments: argumentsPayload })
+}
+
+export function inferAIToolParams(kbId: number, toolId: string, data: {
+  name?: string
+  description?: string
+  output_description?: string
+  script_code?: string
+}): Promise<KBAIToolParamInferResult> {
+  return request('POST', `/kb/${kbId}/tools/${toolId}/infer-params`, data)
+}
+
+export function inferAIToolText(kbId: number, toolId: string, data: {
+  target: 'description' | 'output_description'
+  name?: string
+  description?: string
+  input_schema?: KBAITool['input_schema']
+  test_arguments?: Record<string, any>
+  output_description?: string
+  script_code?: string
+  test_result?: KBAIToolTestResult | null
+}): Promise<KBAIToolTextInferResult> {
+  return request('POST', `/kb/${kbId}/tools/${toolId}/infer-text`, data)
 }
 
 // ─── Templates ───────────────────────────────────
