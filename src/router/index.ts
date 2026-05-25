@@ -4,6 +4,23 @@ import { createRouter, createWebHistory, createMemoryHistory, createWebHashHisto
 ///Users/sheldon/Documents/GithubProject/AsyncTest-front-dev/src/views/electron_views/dashboard.vue
 
 const isElectronRouter = import.meta.env.VITE_IS_ELECTRON === 'true';
+const vibeRoutes = [
+  {
+    path: '/vibe',
+    name: 'vibeWorkbench',
+    component: () => import('@/views/electron_views/vibe/index.vue')
+  },
+  {
+    path: '/vibe/knowledge',
+    name: 'vibeKnowledge',
+    component: () => import('@/views/electron_views/vibe/knowledge/index.vue')
+  },
+  {
+    path: '/vibe/chat',
+    name: 'vibeChat',
+    component: () => import('@/views/electron_views/vibe/chat/index.vue')
+  }
+]
 const routes = [
   {
     path: '/',
@@ -49,11 +66,13 @@ const routes = [
     name: 'agentKnowledgeEditor',
     component: () => import('@/views/electron_views/agent/knowledge/editor.vue')
   },
+  ...vibeRoutes,
   {
     path: '/admin/debug',
     name: 'adminDebugConsole',
     component: () => import('@/views/electron_views/admin/debug/index.vue')
   }] : []),
+  ...(isElectronRouter ? [] : vibeRoutes),
   {
     path: '/login',
     name: 'login',

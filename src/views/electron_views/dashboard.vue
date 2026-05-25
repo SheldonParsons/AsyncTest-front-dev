@@ -43,8 +43,8 @@
           <p class="card-description">AsyncTest 生成工具</p>
         </div>
 
-        <!-- 进入 AsyncTest AI（仅 localhost 环境显示） -->
-        <div v-if="isLocalhost" class="dashboard-card ai-card" @click="handleEnterAgent">
+        <!-- 进入 AsyncTest AI（仅开发环境 localhost 显示） -->
+        <div v-if="showExperimentalAiEntrances" class="dashboard-card ai-card" @click="handleEnterAgent">
           <div class="card-logo">
             <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full.svg"
               alt="AsyncTest AI" />
@@ -53,6 +53,17 @@
           </div>
           <h3 class="card-title">AsyncTest AI</h3>
           <p class="card-description">AsyncTest Agent</p>
+        </div>
+
+        <div v-if="showExperimentalAiEntrances" class="dashboard-card ai-card vibe-card" @click="handleEnterVibe">
+          <div class="card-logo">
+            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full.svg"
+              alt="AsyncTest Vibe" />
+            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg"
+              alt="AsyncTest Vibe" />
+          </div>
+          <h3 class="card-title">AsyncTest Vibe</h3>
+          <p class="card-description">Vibe Requirement</p>
         </div>
 
         <!-- 更多功能 -->
@@ -89,10 +100,12 @@ import { ApiCheckPermission } from '@/api/layout/cookies'
 
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
+const electronAPI = (window as any).electronAPI
 const isLocalhost = computed(() => {
   const host = window.location.hostname
   return host === 'localhost' || host === '127.0.0.1'
 })
+const showExperimentalAiEntrances = computed(() => import.meta.env.DEV && isLocalhost.value)
 
 const emit = defineEmits(['doubleCheckLoginStatus'])
 
@@ -140,6 +153,35 @@ const handleEnterGenerator = () => {
 
 const handleEnterAgent = () => {
   router.push({ name: "agentDashboard" })
+}
+
+const handleEnterVibe = async () => {
+  if (!await checkLoginStatus()) {
+    loginDialogRef.value?.open()
+    return
+  }
+
+  if (electronAPI?.wm?.open) {
+    await electronAPI.wm.open({
+      key: 'vibe-workbench',
+      width: 1600,
+      height: 830,
+      minWidth: 1280,
+      minHeight: 720,
+      title: 'AsyncTest Vibe',
+      route: '/vibe',
+      nativeHeaderless: true,
+      frameless: false,
+      hideMainOnOpen: false,
+      closeBehavior: 'platform',
+      transparent: true,
+      backgroundColor: '#00000000',
+      query: { windowKey: 'vibe-workbench' },
+    })
+    return
+  }
+
+  router.push({ name: 'vibeWorkbench' })
 }
 
 // 更多功能

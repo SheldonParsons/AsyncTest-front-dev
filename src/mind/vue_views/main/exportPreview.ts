@@ -4,7 +4,14 @@ import { ensureMindRoots, getActiveMind } from './actions/useDocUtils';
 import { useEdges } from './actions/useEdges';
 import { useLayout, type Box, type LayoutBounds } from './actions/useLayout';
 import { getNodeImageWorldRect } from './imageInteraction';
-import { getNodeBodyWorldRect, resolveNodeMarkers, NODE_MARKER_ICON_SIZE_PX, NODE_MARKER_STEP_PX } from './nodeMarkers';
+import {
+  getNodeBodyWorldRect,
+  getNodeMarkerRowStartX,
+  getNodeMarkerRowWorldRect,
+  resolveNodeMarkers,
+  NODE_MARKER_ICON_SIZE_PX,
+  NODE_MARKER_STEP_PX,
+} from './nodeMarkers';
 import { getMindNodeDefaultVisualStyle } from './nodeStyles';
 import {
   getNodeTextStyle,
@@ -94,12 +101,12 @@ function mergeBounds(current: LayoutBounds | null, rect: WorldRect): LayoutBound
   };
 }
 
-function computePreviewBounds(worldBoxes: Map<string, WorldRect>, edgeBBoxes: WorldRect[]) {
+function computePreviewBounds(worldBoxes: Map<string, WorldRect>, extraBBoxes: WorldRect[]) {
   let bounds: LayoutBounds | null = null;
   for (const rect of worldBoxes.values()) {
     bounds = mergeBounds(bounds, rect);
   }
-  for (const rect of edgeBBoxes) {
+  for (const rect of extraBBoxes) {
     bounds = mergeBounds(bounds, rect);
   }
   return bounds;
@@ -172,11 +179,15 @@ export async function exportMindPreviewPng(doc: any) {
   if (!layoutLocal.size) return null;
 
   const worldBoxes = buildWorldBoxesForPreview(layoutLocal);
+  const activeNodes = getActiveMind(doc)?.nodes ?? {};
   const { parentEdgeGeoms, rebuildEdgeCache } = useEdges();
   rebuildEdgeCache(doc, worldBoxes);
+  const markerBBoxes = Array.from(worldBoxes.entries())
+    .map(([nodeId, rect]) => getNodeMarkerRowWorldRect(activeNodes[nodeId], rect))
+    .filter((rect): rect is WorldRect => !!rect);
   const bounds = computePreviewBounds(
     worldBoxes,
-    parentEdgeGeoms.value.map((geom) => geom.bbox)
+    [...parentEdgeGeoms.value.map((geom) => geom.bbox), ...markerBBoxes]
   );
   if (!bounds) return null;
 
@@ -248,11 +259,11 @@ export async function exportMindPreviewPng(doc: any) {
       }
     }
 
-    // Draw inline markers at left of body, vertically centered (back-to-front for overlap)
+    // Draw inline markers inside the left edge of the body, vertically centered.
     const resolvedMarkers = resolveNodeMarkers(node);
     if (resolvedMarkers.length) {
       const bodyH = bodyRect.y2 - bodyRect.y1;
-      const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+      const startX = getNodeMarkerRowStartX(node, bodyRect);
       const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
       for (let i = resolvedMarkers.length - 1; i >= 0; i--) {
         const mImg = imageMap.get(resolvedMarkers[i].src);

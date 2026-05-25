@@ -191,6 +191,9 @@ export class WindowManager {
         : {}),
       frame: frameless ? false : undefined,
       alwaysOnTop,
+      transparent: config.transparent === true,
+      ...(config.backgroundColor ? { backgroundColor: config.backgroundColor } : {}),
+      ...(config.vibrancy ? { vibrancy: config.vibrancy } : {}),
       webPreferences: {
         preload: this.options.preloadPath,
         nodeIntegration: false,

@@ -139,6 +139,26 @@ export function getNodeBodyWorldRect(_node: MindNodeLike | null | undefined, rec
   return rect;
 }
 
+export function getNodeMarkerRowStartX(node: MindNodeLike | null | undefined, bodyRect: WorldRect) {
+  const row = measureNodeMarkerRow(node);
+  if (!row.markers.length) return bodyRect.x1;
+  return bodyRect.x1 + 6;
+}
+
+export function getNodeMarkerRowWorldRect(node: MindNodeLike | null | undefined, bodyRect: WorldRect): WorldRect | null {
+  const row = measureNodeMarkerRow(node);
+  if (!row.markers.length) return null;
+  const bodyH = bodyRect.y2 - bodyRect.y1;
+  const x1 = getNodeMarkerRowStartX(node, bodyRect);
+  const y1 = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
+  return {
+    x1,
+    y1,
+    x2: x1 + row.width,
+    y2: y1 + NODE_MARKER_ICON_SIZE_PX,
+  };
+}
+
 /**
  * Hit test markers drawn inside a node body.
  * Returns the index of the topmost marker under (worldX, worldY), or -1.
@@ -154,7 +174,7 @@ export function hitTestNodeMarker(
   if (!markers.length) return -1;
   const bodyH = bodyRect.y2 - bodyRect.y1;
   const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
-  const startX = bodyRect.x1 + 6; // NODE_TEXT_INSET_X
+  const startX = getNodeMarkerRowStartX(node, bodyRect);
   if (worldY < markerY || worldY > markerY + NODE_MARKER_ICON_SIZE_PX) return -1;
   // Check from front (index 0, drawn on top) to back
   for (let i = 0; i < markers.length; i++) {

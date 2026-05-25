@@ -3,7 +3,7 @@ import type { Camera } from './useCamera';
 import { DEBUG_CANVAS_OVERLAY } from '../constants';
 import { WHEEL_LOG_SAMPLE_MS } from '../diagnostics';
 
-const ZOOM_K = 0.0065;
+const ZOOM_K = 0.0032;
 const PAN_K = 0.48;
 
 function isMacPlatform() {

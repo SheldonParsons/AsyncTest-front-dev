@@ -861,8 +861,12 @@ import {
   getNodeMarkerItem,
   getNodeMarkerKeys,
   getNodeBodyWorldRect,
+  getNodeMarkerRowWorldRect,
   hitTestNodeMarker,
   measureNodeMarkerRow,
+  NODE_MARKER_BODY_GAP_PX,
+  NODE_MARKER_ICON_SIZE_PX,
+  NODE_MARKER_STEP_PX,
   nodeMarkerGroups,
   removeNodeMarker,
   resolveNodeMarkers,
@@ -4744,6 +4748,7 @@ function createBatchNodePresentationCommand(
     includeSecrecy?: boolean;
     includeLexical?: boolean;
     ensureVisible?: boolean;
+    preserveRootAnchors?: boolean;
     updateDraftNode: (draftNode: any, nodeId: string) => void;
   }
 ): Command | null {
@@ -4777,6 +4782,7 @@ function createBatchNodePresentationCommand(
       getNodes: getMindNodes,
       setSelection,
       applyMutation: applyDocumentMutation,
+      snapshotRootBodyAnchors,
     },
     {
       name: options.name,
@@ -4786,6 +4792,7 @@ function createBatchNodePresentationCommand(
       previousSelection: selection,
       nextSelection: selection,
       ensureVisibleNodeIds: options.ensureVisible === false ? [] : changedNodeIds,
+      preserveRootAnchors: options.preserveRootAnchors,
     }
   );
 }
@@ -5382,6 +5389,8 @@ async function applyMarkerToSelectedNodes(markerKey: string) {
       name: 'BatchApplyNodeMarkerCommand',
       mutationReason: 'node-apply-marker',
       includeMarkers: true,
+      ensureVisible: false,
+      preserveRootAnchors: true,
       updateDraftNode: (draftNode) => {
         upsertNodeMarker(draftNode, markerKey);
       },
@@ -5396,6 +5405,8 @@ async function onMarkerTileClick(markerKey: string) {
       name: isMarkerDeleteMode.value ? 'BatchRemoveNodeMarkerCommand' : 'BatchApplyNodeMarkerCommand',
       mutationReason: isMarkerDeleteMode.value ? 'node-remove-marker' : 'node-apply-marker',
       includeMarkers: true,
+      ensureVisible: false,
+      preserveRootAnchors: true,
       updateDraftNode: (draftNode) => {
         if (isMarkerDeleteMode.value) removeNodeMarker(draftNode, markerKey);
         else upsertNodeMarker(draftNode, markerKey);
@@ -5419,6 +5430,7 @@ function deleteContextMarker(markerKey: string, fallbackNodeId: string) {
       mutationReason: 'node-remove-marker',
       includeMarkers: true,
       ensureVisible: false,
+      preserveRootAnchors: true,
       updateDraftNode: (draftNode) => {
         removeNodeMarker(draftNode, markerKey);
       },
@@ -5433,6 +5445,8 @@ async function clearSelectedNodeMarkers() {
       name: 'BatchClearNodeMarkersCommand',
       mutationReason: 'node-clear-markers',
       includeMarkers: true,
+      ensureVisible: false,
+      preserveRootAnchors: true,
       updateDraftNode: (draftNode) => {
         clearNodeMarkers(draftNode);
       },
@@ -6254,8 +6268,8 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
     maxHeight: `${viewportSafeHeightPx}px`,
     fontFamily: textStyle.fontFamily,
     fontSize: `${textStyle.fontSizePx * scale}px`,
-    fontWeight: String(textStyle.fontWeight),
-    fontStyle: textStyle.fontStyle,
+    fontWeight: '400',
+    fontStyle: 'normal',
     lineHeight: `${textStyle.lineHeightPx * scale}px`,
     letterSpacing: `${textStyle.letterSpacingPx * scale}px`,
     padding: '0',
@@ -8473,7 +8487,8 @@ function resolveCurrentDraftCursorScreenPosition() {
 }
 
 function zoomTo(scale: number) {
-  centerCamera(scale);
+  const nextScale = clampScale(scale, getMinCameraScale(), MAX_CAMERA_SCALE);
+  zoomAtViewportPoint(viewportW.value / 2, viewportH.value / 2, nextScale);
   requestRender();
 }
 
@@ -12133,19 +12148,53 @@ function hitTest(screenX: number, screenY: number): string | null {
   return hitId;
 }
 
+function getMarkerHitAtWorldPoint(worldPoint: { x: number; y: number }) {
+  const markerSearchWidth =
+    NODE_MARKER_ICON_SIZE_PX + NODE_MARKER_STEP_PX * 5 + NODE_MARKER_BODY_GAP_PX + 8;
+  const markerSearchHeight = NODE_MARKER_ICON_SIZE_PX + 8;
+  const candidates = spatialIndex.queryRect({
+    x1: worldPoint.x - markerSearchWidth,
+    y1: worldPoint.y - markerSearchHeight,
+    x2: worldPoint.x + markerSearchWidth,
+    y2: worldPoint.y + markerSearchHeight,
+  });
+  let hit: { nodeId: string; markerKey: string; index: number } | null = null;
+  let hitArea = Number.POSITIVE_INFINITY;
+  for (const nodeId of candidates) {
+    const bodyRect = worldBoxes.value.get(nodeId);
+    if (!bodyRect) continue;
+    const node = getMindNodes()?.[nodeId];
+    if (!node) continue;
+    const markerRect = getNodeMarkerRowWorldRect(node, bodyRect);
+    if (!markerRect || !pointInRect(worldPoint, markerRect)) continue;
+    const markerIndex = hitTestNodeMarker(node, bodyRect, worldPoint.x, worldPoint.y);
+    if (markerIndex < 0) continue;
+    const marker = resolveNodeMarkers(node)[markerIndex];
+    if (!marker) continue;
+    const area = (bodyRect.x2 - bodyRect.x1) * (bodyRect.y2 - bodyRect.y1);
+    if (area < hitArea) {
+      hitArea = area;
+      hit = { nodeId, markerKey: marker.key, index: markerIndex };
+    }
+  }
+  return hit;
+}
+
 function getMarkerHitAtScreenPoint(screenX: number, screenY: number) {
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  const outsideMarkerHit = getMarkerHitAtWorldPoint(worldPoint);
+  if (outsideMarkerHit) return outsideMarkerHit;
   const nodeId = hitTest(screenX, screenY);
   if (!nodeId) return null;
   const bodyRect = worldBoxes.value.get(nodeId);
   if (!bodyRect) return null;
   const node = getMindNodes()?.[nodeId];
   if (!node) return null;
-  const worldPoint = screenToWorld(camera.value, screenX, screenY);
   const markerIndex = hitTestNodeMarker(node, bodyRect, worldPoint.x, worldPoint.y);
   if (markerIndex < 0) return null;
   const marker = resolveNodeMarkers(node)[markerIndex];
   if (!marker) return null;
-  return { nodeId, markerKey: marker.key };
+  return { nodeId, markerKey: marker.key, index: markerIndex };
 }
 
 async function toggleNodeCollapsed(nodeId: string) {
@@ -12189,15 +12238,18 @@ function updateHoverFromScreenPoint(screenX: number, screenY: number) {
     screenY,
     { includeHidden: true }
   );
-  const nextHoverId = nextCollapseTagHoverId ?? hitTest(screenX, screenY);
+  const worldPoint = screenToWorld(camera.value, screenX, screenY);
+  const markerHit = nextCollapseTagHoverId ? null : getMarkerHitAtWorldPoint(worldPoint);
+  const nextHoverId = nextCollapseTagHoverId ?? markerHit?.nodeId ?? hitTest(screenX, screenY);
   const nextHoverRelationId = nextHoverId ? null : hitTestRelation(screenX, screenY, camera.value);
 
   // Detect marker hover within the hovered node
   let nextHoveredMarker: { nodeId: string; index: number } | null = null;
-  if (nextHoverId && !nextCollapseTagHoverId) {
+  if (markerHit) {
+    nextHoveredMarker = { nodeId: markerHit.nodeId, index: markerHit.index };
+  } else if (nextHoverId && !nextCollapseTagHoverId) {
     const bodyRect = worldBoxes.value.get(nextHoverId);
     if (bodyRect) {
-      const worldPoint = screenToWorld(camera.value, screenX, screenY);
       const node = getMindNodes()?.[nextHoverId];
       const idx = hitTestNodeMarker(node, bodyRect, worldPoint.x, worldPoint.y);
       if (idx >= 0) nextHoveredMarker = { nodeId: nextHoverId, index: idx };
@@ -13160,6 +13212,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const isSaveAsShortcut = isModifierPressed && !event.altKey && event.shiftKey && lowerKey === 's';
   const isToggleSearchPanelShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'f';
   const isToggleFormatPanelShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'w';
+  const isBoldShortcut = isModifierPressed && !event.altKey && !event.shiftKey && lowerKey === 'b';
   if (isSaveShortcut) {
     event.preventDefault();
     event.stopPropagation();
@@ -13234,6 +13287,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
     isLevelMarkerShortcut ||
     isErrorMarkerShortcut ||
     isTaskDoneMarkerShortcut ||
+    (isBoldShortcut && selectedIds.value.size > 0) ||
     isUndoShortcut ||
     isRedoShortcut ||
     isSpaceShortcut;
@@ -13289,6 +13343,11 @@ function onWindowKeyDown(event: KeyboardEvent) {
   const primarySelectedId = getPrimarySelectedId();
   const selectedNodeIds = getSelectedNodeIds();
   const selectedCount = selectedNodeIds.length;
+
+  if (isBoldShortcut && selectedCount > 0) {
+    void onTextToggleClick('bold');
+    return;
+  }
 
   if (primarySelectedId && isSpaceShortcut) {
     const shouldSelectAllText = consumeNodePendingSpaceSelectAll(primarySelectedId);
@@ -14526,7 +14585,7 @@ onBeforeUnmount(() => {
 
 .search-panel-scrollbar {
   position: absolute;
-  z-index: 2;
+  z-index: 8;
   border: 1px solid rgba(203, 213, 225, 0.75);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.52);

@@ -17,7 +17,14 @@ export type NodePresentationSnapshot = {
 type BatchUpdateNodePresentationCommandContext = {
   getNodes: () => MindNodes | null;
   setSelection: (nodeIds: Iterable<string>, primaryId?: string | null) => void;
-  applyMutation: (reason: string, options?: { ensureVisibleNodeIds?: string[] }) => Promise<void> | void;
+  applyMutation: (
+    reason: string,
+    options?: {
+      ensureVisibleNodeIds?: string[];
+      rootAnchorSnapshots?: Array<{ rootId: string; bodyRect: { x1: number; y1: number; x2: number; y2: number } }>;
+    }
+  ) => Promise<void> | void;
+  snapshotRootBodyAnchors?: (nodeIds: Iterable<string>) => Array<{ rootId: string; bodyRect: { x1: number; y1: number; x2: number; y2: number } }>;
 };
 
 type BatchUpdateNodePresentationCommandOptions = {
@@ -28,6 +35,7 @@ type BatchUpdateNodePresentationCommandOptions = {
   previousSelection: SelectionSnapshot;
   nextSelection: SelectionSnapshot;
   ensureVisibleNodeIds?: string[];
+  preserveRootAnchors?: boolean;
 };
 
 function clonePlain<T>(value: T): T {
@@ -81,10 +89,13 @@ export function createBatchUpdateNodePresentationCommand(
 ): Command {
   const beforeSnapshots = options.beforeSnapshots.map(cloneSnapshot);
   const afterSnapshots = options.afterSnapshots.map(cloneSnapshot);
-  const ensureVisibleNodeIds =
-    options.ensureVisibleNodeIds && options.ensureVisibleNodeIds.length
-      ? [...options.ensureVisibleNodeIds]
-      : afterSnapshots.map((snapshot) => snapshot.nodeId);
+  const hasExplicitEnsureVisibleNodeIds = Object.prototype.hasOwnProperty.call(options, 'ensureVisibleNodeIds');
+  const ensureVisibleNodeIds = hasExplicitEnsureVisibleNodeIds
+    ? [...(options.ensureVisibleNodeIds ?? [])]
+    : afterSnapshots.map((snapshot) => snapshot.nodeId);
+  const undoEnsureVisibleNodeIds = hasExplicitEnsureVisibleNodeIds && ensureVisibleNodeIds.length === 0
+    ? []
+    : options.previousSelection.ids;
 
   function applySnapshots(snapshots: NodePresentationSnapshot[]) {
     const nodes = context.getNodes();
@@ -99,21 +110,31 @@ export function createBatchUpdateNodePresentationCommand(
   return {
     name: options.name,
     do: () => {
+      const rootAnchorSnapshots = options.preserveRootAnchors
+        ? context.snapshotRootBodyAnchors?.(ensureVisibleNodeIds.length ? ensureVisibleNodeIds : afterSnapshots.map((snapshot) => snapshot.nodeId))
+        : undefined;
       applySnapshots(afterSnapshots);
       context.setSelection(options.nextSelection.ids, options.nextSelection.primaryId);
-      void context.applyMutation(`history:${options.mutationReason}`, { ensureVisibleNodeIds });
+      void context.applyMutation(`history:${options.mutationReason}`, { ensureVisibleNodeIds, rootAnchorSnapshots });
     },
     undo: () => {
+      const rootAnchorSnapshots = options.preserveRootAnchors
+        ? context.snapshotRootBodyAnchors?.(undoEnsureVisibleNodeIds.length ? undoEnsureVisibleNodeIds : beforeSnapshots.map((snapshot) => snapshot.nodeId))
+        : undefined;
       applySnapshots(beforeSnapshots);
       context.setSelection(options.previousSelection.ids, options.previousSelection.primaryId);
       void context.applyMutation(`history:undo-${options.mutationReason}`, {
-        ensureVisibleNodeIds: options.previousSelection.ids,
+        ensureVisibleNodeIds: undoEnsureVisibleNodeIds,
+        rootAnchorSnapshots,
       });
     },
     redo: () => {
+      const rootAnchorSnapshots = options.preserveRootAnchors
+        ? context.snapshotRootBodyAnchors?.(ensureVisibleNodeIds.length ? ensureVisibleNodeIds : afterSnapshots.map((snapshot) => snapshot.nodeId))
+        : undefined;
       applySnapshots(afterSnapshots);
       context.setSelection(options.nextSelection.ids, options.nextSelection.primaryId);
-      void context.applyMutation(`history:redo-${options.mutationReason}`, { ensureVisibleNodeIds });
+      void context.applyMutation(`history:redo-${options.mutationReason}`, { ensureVisibleNodeIds, rootAnchorSnapshots });
     },
   };
 }

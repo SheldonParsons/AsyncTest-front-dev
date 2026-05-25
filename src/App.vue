@@ -28,7 +28,8 @@ import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
 
 const upHeaderZIndex = ref(false);
 const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
-const isMainWindow = computed(() => (route.query.windowKey || 'main') === 'main');
+const isVibeWorkbench = computed(() => route.path === '/vibe' || route.path.startsWith('/vibe/'));
+const isMainWindow = computed(() => !isVibeWorkbench.value && (route.query.windowKey || 'main') === 'main');
 const showAdminDebugEntry = computed(() => {
   if (!isMainWindow.value) {
     return false

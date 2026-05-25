@@ -23,6 +23,7 @@ import {
   NODE_MARKER_ICON_SIZE_PX,
   NODE_MARKER_STEP_PX,
   NODE_MARKER_HOVER_SCALE,
+  getNodeMarkerRowStartX,
   resolveNodeMarkers,
 } from '../nodeMarkers';
 import {
@@ -373,7 +374,7 @@ function drawNodeMarkers(
   if (!markers.length) return;
 
   const bodyH = bodyRect.y2 - bodyRect.y1;
-  const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+  const startX = getNodeMarkerRowStartX(node, bodyRect);
   const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
   const size = NODE_MARKER_ICON_SIZE_PX;
   const hoverIdx = hoveredIndex ?? -1;
@@ -416,7 +417,7 @@ function drawHoveredNodeMarker(
   if (!image) return;
 
   const bodyH = bodyRect.y2 - bodyRect.y1;
-  const startX = bodyRect.x1 + NODE_TEXT_INSET_X;
+  const startX = getNodeMarkerRowStartX(node, bodyRect);
   const markerY = bodyRect.y1 + (bodyH - NODE_MARKER_ICON_SIZE_PX) / 2;
   const mx = startX + hoverIdx * NODE_MARKER_STEP_PX;
   const hoverSize = NODE_MARKER_ICON_SIZE_PX * NODE_MARKER_HOVER_SCALE;
