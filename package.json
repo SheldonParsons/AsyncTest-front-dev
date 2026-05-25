@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.13",
+  "version": "2.2.14",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：新增彩虹配色方案，现在默认方案为彩虹配色方案\\n#### 新增功能：现在可以通过右键方式清除当前所有选中节点的某个标记\\n#### 修复缺陷：修复在Windows系统下输入时出现轻微抖动的问题\\n#### 修复缺陷：修复粘贴时不同格式的兼容性问题\",\"publishDate\":\"2026-05-07\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 缺陷修复：修复搜索结果过长时被选中后 z-index 的值错误的高于 scrollbar 的问题\\n#### 缺陷修复：修复进行 +/- 缩放后视口被重置的问题\\n#### 缺陷修复：修复 添加/删除 标记后视口被重置的问题\\n#### 缺陷修复：修复选中节点后 cmd/ctrl + B 快捷键失效的问题\\n#### 缺陷修复：修复节点加粗后，进入编辑模式进行部分取消在视觉上没有取消加粗的问题\\n#### 优化功能：现在滚动缩放的幅度更小了\",\"publishDate\":\"2026-05-25\"}"
     },
     "publish": [
       {
