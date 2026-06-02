@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 const ZENTAO_BASE_URL = 'https://ztpm.gree.com:8888';
 const ZENTAO_API_BASE = `${ZENTAO_BASE_URL}/api.php/v1`;
 const BUG_SHEET_TITLE = '禅道Bug列表';
+const EXCEL_CELL_TEXT_LIMIT = 32767;
 const BUG_FIELDS = [
   ['Bug编号', 'id', '无'],
   ['Bug标题', 'title', '无标题'],
@@ -73,23 +74,32 @@ function getColumnWidth(values) {
 }
 
 function processBugFieldValue(value, fieldName, defaultValue) {
+  let text = '';
   if (value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
     return defaultValue;
   }
 
   if (fieldName === 'openedBy' || fieldName === 'assignedTo') {
-    return `${value?.realname ?? defaultValue}`;
+    text = `${value?.realname ?? defaultValue}`;
+  } else if (fieldName === 'steps') {
+    text = htmlToText(value) || defaultValue;
+  } else if (Array.isArray(value)) {
+    text = value.map((item) => `${item}`).join('\n');
+  } else {
+    text = `${value}`.trim() || defaultValue;
   }
 
-  if (fieldName === 'steps') {
-    return htmlToText(value) || defaultValue;
+  return truncateExcelCellText(text);
+}
+
+function truncateExcelCellText(value) {
+  const text = `${value ?? ''}`;
+  if (text.length <= EXCEL_CELL_TEXT_LIMIT) {
+    return text;
   }
 
-  if (Array.isArray(value)) {
-    return value.map((item) => `${item}`).join('\n');
-  }
-
-  return `${value}`.trim() || defaultValue;
+  const suffix = `\n\n[内容过长已截断，原始长度 ${text.length} 字符]`;
+  return `${text.slice(0, EXCEL_CELL_TEXT_LIMIT - suffix.length)}${suffix}`;
 }
 
 function appendBugWorksheet(workbook, sheetName, bugs) {

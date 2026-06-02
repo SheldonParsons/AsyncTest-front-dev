@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.15",
+  "version": "2.2.16",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 缺陷修复：修复搜索结果过长时被选中后 z-index 的值错误的高于 scrollbar 的问题\\n#### 缺陷修复：修复进行 +/- 缩放后视口被重置的问题\\n#### 缺陷修复：修复 添加/删除 标记后视口被重置的问题\\n#### 缺陷修复：修复选中节点后 cmd/ctrl + B 快捷键失效的问题\\n#### 缺陷修复：修复节点加粗后，进入编辑模式进行部分取消在视觉上没有取消加粗的问题\\n#### 优化功能：现在滚动缩放的幅度更小了\",\"publishDate\":\"2026-05-25\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 缺陷修复：修复自动生成报告禅道内容过长导致生成失败的问题\",\"publishDate\":\"2026-06-02\"}"
     },
     "publish": [
       {
