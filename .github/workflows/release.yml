@@ -147,6 +147,8 @@ jobs:
         env:
           APP_ENV: ${{ steps.env.outputs.APP_ENV }}
           VITE_IS_ELECTRON: "true"
+          # 项目模块数较多（5600+），rendering chunks 阶段会超过 Node 默认 ~2GB 堆上限导致 OOM
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           yarn vite build --mode ${{ steps.env.outputs.VITE_MODE }}
 
@@ -401,6 +403,8 @@ jobs:
         env:
           APP_ENV: ${{ steps.env.outputs.APP_ENV }}
           VITE_IS_ELECTRON: "true"
+          # 项目模块数较多（5600+），rendering chunks 阶段会超过 Node 默认 ~2GB 堆上限导致 OOM
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           yarn vite build --mode ${{ steps.env.outputs.VITE_MODE }}
 

@@ -93,7 +93,7 @@
               </span>
               <span class="question-actions">
                 <button class="skip-button" type="button" @click="emitAnswer('')">跳过</button>
-                <button class="submit-button" type="button" @click="emitAnswer((customValues[i] || '').trim())">
+                <button class="submit-button" type="button" @click="submitCustom(i)">
                   提交
                   <svg class="enter-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 4v7a4 4 0 0 1-4 4H4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 10-5 5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
