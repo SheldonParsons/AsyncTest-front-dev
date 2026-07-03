@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         new: (payload) => ipcRenderer.invoke('amind:new', payload),
         newAndOpenWindow: (payload) => ipcRenderer.invoke('amind:newAndOpenWindow', payload),
         openFileInWindow: (payload) => ipcRenderer.invoke('amind:openFileInWindow', payload),
+        createFileAndOpen: (payload) => ipcRenderer.invoke('amind:createFileAndOpen', payload),
         openRemoteBufferInWindow: (payload) => ipcRenderer.invoke('amind:openRemoteBufferInWindow', payload),
         openFolder: (payload) => ipcRenderer.invoke('amind:openFolder', payload),
         fileExists: (payload) => ipcRenderer.invoke('amind:fileExists', payload),
@@ -81,11 +82,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     projectFiles: {
         saveCurrentFolderZip: (payload) => ipcRenderer.invoke('projectFiles:saveCurrentFolderZip', payload),
-    },
-
-    harness: {
-        storeGet: (key) => ipcRenderer.invoke('harness:storeGet', key),
-        storeSet: (key, value) => ipcRenderer.invoke('harness:storeSet', key, value),
     },
 
     lsp: {

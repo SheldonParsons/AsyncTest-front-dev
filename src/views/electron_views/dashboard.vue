@@ -30,12 +30,12 @@
           <div class="card-logo">
             <img
               class="logo-default"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_dark_new_1.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_tool.svg"
               alt="Generator"
             />
             <img
               class="logo-hover"
-              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/generate_full_light_new_1.svg"
+              src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_tool_light.svg"
               alt="Generator"
             />
           </div>
@@ -43,23 +43,12 @@
           <p class="card-description">AsyncTest 生成工具</p>
         </div>
 
-        <!-- 进入 AsyncTest AI（仅开发环境 localhost 显示） -->
-        <div v-if="showExperimentalAiEntrances" class="dashboard-card ai-card" @click="handleEnterAgent">
+        <!-- 进入 AsyncTest Vibe（仅 localhost 可进入，其他域名点击提示暂未开发） -->
+        <div class="dashboard-card ai-card vibe-card" @click="handleEnterVibe">
           <div class="card-logo">
-            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full.svg"
-              alt="AsyncTest AI" />
-            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg"
-              alt="AsyncTest AI" />
-          </div>
-          <h3 class="card-title">AsyncTest AI</h3>
-          <p class="card-description">AsyncTest Agent</p>
-        </div>
-
-        <div v-if="showExperimentalAiEntrances" class="dashboard-card ai-card vibe-card" @click="handleEnterVibe">
-          <div class="card-logo">
-            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full.svg"
+            <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_vibe.svg"
               alt="AsyncTest Vibe" />
-            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ai_full_light.svg"
+            <img class="logo-hover" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_vibe.svg"
               alt="AsyncTest Vibe" />
           </div>
           <h3 class="card-title">AsyncTest Vibe</h3>
@@ -90,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
@@ -101,11 +90,6 @@ import { ApiCheckPermission } from '@/api/layout/cookies'
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
 const electronAPI = (window as any).electronAPI
-const isLocalhost = computed(() => {
-  const host = window.location.hostname
-  return host === 'localhost' || host === '127.0.0.1'
-})
-const showExperimentalAiEntrances = computed(() => import.meta.env.DEV && isLocalhost.value)
 
 const emit = defineEmits(['doubleCheckLoginStatus'])
 
@@ -151,10 +135,6 @@ const handleEnterGenerator = () => {
   router.push({ name: "generator" })
 }
 
-const handleEnterAgent = () => {
-  router.push({ name: "agentDashboard" })
-}
-
 const handleEnterVibe = async () => {
   if (!await checkLoginStatus()) {
     loginDialogRef.value?.open()
@@ -174,8 +154,11 @@ const handleEnterVibe = async () => {
       frameless: false,
       hideMainOnOpen: false,
       closeBehavior: 'platform',
-      transparent: true,
-      backgroundColor: '#00000000',
+      // 不透明黑底：macOS 透明窗口里 HTML <video> 走独立硬件叠加层、不与透明窗口合成，
+      // 会出现「开窗闪一下就没」的现象。hero 本就是纯黑底，透明无用，改回不透明即可正常放视频。
+      transparent: false,
+      backgroundColor: '#000000',
+      openDevTools: true, // dev 下自动开 DevTools（detach），方便看首屏网络加载体积
       query: { windowKey: 'vibe-workbench' },
     })
     return
@@ -363,7 +346,11 @@ const handleLoginSuccess = () => {
 // Specific card styles
 .asynctest-card {
   .card-logo {
+    height: 42px;
+
     img {
+      max-width: 70%;
+      max-height: 70%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
@@ -371,7 +358,11 @@ const handleLoginSuccess = () => {
 
 .mind-card {
   .card-logo {
+    height: 42px;
+
     img {
+      max-width: 70%;
+      max-height: 70%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
@@ -381,9 +372,10 @@ const handleLoginSuccess = () => {
   .card-logo {
     height: 42px;
 
+    // ast_tool.svg 近正方形（210×216），与 vibe 卡一致放大到 75% 保持观感体量
     img {
-      max-width: 70%;
-      max-height: 70%;
+      max-width: 75%;
+      max-height: 75%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
@@ -397,6 +389,23 @@ const handleLoginSuccess = () => {
       max-width: 70%;
       max-height: 70%;
       filter: drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
+    }
+  }
+}
+
+.vibe-card {
+  .card-logo {
+
+    // ast_vibe.svg 是近正方形（443×449），同等高度下比横版 logo（414×326）显窄，
+    // 放大到 75% 让观感体量与其他卡片一致
+    img {
+      max-width: 75%;
+      max-height: 75%;
+    }
+
+    // 暂无 light 版素材：hover 深色底时反色提亮（黑→白，绿色相近似保留）
+    .logo-hover {
+      filter: invert(1) hue-rotate(180deg) drop-shadow(0 1px 2px rgba(16, 185, 129, 0.1));
     }
   }
 }

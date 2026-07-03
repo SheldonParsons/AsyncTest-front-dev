@@ -2,7 +2,7 @@ import type { Ref } from 'vue';
 import { ref } from 'vue';
 import type { Camera } from './useCamera';
 import type { WorldRect } from '../geom/rect';
-import { rectIntersects, screenToWorld } from '../geom/rect';
+import { rectIntersects, screenToWorld, worldToScreen } from '../geom/rect';
 import type { WorldBoxes } from '../geom/worldBoxes';
 import type { UniformGridSpatialIndex } from '../grid/spatialIndex';
 import { DEBUG_CANVAS_OVERLAY, DEBUG_MARQUEE_LOG } from '../constants';
@@ -45,7 +45,12 @@ export function useMarquee(
   const previewSelectedIds = ref<Set<string>>(new Set());
   const marqueeStats = ref<MarqueeStats>({ mousemoveCount: 0, tickCount: 0 });
 
-  let startScreen: ScreenPoint | null = null;
+  /**
+   * 起点锚定在【世界坐标】：框选期间若相机平移/缩放（如靠近边缘自动平移），
+   * 起点应固定在画布内容上而不是屏幕上，这样视口移动才能真正框到更多内容。
+   * 屏幕坐标的起点每个 tick 由当前相机换算得出。
+   */
+  let startWorld: ScreenPoint | null = null;
   let endScreen: ScreenPoint | null = null;
   let baseSelection = new Set<string>();
   let additiveSelection = false;
@@ -76,7 +81,8 @@ export function useMarquee(
 
   function runTick() {
     tickRafId = null;
-    if (!isMarquee.value || !startScreen || !endScreen) return;
+    if (!isMarquee.value || !startWorld || !endScreen) return;
+    const startScreen = worldToScreen(camera.value, startWorld.x, startWorld.y);
 
     marqueeStats.value = {
       mousemoveCount: marqueeStats.value.mousemoveCount,
@@ -107,7 +113,8 @@ export function useMarquee(
     options?: { additiveSelection?: boolean; baseSelectionIds?: Iterable<string> }
   ) {
     isMarquee.value = true;
-    startScreen = { ...start };
+    const startWorldPoint = screenToWorld(camera.value, start.x, start.y);
+    startWorld = { x: startWorldPoint.x, y: startWorldPoint.y };
     endScreen = { ...current };
     additiveSelection = !!options?.additiveSelection;
     baseSelection = new Set(options?.baseSelectionIds ?? []);
@@ -136,7 +143,7 @@ export function useMarquee(
     }
 
     isMarquee.value = false;
-    startScreen = null;
+    startWorld = null;
     endScreen = null;
     selectedIds.value = new Set(previewSelectedIds.value);
     baseSelection = new Set(selectedIds.value);
@@ -159,7 +166,7 @@ export function useMarquee(
       tickRafId = null;
     }
     isMarquee.value = false;
-    startScreen = null;
+    startWorld = null;
     endScreen = null;
     previewSelectedIds.value = new Set(selectedIds.value);
     clearMarqueeOverlay();

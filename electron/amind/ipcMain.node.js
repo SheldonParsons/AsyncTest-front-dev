@@ -249,6 +249,21 @@ export function initAmindMain({ userDataPath, windowManager }) {
     return { reused: false, docId, filePath: realAbs };
   }
 
+  // Mind Agent：按指定路径创建 .amind（含默认 root+4 子节点）并打开窗口。
+  async function createFileAndOpenAt(filePath, title) {
+    let abs = path.resolve(filePath);
+    if (!abs.toLowerCase().endsWith(AMIND_EXT)) abs += AMIND_EXT;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    if (!fs.existsSync(abs)) {
+      const doc = createEmptyDoc(
+        typeof title === 'string' && title.trim() ? title.trim() : '思维导图',
+        {}
+      );
+      await writeAmindFile(abs, doc);
+    }
+    return await openFileInWindow(abs);
+  }
+
   async function importXmindFileInWindow(filePath) {
     const { path: abs, doc } = await readXmindAsAmindDoc(filePath);
     migrateLegacyMindStyles(doc);
@@ -344,6 +359,49 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:openFileInWindow', async (event, { filePath }) => {
     return await openFileInWindow(filePath);
   });
+
+  ipcMain.handle('amind:createFileAndOpen', async (event, payload = {}) => {
+    const { filePath, title } = payload || {};
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('createFileAndOpen requires filePath');
+    }
+    return await createFileAndOpenAt(filePath, title);
+  });
+
+  // Mind Agent 开发监听（仅 dev）：监听 .mind-agent/control.json，
+  // 外部 Agent 写入 {action:'createFileAndOpen', filePath, title, id} 即创建文件并开窗口。
+  if (!app.isPackaged) {
+    try {
+      const controlDir = path.join(app.getAppPath(), '.mind-agent');
+      const controlPath = path.join(controlDir, 'control.json');
+      fs.mkdirSync(controlDir, { recursive: true });
+      let lastControlId = null;
+      const handleControl = async () => {
+        try {
+          if (!fs.existsSync(controlPath)) return;
+          const raw = fs.readFileSync(controlPath, 'utf-8').trim();
+          if (!raw) return;
+          const cmd = JSON.parse(raw);
+          if (!cmd || cmd.action !== 'createFileAndOpen' || !cmd.filePath) return;
+          if (cmd.id && cmd.id === lastControlId) return;
+          lastControlId = cmd.id ?? null;
+          await createFileAndOpenAt(cmd.filePath, cmd.title);
+          // 处理后清空 control.json，避免重启/重复触发时再次自动开窗口
+          try { fs.writeFileSync(controlPath, ''); } catch {}
+          console.info('[mind-agent:main] createFileAndOpen 完成:', cmd.filePath);
+        } catch (error) {
+          console.error('[mind-agent:main] 处理 control.json 失败:', error);
+        }
+      };
+      fs.watch(controlDir, (_evt, fname) => {
+        if (fname === 'control.json') void handleControl();
+      });
+      // 不在启动时自动处理 control.json：仅响应启动后的新写入，避免重启重放上次指令
+      console.info('[mind-agent:main] 监听控制文件:', controlPath);
+    } catch (error) {
+      console.error('[mind-agent:main] 初始化控制监听失败:', error);
+    }
+  }
 
   ipcMain.handle('amind:openRemoteBufferInWindow', async (event, { bytes, fileName, remoteBinding } = {}) => {
     const existingDocId = findDocIdByRemoteBinding(remoteBinding);

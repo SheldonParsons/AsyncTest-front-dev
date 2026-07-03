@@ -1,308 +1,221 @@
 <template>
-  <main class="vibe-landing">
-    <div class="vk-drag" aria-hidden="true" />
+  <div class="vibe-hero" :class="{ 'is-leaving': leaving }">
+    <!-- Electron 窗口拖拽区（顶部一条，别的元素都 no-drag） -->
+    <div class="window-drag" />
 
-    <header class="vk-topbar">
+    <!-- three.js 画布（背景帧序列 + 粒子都在这里渲染；帧序列见 public/frames + Page.js） -->
+    <canvas ref="canvasEl" class="webgl" />
+    <img id="data-texture" src="" alt="" style="display:none" />
+
+    <!-- 品牌 -->
+    <header class="site-header">
       <div class="brand">
-        <span class="brand-dot" aria-hidden="true" />
-        <span class="brand-text">AsyncTest <span class="brand-sep">·</span> Vibe</span>
+        <img
+          class="brand-logo"
+          src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_vibe_light_new.svg"
+          alt="AsyncTest Vibe"
+        >
+        <span class="brand-name">AsyncTest Vibe</span>
       </div>
     </header>
 
-    <section class="vk-stage" @keydown.enter="openKnowledge" tabindex="0">
-      <PlantGrowth :key="plantKey" :size="168" class="vk-plant" />
+    <!-- 三段标语（滚轮翻页，粒子随之 morph；Page.js 靠 .section / .smooth 定位） -->
+    <div id="fake-scroll">
+      <div class="wrapper">
+        <div class="smooth">
+          <section class="section">
+            <div class="section-text">
+              <h1 class="headline-cn">让知识开口</h1>
+              <p class="headline-en">AsyncTest Vibe — Knowledge, Answered.</p>
+              <p class="subtitle">有问，皆有据。</p>
+            </div>
+          </section>
 
-      <h1 class="vk-headline">
-        把模糊的需求，
-        <span class="vk-headline-accent">长成可维护的事实。</span>
-      </h1>
-      <p class="vk-lede">
-        从一句话开始描述你的系统。Vibe 会把对话沉淀为对象、能力、规则、链路、口径与影响——一棵可被检索、被治理、被追溯的认知树。
-      </p>
+          <section class="section">
+            <div class="section-text">
+              <h1 class="headline-cn">让知识生长</h1>
+              <p class="headline-en">AsyncTest Vibe — Knowledge, Evolving.</p>
+              <p class="subtitle">知识，自生长。</p>
+            </div>
+          </section>
 
-      <div class="vk-pill-row" aria-label="Vibe capabilities">
-        <span class="vk-pill"><i class="dot" />录入</span>
-        <span class="vk-pill"><i class="dot" />补丁</span>
-        <span class="vk-pill"><i class="dot" />事实</span>
-        <span class="vk-pill"><i class="dot" />召回</span>
-        <span class="vk-pill"><i class="dot" />治理</span>
-        <span class="vk-pill"><i class="dot" />影响</span>
+          <section class="section">
+            <div class="section-text">
+              <h1 class="headline-cn">让知识自洽</h1>
+              <p class="headline-en">AsyncTest Vibe — Knowledge, in Harmony.</p>
+              <p class="subtitle">一改，而自洽。</p>
+            </div>
+          </section>
+        </div>
       </div>
+    </div>
 
-      <button class="vk-cta" type="button" @click="openKnowledge">
-        <span>进入 Vibe 知识库</span>
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M5 12h14" />
-          <path d="m13 6 6 6-6 6" />
-        </svg>
-      </button>
-
-      <p class="vk-shortcut">
-        <kbd>Enter</kbd> 直接进入
-      </p>
-    </section>
-
-    <footer class="vk-footer">
-      <span class="vk-footer-tag">Requirement Modeling · Preview</span>
-      <span class="vk-footer-sep" aria-hidden="true">·</span>
-      <span class="vk-footer-meta">v0.1</span>
-    </footer>
-
-    <VibeModelSettings />
-  </main>
+    <!-- 进入知识库：仅第三张（末页）淡入 -->
+    <button class="enter-btn" :class="{ 'is-visible': atLastSection }" type="button" @click="openKnowledge">
+      进入知识库
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import PlantGrowth from './knowledge/PlantGrowth.vue'
-import VibeModelSettings from './VibeModelSettings.vue'
 
 const router = useRouter()
 const route = useRoute()
-const plantKey = ref(0)
+
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+let experience: any = null
+
+// 当前页码由粒子引擎（Page.js）通过 vibe:section 事件广播上来。
+const sectionIndex = ref(0)
+const sectionLast = ref(2) // 末页下标（3 段 → 2），引擎会用真实值覆盖
+const leaving = ref(false)
+const atLastSection = computed(() => sectionIndex.value >= sectionLast.value)
+
+function onSectionEvt(e: Event) {
+  const d = (e as CustomEvent).detail || {}
+  if (typeof d.index === 'number') sectionIndex.value = d.index
+  if (typeof d.last === 'number') sectionLast.value = d.last
+  // 背景帧序列由引擎（Page.js）按滚动位置自行驱动，这里只更新按钮所需的页码。
+}
+
+onMounted(async () => {
+  // 先挂监听，确保能收到引擎初始化时广播的第 0 页。
+  window.addEventListener('vibe:section', onSectionEvt)
+  // 只在客户端加载 three 引擎：动态 import 避免 SSR 阶段触碰 window / WebGL / .frag 着色器。
+  try {
+    const mod = await import('./hero/experience/Experience.js')
+    const Experience = (mod as any).default
+    if (canvasEl.value) experience = new Experience(canvasEl.value)
+  } catch (e) {
+    // 粒子起不来也不至于白屏——标语仍在（HTML）。
+    console.error('[vibe-hero] 粒子首屏初始化失败：', e)
+  }
+})
+
+let enterTimer: ReturnType<typeof setTimeout> | null = null
+
+onBeforeUnmount(() => {
+  window.removeEventListener('vibe:section', onSectionEvt)
+  if (enterTimer) { clearTimeout(enterTimer); enterTimer = null }
+  // 停 RAF + 移除全部全局监听（滚轮/指针/resize）+ 置空单例，防泄漏、防死首屏劫持滚轮。
+  try { experience && experience.destroy && experience.destroy() } catch (e) { /* noop */ }
+  experience = null
+})
+
+// 仅 localhost 域名可进入知识库，其他域名提示暂未开发
+const isLocalhost = computed(() => {
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
+})
 
 function openKnowledge() {
-  router.push({ name: 'vibeKnowledge', query: route.query })
+  if (leaving.value) return
+  if (!isLocalhost.value) {
+    ;(window as any).$toast?.({ title: '该功能暂未开发，敬请期待', type: 'info' })
+    return
+  }
+  leaving.value = true // 触发 hero 缩放 + 淡出 + 模糊转场
+  enterTimer = setTimeout(() => {
+    router.push({ name: 'vibeKnowledge', query: route.query })
+  }, 620)
 }
-
-onMounted(() => {
-  plantKey.value += 1
-})
 </script>
 
-<style scoped lang="scss">
-.vibe-landing {
-  position: relative;
-  width: 100vw;
-  min-height: 100vh;
-  padding: 0 32px 28px;
-  box-sizing: border-box;
-  color: #1d1d1f;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(180deg, #fbfbfa 0%, #f4f4f2 100%);
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
-  display: flex;
-  flex-direction: column;
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap');
+
+.vibe-hero {
+  position: fixed;
+  inset: 0;
   overflow: hidden;
+  background: #000;
+  color: #fff;
+  transition: opacity .6s ease, filter .6s ease, transform .6s ease;
+}
+/* 点击「进入知识库」时的转场：整屏缩放推进 + 淡出 + 轻微模糊 */
+.vibe-hero.is-leaving {
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(1.06);
 }
 
-.vk-drag {
+.window-drag {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 36px;
-  z-index: 30;
+  height: 34px;
+  z-index: 8;
   -webkit-app-region: drag;
 }
 
-.vk-topbar {
-  flex-shrink: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding-top: 0;
-  box-sizing: border-box;
-  -webkit-app-region: drag;
-
-  > * { -webkit-app-region: no-drag; }
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 58px;
-  padding: 4px 10px 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(15, 15, 15, 0.06);
-  backdrop-filter: blur(14px) saturate(130%);
-  -webkit-backdrop-filter: blur(14px) saturate(130%);
-}
-
-.brand-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2f7441, #8cc760);
-  box-shadow: 0 0 0 2px rgba(140, 199, 96, 0.18);
-}
-
-.brand-text {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #2a2a2c;
-}
-
-.brand-sep {
-  margin: 0 4px;
-  color: rgba(15, 15, 15, 0.28);
-}
-
-.vk-stage {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
+/* —— three.js 画布（背景视频 + 粒子都在此渲染，垫在文字下） —— */
+.webgl {
+  position: fixed;
+  top: 0;
+  left: 0;
   outline: none;
-  text-align: center;
-  padding: 12px 0 28px;
+  z-index: 0;
 }
 
-.vk-plant {
+/* —— 品牌 —— */
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
+  z-index: 5;
+  padding: 32px 40px;
+  box-sizing: border-box;
   pointer-events: none;
-  flex-shrink: 0;
-  margin-bottom: 4px;
+}
+.brand { display: inline-flex; align-items: center; gap: 12px; pointer-events: auto; -webkit-app-region: no-drag; }
+.brand-logo { height: 28px; width: auto; display: block; }
+.brand-name {
+  font-family: 'Jost', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 15px; font-weight: 500; letter-spacing: 0.06em; color: #f5f6ff;
 }
 
-.vk-headline {
-  max-width: 720px;
-  margin: 4px 0 0;
-  font-size: 34px;
-  font-weight: 660;
-  line-height: 1.18;
-  letter-spacing: -0.01em;
-  color: #161618;
-}
 
-.vk-headline-accent {
-  background: linear-gradient(135deg, #2f7441 0%, #6ba84a 60%, #b6c668 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
+/* —— 三段标语 —— */
+#fake-scroll { position: absolute; width: 100%; height: 100%; overflow: hidden; top: 0; left: 0; z-index: 2; }
+.wrapper { position: sticky; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; }
+.smooth { display: block; position: relative; overflow: hidden; will-change: transform; }
+.section { display: flex; align-items: center; justify-content: flex-start; height: 100dvh; position: relative; padding-left: 8%; padding-right: 8%; }
+.section-text { max-width: 640px; z-index: 2; }
+.headline-cn { font-family: 'PingFang SC', 'Microsoft YaHei', 'Jost', sans-serif; font-weight: 700; font-size: clamp(48px, 7vw, 104px); line-height: 1.08; color: #fff; margin: 0 0 18px; letter-spacing: 0.02em; }
+.headline-en { font-family: 'Jost', sans-serif; font-weight: 500; font-size: clamp(16px, 1.6vw, 22px); letter-spacing: 0.02em; color: rgba(245,246,255,.85); margin: 0 0 28px; }
+.subtitle { font-family: 'PingFang SC', 'Microsoft YaHei', 'Jost', sans-serif; font-weight: 400; font-size: clamp(16px, 1.5vw, 20px); letter-spacing: 0.08em; color: rgba(245,246,255,.6); margin: 0; }
 
-.vk-lede {
-  max-width: 580px;
-  margin: 8px 0 4px;
-  color: rgba(15, 15, 15, 0.58);
-  font-size: 13.5px;
-  line-height: 1.7;
-  font-weight: 400;
-}
-
-.vk-pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.vk-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 8px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(15, 15, 15, 0.07);
+/* —— 进入知识库 —— */
+.enter-btn {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  /* 默认隐藏：淡出 + 下沉 + 不可点，仅到末页时 .is-visible 淡入 */
+  transform: translateX(-50%) translateY(14px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 6;
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 22px;
+  border: 1px solid rgba(255,255,255,.28);
   border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: rgba(15, 15, 15, 0.66);
-  letter-spacing: 0.01em;
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
-
-  .dot {
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: rgba(15, 15, 15, 0.35);
-  }
-}
-
-.vk-cta {
-  margin-top: 18px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 20px 11px 22px;
-  border: none;
-  border-radius: 999px;
-  background: #161618;
-  color: #f7f7f5;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  background: rgba(255,255,255,.06);
+  backdrop-filter: blur(8px);
+  color: #f5f6ff;
+  font-family: 'Jost', 'PingFang SC', sans-serif;
+  font-size: 15px; font-weight: 500; letter-spacing: 0.04em;
   cursor: pointer;
-  box-shadow:
-    0 1px 2px rgba(15, 15, 15, 0.12),
-    0 12px 28px rgba(15, 15, 15, 0.18);
-  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-
-  svg {
-    width: 16px;
-    height: 16px;
-    stroke: currentColor;
-    stroke-width: 1.9;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    transition: transform 0.18s ease;
-  }
-
-  &:hover {
-    background: #000;
-    transform: translateY(-1px);
-    box-shadow:
-      0 1px 2px rgba(15, 15, 15, 0.16),
-      0 16px 36px rgba(15, 15, 15, 0.22);
-
-    svg { transform: translateX(2px); }
-  }
-
-  &:active {
-    transform: translateY(0);
-  }
+  transition: opacity .5s ease, transform .5s ease, background .2s ease, border-color .2s ease;
 }
-
-.vk-shortcut {
-  margin: 6px 0 0;
-  color: rgba(15, 15, 15, 0.42);
-  font-size: 11.5px;
-  font-weight: 400;
-
-  kbd {
-    display: inline-block;
-    padding: 1px 6px;
-    margin-right: 4px;
-    background: rgba(255, 255, 255, 0.7);
-    border: 1px solid rgba(15, 15, 15, 0.12);
-    border-bottom-width: 2px;
-    border-radius: 5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10.5px;
-    color: #2a2a2c;
-  }
-}
-
-.vk-footer {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding-top: 12px;
-  color: rgba(15, 15, 15, 0.36);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-.vk-footer-tag { font-weight: 600; text-transform: uppercase; }
-.vk-footer-sep { opacity: 0.5; }
-.vk-footer-meta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-
-@media (max-width: 760px) {
-  .vk-headline { font-size: 26px; }
-  .vk-lede { font-size: 13px; max-width: 480px; }
-  .vk-plant { /* size controlled via :size prop on responsive screens */ }
-}
+.enter-btn.is-visible { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.enter-btn svg { width: 18px; height: 18px; transition: transform .2s ease; }
+.enter-btn.is-visible:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.5); }
+.enter-btn.is-visible:hover svg { transform: translateX(3px); }
+.enter-btn.is-visible:active { transform: translateX(-50%) translateY(0) scale(.97); }
 </style>

@@ -7,10 +7,12 @@
       :disabled="disabled"
       @click.stop="toggleMenu"
     >
-      <span class="app-select-value" :class="{ 'is-placeholder': !currentLabel }">
-        {{ currentLabel || placeholder }}
-      </span>
-      <el-icon class="app-select-caret"><ArrowDown /></el-icon>
+      <slot name="trigger" :label="currentLabel" :placeholder="placeholder" :open="open" :disabled="disabled">
+        <span class="app-select-value" :class="{ 'is-placeholder': !currentLabel }">
+          {{ currentLabel || placeholder }}
+        </span>
+        <el-icon class="app-select-caret"><ArrowDown /></el-icon>
+      </slot>
     </button>
 
     <Teleport to="body">

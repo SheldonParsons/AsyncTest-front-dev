@@ -46,32 +46,7 @@ const routes = [
     name: 'generator',
     component: () => import('@/views/generator/index.vue')
   },
-  {
-    path: '/agentDashboard',
-    name: 'agentDashboard',
-    component: () => import('@/views/electron_views/agent/index.vue')
-  },
-  {
-    path: '/agent/chat',
-    name: 'agentChat',
-    component: () => import('@/views/electron_views/agent/chat/index.vue')
-  },
-  {
-    path: '/agent/knowledge',
-    name: 'agentKnowledgeList',
-    component: () => import('@/views/electron_views/agent/knowledge/index.vue')
-  },
-  {
-    path: '/agent/knowledge/:kbId',
-    name: 'agentKnowledgeEditor',
-    component: () => import('@/views/electron_views/agent/knowledge/editor.vue')
-  },
-  ...vibeRoutes,
-  {
-    path: '/admin/debug',
-    name: 'adminDebugConsole',
-    component: () => import('@/views/electron_views/admin/debug/index.vue')
-  }] : []),
+  ...vibeRoutes] : []),
   ...(isElectronRouter ? [] : vibeRoutes),
   {
     path: '/login',

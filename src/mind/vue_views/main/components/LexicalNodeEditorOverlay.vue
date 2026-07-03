@@ -19,7 +19,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import { lexicalEditorManager } from '@/mind/core/lexicalEditorManager';
 import type { SerializedLexicalEditorState } from '@/mind/core/lexicalState';
-import { getDomTextTopOffset, type DomTextCalibrationStyle } from '@/mind/core/text/domTextCalibration';
+import { getDomTextBaselineMetrics, type DomTextCalibrationStyle } from '@/mind/core/text/domTextCalibration';
 
 const props = defineProps<{
   visible: boolean;
@@ -28,8 +28,8 @@ const props = defineProps<{
   editorShellStyle: CSSProperties;
   calibrationStyle: DomTextCalibrationStyle | null;
   innerTranslateYpx: number;
-  expectedGlyphTopPx: number;
-  expectedGlyphCenterPx: number;
+  /** canvas 首行真实绘制基线相对 shell 顶部的屏幕距离（含设备像素吸附） */
+  expectedBaselinePx: number;
   nodeId: string;
   initialState: SerializedLexicalEditorState;
   mode: 'append' | 'replace';
@@ -45,13 +45,21 @@ const emit = defineEmits<{
 const editorShellRef = ref<HTMLDivElement | null>(null);
 const editorRootRef = ref<HTMLDivElement | null>(null);
 const editorInnerRef = ref<HTMLDivElement | null>(null);
-const OPTICAL_GLYPH_Y_NUDGE_PX = -0.25;
 
-const estimatedGlyphTranslateYPx = computed(() => {
+/** 闭环实测得到的附加纠偏量（理想情况下恒为 0，仅吸收真实布局与探针的意外差异） */
+const liveCorrectionYPx = ref(0);
+let liveMeasureRafId: number | null = null;
+
+/**
+ * 基线对齐：把 DOM 首行字母基线平移到 canvas 绘制基线上。
+ * 探针（getDomTextBaselineMetrics）实测浏览器行盒的真实基线位置，无经验系数。
+ */
+const baselineTranslateYPx = computed(() => {
   if (!props.calibrationStyle) return 0;
-  return props.expectedGlyphTopPx - getDomTextTopOffset(props.calibrationStyle);
+  return props.expectedBaselinePx - getDomTextBaselineMetrics(props.calibrationStyle).baselineOffsetPx;
 });
 
+// 世界坐标模型：shell 铺满整个节点文本区，内容溢出可见，导航靠相机平移
 const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   return {
     ...props.editorShellStyle,
@@ -59,13 +67,74 @@ const resolvedEditorShellStyle = computed<CSSProperties>(() => {
   };
 });
 
-const editorInnerStyle = computed<CSSProperties>(() =>
-  estimatedGlyphTranslateYPx.value !== 0
-    ? {
-      transform: `translateY(${estimatedGlyphTranslateYPx.value + OPTICAL_GLYPH_Y_NUDGE_PX}px)`,
+const editorInnerStyle = computed<CSSProperties>(() => {
+  const translateY = baselineTranslateYPx.value + liveCorrectionYPx.value;
+  return translateY !== 0 ? { transform: `translateY(${translateY}px)` } : {};
+});
+
+/** 从 shell 样式解析当前 transform: scale（浮层按基准字号排版 + 整体缩放） */
+function resolveShellScale(): number {
+  const transform = props.editorShellStyle.transform;
+  if (typeof transform === 'string') {
+    const match = /scale\(([\d.]+)\)/.exec(transform);
+    if (match) {
+      const parsed = Number.parseFloat(match[1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
-    : {}
-);
+  }
+  return 1;
+}
+
+function findFirstTextNode(root: Node): Text | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let current = walker.nextNode();
+  while (current) {
+    if (current.textContent && current.textContent.length > 0) return current as Text;
+    current = walker.nextNode();
+  }
+  return null;
+}
+
+/**
+ * 闭环校准：编辑器真实渲染后，实测活体 DOM 首字符的位置，
+ * 换算出真实基线并与 canvas 期望基线求差，把残差补进 translate。
+ * 若探针与活体布局一致，残差为 0；只在出现滚动、边框、亚像素累积等
+ * 预测模型覆盖不到的情况时产生非零修正。一步收敛（测量值已包含当前修正量）。
+ */
+function measureLiveBaselineCorrection() {
+  const shell = editorShellRef.value;
+  const root = editorRootRef.value;
+  const style = props.calibrationStyle;
+  if (!props.visible || !shell || !root || !style) return;
+  const textNode = findFirstTextNode(root);
+  if (!textNode) return;
+  const range = document.createRange();
+  range.setStart(textNode, 0);
+  range.setEnd(textNode, Math.min(1, textNode.length));
+  const rangeRect = range.getBoundingClientRect();
+  if (!Number.isFinite(rangeRect.top) || (rangeRect.width === 0 && rangeRect.height === 0)) return;
+  const shellRect = shell.getBoundingClientRect();
+  if (!Number.isFinite(shellRect.top)) return;
+  const scale = resolveShellScale();
+  const probe = getDomTextBaselineMetrics(style);
+  // 同一字体样式下「Range rect 顶 → 基线」为常量，用探针值换算活体基线。
+  // ClientRect 是缩放后的视觉坐标，除回 scale 转成布局坐标；scrollTop 本身是布局坐标。
+  const rangeTopToBaseline = probe.baselineOffsetPx - probe.firstGlyphRangeTopPx;
+  const actualBaselinePx = (rangeRect.top - shellRect.top) / scale + shell.scrollTop + rangeTopToBaseline;
+  const delta = props.expectedBaselinePx - actualBaselinePx;
+  if (Math.abs(delta) > 0.05 && Math.abs(delta) < 8) {
+    liveCorrectionYPx.value += delta;
+  }
+}
+
+function scheduleLiveBaselineMeasure() {
+  if (typeof window === 'undefined') return;
+  if (liveMeasureRafId != null) cancelAnimationFrame(liveMeasureRafId);
+  liveMeasureRafId = requestAnimationFrame(() => {
+    liveMeasureRafId = null;
+    measureLiveBaselineCorrection();
+  });
+}
 
 function mountEditor() {
   if (!props.visible || !editorRootRef.value || !props.nodeId) return;
@@ -76,7 +145,11 @@ function mountEditor() {
       initialState: props.initialState,
       mode: props.mode,
       caretPlacement: props.caretPlacement,
-      onChange: (state) => emit('change', state),
+      onChange: (state) => {
+        emit('change', state);
+        // 空文本首次输入后才有可测的字符；内容变化时补测（rAF 合并，开销可忽略）
+        scheduleLiveBaselineMeasure();
+      },
       onCommit: () => emit('commit'),
       onCancel: () => emit('cancel'),
     });
@@ -86,6 +159,11 @@ function mountEditor() {
 onMounted(() => {
   lexicalEditorManager.setRootElement(editorRootRef.value);
   if (props.visible) mountEditor();
+  scheduleLiveBaselineMeasure();
+  // 字体异步就绪后，探针缓存已被清空，重测一次吸收字体替换带来的度量变化
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    document.fonts.ready.then(() => scheduleLiveBaselineMeasure());
+  }
 });
 
 watch(
@@ -107,28 +185,25 @@ watch(
 watch(
   () => [
     props.visible,
+    props.nodeId,
     props.calibrationStyle?.fontFamily ?? '',
     props.calibrationStyle?.fontSizePx ?? 0,
     props.calibrationStyle?.fontWeight ?? 0,
     props.calibrationStyle?.fontStyle ?? 'normal',
     props.calibrationStyle?.lineHeightPx ?? 0,
     props.calibrationStyle?.letterSpacingPx ?? 0,
-    props.expectedGlyphTopPx,
-    props.expectedGlyphCenterPx,
-    props.innerTranslateYpx,
-    props.editorShellStyle.fontFamily,
-    props.editorShellStyle.fontSize,
-    props.editorShellStyle.fontWeight,
-    props.editorShellStyle.fontStyle,
-    props.editorShellStyle.lineHeight,
+    props.expectedBaselinePx,
   ] as const,
-  ([visible]) => {
-    void visible;
+  () => {
+    // 对齐基准变化（换节点/换字体/缩放）：清掉旧修正，布局稳定后重新闭环实测
+    liveCorrectionYPx.value = 0;
+    nextTick(() => scheduleLiveBaselineMeasure());
   },
   { deep: false }
 );
 
 onBeforeUnmount(() => {
+  if (liveMeasureRafId != null) cancelAnimationFrame(liveMeasureRafId);
   lexicalEditorManager.setRootElement(null);
 });
 </script>

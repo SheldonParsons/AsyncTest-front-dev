@@ -4,6 +4,9 @@ import path from "path";
 import config from "./app.config.js";
 import vitePluginCompression from "vite-plugin-compression";
 import monacoEditorPlugin from "vite-plugin-monaco-editor";
+import { mindAgentPlugin } from "./vite/mindAgentPlugin";
+import glsl from "vite-plugin-glsl";               // Vibe 首屏粒子：让 .vert/.frag 能作字符串 import
+import topLevelAwait from "vite-plugin-top-level-await";
 console.log('--- 当前编译变量 VITE_IS_ELECTRON:', process.env.VITE_IS_ELECTRON);
 console.log(process.env.VITE_IS_ELECTRON === 'true');
 const isElectron = process.env.VITE_IS_ELECTRON === 'true';
@@ -66,6 +69,9 @@ export default defineConfig({
     },
   },
   plugins: [
+    glsl(),                 // Vibe 首屏粒子 shader（.vert/.frag → 字符串）
+    topLevelAwait({ promiseExportName: "__tla", promiseImportName: (i) => `__tla_${i}` }),
+    mindAgentPlugin(), // 仅 dev：监听 .mind-agent/ops.jsonl 并通过 HMR 推送指令
     vue({
       script: {
         defineModel: true, // 启用实验性功能
@@ -94,6 +100,11 @@ export default defineConfig({
   optimizeDeps: {
     include: ['deep-diff'],
     exclude: ["fsevents", ...(isElectron ? [] : ["electron-updater", "electron"])],
+    // three 的 WebGPU.js 用了顶层 await；dev 预打包(esbuild)默认 target 不支持 →
+    // 单独放行该特性（vite-plugin-top-level-await 只管 Rollup 构建，不管 optimizeDeps）。
+    esbuildOptions: {
+      supported: { 'top-level-await': true },
+    },
   },
   build: {
     outDir: "dist", // 统一输出到 dist，不再区分 client

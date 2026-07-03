@@ -200,8 +200,7 @@
         :overlay-root-style="editingOverlayRootStyle" :text-box-rect="editingScreenTextBoxRect"
         :editor-shell-style="editingEditorShellStyle" :calibration-style="editingCalibrationStyle"
         :inner-translate-ypx="editingOverlayInnerTranslateYPx"
-        :expected-glyph-top-px="editingCanvasTopLeadingPx * camera.scale"
-        :expected-glyph-center-px="editingCanvasGlyphCenterYPx"
+        :expected-baseline-px="editingExpectedBaselinePx"
         :node-id="editingSession?.nodeId ?? ''"
         :initial-state="editingDisplayLexicalState" :mode="editingSession?.mode ?? 'append'"
         :caret-placement="editingSession?.caretPlacement ?? 'end'" @change="onLexicalEditorChange" @commit="commitEditingSession"
@@ -2020,13 +2019,6 @@ const editingPreview = ref<null | {
   lineCount: number;
   textLineBoxTop: number;
   textLineBoxHeight: number;
-}>(null);
-const editingTextBoxAnchor = ref<null | {
-  nodeId: string;
-  x: number;
-  y: number;
-  width: number;
-  textAlign: RichTextAlign;
 }>(null);
 const editingWidthPreview = ref<null | {
   nodeId: string;
@@ -5992,7 +5984,7 @@ const editingCanvasTopLeadingPx = computed(() => {
   }).topLeadingPx;
 });
 
-const editingCanvasGlyphCenterYPx = computed(() => {
+const editingCanvasBaselineOffsetPx = computed(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
   const canvas = canvasRef.value;
@@ -6000,12 +5992,27 @@ const editingCanvasGlyphCenterYPx = computed(() => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return 0;
   const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session.nodeId });
-  const verticalMetrics = measureTextVerticalMetrics(ctx, {
+  return measureTextVerticalMetrics(ctx, {
     font: textStyle.canvasFontString,
     fontSizePx: textStyle.fontSizePx,
     lineHeightPx: textStyle.lineHeightPx,
-  });
-  return (verticalMetrics.topLeadingPx + verticalMetrics.contentHeightPx / 2) * camera.value.scale;
+  }).baselineOffsetPx;
+});
+
+/**
+ * canvas 首行真实绘制基线相对文本框（shell）顶部的距离，
+ * 以浮层【布局坐标系】（基准 px，缩放前）表达——浮层内部 translate 发生在 scale 之前。
+ * = 吸附到设备像素后的首行绘制锚点（textBaseline='top'，与 useDraw 的 snapWorldToDevicePixel 一致）
+ *   + 实测的「'top' 锚点 → 字母基线」距离（双 textBaseline 测量差值，见 measureTextVerticalMetrics）。
+ */
+const editingExpectedBaselinePx = computed(() => {
+  const rect = editingScreenTextBoxRect.value;
+  if (!rect) return 0;
+  const scale = Math.max(camera.value.scale, 0.0001);
+  const dpr = canvasDpr.value || 1;
+  const glyphTopScreenY = rect.y + editingCanvasTopLeadingPx.value * scale;
+  const snappedGlyphTopScreenY = Math.round(glyphTopScreenY * dpr) / dpr;
+  return (snappedGlyphTopScreenY - rect.y) / scale + editingCanvasBaselineOffsetPx.value;
 });
 
 function getEditingTextBoxRectForNode(
@@ -6094,20 +6101,30 @@ function ensureEditingPreviewBoxVisible(box: { x: number; y: number; width: numb
   const boxWidth = bottomRight.x - topLeft.x;
   const boxHeight = bottomRight.y - topLeft.y;
 
+  /**
+   * 盒子超出视口（如粘贴大量内容）时的策略：
+   * 已经覆盖视口 → 不平移（交给光标跟随定位）；只在视口内露白时做最小平移补齐。
+   * 旧逻辑是每次重排都把盒子顶/左强制贴到 padding，会与光标跟随互相拉扯，
+   * 造成视口反复跳动。
+   */
   let dx = 0;
   if (boxWidth <= viewportW.value - paddingPx * 2) {
     if (topLeft.x < paddingPx) dx = paddingPx - topLeft.x;
     else if (bottomRight.x > viewportRight) dx = viewportRight - bottomRight.x;
-  } else if (topLeft.x !== paddingPx) {
+  } else if (topLeft.x > paddingPx) {
     dx = paddingPx - topLeft.x;
+  } else if (bottomRight.x < viewportRight) {
+    dx = viewportRight - bottomRight.x;
   }
 
   let dy = 0;
   if (boxHeight <= viewportH.value - paddingPx * 2) {
     if (topLeft.y < paddingPx) dy = paddingPx - topLeft.y;
     else if (bottomRight.y > viewportBottom) dy = viewportBottom - bottomRight.y;
-  } else if (topLeft.y !== paddingPx) {
+  } else if (topLeft.y > paddingPx) {
     dy = paddingPx - topLeft.y;
+  } else if (bottomRight.y < viewportBottom) {
+    dy = viewportBottom - bottomRight.y;
   }
 
   if (dx === 0 && dy === 0) return;
@@ -6218,66 +6235,69 @@ const editingTextBoxRect = computed(() => {
   return getEditingTextBoxRectForNode(session?.nodeId);
 });
 
+/**
+ * 编辑浮层位置直接跟随当前 worldBox 派生的文本框。
+ * 不再用 editingTextBoxAnchor 冻结进入编辑时的绝对世界坐标：
+ * 编辑期间 scheduleEditingLayoutSync 会实时重排（节点长高时分支重新居中、
+ * 节点世界坐标会移动），canvas 框随新布局走，冻结坐标会让文字滞留在旧位置
+ * （表现为节点上方出现空白、文字与框错位）。与 canvas 同源取值即天然同步。
+ */
 const editingScreenTextBoxRect = computed(() => {
   const textBoxRect = editingTextBoxRect.value;
   if (!textBoxRect) return null;
-  const session = editingSession.value;
-  const anchor = session && editingTextBoxAnchor.value?.nodeId === session.nodeId
-    ? editingTextBoxAnchor.value
-    : null;
-  let worldX = textBoxRect.x;
-  if (anchor) {
-    if (anchor.textAlign === 'center') {
-      worldX = anchor.x + anchor.width / 2 - textBoxRect.width / 2;
-    } else if (anchor.textAlign === 'right') {
-      worldX = anchor.x + anchor.width - textBoxRect.width;
-    } else {
-      worldX = anchor.x;
-    }
-  }
-  const worldY = anchor?.y ?? textBoxRect.y;
   return {
-    x: worldX * camera.value.scale + camera.value.tx,
-    y: worldY * camera.value.scale + camera.value.ty,
+    x: textBoxRect.x * camera.value.scale + camera.value.tx,
+    y: textBoxRect.y * camera.value.scale + camera.value.ty,
     width: Math.max(1, textBoxRect.width * camera.value.scale),
     height: Math.max(1, textBoxRect.height * camera.value.scale),
   };
 });
 
+/**
+ * 编辑浮层缩放策略：按【基准字号】排版 + transform: scale 整体缩放。
+ *
+ * 之前是 fontSize * scale 让浏览器在缩放后的字号重新排版，字体度量随字号
+ * 非线性变化（取整/hinting），导致偏移量随 zoom 漂移、断行点与 canvas 不一致。
+ * 现在 DOM 与 canvas 在同一像素字号（基准字号）下排版，再同倍缩放：
+ * - 度量空间一致，断行/宽度天然对齐；
+ * - 编辑中缩放只走合成器（不重排），性能更好。
+ */
 const editingEditorShellStyle = computed<CSSProperties>(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
-  const textBoxRect = editingScreenTextBoxRect.value;
-  if (!session || !node || !textBoxRect) {
+  const screenRect = editingScreenTextBoxRect.value;
+  const worldRect = editingTextBoxRect.value;
+  if (!session || !node || !screenRect || !worldRect) {
     return { display: 'none' };
   }
   const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
-  const scale = camera.value.scale;
-  const viewportPaddingPx = 24;
-  const viewportSafeHeightPx = Math.max(1, viewportH.value - viewportPaddingPx * 2);
-  const constrainedHeightPx = Math.min(textBoxRect.height, viewportSafeHeightPx);
-  const shouldScrollVertically = textBoxRect.height > constrainedHeightPx;
+  const scale = Math.max(camera.value.scale, 0.0001);
+  // 布局尺寸一律用世界（基准）px，视觉尺寸由 transform: scale 放大。
+  // 世界坐标模型：shell 铺满整个节点文本区（不做视口高度钳制），
+  // 超长内容的导航由相机平移（caret follow）负责，容器原生滚动被 scroll guard 禁止。
+  const layoutWidthPx = Math.max(1, worldRect.width);
+  const layoutHeightPx = Math.max(1, worldRect.height);
 
   return {
     position: 'absolute',
-    left: `${textBoxRect.x}px`,
-    top: `${textBoxRect.y}px`,
-    width: `${textBoxRect.width + 2}px`,
-    height: `${constrainedHeightPx}px`,
-    minHeight: `${constrainedHeightPx}px`,
-    maxHeight: `${viewportSafeHeightPx}px`,
+    left: `${screenRect.x}px`,
+    top: `${screenRect.y}px`,
+    width: `${layoutWidthPx + 2}px`,
+    height: `${layoutHeightPx}px`,
+    transform: `scale(${scale})`,
+    transformOrigin: '0 0',
     fontFamily: textStyle.fontFamily,
-    fontSize: `${textStyle.fontSizePx * scale}px`,
+    fontSize: `${textStyle.fontSizePx}px`,
     fontWeight: '400',
     fontStyle: 'normal',
-    lineHeight: `${textStyle.lineHeightPx * scale}px`,
-    letterSpacing: `${textStyle.letterSpacingPx * scale}px`,
+    lineHeight: `${textStyle.lineHeightPx}px`,
+    letterSpacing: `${textStyle.letterSpacingPx}px`,
     padding: '0',
     margin: '0',
     border: '0',
     outline: 'none',
     overflowX: 'visible',
-    overflowY: shouldScrollVertically ? 'auto' : 'visible',
+    overflowY: 'visible',
     overscrollBehavior: 'contain',
     background: 'transparent',
     color: textStyle.color,
@@ -6292,19 +6312,19 @@ const editingEditorShellStyle = computed<CSSProperties>(() => {
 });
 
 
+// 校准样式同步改为基准字号：探针与 DOM 排版处于同一度量空间
 const editingCalibrationStyle = computed(() => {
   const session = editingSession.value;
   const node = getNodeById(session?.nodeId);
   if (!session || !node) return null;
   const textStyle = getNodeTextStyle(node, { doc: props.doc, nodeId: session?.nodeId ?? null });
-  const scale = camera.value.scale;
   return {
     fontFamily: textStyle.fontFamily,
-    fontSizePx: textStyle.fontSizePx * scale,
+    fontSizePx: textStyle.fontSizePx,
     fontWeight: textStyle.fontWeight,
     fontStyle: textStyle.fontStyle,
-    lineHeightPx: textStyle.lineHeightPx * scale,
-    letterSpacingPx: textStyle.letterSpacingPx * scale,
+    lineHeightPx: textStyle.lineHeightPx,
+    letterSpacingPx: textStyle.letterSpacingPx,
   };
 });
 
@@ -6912,7 +6932,6 @@ function startEditing(
     Math.max(1, getNodeTextStyle(node, { doc: props.doc, nodeId }).fontSizePx)
   );
   const currentRect = worldBoxes.value.get(nodeId);
-  const initialTextStyle = getNodeTextStyle(node, { doc: props.doc, nodeId });
   const editingMarkerIW = measureNodeMarkerRow(node).inlineWidth;
   const initialTextBoxRect = currentRect
     ? (() => {
@@ -6953,15 +6972,6 @@ function startEditing(
         ? Math.max(0, initialTextBoxRect.y - getNodeBodyWorldRect(node, currentRect).y1)
         : NODE_TEXT_INSET_Y,
       textLineBoxHeight: initialTextBoxRect?.height ?? Math.max(NODE_LINE_HEIGHT, currentRect.y2 - currentRect.y1 - NODE_TEXT_INSET_Y * 2),
-    }
-    : null;
-  editingTextBoxAnchor.value = initialTextBoxRect
-    ? {
-      nodeId,
-      x: initialTextBoxRect.x,
-      y: initialTextBoxRect.y,
-      width: initialTextBoxRect.width,
-      textAlign: initialTextStyle.textAlign,
     }
     : null;
   // 对于仅含图片无文字的折叠节点，进入编辑时展开文字区域以便输入
@@ -7035,7 +7045,6 @@ function stopEditingSession() {
   editingDraftRichText.value = getNodeRichText(null);
   editingDisplayLexicalState.value = getNodeLexicalState(null);
   editingWidthPreview.value = null;
-  editingTextBoxAnchor.value = null;
   editingNodeId.value = null;
   lexicalEditorManager.stopSession();
   clearEditingPreviewLayout();
@@ -9046,12 +9055,13 @@ function updateDragDropTarget(screenX: number, screenY: number) {
 }
 
 function computeAutoPanVelocity(screenCoord: number, viewportSize: number) {
+  // ratio 截断到 1：指针拖出窗口（坐标为负/超界）时速度封顶在基准值，不会无限加速
   if (screenCoord < AUTO_PAN_EDGE_ZONE_PX) {
-    const ratio = 1 - screenCoord / AUTO_PAN_EDGE_ZONE_PX;
+    const ratio = Math.min(1, 1 - screenCoord / AUTO_PAN_EDGE_ZONE_PX);
     return AUTO_PAN_BASE_SPEED_PX_PER_SEC * Math.pow(ratio, 1.4);
   }
   if (screenCoord > viewportSize - AUTO_PAN_EDGE_ZONE_PX) {
-    const ratio = 1 - (viewportSize - screenCoord) / AUTO_PAN_EDGE_ZONE_PX;
+    const ratio = Math.min(1, 1 - (viewportSize - screenCoord) / AUTO_PAN_EDGE_ZONE_PX);
     return -AUTO_PAN_BASE_SPEED_PX_PER_SEC * Math.pow(ratio, 1.4);
   }
   return 0;
@@ -9095,6 +9105,52 @@ function tickAutoPan(now: number) {
 function startAutoPanLoop() {
   stopAutoPanLoop();
   autoPanRafId = requestAnimationFrame(tickAutoPan);
+}
+
+/**
+ * 框选边缘自动平移：拖拽框选时指针靠近视口边缘，按接近程度平移相机，
+ * 配合 useMarquee 的世界坐标锚定起点，视口移动即可框到更多内容。
+ * 速度曲线与节点拖拽的 autoPan 一致（越靠边越快，1.4 次方缓动）。
+ */
+let marqueeAutoPanRafId: number | null = null;
+let marqueeAutoPanLastAt = 0;
+
+function stopMarqueeAutoPanLoop() {
+  if (marqueeAutoPanRafId != null) cancelAnimationFrame(marqueeAutoPanRafId);
+  marqueeAutoPanRafId = null;
+  marqueeAutoPanLastAt = 0;
+}
+
+function tickMarqueeAutoPan(now: number) {
+  marqueeAutoPanRafId = null;
+  if (interactionState.value.mode !== 'marqueeSelecting' || !isMarquee.value) {
+    marqueeAutoPanLastAt = 0;
+    return;
+  }
+
+  if (!marqueeAutoPanLastAt) marqueeAutoPanLastAt = now;
+  const dt = Math.min(0.05, (now - marqueeAutoPanLastAt) / 1000);
+  marqueeAutoPanLastAt = now;
+
+  const cursorX = interactionState.value.lastScreenX;
+  const cursorY = interactionState.value.lastScreenY;
+  const vx = computeAutoPanVelocity(cursorX, viewportW.value);
+  const vy = computeAutoPanVelocity(cursorY, viewportH.value);
+
+  if (Math.abs(vx) > 0 || Math.abs(vy) > 0) {
+    // panByPixels 内部走 constrainCamera，滚到内容边界会自然停下
+    panByPixels(vx * dt, vy * dt);
+    // 相机变了，指针没动选区也要重算（起点是世界坐标，屏幕端由 tick 重新换算）
+    updateMarqueeSelection({ x: cursorX, y: cursorY });
+    requestRender();
+  }
+
+  marqueeAutoPanRafId = requestAnimationFrame(tickMarqueeAutoPan);
+}
+
+function startMarqueeAutoPanLoop() {
+  stopMarqueeAutoPanLoop();
+  marqueeAutoPanRafId = requestAnimationFrame(tickMarqueeAutoPan);
 }
 
 function buildMoveCommand(dropTarget: DragDropTarget): {
@@ -9593,6 +9649,7 @@ function clearDragTransient(reason?: string) {
 }
 
 function clearMarqueeTransient(reason?: string) {
+  stopMarqueeAutoPanLoop();
   cancelMarqueeSelection(reason);
 }
 
@@ -9761,6 +9818,7 @@ function startMarqueeFromInteraction(screenX: number, screenY: number) {
     lastScreenX: screenX,
     lastScreenY: screenY,
   });
+  startMarqueeAutoPanLoop();
 }
 
 function beginCanvasPanning(screenX: number, screenY: number) {
@@ -9962,6 +10020,7 @@ function finalizeInteraction(
     } else if (mode === 'pointerDownSecondary') {
       focusViewportWithoutScroll();
     } else if (mode === 'marqueeSelecting') {
+      stopMarqueeAutoPanLoop();
       finishMarqueeSelection();
     } else if (mode === 'panningCanvas') {
       suppressCanvasContextMenuUntil = performance.now() + 300;
@@ -13746,13 +13805,113 @@ function onCompositionEnd(event: CompositionEvent) {
   clearPendingDirectTypeSeed();
 }
 
+// ---- Mind Agent 开发桥接（仅 dev）----
+// 供 src/mind/dev/agentBridge.ts 调用：用现有命令系统逐条建节点/连线并实时重绘。
+function agentAddChildNode(parentId: string, text: string): string | null {
+  const nodes = getMindNodes();
+  if (!nodes || !nodes[parentId]) return null;
+  const newNodeId = createNodeId();
+  const role = resolveNewChildRole(parentId);
+  const insertIndex = Array.isArray(nodes[parentId].children) ? nodes[parentId].children.length : 0;
+  const command = createBatchAddChildCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      startEditing: () => {}, // 文本已直接写入，无需进入编辑态
+      applyMutation: applyDocumentMutation,
+      createNodeRecord: (nodeId: string) =>
+        createNodeRecord(nodeId, text, role, { parentId, insertIndex }),
+    },
+    {
+      parentIds: [parentId],
+      newNodeIds: [newNodeId],
+      previousSelection: snapshotSelection(),
+    }
+  );
+  executeCommand(command);
+  return newNodeId;
+}
+
+function agentSetNodeText(nodeId: string, text: string): boolean {
+  const nodes = getMindNodes();
+  const node = nodes?.[nodeId];
+  if (!node) return false;
+  const afterLexical = lexicalStateFromPlainText(text);
+  const command = createUpdateNodeLexicalStateCommand(
+    {
+      getNodes: getMindNodes,
+      setSelection,
+      applyMutation: applyDocumentMutation,
+    },
+    {
+      nodeId,
+      beforeLexicalStateJSON: node.textLexical,
+      afterLexicalStateJSON: afterLexical,
+      beforeRichText: getNodeRichText(node),
+      afterRichText: richTextFromLexicalState(afterLexical),
+      previousSelection: snapshotSelection(),
+      nextSelection: { ids: [nodeId], primaryId: nodeId },
+    }
+  );
+  executeCommand(command);
+  return true;
+}
+
+function agentDeleteNode(nodeId: string): boolean {
+  const command = createDeleteCommand(nodeId);
+  if (!command) return false;
+  executeCommand(command);
+  return true;
+}
+
+function agentGetChildIds(parentId: string): string[] {
+  const nodes = getMindNodes();
+  const parent = nodes?.[parentId];
+  if (!parent) return [];
+  return getRegularChildIds(parent);
+}
+
+function setupMindAgentBridgeIfDev() {
+  if (!import.meta.env.DEV) return;
+  void import('@/mind/dev/agentBridge').then(({ setupMindAgentBridge }) => {
+    setupMindAgentBridge({
+      getRootNodeId,
+      getChildIds: agentGetChildIds,
+      addChild: (parentId: string, text: string) => agentAddChildNode(parentId, text),
+      setNodeText: agentSetNodeText,
+      deleteNode: agentDeleteNode,
+      addRelation: (fromId: string, toId: string) => {
+        const command = createCreateRelationCommand(fromId, toId);
+        if (!command) return false;
+        executeCommand(command);
+        return true;
+      },
+      save: () => saveDocument(),
+      focus: (nodeId: string) => setSelection([nodeId], nodeId),
+    });
+  });
+}
+
+function onViewportNativeScrollGuard() {
+  const el = viewportRef.value;
+  if (!el) return;
+  if (el.scrollTop !== 0) el.scrollTop = 0;
+  if (el.scrollLeft !== 0) el.scrollLeft = 0;
+}
+
 onMounted(() => {
   logRendererDebugInstructions();
+  setupMindAgentBridgeIfDev();
   removeBeforeCloseListener = window.electronAPI.on('wm:before-close', async (_event: any, { key }: any) => {
     await handleBeforeCloseRequest(key);
   });
   // 监听 wheel 在 viewport 上（必须 passive:false 才能 preventDefault）
   if (viewportRef.value) viewportRef.value.addEventListener('wheel', onWheel as any, { passive: false });
+  // 滚动守卫：视口容器是 overflow: hidden，但编辑超长节点时浮层会撑出滚动余量，
+  // 浏览器的 caret scrollIntoView（聚焦/输入/粘贴时）会程序化滚动它，把 canvas
+  // 一起滚出视口（表现为"视口缩小/画布错位露白"）。此容器永远不该有原生滚动，
+  // 光标可见性由相机平移（caret follow）负责。
+  if (viewportRef.value) viewportRef.value.addEventListener('scroll', onViewportNativeScrollGuard, { passive: true });
   if (viewportRef.value) {
     resizeObserver = new ResizeObserver(() => {
       handleResize();
@@ -13978,10 +14137,12 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
   cancelPendingDragBootstrap();
+  stopMarqueeAutoPanLoop();
   if (drawRafId != null) cancelAnimationFrame(drawRafId);
   if (emitNodeCountRafId != null) cancelAnimationFrame(emitNodeCountRafId);
   if (syncStylePanelRafId != null) cancelAnimationFrame(syncStylePanelRafId);
   if (viewportRef.value) viewportRef.value.removeEventListener('wheel', onWheel as any);
+  if (viewportRef.value) viewportRef.value.removeEventListener('scroll', onViewportNativeScrollGuard);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('keydown', onWindowKeyDown, true);
   window.removeEventListener('copy', onWindowCopy, true);

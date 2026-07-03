@@ -1,6 +1,7 @@
 import { getNodeImage, getNodeRichText, type MindNodeImage, type MindNodeLike } from '@/mind/core/nodeContent';
 import { getInlineFont, type RichTextAlign, type RichTextDocument, type RichTextInline, type RichTextMarks } from '@/mind/core/richText';
 import { buildCanvasFont } from '@/mind/core/text/font';
+import { getDomTextBaselineMetrics } from '@/mind/core/text/domTextCalibration';
 import { buildDefaultNodeTextStyle } from './nodeStyles';
 import { measureNodeMarkerRow } from './nodeMarkers';
 import {
@@ -48,6 +49,13 @@ export type TextVerticalMetrics = {
   contentHeightPx: number;
   topLeadingPx: number;
   baselineOffsetPx: number;
+  /**
+   * 字体元数据 ascent/descent（fontBoundingBox*），仅作参考与降级计算用。
+   * 注意：不能当作 'top' 锚点到基线的距离（与 Chromium 内部锚点不同源），
+   * 锚点距离用实测的 baselineOffsetPx。
+   */
+  fontAscentPx: number;
+  fontDescentPx: number;
 };
 
 const domTextTopOffsetCache = new Map<string, number>();
@@ -173,6 +181,34 @@ export function resolveNodeContentWidthConstraint(
 }
 
 const textVerticalMetricsCache = new Map<string, TextVerticalMetrics>();
+let verticalMetricsFontsListenerBound = false;
+
+function bindVerticalMetricsFontsListener() {
+  if (verticalMetricsFontsListenerBound || typeof document === 'undefined' || !document.fonts?.addEventListener) return;
+  verticalMetricsFontsListenerBound = true;
+  document.fonts.addEventListener('loadingdone', () => {
+    textVerticalMetricsCache.clear();
+  });
+}
+
+/**
+ * 解析 canvas font 字符串（buildCanvasFont 产物或 ctx.font 归一化结果），
+ * 供 DOM 基线探针使用。canvas getter 会省略 normal 的 style/weight，需容错。
+ */
+function parseCanvasFontString(font: string): {
+  fontStyle: 'normal' | 'italic';
+  fontWeight: number;
+  fontSizePx: number;
+  fontFamily: string;
+} | null {
+  const match = /^\s*(?:(italic|oblique|normal)\s+)?(?:(normal|bold|\d{3})\s+)?([\d.]+)px\s+(.+)$/.exec(font);
+  if (!match) return null;
+  const fontStyle = match[1] === 'italic' || match[1] === 'oblique' ? 'italic' : 'normal';
+  const fontWeight = match[2] === 'bold' ? 700 : Number.parseInt(match[2] ?? '400', 10) || 400;
+  const fontSizePx = Number.parseFloat(match[3]);
+  if (!Number.isFinite(fontSizePx) || fontSizePx <= 0) return null;
+  return { fontStyle, fontWeight, fontSizePx, fontFamily: match[4].trim() };
+}
 
 export function measureTextVerticalMetrics(
   ctx: CanvasRenderingContext2D,
@@ -186,9 +222,17 @@ export function measureTextVerticalMetrics(
   const cached = textVerticalMetricsCache.get(cacheKey);
   if (cached) return cached;
 
+  bindVerticalMetricsFontsListener();
+
   ctx.save();
   ctx.font = options.font;
+  ctx.textBaseline = 'alphabetic';
   const metrics = ctx.measureText('Mg');
+  // 关键实测：同一段文字分别在 alphabetic / top 两种 textBaseline 下测墨迹 ascent，
+  // 差值 = 画布 'top' 绘制锚点到字母基线的【真实】距离（不依赖任何字体元数据假设，
+  // fontBoundingBoxAscent 与 Chromium 内部 'top' 锚点并不同源，直接用会整体偏移）。
+  ctx.textBaseline = 'top';
+  const metricsFromTopAnchor = ctx.measureText('Mg');
   ctx.restore();
 
   const measuredAscent =
@@ -200,13 +244,44 @@ export function measureTextVerticalMetrics(
     metrics.fontBoundingBoxDescent ||
     Math.max(1, Math.ceil(options.fontSizePx * 0.2));
   const contentHeightPx = Math.max(1, measuredAscent + measuredDescent);
-  const topLeadingPx = Math.max(0, (options.lineHeightPx - contentHeightPx) / 2);
+  const fontAscentPx = metrics.fontBoundingBoxAscent || measuredAscent;
+  const fontDescentPx = metrics.fontBoundingBoxDescent || measuredDescent;
+
+  const topAnchorToBaselinePx =
+    Number.isFinite(metrics.actualBoundingBoxAscent) && Number.isFinite(metricsFromTopAnchor.actualBoundingBoxAscent)
+      ? metrics.actualBoundingBoxAscent - metricsFromTopAnchor.actualBoundingBoxAscent
+      : fontAscentPx;
+
+  /**
+   * 目标基线位置 = DOM 行盒的真实基线（探针实测，含浏览器 strut 半行距模型），
+   * 绘制锚点（textBaseline='top'）= 目标基线 - 实测锚点距离。
+   * 两个量都来自实测，canvas 字形与 DOM（编辑态）字形严格落在同一条基线上，
+   * 对字体、系统、字号无假设。DOM 不可用（SSR 等）时退回字体元数据半行距模型。
+   */
+  const parsedFont = parseCanvasFontString(options.font);
+  let baselineTargetPx: number;
+  if (typeof document !== 'undefined' && parsedFont) {
+    baselineTargetPx = getDomTextBaselineMetrics({
+      fontFamily: parsedFont.fontFamily,
+      fontSizePx: parsedFont.fontSizePx,
+      fontWeight: parsedFont.fontWeight,
+      fontStyle: parsedFont.fontStyle,
+      lineHeightPx: options.lineHeightPx,
+    }).baselineOffsetPx;
+  } else {
+    baselineTargetPx = (options.lineHeightPx - (fontAscentPx + fontDescentPx)) / 2 + fontAscentPx;
+  }
+  const topLeadingPx = baselineTargetPx - topAnchorToBaselinePx;
+
   const verticalMetrics = {
     ascentPx: measuredAscent,
     descentPx: measuredDescent,
     contentHeightPx,
     topLeadingPx,
-    baselineOffsetPx: topLeadingPx + measuredAscent,
+    // 绘制锚点（textBaseline='top'）到字母基线的实测距离
+    baselineOffsetPx: topAnchorToBaselinePx,
+    fontAscentPx,
+    fontDescentPx,
   } satisfies TextVerticalMetrics;
   textVerticalMetricsCache.set(cacheKey, verticalMetrics);
   return verticalMetrics;

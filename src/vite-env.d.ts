@@ -50,10 +50,6 @@ export interface IElectronAPI {
       failedAmindFiles?: Array<{ path: string; message: string }>;
     }>;
   },
-  harness: {
-    storeGet: (key: string) => Promise<any>;
-    storeSet: (key: string, value: any) => Promise<boolean>;
-  }
 }
 
 declare global {

@@ -1,0 +1,10 @@
+{"op":"reset","runId":"example-1"}
+{"op":"node","ref":"m1","parent":"$root","text":"登录模块"}
+{"op":"node","ref":"f1","parent":"m1","text":"手机号验证码登录"}
+{"op":"node","ref":"c1","parent":"f1","text":"正常登录：验证码正确"}
+{"op":"node","ref":"c1s","parent":"c1","text":"步骤：输入正确验证码→点击登录"}
+{"op":"node","ref":"c1e","parent":"c1","text":"预期：登录成功并跳转首页"}
+{"op":"node","ref":"c2","parent":"f1","text":"异常登录：验证码错误"}
+{"op":"node","ref":"c2s","parent":"c2","text":"步骤：输入错误验证码→点击登录"}
+{"op":"node","ref":"c2e","parent":"c2","text":"预期：提示验证码错误，停留当前页"}
+{"op":"save"}

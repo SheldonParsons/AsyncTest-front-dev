@@ -241,7 +241,7 @@ function startNewProvider() {
 }
 
 function template(type: 'gpt' | 'deepseek') {
-  const strongKeys = new Set(['strong', 'vibe_project_baseline', 'vibe_patch_generate', 'vibe_patch_impact', 'vibe_project_summary', 'vibe_system_summary', 'vibe_cross_project_retrieve', 'vibe_retrieval_sufficiency', 'vibe_answer_grounding', 'vibe_question_generate', 'vibe_state_render', 'vibe_test_suggestion'])
+  const strongKeys = new Set(['strong', 'vibe_project_baseline', 'vibe_input_router', 'vibe_modeling_intent', 'vibe_candidate_inventory', 'vibe_candidate_disposition', 'vibe_modeling_package', 'vibe_coverage_quality_gate', 'vibe_patch_generate', 'vibe_project_summary', 'vibe_system_summary', 'vibe_retrieval_sufficiency'])
   return Object.fromEntries(modelKeys.value.map((key) => {
     if (type === 'deepseek') return [key, deepseekBulkModel.value]
     return [key, strongKeys.has(key) ? 'gpt-5.5' : 'gpt-5.4-mini']
@@ -351,20 +351,18 @@ function modelLabel(key: string) {
     strong: '默认强模型',
     vibe_project_baseline: '项目基线生成',
     vibe_event_understand: '需求输入理解',
+    vibe_input_router: '对话输入路由',
+    vibe_modeling_intent: '建模意图识别',
+    vibe_candidate_inventory: '候选枚举',
+    vibe_candidate_disposition: '候选处置',
+    vibe_modeling_package: '建模方案包生成',
+    vibe_coverage_quality_gate: '覆盖率质量门',
     vibe_patch_generate: '待确认补丁生成',
-    vibe_patch_impact: '变更影响分析',
     vibe_fact_summary: '事实摘要生成',
     vibe_project_summary: '项目摘要生成',
     vibe_system_summary: '跨项目系统摘要生成',
     vibe_query_understand: '召回问题理解',
-    vibe_cross_project_retrieve: '跨知识库候选选择',
-    vibe_fact_retrieve: '事实召回判断',
-    vibe_relation_expand: '关系扩展判断',
     vibe_retrieval_sufficiency: '召回满足度判断',
-    vibe_answer_grounding: '回答 Grounding',
-    vibe_question_generate: '追问生成',
-    vibe_state_render: '状态渲染',
-    vibe_test_suggestion: '测试建议生成',
   }
   return labels[key] || key
 }

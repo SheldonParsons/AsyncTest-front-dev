@@ -140,8 +140,11 @@ function isScrollableElement(element: HTMLElement) {
   const style = window.getComputedStyle(element);
   const overflowY = style.overflowY;
   const overflowX = style.overflowX;
-  const canScrollY = /(auto|scroll|overlay)/.test(overflowY) && element.scrollHeight > element.clientHeight;
-  const canScrollX = /(auto|scroll|overlay)/.test(overflowX) && element.scrollWidth > element.clientWidth;
+  // 必须包含 hidden/clip：overflow: hidden 的容器仍可被程序滚动（浏览器的
+  // caret scrollIntoView 就会滚它）。思维导图视口容器正是 overflow: hidden，
+  // 编辑超长节点时若不捕获/恢复它，canvas 会被滚出视口，表现为"视口缩小/错位"。
+  const canScrollY = /(auto|scroll|overlay|hidden|clip)/.test(overflowY) && element.scrollHeight > element.clientHeight;
+  const canScrollX = /(auto|scroll|overlay|hidden|clip)/.test(overflowX) && element.scrollWidth > element.clientWidth;
   return canScrollY || canScrollX;
 }
 
