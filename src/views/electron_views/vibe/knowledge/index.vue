@@ -519,6 +519,18 @@ const composerQuestion = computed(() => {
       ],
     }
   }
+  // ②b 带选项的通用反问（0703）：脑自带候选答案（如"复查刚才那处，还是别处也删"）→ 按脑给的选项渲染，
+  // 选项文本原样回传（走默认续跑同一思考路径）。修"问复查/删别处却弹『记进知识库』模板"的答非所问。
+  if (kind === 'choices' && Array.isArray(raw.options) && raw.options.length) {
+    return {
+      title: c.question,
+      description: '选一个，我就按你的意思处理',
+      items: [
+        ...raw.options.map((o: string) => ({ type: 'choice' as const, label: o, value: o })),
+        { type: 'input' as const, placeholder: '或者告诉我该怎么处理…' },
+      ],
+    }
+  }
   // ③ 录入纪律（默认）：是/否
   return {
     title: c.question,

@@ -296,6 +296,17 @@ function emitAnswer(value: string) {
   emit('answer', value); customValues[activeIndex.value] = ''
 }
 
+// 提交按钮（0703 修交互陷阱）：输入框有字 → 提交手输；【为空但高亮着某个选项】→ 等同点击该选项——
+// 此前"选中『确认应用』再点提交"会发出空值,确认被静默吞掉(反问收起、什么都没发生)。
+// 没高亮任何选项且没输入 → 维持老行为(空值=跳过)。
+function submitCustom(i: number) {
+  const typed = (customValues[i] || '').trim()
+  if (typed) { emitAnswer(typed); return }
+  const act = (props.question?.items || [])[activeIndex.value]
+  if (act && act.type === 'choice') { emitAnswer(act.value || act.label || ''); return }
+  emitAnswer('')
+}
+
 function onCustomKeydown(e: KeyboardEvent, i: number) {
   if (e.key === 'Enter' && (customValues[i] || '').trim()) { e.preventDefault(); emitAnswer((customValues[i] || '').trim()) }
   if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1) }

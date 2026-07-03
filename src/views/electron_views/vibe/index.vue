@@ -125,7 +125,12 @@ function openKnowledge() {
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap');
+/*
+ * 注意：这里不能 @import 在线字体（Google Fonts 等）。
+ * index.html 的 CSP 是 style-src 'self'，打包后该 @import 会进入本路由的异步 CSS chunk，
+ * 被 CSP 拦截后 Vite 的 preload 报错、路由组件加载失败，线上表现为整窗黑屏。
+ * 需要 Jost 的话请把 woff2 放进 src/assets/font 用 @font-face 本地引入。
+ */
 
 .vibe-hero {
   position: fixed;
