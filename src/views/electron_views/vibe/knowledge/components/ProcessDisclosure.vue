@@ -7,7 +7,10 @@
       @click="toggle"
     >
       <span v-if="running" class="proc-head-icon"><RunningDots /></span>
-      <span v-if="running" class="proc-thinking">正在思考</span>
+      <!-- 0704:运行中头部也带"已处理 Xs"活秒表(父组件每 0.5s 推 durationMs),全轮没结束就一直数 -->
+      <span v-if="running" class="proc-thinking">正在思考 · 已处理 {{ durationLabel }}</span>
+      <!-- 第三态(0703):后端已收工、在等用户对反问/勾选做决定——既不是"在思考"也不只是"已处理" -->
+      <span v-else-if="awaiting" class="proc-done">已处理 {{ durationLabel }} · <b class="proc-awaiting">等你选择</b></span>
       <span v-else class="proc-done">已处理 {{ durationLabel }}</span>
       <svg
         v-if="!running && steps.length"
@@ -87,9 +90,11 @@ const props = withDefaults(defineProps<{
   steps: ProcessStep[]
   running?: boolean
   durationMs?: number
+  awaiting?: boolean   // 0703:轮次以反问/勾选收尾、等用户决定(第三态,与"正在思考"区分)
 }>(), {
   running: false,
   durationMs: 0,
+  awaiting: false,
 })
 
 const open = ref(false)
@@ -206,6 +211,7 @@ function fmt(ms?: number): string {
 }
 
 .proc-done { color: var(--vibe-process-fg, #6b7280); }
+.proc-awaiting { color: #b26a00; font-weight: 600; }  /* 等你选择:琥珀色,和灰色"已处理"区分 */
 
 .proc-chevron {
   color: var(--vibe-process-fg, #9ca3af);

@@ -20,6 +20,7 @@
         <div
           v-if="open"
           class="app-select-dropdown"
+          :class="{ 'is-fit-content': dropdownFitContent }"
           :style="dropdownStyle"
           @click.stop
         >
@@ -61,9 +62,11 @@ const props = withDefaults(defineProps<{
   options: AppSelectOption[]
   placeholder?: string
   disabled?: boolean
+  dropdownFitContent?: boolean
 }>(), {
   placeholder: '请选择',
   disabled: false,
+  dropdownFitContent: false,
 })
 
 const emit = defineEmits<{
@@ -220,6 +223,16 @@ watch(() => props.disabled, (d) => { if (d) closeMenu() })
   z-index: 2400;
   max-width: min(360px, calc(100vw - 24px));
   transform-origin: top left;
+}
+
+.app-select-dropdown.is-fit-content {
+  width: max-content;
+  max-width: min(640px, calc(100vw - 24px));
+}
+
+.app-select-dropdown.is-fit-content .app-select-item-label,
+.app-select-dropdown.is-fit-content .app-select-item-hint {
+  white-space: nowrap;
 }
 
 .app-select-list {

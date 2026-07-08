@@ -44,9 +44,10 @@ export class WindowManager {
    * 主进程请求 renderer 决定是否允许关闭。
    * renderer 需监听 'wm:before-close' 并调用 ipc invoke 'wm:closeResponse' 回传。
    * @param {string} key
+   * @param {Record<string, any>} payload
    * @returns {Promise<boolean>}
    */
-  async requestCloseFromRenderer(key) {
+  async requestCloseFromRenderer(key, payload = {}) {
     const win = this.get(key);
     if (!win) return true;
 
@@ -74,7 +75,7 @@ export class WindowManager {
     this._closeRequests.set(key, { resolve, timer });
   });
 
-  win.webContents.send('wm:before-close', { key });
+  win.webContents.send('wm:before-close', { key, ...(payload || {}) });
   return await p;
 }
 
@@ -92,10 +93,10 @@ export class WindowManager {
     return true;
   }
 
-  async requestManagedClose(key) {
+  async requestManagedClose(key, options = {}) {
     const handler = this._managedCloseHandlers.get(key);
     if (typeof handler === 'function') {
-      return await handler();
+      return await handler(options);
     }
 
     const win = this.get(key);
@@ -128,7 +129,7 @@ export class WindowManager {
    *  trafficLightPosition?: {x:number,y:number},
    *  onReadyToShow?: (win: BrowserWindow) => void,
    *  onClosed?: () => void,
-   *  beforeClose?: () => Promise<boolean>|boolean,
+   *  beforeClose?: (options?: Record<string, any>) => Promise<boolean>|boolean,
    *  managedCloseAction?: 'close'|'destroy',
     * }} config
     */
@@ -204,6 +205,15 @@ export class WindowManager {
 
     this.windows.set(key, win);
 
+    // 最大化状态推送：renderer（自定义窗口控制按钮）据此切换 最大化/还原 图标。
+    // 覆盖所有触发途径（按钮、Win+↑、拖到屏幕顶等），不靠 renderer 自己猜。
+    win.on('maximize', () => {
+      win.webContents.send('wm:maximize-state', { key, maximized: true });
+    });
+    win.on('unmaximize', () => {
+      win.webContents.send('wm:maximize-state', { key, maximized: false });
+    });
+
     win.webContents.on('did-finish-load', () => {
       if (config.title) win.setTitle(config.title);
     });
@@ -229,7 +239,7 @@ export class WindowManager {
 
     // close：hide / beforeClose 拦截
     let bypassCloseOnce = false;
-    const requestManagedClose = async () => {
+    const requestManagedClose = async (closeOptions = {}) => {
       const currentWin = this.get(key);
       if (!currentWin) return true;
 
@@ -241,7 +251,7 @@ export class WindowManager {
         let allow = true;
         if (typeof beforeClose === 'function') {
           try {
-            allow = await Promise.resolve(beforeClose());
+            allow = await Promise.resolve(beforeClose(closeOptions));
           } catch {
             allow = false;
           }

@@ -1,14 +1,30 @@
 <template>
-  <main class="vibe-shell">
+  <main class="vibe-shell" :class="{ 'side-collapsed': sideCollapsed }" :data-trace-audit="canViewTraceAudit ? '1' : '0'">
     <div class="window-drag" />
+    <!-- 侧栏收起/展开：钉在窗口左上（mac 靠红绿灯右侧），收起后仍可见 -->
+    <button
+      class="side-toggle"
+      :class="{ mac: isMacPlatform }"
+      type="button"
+      :title="sideCollapsed ? '展开侧栏' : '收起侧栏'"
+      :aria-label="sideCollapsed ? '展开侧栏' : '收起侧栏'"
+      @click="toggleSide"
+    >
+      <!-- lucide: panel-left-open / panel-left-close -->
+      <svg v-if="sideCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /><path d="m14 9 3 3-3 3" /></svg>
+      <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></svg>
+    </button>
+    <!-- Windows 窗口控制（mac 有原生红绿灯，不显示）：默认隐藏，hover 右上角才浮现 -->
+    <div v-if="showWinControls" class="win-ctl-zone">
+      <VibeWindowControls
+        class="win-ctl"
+        :maximized="winMaximized"
+        @minimize="winControl('minimize')"
+        @maximize-toggle="winControl('maximizeToggle')"
+        @close="winControl('close')"
+      />
+    </div>
     <aside class="side">
-      <div class="side-top">
-        <button class="back" type="button" :disabled="sending" @click="router.push({ name: 'vibeWorkbench' })">
-          <svg class="back-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          AsyncTest Vibe
-        </button>
-      </div>
-
       <section class="proj-card">
         <span class="proj-label">当前项目</span>
         <AppSelect
@@ -31,6 +47,11 @@
           </template>
         </AppSelect>
       </section>
+      <button class="kb-browser-entry" type="button" :disabled="!vibeProject || loading" @click="openKbBrowser">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-icon lucide-book-open"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+        <span>原文浏览</span>
+        <em>{{ kbStats.passages }} 段</em>
+      </button>
 
       <section class="convs">
         <div class="convs-head">
@@ -40,22 +61,17 @@
           </button>
         </div>
 
-        <div v-if="sessions.length" class="convs-search">
-          <svg class="convs-search-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          <input v-model="sessionFilter" class="convs-search-input" type="text" placeholder="搜索对话" />
-          <button v-if="sessionFilter" class="convs-search-clear" type="button" title="清除" @click="sessionFilter = ''">×</button>
-        </div>
-
         <div class="convs-list">
           <div
-            v-for="item in filteredSessions"
+            v-for="item in sessions"
             :key="item.id"
             :class="['session-row', { active: activeSessionId === item.id }]"
           >
             <button class="session-open" type="button" @click="openSession(item.id)">
               <span class="session-ic" aria-hidden="true">
-                <RunningDots v-if="isSessionWaiting(item.id)" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg>
+                <!-- 正在对话：灰色实心点·呼吸闪烁（motion:solid-dot-blink）；空闲：空心圆点（motion:hollow-status-dot） -->
+                <svg v-if="isSessionWaiting(item.id)" class="dot-blink" width="15" height="15" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle class="dot-blink-core" cx="20" cy="20" r="7" fill="currentColor" /></svg>
+                <svg v-else width="15" height="15" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6" /></svg>
               </span>
               <span class="session-body">
                 <span class="session-title">{{ sessionDisplayTitle(item) }}</span>
@@ -68,29 +84,23 @@
               :disabled="sending || deletingSessionId === item.id"
               @click="deleteSession(item.id)"
             >
-              ×
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
           </div>
           <p v-if="!sessions.length" class="muted">开始第一轮录入后，这里会出现对话记录。</p>
-          <p v-else-if="!filteredSessions.length" class="muted">没有匹配“{{ sessionFilter }}”的对话。</p>
         </div>
       </section>
 
-      <section class="kb-overview">
-        <div class="kb-head">
-          <span class="kb-title">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
-            知识库概览
-          </span>
-          <button class="kb-refresh" type="button" title="刷新" :disabled="kbStatsLoading" @click="loadKbStats">
-            <svg :class="['kb-refresh-ic', { spin: kbStatsLoading }]" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6M18 4.5V8h-3.5M20 12a8 8 0 0 1-13.7 5.6M6 19.5V16h3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-        <div class="kb-metrics">
-          <div class="kb-metric"><span class="kb-num">{{ kbStats.passages }}</span><span class="kb-unit">原文段</span></div>
-          <div class="kb-metric"><span class="kb-num">{{ kbStats.modules }}</span><span class="kb-unit">覆盖模块</span></div>
-        </div>
-      </section>
+      <button class="side-user-card" type="button" @click="openVibeSettings">
+        <span class="side-user-avatar avatar-container">
+          <el-avatar :size="32" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+          <span class="online-indicator" aria-hidden="true" />
+        </span>
+        <span class="side-user-main">
+          <strong>{{ currentUserName }}</strong>
+        </span>
+      </button>
+
     </aside>
 
     <section class="main-frame">
@@ -103,13 +113,69 @@
         </header>
 
       <section v-if="currentView === 'conversation'" class="conversation">
+        <nav
+          v-if="conversationRailItems.length"
+          class="conversation-rail"
+          aria-label="最近对话预览"
+          @mouseleave="hoveredConversationRailIndex = null"
+        >
+          <button
+            v-for="(item, index) in conversationRailItems"
+            :key="item.id"
+            class="conversation-rail-row"
+            :class="{
+              active: hoveredConversationRailIndex === null && activeConversationRailIndex === index,
+              hover: hoveredConversationRailIndex === index,
+              'hover-near-1': conversationRailHoverDistance(index) === 1,
+              'hover-near-2': conversationRailHoverDistance(index) === 2,
+              'hover-near-3': conversationRailHoverDistance(index) === 3,
+            }"
+            type="button"
+            @mouseenter="hoveredConversationRailIndex = index"
+            @focus="hoveredConversationRailIndex = index"
+            @blur="hoveredConversationRailIndex = null"
+            @click="jumpToConversationTurn(item.id, index)"
+          >
+            <span class="conversation-rail-line" aria-hidden="true" />
+            <div v-if="hoveredConversationRailIndex === index" class="conversation-rail-card">
+              <strong>{{ item.question }}</strong>
+              <p>{{ item.answer }}</p>
+            </div>
+          </button>
+        </nav>
         <div ref="timelineEl" class="timeline" @scroll.passive="handleTimelineScroll">
           <div v-if="!events.length" class="empty">
+            <!-- 鲸鱼游动 → 知识库 logo（alpha webm，播一次停在 logo；点击重播） -->
+            <video
+              class="empty-video"
+              :src="whaleIntroUrl"
+              autoplay
+              muted
+              playsinline
+              preload="auto"
+              disablepictureinpicture
+              aria-hidden="true"
+              @loadeddata="setIntroRate"
+              @click="replayIntro"
+            />
             <strong>从一句话开始录入需求</strong>
             <span>直接描述需求、提出问题或补充说明，系统会自动判断本轮应该回答、整理需求，还是两者一起处理。</span>
+            <div class="empty-hints">
+              <button
+                v-for="hint in EMPTY_HINTS"
+                :key="hint"
+                class="empty-hint"
+                type="button"
+                :disabled="sending"
+                @click="useHint(hint)"
+              >
+                {{ hint }}
+              </button>
+            </div>
           </div>
           <article
             v-for="event in events"
+            :id="`timeline-event-${event.id}`"
             :key="event.id"
             v-show="shouldRenderEvent(event)"
             :class="[
@@ -126,6 +192,7 @@
                 v-if="mergedThreadSteps(event).length || threadRunning(event)"
                 :steps="mergedThreadSteps(event)"
                 :running="threadRunning(event)"
+                :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
               />
               <template v-if="threadFinalAnswer(event)">
@@ -148,9 +215,10 @@
               <ProcessDisclosure
                 v-if="event.role === 'assistant' && eventProcessSteps(event).length"
                 :steps="eventProcessSteps(event)"
-                :running="isPendingClarification(event)"
+                :running="false"
+                :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
-              />
+              /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <div v-if="event.role !== 'assistant'" class="event-top">
                 <span class="role">{{ eventRoleLabel(event) }}</span>
                 <time v-if="event.created_at">{{ formatTime(event.created_at) }}</time>
@@ -160,6 +228,43 @@
                 class="user-message-wrap"
                 :class="{ expanded: isUserMessageExpanded(event.id) }"
               >
+                <div
+                  v-if="eventAttachments(event).length"
+                  class="user-attachment-list"
+                  :class="{ expanded: areAttachmentsExpanded(event.id) }"
+                  aria-label="本轮附件"
+                >
+                  <button
+                    v-for="file in visibleEventAttachments(event)"
+                    :key="attachmentKey(file)"
+                    class="user-attachment-chip"
+                    type="button"
+                    :title="attachmentName(file)"
+                    @click.stop="downloadAttachment(file)"
+                  >
+                    <span class="user-attachment-icon" :class="{ markdown: isMarkdownAttachment(file) }" aria-hidden="true">
+                      <svg v-if="isMarkdownAttachment(file)" viewBox="0 0 32 32" fill="none">
+                        <path d="M7 9.5H25C26.1 9.5 27 10.4 27 11.5V20.5C27 21.6 26.1 22.5 25 22.5H7C5.9 22.5 5 21.6 5 20.5V11.5C5 10.4 5.9 9.5 7 9.5Z" fill="rgba(255,255,255,.18)" stroke="currentColor" stroke-width="1.6"/>
+                        <path d="M9 19V13L12 16.7L15 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19 13V18.5M19 18.5L16.9 16.4M19 18.5L21.1 16.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M23.5 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                      </svg>
+                      <svg v-else viewBox="0 0 24 24" fill="none"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v5h5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 17h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="user-attachment-main">
+                      <span class="user-attachment-name">{{ displayAttachmentName(file) }}</span>
+                      <span class="user-attachment-meta">{{ attachmentMeta(file) }}</span>
+                    </span>
+                  </button>
+                  <button
+                    v-if="hiddenAttachmentCount(event) > 0"
+                    class="user-attachment-more"
+                    type="button"
+                    @click.stop="toggleAttachmentsExpanded(event.id)"
+                  >
+                    {{ areAttachmentsExpanded(event.id) ? '收起' : `+${hiddenAttachmentCount(event)}` }}
+                  </button>
+                </div>
                 <div class="user-message-bubble">
                   <p class="user-message-content">
                     <template v-if="isConfirmationReplyEvent(event)">已选择：{{ event.content }}</template>
@@ -232,10 +337,10 @@
               <div v-if="isStreamingUnderEvent(event) && streamingTurnVisible" class="continuation-responses">
                 <article class="continuation-response streaming-inline-response">
                   <ProcessDisclosure
-                    v-if="streamingProcess.steps.length || streamingProcess.status === 'running'"
+                    v-if="streamingProcess.steps.length || procRunning"
                     :steps="streamingProcess.steps"
-                    :running="streamingProcess.status === 'running'"
-                    :duration-ms="streamingProcess.durationMs"
+                    :running="procRunning"
+                    :duration-ms="procDurationMs"
                   />
                   <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
                   <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
@@ -247,10 +352,10 @@
           </article>
           <article v-if="streamingAssistantStandaloneVisible" class="assistant-message streaming-message">
             <ProcessDisclosure
-              v-if="streamingProcess.steps.length || streamingProcess.status === 'running'"
+              v-if="streamingProcess.steps.length || procRunning"
               :steps="streamingProcess.steps"
-              :running="streamingProcess.status === 'running'"
-              :duration-ms="streamingProcess.durationMs"
+              :running="procRunning"
+              :duration-ms="procDurationMs"
             />
             <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
             <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
@@ -282,6 +387,7 @@
             :question="composerQuestion"
             @send="onComposerSend"
             @answer="onComposerAnswer"
+            @stop="stopFoundationTurn"
           />
         </footer>
       </section>
@@ -293,8 +399,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import whaleIntroUrl from './assets/whale-intro.webm'
+import VibeWindowControls from './components/VibeWindowControls.vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -305,7 +413,6 @@ import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
-import RunningDots from './components/RunningDots.vue'
 import ChatComposer from './components/ChatComposer.vue'
 import {
   createProcessState,
@@ -319,11 +426,14 @@ import {
   autoTitleVibeSession,
   createVibeSession,
   deleteVibeSession,
+  getVibeCapabilities,
   getVibeProjectByAsyncProject,
   initVibeProject,
   listVibeEvents,
   listVibeSessions,
+  listFoundationRunningTurns,
   streamFoundationTurn,
+  cancelFoundationTurn,
   listFoundationProposals,
   actFoundationProposal,
   getFoundationPassageStatsMany,
@@ -331,12 +441,14 @@ import {
   updateVibeSession,
   type FoundationMaterial,
   type FoundationStatement,
+  type FoundationRunningTurn,
+  type VibeAttachment,
+  type VibeCapabilityUser,
   type VibeEvent,
   type VibeProject,
   type VibeSession,
 } from '../api'
 
-const router = useRouter()
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
 const selectedProjectId = ref<string | number | null>(null)
@@ -355,19 +467,21 @@ const lastAssistantId = computed(() => {
 const activeSessionId = ref('')
 const currentView = ref<'conversation' | 'baseline'>('conversation')
 const loading = ref(false)
-// 对话搜索（纯客户端过滤，不打后端）
-const sessionFilter = ref('')
-const filteredSessions = computed(() => {
-  const q = sessionFilter.value.trim().toLowerCase()
-  if (!q) return sessions.value
-  return sessions.value.filter(s => sessionDisplayTitle(s).toLowerCase().includes(q))
+const vibeCapabilities = ref<Record<string, boolean>>({})
+const canViewTraceAudit = computed(() => !!vibeCapabilities.value.trace_audit)
+const currentUser = ref<VibeCapabilityUser | null>(null)
+const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
+const currentUserAvatar = computed(() => String(currentUser.value?.avatar_url || ''))
+const userInitials = computed(() => {
+  const text = currentUserName.value.trim() || 'U'
+  const letters = Array.from(text).slice(0, 2).join('')
+  return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
 // 左栏知识库读数。关键：passages 表按【vibe 工程 UUID】存（turn/录入用的是 vibeProject.id），
 // 而左栏项目下拉是【async 项目 id】，两者不同。所以这里要先把 async id 解析成 vibe UUID，
 // 再按 UUID 批量取段/模块——否则用 async id 查 passages 永远是 0。
 const asyncToVibe = reactive<Record<string, string>>({})                                 // async 项目 id -> vibe UUID
 const projectStatsMap = reactive<Record<string, { passages: number; modules: number }>>({}) // 按 vibe UUID 存读数
-const kbStatsLoading = ref(false)
 async function loadKbStats() {
   // 当前项目的 UUID 已知（selectProject 解析过），先登记，项目卡/概览即时有数
   const curAid = selectedProjectId.value != null ? String(selectedProjectId.value) : ''
@@ -383,16 +497,13 @@ async function loadKbStats() {
   }))
   const uuids = Array.from(new Set(Object.values(asyncToVibe))).filter(Boolean)
   if (!uuids.length) return
-  kbStatsLoading.value = true
   try {
     const map = await getFoundationPassageStatsMany(uuids)
     uuids.forEach((u) => {
       const s = map?.[u]
       projectStatsMap[u] = { passages: Number(s?.passages || 0), modules: Number(s?.modules || 0) }
     })
-  } catch { /* 概览读取失败不阻塞主流程 */ } finally {
-    kbStatsLoading.value = false
-  }
+  } catch { /* 概览读取失败不阻塞主流程 */ }
 }
 // 当前项目读数（项目卡 + 底部概览卡共用）：按 vibe UUID 取
 const kbStats = computed(() => {
@@ -401,7 +512,8 @@ const kbStats = computed(() => {
 })
 // 对话行"等待回复中"：本轮 turn 跑在活动会话上，故活动会话 + 后端忙 = 等待
 function isSessionWaiting(id: string): boolean {
-  return (foundationBusy.value || preparingSend.value) && id === activeSessionId.value
+  return ((foundationBusy.value || preparingSend.value) && id === activeSessionId.value)
+    || runningSessionIds.value.includes(id)
 }
 const preparingSend = ref(false)
 const sendingSessionIds = ref<string[]>([])
@@ -409,6 +521,38 @@ const draft = ref('')
 const liveLogs = ref<{ id: string; type: string; message: string }[]>([])
 // foundation 新管线（知识库前端唯一管线，不再有灰度开关）
 const foundationBusy = ref(false)
+const runningSessionIds = ref<string[]>([])
+const recoveredTurnId = ref('')
+let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
+// T26 停止：本轮后端令牌 id（turn_started 事件带来）+ 防连点
+const activeTurnId = ref('')
+const cancelRequested = ref(false)
+
+async function stopFoundationTurn() {
+  if (!activeTurnId.value || cancelRequested.value) return
+  cancelRequested.value = true
+  try {
+    await cancelFoundationTurn(activeTurnId.value)
+    // 不 abort 流：后端置位后会自己发 cancelled + 已停止回执 + done 正常收尾
+  } catch { cancelRequested.value = false /* 失败允许再点 */ }
+}
+// 0704 体验修复:"已处理"计时与"正在思考"由【整轮请求生命周期】驱动,不再听后端 process_done。
+// 根因:后端 pe.done 在最终 answer 之前入队,done 之后还有 recall 兜底/安全网录入/收敛/持久化
+// (都可能是秒级 LLM 调用)——旧逻辑一收到 process_done 就冻结成"已处理 Xs",页面既不在思考又没结束。
+const streamingElapsedMs = ref(0)
+let _elapsedTimer: ReturnType<typeof setInterval> | null = null
+function startElapsedTicker(startedAt: number) {
+  stopElapsedTicker()
+  streamingElapsedMs.value = 0
+  _elapsedTimer = setInterval(() => { streamingElapsedMs.value = Date.now() - startedAt }, 500)
+}
+function stopElapsedTicker() {
+  if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null }
+}
+// 思考态=整轮在途(SSE 没关就没结束);计时=在途时前端秒表、结束后用最终值。
+const procRunning = computed(() => foundationBusy.value || streamingProcess.status === 'running')
+const procDurationMs = computed(() =>
+  foundationBusy.value ? streamingElapsedMs.value : streamingProcess.durationMs)
 const foundationPending = ref(0)
 const processExpanded = ref(false)
 const streamingProcess = createProcessState()
@@ -416,15 +560,20 @@ const streamingProcess = createProcessState()
 const packageStatusOverrides = ref<Record<string, string>>({})
 const sessionTitleOverrides = ref<Record<string, string>>({})
 const expandedUserMessageIds = ref<string[]>([])
+const expandedAttachmentEventIds = ref<string[]>([])
 const deletingSessionId = ref('')
 const streamingAssistantContent = ref('')
 const streamingSources = ref<any[]>([])        // T1 溯源：本轮答案的来源段（流式渲染用）
 const streamingVerification = ref<any | null>(null) // T8 核验：{checked, issues, clean}
 const streamingContinuationParentId = ref('')
+const hoveredConversationRailIndex = ref<number | null>(null)
+const activeConversationEventId = ref('')
 const timelineEl = ref<HTMLElement | null>(null)
 const processBodyEl = ref<HTMLElement | null>(null)
 const draftEl = ref<HTMLTextAreaElement | null>(null)
 const MAX_LIVE_LOGS = 80
+const MAX_CONVERSATION_RAIL_ITEMS = 40
+let conversationRailRaf = 0
 const baselineDraft = reactive<{ system_name: string; summary: string; system_goals: { name: string; description: string }[] }>({ system_name: '', summary: '', system_goals: [] })
 const composerDraft = computed({
   get: () => draft.value,
@@ -444,14 +593,17 @@ const projectOptions = computed(() => projects.value.map(project => {
 const activeSessionSending = computed(() =>
   !!activeSessionId.value && sendingSessionIds.value.includes(activeSessionId.value),
 )
+const conversationRailItems = computed(() => buildConversationRailItems())
+const activeConversationRailIndex = computed(() => {
+  const items = conversationRailItems.value
+  if (!items.length) return -1
+  const index = items.findIndex(item => item.id === activeConversationEventId.value)
+  return index >= 0 ? index : Math.max(0, items.length - 1)
+})
 const sending = computed(() => preparingSend.value || foundationBusy.value || sendingSessionIds.value.length > 0)
 const composerStatusText = computed(() => {
   if (preparingSend.value) return '正在创建对话…'
-  if (!foundationBusy.value) return ''
-  // 任何时刻都让用户知道"在处理"：过程区在跑时它自己显示思考；过程区收起到答案出来这段
-  // （之前的"空窗"）补一句明确状态，避免看起来卡住。
-  if (streamingProcess.status === 'running') return ''
-  return streamingAssistantContent.value ? '正在收尾…' : '正在生成回答…'
+  return ''  // 0704 用户定:输入框下不再显示"正在思考/收尾"——状态由过程区"已处理 Xs"+按钮■表达
 })
 const composerPlaceholder = computed(() =>
   sending.value
@@ -466,15 +618,15 @@ const composerQuestion = computed(() => {
   const raw: any = c.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
 
-  // ① 改原文·待确认：显示 diff 预览 + 确认应用/取消
+  // ① 改原文·待确认：显示 diff 预览 + 就这么改/先不改（0703 与后端问句"就这么改吗"统一口吻）
   if (kind === 'edit') {
     return {
       title: c.question,
-      description: raw.summary || '看下面的改动预览，确认应用吗？',
+      description: raw.summary || '看下面的改动预览，就这么改吗？',
       diff: { breadcrumb: raw.breadcrumb, oldBody: raw.old_body, newBody: raw.new_body },
       items: [
-        { type: 'choice' as const, label: '确认应用', value: '__APPLY_EDIT__' },
-        { type: 'choice' as const, label: '取消', value: '__CANCEL_EDIT__' },
+        { type: 'choice' as const, label: '就这么改', value: '__APPLY_EDIT__' },
+        { type: 'choice' as const, label: '先不改', value: '__CANCEL_EDIT__' },
         { type: 'input' as const, placeholder: '或者说说要怎么改…' },
       ],
     }
@@ -483,12 +635,30 @@ const composerQuestion = computed(() => {
   if (kind === 'insert') {
     return {
       title: c.question,
-      description: raw.summary || '把这条作为新原文段录进知识库，确认吗？',
+      description: raw.summary || '把这条作为新原文段录进知识库，就这么录吗？',
       diff: { breadcrumb: raw.breadcrumb, oldBody: '', newBody: raw.body },
       items: [
-        { type: 'choice' as const, label: '确认录入', value: '__APPLY_EDIT__' },
-        { type: 'choice' as const, label: '取消', value: '__CANCEL_EDIT__' },
+        { type: 'choice' as const, label: '就这么录', value: '__APPLY_EDIT__' },
+        { type: 'choice' as const, label: '先不录', value: '__CANCEL_EDIT__' },
         { type: 'input' as const, placeholder: '或者说说要怎么改…' },
+      ],
+    }
+  }
+  // ①c 模块删除：展示会被删除的原文块清单，确认后批量 soft delete
+  if (kind === 'delete_many') {
+    const items = Array.isArray(raw.items) ? raw.items : []
+    return {
+      title: c.question,
+      description: raw.summary || '这是批量删除操作，请确认下面这些原文块都应该删除。',
+      deleteMany: {
+        prefix: raw.prefix || '',
+        items: items.map((it: any) => ({
+          id: it.passage_id, breadcrumb: it.breadcrumb, title: it.title, bodyPreview: it.body_preview || '',
+        })),
+      },
+      items: [
+        { type: 'choice' as const, label: `就这么删（${items.length} 个原文块）`, value: '__APPLY_EDIT__' },
+        { type: 'choice' as const, label: '先不删', value: '__CANCEL_EDIT__' },
       ],
     }
   }
@@ -503,7 +673,7 @@ const composerQuestion = computed(() => {
         reason: cd.reason || '', mode: cd.mode || 'literal', checked: cd.checked !== false,
       })),
       items: [
-        { type: 'choice' as const, label: '确认应用勾选项', value: '__APPLY_EDIT__' },
+        { type: 'choice' as const, label: '就改勾选的这些', value: '__APPLY_EDIT__' },
         { type: 'choice' as const, label: '都不改了', value: '__CANCEL_EDIT__' },
       ],
     }
@@ -527,7 +697,8 @@ const composerQuestion = computed(() => {
       description: '选一个，我就按你的意思处理',
       items: [
         ...raw.options.map((o: string) => ({ type: 'choice' as const, label: o, value: o })),
-        { type: 'input' as const, placeholder: '或者告诉我该怎么处理…' },
+        // input_hint(0703):脑需要用户打字补充时,给输入框写提示语,而不是造"其他/手动输入"假选项
+        { type: 'input' as const, placeholder: raw.input_hint || '或者告诉我该怎么处理…' },
       ],
     }
   }
@@ -551,6 +722,7 @@ function restoreClarificationFromEvents() {
   if (last && last.role === 'assistant') {
     const q = eventClarificationQuestion(last)
     const clar = last?.meta?.clarification
+    // 可选连锁候选仍允许恢复到输入区处理，但不会触发消息头“等你选择”。
     clarificationActive.value = q
       ? { question: q, raw: clar?.raw, pending: Array.isArray(clar?.pending) ? clar.pending : [] }
       : null
@@ -560,7 +732,7 @@ function restoreClarificationFromEvents() {
 }
 const streamingTurnVisible = computed(() =>
   !!streamingAssistantContent.value
-  || streamingProcess.status === 'running'
+  || procRunning.value
   || streamingProcess.steps.length > 0,
 )
 const streamingAssistantStandaloneVisible = computed(() =>
@@ -581,7 +753,104 @@ const headTitle = computed(() => {
   return '项目基线'
 })
 
-onMounted(() => { bootstrap(); refreshFoundationPending() })
+// ===== 侧栏收起/展开：给主对话区让空间，状态记住（下次打开保持） =====
+const SIDE_COLLAPSED_KEY = 'vibe_kb_side_collapsed'
+const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSED_KEY) === '1')
+const isMacPlatform = window.electronAPI?.platform === 'darwin'
+
+function toggleSide() {
+  sideCollapsed.value = !sideCollapsed.value
+  localStorage.setItem(SIDE_COLLAPSED_KEY, sideCollapsed.value ? '1' : '0')
+}
+
+// ===== Windows 窗口控制：关闭 / 最大化切换 / 最小化 =====
+// mac 用原生红绿灯（toggleTrafficLights），仅非 darwin 的 Electron 端显示。
+// windowKey 随 route.query 传递（dashboard 开 vibe 窗口时带 vibe-workbench，workbench→knowledge 跳转保留 query）。
+const route = useRoute()
+const router = useRouter()
+const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true'
+// 【临时】预览用：mac 上也强制显示，看完效果要改回下面这行
+// const showWinControls = computed(() => isElectron && window.electronAPI?.platform !== 'darwin')
+const showWinControls = computed(() => true)
+const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
+
+function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
+  window.electronAPI?.wm?.control(winKey.value, action)
+}
+
+function openKbBrowser() {
+  router.push({ name: 'vibeKnowledgeBrowser', query: { ...route.query, project: String(selectedProjectId.value || '') } })
+}
+
+function openVibeSettings() {
+  router.push({ name: 'vibeSettingsTrace', query: { ...route.query, project: String(selectedProjectId.value || '') } })
+}
+
+// 最大化状态：初始查一次 + 订阅主进程 wm:maximize-state 推送（覆盖按钮/快捷键/拖顶等一切途径），
+// 据此在 最大化 ⇄ 还原 图标间切换。
+const winMaximized = ref(false)
+let offMaximizeState: (() => void) | null = null
+
+function trackMaximizeState() {
+  if (!window.electronAPI) return
+  window.electronAPI.wm?.isMaximized?.(winKey.value)
+    ?.then((v: boolean) => { winMaximized.value = !!v })
+    ?.catch(() => {})
+  offMaximizeState = window.electronAPI.on?.('wm:maximize-state', (_event: any, payload: { key?: string; maximized?: boolean } = {}) => {
+    if (payload?.key !== winKey.value) return
+    winMaximized.value = !!payload.maximized
+  }) || null
+}
+
+onBeforeUnmount(() => {
+  offMaximizeState?.()
+  stopElapsedTicker()
+  stopRunningTurnPolling()
+  if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
+})
+
+// 空态示例：三种典型输入（录入一句 / 检索提问 / 盘点），点一下填进输入框，不自动发送
+const EMPTY_HINTS = ['积分永久有效', '退款期限是多久？', '盘点一下知识库里都有什么']
+
+function useHint(text: string) {
+  if (sending.value) return
+  draft.value = text
+  resizeDraft()
+}
+
+async function loadVibeCapabilities() {
+  try {
+    const res = await getVibeCapabilities()
+    vibeCapabilities.value = res?.capabilities || {}
+    currentUser.value = res?.user || null
+  } catch {
+    vibeCapabilities.value = {}
+    currentUser.value = null
+  }
+}
+
+// 播放速度（原素材 3s 偏慢，2 = 加速一倍）
+const INTRO_PLAYBACK_RATE = 2
+
+function setIntroRate(event: Event) {
+  const el = event.currentTarget as HTMLVideoElement
+  if (el) el.playbackRate = INTRO_PLAYBACK_RATE
+}
+
+// 动画播完停在 logo；点击可重播
+function replayIntro(event: MouseEvent) {
+  const el = event.currentTarget as HTMLVideoElement
+  if (!el || !el.ended) return
+  el.currentTime = 0
+  el.play().catch(() => {})
+}
+
+onMounted(() => { bootstrap(); refreshFoundationPending(); loadVibeCapabilities(); trackMaximizeState() })
+
+watch(
+  () => [events.value.length, streamingAssistantContent.value],
+  async () => { await nextTick(updateActiveConversationRail) },
+)
 
 async function bootstrap() {
   loading.value = true
@@ -692,6 +961,7 @@ function removeBaselineGoal(idx: number) {
 async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
   if (!vibeProject.value) return
   sessions.value = await listVibeSessions(vibeProject.value.id)
+  await refreshProjectRunningTurns()
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
   }
@@ -706,6 +976,167 @@ async function openSession(sessionId: string) {
   clearStreamingAssistant()
   events.value = sortEvents(await listVibeEvents(sessionId))
   restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
+  await recoverRunningTurnForSession(sessionId)
+  await scrollBottom()
+}
+
+function stopRunningTurnPolling() {
+  if (runningTurnPollTimer) {
+    clearTimeout(runningTurnPollTimer)
+    runningTurnPollTimer = null
+  }
+}
+
+function scheduleRunningTurnPolling(sessionId: string) {
+  stopRunningTurnPolling()
+  if (!sessionId) return
+  runningTurnPollTimer = setTimeout(() => {
+    recoverRunningTurnForSession(sessionId).catch(() => {})
+  }, 900)
+}
+
+function setSessionRunning(sessionId: string, running: boolean) {
+  if (!sessionId) return
+  const next = new Set(runningSessionIds.value)
+  if (running) next.add(sessionId)
+  else next.delete(sessionId)
+  runningSessionIds.value = Array.from(next)
+}
+
+async function refreshProjectRunningTurns() {
+  if (!vibeProject.value?.id) {
+    runningSessionIds.value = []
+    return
+  }
+  try {
+    const res = await listFoundationRunningTurns({ project: String(vibeProject.value.id) })
+    runningSessionIds.value = (res.items || []).map(item => String(item.session_id || '')).filter(Boolean)
+  } catch {
+    runningSessionIds.value = []
+  }
+}
+
+function replayRunningTurn(turn: FoundationRunningTurn) {
+  const turnId = String(turn.turn_id || '')
+  const sessionId = String(turn.session_id || '')
+  if (!turnId || !sessionId || activeSessionId.value !== sessionId) return
+  const startedAt = Number(turn.started_at || 0) > 0 ? Number(turn.started_at) * 1000 : Date.now()
+  if (recoveredTurnId.value !== turnId) {
+    recoveredTurnId.value = turnId
+    startElapsedTicker(startedAt)
+  }
+  foundationBusy.value = true
+  activeTurnId.value = turnId
+  cancelRequested.value = false
+  resetProcessState(streamingProcess)
+  streamingProcess.status = 'running'
+  streamingAssistantContent.value = ''
+  streamingSources.value = []
+  streamingVerification.value = null
+
+  const answers: string[] = []
+  for (const event of turn.events || []) {
+    const type = String(event?.type || '')
+    if (type.startsWith('process_')) {
+      consumeProcessEvent(streamingProcess, event)
+      continue
+    }
+    switch (type) {
+      case 'event_saved': {
+        const saved = event.event as VibeEvent
+        if (event.role === 'user') {
+          const parentId = String((saved as any)?.meta?.parent_event_id || '')
+          if (parentId) streamingContinuationParentId.value = parentId
+        } else if (event.role === 'assistant') {
+          streamingAssistantContent.value = ''
+          streamingSources.value = []
+          streamingVerification.value = null
+        }
+        upsertEvent(saved)
+        break
+      }
+      case 'turn_started':
+        activeTurnId.value = String(event.turn_id || turnId)
+        break
+      case 'intent':
+        fndPushStep(intentStepLabel((event.actions || []).map(String), '', undefined))
+        break
+      case 'stage':
+        fndPushStep(String(event.message || ''))
+        break
+      case 'answer': {
+        const text = String(event.text || '')
+        if (text) answers.push(text)
+        streamingAssistantContent.value = answers.join('\n\n')
+        break
+      }
+      case 'sources':
+        streamingSources.value = Array.isArray(event.items) ? event.items : []
+        break
+      case 'verification':
+        streamingVerification.value = {
+          checked: !!event.checked,
+          clean: event.clean != null ? !!event.clean : !(event.issues && event.issues.length),
+          issues: Array.isArray(event.issues) ? event.issues.map(String) : [],
+        }
+        break
+      case 'clarification': {
+        const q = String(event.question || '').trim()
+        if (q) clarificationActive.value = {
+          question: q,
+          raw: event.raw,
+          pending: Array.isArray(event.pending) ? event.pending : [],
+        }
+        break
+      }
+      case 'done':
+        streamingProcess.status = 'done'
+        break
+      default:
+        break
+    }
+  }
+}
+
+async function recoverRunningTurnForSession(sessionId: string) {
+  if (!sessionId || !vibeProject.value?.id) return
+  let turn: FoundationRunningTurn | null = null
+  try {
+    const res = await listFoundationRunningTurns({ project: String(vibeProject.value.id), session_id: sessionId })
+    turn = (res.items || [])[0] || null
+  } catch {
+    turn = null
+  }
+  if (!turn) {
+    setSessionRunning(sessionId, false)
+    if (activeSessionId.value === sessionId && recoveredTurnId.value) {
+      stopElapsedTicker()
+      activeTurnId.value = ''
+      recoveredTurnId.value = ''
+      foundationBusy.value = false
+      clearStreamingAssistant()
+      resetProcessState(streamingProcess)
+      events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
+      restoreClarificationFromEvents()
+    }
+    return
+  }
+  setSessionRunning(sessionId, true)
+  replayRunningTurn(turn)
+  if (turn.done || turn.failed) {
+    setSessionRunning(sessionId, false)
+    stopElapsedTicker()
+    activeTurnId.value = ''
+    recoveredTurnId.value = ''
+    foundationBusy.value = false
+    clearStreamingAssistant()
+    resetProcessState(streamingProcess)
+    events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
+    restoreClarificationFromEvents()
+    await scrollBottom()
+    return
+  }
+  scheduleRunningTurnPolling(sessionId)
   await scrollBottom()
 }
 
@@ -761,6 +1192,30 @@ async function send() {
 // 录入意图关键词：附件 + 这些词之一 → 把文件【整篇录入知识库】（切段进 passage 库），而不是当提问资料。
 const INGEST_INTENT_RE = /录入|导入|入库|收录|沉淀|存进|存入|记进|加进知识库|存到知识库/
 
+async function prepareComposerAttachments(files: File[]): Promise<VibeAttachment[]> {
+  const items: VibeAttachment[] = []
+  for (const [index, file] of files.entries()) {
+    let content = ''
+    try {
+      content = await file.text()
+    } catch {
+      content = ''
+    }
+    items.push({
+      id: `${Date.now()}-${index}-${file.name}-${file.size}`,
+      name: file.name,
+      filename: file.name,
+      mime: file.type || 'text/markdown',
+      size: file.size,
+      chars: content.length,
+      kind: 'document',
+      content,
+      text: content,
+    })
+  }
+  return items
+}
+
 // 新输入框发送：
 //  ① 附件 + 录入意图 → 整篇文件录入知识库（document 切段，干净显示"导入《X》"，不塞 markdown 进提问）；
 //  ② 否则 → 文件作本轮提问的资料（附在问题后，不入库）。
@@ -768,36 +1223,32 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   const base = (text || '').trim()
   const fileList = files || []
   if (sending.value) return
+  const attachments = fileList.length ? await prepareComposerAttachments(fileList) : []
 
   // ① 录入文件：附件整篇录入知识库（切段进 passage 库），但【保留用户自己输入的那句话】作为气泡，不替换。
   // （附件本身后续在 UI 上挂到提问处展示；这里只把文件正文走 document 字段切段，不动可见消息。）
-  if (fileList.length && INGEST_INTENT_RE.test(base)) {
-    let doc = ''
-    for (const f of fileList) {
-      try {
-        const c = (await f.text()).trim()
-        if (c) doc += (doc ? '\n\n' : '') + c
-      } catch { /* 读不出的跳过 */ }
-    }
-    if (doc) {
+  if (attachments.length && INGEST_INTENT_RE.test(base)) {
+    if (attachments.some((item) => String(item.content || item.text || '').trim())) {
       draft.value = ''
-      await sendFoundationTurn(base, { documentContent: doc })
+      await sendFoundationTurn(base, {
+        documentMode: true,
+        attachments,
+        filename: attachments.map((item) => attachmentName(item)).filter(Boolean).join('、'),
+      })
       return
     }
   }
 
   // ② 文件作提问资料
-  let materials = ''
-  for (const f of fileList) {
-    try {
-      const content = await f.text()
-      if (content.trim()) materials += `\n\n----- 附带资料《${f.name}》-----\n${content.trim()}`
-    } catch { /* 读不出的文件跳过 */ }
-  }
-  const combined = (base + materials).trim()
+  const combined = base || (attachments.length
+    ? `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
+    : '')
   if (!combined) return
   draft.value = ''
-  await sendFoundationTurn(combined)
+  await sendFoundationTurn(combined, {
+    attachments,
+    filename: attachments.map((item) => attachmentName(item)).filter(Boolean).join('、'),
+  })
 }
 
 // 询问模式（clarification）选项被选/提交：把答案【续跑同一思考】发出去（空=跳过，仅收起反问）。
@@ -806,15 +1257,25 @@ async function onComposerAnswer(value: string) {
   const c = clarificationActive.value
   const raw: any = c?.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
+  // T26 后续·显式跳过(Claude 式闭环):普通反问的跳过=一条真实的续跑回答,让脑按最佳判断继续或收尾——
+  // 反问从此有下文(历史闭环,刷新不再重弹)。话术作用域钉在"这件事",不污染后续轮的反问纪律。
+  const SKIP_PHRASE = '跳过这个问题，按照你认为的最佳决策继续；拿不准的先收尾，这件事不用再追问了'
 
-  // 改原文 / 录入单条·确认提案：确认 → 回传 apply_edit 确定性落库；取消 → 收起不动；输入 → 当作新的说法。
-  if (kind === 'edit' || kind === 'insert') {
+  // 改原文 / 录入单条 / 模块删除·确认提案：确认 → 回传 apply_edit 确定性落库；取消/跳过 → 收起不动；输入 → 当作新的说法。
+  if (kind === 'edit' || kind === 'insert' || kind === 'delete_many') {
     const parentId = lastClarificationAssistantId()  // 在清空前取：让"确认+已更新"挂到反问之下，合成一条思考
     clarificationActive.value = null
-    if (value === '__CANCEL_EDIT__') return
+    if (value === '__CANCEL_EDIT__' || value === '__SKIP__') {
+      await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
+      return
+    }
     if (value === '__APPLY_EDIT__') {
       if (sending.value) return
-      const label = kind === 'insert' ? `确认录入（${raw.breadcrumb}）` : `确认应用这处修改（${raw.breadcrumb}）`
+      const label = kind === 'insert'
+        ? `就这么录（${raw.breadcrumb}）`
+        : kind === 'delete_many'
+          ? `就这么删（${raw.prefix || raw.breadcrumb || ''}）`
+          : `就这么改（${raw.breadcrumb}）`
       await sendFoundationTurn(label, { applyEdit: raw, continuationParentId: parentId })
       return
     }
@@ -828,22 +1289,29 @@ async function onComposerAnswer(value: string) {
     const parentId = lastClarificationAssistantId()
     const cands = Array.isArray(raw?.candidates) ? raw.candidates : []
     clarificationActive.value = null
-    if (value === '__CANCEL_EDIT__' || !value.startsWith('__CASCADE_APPLY__:')) return
+    if (value === '__CANCEL_EDIT__' || !value.startsWith('__CASCADE_APPLY__:')) {
+      await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
+      return
+    }
     const ids = new Set(value.slice('__CASCADE_APPLY__:'.length).split(',').map((s: string) => Number(s)).filter((n: number) => !Number.isNaN(n)))
     const items = cands.filter((cd: any) => ids.has(cd.passage_id)).map((cd: any) => ({
       passage_id: cd.passage_id, breadcrumb: cd.breadcrumb, ops: cd.ops, edit_request: `连锁同步：${cd.term || ''}`,
     }))
     if (!items.length || sending.value) return
-    await sendFoundationTurn(`确认连锁更新这 ${items.length} 处`, {
-      applyEdit: { kind: 'cascade_apply', items }, continuationParentId: parentId,
+    await sendFoundationTurn(`就改勾选的这 ${items.length} 处`, {
+      applyEdit: { kind: 'cascade_apply', items, origin: raw?.origin || '' }, continuationParentId: parentId,
     })
     return
   }
-  // 开放式反问（改原文没定准）：取消 → 收起不动；说得更具体 → 当作一条新的修改请求重试。
+  // 开放式反问（改原文没定准）：取消/跳过 → 收起不动；说得更具体 → 当作一条新的修改请求重试。
   if (kind === 'ask') {
+    const parentId = lastClarificationAssistantId()
     clarificationActive.value = null
     const vv = (value || '').trim()
-    if (!vv || vv === '__CANCEL_EDIT__') return
+    if (!vv || vv === '__CANCEL_EDIT__' || vv === '__SKIP__') {
+      await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
+      return
+    }
     if (!sending.value) await sendFoundationTurn(vv)
     return
   }
@@ -852,7 +1320,7 @@ async function onComposerAnswer(value: string) {
   // 续跑挂到"反问那条 assistant"之下 → 渲染成同一条思考。反问 = 当前最后一条 assistant 事件。
   const parentId = lastClarificationAssistantId()
   clarificationActive.value = null
-  const v = (value || '').trim()
+  const v = value === '__SKIP__' ? SKIP_PHRASE : (value || '').trim()
   if (!v || sending.value) return
   await sendFoundationTurn(v, {
     seedMessages: Array.isArray(seed) && seed.length ? seed : undefined,
@@ -893,6 +1361,18 @@ function fndMaterialLine(m: FoundationMaterial): string {
 
 function fndIngestMarkdown(summary: any): string {
   // passage（原文段）录入：用"段"口径，别套用旧的"N 条事实"文案（否则显示"undefined 条事实"）。
+  if (summary?.mode === 'passage_batch') {
+    const files = Array.isArray(summary?.files) ? summary.files : []
+    const lines = [`已按原文段录入 ${files.length} 份文件，共 ${summary?.passages ?? 0} 段。`]
+    files.forEach((file: any) => {
+      let status = `${file?.passages ?? 0} 段`
+      if (file?.error) status = `失败：${file.error}`
+      else if (file?.warning_kind === 'empty') status = '未切出内容'
+      else if (file?.warning_kind === 'no_structure') status += '（无标题结构，按段落兜底）'
+      lines.push(`- ${file?.filename || '未命名文件'}：${status}`)
+    })
+    return lines.join('\n')
+  }
   if (summary?.mode === 'passage' || summary?.passages != null) {
     if (summary?.warning_kind === 'empty') return '这篇没切出任何内容（空白或纯符号），未录入。'
     const n = summary?.passages ?? 0
@@ -915,15 +1395,105 @@ function fndIngestMarkdown(summary: any): string {
   return lines.join('\n')
 }
 
-function fndSyntheticEvent(role: 'user' | 'assistant', content: string, mode: string, meta: Record<string, any> = {}): VibeEvent {
+function fndSyntheticEvent(role: 'user' | 'assistant', content: string, mode: string, meta: Record<string, any> = {}, attachments: VibeAttachment[] = []): VibeEvent {
   return {
     id: `fnd-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     role,
     content,
+    attachments,
     created_at: new Date().toISOString(),
     mode,
     meta: { foundation: true, ...meta },
   } as unknown as VibeEvent
+}
+
+function attachmentName(file: Partial<VibeAttachment> | any) {
+  return String(file?.name || file?.filename || '未命名文件')
+}
+
+function isMarkdownAttachment(file: Partial<VibeAttachment> | any) {
+  const name = attachmentName(file).toLowerCase()
+  const mime = String(file?.mime || '').toLowerCase()
+  return mime.includes('markdown') || name.endsWith('.md') || name.endsWith('.markdown')
+}
+
+function displayAttachmentName(file: Partial<VibeAttachment> | any) {
+  const name = attachmentName(file)
+  if (name.length <= 34) return name
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 && name.length - dot <= 10 ? name.slice(dot) : ''
+  const base = ext ? name.slice(0, dot) : name
+  const head = base.slice(0, 16)
+  const tail = base.slice(Math.max(16, base.length - 10))
+  return `${head}...${tail}${ext}`
+}
+
+function attachmentKey(file: Partial<VibeAttachment> | any) {
+  return String(file?.id || `${attachmentName(file)}-${file?.size || file?.chars || ''}`)
+}
+
+function attachmentSizeLabel(size?: number) {
+  const n = Number(size || 0)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n < 1024) return `${Math.round(n)} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+function attachmentMeta(file: Partial<VibeAttachment> | any) {
+  const parts = [attachmentSizeLabel(file?.size), file?.mime ? String(file.mime) : '']
+  return parts.filter(Boolean).join(' · ') || '点击下载'
+}
+
+function eventAttachments(event: Partial<VibeEvent> | any): VibeAttachment[] {
+  return Array.isArray(event?.attachments) ? event.attachments : []
+}
+
+const COLLAPSED_ATTACHMENT_LIMIT = 3
+
+function areAttachmentsExpanded(eventId: string) {
+  return expandedAttachmentEventIds.value.includes(String(eventId || ''))
+}
+
+function visibleEventAttachments(event: Partial<VibeEvent> | any): VibeAttachment[] {
+  const files = eventAttachments(event)
+  if (files.length <= COLLAPSED_ATTACHMENT_LIMIT || areAttachmentsExpanded(event?.id)) return files
+  return files.slice(0, COLLAPSED_ATTACHMENT_LIMIT)
+}
+
+function hiddenAttachmentCount(event: Partial<VibeEvent> | any) {
+  const files = eventAttachments(event)
+  if (files.length <= COLLAPSED_ATTACHMENT_LIMIT) return 0
+  return areAttachmentsExpanded(event?.id) ? files.length - COLLAPSED_ATTACHMENT_LIMIT : files.length - COLLAPSED_ATTACHMENT_LIMIT
+}
+
+function toggleAttachmentsExpanded(eventId: string) {
+  const id = String(eventId || '')
+  if (!id) return
+  if (expandedAttachmentEventIds.value.includes(id)) {
+    expandedAttachmentEventIds.value = expandedAttachmentEventIds.value.filter(item => item !== id)
+  } else {
+    expandedAttachmentEventIds.value = [...expandedAttachmentEventIds.value, id]
+  }
+}
+
+function downloadAttachment(file: Partial<VibeAttachment> | any) {
+  const url = String(file?.download_url || '').trim()
+  if (url) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  const name = attachmentName(file)
+  const content = String(file?.content ?? file?.text ?? '')
+  const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
 function fndSerializeSteps(): any[] {
@@ -970,20 +1540,45 @@ async function showFoundationProposals() {
   }
 }
 
+function isLikelyDeleteIntentText(text: string, applyEdit?: any) {
+  const kind = String(applyEdit?.kind || '')
+  if (kind === 'delete' || kind === 'delete_many') return true
+  const t = String(text || '').trim()
+  if (!t) return false
+  return /(删除|删掉|移除|清除|去掉|撤掉).{0,80}(模块|分类|原文|原文块|整段|知识库|规则|内容)/.test(t)
+}
+
+function intentStepLabel(actions: string[], text: string, applyEdit?: any) {
+  if (isLikelyDeleteIntentText(text, applyEdit) && actions.some(a => a === 'save' || a === 'candidate_save')) {
+    return '意图：删除原文'
+  }
+  return actions.length
+    ? `意图：${actions.map(a => FND_ACTION_LABELS[a] || a).join('＋')}`
+    : '意图：待判断'
+}
+
 const FND_ACTION_LABELS: Record<string, string> = {
   save: '录入新知识',
+  edit: '修改原文',
+  candidate_save: '疑似录入，待确认',
   overview: '盘点知识库',
   kb: '检索知识库',
   system: '使用向导',
   external: '库外问题（待接工具）',
+  smalltalk: '寒暄/边界',
+  needs_clarification: '待澄清',
 }
 
-async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; applyEdit?: any }) {
+async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean }) {
   const content = (overrideText ?? draft.value).trim()
   if (!content || sending.value) return
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
   const documentContent = opts?.documentContent  // 文件整篇录入：整篇原文走 document、text 只作干净消息
+  const documentMode = !!opts?.documentMode
+  const attachments = opts?.attachments || []
+  const filename = opts?.filename || ''
   const applyEdit = opts?.applyEdit  // 改原文·确认：回传 diff 提案，后端确定性落库
+  const clarificationCancel = !!opts?.clarificationCancel  // 取消反问/确认：写终态回执，避免刷新后旧反问复活
   // 续跑·视觉一体化：本轮(回答+续跑答案)挂到上一轮反问那条 assistant 之下，渲染成同一条思考。
   const contParent = opts?.continuationParentId && hasEvent(opts.continuationParentId) ? opts.continuationParentId : ''
   if (!vibeProject.value) {
@@ -994,6 +1589,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   const project = String(vibeProject.value.id)
   const startedAt = Date.now()
   foundationBusy.value = true
+  startElapsedTicker(startedAt)  // "已处理 Xs"前端秒表:整轮在途一直数,不听 process_done
   processExpanded.value = true
   clearStreamingAssistant()
   streamingContinuationParentId.value = contParent  // 必须在 clearStreamingAssistant 之后（它会清空）
@@ -1001,7 +1597,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   streamingProcess.status = 'running'
   // 续跑轮：用户的回答=对反问的"选择回复"，挂到反问之下、不再单列成气泡。
   events.value.push(fndSyntheticEvent('user', content, 'entry',
-    contParent ? { confirmation_reply: true, parent_event_id: contParent } : {}))
+    contParent ? { confirmation_reply: true, parent_event_id: contParent } : {},
+    attachments))
   draft.value = ''
   resizeDraft()
   scrollBottom()
@@ -1031,6 +1628,13 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       return
     }
     switch (String(event?.type || '')) {
+      case 'turn_started':
+        // T26：后端本轮令牌 id——停止按钮凭它调 cancel 接口
+        activeTurnId.value = String(event.turn_id || '')
+        break
+      case 'cancelled':
+        if (live) fndPushStep('已停止本轮处理')
+        break
       case 'event_saved': {
         // 后端已把本轮消息写进会话历史。标志位无论是否在场都要置（兜底/重载判定要用）；
         // 只有【当前正看本轮会话】时才把服务器事件写进 events.value（避免串到别的会话）。
@@ -1040,6 +1644,13 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
           if (live) events.value = events.value.filter(e => !String(e.id).startsWith('fnd-user-'))
         } else if (event.role === 'assistant') {
           assistantEventSaved = true
+          // 0704 防闪:持久化气泡即将插入列表,同帧清掉流式气泡——否则"流式份+持久份"双显一瞬,
+          // finally 再清时肉眼看到答案闪一下/整块跳动。
+          if (live) {
+            streamingAssistantContent.value = ''
+            streamingSources.value = []
+            streamingVerification.value = null
+          }
         }
         if (live) upsertEvent(saved)
         break
@@ -1049,9 +1660,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         break
       case 'intent':
         actions = (event.actions || []).map(String)
-        if (live) fndPushStep(actions.length
-          ? `意图：${actions.map(a => FND_ACTION_LABELS[a] || a).join('＋')}`
-          : '意图：寒暄/无关（边界说明）')
+        if (live) fndPushStep(intentStepLabel(actions, content, applyEdit))
         break
       case 'fact': {
         const f = event.fact || {}
@@ -1132,7 +1741,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
     }
     turnSessionId = sessionId || activeSessionId.value  // 锚定本轮归属的会话（#2 切换查看用）
-    await streamFoundationTurn({ project, text: content, session_id: sessionId, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: documentContent ? 'document' : undefined, document: documentContent || undefined, apply_edit: applyEdit || undefined }, {
+    await streamFoundationTurn({ project, text: content, session_id: sessionId, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined }, {
       onEvent,
       onError(message: string) { failed = failed || message },
     })
@@ -1150,6 +1759,9 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   } catch (error) {
     failed = failed || (error instanceof Error ? error.message : String(error))
   } finally {
+    stopElapsedTicker()
+    activeTurnId.value = ''
+    cancelRequested.value = false
     streamingProcess.status = 'done'
     streamingProcess.durationMs = Date.now() - startedAt
     if (failed) {
@@ -1179,7 +1791,12 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
       try {
         await refreshState()
-        events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
+        // 0704 防闪:event_saved 已把本轮两条真实事件插进列表,全量替换会让整个回答区
+        // v-html 重渲染闪一下——id 序列没变化就跳过替换。
+        const fresh = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
+        const sameIds = fresh.length === events.value.length
+          && fresh.every((e, i) => e.id === events.value[i]?.id)
+        if (!sameIds) events.value = fresh
       } catch { /* 刷新失败不影响本轮结果展示 */ }
     }
     await scrollBottom()
@@ -1232,6 +1849,58 @@ function addLog(type: string, message: string) {
   scrollProcessBottom()
 }
 
+function buildConversationRailItems() {
+  const visible = events.value.filter((event: any) => shouldRenderEvent(event)).sort(compareEvents)
+  const users = visible.filter((event: any) =>
+    event?.role === 'user'
+    && !isConfirmationReplyEvent(event)
+    && String(event?.content || '').trim())
+  return users.slice(-MAX_CONVERSATION_RAIL_ITEMS).map((event: any) => ({
+    id: String(event.id),
+    question: conversationPreviewText(event.content, '未命名提问'),
+    answer: conversationPreviewText(answerForUserEvent(event, visible), '暂无答案'),
+  }))
+}
+
+function answerForUserEvent(userEvent: any, visibleEvents: any[]) {
+  const userIndex = visibleEvents.findIndex((event: any) => event.id === userEvent.id)
+  if (userIndex < 0) return ''
+  const nextUserIndex = visibleEvents.findIndex((event: any, index: number) =>
+    index > userIndex
+    && event?.role === 'user'
+    && !isConfirmationReplyEvent(event))
+  const end = nextUserIndex >= 0 ? nextUserIndex : visibleEvents.length
+  const candidates = visibleEvents
+    .slice(userIndex + 1, end)
+    .filter((event: any) => event?.role === 'assistant' && !isPackageActionEvent(event))
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const event = candidates[i]
+    if (isClarifyThreadRoot(event)) {
+      const finalAnswer = threadFinalAnswer(event)
+      if (finalAnswer) return finalAnswer
+    }
+    if (!isPendingClarification(event)) {
+      const content = eventDisplayContent(event)
+      if (content) return content
+    }
+  }
+  const isLastUser = !visibleEvents.slice(userIndex + 1).some((event: any) =>
+    event?.role === 'user' && !isConfirmationReplyEvent(event))
+  return isLastUser ? streamingAssistantContent.value : ''
+}
+
+function conversationPreviewText(value: unknown, fallback = '') {
+  const text = String(value || '')
+    .replace(/```[\w-]*\n?([\s\S]*?)```/g, '$1 ')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1 ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1 ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[#>*_`[\]()|~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text || fallback
+}
+
 function renderMarkdown(content: string) {
   const html = marked.parse(content || '') as string
   return DOMPurify.sanitize(html, {
@@ -1272,6 +1941,28 @@ function eventClarificationQuestion(event: any) {
   if (direct) return String(direct)
   const clarifyCard = answerCards(event).find((card: any) => card?.type === 'clarify' && card?.question)
   return clarifyCard?.question ? String(clarifyCard.question) : ''
+}
+
+function eventClarificationRaw(event: any) {
+  const raw = event?.meta?.clarification?.raw
+  return raw && typeof raw === 'object' ? raw : null
+}
+
+// 主修改已经完成后追加的连锁候选是“可选后续”，不是阻塞式反问。
+// 它仍然保留在输入/选择区可处理，但不能吞掉主回答或把过程头标成“等你选择”。
+function isOptionalCascadeClarification(event: any): boolean {
+  const raw = eventClarificationRaw(event)
+  if (raw?.kind !== 'cascade') return false
+  const content = String(event?.content || '').trim()
+  if (!content) return false
+  return !!event?.meta?.continuation_context?.parent_event_id
+    || eventSources(event).length > 0
+    || (Array.isArray(event?.meta?.structure_reviews) && event.meta.structure_reviews.length > 0)
+    || /^已(更新|连锁|删除|录入)/.test(content)
+}
+
+function isBlockingClarificationEvent(event: any): boolean {
+  return !!eventClarificationQuestion(event) && !isOptionalCascadeClarification(event)
 }
 
 function eventProcessSteps(event: any): ProcessStep[] {
@@ -1348,15 +2039,67 @@ async function scrollBottom() {
   const el = timelineEl.value
   if (el) el.scrollTop = el.scrollHeight
   isAtBottom.value = true
+  updateActiveConversationRail()
 }
 
 // 是否已滚动到底部（用于控制"回到底部"悬浮按钮的显隐）
 const isAtBottom = ref(true)
 
+function isTimelineNearBottom(el: HTMLElement, threshold = 56) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+
 function handleTimelineScroll() {
   const el = timelineEl.value
   if (!el) return
-  isAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  isAtBottom.value = isTimelineNearBottom(el)
+  if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
+  conversationRailRaf = requestAnimationFrame(() => {
+    conversationRailRaf = 0
+    updateActiveConversationRail()
+  })
+}
+
+function updateActiveConversationRail() {
+  const items = conversationRailItems.value
+  if (!items.length) {
+    activeConversationEventId.value = ''
+    return
+  }
+  const el = timelineEl.value
+  if (el && isTimelineNearBottom(el, 96)) {
+    activeConversationEventId.value = items[items.length - 1].id
+    return
+  }
+  const topBase = el?.getBoundingClientRect().top ?? 0
+  let candidate = items[items.length - 1].id
+  let bestTop = Number.NEGATIVE_INFINITY
+  for (const item of items) {
+    const node = document.getElementById(`timeline-event-${item.id}`)
+    if (!node) continue
+    const top = node.getBoundingClientRect().top - topBase
+    if (top <= 120 && top > bestTop) {
+      candidate = item.id
+      bestTop = top
+    }
+  }
+  activeConversationEventId.value = candidate
+}
+
+function jumpToConversationTurn(id: string, index = -1) {
+  activeConversationEventId.value = id
+  const el = timelineEl.value
+  if (index === 0 && el) {
+    el.scrollTo({ top: 0, behavior: 'smooth' })
+    isAtBottom.value = false
+    return
+  }
+  document.getElementById(`timeline-event-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function conversationRailHoverDistance(index: number) {
+  if (hoveredConversationRailIndex.value === null) return -1
+  return Math.abs(hoveredConversationRailIndex.value - index)
 }
 
 function scrollBottomSmooth() {
@@ -1364,6 +2107,7 @@ function scrollBottomSmooth() {
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   isAtBottom.value = true
+  activeConversationEventId.value = conversationRailItems.value.at(-1)?.id || ''
 }
 
 async function scrollProcessBottom() {
@@ -1560,7 +2304,7 @@ function eventRoleLabel(event: any) {
   if (isConfirmationReplyEvent(event)) return '确认'
   if (event?.meta?.message_kind === 'package_action') return '操作'
   if (event?.meta?.message_kind === 'error') return '错误'
-  if (event?.role === 'assistant' && eventClarificationQuestion(event)) return '确认'
+  if (event?.role === 'assistant' && isBlockingClarificationEvent(event)) return '确认'
   if (event?.role === 'assistant') return '回答'
   if (event?.role === 'user') return ''
   if (event?.mode === 'entry') return '录入'
@@ -1620,7 +2364,7 @@ function clarificationReplyContent(event: any): string {
 function isPendingClarification(event: any): boolean {
   return !!clarificationActive.value
     && event?.role === 'assistant'
-    && !!eventClarificationQuestion(event)
+    && isBlockingClarificationEvent(event)
     && event.id === lastAssistantId.value
     && parentContinuationResponses(event).length === 0
     && !isStreamingUnderEvent(event)
@@ -1630,7 +2374,7 @@ function isPendingClarification(event: any): boolean {
 // 线程根 = 第一条反问(自己不是续跑子)，且已被回答(下面挂了续跑 或 正在流式续跑)。
 function isClarifyThreadRoot(event: any): boolean {
   return event?.role === 'assistant'
-    && !!eventClarificationQuestion(event)
+    && isBlockingClarificationEvent(event)
     && !event?.meta?.continuation_context?.parent_event_id
     && (parentContinuationResponses(event).length > 0 || isStreamingUnderEvent(event))
 }
@@ -1685,18 +2429,26 @@ function mergedThreadSteps(root: any): any[] {
 }
 
 function threadRunning(root: any): boolean {
-  return isStreamingUnderEvent(root) && streamingProcess.status === 'running'
+  return isStreamingUnderEvent(root) && procRunning.value
+}
+
+// 0703 第三态:线程收尾在反问/勾选上、后端已收工、等用户决定 → 头部显示"等你选择"
+function threadAwaiting(root: any): boolean {
+  if (threadRunning(root) || !clarificationActive.value) return false
+  return clarifyThreadNodes(root).some((n: any) => n.id === lastAssistantId.value && isBlockingClarificationEvent(n))
 }
 
 function threadDurationMs(root: any): number {
-  return clarifyThreadNodes(root).reduce((sum: number, n: any) => sum + (eventProcessDuration(n) || 0), 0)
+  const base = clarifyThreadNodes(root).reduce((sum: number, n: any) => sum + (eventProcessDuration(n) || 0), 0)
+  // 续跑轮在途:历史各段耗时 + 本轮前端秒表,让"已处理"一直数着(0704)。
+  return threadRunning(root) ? base + streamingElapsedMs.value : base
 }
 
 // 线程的最终答案节点 = 最后一个【非反问】节点；若最后还是反问(还在问)则没有最终答案。
 function threadFinalNode(root: any): any {
   const nodes = clarifyThreadNodes(root)
   const last = nodes[nodes.length - 1]
-  return eventClarificationQuestion(last) ? null : last
+  return isBlockingClarificationEvent(last) ? null : last
 }
 
 function threadFinalAnswer(root: any): string {
@@ -1757,6 +2509,12 @@ function isStreamingUnderEvent(event: any) {
     linear-gradient(180deg, rgba(248, 248, 247, 0.9), rgba(242, 242, 240, 0.82)),
     rgba(245, 245, 244, 0.76);
   --vibe-glass-filter: blur(22px) saturate(1.12);
+  /* —— 全局 4 档灰阶 + 填充 token（左栏/主区共用）：颜色只从这里取，别再新造 —— */
+  --ink-1: rgba(15, 15, 15, 0.9);    /* 主文字 */
+  --ink-2: rgba(15, 15, 15, 0.68);   /* 次文字 */
+  --ink-3: rgba(15, 15, 15, 0.42);   /* 弱文字/图标 */
+  --hairline: rgba(15, 15, 15, 0.07);
+  --fill-1: rgba(15, 15, 15, 0.045); /* hover 填充 */
   position: relative;
   width: 100vw;
   height: 100vh;
@@ -1771,6 +2529,54 @@ function isStreamingUnderEvent(event: any) {
   background: transparent;
   color: #1f1f21;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  /* 侧栏收起：列宽动画（Chromium 支持 grid-template-columns 过渡） */
+  transition: grid-template-columns 240ms ease;
+}
+
+.vibe-shell.side-collapsed {
+  grid-template-columns: 0px minmax(0, 1fr);
+}
+
+/* 玻璃色底层：收起动画中 grid 轨道缩放会瞬间露出透明窗口（黑闪），
+   垫一层与玻璃同色的底，任何缝隙都只会露出浅灰而不是黑。 */
+.vibe-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--vibe-glass-bg);
+  pointer-events: none;
+}
+
+/* 侧栏收起/展开按钮：钉在窗口左上拖拽条上（需 no-drag），mac 时让出红绿灯的位置 */
+.side-toggle {
+  position: fixed;
+  top: 4px;
+  left: 8px;
+  z-index: 20;
+  -webkit-app-region: no-drag;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+
+  &:hover {
+    background: rgba(15, 15, 15, 0.07);
+    color: var(--ink-1);
+  }
+}
+
+/* mac：红绿灯在 (12,12)、灯珠 12px（垂直中心 ≈18px）——按钮 28px 取 top 4 与其对中，左侧紧贴灯组 */
+.side-toggle.mac {
+  left: 72px;
+  top: 4px;
 }
 
 :global(.main-router.vibe-shell),
@@ -1786,6 +2592,29 @@ function isStreamingUnderEvent(event: any) {
   z-index: 10;
 }
 
+/* Windows 窗口控制：钉在拖拽条右上，压在 drag 层之上。
+   默认透明、hover 感应区才浮现；感应区比按钮大一圈（padding 扩出），并显式 no-drag——
+   否则被 drag 区吞掉 mouse 事件，hover 永远不触发。 */
+.win-ctl-zone {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  padding: 6px 8px 10px 16px;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.win-ctl-zone:hover {
+  opacity: 1;
+}
+
+/* 组件自带 absolute 定位，这里改由感应区排版 */
+.win-ctl {
+  position: static;
+}
+
 .side,
 .main-frame {
   position: relative;
@@ -1798,24 +2627,30 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .side {
-  padding: 38px 13px 14px;
+  padding: 38px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  /* 高度自适应：side 自身不滚，由内部对话列表滚动——库再多也不外溢、项目卡与概览卡常驻 */
+  gap: 16px;
+  /* 高度自适应：side 自身不滚，由内部对话列表滚动——库再多也不外溢、项目卡常驻 */
   min-height: 0;
   overflow: hidden;
+  transition: opacity 180ms ease, padding 240ms ease;
 }
 
-.side-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 0;
-  -webkit-app-region: no-drag;
+/* 收起动画期间内容保持固有宽度（282 - 左右 padding 24 = 258），只被裁切、不被挤压回流 */
+.side > * {
+  width: 258px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
-.back,
+.side-collapsed .side {
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .icon-btn,
 .round-btn,
 .ghost,
@@ -1826,38 +2661,23 @@ function isStreamingUnderEvent(event: any) {
   transition: background 150ms ease, transform 150ms ease, opacity 150ms ease;
 }
 
-.back {
-  height: 26px;
-  padding: 0 11px 0 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  color: rgba(15, 15, 15, 0.62);
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.back-ic { opacity: 0.7; }
-
 .icon-btn,
 .round-btn {
   height: 25px;
   min-width: 25px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(15, 15, 15, 0.58);
+  color: var(--ink-3, rgba(15, 15, 15, 0.58));
 }
 
 .icon-btn:hover,
-.round-btn:hover,
-.back:hover {
-  background: rgba(255, 255, 255, 0.96);
+.round-btn:hover {
+  background: var(--fill-1, rgba(255, 255, 255, 0.96));
+  color: var(--ink-2, rgba(15, 15, 15, 0.72));
 }
 
 .icon-btn:disabled,
 .round-btn:disabled,
-.back:disabled,
 .session-open:disabled,
 .session-delete:disabled,
 .nav button:disabled {
@@ -1882,20 +2702,19 @@ function isStreamingUnderEvent(event: any) {
   width: 100%;
   display: flex;
 
-  /* 触发器=项目卡：[知识库 icon] [项目名 / 段·模块] [caret]，高度自适应内容 */
+  /* 触发器=项目卡：[知识库 icon] [项目名 / 段·模块] [caret]，高度自适应内容。
+     左栏唯一的一张卡：平铺白、发丝线，不再叠渐变（多层半透明白是"浑浊感"来源）。 */
   :deep(.app-select-trigger) {
     width: 100%;
     min-width: 0;
     height: auto;
     min-height: 50px;
-    padding: 8px 10px 8px 11px;
+    padding: 8px 10px;
     gap: 10px;
     border-radius: 12px;
-    border-color: rgba(15, 15, 15, 0.07);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(249, 249, 248, 0.72)),
-      rgba(255, 255, 255, 0.76);
-    color: rgba(15, 15, 15, 0.78);
+    border-color: var(--hairline);
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--ink-2);
   }
 }
 
@@ -1907,9 +2726,9 @@ function isStreamingUnderEvent(event: any) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(15, 15, 15, 0.06);
-  color: rgba(15, 15, 15, 0.82);
+  color: var(--ink-1);
 }
 
 .proj-main {
@@ -1924,7 +2743,7 @@ function isStreamingUnderEvent(event: any) {
 .proj-name {
   font-size: 14px;
   font-weight: 500;
-  color: rgba(15, 15, 15, 0.9);
+  color: var(--ink-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1932,7 +2751,7 @@ function isStreamingUnderEvent(event: any) {
 
 .proj-kb {
   font-size: 12px;
-  color: rgba(15, 15, 15, 0.5);
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1940,8 +2759,8 @@ function isStreamingUnderEvent(event: any) {
 
 .proj-caret {
   flex: 0 0 auto;
-  color: rgba(15, 15, 15, 0.4);
-  transition: transform 0.2s ease;
+  color: var(--ink-3);
+  transition: transform 150ms ease;
 }
 .proj-caret.open { transform: rotate(180deg); }
 
@@ -1953,12 +2772,143 @@ function isStreamingUnderEvent(event: any) {
   gap: 6px;
 }
 
+/* 区块 label 全侧栏一个口径：11px / 600 / 0.04em / ink-3，左起 10px 基准线 */
 .proj-label {
-  padding: 0 4px;
-  color: rgba(15, 15, 15, 0.42);
+  padding: 0 10px;
+  color: var(--ink-3);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
+}
+
+.kb-browser-entry {
+  flex: 0 0 auto;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--ink-1) 10%, transparent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-2);
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.kb-browser-entry svg {
+  width: 16px;
+  height: 16px;
+}
+
+.kb-browser-entry:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--ink-1);
+}
+
+.kb-browser-entry:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.kb-browser-entry span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.kb-browser-entry em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+
+.side-user-card {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 64px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--ink-1);
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 10px 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.side-user-card:hover {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px var(--hairline), 0 8px 20px rgba(15, 15, 15, 0.06);
+}
+
+.side-user-avatar.avatar-container {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.side-user-avatar .user-avatar {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  will-change: transform;
+}
+
+.side-user-avatar .online-indicator {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  background: #10b981;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  animation: user-pulse 2s ease-in-out infinite;
+}
+
+.side-user-card:hover .side-user-avatar .user-avatar {
+  transform: scale(1.1) rotate(5deg);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+@keyframes user-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+
+.side-user-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.side-user-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-1);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.side-user-main em {
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.3;
+  font-style: normal;
 }
 
 /* 对话区整段 flex:1，列表内部滚动（宽度跟随 282px 栏宽，长标题省略号不撑宽） */
@@ -1973,67 +2923,15 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 0 6px;
+  padding: 0 4px 0 10px;
   margin-bottom: 6px;
 }
 
 .convs-title {
-  color: rgba(15, 15, 15, 0.46);
+  color: var(--ink-3);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.04em;
-}
-
-.convs-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  margin: 0 2px 6px;
-}
-
-.convs-search-ic {
-  position: absolute;
-  left: 9px;
-  color: rgba(15, 15, 15, 0.34);
-  pointer-events: none;
-}
-
-.convs-search-input {
-  width: 100%;
-  height: 30px;
-  box-sizing: border-box;
-  padding: 0 26px 0 28px;
-  border: 1px solid rgba(15, 15, 15, 0.08);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-  color: rgba(15, 15, 15, 0.8);
-  outline: none;
-  transition: border-color 150ms ease, background 150ms ease;
-}
-
-.convs-search-input:focus {
-  border-color: rgba(15, 15, 15, 0.18);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.convs-search-clear {
-  position: absolute;
-  right: 6px;
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: rgba(15, 15, 15, 0.4);
-  cursor: pointer;
-  line-height: 1;
-  font-size: 14px;
-}
-
-.convs-search-clear:hover {
-  background: rgba(15, 15, 15, 0.07);
-  color: rgba(15, 15, 15, 0.7);
 }
 
 .convs-list {
@@ -2048,85 +2946,6 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .session-title { font-weight: 500; }
-
-/* 知识库概览（只读，底部常驻）—— 当前项目的段数 + 模块数 */
-.kb-overview {
-  flex: 0 0 auto;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(15, 15, 15, 0.06);
-  border-radius: 12px;
-  padding: 10px 12px;
-  box-sizing: border-box;
-}
-
-.kb-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-}
-
-.kb-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(15, 15, 15, 0.66);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.kb-title svg { opacity: 0.66; }
-
-.kb-refresh {
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(15, 15, 15, 0.4);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.kb-refresh:hover {
-  background: rgba(15, 15, 15, 0.06);
-  color: rgba(15, 15, 15, 0.7);
-}
-
-.kb-refresh:disabled { cursor: default; opacity: 0.6; }
-.kb-refresh-ic.spin { animation: kb-spin 0.8s linear infinite; }
-@keyframes kb-spin { to { transform: rotate(360deg); } }
-
-.kb-metrics {
-  display: flex;
-  gap: 8px;
-}
-
-.kb-metric {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 7px 4px;
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
-}
-
-.kb-num {
-  font-size: 18px;
-  font-weight: 500;
-  color: rgba(15, 15, 15, 0.86);
-  line-height: 1.1;
-}
-
-.kb-unit {
-  font-size: 11px;
-  color: rgba(15, 15, 15, 0.5);
-}
 
 .section-head {
   display: flex;
@@ -2148,17 +2967,22 @@ function isStreamingUnderEvent(event: any) {
   width: 100%;
   min-height: 34px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
   padding: 7px 9px;
   box-sizing: border-box;
   cursor: pointer;
-  color: rgba(15, 15, 15, 0.72);
+  color: var(--ink-2, rgba(15, 15, 15, 0.72));
   font-size: 13px;
+  transition: background 150ms ease;
 
-  &:hover { background: rgba(255, 255, 255, 0.6); }
-  &.active { background: rgba(255, 255, 255, 0.92); box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.06); }
+  /* hover 只动背景不动文字色（扫过列表时明暗不跳）；active 是全侧栏唯一的强状态 */
+  &:hover { background: var(--fill-1); }
+  &.active {
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.05), inset 0 0 0 1px var(--hairline);
+  }
   &:disabled {
     cursor: not-allowed;
   }
@@ -2168,8 +2992,8 @@ function isStreamingUnderEvent(event: any) {
   position: relative;
 
   &.active .session-open {
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.06);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.05), inset 0 0 0 1px var(--hairline);
   }
 }
 
@@ -2178,19 +3002,17 @@ function isStreamingUnderEvent(event: any) {
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  /* 去掉时间后变单行，行高收窄 */
+  /* 去掉时间后变单行，行高收窄；左起对齐 10px 基准线 */
   min-height: 28px;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  padding-right: 28px;
+  padding: 5px 28px 5px 10px;
 }
 
 .session-ic {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  color: rgba(15, 15, 15, 0.36);
-  transition: color 140ms ease;
+  color: var(--ink-3);
+  transition: color 150ms ease;
 }
 
 .session-body {
@@ -2206,25 +3028,46 @@ function isStreamingUnderEvent(event: any) {
   white-space: nowrap;
   font-size: 13px;
   line-height: 1.4;
-  color: rgba(15, 15, 15, 0.74);
-  transition: color 140ms ease;
+  color: var(--ink-2);
+  transition: color 150ms ease;
 }
 
 .session-body small {
-  color: rgba(15, 15, 15, 0.38);
+  color: var(--ink-3);
   font-size: 11px;
 }
 
-/* 选中 / hover → 黑色（icon + 标题），不用蓝色 */
-.session-row:hover .session-ic,
-.session-row:hover .session-title {
-  color: rgba(15, 15, 15, 0.9);
+/* 正在对话的实心闪烁点：压灰（比默认 icon 色更淡），hover/active 也只到中灰、不跟黑 */
+.session-ic .dot-blink { color: rgba(15, 15, 15, 0.3); }
+
+.dot-blink-core {
+  transform-origin: 20px 20px;
+  animation: dot-blink 1.35s ease-in-out infinite;
 }
-.session-row.active .session-ic {
-  color: rgba(15, 15, 15, 0.96);
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 0.38; transform: scale(0.88); }
+  45% { opacity: 1; transform: scale(1); }
+  68% { opacity: 0.72; transform: scale(0.94); }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-blink-core {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 只有选中态加深（icon + 标题）；hover 不动文字色 */
+.session-row.active .session-ic,
 .session-row.active .session-title {
-  color: rgba(15, 15, 15, 0.96);
+  color: var(--ink-1);
+}
+
+/* 选中行里的闪烁点也只到中灰，不跟标题变黑 */
+.session-row.active .session-ic .dot-blink {
+  color: rgba(15, 15, 15, 0.45);
 }
 
 .session-row:hover .session-delete,
@@ -2242,18 +3085,17 @@ function isStreamingUnderEvent(event: any) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgba(15, 15, 15, 0.36);
+  color: var(--ink-3);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+  transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
 
   &:hover {
-    background: rgba(15, 15, 15, 0.07);
-    color: rgba(15, 15, 15, 0.74);
+    background: var(--fill-1);
+    color: var(--ink-2);
   }
 
   &:disabled {
@@ -2263,8 +3105,8 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .muted {
-  margin: 8px;
-  color: rgba(15, 15, 15, 0.42);
+  margin: 6px 10px;
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -2406,6 +3248,7 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .main {
+  position: relative;
   min-width: 0;
   width: 100%;
   height: 100%;
@@ -2417,14 +3260,36 @@ function isStreamingUnderEvent(event: any) {
   box-shadow: none;
 }
 
+/* header 浮在滚动内容之上：无 border，靠近 header 的内容经背后毛玻璃渐隐——
+   模糊层放 ::before（带渐变 mask），标题文字自身不受 mask 影响。 */
 .main-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
   height: 68px;
   flex-shrink: 0;
   padding: 0 20px;
-  border-bottom: 1px solid rgba(15, 15, 15, 0.07);
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  pointer-events: none; /* 只是标题层，别挡住下面的滚动/悬停 */
+  background: #fff; /* header 本体实底不透明 */
+
+  /* 紧贴 header 下沿的柔边：纯白色渐隐（无 backdrop 模糊）——
+     文字滚过时渐渐没入白底，像轻微化开，但始终清晰可读。 */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 14px;
+    background: linear-gradient(to bottom, #fff, rgba(255, 255, 255, 0));
+  }
+
 
   p {
     margin: 0 0 4px;
@@ -2469,6 +3334,105 @@ function isStreamingUnderEvent(event: any) {
   background: #fff;
   overflow: hidden;
   position: relative;
+}
+
+
+.conversation-rail {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 8;
+  width: 72px;
+  max-height: min(500px, calc(100% - 112px));
+  padding: 6px 0 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: auto;
+}
+
+.conversation-rail-row {
+  position: relative;
+  width: 58px;
+  min-height: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.conversation-rail-line {
+  width: 7px;
+  height: 2px;
+  border-radius: 999px;
+  background: #d7d7d7;
+  transition: width 140ms ease, height 140ms ease, background 140ms ease;
+}
+
+.conversation-rail-row.hover .conversation-rail-line {
+  width: 28px;
+  height: 2.5px;
+  background: #111;
+}
+
+.conversation-rail-row.hover-near-1 .conversation-rail-line { width: 24px; }
+.conversation-rail-row.hover-near-2 .conversation-rail-line { width: 18px; }
+.conversation-rail-row.hover-near-3 .conversation-rail-line { width: 13px; }
+
+.conversation-rail-row.active .conversation-rail-line {
+  width: 14px;
+  background: #111;
+}
+
+.conversation-rail-row.active.hover .conversation-rail-line {
+  width: 28px;
+  height: 2.5px;
+}
+
+.conversation-rail-card {
+  position: absolute;
+  left: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 320px;
+  min-height: 104px;
+  max-height: 130px;
+  border: 1px solid rgba(15, 15, 15, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 44px rgba(15, 15, 15, 0.13);
+  padding: 14px 16px;
+  box-sizing: border-box;
+  text-align: left;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+
+.conversation-rail-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #171717;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.conversation-rail-card p {
+  margin: 8px 0 0;
+  color: #8a8a8a;
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 600;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* 回到底部悬浮按钮：贴在输入框正上方居中 */
@@ -2520,7 +3484,9 @@ function isStreamingUnderEvent(event: any) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 24px max(28px, calc((100% - 760px) / 2));
+  /* header 改为悬浮层后，顶部留出【header 高 + 下沿模糊带】：滚到顶时首条消息完整露出，
+     只有滚动经过时才进模糊带 */
+  padding: 60px max(28px, calc((100% - 760px) / 2)) 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2532,15 +3498,66 @@ function isStreamingUnderEvent(event: any) {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: rgba(15, 15, 15, 0.46);
+  color: var(--ink-3);
   text-align: center;
+  animation: empty-rise 420ms ease both;
 
-  strong { color: rgba(15, 15, 15, 0.72); font-size: 15px; }
-  span { max-width: 420px; font-size: 13px; line-height: 1.7; }
+  strong { color: var(--ink-1); font-size: 16px; font-weight: 600; letter-spacing: 0.01em; }
+  span { max-width: 420px; font-size: 13px; line-height: 1.7; color: var(--ink-3); }
 
   &.inline {
     margin: 40px auto;
   }
+}
+
+@keyframes empty-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 鲸鱼 → logo 动画：素材四周留白较多，负 margin 收紧与标题的视觉间距 */
+.empty-video {
+  width: 104px;
+  height: 104px;
+  margin-bottom: -4px;
+  cursor: pointer;           /* 播完停在 logo，点击重播 */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.empty-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.empty-hint {
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+
+  &:hover:not(:disabled) {
+    background: var(--fill-1);
+    border-color: rgba(15, 15, 15, 0.12);
+    color: var(--ink-1);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty { animation: none; }
 }
 
 .event,
@@ -2612,7 +3629,147 @@ function isStreamingUnderEvent(event: any) {
   min-width: 0;
 }
 
+.user-attachment-list {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 7px;
+  max-width: 100%;
+  margin-left: auto;
+  align-items: center;
+  overflow: visible;
+  padding: 1px;
+  box-sizing: border-box;
+}
+
+.user-attachment-list.expanded {
+  max-height: 152px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 3px;
+}
+
+.user-attachment-chip {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(15, 15, 15, 0.1);
+  border-radius: 9px;
+  padding: 5px 8px 5px 5px;
+  color: rgba(15, 15, 15, 0.78);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04);
+  cursor: pointer;
+  text-align: left;
+  flex: 1 1 172px;
+}
+
+.user-attachment-list:not(.expanded) .user-attachment-chip {
+  max-width: 248px;
+}
+
+.user-attachment-chip:hover {
+  border-color: rgba(15, 15, 15, 0.18);
+  background: #fafafa;
+}
+
+.user-attachment-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: rgba(15, 15, 15, 0.68);
+  background: #f3f4f6;
+}
+
+.user-attachment-icon.markdown {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(37,99,235,.95), rgba(124,58,237,.92) 52%, rgba(22,163,74,.9));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 5px 12px rgba(37,99,235,.18);
+}
+
+.user-attachment-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.user-attachment-icon.markdown svg {
+  width: 18px;
+  height: 18px;
+}
+
+.user-attachment-main {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.user-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(15, 15, 15, 0.86);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.user-attachment-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(15, 15, 15, 0.42);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.user-attachment-more {
+  height: 32px;
+  min-width: 42px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid rgba(15, 15, 15, 0.1);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.94);
+  color: rgba(15, 15, 15, 0.58);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: 0 1px 2px rgba(15, 15, 15, 0.035);
+}
+
+.user-attachment-more:hover {
+  border-color: rgba(15, 15, 15, 0.18);
+  color: rgba(15, 15, 15, 0.76);
+  background: #fafafa;
+}
+
+@media (max-width: 760px) {
+  .user-attachment-chip {
+    flex-basis: 100%;
+  }
+
+  .user-attachment-list:not(.expanded) .user-attachment-chip {
+    max-width: 100%;
+  }
+}
+
 .user-message-bubble {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
   border-radius: 12px;
   background: rgb(244, 244, 244);
   padding: 5px 10px;

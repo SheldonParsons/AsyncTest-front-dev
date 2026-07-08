@@ -11,10 +11,17 @@ import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
+import { handleMindMcpRendererResponse, initMindMcpAppBridgeServer } from './mcp/appBridgeServer.node.js';
+import { startMindMcpStdioServer } from './mcp/asynctest-mind-mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const rustEngine = require('../src-rust/index.cjs');
+
+if (process.argv.includes('--asynctest-mind-mcp')) {
+  startMindMcpStdioServer();
+  await new Promise(() => {});
+}
 
 let mainWindow = null;
 let windowManager = null;
@@ -24,6 +31,7 @@ let pendingAppQuitPromise = null;
 let mainCloseRequestedFromRenderer = false;
 let mindNodesClipboardPayload = null;
 let mindNodesClipboardText = null;
+let mindMcpBridge = null;
 
 // amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
 let amindMain = null;
@@ -343,6 +351,12 @@ ipcMain.handle('wm:closeResponse', async (event, { key, allow }) => {
   return windowManager.resolveCloseRequest(key, !!allow);
 });
 
+ipcMain.handle('mind:mcpResponse', async (event, payload = {}) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return false;
+  return handleMindMcpRendererResponse(senderKey, payload);
+});
+
 ipcMain.handle('wm:close', async (event, key) => {
   if (!key) return false;
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
@@ -370,6 +384,13 @@ ipcMain.handle('wm:list', async () => {
   return windowManager.listKeys();
 });
 
+// 查询窗口当前是否最大化（renderer 初始化窗口控制按钮图标用）
+ipcMain.handle('wm:isMaximized', async (event, key) => {
+  if (!key) return false;
+  const win = windowManager.get(key);
+  return win ? win.isMaximized() : false;
+});
+
 ipcMain.handle('wm:sendTo', async (event, { targetKey, channel, payload }) => {
   if (!targetKey || !channel) return false;
   windowManager.sendTo(targetKey, channel, payload);
@@ -380,6 +401,47 @@ ipcMain.handle('wm:broadcast', async (event, { channel, payload }) => {
   if (!channel) return false;
   windowManager.broadcast(channel, payload);
   return true;
+});
+
+function quoteTomlString(value) {
+  return JSON.stringify(String(value));
+}
+
+function getMindMcpLaunchConfig() {
+  const command = app.isPackaged
+    ? process.execPath
+    : (process.env.npm_node_execpath || process.env.NODE || 'node');
+  const args = app.isPackaged
+    ? ['--asynctest-mind-mcp']
+    : [path.join(app.getAppPath(), 'asynctest-mind-mcp.mjs')];
+  const serverName = 'asynctest-mind';
+  const toml = [
+    `[mcp_servers.${serverName}]`,
+    `command = ${quoteTomlString(command)}`,
+    `args = [${args.map(quoteTomlString).join(', ')}]`,
+  ].join('\n');
+  const stdioJson = {
+    [serverName]: {
+      type: 'stdio',
+      command,
+      args,
+    },
+  };
+
+  return {
+    serverName,
+    transport: 'stdio',
+    command,
+    args,
+    stdioJson,
+    stdioJsonText: JSON.stringify(stdioJson, null, 2),
+    codexToml: toml,
+    note: 'Open AsyncTest before using this stdio MCP server. In development, use Node to run the MCP stdio script directly.',
+  };
+}
+
+ipcMain.handle('mcp:mindConfig', async () => {
+  return getMindMcpLaunchConfig();
 });
 
 ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
@@ -432,6 +494,7 @@ app.whenReady().then(async () => {
     userDataPath: app.getPath('userData'),
     windowManager,
   });
+  mindMcpBridge = initMindMcpAppBridgeServer({ amindMain, windowManager });
 
   initGeneratorMain();
   initProjectFilesMain();
@@ -474,6 +537,7 @@ app.on('before-quit', (event) => {
   cleanupLsp();
   cleanupPythonRunner();
   if (isQuitApproved || isQuittingForUpdate()) {
+    mindMcpBridge?.close?.();
     isQuitting = true;
     return;
   }

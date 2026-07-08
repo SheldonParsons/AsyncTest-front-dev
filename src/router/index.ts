@@ -16,6 +16,21 @@ const vibeRoutes = [
     component: () => import('@/views/electron_views/vibe/knowledge/index.vue')
   },
   {
+    path: '/vibe/browser',
+    name: 'vibeKnowledgeBrowser',
+    component: () => import('@/views/electron_views/vibe/browser/index.vue')
+  },
+  {
+    path: '/vibe/settings',
+    name: 'vibeSettings',
+    component: () => import('@/views/electron_views/vibe/settings/index.vue')
+  },
+  {
+    path: '/vibe/settings/trace',
+    name: 'vibeSettingsTrace',
+    component: () => import('@/views/electron_views/vibe/settings/index.vue')
+  },
+  {
     path: '/vibe/chat',
     name: 'vibeChat',
     component: () => import('@/views/electron_views/vibe/chat/index.vue')

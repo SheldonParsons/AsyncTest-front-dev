@@ -152,6 +152,7 @@ type MindMainExpose = {
     triggerHeaderRelationAction: () => boolean;
     triggerHeaderSummaryAction: () => boolean;
     zoomTo: (scale: number) => void;
+    handleMindMcpRequest: (method: string, params?: any) => Promise<any>;
 };
 
 const docId = ref<string>('');
@@ -175,6 +176,8 @@ const remoteBindingDialogVisible = ref(false);
 const invalidRemoteBinding = ref<MindRemoteBinding | null>(null);
 let removeAuthLogoutListener: (() => void) | null = null;
 let removeAuthLoginListener: (() => void) | null = null;
+let removeMcpRequestListener: (() => void) | null = null;
+let removeMcpDocUpdatedListener: (() => void) | null = null;
 const nodeCountState = ref({
     totalNodes: 0,
     selectedNodes: 0,
@@ -241,6 +244,30 @@ onMounted(async () => {
             if (payload?.sourceWindow === windowKey.value) return;
             updateLoginStatus();
         });
+        removeMcpRequestListener = window.electronAPI.on('mind:mcp-request', async (_event: any, payload: any) => {
+            const requestId = payload?.requestId;
+            if (!requestId) return;
+            try {
+                if (!mindMainRef.value?.handleMindMcpRequest) {
+                    throw new Error('Mind content view is not ready');
+                }
+                const result = await mindMainRef.value.handleMindMcpRequest(payload?.method, payload?.params || {});
+                await window.electronAPI.invoke('mind:mcpResponse', { requestId, ok: true, result });
+            } catch (error) {
+                await window.electronAPI.invoke('mind:mcpResponse', {
+                    requestId,
+                    ok: false,
+                    error: { message: error instanceof Error ? error.message : String(error) },
+                });
+            }
+        });
+        removeMcpDocUpdatedListener = window.electronAPI.on('mind:mcp-doc-updated', (_event: any, payload: any) => {
+            if (payload?.docId !== docId.value || !payload?.doc) return;
+            doc.value = payload.doc;
+            if (Object.prototype.hasOwnProperty.call(payload, 'filePath')) {
+                filePath.value = payload.filePath ?? null;
+            }
+        });
     }
     await loadRecentPaths();
 });
@@ -250,6 +277,10 @@ onBeforeUnmount(() => {
     removeAuthLogoutListener = null;
     removeAuthLoginListener?.();
     removeAuthLoginListener = null;
+    removeMcpRequestListener?.();
+    removeMcpRequestListener = null;
+    removeMcpDocUpdatedListener?.();
+    removeMcpDocUpdatedListener = null;
 });
 
 function changeFilePath(value: any) {

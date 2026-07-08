@@ -90,7 +90,8 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
   switch (type) {
     case 'process_started':
       state.status = 'running'
-      state.steps = []
+      // 0704 防闪：不清 steps——后端在 process_started 之前已发 intent（前端已推"意图:…"步），
+      // 这里一清就是"文字出现又消失+过程区塌一下"。每轮真正的清零在 sendFoundationTurn 开头 resetProcessState。
       state.startedAt = String(event.started_at || '')
       state.durationMs = 0
       state.summary = ''
@@ -240,7 +241,7 @@ export function formatDuration(ms: number): string {
   if (!ms || ms < 0) return '0s'
   if (ms < 1000) return '<1s'
   const seconds = ms / 1000
-  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1).replace(/\.0$/, '') : Math.round(seconds)}s`
+  if (seconds < 60) return `${Math.round(seconds)}s`
   const mins = Math.floor(seconds / 60)
   const rem = Math.round(seconds % 60)
   return rem ? `${mins}m${rem}s` : `${mins}m`

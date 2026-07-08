@@ -21,6 +21,9 @@
                 <button class="mind-hero-button" type="button" @click="openLocalMindFile">
                     打开本地文件
                 </button>
+                <button class="mind-hero-button" type="button" @click="openMcpConfigDialog">
+                    MCP 配置
+                </button>
             </div>
         </section>
 
@@ -62,6 +65,63 @@
                 <p class="mind-recents-empty-description">保存一次文件后，这里会显示自动生成的预览图片。</p>
             </section>
         </section>
+
+        <div v-if="mcpConfigVisible" class="mcp-config-overlay" @click.self="closeMcpConfigDialog">
+            <section class="mcp-config-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-config-title">
+                <header class="mcp-config-header">
+                    <div>
+                        <p class="mcp-config-eyebrow">MCP</p>
+                        <h2 id="mcp-config-title" class="mcp-config-title">stdio 配置</h2>
+                    </div>
+                    <button class="mcp-config-close" type="button" aria-label="关闭" @click="closeMcpConfigDialog"></button>
+                </header>
+
+                <div v-if="mcpConfigLoading" class="mcp-config-state">正在读取配置...</div>
+                <div v-else-if="mcpConfigError" class="mcp-config-state is-error">{{ mcpConfigError }}</div>
+                <div v-else-if="mcpConfig" class="mcp-config-body">
+                    <section class="mcp-config-item">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">服务名</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(mcpConfig.serverName)">
+                                复制
+                            </button>
+                        </div>
+                        <div class="mcp-config-code is-single-line">{{ mcpConfig.serverName }}</div>
+                    </section>
+
+                    <section class="mcp-config-item">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">Command（启动命令）</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(mcpConfig.command)">
+                                复制
+                            </button>
+                        </div>
+                        <div class="mcp-config-code is-single-line">{{ mcpConfig.command }}</div>
+                    </section>
+
+                    <section class="mcp-config-item">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">Args（启动参数）</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(formatPrimaryMcpArg(mcpConfig.args))">
+                                复制
+                            </button>
+                        </div>
+                        <div class="mcp-config-code is-single-line">{{ formatPrimaryMcpArg(mcpConfig.args) }}</div>
+                    </section>
+
+                    <section class="mcp-config-item mcp-config-item--separated">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">通用 stdio JSON</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(mcpConfig.stdioJsonText)">
+                                复制全部
+                            </button>
+                        </div>
+                        <pre class="mcp-config-code is-block">{{ mcpConfig.stdioJsonText }}</pre>
+                    </section>
+
+                </div>
+            </section>
+        </div>
     </div>
 </template>
 
@@ -77,7 +137,26 @@ type RecentMindEntry = {
     previewUrl?: string | null;
 };
 
+type MindMcpConfig = {
+    serverName: string;
+    transport: string;
+    command: string;
+    args: string[];
+    stdioJson: Record<string, {
+        type: string;
+        command: string;
+        args: string[];
+    }>;
+    stdioJsonText: string;
+    codexToml: string;
+    note?: string;
+};
+
 const recentMindEntries = ref<RecentMindEntry[]>([]);
+const mcpConfigVisible = ref(false);
+const mcpConfigLoading = ref(false);
+const mcpConfigError = ref<string | null>(null);
+const mcpConfig = ref<MindMcpConfig | null>(null);
 let removeRecentUpdateListener: (() => void) | null = null;
 
 onMounted(() => {
@@ -135,6 +214,45 @@ async function openLocalMindFile() {
         await loadRecentMindEntries();
     } catch {
         window.$toast({ title: '打开本地文件失败', type: 'error' });
+    }
+}
+
+async function openMcpConfigDialog() {
+    mcpConfigVisible.value = true;
+    mcpConfigLoading.value = true;
+    mcpConfigError.value = null;
+    try {
+        const result = await window.electronAPI.mcp?.mindConfig?.();
+        if (!result?.command || !Array.isArray(result?.args) || !result?.stdioJsonText) {
+            throw new Error('MCP 配置信息不完整');
+        }
+        mcpConfig.value = result;
+    } catch (error) {
+        mcpConfig.value = null;
+        mcpConfigError.value = error instanceof Error ? error.message : '读取 MCP 配置失败';
+    } finally {
+        mcpConfigLoading.value = false;
+    }
+}
+
+function closeMcpConfigDialog() {
+    mcpConfigVisible.value = false;
+}
+
+function formatMcpArgs(args: string[]) {
+    return JSON.stringify(args, null, 2);
+}
+
+function formatPrimaryMcpArg(args: string[]) {
+    return args[0] ?? '';
+}
+
+async function copyMcpValue(value: string) {
+    try {
+        await navigator.clipboard.writeText(value);
+        window.$toast({ title: '已复制配置', type: 'success' });
+    } catch {
+        window.$toast({ title: '复制失败', type: 'error' });
     }
 }
 
@@ -483,5 +601,188 @@ function formatUpdatedAt(value?: string | null) {
 .mind-recents-empty-description {
     margin: 8px 0 0 0;
     font-size: 13px;
+}
+
+.mcp-config-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.36);
+    backdrop-filter: blur(10px);
+}
+
+.mcp-config-dialog {
+    width: min(760px, 100%);
+    max-height: min(82vh, 720px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #ffffff, #f9fafb);
+    border: 1px solid rgba(229, 231, 235, 0.95);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.mcp-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.mcp-config-eyebrow {
+    margin: 0 0 6px;
+    color: #10b981;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.mcp-config-title {
+    margin: 0;
+    color: #111827;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.mcp-config-close {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    appearance: none;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.mcp-config-close::before,
+.mcp-config-close::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 2px;
+    content: '';
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.mcp-config-close::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.mcp-config-close::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.mcp-config-close:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.mcp-config-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 20px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.mcp-config-state {
+    padding: 28px 24px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.mcp-config-state.is-error {
+    color: #b91c1c;
+}
+
+.mcp-config-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.76);
+    padding: 14px;
+}
+
+.mcp-config-item--separated {
+    margin-top: 8px;
+}
+
+.mcp-config-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.mcp-config-label {
+    color: #374151;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.mcp-config-copy {
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 10px;
+    cursor: pointer;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.mcp-config-copy:hover {
+    transform: translateY(-1px);
+    border-color: rgba(16, 185, 129, 0.34);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.mcp-config-code {
+    box-sizing: border-box;
+    width: 100%;
+    color: #111827;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    user-select: text;
+    overflow-wrap: anywhere;
+}
+
+.mcp-config-code.is-single-line {
+    min-height: auto;
+    padding: 0;
+    white-space: normal;
+}
+
+.mcp-config-code.is-block {
+    margin: 0;
+    max-height: 220px;
+    padding: 0;
+    white-space: pre;
+    overflow: auto;
+}
+
+.mcp-config-code.is-compact {
+    max-height: 120px;
 }
 </style>

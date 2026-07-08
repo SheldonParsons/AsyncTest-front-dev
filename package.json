@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "2.2.20",
+  "version": "2.3.1",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：现在拖拽框选到视口边缘时可以触发自动平移循环\\n#### 缺陷修复：修复文字超过当前视口时导致的视口变小问题\\n#### 缺陷修复：修复 preview 和编辑态下文字不对齐的问题\\n#### 缺陷修复：修复前节点过大时导致子节点换行错误的问题\",\"publishDate\":\"2026-07-03\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n#### 新增功能：新增思维导图 AsyncTest Mind MCP（preview）\\n#### 缺陷修复：修复编辑模式下对第一个字符加粗导致预览模式下所有内容加粗的问题\",\"publishDate\":\"2026-07-08\"}"
     },
     "publish": [
       {

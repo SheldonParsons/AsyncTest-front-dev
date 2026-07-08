@@ -118,6 +118,32 @@ export function isRichTextFullyEmpty(richText: RichTextDocument | null | undefin
   );
 }
 
+function getTextBearingInlines(richText: RichTextDocument): RichTextInline[] {
+  const inlines = richText.blocks.flatMap((block) => block.inlines ?? []);
+  const textInlines = inlines.filter((inline) => String(inline.text ?? '').length > 0);
+  return textInlines.length ? textInlines : inlines;
+}
+
+function getUniformExplicitInlineMark<T extends keyof RichTextMarks>(
+  richText: RichTextDocument,
+  key: T
+): RichTextMarks[T] | undefined {
+  const inlines = getTextBearingInlines(richText);
+  if (!inlines.length) return undefined;
+  let uniformValue: RichTextMarks[T] | undefined;
+  for (const inline of inlines) {
+    const marks = inline.marks;
+    if (!marks || marks[key] === undefined) return undefined;
+    const nextValue = marks[key];
+    if (uniformValue === undefined) {
+      uniformValue = nextValue;
+      continue;
+    }
+    if (uniformValue !== nextValue) return undefined;
+  }
+  return uniformValue;
+}
+
 export function getNodeMinimumWidth(
   node: MindNodeLike | null | undefined,
   richText?: RichTextDocument,
@@ -340,13 +366,16 @@ export function getNodeTextStyle(
 ): NodeTextStyle {
   const richText = getNodeRichText(node);
   const firstBlock = richText.blocks[0];
-  const firstInline = firstBlock?.inlines.find((inline) => inline.text.length || inline.marks) ?? firstBlock?.inlines[0];
-  const marks = firstInline?.marks;
+  const uniformFontFamily = getUniformExplicitInlineMark(richText, 'fontFamily');
+  const uniformFontSize = getUniformExplicitInlineMark(richText, 'fontSize');
+  const uniformBold = getUniformExplicitInlineMark(richText, 'bold');
+  const uniformItalic = getUniformExplicitInlineMark(richText, 'italic');
+  const uniformColor = getUniformExplicitInlineMark(richText, 'color');
   const defaults = buildDefaultNodeTextStyle(options?.doc, options?.nodeId);
-  const fontFamily = marks?.fontFamily ?? defaults.fontFamily;
-  const fontSizePx = marks?.fontSize ?? defaults.fontSizePx;
-  const fontWeight = marks?.bold === true ? 700 : marks?.bold === false ? 400 : defaults.fontWeight;
-  const fontStyle = marks?.italic === true ? 'italic' : marks?.italic === false ? 'normal' : defaults.fontStyle;
+  const fontFamily = uniformFontFamily ?? defaults.fontFamily;
+  const fontSizePx = uniformFontSize ?? defaults.fontSizePx;
+  const fontWeight = uniformBold === true ? 700 : uniformBold === false ? 400 : defaults.fontWeight;
+  const fontStyle = uniformItalic === true ? 'italic' : uniformItalic === false ? 'normal' : defaults.fontStyle;
   const lineHeightPx = Math.max(NODE_LINE_HEIGHT, Math.ceil(fontSizePx * 1.3));
   return {
     fontFamily,
@@ -354,7 +383,7 @@ export function getNodeTextStyle(
     fontWeight,
     fontStyle,
     lineHeightPx,
-    color: marks?.color ?? defaults.color,
+    color: uniformColor ?? defaults.color,
     textAlign: firstBlock?.align ?? defaults.textAlign,
     letterSpacingPx: 0,
     canvasFontString: buildCanvasFont({ fontFamily, fontSizePx, fontWeight, fontStyle }),

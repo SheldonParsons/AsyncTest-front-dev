@@ -23,12 +23,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         broadcast: (channel, payload) =>
             ipcRenderer.invoke('wm:broadcast', { channel, payload }),
         control: (key, action) => ipcRenderer.invoke('wm:control', { key, action }),
+        isMaximized: (key) => ipcRenderer.invoke('wm:isMaximized', key),
 
         // 新增：renderer 回应“是否允许关闭”
         closeResponse: ({ key, allow }) => ipcRenderer.invoke('wm:closeResponse', { key, allow }),
     },
 
     platform: process.platform,
+
+    mcp: {
+        mindConfig: () => ipcRenderer.invoke('mcp:mindConfig'),
+    },
 
     mindClipboard: {
         writeNodeClipboard: (payload) => ipcRenderer.invoke('clipboard:writeMindNodes', payload),

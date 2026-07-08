@@ -26,6 +26,19 @@ export interface VibeSession {
   last_event_at?: string
 }
 
+export interface VibeAttachment {
+  id?: string
+  name?: string
+  filename?: string
+  mime?: string
+  size?: number
+  content?: string
+  text?: string
+  download_url?: string
+  kind?: string
+  chars?: number
+}
+
 export interface VibeEvent {
   id: string
   session_id: string
@@ -34,7 +47,7 @@ export interface VibeEvent {
   role: string
   input_type: string
   content: string
-  attachments: any[]
+  attachments: VibeAttachment[]
   event_order: number
   mode?: string
   test_run_id?: string
@@ -114,6 +127,116 @@ export interface VibeLLMRuntimeConfig {
   source: string
   provider: Record<string, any> | null
   models: Record<string, string>
+}
+
+export interface VibeCapabilityUser {
+  id?: number | null
+  username: string
+  nick_name: string
+  display_name: string
+  email?: string
+  mobile?: string
+  sex?: number | null
+  avatar_url?: string
+}
+
+export interface VibeFeatureConfig {
+  account: string
+  feature_key: string
+  enabled: boolean
+  config: Record<string, any>
+  source: string
+  updated_at?: string | null
+}
+
+export interface VibeCapabilities {
+  user_id: number
+  account: string
+  user: VibeCapabilityUser
+  capabilities: Record<string, boolean>
+  feature_configs?: Record<string, VibeFeatureConfig>
+}
+
+export function getVibeCapabilities(): Promise<VibeCapabilities> {
+  return request('GET', '/vibe/capabilities')
+}
+
+export function getVibeAdminFeatureConfigs(): Promise<{ items: Record<string, VibeFeatureConfig> }> {
+  return request('GET', '/vibe/admin/feature-configs')
+}
+
+export function updateVibeTraceAuditConfig(enabled: boolean): Promise<{ ok: boolean; item: VibeFeatureConfig }> {
+  return request('PATCH', '/vibe/admin/feature-configs/trace_audit', { enabled })
+}
+
+
+export interface VibeDialogueTraceRun {
+  trace_id: string
+  audit_marker?: string
+  turn_id?: string
+  session_id?: string
+  session_title?: string
+  project_id?: string
+  project_name?: string
+  user_id?: number
+  account?: string
+  username?: string
+  user_display_name?: string
+  input_text?: string
+  route_action?: string
+  final_status?: string
+  summary?: string
+  started_at?: string
+  ended_at?: string | null
+  elapsed_ms?: number | null
+}
+
+export interface VibeDialogueTraceEvent {
+  id: number
+  trace_id: string
+  seq: number
+  stage: string
+  event_type: string
+  title?: string
+  reason?: string
+  severity?: string
+  elapsed_ms?: number | null
+  created_at?: string
+  payload?: Record<string, any>
+}
+
+export interface VibeDialogueTraceDetail extends VibeDialogueTraceRun {
+  request_id?: string
+  attachment_summary?: Record<string, any>
+  side_effects?: Record<string, any>
+  events: VibeDialogueTraceEvent[]
+}
+
+export function listVibeDialogueTraceRuns(params: {
+  limit?: number
+  cursor?: string
+  project?: string
+  user?: string
+  status?: string
+  q?: string
+} = {}): Promise<{
+  items: VibeDialogueTraceRun[]
+  next_cursor: string
+  filters?: {
+    projects?: Array<{ project_id: string; project_name: string; count: number }>
+    users?: Array<{ user_id?: number; account?: string; username?: string; user_display_name?: string; label: string; count: number }>
+  }
+}> {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) query.set(key, String(value))
+  })
+  const qs = query.toString()
+  return request('GET', `/vibe/foundation/dialogue-trace/runs${qs ? `?${qs}` : ''}`)
+}
+
+export function getVibeDialogueTraceDetail(traceId: string): Promise<VibeDialogueTraceDetail> {
+  return request('GET', `/vibe/foundation/dialogue-trace/runs/${traceId}`)
 }
 
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {
@@ -523,14 +646,38 @@ export function streamFoundationTurn(
   // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
   // mode='document' + document：文件整篇录入——document 放整篇原文(切段进 passage 库)，text 只作"导入《X》"干净消息。
   // apply_edit：改原文确认后回传的 diff 提案（passage_id+new_body…），后端确定性落库。
-  payload: { project: string; text: string; session_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; apply_edit?: any },
+  payload: { project: string; text: string; session_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean },
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
   return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)
 }
 
+export interface FoundationRunningTurn {
+  turn_id: string
+  session_id: string
+  project: string
+  done: boolean
+  failed?: string
+  started_at?: number
+  updated_at?: number
+  events: any[]
+}
+
+export function listFoundationRunningTurns(params: { project?: string; session_id?: string } = {}): Promise<{ items: FoundationRunningTurn[] }> {
+  const query = new URLSearchParams()
+  if (params.project) query.set('project', params.project)
+  if (params.session_id) query.set('session_id', params.session_id)
+  const qs = query.toString()
+  return request('GET', `/vibe/foundation/turn/running${qs ? `?${qs}` : ''}`)
+}
+
 export function listFoundationProposals(): Promise<{ items: FoundationProposal[] }> {
   return request('GET', '/vibe/foundation/proposals')
+}
+
+/** T26 停止本轮：置位后端取消令牌。流会自己发 cancelled+已停止回执+done 正常收尾，无需 abort。 */
+export function cancelFoundationTurn(turnId: string): Promise<{ ok: boolean; cancelled: boolean }> {
+  return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId })
 }
 
 /** 左栏只读"知识库概览"：原文段数 + 覆盖模块数（按 project 隔离）。 */
@@ -547,4 +694,119 @@ export function getFoundationPassageStatsMany(
 
 export function actFoundationProposal(taskId: number, action: 'approve' | 'reject'): Promise<{ message: string; pending: number }> {
   return request('POST', `/vibe/foundation/proposals/${taskId}/${action}`)
+}
+
+// ===== T31 知识库原文视角浏览 =====
+
+export interface KbBrowserPassage {
+  id: number
+  project: string
+  ord: number
+  breadcrumb: string
+  title: string
+  level: number
+  namespace: string
+  module: string
+  body: string
+  status: 'active' | 'deleted' | string
+  parent_ord?: number | null
+  has_recent_change?: boolean
+  is_chat_appended?: boolean
+}
+
+export interface KbBrowserHistoryItem {
+  id: number
+  passage_id: number
+  project: string
+  op: 'insert' | 'update' | 'delete' | string
+  edit_request?: string
+  batch_id?: string | null
+  actor_user_id?: number | null
+  actor_name?: string
+  undone: boolean
+  edited_at?: string
+  breadcrumb?: string
+  title?: string
+  namespace?: string
+  module?: string
+  status?: string
+  body_before?: string | null
+  body_after?: string | null
+  body_before_preview?: string
+  body_after_preview?: string
+}
+
+export interface KbBrowserSummary {
+  project: string
+  passages: { active: number; deleted: number; total: number }
+  modules: number
+  sources: number
+  history: number
+  top_modules: Array<{ module: string; active_count: number }>
+  recent_changes: KbBrowserHistoryItem[]
+  legacy_note?: string
+}
+
+export interface KbBrowserTreeModule {
+  module: string
+  active_count: number
+  deleted_count: number
+  first_ord: number
+  passages: Array<Pick<KbBrowserPassage, 'id' | 'ord' | 'breadcrumb' | 'title' | 'level' | 'status'>>
+}
+
+export interface KbBrowserReceipt {
+  batch_id: string
+  operation_kind?: string
+  common_prefix?: string
+  affected_count?: number
+  started_at?: string
+  ended_at?: string
+  total: number
+  inserted: number
+  updated: number
+  deleted: number
+  edit_request?: string
+}
+
+function kbBrowserQuery(params: Record<string, any>) {
+  const usp = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    usp.set(key, String(value))
+  })
+  const qs = usp.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export function getKbBrowserSummary(project: string): Promise<KbBrowserSummary> {
+  return request('GET', `/vibe/foundation/kb-browser/summary${kbBrowserQuery({ project })}`)
+}
+
+export function getKbBrowserTree(project: string, includeDeleted = false): Promise<{ project: string; modules: KbBrowserTreeModule[]; include_deleted: boolean }> {
+  return request('GET', `/vibe/foundation/kb-browser/tree${kbBrowserQuery({ project, include_deleted: includeDeleted ? '1' : '' })}`)
+}
+
+export function getKbBrowserDocument(project: string, params: { namespace?: string; include_deleted?: boolean } = {}): Promise<{ project: string; namespace: string; include_deleted: boolean; passages: KbBrowserPassage[] }> {
+  return request('GET', `/vibe/foundation/kb-browser/document${kbBrowserQuery({ project, namespace: params.namespace, include_deleted: params.include_deleted ? '1' : '' })}`)
+}
+
+export function searchKbBrowserPassages(project: string, params: { q?: string; namespace?: string; status?: string; limit?: number; cursor?: number } = {}): Promise<{ project: string; items: KbBrowserPassage[]; next_cursor?: number | null }> {
+  return request('GET', `/vibe/foundation/kb-browser/passages${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKbBrowserPassageDetail(project: string, passageId: number): Promise<{ project: string; passage: KbBrowserPassage; history: KbBrowserHistoryItem[] }> {
+  return request('GET', `/vibe/foundation/kb-browser/passages/${passageId}${kbBrowserQuery({ project })}`)
+}
+
+export function getKbBrowserHistory(project: string, params: { op?: string; batch_id?: string; passage_id?: number; limit?: number; cursor?: number; include_undone?: boolean } = {}): Promise<{ project: string; items: KbBrowserHistoryItem[]; next_cursor?: number | null }> {
+  return request('GET', `/vibe/foundation/kb-browser/history${kbBrowserQuery({ project, ...params, include_undone: params.include_undone ? '1' : '' })}`)
+}
+
+export function getKbBrowserReceipts(project: string, limit = 30): Promise<{ project: string; items: KbBrowserReceipt[] }> {
+  return request('GET', `/vibe/foundation/kb-browser/receipts${kbBrowserQuery({ project, limit })}`)
+}
+
+export function getKbBrowserReceiptDetail(project: string, batchId: string): Promise<{ project: string; batch_id: string; operation_kind?: string; common_prefix?: string; affected_count?: number; items: KbBrowserHistoryItem[] }> {
+  return request('GET', `/vibe/foundation/kb-browser/receipts/${encodeURIComponent(batchId)}${kbBrowserQuery({ project })}`)
 }

@@ -32,6 +32,22 @@ export interface IElectronAPI {
   invoke: (event: any) => void;
   wm: any,
   platform: any,
+  mcp?: {
+    mindConfig: () => Promise<{
+      serverName: string;
+      transport: string;
+      command: string;
+      args: string[];
+      stdioJson: Record<string, {
+        type: string;
+        command: string;
+        args: string[];
+      }>;
+      stdioJsonText: string;
+      codexToml: string;
+      note?: string;
+    }>;
+  },
   mindClipboard?: {
     writeNodeClipboard: (payload: { text: string; payload: string }) => Promise<boolean>;
     readNodeClipboard: () => Promise<string | null>;

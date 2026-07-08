@@ -192,9 +192,12 @@ export function initAmindMain({ userDataPath, windowManager }) {
         docStore.remove(docId);
       },
 
-      beforeClose: async () => {
+      beforeClose: async (closeOptions = {}) => {
         if (typeof windowManager.requestCloseFromRenderer === 'function') {
-          return await windowManager.requestCloseFromRenderer(windowKey);
+          return await windowManager.requestCloseFromRenderer(windowKey, {
+            source: closeOptions?.source ?? null,
+            forceSaveBeforeClose: closeOptions?.forceSaveBeforeClose === true,
+          });
         }
         return true;
       },
@@ -208,6 +211,20 @@ export function initAmindMain({ userDataPath, windowManager }) {
       windowManager.hide('main');
     }
     return { windowKey };
+  }
+
+  async function newAndOpenWindow(payload = {}) {
+    const docId = newDocId();
+    const doc = createEmptyDoc(undefined, payload);
+    console.info('[mind-style-debug:main] create new window doc manifest', {
+      renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
+      title: doc?.manifest?.title ?? null,
+      payload,
+    });
+    docStore.create(docId, { doc, filePath: null, windowKey: null });
+
+    await openMindWindow({ docId, filePath: null, title: 'AsyncTest Mind' });
+    return { docId, filePath: null };
   }
 
   async function openFileInWindow(filePath) {
@@ -343,17 +360,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
   });
 
   ipcMain.handle('amind:newAndOpenWindow', async (event, payload = {}) => {
-    const docId = newDocId();
-    const doc = createEmptyDoc(undefined, payload);
-    console.info('[mind-style-debug:main] create new window doc manifest', {
-      renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
-      title: doc?.manifest?.title ?? null,
-      payload,
-    });
-    docStore.create(docId, { doc, filePath: null, windowKey: null });
-
-    await openMindWindow({ docId, filePath: null, title: 'AsyncTest Mind' });
-    return { docId, filePath: null };
+    return await newAndOpenWindow(payload);
   });
 
   ipcMain.handle('amind:openFileInWindow', async (event, { filePath }) => {
@@ -757,6 +764,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     assetCache,
     docStore,
     fileIndex,
+    newAndOpenWindow,
     openFileInWindow,
     importXmindFileInWindow,
     importMarkdownFileInWindow,

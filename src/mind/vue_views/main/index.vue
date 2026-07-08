@@ -8519,6 +8519,7 @@ defineExpose({
   triggerHeaderRelationAction,
   triggerHeaderSummaryAction,
   zoomTo,
+  handleMindMcpRequest,
 });
 
 function findParentAndIndexFromNodes(nodeId: string) {
@@ -13175,9 +13176,14 @@ async function onWindowPaste(event: ClipboardEvent) {
   executeCommand(createMultiTargetPasteTextLinesCommand(pasteTargetNodeIds, lines));
 }
 
-async function handleBeforeCloseRequest(key: string) {
+async function handleBeforeCloseRequest(key: string, options: { forceSaveBeforeClose?: boolean } = {}) {
   if (isSaving.value) {
     await window.electronAPI.wm.closeResponse({ key, allow: false });
+    return;
+  }
+  if (options.forceSaveBeforeClose === true) {
+    const saved = await saveDocument();
+    await window.electronAPI.wm.closeResponse({ key, allow: saved });
     return;
   }
   if (!shouldConfirmClose.value) {
@@ -13871,6 +13877,520 @@ function agentGetChildIds(parentId: string): string[] {
   return getRegularChildIds(parent);
 }
 
+function mcpCloneJson<T>(value: T): T {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function mcpGetNodeText(node: any) {
+  if (typeof node?.text === 'string') return node.text;
+  if (Array.isArray(node?.richText)) {
+    return node.richText.map((run: any) => (typeof run?.text === 'string' ? run.text : '')).join('');
+  }
+  const lexicalRoot = node?.textLexical?.root ?? node?.textLexical;
+  if (lexicalRoot && Array.isArray(lexicalRoot.children)) {
+    const readLexical = (entry: any): string => {
+      if (!entry || typeof entry !== 'object') return '';
+      if (typeof entry.text === 'string') return entry.text;
+      if (Array.isArray(entry.children)) return entry.children.map(readLexical).join('');
+      return '';
+    };
+    return readLexical(lexicalRoot);
+  }
+  return '';
+}
+
+function mcpGetNodeNote(node: any) {
+  const note = node?.note ?? node?.notes ?? node?.remark ?? null;
+  return typeof note === 'string' ? note : note == null ? null : mcpCloneJson(note);
+}
+
+function mcpGetImageSummary(node: any) {
+  const images: any[] = [];
+  if (node?.image && typeof node.image === 'object') {
+    images.push({
+      assetId: node.image.assetId ?? null,
+      ext: node.image.ext ?? null,
+      width: node.image.w ?? node.image.width ?? null,
+      height: node.image.h ?? node.image.height ?? null,
+    });
+  }
+  if (Array.isArray(node?.images)) {
+    node.images.forEach((image: any) => {
+      if (!image || typeof image !== 'object') return;
+      images.push({
+        assetId: image.assetId ?? null,
+        ext: image.ext ?? null,
+        width: image.w ?? image.width ?? null,
+        height: image.h ?? image.height ?? null,
+      });
+    });
+  }
+  return images;
+}
+
+function mcpSerializeNode(nodeId: string, options: any = {}) {
+  const nodes = getMindNodes();
+  const node = nodes?.[nodeId];
+  if (!node) return null;
+  const childIds = Array.isArray(node.children) ? [...node.children] : [];
+  const result: any = {
+    id: nodeId,
+    text: mcpGetNodeText(node),
+    parentId: node.parentId ?? null,
+    childIds,
+    hasChildren: childIds.length > 0,
+  };
+  if (options.includeNotes) result.note = mcpGetNodeNote(node);
+  if (options.includeImages) {
+    result.images = mcpGetImageSummary(node);
+    result.imageCount = result.images.length;
+  }
+  if (options.includeMetadata) {
+    result.metadata = {
+      collapsed: !!node.collapsed,
+      icon: node.icon ?? null,
+      markers: mcpCloneJson(node.markers ?? node.markerKeys ?? null),
+      style: mcpCloneJson(node.style ?? null),
+      secrecy: mcpCloneJson(node.secrecy ?? null),
+      nodeKind: node.nodeKind ?? null,
+    };
+  }
+  return result;
+}
+
+function mcpBuildOutlineNode(nodeId: string, depth: number, maxDepth: number | null): any {
+  const node = getMindNodes()?.[nodeId];
+  if (!node) return null;
+  const children = Array.isArray(node.children) ? node.children : [];
+  const result: any = {
+    id: nodeId,
+    text: mcpGetNodeText(node),
+    childCount: children.length,
+  };
+  if (maxDepth == null || depth < maxDepth) {
+    const childOutlines = children.map((childId: string) => mcpBuildOutlineNode(childId, depth + 1, maxDepth)).filter(Boolean);
+    if (childOutlines.length) result.children = childOutlines;
+  }
+  return result;
+}
+
+function mcpGetDocumentOutline(params: any = {}) {
+  const nodes = getMindNodes();
+  const roots = getMindRoots();
+  if (!nodes) throw new Error('Mind document is not ready');
+  const maxDepth = Number.isInteger(params.depth) ? params.depth : null;
+  return {
+    docId: props.docId,
+    filePath: props.filePath ?? null,
+    title: props.doc?.manifest?.title ?? null,
+    nodeCount: Object.keys(nodes).length,
+    roots: roots.map((root: any) => mcpBuildOutlineNode(root.rootId, 0, maxDepth)).filter(Boolean),
+  };
+}
+
+function mcpGetSubtree(nodeId: string, params: any = {}) {
+  const maxDepth = Number.isInteger(params.depth) ? params.depth : null;
+  function walk(currentId: string, depth: number): any {
+    const item = mcpSerializeNode(currentId, params);
+    if (!item) return null;
+    if (maxDepth == null || depth < maxDepth) {
+      item.children = item.childIds.map((childId: string) => walk(childId, depth + 1)).filter(Boolean);
+    }
+    return item;
+  }
+  const subtree = walk(nodeId, 0);
+  if (!subtree) throw new Error(`Node not found: ${nodeId}`);
+  return { subtree };
+}
+
+function mcpGetParentChain(nodeId: string, params: any = {}) {
+  const nodes = getMindNodes();
+  if (!nodes?.[nodeId]) throw new Error(`Node not found: ${nodeId}`);
+  const chain = [];
+  let currentId: string | null = nodeId;
+  const seen = new Set<string>();
+  while (currentId && nodes[currentId] && !seen.has(currentId)) {
+    seen.add(currentId);
+    chain.push(mcpSerializeNode(currentId, params));
+    currentId = nodes[currentId]?.parentId ?? null;
+  }
+  return { chain: chain.reverse() };
+}
+
+function mcpGetChildren(nodeId: string, params: any = {}) {
+  const node = getMindNodes()?.[nodeId];
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  const childIds = Array.isArray(node.children) ? [...node.children] : [];
+  if (params.includeContent === false) return { nodeId, childIds };
+  return { nodeId, children: childIds.map((childId) => mcpSerializeNode(childId, params)).filter(Boolean) };
+}
+
+function mcpSearchNodes(params: any = {}) {
+  const query = String(params.query || '').trim();
+  if (!query) throw new Error('query is required');
+  const caseSensitive = params.caseSensitive === true;
+  const needle = caseSensitive ? query : query.toLowerCase();
+  const limit = Math.max(1, Math.min(200, Number.parseInt(String(params.limit ?? 50), 10) || 50));
+  const nodes = getMindNodes();
+  if (!nodes) throw new Error('Mind document is not ready');
+  const results: any[] = [];
+  for (const [nodeId, node] of Object.entries(nodes)) {
+    const text = mcpGetNodeText(node);
+    const note = typeof mcpGetNodeNote(node) === 'string' ? mcpGetNodeNote(node) : '';
+    const haystack = caseSensitive ? `${text}\n${note}` : `${text}\n${note}`.toLowerCase();
+    if (!haystack.includes(needle)) continue;
+    results.push(mcpSerializeNode(nodeId, params));
+    if (results.length >= limit) break;
+  }
+  return { query, results };
+}
+
+function mcpFindNodesByFilter(params: any = {}) {
+  const nodes = getMindNodes();
+  if (!nodes) throw new Error('Mind document is not ready');
+  const limit = Math.max(1, Math.min(200, Number.parseInt(String(params.limit ?? 50), 10) || 50));
+  const textIncludes = typeof params.textIncludes === 'string' && params.textIncludes
+    ? params.textIncludes.toLowerCase()
+    : null;
+  const results: any[] = [];
+  for (const [nodeId, node] of Object.entries(nodes)) {
+    const images = mcpGetImageSummary(node);
+    const note = mcpGetNodeNote(node);
+    const childIds = Array.isArray((node as any).children) ? (node as any).children : [];
+    if (typeof params.hasNote === 'boolean' && (!!note) !== params.hasNote) continue;
+    if (typeof params.hasImage === 'boolean' && (images.length > 0) !== params.hasImage) continue;
+    if (typeof params.hasChildren === 'boolean' && (childIds.length > 0) !== params.hasChildren) continue;
+    if (textIncludes && !mcpGetNodeText(node).toLowerCase().includes(textIncludes)) continue;
+    results.push(mcpSerializeNode(nodeId, params));
+    if (results.length >= limit) break;
+  }
+  return { results };
+}
+
+function mcpUpdateNodeNote(nodeId: string, note: string) {
+  const node = getMindNodes()?.[nodeId];
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  const beforeNote = mcpGetNodeNote(node);
+  const command: Command = {
+    name: 'McpUpdateNodeNoteCommand',
+    do: () => {
+      const current = getMindNodes()?.[nodeId];
+      if (!current) return;
+      current.note = note;
+      void applyDocumentMutation('mcp:update-node-note', { ensureVisibleNodeId: nodeId });
+    },
+    undo: () => {
+      const current = getMindNodes()?.[nodeId];
+      if (!current) return;
+      current.note = beforeNote;
+      void applyDocumentMutation('mcp:undo-update-node-note', { ensureVisibleNodeId: nodeId });
+    },
+    redo: () => {
+      const current = getMindNodes()?.[nodeId];
+      if (!current) return;
+      current.note = note;
+      void applyDocumentMutation('mcp:redo-update-node-note', { ensureVisibleNodeId: nodeId });
+    },
+  };
+  executeCommand(command);
+  return { ok: true, node: mcpSerializeNode(nodeId, { includeNotes: true }) };
+}
+
+function mcpUpdateNodeMetadata(nodeId: string, metadata: any) {
+  const node = getMindNodes()?.[nodeId];
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('metadata must be an object');
+  const before = mcpCloneJson(node);
+  const command: Command = {
+    name: 'McpUpdateNodeMetadataCommand',
+    do: () => {
+      const current = getMindNodes()?.[nodeId];
+      if (!current) return;
+      Object.assign(current, mcpCloneJson(metadata));
+      void applyDocumentMutation('mcp:update-node-metadata', { ensureVisibleNodeId: nodeId });
+    },
+    undo: () => {
+      const nodes = getMindNodes();
+      if (!nodes?.[nodeId]) return;
+      nodes[nodeId] = mcpCloneJson(before);
+      void applyDocumentMutation('mcp:undo-update-node-metadata', { ensureVisibleNodeId: nodeId });
+    },
+    redo: () => {
+      const current = getMindNodes()?.[nodeId];
+      if (!current) return;
+      Object.assign(current, mcpCloneJson(metadata));
+      void applyDocumentMutation('mcp:redo-update-node-metadata', { ensureVisibleNodeId: nodeId });
+    },
+  };
+  executeCommand(command);
+  return { ok: true, node: mcpSerializeNode(nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+}
+
+function mcpCreateNode(parentId: string, text: string) {
+  const nodeId = agentAddChildNode(parentId, text);
+  if (!nodeId) throw new Error(`Cannot create node under parent: ${parentId}`);
+  return { ok: true, nodeId, node: mcpSerializeNode(nodeId, { includeNotes: true, includeImages: true }) };
+}
+
+function mcpCreateNodes(parentId: string, nodeInputs: any[]) {
+  if (!Array.isArray(nodeInputs)) throw new Error('nodes must be an array');
+  const created: any[] = [];
+  const createRecursively = (targetParentId: string, input: any) => {
+    const text = typeof input === 'string' ? input : String(input?.text ?? '');
+    const result = mcpCreateNode(targetParentId, text);
+    created.push(result);
+    const children = Array.isArray(input?.children) ? input.children : [];
+    children.forEach((child) => createRecursively(result.nodeId, child));
+    return result;
+  };
+  nodeInputs.forEach((input) => createRecursively(parentId, input));
+  return { ok: true, created };
+}
+
+function mcpDeleteNode(nodeId: string, params: any = {}) {
+  const node = getMindNodes()?.[nodeId];
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  const childIds = Array.isArray(node.children) ? node.children : [];
+  if (childIds.length && params.deleteSubtree !== true) {
+    throw new Error('Node has children. Pass deleteSubtree: true to delete the subtree.');
+  }
+  const ok = agentDeleteNode(nodeId);
+  return { ok, nodeId };
+}
+
+function mcpCollectSubtreeIds(nodeId: string) {
+  const nodes = getMindNodes();
+  const result: string[] = [];
+  const walk = (currentId: string) => {
+    if (!nodes?.[currentId]) return;
+    result.push(currentId);
+    const children = Array.isArray(nodes[currentId].children) ? nodes[currentId].children : [];
+    children.forEach(walk);
+  };
+  walk(nodeId);
+  return result;
+}
+
+function mcpMoveNode(nodeId: string, newParentId: string, index?: number) {
+  const nodes = getMindNodes();
+  const node = nodes?.[nodeId];
+  const newParent = nodes?.[newParentId];
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  if (!newParent) throw new Error(`Parent node not found: ${newParentId}`);
+  if (nodeId === newParentId || mcpCollectSubtreeIds(nodeId).includes(newParentId)) {
+    throw new Error('Cannot move a node into itself or its descendants');
+  }
+  const oldParentId = node.parentId;
+  const oldParent = oldParentId ? nodes?.[oldParentId] : null;
+  const oldIndex = Array.isArray(oldParent?.children) ? oldParent.children.indexOf(nodeId) : -1;
+  const nextIndex = Number.isInteger(index) ? Math.max(0, index as number) : Number.MAX_SAFE_INTEGER;
+  const command: Command = {
+    name: 'McpMoveNodeCommand',
+    do: () => {
+      const currentNodes = getMindNodes();
+      const current = currentNodes?.[nodeId];
+      const target = currentNodes?.[newParentId];
+      if (!current || !target) return;
+      const currentOldParent = current.parentId ? currentNodes?.[current.parentId] : null;
+      if (Array.isArray(currentOldParent?.children)) {
+        currentOldParent.children = currentOldParent.children.filter((id: string) => id !== nodeId);
+      }
+      target.children = Array.isArray(target.children) ? target.children.filter((id: string) => id !== nodeId) : [];
+      target.children.splice(Math.min(nextIndex, target.children.length), 0, nodeId);
+      current.parentId = newParentId;
+      void applyDocumentMutation('mcp:move-node', { ensureVisibleNodeId: nodeId, forceFullEdgeRebuild: true });
+    },
+    undo: () => {
+      const currentNodes = getMindNodes();
+      const current = currentNodes?.[nodeId];
+      const target = currentNodes?.[newParentId];
+      if (!current) return;
+      if (Array.isArray(target?.children)) target.children = target.children.filter((id: string) => id !== nodeId);
+      if (oldParent) {
+        const restoredParent = currentNodes?.[oldParentId as string];
+        if (restoredParent) {
+          restoredParent.children = Array.isArray(restoredParent.children) ? restoredParent.children.filter((id: string) => id !== nodeId) : [];
+          restoredParent.children.splice(Math.max(0, oldIndex), 0, nodeId);
+        }
+      }
+      current.parentId = oldParentId ?? null;
+      void applyDocumentMutation('mcp:undo-move-node', { ensureVisibleNodeId: nodeId, forceFullEdgeRebuild: true });
+    },
+    redo: () => {
+      this.do?.();
+    },
+  };
+  command.redo = command.do;
+  executeCommand(command);
+  return { ok: true, node: mcpSerializeNode(nodeId, { includeMetadata: true }) };
+}
+
+function mcpCopySubtree(nodeId: string, newParentId: string, index?: number) {
+  const nodes = getMindNodes();
+  if (!nodes?.[nodeId]) throw new Error(`Node not found: ${nodeId}`);
+  if (!nodes?.[newParentId]) throw new Error(`Parent node not found: ${newParentId}`);
+  const sourceIds = mcpCollectSubtreeIds(nodeId);
+  const idMap = Object.fromEntries(sourceIds.map((sourceId) => [sourceId, createNodeId()]));
+  const snapshots = Object.fromEntries(
+    sourceIds.map((sourceId) => {
+      const cloned = mcpCloneJson(nodes[sourceId]);
+      cloned.id = idMap[sourceId];
+      cloned.parentId = sourceId === nodeId ? newParentId : idMap[cloned.parentId] ?? cloned.parentId;
+      cloned.children = Array.isArray(cloned.children) ? cloned.children.map((childId: string) => idMap[childId]).filter(Boolean) : [];
+      return [idMap[sourceId], cloned];
+    })
+  );
+  const rootCopyId = idMap[nodeId];
+  const insertIndex = Number.isInteger(index) ? Math.max(0, index as number) : Number.MAX_SAFE_INTEGER;
+  const command: Command = {
+    name: 'McpCopySubtreeCommand',
+    do: () => {
+      const currentNodes = getMindNodes();
+      const targetParent = currentNodes?.[newParentId];
+      if (!currentNodes || !targetParent) return;
+      Object.assign(currentNodes, mcpCloneJson(snapshots));
+      targetParent.children = Array.isArray(targetParent.children) ? targetParent.children.filter((id: string) => id !== rootCopyId) : [];
+      targetParent.children.splice(Math.min(insertIndex, targetParent.children.length), 0, rootCopyId);
+      void applyDocumentMutation('mcp:copy-subtree', { ensureVisibleNodeId: rootCopyId, forceFullEdgeRebuild: true });
+    },
+    undo: () => {
+      const currentNodes = getMindNodes();
+      const targetParent = currentNodes?.[newParentId];
+      if (!currentNodes) return;
+      if (Array.isArray(targetParent?.children)) targetParent.children = targetParent.children.filter((id: string) => id !== rootCopyId);
+      Object.keys(snapshots).forEach((id) => delete currentNodes[id]);
+      void applyDocumentMutation('mcp:undo-copy-subtree', { ensureVisibleNodeId: newParentId, forceFullEdgeRebuild: true });
+    },
+    redo: () => {
+      const currentNodes = getMindNodes();
+      const targetParent = currentNodes?.[newParentId];
+      if (!currentNodes || !targetParent) return;
+      Object.assign(currentNodes, mcpCloneJson(snapshots));
+      targetParent.children = Array.isArray(targetParent.children) ? targetParent.children.filter((id: string) => id !== rootCopyId) : [];
+      targetParent.children.splice(Math.min(insertIndex, targetParent.children.length), 0, rootCopyId);
+      void applyDocumentMutation('mcp:redo-copy-subtree', { ensureVisibleNodeId: rootCopyId, forceFullEdgeRebuild: true });
+    },
+  };
+  executeCommand(command);
+  return { ok: true, rootCopyId, idMap, subtree: mcpGetSubtree(rootCopyId, { includeNotes: true, includeImages: true }).subtree };
+}
+
+function mcpOutlineToMarkdown(outline: any) {
+  const lines: string[] = [];
+  const walk = (node: any, depth: number) => {
+    if (!node) return;
+    lines.push(`${'  '.repeat(depth)}- ${node.text || '(空节点)'}`);
+    if (Array.isArray(node.children)) node.children.forEach((child: any) => walk(child, depth + 1));
+  };
+  (outline?.roots || []).forEach((root: any) => walk(root, 0));
+  return lines.join('\n');
+}
+
+function mcpReadOpenDocument(params: any = {}) {
+  const mode = params.mode || 'outline';
+  if (mode === 'rawJson') return { docId: props.docId, filePath: props.filePath ?? null, doc: mcpCloneJson(props.doc) };
+  if (mode === 'node') return handleMindMcpRequest('mind.getNode', params);
+  if (mode === 'subtree') return handleMindMcpRequest('mind.getSubtree', params);
+  if (mode === 'search') return handleMindMcpRequest('mind.searchNodes', params);
+  const outline = mcpGetDocumentOutline(params);
+  if (params.format === 'markdown') return { ...outline, markdown: mcpOutlineToMarkdown(outline) };
+  return outline;
+}
+
+async function handleMindMcpRequest(method: string, params: any = {}) {
+  switch (method) {
+    case 'mind.getWindowDocument':
+      return {
+        docId: props.docId,
+        filePath: props.filePath ?? null,
+        title: props.doc?.manifest?.title ?? null,
+        isDirty: isDirty.value,
+        isSaving: isSaving.value,
+        nodeCount: Object.keys(getMindNodes() || {}).length,
+      };
+    case 'mind.getDocumentOutline':
+      return mcpGetDocumentOutline(params);
+    case 'mind.getNode': {
+      const node = mcpSerializeNode(params.nodeId, params);
+      if (!node) throw new Error(`Node not found: ${params.nodeId}`);
+      return { node };
+    }
+    case 'mind.getNodes':
+      return { nodes: (Array.isArray(params.nodeIds) ? params.nodeIds : []).map((nodeId: string) => mcpSerializeNode(nodeId, params)).filter(Boolean) };
+    case 'mind.getSubtree':
+      return mcpGetSubtree(params.nodeId, params);
+    case 'mind.getParentChain':
+      return mcpGetParentChain(params.nodeId, params);
+    case 'mind.getChildren':
+      return mcpGetChildren(params.nodeId, params);
+    case 'mind.searchNodes':
+      return mcpSearchNodes(params);
+    case 'mind.findNodesByFilter':
+      return mcpFindNodesByFilter(params);
+    case 'mind.getSelection':
+      return { nodeIds: Array.from(selectedIds.value), primaryId: primarySelectedNodeId.value };
+    case 'mind.setSelection': {
+      const nodeIds = Array.isArray(params.nodeIds) ? params.nodeIds : [];
+      setSelection(nodeIds, params.primaryId ?? nodeIds[nodeIds.length - 1] ?? null);
+      return { ok: true, nodeIds: Array.from(selectedIds.value), primaryId: primarySelectedNodeId.value };
+    }
+    case 'mind.updateNodeText': {
+      const ok = agentSetNodeText(params.nodeId, String(params.text ?? ''));
+      return { ok, node: mcpSerializeNode(params.nodeId, { includeNotes: true, includeImages: true }) };
+    }
+    case 'mind.updateNodeNote':
+      return mcpUpdateNodeNote(params.nodeId, String(params.note ?? ''));
+    case 'mind.updateNodeMetadata':
+      return mcpUpdateNodeMetadata(params.nodeId, params.metadata);
+    case 'mind.createNode':
+      return mcpCreateNode(params.parentId, String(params.text ?? ''));
+    case 'mind.createNodes':
+      return mcpCreateNodes(params.parentId, params.nodes);
+    case 'mind.deleteNode':
+      return mcpDeleteNode(params.nodeId, params);
+    case 'mind.moveNode':
+      return mcpMoveNode(params.nodeId, params.newParentId, params.index);
+    case 'mind.copySubtree':
+      return mcpCopySubtree(params.nodeId, params.newParentId, params.index);
+    case 'mind.applyNodeOperations': {
+      const operations = Array.isArray(params.operations) ? params.operations : [];
+      const results = [];
+      for (const op of operations) {
+        if (!op || typeof op !== 'object') continue;
+        if (op.type === 'update_text') results.push(await handleMindMcpRequest('mind.updateNodeText', op));
+        else if (op.type === 'update_note') results.push(await handleMindMcpRequest('mind.updateNodeNote', op));
+        else if (op.type === 'update_metadata') results.push(await handleMindMcpRequest('mind.updateNodeMetadata', op));
+        else if (op.type === 'create_node') results.push(await handleMindMcpRequest('mind.createNode', op));
+        else if (op.type === 'delete_node') results.push(await handleMindMcpRequest('mind.deleteNode', op));
+        else if (op.type === 'move_node') results.push(await handleMindMcpRequest('mind.moveNode', op));
+        else if (op.type === 'copy_subtree') results.push(await handleMindMcpRequest('mind.copySubtree', op));
+        else throw new Error(`Unsupported operation type: ${op.type}`);
+      }
+      const saved = params.saveAfterApply === true ? await saveDocument() : null;
+      return { ok: true, results, saved };
+    }
+    case 'mind.saveDocument': {
+      const saved = await saveDocument();
+      return { ok: saved, filePath: props.filePath ?? null };
+    }
+    case 'mind.readOpenDocument':
+      return await mcpReadOpenDocument(params);
+    case 'mind.exportDocument': {
+      const format = params.format || 'outline';
+      if (format === 'rawJson') return { doc: mcpCloneJson(props.doc) };
+      const outline = mcpGetDocumentOutline(params);
+      if (format === 'markdown') return { markdown: mcpOutlineToMarkdown(outline) };
+      return { outline };
+    }
+    default:
+      throw new Error(`Unsupported Mind MCP method: ${method}`);
+  }
+}
+
+async function respondMindMcpRequest(requestId: string, payload: any) {
+  await window.electronAPI.invoke('mind:mcpResponse', { requestId, ...payload });
+}
+
 function setupMindAgentBridgeIfDev() {
   if (!import.meta.env.DEV) return;
   void import('@/mind/dev/agentBridge').then(({ setupMindAgentBridge }) => {
@@ -13902,8 +14422,10 @@ function onViewportNativeScrollGuard() {
 onMounted(() => {
   logRendererDebugInstructions();
   setupMindAgentBridgeIfDev();
-  removeBeforeCloseListener = window.electronAPI.on('wm:before-close', async (_event: any, { key }: any) => {
-    await handleBeforeCloseRequest(key);
+  removeBeforeCloseListener = window.electronAPI.on('wm:before-close', async (_event: any, payload: any) => {
+    await handleBeforeCloseRequest(payload?.key, {
+      forceSaveBeforeClose: payload?.forceSaveBeforeClose === true,
+    });
   });
   // 监听 wheel 在 viewport 上（必须 passive:false 才能 preventDefault）
   if (viewportRef.value) viewportRef.value.addEventListener('wheel', onWheel as any, { passive: false });
