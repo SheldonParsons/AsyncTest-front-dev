@@ -109,6 +109,16 @@
                         <div class="mcp-config-code is-single-line">{{ formatPrimaryMcpArg(mcpConfig.args) }}</div>
                     </section>
 
+                    <section v-if="hasMcpEnv(mcpConfig.env)" class="mcp-config-item">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">Env（环境变量）</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(formatMcpEnv(mcpConfig.env))">
+                                复制
+                            </button>
+                        </div>
+                        <pre class="mcp-config-code is-block is-compact">{{ formatMcpEnv(mcpConfig.env) }}</pre>
+                    </section>
+
                     <section class="mcp-config-item mcp-config-item--separated">
                         <div class="mcp-config-item-head">
                             <span class="mcp-config-label">通用 stdio JSON</span>
@@ -142,10 +152,12 @@ type MindMcpConfig = {
     transport: string;
     command: string;
     args: string[];
+    env?: Record<string, string>;
     stdioJson: Record<string, {
         type: string;
         command: string;
         args: string[];
+        env?: Record<string, string>;
     }>;
     stdioJsonText: string;
     codexToml: string;
@@ -245,6 +257,17 @@ function formatMcpArgs(args: string[]) {
 
 function formatPrimaryMcpArg(args: string[]) {
     return args[0] ?? '';
+}
+
+function hasMcpEnv(env: Record<string, string> | undefined) {
+    return !!env && Object.keys(env).length > 0;
+}
+
+function formatMcpEnv(env: Record<string, string> | undefined) {
+    if (!env) return '';
+    return Object.entries(env)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n');
 }
 
 async function copyMcpValue(value: string) {

@@ -156,6 +156,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p /tmp/apple
           echo "${{ secrets.APPLE_API_KEY }}" | base64 --decode > /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           chmod 600 /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
@@ -193,9 +194,20 @@ jobs:
           APPLE_API_KEY: /tmp/apple/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          DEBUG: electron-builder,electron-notarize
+          DEBUG: electron-builder,electron-notarize*
         run: |
-          yarn electron-builder --mac --${{ matrix.arch }}
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "electron-builder notarize attempt ${attempt}/3"
+            if yarn electron-builder --mac --${{ matrix.arch }}; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Notarization/build attempt failed, retrying in 90 seconds..."
+              sleep 90
+            fi
+          done
+          exit 1
 
       - name: List Electron caches after build (mac)
         if: always()

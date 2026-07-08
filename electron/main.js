@@ -19,6 +19,10 @@ const require = createRequire(import.meta.url);
 const rustEngine = require('../src-rust/index.cjs');
 
 if (process.argv.includes('--asynctest-mind-mcp')) {
+  if (process.platform === 'darwin') {
+    app.setActivationPolicy?.('accessory');
+    app.dock?.hide?.();
+  }
   startMindMcpStdioServer();
   await new Promise(() => {});
 }
@@ -408,23 +412,25 @@ function quoteTomlString(value) {
 }
 
 function getMindMcpLaunchConfig() {
+  const scriptPath = path.join(app.getAppPath(), 'electron/mcp/asynctest-mind-mcp.mjs');
   const command = app.isPackaged
     ? process.execPath
     : (process.env.npm_node_execpath || process.env.NODE || 'node');
-  const args = app.isPackaged
-    ? ['--asynctest-mind-mcp']
-    : [path.join(app.getAppPath(), 'asynctest-mind-mcp.mjs')];
+  const args = [scriptPath];
+  const env = app.isPackaged ? { ELECTRON_RUN_AS_NODE: '1' } : {};
   const serverName = 'asynctest-mind';
   const toml = [
     `[mcp_servers.${serverName}]`,
     `command = ${quoteTomlString(command)}`,
     `args = [${args.map(quoteTomlString).join(', ')}]`,
+    ...(Object.keys(env).length ? [`env = { ${Object.entries(env).map(([key, value]) => `${key} = ${quoteTomlString(value)}`).join(', ')} }`] : []),
   ].join('\n');
   const stdioJson = {
     [serverName]: {
       type: 'stdio',
       command,
       args,
+      ...(Object.keys(env).length ? { env } : {}),
     },
   };
 
@@ -433,10 +439,11 @@ function getMindMcpLaunchConfig() {
     transport: 'stdio',
     command,
     args,
+    env,
     stdioJson,
     stdioJsonText: JSON.stringify(stdioJson, null, 2),
     codexToml: toml,
-    note: 'Open AsyncTest before using this stdio MCP server. In development, use Node to run the MCP stdio script directly.',
+    note: 'Open AsyncTest before using this stdio MCP server.',
   };
 }
 

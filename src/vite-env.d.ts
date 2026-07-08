@@ -38,10 +38,12 @@ export interface IElectronAPI {
       transport: string;
       command: string;
       args: string[];
+      env?: Record<string, string>;
       stdioJson: Record<string, {
         type: string;
         command: string;
         args: string[];
+        env?: Record<string, string>;
       }>;
       stdioJsonText: string;
       codexToml: string;
