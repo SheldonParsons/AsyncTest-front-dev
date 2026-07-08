@@ -319,26 +319,70 @@ export function createMindDocNode(doc, parentId, text, options = {}) {
   return { boardId, ok: true, nodeId, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
 }
 
-function createMindDocNodeTree(doc, board, parentId, spec, created) {
-  const result = createMindDocNode(doc, parentId, spec?.text ?? '', { index: spec?.index });
-  const node = board.nodes[result.nodeId];
+function normalizeNodeSpec(spec) {
+  if (typeof spec === 'string') return { text: spec };
+  return spec && typeof spec === 'object' ? spec : { text: '' };
+}
+
+function applyNodeSpecToNode(node, spec) {
   if (spec?.note != null) node.note = String(spec.note);
+  if (Array.isArray(spec?.markers)) node.markers = [...new Set(spec.markers.map(String).filter(Boolean))];
+  if (spec?.secrecy !== undefined) node.secrecy = spec.secrecy == null ? null : cloneJson(spec.secrecy);
   if (spec?.metadata && typeof spec.metadata === 'object') {
     Object.assign(node, cloneJson(spec.metadata));
   }
-  created.push({ nodeId: result.nodeId, parentId, text: node.text });
-  if (Array.isArray(spec?.children)) {
-    spec.children.forEach((child) => createMindDocNodeTree(doc, board, result.nodeId, child, created));
+}
+
+function countNodeSpecs(nodes) {
+  let count = 0;
+  for (const rawSpec of Array.isArray(nodes) ? nodes : []) {
+    const spec = normalizeNodeSpec(rawSpec);
+    count += 1 + countNodeSpecs(spec.children);
   }
+  return count;
+}
+
+function createMindDocNodeTree(doc, board, parentId, rawSpec, created, idMap, options = {}) {
+  const spec = normalizeNodeSpec(rawSpec);
+  const result = createMindDocNode(doc, parentId, spec.text ?? spec.title ?? '', { index: spec.index });
+  const node = board.nodes[result.nodeId];
+  applyNodeSpecToNode(node, spec);
+  if (spec.id || spec.sourceId || spec.clientId) idMap[String(spec.id || spec.sourceId || spec.clientId)] = result.nodeId;
+  created.push({
+    nodeId: result.nodeId,
+    parentId,
+    text: node.text,
+    sourceId: spec.id || spec.sourceId || spec.clientId || null,
+  });
+  if (Array.isArray(spec.children)) {
+    spec.children.forEach((child) => createMindDocNodeTree(doc, board, result.nodeId, child, created, idMap, options));
+  }
+  return result.nodeId;
 }
 
 export function createMindDocNodes(doc, parentId, nodes, options = {}) {
   const { boardId, board } = getActiveBoard(doc, options.boardId);
   if (!board?.nodes?.[parentId]) throw new Error(`Parent node not found: ${parentId}`);
+  const createdCount = countNodeSpecs(nodes);
+  const maxNodes = Math.max(1, Math.min(5000, Number.parseInt(String(options.maxNodes ?? 1000), 10) || 1000));
+  if (createdCount > maxNodes) throw new Error(`Too many nodes: ${createdCount}. maxNodes is ${maxNodes}`);
   const created = [];
-  (Array.isArray(nodes) ? nodes : []).forEach((spec) => createMindDocNodeTree(doc, board, parentId, spec, created));
+  const idMap = {};
+  const rootNodeIds = [];
+  (Array.isArray(nodes) ? nodes : []).forEach((spec) => {
+    rootNodeIds.push(createMindDocNodeTree(doc, board, parentId, spec, created, idMap, options));
+  });
   touchDoc(doc);
-  return { boardId, ok: true, created };
+  return {
+    boardId,
+    ok: true,
+    parentId,
+    createdCount,
+    rootNodeIds,
+    idMap,
+    created,
+    dirty: true,
+  };
 }
 
 export function deleteMindDocNode(doc, nodeId, options = {}) {
@@ -405,20 +449,104 @@ export function copyMindDocSubtree(doc, nodeId, newParentId, index, options = {}
   return { boardId, ok: true, rootCopyId, idMap: Object.fromEntries(idMap.entries()) };
 }
 
-export async function readMindFileContent(filePath, options = {}) {
+function resolveMindFileDoc(filePath) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath is required');
   const abs = path.resolve(filePath);
   const ext = path.extname(abs).toLowerCase();
+  return { abs, ext };
+}
+
+async function readMindFileDoc(filePath) {
+  const { abs, ext } = resolveMindFileDoc(filePath);
   const source = ext === '.xmind'
     ? await readXmindAsAmindDoc(abs)
     : await readAmindFile(abs);
+  return {
+    path: source.path || abs,
+    fileType: ext === '.xmind' ? 'xmind' : 'amind',
+    doc: source.doc,
+  };
+}
+
+export async function importMindFileSubtree(targetDoc, params = {}) {
+  const source = await readMindFileDoc(params.sourceFilePath);
+  const { boardId: sourceBoardId, board: sourceBoard } = getActiveBoard(source.doc, params.sourceBoardId);
+  const sourceNodeId = params.sourceNodeId || sourceBoard?.roots?.[0]?.rootId;
+  if (!sourceNodeId || !sourceBoard?.nodes?.[sourceNodeId]) {
+    throw new Error(`Source node not found: ${sourceNodeId || '<root>'}`);
+  }
+
+  const { boardId: targetBoardId, board: targetBoard } = getActiveBoard(targetDoc, params.targetBoardId || params.boardId);
+  const targetParentId = params.targetParentId || params.parentId;
+  const targetParent = targetParentId ? targetBoard?.nodes?.[targetParentId] : null;
+  if (!targetParent) throw new Error(`Target parent node not found: ${targetParentId || '<required>'}`);
+
+  const includeNotes = params.includeNotes !== false;
+  const includeImages = params.includeImages === true;
+  const idMap = {};
+  let importedCount = 0;
+
+  function cloneSourceNode(oldId, parentId, isRoot = false) {
+    const oldNode = sourceBoard.nodes[oldId];
+    const newId = makeNodeId(targetBoard, 'mcp-import');
+    idMap[oldId] = newId;
+    const copied = cloneJson(oldNode);
+    copied.id = newId;
+    copied.parentId = parentId;
+    if (isRoot && params.titleOverride != null) {
+      copied.text = String(params.titleOverride);
+      delete copied.richText;
+    } else {
+      copied.text = getNodeText(copied);
+    }
+    if (!includeNotes) {
+      delete copied.note;
+      delete copied.notes;
+      delete copied.remark;
+    }
+    if (!includeImages) {
+      delete copied.image;
+      copied.images = [];
+    }
+    copied.children = [];
+    targetBoard.nodes[newId] = copied;
+    importedCount += 1;
+    (Array.isArray(oldNode.children) ? oldNode.children : []).forEach((childId) => {
+      const childCopyId = cloneSourceNode(childId, newId, false);
+      copied.children.push(childCopyId);
+    });
+    return newId;
+  }
+
+  const rootNodeId = cloneSourceNode(sourceNodeId, targetParentId, true);
+  if (!Array.isArray(targetParent.children)) targetParent.children = [];
+  const index = Number.isInteger(params.index) ? Math.max(0, Math.min(params.index, targetParent.children.length)) : targetParent.children.length;
+  targetParent.children.splice(index, 0, rootNodeId);
+  touchDoc(targetDoc);
+  return {
+    ok: true,
+    sourceFilePath: source.path,
+    sourceFileType: source.fileType,
+    sourceBoardId,
+    sourceNodeId,
+    targetBoardId,
+    targetParentId,
+    rootNodeId,
+    importedCount,
+    idMap,
+    dirty: true,
+  };
+}
+
+export async function readMindFileContent(filePath, options = {}) {
+  const source = await readMindFileDoc(filePath);
   const doc = source.doc;
   let mode = options.mode || 'outline';
   if (!options.mode && options.nodeId && options.depth !== undefined) mode = 'subtree';
   if (!options.mode && options.query) mode = 'search';
   const common = {
-    filePath: source.path || abs,
-    fileType: ext === '.xmind' ? 'xmind' : 'amind',
+    filePath: source.path,
+    fileType: source.fileType,
     title: doc?.manifest?.title ?? null,
   };
   if (mode === 'rawJson') return { ...common, doc };

@@ -197,6 +197,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
           return await windowManager.requestCloseFromRenderer(windowKey, {
             source: closeOptions?.source ?? null,
             forceSaveBeforeClose: closeOptions?.forceSaveBeforeClose === true,
+            discardChanges: closeOptions?.discardChanges === true,
           });
         }
         return true;
@@ -215,7 +216,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   async function newAndOpenWindow(payload = {}) {
     const docId = newDocId();
-    const doc = createEmptyDoc(undefined, payload);
+    const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
+    const doc = createDocumentFromMcpOptions({ ...payload, title });
     console.info('[mind-style-debug:main] create new window doc manifest', {
       renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
       title: doc?.manifest?.title ?? null,
@@ -223,8 +225,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     });
     docStore.create(docId, { doc, filePath: null, windowKey: null });
 
-    await openMindWindow({ docId, filePath: null, title: 'AsyncTest Mind' });
-    return { docId, filePath: null };
+    const opened = await openMindWindow({ docId, filePath: null, title: buildImportWindowTitle(doc?.manifest?.title) });
+    return { docId, filePath: null, windowKey: opened?.windowKey ?? null };
   }
 
   async function openFileInWindow(filePath) {
@@ -235,7 +237,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     if (existingDocId) {
       const entry = docStore.mustGet(existingDocId);
       if (entry.windowKey) windowManager.focus(entry.windowKey);
-      return { reused: true, docId: existingDocId, filePath: entry.filePath };
+      return { reused: true, docId: existingDocId, filePath: entry.filePath, windowKey: entry.windowKey ?? null };
     }
 
     const { path: realAbs, doc } = await readAmindFile(absInput);
@@ -247,7 +249,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     if (existingDocId2) {
       const entry = docStore.mustGet(existingDocId2);
       if (entry.windowKey) windowManager.focus(entry.windowKey);
-      return { reused: true, docId: existingDocId2, filePath: entry.filePath };
+      return { reused: true, docId: existingDocId2, filePath: entry.filePath, windowKey: entry.windowKey ?? null };
     }
 
     await recentStore.add(realAbs, {
@@ -261,9 +263,9 @@ export function initAmindMain({ userDataPath, windowManager }) {
     docStore.create(docId, { doc, filePath: realAbs, windowKey: null });
     fileIndex.set(fkReal, docId);
 
-    await openMindWindow({ docId, filePath: realAbs, title: buildMindWindowTitle(realAbs) });
+    const opened = await openMindWindow({ docId, filePath: realAbs, title: buildMindWindowTitle(realAbs) });
 
-    return { reused: false, docId, filePath: realAbs };
+    return { reused: false, docId, filePath: realAbs, windowKey: opened?.windowKey ?? null };
   }
 
   // Mind Agent：按指定路径创建 .amind（含默认 root+4 子节点）并打开窗口。
@@ -279,6 +281,152 @@ export function initAmindMain({ userDataPath, windowManager }) {
       await writeAmindFile(abs, doc);
     }
     return await openFileInWindow(abs);
+  }
+
+  async function createFileAt(filePath, options = {}) {
+    let abs = path.resolve(filePath);
+    if (!abs.toLowerCase().endsWith(AMIND_EXT)) abs += AMIND_EXT;
+    const overwrite = options.overwrite === true;
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    if (!overwrite && fs.existsSync(abs)) {
+      const error = new Error(`File already exists: ${abs}`);
+      error.code = 'FILE_ALREADY_EXISTS';
+      throw error;
+    }
+    const doc = createDocumentFromMcpOptions(options);
+    const result = await writeAmindFile(abs, doc);
+    await recentStore.add(result.path, {
+      title: result.doc?.manifest?.title ?? undefined,
+      updatedAt: result.doc?.manifest?.updatedAt ?? undefined,
+    });
+    addRecentForMac(result.path);
+    notifyRecentEntriesChanged();
+    if (options.openWindow === true) {
+      const opened = await openFileInWindow(result.path);
+      return { ...opened, created: true };
+    }
+    return {
+      created: true,
+      opened: false,
+      filePath: result.path,
+      savedAt: result.doc?.manifest?.updatedAt ?? null,
+      title: result.doc?.manifest?.title ?? null,
+    };
+  }
+
+  function cloneForMcpDoc(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeMcpNodeSpec(spec) {
+    if (typeof spec === 'string') return { text: spec };
+    return spec && typeof spec === 'object' ? spec : { text: '' };
+  }
+
+  function createDocumentFromMcpOptions(options = {}) {
+    const title = typeof options.title === 'string' && options.title.trim() ? options.title.trim() : '思维导图';
+    const doc = createEmptyDoc(title, options);
+    const activeBoardId = doc?.mind?.activeMindId;
+    const board = activeBoardId ? doc?.mind?.minds?.[activeBoardId] : null;
+    const rootId = board?.roots?.[0]?.rootId;
+    const rootNode = rootId ? board?.nodes?.[rootId] : null;
+    if (!board || !rootNode) return doc;
+
+    if (typeof options.rootText === 'string') rootNode.text = options.rootText;
+    if (Array.isArray(options.rootMarkers)) rootNode.markers = [...new Set(options.rootMarkers.map(String).filter(Boolean))];
+    if (options.rootSecrecy !== undefined) rootNode.secrecy = options.rootSecrecy == null ? null : cloneForMcpDoc(options.rootSecrecy);
+
+    if (Array.isArray(options.children)) {
+      rootNode.children = [];
+      const appendNodeTree = (parentId, rawSpec, indexPath) => {
+        const spec = normalizeMcpNodeSpec(rawSpec);
+        const nodeId = `mcp-node-${Date.now().toString(36)}-${indexPath.join('-')}`;
+        board.nodes[nodeId] = {
+          id: nodeId,
+          parentId,
+          text: String(spec.text ?? spec.title ?? ''),
+          children: [],
+          images: [],
+        };
+        if (spec.note != null) board.nodes[nodeId].note = String(spec.note);
+        if (Array.isArray(spec.markers)) {
+          board.nodes[nodeId].markers = [...new Set(spec.markers.map(String).filter(Boolean))];
+        }
+        if (spec.secrecy !== undefined) {
+          board.nodes[nodeId].secrecy = spec.secrecy == null ? null : cloneForMcpDoc(spec.secrecy);
+        }
+        if (spec.metadata && typeof spec.metadata === 'object') {
+          Object.assign(board.nodes[nodeId], cloneForMcpDoc(spec.metadata));
+        }
+        const parent = board.nodes[parentId];
+        if (!Array.isArray(parent.children)) parent.children = [];
+        parent.children.push(nodeId);
+        if (Array.isArray(spec.children)) {
+          spec.children.forEach((child, childIndex) => appendNodeTree(nodeId, child, [...indexPath, childIndex + 1]));
+        }
+      };
+      options.children.forEach((child, index) => appendNodeTree(rootId, child, [index + 1]));
+    }
+    return doc;
+  }
+
+  async function saveAsDocument({ docId, filePath, doc, overwrite = true } = {}) {
+    if (!docId) throw new Error('docId is required');
+    if (!filePath || typeof filePath !== 'string') throw new Error('filePath is required');
+    const entry = docStore.mustGet(docId);
+    const docToSave = doc && typeof doc === 'object' ? doc : entry.doc;
+
+    let targetPath = path.resolve(filePath);
+    if (!targetPath.toLowerCase().endsWith(AMIND_EXT)) targetPath += AMIND_EXT;
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    if (!overwrite && fs.existsSync(targetPath)) {
+      const error = new Error(`File already exists: ${targetPath}`);
+      error.code = 'FILE_ALREADY_EXISTS';
+      throw error;
+    }
+
+    const oldFilePath = entry.filePath;
+    const oldFk = oldFilePath ? normalizeFileKey(oldFilePath) : null;
+    const fileKeyOldForAssets = getFileKey({ docId, filePath: oldFilePath });
+    const dirtyAssets = assetCache.listDirty(fileKeyOldForAssets);
+
+    const { path: abs, doc: saved } = await writeAmindFile(targetPath, docToSave, {
+      assetsToWrite: dirtyAssets.map(a => ({ assetId: a.assetId, ext: a.ext, bytes: a.bytes })),
+    });
+
+    for (const a of dirtyAssets) {
+      assetCache.putBytes({
+        fileKey: abs,
+        assetId: a.assetId,
+        ext: a.ext,
+        mime: a.mime,
+        bytes: a.bytes,
+        dirty: false,
+      });
+    }
+    assetCache.markClean(fileKeyOldForAssets, dirtyAssets.map(a => ({ assetId: a.assetId, ext: a.ext })));
+
+    docStore.setFilePath(docId, abs);
+    docStore.setDoc(docId, saved);
+    refreshWindowTitle(docId);
+
+    if (oldFk && fileIndex.get(oldFk) === docId) fileIndex.delete(oldFk);
+    fileIndex.set(normalizeFileKey(abs), docId);
+
+    await recentStore.add(abs, {
+      title: saved?.manifest?.title ?? undefined,
+      updatedAt: saved?.manifest?.updatedAt ?? undefined,
+    });
+    addRecentForMac(abs);
+    notifyRecentEntriesChanged();
+
+    return {
+      needSaveAs: false,
+      docId,
+      filePath: abs,
+      savedAt: saved?.manifest?.updatedAt ?? null,
+      title: saved?.manifest?.title ?? null,
+    };
   }
 
   async function importXmindFileInWindow(filePath) {
@@ -349,7 +497,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   ipcMain.handle('amind:new', async (event, payload = {}) => {
     const docId = newDocId();
-    const doc = createEmptyDoc(undefined, payload);
+    const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : undefined;
+    const doc = createEmptyDoc(title, payload);
     console.info('[mind-style-debug:main] create new doc manifest', {
       renderStylePreset: doc?.manifest?.renderStylePreset ?? null,
       title: doc?.manifest?.title ?? null,
@@ -765,6 +914,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     docStore,
     fileIndex,
     newAndOpenWindow,
+    createFileAt,
+    saveAsDocument,
     openFileInWindow,
     importXmindFileInWindow,
     importMarkdownFileInWindow,

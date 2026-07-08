@@ -51,9 +51,48 @@ const tools = [
   },
   {
     name: 'mind_list_windows',
-    description: 'List currently open AsyncTest Mind windows.',
+    description: 'List currently open AsyncTest Mind windows with document status.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     bridgeMethod: 'mind.listWindows',
+  },
+  {
+    name: 'mind_create_file',
+    description: 'Low-level helper to create a .amind file through AsyncTest Mind internals. Prefer mind_create_document for agent workflows; never construct or zip .amind files yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        title: { type: 'string' },
+        rootText: { type: 'string' },
+        children: { type: 'array', items: { type: 'object' } },
+        rootMarkers: { type: 'array', items: { type: 'string' } },
+        rootSecrecy: { type: 'object' },
+        overwrite: { type: 'boolean' },
+        openWindow: { type: 'boolean' },
+      },
+      required: ['filePath'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.createFile',
+  },
+  {
+    name: 'mind_create_document',
+    description: 'Create a Mind document using AsyncTest Mind internals. If filePath is provided, save it as .amind; if open=true, open it in a Mind window. Use this instead of directly modifying .amind files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        title: { type: 'string' },
+        rootText: { type: 'string' },
+        children: { type: 'array', items: { type: 'object' } },
+        rootMarkers: { type: 'array', items: { type: 'string' } },
+        rootSecrecy: { type: 'object' },
+        overwrite: { type: 'boolean' },
+        open: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.createDocument',
   },
   {
     name: 'mind_get_active_window',
@@ -280,6 +319,84 @@ const tools = [
     bridgeMethod: 'mind.updateNodeMetadata',
   },
   {
+    name: 'mind_set_node_markers',
+    description: 'Replace all marker keys on a node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        boardId: { type: 'string' },
+        nodeId: { type: 'string' },
+        markers: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['nodeId', 'markers'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.setNodeMarkers',
+  },
+  {
+    name: 'mind_add_node_marker',
+    description: 'Add a marker key to a node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        boardId: { type: 'string' },
+        nodeId: { type: 'string' },
+        markerKey: { type: 'string' },
+      },
+      required: ['nodeId', 'markerKey'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.addNodeMarker',
+  },
+  {
+    name: 'mind_remove_node_marker',
+    description: 'Remove a marker key from a node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        boardId: { type: 'string' },
+        nodeId: { type: 'string' },
+        markerKey: { type: 'string' },
+      },
+      required: ['nodeId', 'markerKey'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.removeNodeMarker',
+  },
+  {
+    name: 'mind_set_root_secrecy',
+    description: 'Set or clear secrecy level on a root node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        boardId: { type: 'string' },
+        nodeId: { type: 'string' },
+        secrecy: {
+          anyOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              properties: {
+                level: { type: 'string', enum: ['top-secret', 'confidential', 'secret'] },
+                durationYears: { type: 'number' },
+                markedAt: { type: 'string' },
+              },
+              required: ['level'],
+              additionalProperties: false,
+            },
+          ],
+        },
+      },
+      required: ['secrecy'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.setRootSecrecy',
+  },
+  {
     name: 'mind_create_node',
     description: 'Create a child node in an open Mind document.',
     inputSchema: {
@@ -296,13 +413,15 @@ const tools = [
   },
   {
     name: 'mind_create_nodes',
-    description: 'Create multiple child nodes or a small tree under a parent node.',
+    description: 'Preferred tool for adding many nodes or large trees to an open document. It edits the open window in place; do not close the window or modify .amind files directly.',
     inputSchema: {
       type: 'object',
       properties: {
         windowKey: { type: 'string' },
         parentId: { type: 'string' },
         nodes: { type: 'array', items: { type: 'object' } },
+        maxNodes: { type: 'number', description: 'Safety limit, default 1000 and max 5000.' },
+        saveAfterApply: { type: 'boolean' },
       },
       required: ['parentId', 'nodes'],
       additionalProperties: false,
@@ -358,13 +477,15 @@ const tools = [
   },
   {
     name: 'mind_apply_node_operations',
-    description: 'Apply multiple node operations to an open Mind document.',
+    description: 'Apply multiple node operations to an open Mind document. This edits the open window in place; use create_nodes for large tree creation and do not close the window to edit files offline.',
     inputSchema: {
       type: 'object',
       properties: {
         windowKey: { type: 'string' },
         operations: { type: 'array', items: { type: 'object' } },
         saveAfterApply: { type: 'boolean' },
+        rollbackOnError: { type: 'boolean' },
+        expectedRevision: { type: 'string' },
       },
       required: ['operations'],
       additionalProperties: false,
@@ -373,13 +494,57 @@ const tools = [
   },
   {
     name: 'mind_save_document',
-    description: 'Save an open Mind document.',
+    description: 'Save an existing opened Mind document after window-based edits. If the document is unsaved, use mind_save_as_document instead.',
     inputSchema: {
       type: 'object',
       properties: { windowKey: { type: 'string' } },
       additionalProperties: false,
     },
     bridgeMethod: 'mind.saveDocument',
+  },
+  {
+    name: 'mind_save_as_document',
+    description: 'Save an open Mind document to a specified .amind file path. Use this for unsaved windows; never close the window and modify .amind files directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        filePath: { type: 'string' },
+        overwrite: { type: 'boolean' },
+      },
+      required: ['filePath'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.saveAsDocument',
+  },
+  {
+    name: 'mind_update_document_title',
+    description: 'Update the document manifest title for an open Mind document.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        title: { type: 'string' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.updateDocumentTitle',
+  },
+  {
+    name: 'mind_update_board_title',
+    description: 'Update a board title in an open Mind document.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowKey: { type: 'string' },
+        boardId: { type: 'string' },
+        title: { type: 'string' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.updateBoardTitle',
   },
   {
     name: 'mind_read_open_document',
@@ -418,7 +583,7 @@ const tools = [
   },
   {
     name: 'mind_read_file',
-    description: 'Read .amind or .xmind file content without opening a window.',
+    description: 'Read .amind or .xmind file content without opening a window. This is read-only for analysis/import preview; to modify an open document, use window editing tools such as mind_create_nodes or mind_import_file_subtree.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -439,7 +604,7 @@ const tools = [
   },
   {
     name: 'mind_read_file_outline',
-    description: 'Read a lightweight outline from a .amind or .xmind file without opening it.',
+    description: 'Read a lightweight outline from a .amind or .xmind file without opening it. Read-only; do not use this result to rewrite .amind files directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -454,7 +619,7 @@ const tools = [
   },
   {
     name: 'mind_read_file_subtree',
-    description: 'Read a subtree from a .amind or .xmind file without opening it.',
+    description: 'Read a subtree from a .amind or .xmind file without opening it. Read-only; use mind_import_file_subtree to copy it into an open document.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -472,7 +637,7 @@ const tools = [
   },
   {
     name: 'mind_search_file_nodes',
-    description: 'Search nodes in a .amind or .xmind file without opening it.',
+    description: 'Search nodes in a .amind or .xmind file without opening it. Read-only; use window editing tools for modifications.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -486,6 +651,29 @@ const tools = [
       additionalProperties: false,
     },
     bridgeMethod: 'mind.searchFileNodes',
+  },
+  {
+    name: 'mind_import_file_subtree',
+    description: 'Import a subtree from a .amind or .xmind file into an already open Mind window. Preferred when copying branches from existing files; do not close the target window or manually rewrite .amind files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceFilePath: { type: 'string' },
+        sourceNodeId: { type: 'string', description: 'Omit to import the source root node.' },
+        sourceBoardId: { type: 'string' },
+        targetWindowKey: { type: 'string' },
+        targetParentId: { type: 'string' },
+        targetBoardId: { type: 'string' },
+        titleOverride: { type: 'string' },
+        includeNotes: { type: 'boolean' },
+        includeImages: { type: 'boolean', description: 'Default false. Image asset copying is not guaranteed across files yet.' },
+        index: { type: 'number' },
+        saveAfterApply: { type: 'boolean' },
+      },
+      required: ['sourceFilePath', 'targetParentId'],
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.importFileSubtree',
   },
   {
     name: 'mind_focus_window',
@@ -502,21 +690,29 @@ const tools = [
   },
   {
     name: 'mind_close_window',
-    description: 'Save and close a specific AsyncTest Mind window.',
+    description: 'Close a specific AsyncTest Mind window. Do not call this tool unless the user explicitly asks to close a window. mode is required: save, discard, or prompt.',
     inputSchema: {
       type: 'object',
       properties: {
         windowKey: { type: 'string' },
+        mode: { type: 'string', enum: ['save', 'discard', 'prompt'] },
       },
-      required: ['windowKey'],
+      required: ['windowKey', 'mode'],
       additionalProperties: false,
     },
     bridgeMethod: 'mind.closeWindow',
   },
   {
     name: 'mind_close_all_windows',
-    description: 'Save and close all open AsyncTest Mind windows.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: 'Close all open AsyncTest Mind windows. Do not call this tool unless the user explicitly asks to close windows. mode is required: save, discard, or prompt.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: ['save', 'discard', 'prompt'] },
+      },
+      required: ['mode'],
+      additionalProperties: false,
+    },
     bridgeMethod: 'mind.closeAllWindows',
   },
   {
@@ -586,6 +782,27 @@ function writeError(id, code, message, data) {
   });
 }
 
+function createBridgeErrorFromPayload(payload, fallbackMessage = 'AsyncTest bridge request failed') {
+  const error = new Error(payload?.message || fallbackMessage);
+  if (payload && typeof payload === 'object') {
+    error.code = payload.code;
+    error.recoverable = payload.recoverable;
+    error.suggestedAction = payload.suggestedAction;
+  }
+  return error;
+}
+
+function formatToolError(error) {
+  const payload = {
+    ok: false,
+    code: error?.code || 'UNKNOWN_ERROR',
+    message: error instanceof Error ? error.message : String(error),
+    recoverable: error?.recoverable,
+    suggestedAction: error?.suggestedAction,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
 function sanitizeForMcpOutput(value) {
   if (typeof value === 'string') {
     if (value.startsWith('data:') && value.includes(';base64,')) return null;
@@ -648,7 +865,7 @@ function callBridge(method, params = {}) {
       try {
         const response = JSON.parse(line);
         if (response.ok) finish(resolve, response.result);
-        else finish(reject, new Error(response.error?.message || 'AsyncTest bridge request failed'));
+        else finish(reject, createBridgeErrorFromPayload(response.error));
       } catch (error) {
         finish(reject, error);
       }
@@ -697,7 +914,7 @@ async function callFileBridge(method, params = {}) {
       await fs.rm(responsePath, { force: true }).catch(() => {});
       await appendDebugLog('file-bridge-response', { method, ok: response.ok });
       if (response.ok) return response.result;
-      throw new Error(response.error?.message || 'AsyncTest file bridge request failed');
+      throw createBridgeErrorFromPayload(response.error, 'AsyncTest file bridge request failed');
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
     }
@@ -719,7 +936,11 @@ async function callAppBridge(method, params = {}) {
     } catch (fileError) {
       const socketMessage = socketError instanceof Error ? socketError.message : String(socketError);
       const fileMessage = fileError instanceof Error ? fileError.message : String(fileError);
-      throw new Error(`${fileMessage} Socket bridge: ${socketMessage}`);
+      const error = new Error(`${fileMessage} Socket bridge: ${socketMessage}`);
+      error.code = fileError?.code || socketError?.code;
+      error.recoverable = fileError?.recoverable ?? socketError?.recoverable;
+      error.suggestedAction = fileError?.suggestedAction ?? socketError?.suggestedAction;
+      throw error;
     }
   }
 }
@@ -739,6 +960,9 @@ async function handleToolsCall(id, params = {}) {
   if (params.name === 'mind_read_file_outline') bridgeParams = { ...bridgeParams, mode: 'outline' };
   if (params.name === 'mind_read_file_subtree') bridgeParams = { ...bridgeParams, mode: 'subtree' };
   if (params.name === 'mind_search_file_nodes') bridgeParams = { ...bridgeParams, mode: 'search' };
+  if (params.name === 'mind_import_file_subtree' && input.targetWindowKey) {
+    bridgeParams = { ...bridgeParams, windowKey: input.targetWindowKey };
+  }
 
   try {
     const result = await callAppBridge(tool.bridgeMethod, bridgeParams);
@@ -757,7 +981,7 @@ async function handleToolsCall(id, params = {}) {
       content: [
         {
           type: 'text',
-          text: error instanceof Error ? error.message : String(error),
+          text: formatToolError(error),
         },
       ],
     });

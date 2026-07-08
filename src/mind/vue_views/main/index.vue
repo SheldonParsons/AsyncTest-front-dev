@@ -13176,9 +13176,13 @@ async function onWindowPaste(event: ClipboardEvent) {
   executeCommand(createMultiTargetPasteTextLinesCommand(pasteTargetNodeIds, lines));
 }
 
-async function handleBeforeCloseRequest(key: string, options: { forceSaveBeforeClose?: boolean } = {}) {
+async function handleBeforeCloseRequest(key: string, options: { forceSaveBeforeClose?: boolean; discardChanges?: boolean } = {}) {
   if (isSaving.value) {
     await window.electronAPI.wm.closeResponse({ key, allow: false });
+    return;
+  }
+  if (options.discardChanges === true) {
+    await window.electronAPI.wm.closeResponse({ key, allow: true });
     return;
   }
   if (options.forceSaveBeforeClose === true) {
@@ -14425,6 +14429,7 @@ onMounted(() => {
   removeBeforeCloseListener = window.electronAPI.on('wm:before-close', async (_event: any, payload: any) => {
     await handleBeforeCloseRequest(payload?.key, {
       forceSaveBeforeClose: payload?.forceSaveBeforeClose === true,
+      discardChanges: payload?.discardChanges === true,
     });
   });
   // 监听 wheel 在 viewport 上（必须 passive:false 才能 preventDefault）
