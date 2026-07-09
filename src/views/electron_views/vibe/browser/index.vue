@@ -379,14 +379,27 @@
         <template v-else-if="selectedHistory">
           <div class="detail-head">
             <strong>{{ opLabel(selectedHistory.op) }}记录</strong>
-            <button class="icon-btn sm" type="button" title="关闭" aria-label="关闭" @click="selectedHistory = null">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
+            <span class="detail-actions">
+              <button
+                v-if="canUndoHistory(selectedHistory)"
+                class="undo-history-btn"
+                type="button"
+                :disabled="undoingHistoryId === selectedHistory.id"
+                @click="undoHistoryItem(selectedHistory)"
+              >
+                {{ undoingHistoryId === selectedHistory.id ? '撤销中' : '撤销本次变更' }}
+              </button>
+              <span v-else-if="selectedHistory.undone" class="history-undone">已撤销</span>
+              <button class="icon-btn sm" type="button" title="关闭" aria-label="关闭" @click="selectedHistory = null">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </span>
           </div>
           <dl class="detail-meta">
             <dt>段落</dt><dd>{{ selectedHistory.title || lastCrumb(selectedHistory.breadcrumb) }}</dd>
             <dt>用户</dt><dd>{{ actorLabel(selectedHistory) }}</dd>
             <dt>批次</dt><dd>{{ selectedHistory.batch_id || '无批次' }}</dd>
+            <dt>状态</dt><dd>{{ selectedHistory.undone ? '已撤销' : '有效' }}</dd>
             <dt>时间</dt><dd>{{ formatTime(selectedHistory.edited_at) }}</dd>
           </dl>
 
@@ -418,7 +431,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ApiGetJoinProjects } from '@/api/project/index'
@@ -434,6 +447,7 @@ import {
   getVibeProjectByAsyncProject,
   initVibeProject,
   searchKbBrowserPassages,
+  undoKbBrowserHistory,
   type KbBrowserHistoryItem,
   type KbBrowserPassage,
   type KbBrowserReceipt,
@@ -490,6 +504,7 @@ const receiptError = ref('')
 const selectedHistory = ref<KbBrowserHistoryItem | null>(null)
 const selectedPassage = ref<KbBrowserPassage | null>(null)
 const selectedHistoryItems = ref<KbBrowserHistoryItem[]>([])
+const undoingHistoryId = ref<number | null>(null)
 const activeTab = ref<TabKey>('document')
 const selectedNamespace = ref('')
 const includeDeleted = ref(false)
@@ -856,6 +871,48 @@ function openHistoryItem(item: KbBrowserHistoryItem) {
   receiptItems.value = []
   receiptDetailMeta.value = null
   receiptError.value = ''
+}
+
+function canUndoHistory(item?: KbBrowserHistoryItem | null) {
+  return !!item && !item.undone && ['insert', 'update', 'delete', 'structure'].includes(String(item.op || ''))
+}
+
+async function undoHistoryItem(item: KbBrowserHistoryItem) {
+  if (!vibeProjectId.value || !canUndoHistory(item) || undoingHistoryId.value) return
+  try {
+    await ElMessageBox.confirm(
+      '撤销会把知识库恢复到这条变更发生前的状态。撤销后会刷新原文、历史和回执。',
+      '撤销本次变更？',
+      {
+        confirmButtonText: '撤销',
+        cancelButtonText: '取消',
+        type: 'warning',
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch {
+    return
+  }
+  undoingHistoryId.value = item.id
+  try {
+    const res = await undoKbBrowserHistory(vibeProjectId.value, item.id)
+    const after = res.after || { ...item, undone: true }
+    selectedHistory.value = after
+    historyItems.value = historyItems.value.map(row => row.id === item.id ? { ...row, undone: true } : row)
+    receiptDetailCache.value = {}
+    await Promise.all([
+      getKbBrowserSummary(vibeProjectId.value).then(data => { summary.value = data }),
+      getKbBrowserTree(vibeProjectId.value, includeDeleted.value).then(data => { treeModules.value = data.modules || [] }),
+      reloadDocument(),
+      loadHistory(true),
+      activeTab.value === 'receipts' ? loadReceipts() : Promise.resolve(),
+    ])
+    ElMessage.success('已撤销本次变更')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : String(error))
+  } finally {
+    undoingHistoryId.value = null
+  }
 }
 
 async function focusHistoryItem(item: KbBrowserHistoryItem, ensureLoaded = false) {
@@ -3127,6 +3184,50 @@ h4.doc-heading { font-size: 15px; }
   z-index: 2;
   padding: 14px 0 10px;
   background: rgba(255, 255, 255, .96);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.undo-history-btn {
+  border: 0;
+  border-radius: 8px;
+  background: #ededec;
+  color: #1f1f1f;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.undo-history-btn:hover {
+  background: #dededd;
+}
+
+.undo-history-btn:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.history-undone {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border-radius: 999px;
+  background: #f0f0ef;
+  color: #777;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .diff-view {

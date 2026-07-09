@@ -1,6 +1,15 @@
 <template>
   <main class="vibe-settings-shell">
     <div class="settings-drag" />
+    <div v-if="showWinControls" class="settings-win-ctl-zone">
+      <VibeWindowControls
+        class="settings-win-ctl"
+        :maximized="winMaximized"
+        @minimize="winControl('minimize')"
+        @maximize-toggle="winControl('maximizeToggle')"
+        @close="winControl('close')"
+      />
+    </div>
     <aside class="settings-side">
       <button class="back-btn" type="button" @click="backToApp">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
@@ -14,10 +23,26 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             个人资料
           </button>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'model' }" @click="activeKey = 'model'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.8 6.8l2.1 2.1"/><path d="M17.1 17.1l2.1 2.1"/><path d="M3 12h3"/><path d="M18 12h3"/><circle cx="12" cy="12" r="3.4"/></svg>
+            模型
+          </button>
         </section>
 
         <section v-if="canViewTraceAudit" class="nav-section">
           <h2>Admin Settings</h2>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-model' }" @click="activeKey = 'admin-model'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg>
+            默认模型
+          </button>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-scenes' }" @click="activeKey = 'admin-scenes'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>
+            模型场景配置
+          </button>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-config' }" @click="activeKey = 'admin-config'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/><path d="M19 5h1a1 1 0 0 1 1 1v3"/><path d="M5 5H4a1 1 0 0 0-1 1v3"/></svg>
+            配置导入/导出
+          </button>
           <button class="nav-row" type="button" :class="{ active: activeKey === 'trace' }" @click="activeKey = 'trace'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
             对话链路审计
@@ -38,13 +63,178 @@
             <span class="online-indicator" aria-hidden="true" />
           </span>
           <h1>{{ currentUserName }}</h1>
-          <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? 'Admin' : 'Pro' }}</em></p>
+          <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
         </div>
         <div class="profile-stats">
-          <div><strong>--</strong><span>累计 Token 数</span></div>
-          <div><strong>--</strong><span>峰值 Token 数</span></div>
-          <div><strong>--</strong><span>最长任务时长</span></div>
-          <div><strong>--</strong><span>当前连续天数</span></div>
+          <div><strong>{{ formatUsageNumber(usageSummary.total_tokens) }}</strong><span>累计 Token 数</span></div>
+          <div><strong>{{ formatUsageNumber(usageSummary.peak_tokens) }}</strong><span>峰值 Token 数</span></div>
+          <div><strong>{{ formatUsageDuration(usageSummary.max_elapsed_ms) }}</strong><span>最长任务时长</span></div>
+          <div><strong>{{ formatUsageNumber(usageSummary.dialogue_turns) }}</strong><span>总对话次数</span></div>
+        </div>
+      </section>
+
+      <section v-else-if="activeKey === 'model'" class="model-panel">
+        <VibeModelSettings embedded />
+      </section>
+
+      <section v-else-if="activeKey === 'admin-model' && canViewTraceAudit" class="admin-model-panel">
+        <template v-if="adminModelMode === 'list'">
+          <div class="admin-model-head">
+            <button type="button" class="admin-model-add" :disabled="adminModelLoading || adminModelSaving" @click="startNewAdminProvider">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+              <span>新增默认模型</span>
+            </button>
+            <button type="button" class="admin-model-refresh" :disabled="adminModelLoading || adminModelSaving" @click="loadAdminModelDefaults">刷新</button>
+          </div>
+          <div v-if="adminModelLoading && !adminModelProviders.length" class="admin-model-state">加载中...</div>
+          <div v-else-if="!adminModelProviders.length" class="admin-model-state">新增默认模型后，所有用户都可以在会话中选择它。</div>
+          <div v-else class="admin-model-list" aria-label="默认模型列表">
+            <article
+              v-for="provider in adminModelProviders"
+              :key="provider.id"
+              class="admin-model-row"
+              :class="{ enabled: isAdminSystemDefault(provider.id) }"
+              @click="startEditAdminProvider(provider)"
+            >
+              <img class="admin-model-logo" :src="DEEPSEEK_LOGO" alt="DeepSeek" />
+              <span class="admin-model-main">
+                <strong>{{ provider.name || 'DeepSeek' }}</strong>
+                <small>{{ provider.base_url || 'https://api.deepseek.com' }}</small>
+              </span>
+              <span class="admin-model-badges">
+                <i v-if="isAdminSystemDefault(provider.id)">系统默认</i>
+                <em v-else>未启用</em>
+              </span>
+              <span class="admin-model-row-actions" @click.stop>
+                <button type="button" class="admin-model-icon" title="编辑模型" aria-label="编辑模型" :disabled="adminModelSaving || adminModelLoading" @click="startEditAdminProvider(provider)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+                <button
+                  type="button"
+                  class="admin-model-toggle"
+                  :class="{ enabled: isAdminSystemDefault(provider.id) }"
+                  :disabled="adminModelSaving || adminModelLoading"
+                  @click="setAdminModelEnabled(provider.id, !isAdminSystemDefault(provider.id))"
+                >{{ isAdminSystemDefault(provider.id) ? '禁用' : '启用' }}</button>
+              </span>
+            </article>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="admin-model-edit-head">
+            <h1>{{ adminEditingProvider?.id ? '编辑默认模型' : '新增默认模型' }}</h1>
+          </div>
+          <section class="admin-model-form-card">
+            <div class="admin-model-provider-option">
+              <img class="admin-model-logo" :src="DEEPSEEK_LOGO" alt="DeepSeek" />
+              <span>
+                <strong>DeepSeek</strong>
+                <small>当前唯一可选模型服务</small>
+              </span>
+              <i>已选择</i>
+            </div>
+            <div class="admin-model-form-grid">
+              <label>
+                <span>模型名称</span>
+                <input v-model="adminDraft.name" autocomplete="off" placeholder="例如 DeepSeek" @input="clearAdminStatus" />
+              </label>
+              <label>
+                <span>Base Url</span>
+                <input v-model="adminDraft.base_url" autocomplete="off" placeholder="https://api.deepseek.com" @input="clearAdminStatus" />
+              </label>
+              <label class="wide">
+                <span>Api Key</span>
+                <input v-model="adminDraft.api_key" autocomplete="off" spellcheck="false" placeholder="请输入 DeepSeek Api Key" @input="clearAdminStatus" />
+              </label>
+              <label>
+                <span>增强模型</span>
+                <input :value="DEEPSEEK_ENHANCED_MODEL" readonly />
+              </label>
+              <label>
+                <span>轻量模型</span>
+                <input :value="DEEPSEEK_LIGHT_MODEL" readonly />
+              </label>
+            </div>
+            <footer class="admin-model-edit-foot">
+              <div class="admin-model-left-actions">
+                <button v-if="adminEditingProvider?.id" type="button" class="admin-model-danger" :disabled="adminDeleting || adminModelSaving || adminTesting" @click="deleteAdminProvider">
+                  {{ adminDeleting ? '删除中' : '删除' }}
+                </button>
+              </div>
+              <span v-if="adminStatusText" :class="['admin-model-status', { ok: adminStatusKind === 'ok', error: adminStatusKind === 'error' }]">{{ adminStatusText }}</span>
+              <div class="admin-model-right-actions">
+                <button type="button" class="admin-model-secondary" :disabled="adminModelSaving || adminDeleting || adminTesting" @click="cancelAdminEdit">取消</button>
+                <button type="button" class="admin-model-secondary" :disabled="adminTesting || adminModelSaving || adminDeleting" @click="testAdminProvider">{{ adminTesting ? '测试中' : '测试连接' }}</button>
+                <button type="button" class="admin-model-primary" :disabled="adminModelSaving || adminDeleting" @click="saveAdminProvider">{{ adminModelSaving ? '保存中' : '保存' }}</button>
+              </div>
+            </footer>
+          </section>
+        </template>
+      </section>
+
+      <section v-else-if="activeKey === 'admin-scenes' && canViewTraceAudit" class="admin-scenes-panel">
+        <div class="admin-scenes-head">
+          <div>
+            <strong>模型场景配置</strong>
+            <span>每个场景只选择使用增强模型或轻量模型；具体模型名称来自当前会话选择的模型配置。</span>
+          </div>
+          <button type="button" :disabled="adminSceneLoading || adminSceneSaving" @click="saveAdminScenes">{{ adminSceneSaving ? '保存中' : '保存' }}</button>
+        </div>
+        <div v-if="adminSceneLoading && !adminScenes.length" class="admin-model-state">加载中...</div>
+        <div v-else class="admin-scenes-list" aria-label="模型场景配置列表">
+          <article v-for="scene in adminScenes" :key="scene.key" class="admin-scene-row">
+            <span class="admin-scene-main">
+              <strong>{{ scene.label }}</strong>
+              <small>{{ scene.description || scene.key }}</small>
+              <code>{{ scene.key }}</code>
+            </span>
+            <AppSelect
+              class="admin-scene-select"
+              :model-value="scene.strength"
+              :options="sceneStrengthOptions"
+              :disabled="adminSceneSaving"
+              dropdown-fit-content
+              @change="(value) => setSceneStrengthValue(scene.key, value)"
+            >
+              <template #trigger="{ label, open }">
+                <span class="admin-scene-select-trigger" :class="{ open }">
+                  <span>{{ label || '选择模型强度' }}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+              </template>
+            </AppSelect>
+          </article>
+        </div>
+        <p v-if="adminSceneStatusText" :class="['admin-scenes-status', { ok: adminSceneStatusKind === 'ok', error: adminSceneStatusKind === 'error' }]">{{ adminSceneStatusText }}</p>
+      </section>
+
+      <section v-else-if="activeKey === 'admin-config' && canViewTraceAudit" class="admin-config-panel">
+        <div class="admin-config-head">
+          <div>
+            <strong>配置导入/导出</strong>
+            <span>第一期只处理系统默认模型和模型场景配置，用于上线后把当前环境的关键配置迁移到正式环境。</span>
+          </div>
+          <button type="button" :disabled="adminConfigExporting" @click="exportAdminConfig">{{ adminConfigExporting ? '导出中' : '导出 JSON' }}</button>
+        </div>
+        <div class="admin-config-grid">
+          <section class="admin-config-card">
+            <h3>导出内容</h3>
+            <ul>
+              <li>系统默认模型 Provider，包括 DeepSeek Base Url、Api Key、增强模型、轻量模型。</li>
+              <li>模型场景配置，包括缺省模型、对话主脑/复杂编排、标题生成等场景强度。</li>
+            </ul>
+            <p>导出文件包含密钥，只用于可信环境迁移，不要发到公共群或代码仓库。</p>
+          </section>
+          <section class="admin-config-card import">
+            <h3>导入配置</h3>
+            <textarea v-model="adminConfigImportText" spellcheck="false" placeholder="粘贴导出的 JSON 配置..." />
+            <div class="admin-config-actions">
+              <button type="button" class="admin-model-secondary" :disabled="adminConfigImporting || !adminConfigImportText.trim()" @click="adminConfigImportText = ''">清空</button>
+              <button type="button" class="admin-model-primary" :disabled="adminConfigImporting || !adminConfigImportText.trim()" @click="importAdminConfig">{{ adminConfigImporting ? '导入中' : '导入并覆盖' }}</button>
+            </div>
+            <p v-if="adminConfigStatusText" :class="['admin-config-status', { ok: adminConfigStatusKind === 'ok', error: adminConfigStatusKind === 'error' }]">{{ adminConfigStatusText }}</p>
+          </section>
         </div>
       </section>
 
@@ -221,18 +411,32 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useRoute, useRouter } from 'vue-router'
-import { getVibeCapabilities, getVibeDialogueTraceDetail, listVibeDialogueTraceRuns, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig } from '../api'
+import VibeModelSettings from '../VibeModelSettings.vue'
+import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
+import AppSelect from '@/components/common/select/AppSelect.vue'
+import { createVibeLLMProvider, deleteVibeLLMProvider, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
-const activeKey = ref<'profile' | 'trace'>('profile')
+const activeKey = ref<'profile' | 'model' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'trace'>('profile')
+const showWinControls = computed(() => !!window.electronAPI)
+const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
+const winMaximized = ref(false)
+let offMaximizeState: (() => void) | null = null
 const capabilities = ref<Record<string, boolean>>({})
 const featureConfigs = ref<Record<string, VibeFeatureConfig>>({})
 const currentUser = ref<VibeCapabilityUser | null>(null)
+const usageSummary = ref<VibeUsageSummary>({
+  total_tokens: 0,
+  peak_tokens: 0,
+  max_elapsed_ms: 0,
+  dialogue_turns: 0,
+  latest_sent_at: null,
+})
 const traceConfigSaving = ref(false)
 const traceRuns = ref<VibeDialogueTraceRun[]>([])
 const selectedTraceId = ref('')
@@ -246,6 +450,42 @@ const copiedAuditMarker = ref('')
 const copiedAuditMarkerBatch = ref(false)
 const traceProjectFilter = ref('')
 const traceUserFilter = ref('')
+const adminModelProviders = ref<VibeLLMProviderConfig[]>([])
+const adminSystemDefaultProviderIds = ref<string[]>([])
+const adminModelLoading = ref(false)
+const adminModelSaving = ref(false)
+const adminModelMode = ref<'list' | 'edit'>('list')
+const adminEditingProvider = ref<VibeLLMProviderConfig | null>(null)
+const adminDeleting = ref(false)
+const adminTesting = ref(false)
+const adminStatusText = ref('')
+const adminStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const adminScenes = ref<VibeLLMSceneConfig[]>([])
+const adminSceneLoading = ref(false)
+const adminSceneSaving = ref(false)
+const adminSceneStatusText = ref('')
+const adminSceneStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const adminConfigExporting = ref(false)
+const adminConfigImporting = ref(false)
+const adminConfigImportText = ref('')
+const adminConfigStatusText = ref('')
+const adminConfigStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const DEEPSEEK_LOGO = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/other_band_logo/deepseek_logo.svg'
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
+const DEEPSEEK_ENHANCED_MODEL = 'deepseek-v4-pro'
+const DEEPSEEK_LIGHT_MODEL = 'deepseek-v4-flash'
+const adminDraft = reactive<VibeLLMProviderPayload>({
+  name: 'DeepSeek',
+  provider_type: 'deepseek',
+  base_url: DEEPSEEK_BASE_URL,
+  api_key: '',
+  proxy_url: '',
+  timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
+  max_retries: 0,
+  model_config: {},
+  enabled: true,
+})
+
 const traceFilterOptions = ref<{
   projects: Array<{ project_id: string; project_name: string; count: number }>
   users: Array<{ user_id?: number; account?: string; username?: string; user_display_name?: string; label: string; count: number }>
@@ -261,11 +501,15 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-const activeTitle = computed(() => activeKey.value === 'trace' ? '对话链路审计' : '个人资料')
+const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
   const ids = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
 })
+const sceneStrengthOptions = [
+  { value: 'mini', label: '轻量模型' },
+  { value: 'strong', label: '增强模型' },
+]
 
 async function loadCapabilities() {
   try {
@@ -280,6 +524,269 @@ async function loadCapabilities() {
   }
 }
 
+async function loadUsageSummary() {
+  try {
+    const res = await getVibeUsageSummary()
+    usageSummary.value = {
+      total_tokens: Number(res?.total_tokens || 0),
+      peak_tokens: Number(res?.peak_tokens || 0),
+      max_elapsed_ms: Number(res?.max_elapsed_ms || 0),
+      dialogue_turns: Number(res?.dialogue_turns || 0),
+      latest_sent_at: res?.latest_sent_at || null,
+      scope: res?.scope,
+      rule: res?.rule,
+    }
+  } catch {
+    usageSummary.value = {
+      total_tokens: 0,
+      peak_tokens: 0,
+      max_elapsed_ms: 0,
+      dialogue_turns: 0,
+      latest_sent_at: null,
+    }
+  }
+}
+
+
+async function loadAdminModelDefaults() {
+  if (!canViewTraceAudit.value || adminModelLoading.value) return
+  adminModelLoading.value = true
+  try {
+    const res = await getVibeLLMAdminModelDefaults()
+    adminModelProviders.value = res?.providers || []
+    adminSystemDefaultProviderIds.value = res?.system_default_provider_ids || []
+  } finally {
+    adminModelLoading.value = false
+  }
+}
+
+async function loadAdminModelScenes() {
+  if (!canViewTraceAudit.value || adminSceneLoading.value) return
+  adminSceneLoading.value = true
+  try {
+    const res = await getVibeLLMAdminModelScenes()
+    adminScenes.value = res?.scenes || []
+  } finally {
+    adminSceneLoading.value = false
+  }
+}
+
+function setSceneStrength(key: string, strength: 'mini' | 'strong') {
+  adminScenes.value = adminScenes.value.map((item) => item.key === key ? { ...item, strength } : item)
+  adminSceneStatusText.value = ''
+  adminSceneStatusKind.value = 'idle'
+}
+
+function setSceneStrengthValue(key: string, value: string | number) {
+  setSceneStrength(key, String(value) === 'strong' ? 'strong' : 'mini')
+}
+
+async function saveAdminScenes() {
+  if (adminSceneSaving.value) return
+  adminSceneSaving.value = true
+  try {
+    const res = await updateVibeLLMAdminModelScenes(adminScenes.value.map((item) => ({ key: item.key, strength: item.strength })))
+    adminScenes.value = res?.scenes || []
+    adminSceneStatusText.value = '已保存'
+    adminSceneStatusKind.value = 'ok'
+  } catch (error: any) {
+    adminSceneStatusText.value = `保存失败：${error?.message || String(error)}`
+    adminSceneStatusKind.value = 'error'
+  } finally {
+    adminSceneSaving.value = false
+  }
+}
+
+function isAdminSystemDefault(providerId: string) {
+  return adminSystemDefaultProviderIds.value.includes(providerId)
+}
+
+function adminFixedModelConfig() {
+  return {
+    mini: DEEPSEEK_LIGHT_MODEL,
+    strong: DEEPSEEK_ENHANCED_MODEL,
+  }
+}
+
+function setAdminStatus(text: string, kind: 'idle' | 'ok' | 'error') {
+  adminStatusText.value = text
+  adminStatusKind.value = kind
+}
+
+function clearAdminStatus() {
+  if (adminStatusKind.value !== 'idle') setAdminStatus('', 'idle')
+}
+
+function resetAdminDraft() {
+  Object.assign(adminDraft, {
+    name: 'DeepSeek',
+    provider_type: 'deepseek',
+    base_url: DEEPSEEK_BASE_URL,
+    api_key: '',
+    proxy_url: '',
+    timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
+    max_retries: 0,
+    model_config: adminFixedModelConfig(),
+    enabled: true,
+  })
+}
+
+function applyAdminDraft(provider: VibeLLMProviderConfig) {
+  Object.assign(adminDraft, {
+    name: provider.name || 'DeepSeek',
+    provider_type: 'deepseek',
+    base_url: provider.base_url || DEEPSEEK_BASE_URL,
+    api_key: provider.api_key || '',
+    proxy_url: provider.proxy_url || '',
+    timeout_config: {
+      connect: Number(provider.timeout_config?.connect ?? 30),
+      read: Number(provider.timeout_config?.read ?? 240),
+      write: Number(provider.timeout_config?.write ?? 60),
+      pool: Number(provider.timeout_config?.pool ?? 30),
+    },
+    max_retries: Number(provider.max_retries ?? 0),
+    model_config: adminFixedModelConfig(),
+    enabled: provider.enabled !== false,
+  })
+}
+
+function startNewAdminProvider() {
+  adminEditingProvider.value = null
+  resetAdminDraft()
+  adminModelMode.value = 'edit'
+  setAdminStatus('', 'idle')
+}
+
+function startEditAdminProvider(provider: VibeLLMProviderConfig) {
+  adminEditingProvider.value = provider
+  applyAdminDraft(provider)
+  adminModelMode.value = 'edit'
+  setAdminStatus('', 'idle')
+}
+
+function cancelAdminEdit() {
+  adminModelMode.value = 'list'
+  adminEditingProvider.value = null
+  setAdminStatus('', 'idle')
+}
+
+function validateAdminDraft() {
+  if (!String(adminDraft.name || '').trim()) return '请填写模型名称'
+  if (!String(adminDraft.base_url || '').trim()) return '请填写 Base Url'
+  if (!String(adminDraft.api_key || '').trim()) return '请填写 Api Key'
+  return ''
+}
+
+function buildAdminPayload(): VibeLLMProviderPayload {
+  return {
+    name: String(adminDraft.name || '').trim(),
+    provider_type: 'deepseek',
+    base_url: String(adminDraft.base_url || DEEPSEEK_BASE_URL).trim(),
+    api_key: String(adminDraft.api_key || '').trim(),
+    proxy_url: String(adminDraft.proxy_url || '').trim(),
+    timeout_config: adminDraft.timeout_config,
+    max_retries: Number(adminDraft.max_retries || 0),
+    model_config: adminFixedModelConfig(),
+    enabled: true,
+  }
+}
+
+async function persistAdminProvider() {
+  const error = validateAdminDraft()
+  if (error) {
+    setAdminStatus(error, 'error')
+    return null
+  }
+  const wasNew = !adminEditingProvider.value?.id
+  const provider = adminEditingProvider.value?.id
+    ? await updateVibeLLMProvider(adminEditingProvider.value.id, buildAdminPayload())
+    : await createVibeLLMProvider(buildAdminPayload())
+  if (wasNew && provider?.id) {
+    const next = Array.from(new Set([...adminSystemDefaultProviderIds.value, provider.id]))
+    const res = await setVibeLLMAdminSystemDefaults(next)
+    adminModelProviders.value = res?.providers || []
+    adminSystemDefaultProviderIds.value = res?.system_default_provider_ids || []
+  } else {
+    await loadAdminModelDefaults()
+  }
+  adminEditingProvider.value = provider
+  return provider
+}
+
+async function saveAdminProvider() {
+  if (adminModelSaving.value) return
+  adminModelSaving.value = true
+  try {
+    const provider = await persistAdminProvider()
+    if (!provider) return
+    adminModelMode.value = 'list'
+    adminEditingProvider.value = null
+    setAdminStatus('', 'idle')
+  } catch (error: any) {
+    setAdminStatus(`保存失败：${error?.message || String(error)}`, 'error')
+  } finally {
+    adminModelSaving.value = false
+  }
+}
+
+async function testAdminProvider() {
+  if (adminTesting.value || adminModelSaving.value) return
+  adminTesting.value = true
+  try {
+    const provider = await persistAdminProvider()
+    if (!provider?.id) return
+    const result = await testVibeLLMProvider(provider.id, { model: DEEPSEEK_LIGHT_MODEL })
+    setAdminStatus(
+      result.ok ? `测试成功 · ${result.model} · ${result.elapsed_ms}ms` : `测试失败 · ${result.model} · ${result.error || '未知错误'}`,
+      result.ok ? 'ok' : 'error',
+    )
+  } catch (error: any) {
+    setAdminStatus(`测试失败：${error?.message || String(error)}`, 'error')
+  } finally {
+    adminTesting.value = false
+  }
+}
+
+async function deleteAdminProvider() {
+  if (!adminEditingProvider.value?.id || adminDeleting.value) return
+  if (!window.confirm(`确认删除默认模型「${adminEditingProvider.value.name || 'DeepSeek'}」？`)) return
+  adminDeleting.value = true
+  try {
+    const providerId = adminEditingProvider.value.id
+    if (isAdminSystemDefault(providerId)) {
+      await setVibeLLMAdminSystemDefaults(adminSystemDefaultProviderIds.value.filter((id) => id !== providerId))
+    }
+    await deleteVibeLLMProvider(providerId)
+    await loadAdminModelDefaults()
+    adminModelMode.value = 'list'
+    adminEditingProvider.value = null
+    setAdminStatus('', 'idle')
+  } catch (error: any) {
+    setAdminStatus(`删除失败：${error?.message || String(error)}`, 'error')
+  } finally {
+    adminDeleting.value = false
+  }
+}
+
+async function setAdminModelEnabled(providerId: string, enabled: boolean) {
+  if (!providerId || adminModelSaving.value) return
+  const previous = [...adminSystemDefaultProviderIds.value]
+  const next = enabled
+    ? Array.from(new Set([...adminSystemDefaultProviderIds.value, providerId]))
+    : adminSystemDefaultProviderIds.value.filter((id) => id !== providerId)
+  adminSystemDefaultProviderIds.value = next
+  adminModelSaving.value = true
+  try {
+    const res = await setVibeLLMAdminSystemDefaults(next)
+    adminModelProviders.value = res?.providers || []
+    adminSystemDefaultProviderIds.value = res?.system_default_provider_ids || []
+  } catch {
+    adminSystemDefaultProviderIds.value = previous
+  } finally {
+    adminModelSaving.value = false
+  }
+}
+
 async function toggleTraceAudit() {
   if (traceConfigSaving.value) return
   traceConfigSaving.value = true
@@ -288,6 +795,59 @@ async function toggleTraceAudit() {
     if (res?.item) featureConfigs.value = { ...featureConfigs.value, trace_audit: res.item }
   } finally {
     traceConfigSaving.value = false
+  }
+}
+
+function downloadJson(filename: string, payload: VibeAdminConfigTransferPayload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+async function exportAdminConfig() {
+  if (adminConfigExporting.value) return
+  adminConfigExporting.value = true
+  adminConfigStatusText.value = ''
+  adminConfigStatusKind.value = 'idle'
+  try {
+    const payload = await exportVibeAdminConfig()
+    downloadJson(`vibe-admin-config-${exportStamp()}.json`, payload)
+    adminConfigStatusText.value = '已导出配置文件'
+    adminConfigStatusKind.value = 'ok'
+  } catch (error: any) {
+    adminConfigStatusText.value = `导出失败：${error?.message || String(error)}`
+    adminConfigStatusKind.value = 'error'
+  } finally {
+    adminConfigExporting.value = false
+  }
+}
+
+async function importAdminConfig() {
+  if (adminConfigImporting.value || !adminConfigImportText.value.trim()) return
+  adminConfigImporting.value = true
+  adminConfigStatusText.value = ''
+  adminConfigStatusKind.value = 'idle'
+  try {
+    const config = JSON.parse(adminConfigImportText.value)
+    const res = await importVibeAdminConfig(config)
+    adminConfigStatusText.value = `导入完成：默认模型 ${res.imported?.providers || 0} 个，场景配置 ${res.imported?.scenes || 0} 项`
+    adminConfigStatusKind.value = 'ok'
+    adminConfigImportText.value = ''
+    await Promise.all([
+      loadAdminModelDefaults(),
+      loadAdminModelScenes(),
+    ])
+  } catch (error: any) {
+    adminConfigStatusText.value = `导入失败：${error?.message || String(error)}`
+    adminConfigStatusKind.value = 'error'
+  } finally {
+    adminConfigImporting.value = false
   }
 }
 
@@ -617,8 +1177,10 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   'sse.process_action_done': '过程动作完成',
   'sse.process_persist': '过程状态持久化',
   'sse.stage': '阶段更新',
+  'sse.answer_start': '答案流开始',
   'sse.answer': '答案输出',
   'sse.answer_delta': '答案流式输出',
+  'sse.answer_done': '答案流结束',
   'sse.notes': '补充说明',
   'sse.materials': '召回材料',
   'sse.sources': '来源引用',
@@ -648,8 +1210,10 @@ const RAW_TYPE_LABELS: Record<string, string> = {
   process_action_done: '过程动作完成',
   process_persist: '过程状态持久化',
   stage: '阶段更新',
+  answer_start: '答案流开始',
   answer: '答案输出',
   answer_delta: '答案流式输出',
+  answer_done: '答案流结束',
   notes: '补充说明',
   materials: '召回材料',
   sources: '来源引用',
@@ -773,6 +1337,17 @@ function annotatedPayload(value: any): any {
 
 function eventText(event: VibeDialogueTraceEvent) {
   const payload = event?.payload || {}
+  const eventType = String(event?.event_type || '')
+  if (eventType.startsWith('llm.call_')) {
+    const lines: string[] = []
+    if (payload.model) lines.push(`**模型**：${payload.model}`)
+    if (payload.provider_name) lines.push(`**服务**：${payload.provider_name}`)
+    if (payload.use_case) lines.push(`**场景**：${payload.use_case}${payload.strength ? `（${payload.strength}）` : ''}`)
+    if (payload.purpose) lines.push(`**用途**：${payload.purpose}`)
+    if (payload.elapsed_ms !== undefined && payload.elapsed_ms !== null) lines.push(`**耗时**：${formatDuration(payload.elapsed_ms)}`)
+    if (payload.error) lines.push(`**错误**：${payload.error}`)
+    if (lines.length) return lines.join('\n')
+  }
   const candidates = [payload.message, payload.text, payload.detail, payload.answer, payload.summary]
   const first = candidates.find((item) => typeof item === 'string' && item.trim())
   return first ? String(first) : ''
@@ -784,6 +1359,25 @@ function formatDuration(ms?: number | null) {
   if (!Number.isFinite(n)) return '-'
   if (n < 1000) return `${Math.max(0, Math.round(n))}ms`
   return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}s`
+}
+
+function formatUsageNumber(value?: number | null) {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 100000000) return `${(n / 100000000).toFixed(n >= 1000000000 ? 1 : 2)}亿`
+  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 1 : 2)}万`
+  return String(Math.round(n))
+}
+
+function formatUsageDuration(ms?: number | null) {
+  const n = Number(ms || 0)
+  if (!Number.isFinite(n) || n <= 0) return '0s'
+  if (n < 1000) return `${Math.round(n)}ms`
+  const seconds = n / 1000
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = Math.round(seconds % 60)
+  return rest ? `${minutes}分${rest}秒` : `${minutes}分`
 }
 
 function formatTime(value?: string | null) {
@@ -873,19 +1467,47 @@ function backToApp() {
   router.push({ name: 'vibeKnowledge', query: route.query })
 }
 
+function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
+  window.electronAPI?.wm?.control(winKey.value, action)
+}
+
+function trackMaximizeState() {
+  if (!window.electronAPI) return
+  window.electronAPI.wm?.isMaximized?.(winKey.value)
+    ?.then((v: boolean) => { winMaximized.value = !!v })
+    ?.catch(() => {})
+  offMaximizeState = window.electronAPI.on?.('wm:maximize-state', (_event: any, payload: { key?: string; maximized?: boolean } = {}) => {
+    if (payload?.key !== winKey.value) return
+    winMaximized.value = !!payload.maximized
+  }) || null
+}
+
 watch(canViewTraceAudit, (allowed) => {
-  if (!allowed && activeKey.value === 'trace') activeKey.value = 'profile'
+  if (!allowed && (activeKey.value === 'trace' || activeKey.value === 'admin-model' || activeKey.value === 'admin-scenes' || activeKey.value === 'admin-config')) activeKey.value = 'profile'
 })
 
 watch(activeKey, (key) => {
+  if (key === 'profile') loadUsageSummary()
   if (key === 'trace' && canViewTraceAudit.value && !traceRuns.value.length) loadTraceRuns(true)
+  if (key === 'admin-model' && canViewTraceAudit.value && !adminModelProviders.value.length) loadAdminModelDefaults()
+  if (key === 'admin-scenes' && canViewTraceAudit.value && !adminScenes.value.length) loadAdminModelScenes()
 })
 
 onMounted(async () => {
+  trackMaximizeState()
   syncRouteTab()
-  await loadCapabilities()
+  await Promise.all([
+    loadCapabilities(),
+    loadUsageSummary(),
+  ])
   if (!canViewTraceAudit.value && activeKey.value === 'trace') activeKey.value = 'profile'
   if (activeKey.value === 'trace' && canViewTraceAudit.value) await loadTraceRuns(true)
+  if (activeKey.value === 'admin-model' && canViewTraceAudit.value) await loadAdminModelDefaults()
+  if (activeKey.value === 'admin-scenes' && canViewTraceAudit.value) await loadAdminModelScenes()
+})
+
+onBeforeUnmount(() => {
+  offMaximizeState?.()
 })
 </script>
 
@@ -919,6 +1541,25 @@ onMounted(async () => {
   -webkit-app-region: drag;
   z-index: 3;
   pointer-events: none;
+}
+
+.settings-win-ctl-zone {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  padding: 6px 8px 10px 16px;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.settings-win-ctl-zone:hover {
+  opacity: 1;
+}
+
+.settings-win-ctl {
+  position: static;
 }
 
 .settings-side {
@@ -1035,6 +1676,8 @@ onMounted(async () => {
 }
 
 .profile-panel,
+.model-panel,
+.admin-model-panel,
 .trace-panel {
   max-width: 920px;
   margin: 78px auto 60px;
@@ -1128,6 +1771,237 @@ onMounted(async () => {
 .profile-stats div + div { border-left: 1px solid var(--line); }
 .profile-stats strong { font-size: 16px; font-weight: 620; }
 .profile-stats span { color: var(--ink-3); font-size: 12px; }
+
+.model-panel {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-model-panel {
+  max-width: 760px;
+  margin-top: 24px;
+}
+
+.admin-model-head { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 18px; }
+.admin-model-refresh,
+.admin-model-add { height: 34px; border: 0; border-radius: 10px; background: #f4f4f4; color: var(--ink-1); padding: 0 12px; cursor: pointer; }
+.admin-model-refresh:hover,
+.admin-model-add:hover { background: #ececec; }
+.admin-model-refresh:disabled,
+.admin-model-add:disabled { opacity: .45; cursor: not-allowed; }
+.admin-model-add { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+.admin-model-add svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.admin-model-list { display: grid; gap: 10px; }
+.admin-model-row { width: 100%; min-height: 72px; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; }
+.admin-model-row:hover { background: #fcfcfc; }
+.admin-model-row.enabled { border-color: rgba(47, 107, 61, .18); background: #fbfdfb; }
+.admin-model-logo { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; }
+.admin-model-main { min-width: 0; display: grid; gap: 4px; }
+.admin-model-main strong { color: var(--ink-1); font-size: 14px; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-model-main small { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-model-badges { display: flex; justify-content: flex-end; }
+.admin-model-badges i,
+.admin-model-badges em { height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; font-size: 11px; font-style: normal; font-weight: 500; white-space: nowrap; }
+.admin-model-badges i { background: #f0f7f1; color: #2f6b3d; }
+.admin-model-badges em { background: #f6f6f6; color: var(--ink-3); }
+.admin-model-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.admin-model-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; color: rgba(29, 29, 31, .72); padding: 0; cursor: pointer; }
+.admin-model-icon:hover { background: #f1f1f1; }
+.admin-model-icon svg { width: 16px; height: 16px; }
+.admin-model-toggle { height: 32px; border: 0; border-radius: 9px; background: #f1f1f1; color: var(--ink-1); padding: 0 12px; font-size: 12px; cursor: pointer; }
+.admin-model-toggle:hover { background: #e9e9e9; }
+.admin-model-toggle.enabled { background: #fff2f2; color: #a33a32; }
+.admin-model-toggle.enabled:hover { background: #ffe8e8; }
+.admin-model-toggle:disabled,
+.admin-model-icon:disabled { opacity: .45; cursor: not-allowed; }
+.admin-model-state { color: var(--ink-3); font-size: 13px; }
+.admin-model-edit-head { margin-bottom: 14px; }
+.admin-model-edit-head h1 { margin: 0; font-size: 18px; font-weight: 560; }
+.admin-model-form-card { border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 18px; box-shadow: 0 14px 38px rgba(0,0,0,.045); }
+.admin-model-provider-option { width: 100%; min-height: 66px; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 13px; padding: 12px; border: 1px solid rgba(15,15,15,.1); border-radius: 14px; background: #fafafa; margin-bottom: 16px; }
+.admin-model-provider-option strong,
+.admin-model-provider-option small { display: block; }
+.admin-model-provider-option strong { margin-bottom: 3px; font-size: 14px; font-weight: 560; }
+.admin-model-provider-option small { color: var(--ink-3); font-size: 12px; }
+.admin-model-provider-option i { font-size: 12px; font-style: normal; color: #2f6b3d; }
+.admin-model-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.admin-model-form-grid label { min-width: 0; }
+.admin-model-form-grid label.wide { grid-column: 1 / -1; }
+.admin-model-form-grid label span { display: block; margin-bottom: 7px; color: var(--ink-3); font-size: 12px; }
+.admin-model-form-grid input { width: 100%; height: 38px; box-sizing: border-box; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; background: #fff; color: var(--ink-1); padding: 0 11px; font-size: 13px; outline: none; }
+.admin-model-form-grid input:focus { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }
+.admin-model-form-grid input[readonly] { background: #f6f6f6; color: rgba(29,29,31,.62); }
+.admin-model-edit-foot { display: grid; grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto; align-items: center; gap: 14px; margin-top: 18px; }
+.admin-model-left-actions,
+.admin-model-right-actions { display: flex; gap: 8px; }
+.admin-model-right-actions { justify-content: flex-end; }
+.admin-model-primary,
+.admin-model-secondary,
+.admin-model-danger { height: 34px; border-radius: 10px; padding: 0 14px; font-size: 13px; cursor: pointer; }
+.admin-model-primary { border: 1px solid #1d1d1f; background: #1d1d1f; color: #fff; }
+.admin-model-secondary { border: 1px solid var(--line); background: #fff; color: var(--ink-1); }
+.admin-model-danger { border: 1px solid rgba(180,35,24,.16); background: #fff; color: #b42318; }
+.admin-model-primary:disabled,
+.admin-model-secondary:disabled,
+.admin-model-danger:disabled { opacity: .5; cursor: not-allowed; }
+.admin-model-status { min-width: 0; color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-model-status.ok { color: #2f6b3d; }
+.admin-model-status.error { color: #b42318; }
+
+.admin-scenes-panel {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding: 22px 40px 34px;
+}
+.admin-scenes-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.admin-scenes-head div { display: grid; gap: 5px; }
+.admin-scenes-head strong { font-size: 18px; font-weight: 560; }
+.admin-scenes-head span { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+.admin-scenes-head button {
+  height: 32px;
+  border: 1px solid #1d1d1f;
+  border-radius: 10px;
+  background: #1d1d1f;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.admin-scenes-head button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-scenes-list { display: grid; gap: 8px; }
+.admin-scene-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.admin-scene-main { min-width: 0; display: grid; gap: 4px; }
+.admin-scene-main strong { font-size: 13px; font-weight: 560; color: var(--ink-1); }
+.admin-scene-main small { color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+.admin-scene-main code { width: fit-content; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); background: #f5f5f5; border-radius: 6px; padding: 2px 6px; font-size: 11px; }
+.admin-scene-select { width: 138px; }
+.admin-scene-select :deep(.app-select-trigger) { width: 100%; height: 32px; padding: 0; border: 0; background: transparent; }
+.admin-scene-select-trigger {
+  width: 100%;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-1);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.admin-scene-select-trigger.open,
+.admin-scene-select-trigger:hover { background: #f7f7f7; border-color: #d6d6d6; }
+.admin-scene-select-trigger svg { flex: 0 0 auto; color: var(--ink-3); }
+.admin-scenes-status { margin: 12px 0 0; color: var(--ink-3); font-size: 12px; }
+.admin-scenes-status.ok { color: #2f6b3d; }
+.admin-scenes-status.error { color: #b42318; }
+
+.admin-config-panel {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding: 22px 40px 34px;
+}
+.admin-config-head {
+  max-width: 920px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.admin-config-head div { display: grid; gap: 5px; }
+.admin-config-head strong { font-size: 18px; font-weight: 560; }
+.admin-config-head span { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+.admin-config-head button {
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid #1d1d1f;
+  border-radius: 10px;
+  background: #1d1d1f;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.admin-config-head button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-config-grid {
+  max-width: 920px;
+  display: grid;
+  grid-template-columns: minmax(260px, .78fr) minmax(360px, 1.22fr);
+  gap: 14px;
+}
+.admin-config-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 16px;
+}
+.admin-config-card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 560; }
+.admin-config-card ul {
+  margin: 0;
+  padding-left: 17px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.admin-config-card p {
+  margin: 14px 0 0;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.admin-config-card.import { display: grid; gap: 12px; }
+.admin-config-card textarea {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  border: 1px solid rgba(15,15,15,.1);
+  border-radius: 12px;
+  background: #fbfbfb;
+  color: var(--ink-1);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+}
+.admin-config-card textarea:focus {
+  border-color: rgba(29,29,31,.34);
+  box-shadow: 0 0 0 3px rgba(15,15,15,.06);
+}
+.admin-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.admin-config-status {
+  margin: 0 !important;
+  color: var(--ink-3) !important;
+  font-size: 12px;
+}
+.admin-config-status.ok { color: #2f6b3d !important; }
+.admin-config-status.error { color: #b42318 !important; }
 
 .trace-panel {
   max-width: none;

@@ -2,6 +2,15 @@
   <div class="vibe-hero" :class="{ 'is-leaving': leaving }">
     <!-- Electron 窗口拖拽区（顶部一条，别的元素都 no-drag） -->
     <div class="window-drag" />
+    <div v-if="showWinControls" class="win-ctl-zone hero-window-controls">
+      <VibeWindowControls
+        class="win-ctl"
+        :maximized="winMaximized"
+        @minimize="winControl('minimize')"
+        @maximize-toggle="winControl('maximizeToggle')"
+        @close="winControl('close')"
+      />
+    </div>
 
     <!-- three.js 画布（背景帧序列 + 粒子都在这里渲染；帧序列见 public/frames + Page.js） -->
     <canvas ref="canvasEl" class="webgl" />
@@ -61,6 +70,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import VibeWindowControls from './knowledge/components/VibeWindowControls.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -73,6 +83,10 @@ const sectionIndex = ref(0)
 const sectionLast = ref(2) // 末页下标（3 段 → 2），引擎会用真实值覆盖
 const leaving = ref(false)
 const atLastSection = computed(() => sectionIndex.value >= sectionLast.value)
+const showWinControls = computed(() => !!window.electronAPI)
+const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
+const winMaximized = ref(false)
+let offMaximizeState: (() => void) | null = null
 
 function onSectionEvt(e: Event) {
   const d = (e as CustomEvent).detail || {}
@@ -82,6 +96,7 @@ function onSectionEvt(e: Event) {
 }
 
 onMounted(async () => {
+  trackMaximizeState()
   // 先挂监听，确保能收到引擎初始化时广播的第 0 页。
   window.addEventListener('vibe:section', onSectionEvt)
   // 只在客户端加载 three 引擎：动态 import 避免 SSR 阶段触碰 window / WebGL / .frag 着色器。
@@ -98,6 +113,7 @@ onMounted(async () => {
 let enterTimer: ReturnType<typeof setTimeout> | null = null
 
 onBeforeUnmount(() => {
+  offMaximizeState?.()
   window.removeEventListener('vibe:section', onSectionEvt)
   if (enterTimer) { clearTimeout(enterTimer); enterTimer = null }
   // 停 RAF + 移除全部全局监听（滚轮/指针/resize）+ 置空单例，防泄漏、防死首屏劫持滚轮。
@@ -105,22 +121,27 @@ onBeforeUnmount(() => {
   experience = null
 })
 
-// 仅 localhost 域名可进入知识库，其他域名提示暂未开发
-const isLocalhost = computed(() => {
-  const host = window.location.hostname
-  return host === 'localhost' || host === '127.0.0.1'
-})
-
 function openKnowledge() {
   if (leaving.value) return
-  if (!isLocalhost.value) {
-    ;(window as any).$toast?.({ title: '该功能暂未开发，敬请期待', type: 'info' })
-    return
-  }
   leaving.value = true // 触发 hero 缩放 + 淡出 + 模糊转场
   enterTimer = setTimeout(() => {
     router.push({ name: 'vibeKnowledge', query: route.query })
   }, 620)
+}
+
+function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
+  window.electronAPI?.wm?.control(winKey.value, action)
+}
+
+function trackMaximizeState() {
+  if (!window.electronAPI) return
+  window.electronAPI.wm?.isMaximized?.(winKey.value)
+    ?.then((v: boolean) => { winMaximized.value = !!v })
+    ?.catch(() => {})
+  offMaximizeState = window.electronAPI.on?.('wm:maximize-state', (_event: any, payload: { key?: string; maximized?: boolean } = {}) => {
+    if (payload?.key !== winKey.value) return
+    winMaximized.value = !!payload.maximized
+  }) || null
 }
 </script>
 
@@ -155,6 +176,43 @@ function openKnowledge() {
   height: 34px;
   z-index: 8;
   -webkit-app-region: drag;
+}
+
+.win-ctl-zone {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  padding: 6px 8px 10px 16px;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.win-ctl-zone:hover {
+  opacity: 1;
+}
+
+.win-ctl {
+  position: static;
+}
+
+.hero-window-controls :deep(.btn) {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.hero-window-controls :deep(.btn:hover) {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.hero-window-controls :deep(.btn:active) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.hero-window-controls :deep(.btn.close:hover) {
+  background: #e81123;
+  color: #fff;
 }
 
 /* —— three.js 画布（背景视频 + 粒子都在此渲染，垫在文字下） —— */

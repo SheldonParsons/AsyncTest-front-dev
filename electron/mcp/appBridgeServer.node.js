@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { writeAmindFile } from '../amind/amindFileService.node.js';
+import { getAsyncTestMindMcpCapabilities } from './asynctest-mind-mcp.mjs';
 import {
   cloneJson,
   copyMindDocSubtree,
@@ -167,6 +168,7 @@ function listMindWindows({ amindMain, windowManager }) {
 
 async function listMindWindowsDetailed(context) {
   const windows = listMindWindows(context);
+  if (context?.includeRuntimeState !== true) return windows;
   return await Promise.all(
     windows.map(async (item) => {
       try {
@@ -369,7 +371,7 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       const primaryId = params.primaryId ?? nodeIds[nodeIds.length - 1] ?? null;
       const selection = { nodeIds, primaryId };
       openDocumentSelections.set(windowKey, selection);
-      return selection;
+      return { ok: true, ...selection };
     }
     case 'mind.updateNodeText': {
       const result = updateMindDocNodeText(doc, params.nodeId, params.text, params);
@@ -457,7 +459,9 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
         throw error;
       }
       const saved = params.saveAfterApply === true ? await saveOpenMindEntry(context, docId, entry) : null;
-      return { ok: true, results, saved };
+      const result = { ok: true, windowKey, docId, appliedCount: operations.length, dirty: true, saved };
+      if (params.includeResults === true) result.results = results;
+      return result;
     }
     case 'mind.saveDocument': {
       const saved = await saveOpenMindEntry(context, docId, entry);
@@ -488,7 +492,9 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       node.markers = Array.isArray(params.markers) ? [...new Set(params.markers.map(String).filter(Boolean))] : [];
       markOpenDocChanged(entry);
       notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { boardId, ok: true, node: getMindDocNode(doc, params.nodeId, { boardId, includeMetadata: true }).node };
+      const result = { boardId, ok: true, nodeId: params.nodeId, markers: node.markers, changedCount: 1, dirty: true };
+      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
+      return result;
     }
     case 'mind.addNodeMarker': {
       const { boardId, board } = getActiveBoard(doc, params.boardId);
@@ -500,7 +506,9 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       node.markers = current.includes(markerKey) ? current : [...current, markerKey];
       markOpenDocChanged(entry);
       notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { boardId, ok: true, node: getMindDocNode(doc, params.nodeId, { boardId, includeMetadata: true }).node };
+      const result = { boardId, ok: true, nodeId: params.nodeId, markerKey, markers: node.markers, changedCount: 1, dirty: true };
+      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
+      return result;
     }
     case 'mind.removeNodeMarker': {
       const { boardId, board } = getActiveBoard(doc, params.boardId);
@@ -510,7 +518,9 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       node.markers = (Array.isArray(node.markers) ? node.markers : []).filter((item) => item !== markerKey);
       markOpenDocChanged(entry);
       notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { boardId, ok: true, node: getMindDocNode(doc, params.nodeId, { boardId, includeMetadata: true }).node };
+      const result = { boardId, ok: true, nodeId: params.nodeId, markerKey, markers: node.markers, changedCount: 1, dirty: true };
+      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
+      return result;
     }
     case 'mind.setRootSecrecy': {
       const { boardId, board } = getActiveBoard(doc, params.boardId);
@@ -520,7 +530,9 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       node.secrecy = params.secrecy == null ? null : cloneJson(params.secrecy);
       markOpenDocChanged(entry);
       notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { boardId, ok: true, node: getMindDocNode(doc, rootId, { boardId, includeMetadata: true }).node };
+      const result = { boardId, ok: true, nodeId: rootId, secrecy: node.secrecy ?? null, changedCount: 1, dirty: true };
+      if (params.includeNode === true) result.node = getMindDocNode(doc, rootId, { ...params, boardId }).node;
+      return result;
     }
     case 'mind.readOpenDocument': {
       const mode = params.mode || 'outline';
@@ -586,11 +598,15 @@ async function handleMindBridgeRequest(context, method, params = {}) {
   if (!amindMain || !windowManager) throw new Error('AsyncTest Mind is not ready');
 
   switch (method) {
+    case 'mind.capabilities':
+      return getAsyncTestMindMcpCapabilities();
+
     case 'mind.status':
       return {
         ok: true,
         bridge: 'ready',
-        windows: await listMindWindowsDetailed(context),
+        mcp: getAsyncTestMindMcpCapabilities(),
+        windows: await listMindWindowsDetailed({ ...context, includeRuntimeState: params?.includeRuntimeState === true }),
       };
 
     case 'mind.recentFiles':
@@ -606,6 +622,8 @@ async function handleMindBridgeRequest(context, method, params = {}) {
         title: params.title,
         rootText: params.rootText,
         children: params.children,
+        rootMarkers: params.rootMarkers,
+        rootSecrecy: params.rootSecrecy,
         overwrite: params.overwrite === true,
         openWindow: params.openWindow === true,
       });
@@ -617,6 +635,8 @@ async function handleMindBridgeRequest(context, method, params = {}) {
           title: params.title,
           rootText: params.rootText,
           children: params.children,
+          rootMarkers: params.rootMarkers,
+          rootSecrecy: params.rootSecrecy,
           overwrite: params.overwrite === true,
           openWindow: params.open === true || params.openWindow === true,
         });
@@ -625,14 +645,16 @@ async function handleMindBridgeRequest(context, method, params = {}) {
         title: params.title,
         rootText: params.rootText,
         children: params.children,
+        rootMarkers: params.rootMarkers,
+        rootSecrecy: params.rootSecrecy,
       });
     }
 
     case 'mind.listWindows':
-      return await listMindWindowsDetailed(context);
+      return await listMindWindowsDetailed({ ...context, includeRuntimeState: params?.includeRuntimeState === true });
 
     case 'mind.getActiveWindow': {
-      const windows = await listMindWindowsDetailed(context);
+      const windows = await listMindWindowsDetailed({ ...context, includeRuntimeState: params?.includeRuntimeState === true });
       return windows.find((item) => item.focused) || windows[0] || null;
     }
 

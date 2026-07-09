@@ -43,7 +43,7 @@
           <p class="card-description">AsyncTest 生成工具</p>
         </div>
 
-        <!-- 进入 AsyncTest Vibe（仅 localhost 可进入，其他域名点击提示暂未开发） -->
+        <!-- 进入 AsyncTest Vibe -->
         <div class="dashboard-card ai-card vibe-card" @click="handleEnterVibe">
           <div class="card-logo">
             <img class="logo-default" src="https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/ast_vibe.svg"
@@ -73,7 +73,7 @@
 
     <!-- 登录弹窗 -->
     <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
-      <LoginComponent @loginSuccess="handleLoginSuccess" />
+      <LoginComponent :redirect-on-success="loginRedirectOnSuccess" @loginSuccess="handleLoginSuccess" />
     </DialogAnimation>
   </div>
 </template>
@@ -90,6 +90,8 @@ import { ApiCheckPermission } from '@/api/layout/cookies'
 const router = useRouter()
 const loginDialogRef = ref<any>(null)
 const electronAPI = (window as any).electronAPI
+const loginRedirectOnSuccess = ref(true)
+const postLoginAction = ref<'vibe' | null>(null)
 
 const emit = defineEmits(['doubleCheckLoginStatus'])
 
@@ -118,6 +120,8 @@ const handleEnterAsyncTest = async () => {
   if (await checkLoginStatus()) {
     router.push({ name: "project" })
   } else {
+    postLoginAction.value = null
+    loginRedirectOnSuccess.value = true
     loginDialogRef.value?.open()
   }
 }
@@ -137,10 +141,16 @@ const handleEnterGenerator = () => {
 
 const handleEnterVibe = async () => {
   if (!await checkLoginStatus()) {
+    postLoginAction.value = 'vibe'
+    loginRedirectOnSuccess.value = false
     loginDialogRef.value?.open()
     return
   }
 
+  await openVibeWorkbench()
+}
+
+async function openVibeWorkbench() {
   if (electronAPI?.wm?.open) {
     await electronAPI.wm.open({
       key: 'vibe-workbench',
@@ -173,12 +183,20 @@ const handleMoreFeatures = () => {
 }
 
 // 登录成功回调
-const handleLoginSuccess = () => {
+const handleLoginSuccess = async () => {
   loginDialogRef.value?.close()
   // 更新 header 的登录状态
   if (window.$updateHeaderLoginStatus) {
     window.$updateHeaderLoginStatus()
   }
+  if (postLoginAction.value === 'vibe') {
+    postLoginAction.value = null
+    loginRedirectOnSuccess.value = true
+    await openVibeWorkbench()
+    return
+  }
+  postLoginAction.value = null
+  loginRedirectOnSuccess.value = true
 }
 </script>
 

@@ -12,7 +12,14 @@ import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
 import { handleMindMcpRendererResponse, initMindMcpAppBridgeServer } from './mcp/appBridgeServer.node.js';
-import { startMindMcpStdioServer } from './mcp/asynctest-mind-mcp.mjs';
+import {
+  ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+  ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
+  ASYNCTEST_MIND_MCP_TIMEZONE,
+  ASYNCTEST_MIND_MCP_UPDATED_AT,
+  ASYNCTEST_MIND_MCP_VERSION,
+  startMindMcpStdioServer,
+} from './mcp/asynctest-mind-mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -437,6 +444,11 @@ function getMindMcpLaunchConfig() {
   return {
     serverName,
     transport: 'stdio',
+    version: ASYNCTEST_MIND_MCP_VERSION,
+    capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    updatedAt: ASYNCTEST_MIND_MCP_UPDATED_AT,
+    timezone: ASYNCTEST_MIND_MCP_TIMEZONE,
+    responseProfile: ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
     command,
     args,
     env,

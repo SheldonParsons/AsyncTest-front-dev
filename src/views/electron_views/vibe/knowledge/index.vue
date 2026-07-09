@@ -385,6 +385,11 @@
             :placeholder="composerPlaceholder"
             :status-text="composerStatusText"
             :question="composerQuestion"
+            :model-options="composerModelOptions"
+            :model-value-id="selectedLlmProviderId"
+            :model-disabled="modelConfigLoading"
+            @model-open="refreshComposerModels"
+            @model-change="handleComposerModelChange"
             @send="onComposerSend"
             @answer="onComposerAnswer"
             @stop="stopFoundationTurn"
@@ -394,7 +399,6 @@
       </section>
     </section>
 
-    <VibeModelSettings />
   </main>
 </template>
 
@@ -408,7 +412,6 @@ import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import AppSelect from '@/components/common/select/AppSelect.vue'
-import VibeModelSettings from '../VibeModelSettings.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import AssistantActions from './components/AssistantActions.vue'
@@ -428,9 +431,12 @@ import {
   deleteVibeSession,
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
+  getVibeProjectsByAsyncProjects,
   initVibeProject,
+  getVibeLLMRuntimeConfig,
   listVibeEvents,
   listVibeSessions,
+  listVibeLLMProviders,
   listFoundationRunningTurns,
   streamFoundationTurn,
   cancelFoundationTurn,
@@ -445,6 +451,8 @@ import {
   type VibeAttachment,
   type VibeCapabilityUser,
   type VibeEvent,
+  type VibeLLMProviderConfig,
+  type VibeLLMRuntimeConfig,
   type VibeProject,
   type VibeSession,
 } from '../api'
@@ -472,6 +480,17 @@ const canViewTraceAudit = computed(() => !!vibeCapabilities.value.trace_audit)
 const currentUser = ref<VibeCapabilityUser | null>(null)
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
 const currentUserAvatar = computed(() => String(currentUser.value?.avatar_url || ''))
+const llmProviders = ref<VibeLLMProviderConfig[]>([])
+const llmRuntime = ref<VibeLLMRuntimeConfig | null>(null)
+const selectedLlmProviderId = ref('')
+const modelConfigLoading = ref(false)
+const composerModelOptions = computed(() => llmProviders.value
+  .filter((item) => item.enabled !== false)
+  .map((item) => ({
+    value: item.id,
+    label: item.name || 'DeepSeek',
+    hint: item.is_system_default ? '系统默认' : (item.source === 'mine' ? '个人模型' : ''),
+  })))
 const userInitials = computed(() => {
   const text = currentUserName.value.trim() || 'U'
   const letters = Array.from(text).slice(0, 2).join('')
@@ -482,19 +501,86 @@ const userInitials = computed(() => {
 // 再按 UUID 批量取段/模块——否则用 async id 查 passages 永远是 0。
 const asyncToVibe = reactive<Record<string, string>>({})                                 // async 项目 id -> vibe UUID
 const projectStatsMap = reactive<Record<string, { passages: number; modules: number }>>({}) // 按 vibe UUID 存读数
+async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
+  if (!opts.silent) modelConfigLoading.value = true
+  try {
+    const [providerPayload, runtime] = await Promise.all([
+      listVibeLLMProviders(),
+      getVibeLLMRuntimeConfig(sessionId || undefined),
+    ])
+    const providers = (providerPayload.providers || []).filter((item) => item.enabled !== false)
+    llmProviders.value = providers
+    llmRuntime.value = runtime
+    const session = sessions.value.find(item => item.id === sessionId)
+    const candidate = session?.llm_provider_id || String(runtime.provider?.id || '')
+    selectedLlmProviderId.value = providers.some((item) => item.id === candidate) ? candidate : (providers[0]?.id || '')
+  } finally {
+    if (!opts.silent) modelConfigLoading.value = false
+  }
+}
+
+function applySessionModel(sessionId: string, providerId: string) {
+  sessions.value = sessions.value.map(item => item.id === sessionId ? { ...item, llm_provider_id: providerId } : item)
+}
+
+async function refreshComposerModels() {
+  await loadModelConfig(activeSessionId.value, { silent: true })
+}
+
+async function ensureComposerModelUsable() {
+  try {
+    const providerPayload = await listVibeLLMProviders()
+    const providers = (providerPayload.providers || []).filter((item) => item.enabled !== false)
+    llmProviders.value = providers
+    const selected = selectedLlmProviderId.value
+    if (selected && providers.some((item) => item.id === selected)) return true
+    if (!selected && providers[0]?.id) {
+      selectedLlmProviderId.value = providers[0].id
+      if (activeSessionId.value) {
+        const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providers[0].id })
+        applySessionModel(activeSessionId.value, updated.llm_provider_id || providers[0].id)
+      }
+      return true
+    }
+    ElMessage.error(selected ? '当前选择的模型不存在或已被禁用，请重新选择模型。' : '暂无可用模型，请先在设置中添加模型或等待管理员启用系统模型。')
+    return false
+  } catch (error: any) {
+    ElMessage.error(`模型检查失败：${error?.message || String(error)}`)
+    return false
+  }
+}
+
+async function handleComposerModelChange(providerId: string) {
+  selectedLlmProviderId.value = providerId
+  if (!activeSessionId.value) return
+  try {
+    const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providerId })
+    applySessionModel(activeSessionId.value, updated.llm_provider_id || providerId)
+    await loadModelConfig(activeSessionId.value)
+  } catch (error: any) {
+    ElMessage.error(`模型切换失败：${error?.message || String(error)}`)
+    await loadModelConfig(activeSessionId.value)
+  }
+}
+
 async function loadKbStats() {
   // 当前项目的 UUID 已知（selectProject 解析过），先登记，项目卡/概览即时有数
   const curAid = selectedProjectId.value != null ? String(selectedProjectId.value) : ''
   if (curAid && vibeProject.value?.id) asyncToVibe[curAid] = String(vibeProject.value.id)
-  // 其余项目逐个解析 async -> vibe（并行；没建 vibe 工程的当 0 处理）
-  await Promise.all((projects.value || []).map(async (p: any) => {
-    const aid = String(p.id)
-    if (asyncToVibe[aid]) return
+
+  // 其余 async 项目一次性批量解析成 vibe UUID，避免进入主对话时按项目数量打满请求。
+  const unresolvedIds = Array.from(new Set((projects.value || [])
+    .map((p: any) => Number(p.id))
+    .filter((id) => Number.isFinite(id) && !asyncToVibe[String(id)])))
+  if (unresolvedIds.length) {
     try {
-      const vp = await getVibeProjectByAsyncProject(Number(p.id))
-      if (vp?.id) asyncToVibe[aid] = String(vp.id)
-    } catch { /* 该项目还没建 vibe 工程 → 视为 0 段 */ }
-  }))
+      const payload = await getVibeProjectsByAsyncProjects(unresolvedIds)
+      ;(payload.items || []).forEach((vp) => {
+        if (vp?.id) asyncToVibe[String(vp.project_id)] = String(vp.id)
+      })
+    } catch { /* 未初始化项目继续按 0 段处理，概览不阻塞主流程 */ }
+  }
+
   const uuids = Array.from(new Set(Object.values(asyncToVibe))).filter(Boolean)
   if (!uuids.length) return
   try {
@@ -764,14 +850,11 @@ function toggleSide() {
 }
 
 // ===== Windows 窗口控制：关闭 / 最大化切换 / 最小化 =====
-// mac 用原生红绿灯（toggleTrafficLights），仅非 darwin 的 Electron 端显示。
+// Vibe 窗口的控件默认 hover 才出现，所以在 Electron 全平台开放，避免 mac 自定义窗口缺少控制入口。
 // windowKey 随 route.query 传递（dashboard 开 vibe 窗口时带 vibe-workbench，workbench→knowledge 跳转保留 query）。
 const route = useRoute()
 const router = useRouter()
-const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true'
-// 【临时】预览用：mac 上也强制显示，看完效果要改回下面这行
-// const showWinControls = computed(() => isElectron && window.electronAPI?.platform !== 'darwin')
-const showWinControls = computed(() => true)
+const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 
 function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
@@ -783,7 +866,7 @@ function openKbBrowser() {
 }
 
 function openVibeSettings() {
-  router.push({ name: 'vibeSettingsTrace', query: { ...route.query, project: String(selectedProjectId.value || '') } })
+  router.push({ name: 'vibeSettings', query: { ...route.query, project: String(selectedProjectId.value || '') } })
 }
 
 // 最大化状态：初始查一次 + 订阅主进程 wm:maximize-state 推送（覆盖按钮/快捷键/拖顶等一切途径），
@@ -961,6 +1044,7 @@ function removeBaselineGoal(idx: number) {
 async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
   if (!vibeProject.value) return
   sessions.value = await listVibeSessions(vibeProject.value.id)
+  await loadModelConfig(activeSessionId.value).catch(() => {})
   await refreshProjectRunningTurns()
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
@@ -974,6 +1058,9 @@ async function openSession(sessionId: string) {
   liveLogs.value = []
   processExpanded.value = false
   clearStreamingAssistant()
+  const currentSession = sessions.value.find(item => item.id === sessionId)
+  selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
+  await loadModelConfig(sessionId).catch(() => {})
   events.value = sortEvents(await listVibeEvents(sessionId))
   restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
   await recoverRunningTurnForSession(sessionId)
@@ -1035,6 +1122,8 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   streamingVerification.value = null
 
   const answers: string[] = []
+  let answerStreamText = ''
+  let answerStreamDoneText = ''
   for (const event of turn.events || []) {
     const type = String(event?.type || '')
     if (type.startsWith('process_')) {
@@ -1064,9 +1153,23 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
       case 'stage':
         fndPushStep(String(event.message || ''))
         break
+      case 'answer_start':
+        answerStreamText = ''
+        answerStreamDoneText = ''
+        streamingAssistantContent.value = ''
+        break
+      case 'answer_delta':
+        answerStreamText += String(event.delta || '')
+        streamingAssistantContent.value = answerStreamText
+        break
+      case 'answer_done':
+        answerStreamDoneText = answerStreamText
+        if (answerStreamDoneText) streamingAssistantContent.value = answerStreamDoneText
+        break
       case 'answer': {
         const text = String(event.text || '')
-        if (text) answers.push(text)
+        if (text && answers[answers.length - 1] !== text) answers.push(text)
+        answerStreamDoneText = text || answerStreamDoneText
         streamingAssistantContent.value = answers.join('\n\n')
         break
       }
@@ -1155,6 +1258,16 @@ function newConversation() {
 
 async function deleteSession(sessionId: string) {
   if (!sessionId || deletingSessionId.value || sending.value) return
+  try {
+    await ElMessageBox.confirm('删除后这个会话不会再出现在列表中。', '删除会话？', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      distinguishCancelAndClose: true,
+    })
+  } catch {
+    return
+  }
   deletingSessionId.value = sessionId
   const deletingActive = activeSessionId.value === sessionId
   try {
@@ -1178,6 +1291,7 @@ async function ensureSession() {
   if (!vibeProject.value) throw new Error('Vibe 项目未初始化')
   const session = await createVibeSession(vibeProject.value.id, { title: '新的需求对话' })
   activeSessionId.value = session.id
+  selectedLlmProviderId.value = session.llm_provider_id || selectedLlmProviderId.value
   await refreshState()
   if (!sessions.value.some(item => item.id === session.id)) {
     sessions.value.unshift(session)
@@ -1585,6 +1699,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     ElMessage.warning('请先选择项目')
     return
   }
+  if (!(await ensureComposerModelUsable())) return
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
   const project = String(vibeProject.value.id)
   const startedAt = Date.now()
@@ -1612,6 +1727,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   let recallSources: any[] = []
   let recallVerification: any | null = null
   const answers: string[] = []
+  let answerStreamText = ''
+  let answerStreamDoneText = ''
   let failed = ''
   let sessionId = ''
   let turnSessionId = ''
@@ -1662,6 +1779,19 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         actions = (event.actions || []).map(String)
         if (live) fndPushStep(intentStepLabel(actions, content, applyEdit))
         break
+      case 'answer_start':
+        answerStreamText = ''
+        answerStreamDoneText = ''
+        if (live) streamingAssistantContent.value = ''
+        break
+      case 'answer_delta':
+        answerStreamText += String(event.delta || '')
+        if (live) streamingAssistantContent.value = answerStreamText
+        break
+      case 'answer_done':
+        answerStreamDoneText = answerStreamText
+        if (live && answerStreamDoneText) streamingAssistantContent.value = answerStreamDoneText
+        break
       case 'fact': {
         const f = event.fact || {}
         if (live) fndPushStep(`落库：${f.quote}（${f.coarse}${f.conflict ? '，⚠ 冲突候选' : ''}）`)
@@ -1687,7 +1817,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         break
       case 'answer': {
         const text = String(event.text || '')
-        if (text) answers.push(text)
+        if (text && answers[answers.length - 1] !== text) answers.push(text)
+        answerStreamDoneText = text || answerStreamDoneText
         if (live) streamingAssistantContent.value = answers.join('\n\n')
         break
       }
@@ -2929,7 +3060,7 @@ function isStreamingUnderEvent(event: any) {
 
 .convs-title {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -3026,7 +3157,7 @@ function isStreamingUnderEvent(event: any) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--ink-2);
   transition: color 150ms ease;

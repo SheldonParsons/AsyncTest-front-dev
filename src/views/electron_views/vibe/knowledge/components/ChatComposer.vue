@@ -25,6 +25,7 @@
       </div>
     </div>
 
+
     <div class="composer-shell" :class="{ 'is-question': isQuestion }">
       <!-- 询问模式：Codex 反问式提问 + 选项列表 -->
       <div v-if="isQuestion" class="question-view" aria-label="提问和选项列表">
@@ -175,6 +176,44 @@
             </svg>
           </button>
 
+          <span v-if="modelOptions.length || modelValueId" class="model-picker-anchor">
+            <button
+              class="model-picker"
+              type="button"
+              :disabled="modelDisabled || sending"
+              :aria-expanded="modelMenuOpen ? 'true' : 'false'"
+              aria-label="选择模型"
+              @click.stop="toggleModelMenu"
+            >
+              <span>{{ currentModelLabel }}</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <div class="model-menu" :class="{ 'is-open': modelMenuOpen && !isQuestion }" role="menu" aria-label="选择模型">
+              <div class="model-menu-head">
+                <span>选择模型</span>
+                <em v-if="modelDisabled">刷新中...</em>
+              </div>
+              <button
+                v-for="item in modelOptions"
+                :key="item.value"
+                class="model-menu-item"
+                :class="{ active: item.value === modelValueId }"
+                type="button"
+                role="menuitemradio"
+                :aria-checked="item.value === modelValueId ? 'true' : 'false'"
+                :disabled="modelDisabled || sending"
+                @click="selectModel(item.value)"
+              >
+                <span>
+                  <strong>{{ item.label }}</strong>
+                  <small v-if="item.hint">{{ item.hint }}</small>
+                </span>
+                <svg v-if="item.value === modelValueId" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+              </button>
+              <div v-if="!modelOptions.length" class="model-menu-empty">暂无可用模型</div>
+            </div>
+          </span>
+
           <button
             class="icon-button send-button"
             :class="{ 'is-sending': sending }"
@@ -215,6 +254,7 @@ interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
 // 连锁（Phase 3）：多处受影响段，逐项可勾选。mode=literal(同词)/semantic(措辞不同)；reason=为什么提议改它；checked=默认是否勾。
 interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBody?: string; reason?: string; mode?: string; checked?: boolean }
 interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyPreview?: string }
+interface ModelOption { value: string; label: string; hint?: string }
 interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
 
 const props = withDefaults(defineProps<{
@@ -224,13 +264,18 @@ const props = withDefaults(defineProps<{
   statusText?: string
   question?: Question | null
   customPlaceholder?: string
-}>(), { sending: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…' })
+  modelOptions?: ModelOption[]
+  modelValueId?: string
+  modelDisabled?: boolean
+}>(), { sending: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
   (e: 'send', payload: { text: string; files: File[] }): void
   (e: 'answer', value: string): void
   (e: 'stop'): void
+  (e: 'model-open'): void
+  (e: 'model-change', value: string): void
 }>()
 
 const rootEl = ref<HTMLElement | null>(null)
@@ -238,11 +283,13 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
 const menuOpen = ref(false)
+const modelMenuOpen = ref(false)
 const activeIndex = ref(0)
 const customValues = reactive<Record<number, string>>({})
 const checkedIds = ref<Set<number>>(new Set())   // 连锁：默认全勾，用户可逐项取消
 
 const isQuestion = computed(() => !!props.question && Array.isArray(props.question.items) && props.question.items.length > 0)
+const currentModelLabel = computed(() => props.modelOptions.find(item => item.value === props.modelValueId)?.label || props.modelOptions[0]?.label || '模型')
 const cascadeRows = computed<CascadeRow[]>(() => props.question?.cascade || [])
 const deleteManyRows = computed<DeleteManyRow[]>(() => props.question?.deleteMany?.items || [])
 function toggleCascade(id: number) {
@@ -273,6 +320,7 @@ const sendDisabled = computed(() => props.modelValue.trim().length === 0 && sele
 watch(() => props.question, () => {
   activeIndex.value = 0
   menuOpen.value = false
+  modelMenuOpen.value = false
   // 连锁默认勾选：字面(checked!==false)默认勾、语义(checked===false)默认不勾，逼你过目。
   checkedIds.value = new Set((props.question?.cascade || []).filter(r => r.checked !== false).map(r => r.id))
   if (isQuestion.value) focusActive()  // 反问一出现就聚焦首项，上下键立即可用
@@ -294,6 +342,19 @@ function onInputKeydown(e: KeyboardEvent) {
     onSend()
   }
 }
+function toggleModelMenu() {
+  if (props.modelDisabled || props.sending) return
+  const opening = !modelMenuOpen.value
+  modelMenuOpen.value = opening
+  menuOpen.value = false
+  if (opening) emit('model-open')
+}
+function selectModel(value: string) {
+  if (!value || props.modelDisabled || props.sending) return
+  modelMenuOpen.value = false
+  emit('model-change', value)
+}
+
 function onSend() {
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   if (sendDisabled.value) return
@@ -361,7 +422,7 @@ function onDocKeydown(e: KeyboardEvent) {
 }
 
 function onDocClick(e: MouseEvent) {
-  if (rootEl.value && !rootEl.value.contains(e.target as Node)) menuOpen.value = false
+  if (rootEl.value && !rootEl.value.contains(e.target as Node)) { menuOpen.value = false; modelMenuOpen.value = false }
 }
 onMounted(() => {
   document.addEventListener('click', onDocClick, true)
@@ -470,6 +531,24 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
   transition: opacity 160ms ease, transform 160ms ease; z-index: 6;
 }
 .attachment-menu.is-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.model-menu {
+  position: absolute; right: 0; bottom: calc(100% + 8px); width: 270px; max-width: min(270px, calc(100vw - 32px)); max-height: 260px; overflow: auto;
+  padding: 8px; border: 1px solid rgba(229, 231, 235, .92); border-radius: 16px; background: rgba(255, 255, 255, .98);
+  box-shadow: 0 18px 48px rgba(17, 24, 39, .13); backdrop-filter: blur(18px);
+  opacity: 0; transform: translateY(8px) scale(.98); transform-origin: calc(100% - 28px) 100%; pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease; z-index: 7;
+}
+.model-menu.is-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.model-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px 7px; color: #8a8f98; font-size: 12px; }
+.model-menu-head em { font-style: normal; }
+.model-menu-item { width: 100%; min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 11px; background: transparent; color: #171b21; text-align: left; cursor: pointer; }
+.model-menu-item:hover { background: #f3f4f6; }
+.model-menu-item.active { background: #f0f0f0; }
+.model-menu-item:disabled { opacity: .58; cursor: not-allowed; }
+.model-menu-item span { min-width: 0; display: grid; gap: 2px; }
+.model-menu-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.model-menu-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8a8f98; font-size: 11px; }
+.model-menu-empty { padding: 14px 8px; color: #8a8f98; font-size: 12px; }
 .menu-section { display: grid; gap: 6px; }
 .menu-title { padding: 4px 8px; color: #4b5563; font-size: 12px; font-weight: 650; }
 .menu-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 8px; color: #171b21; background: transparent; text-align: left; cursor: pointer; }
@@ -495,6 +574,12 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .composer-input::placeholder { color: #9ca3af; }
 
 .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.model-picker-anchor { position: relative; display: inline-flex; min-width: 0; margin-left: auto; }
+.model-picker { max-width: 180px; min-width: 0; height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: #5f6670; font-size: 12px; cursor: pointer; }
+.model-picker:hover, .model-picker[aria-expanded="true"] { background: #f3f4f6; color: #171b21; }
+.model-picker:disabled { opacity: .55; cursor: not-allowed; }
+.model-picker span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker svg { flex: 0 0 auto; }
 .icon-button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
 .icon-button svg { width: 25px; height: 25px; color: currentColor; overflow: visible; }
 .attach-button:hover, .attach-button[aria-expanded="true"] { background: #f3f4f6; }

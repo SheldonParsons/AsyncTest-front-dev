@@ -272,7 +272,11 @@ export function updateMindDocNodeText(doc, nodeId, text, options = {}) {
   node.text = String(text ?? '');
   delete node.richText;
   touchDoc(doc);
-  return { boardId, ok: true, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+  const result = { boardId, ok: true, nodeId, changedCount: 1, dirty: true };
+  if (options.includeNode === true) {
+    result.node = serializeNode(board, nodeId, options);
+  }
+  return result;
 }
 
 export function updateMindDocNodeNote(doc, nodeId, note, options = {}) {
@@ -281,7 +285,11 @@ export function updateMindDocNodeNote(doc, nodeId, note, options = {}) {
   if (!node) throw new Error(`Node not found: ${nodeId}`);
   node.note = String(note ?? '');
   touchDoc(doc);
-  return { boardId, ok: true, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+  const result = { boardId, ok: true, nodeId, changedCount: 1, dirty: true };
+  if (options.includeNode === true) {
+    result.node = serializeNode(board, nodeId, options);
+  }
+  return result;
 }
 
 export function updateMindDocNodeMetadata(doc, nodeId, metadata = {}, options = {}) {
@@ -296,7 +304,11 @@ export function updateMindDocNodeMetadata(doc, nodeId, metadata = {}, options = 
     }
   }
   touchDoc(doc);
-  return { boardId, ok: true, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+  const result = { boardId, ok: true, nodeId, changedCount: 1, dirty: true };
+  if (options.includeNode === true) {
+    result.node = serializeNode(board, nodeId, options);
+  }
+  return result;
 }
 
 export function createMindDocNode(doc, parentId, text, options = {}) {
@@ -316,7 +328,11 @@ export function createMindDocNode(doc, parentId, text, options = {}) {
   const index = Number.isInteger(options.index) ? Math.max(0, Math.min(options.index, parent.children.length)) : parent.children.length;
   parent.children.splice(index, 0, nodeId);
   touchDoc(doc);
-  return { boardId, ok: true, nodeId, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+  const result = { boardId, ok: true, parentId, nodeId, createdCount: 1, dirty: true };
+  if (options.includeNode === true) {
+    result.node = serializeNode(board, nodeId, options);
+  }
+  return result;
 }
 
 function normalizeNodeSpec(spec) {
@@ -373,16 +389,17 @@ export function createMindDocNodes(doc, parentId, nodes, options = {}) {
     rootNodeIds.push(createMindDocNodeTree(doc, board, parentId, spec, created, idMap, options));
   });
   touchDoc(doc);
-  return {
+  const result = {
     boardId,
     ok: true,
     parentId,
     createdCount,
     rootNodeIds,
     idMap,
-    created,
     dirty: true,
   };
+  if (options.includeCreated === true) result.created = created;
+  return result;
 }
 
 export function deleteMindDocNode(doc, nodeId, options = {}) {
@@ -398,7 +415,9 @@ export function deleteMindDocNode(doc, nodeId, options = {}) {
   const deletedIds = collectSubtreeIds(board, nodeId, []);
   deletedIds.forEach((id) => delete board.nodes[id]);
   touchDoc(doc);
-  return { boardId, ok: true, deletedIds };
+  const result = { boardId, ok: true, nodeId, deletedCount: deletedIds.length, dirty: true };
+  if (options.includeDeletedIds === true) result.deletedIds = deletedIds;
+  return result;
 }
 
 export function moveMindDocNode(doc, nodeId, newParentId, index, options = {}) {
@@ -417,7 +436,11 @@ export function moveMindDocNode(doc, nodeId, newParentId, index, options = {}) {
   newParent.children.splice(insertIndex, 0, nodeId);
   node.parentId = newParentId;
   touchDoc(doc);
-  return { boardId, ok: true, node: serializeNode(board, nodeId, { includeNotes: true, includeImages: true, includeMetadata: true }) };
+  const result = { boardId, ok: true, nodeId, oldParentId, newParentId, index: insertIndex, dirty: true };
+  if (options.includeNode === true) {
+    result.node = serializeNode(board, nodeId, options);
+  }
+  return result;
 }
 
 export function copyMindDocSubtree(doc, nodeId, newParentId, index, options = {}) {
@@ -446,7 +469,15 @@ export function copyMindDocSubtree(doc, nodeId, newParentId, index, options = {}
   const insertIndex = Number.isInteger(index) ? Math.max(0, Math.min(index, newParent.children.length)) : newParent.children.length;
   newParent.children.splice(insertIndex, 0, rootCopyId);
   touchDoc(doc);
-  return { boardId, ok: true, rootCopyId, idMap: Object.fromEntries(idMap.entries()) };
+  const idMapObject = Object.fromEntries(idMap.entries());
+  return {
+    boardId,
+    ok: true,
+    rootCopyId,
+    copiedCount: Object.keys(idMapObject).length,
+    idMap: idMapObject,
+    dirty: true,
+  };
 }
 
 function resolveMindFileDoc(filePath) {

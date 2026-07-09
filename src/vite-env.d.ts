@@ -36,6 +36,11 @@ export interface IElectronAPI {
     mindConfig: () => Promise<{
       serverName: string;
       transport: string;
+      version?: string;
+      capabilityRevision?: number;
+      updatedAt?: string;
+      timezone?: string;
+      responseProfile?: string;
       command: string;
       args: string[];
       env?: Record<string, string>;

@@ -6,6 +6,52 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
+export const ASYNCTEST_MIND_MCP_VERSION = '0.3.0';
+export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 7;
+export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
+export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-07-08';
+export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
+
+export function getAsyncTestMindMcpCapabilities() {
+  return {
+    server: 'asynctest-mind',
+    version: ASYNCTEST_MIND_MCP_VERSION,
+    capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    updatedAt: ASYNCTEST_MIND_MCP_UPDATED_AT,
+    timezone: ASYNCTEST_MIND_MCP_TIMEZONE,
+    responseProfile: ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
+    summary: 'AsyncTest Mind MCP 默认返回精简响应。只有在需要额外节点细节时，才显式传入 include 相关参数。',
+    breakingOrBehaviorChanges: [
+      '编辑类工具默认只返回精简摘要。',
+      'mind_create_nodes 默认不再返回 created[]；需要时请传 includeCreated=true。',
+      'mind_apply_node_operations 默认不再返回 results[]；需要时请传 includeResults=true。',
+      '读取类工具默认不返回备注、图片、metadata、样式和完整原始 JSON；需要时请显式传 include 参数或 mode=rawJson。',
+    ],
+    recommendedUsage: [
+      '读取精简树结构时，优先使用 mind_get_subtree 或 mind_get_document_outline。',
+      '在已打开窗口中批量创建节点时，优先使用 mind_create_nodes。',
+      '需要把 .amind 或 .xmind 文件中的分支导入已打开窗口时，使用 mind_import_file_subtree。',
+      '编辑已打开且已有文件路径的文档后，使用 mind_save_document 保存。',
+      '未保存窗口需要指定保存路径时，使用 mind_save_as_document。',
+      '除非用户明确要求关闭窗口，否则不要关闭窗口后离线编辑 .amind 文件。',
+    ],
+    compactResponseDefaults: {
+      node: ['id', 'text', 'parentId', 'childIds', 'hasChildren'],
+      outlineNode: ['id', 'text', 'childCount', 'children'],
+      mutation: ['ok', 'windowKey', 'boardId', 'nodeId or changed ids', 'dirty'],
+    },
+    optionalIncludes: [
+      'includeNotes',
+      'includeImages',
+      'includeMetadata',
+      'includeNode',
+      'includeCreated',
+      'includeResults',
+      'mode=rawJson',
+    ],
+  };
+}
+
 function getEndpoint() {
   return getEndpoints()[0];
 }
@@ -26,9 +72,21 @@ function getEndpoints() {
 
 const tools = [
   {
+    name: 'mind_get_mcp_capabilities',
+    description: 'Get the current AsyncTest Mind MCP version, capability revision, response profile, behavior changes, and recommended tool usage. Call this after AsyncTest Mind MCP updates or when an old conversation may have stale assumptions.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    localHandler: getAsyncTestMindMcpCapabilities,
+  },
+  {
     name: 'mind_get_app_status',
     description: 'Check whether AsyncTest Mind bridge is available and list currently open Mind windows.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeRuntimeState: { type: 'boolean', description: 'Default false. When true, asks each renderer for dirty/isSaving state.' },
+      },
+      additionalProperties: false,
+    },
     bridgeMethod: 'mind.status',
   },
   {
@@ -51,8 +109,14 @@ const tools = [
   },
   {
     name: 'mind_list_windows',
-    description: 'List currently open AsyncTest Mind windows with document status.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    description: 'List currently open AsyncTest Mind windows. Default is compact and does not ask renderers for dirty state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeRuntimeState: { type: 'boolean', description: 'Default false. When true, asks each renderer for dirty/isSaving state.' },
+      },
+      additionalProperties: false,
+    },
     bridgeMethod: 'mind.listWindows',
   },
   {
@@ -97,7 +161,13 @@ const tools = [
   {
     name: 'mind_get_active_window',
     description: 'Get the currently focused AsyncTest Mind window, or the first open Mind window.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeRuntimeState: { type: 'boolean', description: 'Default false. When true, asks renderer for dirty/isSaving state.' },
+      },
+      additionalProperties: false,
+    },
     bridgeMethod: 'mind.getActiveWindow',
   },
   {
@@ -282,6 +352,7 @@ const tools = [
         windowKey: { type: 'string' },
         nodeId: { type: 'string' },
         text: { type: 'string' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'text'],
       additionalProperties: false,
@@ -297,6 +368,7 @@ const tools = [
         windowKey: { type: 'string' },
         nodeId: { type: 'string' },
         note: { type: 'string' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'note'],
       additionalProperties: false,
@@ -312,6 +384,7 @@ const tools = [
         windowKey: { type: 'string' },
         nodeId: { type: 'string' },
         metadata: { type: 'object' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'metadata'],
       additionalProperties: false,
@@ -328,6 +401,7 @@ const tools = [
         boardId: { type: 'string' },
         nodeId: { type: 'string' },
         markers: { type: 'array', items: { type: 'string' } },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'markers'],
       additionalProperties: false,
@@ -344,6 +418,7 @@ const tools = [
         boardId: { type: 'string' },
         nodeId: { type: 'string' },
         markerKey: { type: 'string' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'markerKey'],
       additionalProperties: false,
@@ -360,6 +435,7 @@ const tools = [
         boardId: { type: 'string' },
         nodeId: { type: 'string' },
         markerKey: { type: 'string' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated node only when needed.' },
       },
       required: ['nodeId', 'markerKey'],
       additionalProperties: false,
@@ -390,6 +466,7 @@ const tools = [
             },
           ],
         },
+        includeNode: { type: 'boolean', description: 'Default false. Include the updated root node only when needed.' },
       },
       required: ['secrecy'],
       additionalProperties: false,
@@ -405,6 +482,7 @@ const tools = [
         windowKey: { type: 'string' },
         parentId: { type: 'string' },
         text: { type: 'string' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the created node only when needed.' },
       },
       required: ['parentId', 'text'],
       additionalProperties: false,
@@ -422,6 +500,7 @@ const tools = [
         nodes: { type: 'array', items: { type: 'object' } },
         maxNodes: { type: 'number', description: 'Safety limit, default 1000 and max 5000.' },
         saveAfterApply: { type: 'boolean' },
+        includeCreated: { type: 'boolean', description: 'Default false. Include per-node creation details only when needed.' },
       },
       required: ['parentId', 'nodes'],
       additionalProperties: false,
@@ -437,6 +516,7 @@ const tools = [
         windowKey: { type: 'string' },
         nodeId: { type: 'string' },
         deleteSubtree: { type: 'boolean' },
+        includeDeletedIds: { type: 'boolean', description: 'Default false. Include all deleted node ids only when needed.' },
       },
       required: ['nodeId'],
       additionalProperties: false,
@@ -453,6 +533,7 @@ const tools = [
         nodeId: { type: 'string' },
         newParentId: { type: 'string' },
         index: { type: 'number' },
+        includeNode: { type: 'boolean', description: 'Default false. Include the moved node only when needed.' },
       },
       required: ['nodeId', 'newParentId'],
       additionalProperties: false,
@@ -486,6 +567,7 @@ const tools = [
         saveAfterApply: { type: 'boolean' },
         rollbackOnError: { type: 'boolean' },
         expectedRevision: { type: 'string' },
+        includeResults: { type: 'boolean', description: 'Default false. Include per-operation results only when needed.' },
       },
       required: ['operations'],
       additionalProperties: false,
@@ -965,7 +1047,9 @@ async function handleToolsCall(id, params = {}) {
   }
 
   try {
-    const result = await callAppBridge(tool.bridgeMethod, bridgeParams);
+    const result = typeof tool.localHandler === 'function'
+      ? await tool.localHandler(bridgeParams)
+      : await callAppBridge(tool.bridgeMethod, bridgeParams);
     const safeResult = sanitizeForMcpOutput(result);
     writeResult(id, {
       content: [
@@ -996,14 +1080,14 @@ async function handleMessage(message) {
     writeResult(id, {
       protocolVersion: params?.protocolVersion || '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'asynctest-mind', version: '0.1.0' },
+      serverInfo: { name: 'asynctest-mind', version: ASYNCTEST_MIND_MCP_VERSION },
     });
     return;
   }
 
   if (method === 'tools/list') {
     writeResult(id, {
-      tools: tools.map(({ bridgeMethod, ...tool }) => tool),
+      tools: tools.map(({ bridgeMethod, localHandler, ...tool }) => tool),
     });
     return;
   }

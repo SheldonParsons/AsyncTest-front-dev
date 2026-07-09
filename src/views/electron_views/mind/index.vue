@@ -72,6 +72,11 @@
                     <div>
                         <p class="mcp-config-eyebrow">MCP</p>
                         <h2 id="mcp-config-title" class="mcp-config-title">stdio 配置</h2>
+                        <p v-if="mcpConfig?.version" class="mcp-config-version">
+                            当前版本 v{{ mcpConfig.version }}
+                            <span v-if="mcpConfig.capabilityRevision"> · 能力版本 {{ mcpConfig.capabilityRevision }}</span>
+                            <span v-if="mcpConfig.updatedAt"> · 更新日期 {{ mcpConfig.updatedAt }}</span>
+                        </p>
                     </div>
                     <button class="mcp-config-close" type="button" aria-label="关闭" @click="closeMcpConfigDialog"></button>
                 </header>
@@ -119,6 +124,19 @@
                         <pre class="mcp-config-code is-block is-compact">{{ formatMcpEnv(mcpConfig.env) }}</pre>
                     </section>
 
+                    <section class="mcp-config-item mcp-config-update-hint">
+                        <div class="mcp-config-item-head">
+                            <span class="mcp-config-label">MCP 更新后提示</span>
+                            <button class="mcp-config-copy" type="button" @click="copyMcpValue(mcpRefreshPrompt)">
+                                复制提示词
+                            </button>
+                        </div>
+                        <p class="mcp-config-hint-text">
+                            AsyncTest Mind MCP 已更新。如需继续使用旧会话，请复制下面提示发送给 AI Agent，让它重新读取最新能力说明。
+                        </p>
+                        <div class="mcp-config-code mcp-config-prompt">{{ mcpRefreshPrompt }}</div>
+                    </section>
+
                     <section class="mcp-config-item mcp-config-item--separated">
                         <div class="mcp-config-item-head">
                             <span class="mcp-config-label">通用 stdio JSON</span>
@@ -150,6 +168,11 @@ type RecentMindEntry = {
 type MindMcpConfig = {
     serverName: string;
     transport: string;
+    version?: string;
+    capabilityRevision?: number;
+    updatedAt?: string;
+    timezone?: string;
+    responseProfile?: string;
     command: string;
     args: string[];
     env?: Record<string, string>;
@@ -169,6 +192,7 @@ const mcpConfigVisible = ref(false);
 const mcpConfigLoading = ref(false);
 const mcpConfigError = ref<string | null>(null);
 const mcpConfig = ref<MindMcpConfig | null>(null);
+const mcpRefreshPrompt = 'AsyncTest Mind MCP 已更新。请先调用 mind_get_mcp_capabilities 查看当前能力版本和推荐用法，并以最新返回信息为准重新评估工具选择，不要沿用旧会话中对旧版 MCP 的判断。';
 let removeRecentUpdateListener: (() => void) | null = null;
 
 onMounted(() => {
@@ -675,6 +699,13 @@ function formatUpdatedAt(value?: string | null) {
     line-height: 1.2;
 }
 
+.mcp-config-version {
+    margin: 7px 0 0;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 .mcp-config-close {
     position: relative;
     width: 32px;
@@ -748,6 +779,10 @@ function formatUpdatedAt(value?: string | null) {
     margin-top: 8px;
 }
 
+.mcp-config-update-hint {
+    background: #f8fafc;
+}
+
 .mcp-config-item-head {
     display: flex;
     align-items: center;
@@ -807,5 +842,17 @@ function formatUpdatedAt(value?: string | null) {
 
 .mcp-config-code.is-compact {
     max-height: 120px;
+}
+
+.mcp-config-hint-text {
+    margin: 0 0 10px;
+    color: #4b5563;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.mcp-config-prompt {
+    color: #1f2937;
+    line-height: 1.7;
 }
 </style>

@@ -20,6 +20,7 @@ export interface VibeSession {
   title: string
   focus: string
   test_run_id?: string
+  llm_provider_id?: string
   status: string
   created_at?: string
   updated_at?: string
@@ -106,6 +107,9 @@ export interface VibeLLMProviderConfig {
   model_config: Record<string, string>
   enabled: boolean
   is_active?: boolean
+  is_system_default?: boolean
+  source?: string
+  editable?: boolean
   created_at?: string | null
   updated_at?: string | null
 }
@@ -122,11 +126,23 @@ export interface VibeLLMProviderPayload {
   enabled?: boolean
 }
 
+export interface VibeLLMSceneConfig {
+  key: string
+  label: string
+  description?: string
+  default_strength: 'mini' | 'strong'
+  strength: 'mini' | 'strong'
+  is_overridden?: boolean
+}
+
 export interface VibeLLMRuntimeConfig {
   user_id: number
   source: string
+  session_id?: string
   provider: Record<string, any> | null
   models: Record<string, string>
+  scene_strengths?: Record<string, 'mini' | 'strong'>
+  scene_catalog?: VibeLLMSceneConfig[]
 }
 
 export interface VibeCapabilityUser {
@@ -161,12 +177,54 @@ export function getVibeCapabilities(): Promise<VibeCapabilities> {
   return request('GET', '/vibe/capabilities')
 }
 
+export interface VibeUsageSummary {
+  total_tokens: number
+  peak_tokens: number
+  max_elapsed_ms: number
+  dialogue_turns: number
+  latest_sent_at?: string | null
+  scope?: string
+  rule?: Record<string, number>
+}
+
+export function getVibeUsageSummary(): Promise<VibeUsageSummary> {
+  return request('GET', '/vibe/usage/summary')
+}
+
 export function getVibeAdminFeatureConfigs(): Promise<{ items: Record<string, VibeFeatureConfig> }> {
   return request('GET', '/vibe/admin/feature-configs')
 }
 
 export function updateVibeTraceAuditConfig(enabled: boolean): Promise<{ ok: boolean; item: VibeFeatureConfig }> {
   return request('PATCH', '/vibe/admin/feature-configs/trace_audit', { enabled })
+}
+
+export interface VibeAdminConfigTransferPayload {
+  schema: string
+  version: number
+  exported_at?: string
+  sections?: string[]
+  llm_system_default_models?: {
+    providers: VibeLLMProviderConfig[]
+    system_default_provider_ids: string[]
+  }
+  llm_model_scenes?: {
+    scenes: VibeLLMSceneConfig[]
+    strengths?: Record<string, 'mini' | 'strong'>
+  }
+}
+
+export function exportVibeAdminConfig(): Promise<VibeAdminConfigTransferPayload> {
+  return request('GET', '/vibe/admin/config-transfer')
+}
+
+export function importVibeAdminConfig(config: Record<string, any>): Promise<{
+  ok: boolean
+  imported: { providers: number; scenes: number }
+  provider_id_map: Record<string, string>
+  config: VibeAdminConfigTransferPayload
+}> {
+  return request('POST', '/vibe/admin/config-transfer', { config })
 }
 
 
@@ -243,6 +301,11 @@ export function getVibeProjectByAsyncProject(projectId: number): Promise<VibePro
   return request('GET', `/vibe/projects/by-async-project/${projectId}`)
 }
 
+export function getVibeProjectsByAsyncProjects(projectIds: number[]): Promise<{ items: VibeProject[] }> {
+  const ids = Array.from(new Set(projectIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))).join(',')
+  return request('GET', `/vibe/projects/by-async-projects${ids ? `?ids=${encodeURIComponent(ids)}` : ''}`)
+}
+
 export function initVibeProject(projectId: number, payload: {
   name?: string
   description?: string
@@ -258,6 +321,7 @@ export function listVibeSessions(vibeProjectId: string): Promise<VibeSession[]> 
 export function createVibeSession(vibeProjectId: string, payload: {
   title?: string
   focus?: string
+  llm_provider_id?: string
 } = {}): Promise<VibeSession> {
   return request('POST', `/vibe/projects/${vibeProjectId}/sessions`, payload)
 }
@@ -270,6 +334,7 @@ export function updateVibeSession(sessionId: string, payload: {
   title?: string
   focus?: string
   status?: string
+  llm_provider_id?: string
 }): Promise<VibeSession> {
   return request('PATCH', `/vibe/sessions/${sessionId}`, payload)
 }
@@ -334,8 +399,49 @@ export function testVibeLLMProvider(providerId: string, payload: { model?: strin
   return request('POST', `/vibe/llm/providers/${providerId}/test`, payload)
 }
 
-export function getVibeLLMRuntimeConfig(): Promise<VibeLLMRuntimeConfig> {
-  return request('GET', '/vibe/llm/runtime-config')
+export function getVibeLLMRuntimeConfig(sessionId?: string): Promise<VibeLLMRuntimeConfig> {
+  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  return request('GET', `/vibe/llm/runtime-config${query}`)
+}
+
+export interface VibeLLMAdminUserDefault {
+  id: number
+  username: string
+  nick_name?: string
+  display_name?: string
+  active_provider_id?: string
+}
+
+export function getVibeLLMAdminModelDefaults(): Promise<{
+  users: VibeLLMAdminUserDefault[]
+  providers: VibeLLMProviderConfig[]
+  system_default_provider_ids: string[]
+  admin_user_id: number
+}> {
+  return request('GET', '/vibe/llm/admin/model-defaults')
+}
+
+export function setVibeLLMAdminSystemDefaults(providerIds: string[]): Promise<{
+  users: VibeLLMAdminUserDefault[]
+  providers: VibeLLMProviderConfig[]
+  system_default_provider_ids: string[]
+  admin_user_id: number
+}> {
+  return request('PATCH', '/vibe/llm/admin/model-defaults', { provider_ids: providerIds })
+}
+
+export function getVibeLLMAdminModelScenes(): Promise<{
+  scenes: VibeLLMSceneConfig[]
+  strengths: Record<string, 'mini' | 'strong'>
+}> {
+  return request('GET', '/vibe/llm/admin/model-scenes')
+}
+
+export function updateVibeLLMAdminModelScenes(scenes: Array<{ key: string; strength: 'mini' | 'strong' }>): Promise<{
+  scenes: VibeLLMSceneConfig[]
+  strengths: Record<string, 'mini' | 'strong'>
+}> {
+  return request('PATCH', '/vibe/llm/admin/model-scenes', { scenes })
 }
 
 export interface ConvergeConfig {
@@ -801,6 +907,10 @@ export function getKbBrowserPassageDetail(project: string, passageId: number): P
 
 export function getKbBrowserHistory(project: string, params: { op?: string; batch_id?: string; passage_id?: number; limit?: number; cursor?: number; include_undone?: boolean } = {}): Promise<{ project: string; items: KbBrowserHistoryItem[]; next_cursor?: number | null }> {
   return request('GET', `/vibe/foundation/kb-browser/history${kbBrowserQuery({ project, ...params, include_undone: params.include_undone ? '1' : '' })}`)
+}
+
+export function undoKbBrowserHistory(project: string, historyId: number): Promise<{ project: string; history_id: number; undone: boolean; before?: KbBrowserHistoryItem; after?: KbBrowserHistoryItem; passage?: KbBrowserPassage | null }> {
+  return request('POST', `/vibe/foundation/kb-browser/history/${historyId}/undo${kbBrowserQuery({ project })}`)
 }
 
 export function getKbBrowserReceipts(project: string, limit = 30): Promise<{ project: string; items: KbBrowserReceipt[] }> {
