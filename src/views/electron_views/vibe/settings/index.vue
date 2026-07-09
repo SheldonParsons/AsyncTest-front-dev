@@ -29,7 +29,7 @@
           </button>
         </section>
 
-        <section v-if="canViewTraceAudit" class="nav-section">
+        <section v-if="canViewAdminSettings" class="nav-section">
           <h2>Admin Settings</h2>
           <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-model' }" @click="activeKey = 'admin-model'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg>
@@ -42,6 +42,10 @@
           <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-config' }" @click="activeKey = 'admin-config'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/><path d="M19 5h1a1 1 0 0 1 1 1v3"/><path d="M5 5H4a1 1 0 0 0-1 1v3"/></svg>
             配置导入/导出
+          </button>
+          <button v-if="canViewSystemKnowledgeAdmin" class="nav-row" type="button" :class="{ active: activeKey === 'admin-system-knowledge' }" @click="activeKey = 'admin-system-knowledge'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2"/></svg>
+            系统知识
           </button>
           <button class="nav-row" type="button" :class="{ active: activeKey === 'trace' }" @click="activeKey = 'trace'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
@@ -238,6 +242,86 @@
         </div>
       </section>
 
+      <section v-else-if="activeKey === 'admin-system-knowledge' && canViewSystemKnowledgeAdmin" class="system-knowledge-panel">
+        <template v-if="systemKnowledgeMode === 'list'">
+          <div class="system-knowledge-head">
+            <div>
+              <strong>系统知识</strong>
+              <span>维护平台用法、最佳实践、FAQ、更新日志、上线防坑等主对话可检索的系统材料。</span>
+            </div>
+            <div class="system-knowledge-actions">
+              <button type="button" :disabled="systemKnowledgeLoading" @click="loadSystemKnowledge(true)">刷新</button>
+              <button type="button" class="primary" :disabled="systemKnowledgeSaving" @click="startNewSystemKnowledge">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+                新增
+              </button>
+            </div>
+          </div>
+          <div class="system-knowledge-filters">
+            <input v-model.trim="systemKnowledgeQuery" placeholder="搜索标题、标签、正文..." @keyup.enter="loadSystemKnowledge(true)" />
+            <AppSelect
+              class="system-knowledge-select"
+              :model-value="systemKnowledgeStatusFilter"
+              :options="systemKnowledgeStatusOptions"
+              dropdown-fit-content
+              @change="(value) => { systemKnowledgeStatusFilter = String(value); loadSystemKnowledge(true) }"
+            >
+              <template #trigger="{ label, open }">
+                <span class="admin-scene-select-trigger" :class="{ open }">
+                  <span>{{ label || '全部状态' }}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+              </template>
+            </AppSelect>
+            <button type="button" @click="loadSystemKnowledge(true)" :disabled="systemKnowledgeLoading">查询</button>
+          </div>
+          <div v-if="systemKnowledgeLoading && !systemKnowledgeItems.length" class="admin-model-state">加载中...</div>
+          <div v-else-if="!systemKnowledgeItems.length" class="admin-model-state">暂无系统知识，先新增一条最佳实践、FAQ 或更新日志。</div>
+          <div v-else class="system-knowledge-list">
+            <article v-for="item in systemKnowledgeItems" :key="item.id" class="system-knowledge-row" :class="{ disabled: item.status !== 'enabled' }" @click="startEditSystemKnowledge(item)">
+              <span class="system-knowledge-main">
+                <strong>{{ item.title }}</strong>
+                <small>{{ systemKnowledgeCategoryLabel(item.category) }} · {{ item.tags?.join(' / ') || '无标签' }}</small>
+              </span>
+              <span class="system-knowledge-meta">
+                <i :class="{ off: item.status !== 'enabled' }">{{ item.status === 'enabled' ? '启用' : '禁用' }}</i>
+                <code>#{{ item.id }}</code>
+              </span>
+            </article>
+          </div>
+        </template>
+        <template v-else>
+          <div class="system-knowledge-edit-head">
+            <h1>{{ systemKnowledgeEditing?.id ? '编辑系统知识' : '新增系统知识' }}</h1>
+            <span v-if="systemKnowledgeStatusText" :class="['system-knowledge-status', { ok: systemKnowledgeStatusKind === 'ok', error: systemKnowledgeStatusKind === 'error' }]">{{ systemKnowledgeStatusText }}</span>
+          </div>
+          <section class="system-knowledge-editor">
+            <div class="system-knowledge-form">
+              <label><span>标题</span><input v-model="systemKnowledgeDraft.title" autocomplete="off" @input="clearSystemKnowledgeStatus" /></label>
+              <label><span>分类</span><input v-model="systemKnowledgeDraft.category" autocomplete="off" placeholder="best_practice / faq / changelog" @input="clearSystemKnowledgeStatus" /></label>
+              <label><span>标签</span><input v-model="systemKnowledgeTagsText" autocomplete="off" placeholder="用逗号或空格分隔" @input="clearSystemKnowledgeStatus" /></label>
+              <label><span>优先级</span><input v-model.number="systemKnowledgeDraft.priority" type="number" min="1" max="999" @input="clearSystemKnowledgeStatus" /></label>
+              <label class="wide"><span>来源说明</span><input v-model="systemKnowledgeDraft.source_note" autocomplete="off" placeholder="可选" @input="clearSystemKnowledgeStatus" /></label>
+              <label class="wide"><span>Markdown 正文</span><textarea v-model="systemKnowledgeDraft.content_markdown" spellcheck="false" @input="clearSystemKnowledgeStatus" /></label>
+            </div>
+            <div class="system-knowledge-preview">
+              <strong>预览</strong>
+              <div class="trace-markdown" v-html="renderMarkdown(systemKnowledgeDraft.content_markdown || '暂无内容')" />
+            </div>
+          </section>
+          <footer class="system-knowledge-foot">
+            <div>
+              <button v-if="systemKnowledgeEditing?.id" type="button" class="admin-model-danger" :disabled="systemKnowledgeSaving" @click="removeSystemKnowledge">删除</button>
+              <button v-if="systemKnowledgeEditing?.id" type="button" class="admin-model-secondary" :disabled="systemKnowledgeSaving" @click="toggleSystemKnowledgeStatus">{{ systemKnowledgeDraft.status === 'enabled' ? '禁用' : '启用' }}</button>
+            </div>
+            <div>
+              <button type="button" class="admin-model-secondary" :disabled="systemKnowledgeSaving" @click="cancelSystemKnowledgeEdit">取消</button>
+              <button type="button" class="admin-model-primary" :disabled="systemKnowledgeSaving" @click="saveSystemKnowledge">{{ systemKnowledgeSaving ? '保存中' : '保存' }}</button>
+            </div>
+          </footer>
+        </template>
+      </section>
+
       <section v-else-if="activeKey === 'trace' && canViewTraceAudit" class="trace-panel">
         <div class="trace-control">
           <div>
@@ -365,9 +449,9 @@
                 </div>
               </div>
 
-              <div v-if="selectedTrace.summary" class="trace-section">
+              <div v-if="traceFinalAnswer(selectedTrace)" class="trace-section">
                 <div class="trace-section-title">最终结果</div>
-                <div class="trace-markdown" v-html="renderMarkdown(selectedTrace.summary || '')" />
+                <div class="trace-markdown" v-html="renderMarkdown(traceFinalAnswer(selectedTrace))" />
               </div>
 
               <div class="trace-section compact">
@@ -384,7 +468,7 @@
               <div class="trace-section">
                 <div class="trace-section-title">事件时间线</div>
                 <div class="trace-timeline">
-                  <article v-for="event in selectedTrace.events || []" :key="event.id || event.seq" class="trace-event">
+                  <article v-for="event in traceTimelineEvents(selectedTrace)" :key="event.id || event.seq" class="trace-event">
                     <div class="trace-event-dot" />
                     <div class="trace-event-body">
                       <div class="trace-event-head">
@@ -418,11 +502,11 @@ import { useRoute, useRouter } from 'vue-router'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
-import { createVibeLLMProvider, deleteVibeLLMProvider, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, listVibeSystemKnowledge, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
-const activeKey = ref<'profile' | 'model' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'trace'>('profile')
+const activeKey = ref<'profile' | 'model' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 const winMaximized = ref(false)
@@ -470,10 +554,30 @@ const adminConfigImporting = ref(false)
 const adminConfigImportText = ref('')
 const adminConfigStatusText = ref('')
 const adminConfigStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const systemKnowledgeItems = ref<VibeSystemKnowledgeItem[]>([])
+const systemKnowledgeLoading = ref(false)
+const systemKnowledgeSaving = ref(false)
+const systemKnowledgeMode = ref<'list' | 'edit'>('list')
+const systemKnowledgeEditing = ref<VibeSystemKnowledgeItem | null>(null)
+const systemKnowledgeQuery = ref('')
+const systemKnowledgeStatusFilter = ref('')
+const systemKnowledgeTagsText = ref('')
+const systemKnowledgeStatusText = ref('')
+const systemKnowledgeStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
 const DEEPSEEK_LOGO = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/other_band_logo/deepseek_logo.svg'
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 const DEEPSEEK_ENHANCED_MODEL = 'deepseek-v4-pro'
 const DEEPSEEK_LIGHT_MODEL = 'deepseek-v4-flash'
+const systemKnowledgeDraft = reactive<VibeSystemKnowledgePayload>({
+  title: '',
+  category: 'best_practice',
+  content_markdown: '',
+  status: 'enabled',
+  priority: 100,
+  tags: [],
+  source_note: '',
+})
+
 const adminDraft = reactive<VibeLLMProviderPayload>({
   name: 'DeepSeek',
   provider_type: 'deepseek',
@@ -492,6 +596,8 @@ const traceFilterOptions = ref<{
 }>({ projects: [], users: [] })
 
 const canViewTraceAudit = computed(() => !!capabilities.value.trace_audit)
+const canViewSystemKnowledgeAdmin = computed(() => !!capabilities.value.system_knowledge_admin)
+const canViewAdminSettings = computed(() => canViewTraceAudit.value || canViewSystemKnowledgeAdmin.value)
 const traceAuditEnabled = computed(() => featureConfigs.value.trace_audit?.enabled !== false)
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
 const currentUsername = computed(() => String(currentUser.value?.username || 'user'))
@@ -501,7 +607,7 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', trace: '对话链路审计' }[activeKey.value]))
+const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
   const ids = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
@@ -509,6 +615,11 @@ const allVisibleTraceSelected = computed(() => {
 const sceneStrengthOptions = [
   { value: 'mini', label: '轻量模型' },
   { value: 'strong', label: '增强模型' },
+]
+const systemKnowledgeStatusOptions = [
+  { value: '', label: '全部状态' },
+  { value: 'enabled', label: '启用' },
+  { value: 'disabled', label: '禁用' },
 ]
 
 async function loadCapabilities() {
@@ -851,6 +962,165 @@ async function importAdminConfig() {
   }
 }
 
+
+function clearSystemKnowledgeStatus() {
+  if (systemKnowledgeStatusKind.value !== 'idle') {
+    systemKnowledgeStatusText.value = ''
+    systemKnowledgeStatusKind.value = 'idle'
+  }
+}
+
+function resetSystemKnowledgeDraft() {
+  Object.assign(systemKnowledgeDraft, {
+    title: '',
+    category: 'best_practice',
+    content_markdown: '',
+    status: 'enabled',
+    priority: 100,
+    tags: [],
+    source_note: '',
+  })
+  systemKnowledgeTagsText.value = ''
+}
+
+function applySystemKnowledgeDraft(item: VibeSystemKnowledgeItem) {
+  Object.assign(systemKnowledgeDraft, {
+    title: item.title || '',
+    category: item.category || 'general',
+    content_markdown: item.content_markdown || '',
+    status: item.status === 'disabled' ? 'disabled' : 'enabled',
+    priority: Number(item.priority || 100),
+    tags: item.tags || [],
+    source_note: item.source_note || '',
+  })
+  systemKnowledgeTagsText.value = (item.tags || []).join('，')
+}
+
+function systemKnowledgeTags() {
+  return String(systemKnowledgeTagsText.value || '')
+    .split(/[，,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function systemKnowledgePayload(): VibeSystemKnowledgePayload {
+  return {
+    title: String(systemKnowledgeDraft.title || '').trim(),
+    category: String(systemKnowledgeDraft.category || 'general').trim() || 'general',
+    content_markdown: String(systemKnowledgeDraft.content_markdown || '').trim(),
+    status: systemKnowledgeDraft.status === 'disabled' ? 'disabled' : 'enabled',
+    priority: Number(systemKnowledgeDraft.priority || 100),
+    tags: systemKnowledgeTags(),
+    source_note: String(systemKnowledgeDraft.source_note || '').trim(),
+  }
+}
+
+function systemKnowledgeCategoryLabel(category?: string) {
+  const value = String(category || 'general')
+  const labels: Record<string, string> = {
+    best_practice: '最佳实践',
+    guide: '使用指引',
+    answer_contract: '答案约定',
+    faq: 'FAQ',
+    changelog: '更新日志',
+    launch_guard: '上线防坑',
+    general: '通用',
+  }
+  return labels[value] || value
+}
+
+async function loadSystemKnowledge(reset = false) {
+  if (!canViewSystemKnowledgeAdmin.value || systemKnowledgeLoading.value) return
+  systemKnowledgeLoading.value = true
+  try {
+    const res = await listVibeSystemKnowledge({
+      q: systemKnowledgeQuery.value,
+      status: systemKnowledgeStatusFilter.value,
+      limit: 100,
+      cursor: reset ? 0 : 0,
+    })
+    systemKnowledgeItems.value = res?.items || []
+  } finally {
+    systemKnowledgeLoading.value = false
+  }
+}
+
+function startNewSystemKnowledge() {
+  systemKnowledgeEditing.value = null
+  resetSystemKnowledgeDraft()
+  systemKnowledgeMode.value = 'edit'
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+}
+
+function startEditSystemKnowledge(item: VibeSystemKnowledgeItem) {
+  systemKnowledgeEditing.value = item
+  applySystemKnowledgeDraft(item)
+  systemKnowledgeMode.value = 'edit'
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+}
+
+function cancelSystemKnowledgeEdit() {
+  systemKnowledgeMode.value = 'list'
+  systemKnowledgeEditing.value = null
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+}
+
+async function saveSystemKnowledge() {
+  if (systemKnowledgeSaving.value) return
+  const payload = systemKnowledgePayload()
+  if (!payload.title) {
+    systemKnowledgeStatusText.value = '请填写标题'
+    systemKnowledgeStatusKind.value = 'error'
+    return
+  }
+  if (!payload.content_markdown) {
+    systemKnowledgeStatusText.value = '请填写 Markdown 正文'
+    systemKnowledgeStatusKind.value = 'error'
+    return
+  }
+  systemKnowledgeSaving.value = true
+  try {
+    const res = systemKnowledgeEditing.value?.id
+      ? await updateVibeSystemKnowledge(systemKnowledgeEditing.value.id, payload)
+      : await createVibeSystemKnowledge(payload)
+    if (res?.item) systemKnowledgeEditing.value = res.item
+    await loadSystemKnowledge(true)
+    systemKnowledgeMode.value = 'list'
+    systemKnowledgeStatusText.value = ''
+    systemKnowledgeStatusKind.value = 'idle'
+  } catch (error: any) {
+    systemKnowledgeStatusText.value = `保存失败：${error?.message || String(error)}`
+    systemKnowledgeStatusKind.value = 'error'
+  } finally {
+    systemKnowledgeSaving.value = false
+  }
+}
+
+async function toggleSystemKnowledgeStatus() {
+  systemKnowledgeDraft.status = systemKnowledgeDraft.status === 'enabled' ? 'disabled' : 'enabled'
+  await saveSystemKnowledge()
+}
+
+async function removeSystemKnowledge() {
+  if (!systemKnowledgeEditing.value?.id || systemKnowledgeSaving.value) return
+  if (!window.confirm(`确认删除系统知识「${systemKnowledgeEditing.value.title}」？`)) return
+  systemKnowledgeSaving.value = true
+  try {
+    await deleteVibeSystemKnowledge(systemKnowledgeEditing.value.id)
+    await loadSystemKnowledge(true)
+    systemKnowledgeMode.value = 'list'
+    systemKnowledgeEditing.value = null
+  } catch (error: any) {
+    systemKnowledgeStatusText.value = `删除失败：${error?.message || String(error)}`
+    systemKnowledgeStatusKind.value = 'error'
+  } finally {
+    systemKnowledgeSaving.value = false
+  }
+}
+
 async function loadTraceRuns(reset = false) {
   if (!canViewTraceAudit.value || traceRunsLoading.value) return
   traceRunsLoading.value = true
@@ -1008,7 +1278,7 @@ function buildTraceExportMarkdown(details: VibeDialogueTraceDetail[]) {
     }
     lines.push('### 最终结果')
     lines.push('')
-    lines.push(mdFence(trace.summary || '-', 'markdown'))
+    lines.push(mdFence(traceFinalAnswer(trace) || '-', 'markdown'))
     lines.push('')
     lines.push('### 副作用')
     lines.push('')
@@ -1092,6 +1362,36 @@ function traceAttachments(trace?: Partial<VibeDialogueTraceDetail> | null): Vibe
   }]
 }
 
+const HIDDEN_TRACE_EVENT_TYPES = new Set([
+  'sse.answer_start',
+  'sse.answer_delta',
+  'sse.answer_done',
+  'sse.ping',
+])
+
+function traceTimelineEvents(trace?: Partial<VibeDialogueTraceDetail> | null) {
+  return (trace?.events || []).filter((event: any) => !HIDDEN_TRACE_EVENT_TYPES.has(String(event?.event_type || '')))
+}
+
+function traceFinalAnswer(trace?: Partial<VibeDialogueTraceDetail> | null) {
+  const events = trace?.events || []
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event: any = events[i]
+    const payload = event?.payload || {}
+    if (event?.event_type === 'sse.answer' && typeof payload.text === 'string' && payload.text.trim()) {
+      return payload.text
+    }
+    if (event?.event_type === 'sse.event_saved' && payload.role === 'assistant') {
+      const content = payload.event?.content
+      if (typeof content === 'string' && content.trim()) return content
+    }
+    if (event?.event_type === 'answer.finished' && typeof payload.answer === 'string' && payload.answer.trim()) {
+      return payload.answer
+    }
+  }
+  return String(trace?.summary || '')
+}
+
 function downloadAttachment(file: Partial<VibeAttachment> | any) {
   const url = String(file?.download_url || '').trim()
   if (url) {
@@ -1140,11 +1440,28 @@ async function copySelectedTraceMarkers() {
 
 
 function renderMarkdown(text: string) {
-  const raw = String(text || '').trim()
+  const raw = normalizeCopyableMarkdownFence(String(text || '')).trim()
   if (!raw) return '<span class="trace-empty-text">-</span>'
   return DOMPurify.sanitize(marked.parse(raw, { async: false }) as string, {
     USE_PROFILES: { html: true },
   })
+}
+
+function normalizeCopyableMarkdownFence(text: string) {
+  const raw = String(text || '')
+  const stripped = raw.trim()
+  if (!stripped.startsWith('```') || !stripped.endsWith('```')) return raw
+  const firstNewline = stripped.indexOf('\n')
+  if (firstNewline <= 0) return raw
+  const opener = stripped.slice(0, firstNewline)
+  const body = stripped.slice(firstNewline + 1, -3)
+  if (!body.includes('```')) return raw
+  const runs = body.match(/`{3,}/g) || ['```']
+  const maxRun = Math.max(...runs.map((item) => item.length))
+  const fence = '`'.repeat(maxRun + 1)
+  const lang = opener.slice(3).trim()
+  const normalized = `${fence}${lang}\n${body}${fence}`
+  return `${raw.slice(0, raw.length - raw.trimStart().length)}${normalized}${raw.slice(raw.trimEnd().length)}`
 }
 
 function formatJson(value: any) {
@@ -1483,7 +1800,7 @@ function trackMaximizeState() {
 }
 
 watch(canViewTraceAudit, (allowed) => {
-  if (!allowed && (activeKey.value === 'trace' || activeKey.value === 'admin-model' || activeKey.value === 'admin-scenes' || activeKey.value === 'admin-config')) activeKey.value = 'profile'
+  if (!allowed && activeKey.value === 'trace') activeKey.value = 'profile'
 })
 
 watch(activeKey, (key) => {
@@ -1491,6 +1808,7 @@ watch(activeKey, (key) => {
   if (key === 'trace' && canViewTraceAudit.value && !traceRuns.value.length) loadTraceRuns(true)
   if (key === 'admin-model' && canViewTraceAudit.value && !adminModelProviders.value.length) loadAdminModelDefaults()
   if (key === 'admin-scenes' && canViewTraceAudit.value && !adminScenes.value.length) loadAdminModelScenes()
+  if (key === 'admin-system-knowledge' && canViewSystemKnowledgeAdmin.value && !systemKnowledgeItems.value.length) loadSystemKnowledge(true)
 })
 
 onMounted(async () => {
@@ -1501,9 +1819,11 @@ onMounted(async () => {
     loadUsageSummary(),
   ])
   if (!canViewTraceAudit.value && activeKey.value === 'trace') activeKey.value = 'profile'
+  if (!canViewSystemKnowledgeAdmin.value && activeKey.value === 'admin-system-knowledge') activeKey.value = 'profile'
   if (activeKey.value === 'trace' && canViewTraceAudit.value) await loadTraceRuns(true)
   if (activeKey.value === 'admin-model' && canViewTraceAudit.value) await loadAdminModelDefaults()
   if (activeKey.value === 'admin-scenes' && canViewTraceAudit.value) await loadAdminModelScenes()
+  if (activeKey.value === 'admin-system-knowledge' && canViewSystemKnowledgeAdmin.value) await loadSystemKnowledge(true)
 })
 
 onBeforeUnmount(() => {
@@ -2002,6 +2322,67 @@ onBeforeUnmount(() => {
 }
 .admin-config-status.ok { color: #2f6b3d !important; }
 .admin-config-status.error { color: #b42318 !important; }
+
+
+.system-knowledge-panel {
+  width: min(1120px, calc(100vw - 310px));
+  margin: 0 auto;
+  padding: 18px 0 42px;
+}
+.system-knowledge-head,
+.system-knowledge-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.system-knowledge-head div { display: grid; gap: 5px; }
+.system-knowledge-head strong,
+.system-knowledge-edit-head h1 { margin: 0; font-size: 18px; font-weight: 560; }
+.system-knowledge-head span { color: var(--ink-3); font-size: 12px; }
+.system-knowledge-actions { display: flex; align-items: center; gap: 8px; }
+.system-knowledge-actions button,
+.system-knowledge-filters button { height: 34px; border: 0; border-radius: 10px; background: #f4f4f4; color: var(--ink-1); padding: 0 12px; font-size: 13px; cursor: pointer; }
+.system-knowledge-actions button.primary { display: inline-flex; align-items: center; gap: 5px; background: #1d1d1f; color: #fff; }
+.system-knowledge-actions button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.system-knowledge-actions button:hover,
+.system-knowledge-filters button:hover { background: #ececec; }
+.system-knowledge-actions button.primary:hover { background: #111; }
+.system-knowledge-filters { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; gap: 8px; margin-bottom: 14px; }
+.system-knowledge-filters input { width: 100%; height: 36px; box-sizing: border-box; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; padding: 0 11px; outline: none; font-size: 13px; }
+.system-knowledge-filters input:focus { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }
+.system-knowledge-list { display: grid; gap: 9px; }
+.system-knowledge-row { min-height: 68px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; }
+.system-knowledge-row:hover { background: #fcfcfc; }
+.system-knowledge-row.disabled { opacity: .62; }
+.system-knowledge-main { display: grid; min-width: 0; gap: 5px; }
+.system-knowledge-main strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-1); font-size: 14px; font-weight: 560; }
+.system-knowledge-main small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); font-size: 12px; }
+.system-knowledge-meta { display: inline-flex; align-items: center; gap: 8px; }
+.system-knowledge-meta i { height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; background: #f0f7f1; color: #2f6b3d; font-size: 11px; font-style: normal; font-weight: 500; }
+.system-knowledge-meta i.off { background: #f6f6f6; color: var(--ink-3); }
+.system-knowledge-meta code { color: var(--ink-3); font-size: 12px; }
+.system-knowledge-editor { display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(320px, .98fr); gap: 14px; }
+.system-knowledge-form,
+.system-knowledge-preview { border: 1px solid var(--line); border-radius: 16px; background: #fff; padding: 16px; }
+.system-knowledge-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.system-knowledge-form label { min-width: 0; }
+.system-knowledge-form label.wide { grid-column: 1 / -1; }
+.system-knowledge-form label span { display: block; margin-bottom: 7px; color: var(--ink-3); font-size: 12px; }
+.system-knowledge-form input,
+.system-knowledge-form textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; background: #fff; color: var(--ink-1); padding: 0 11px; font-size: 13px; outline: none; }
+.system-knowledge-form input { height: 38px; }
+.system-knowledge-form textarea { min-height: 390px; resize: vertical; padding: 11px; line-height: 1.6; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.system-knowledge-form input:focus,
+.system-knowledge-form textarea:focus { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }
+.system-knowledge-preview { min-width: 0; max-height: 560px; overflow: auto; }
+.system-knowledge-preview > strong { display: block; margin-bottom: 10px; font-size: 13px; font-weight: 560; }
+.system-knowledge-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; }
+.system-knowledge-foot > div { display: flex; gap: 8px; }
+.system-knowledge-status { color: var(--ink-3); font-size: 12px; }
+.system-knowledge-status.ok { color: #2f6b3d; }
+.system-knowledge-status.error { color: #b42318; }
 
 .trace-panel {
   max-width: none;

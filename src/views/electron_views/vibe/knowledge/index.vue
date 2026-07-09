@@ -143,7 +143,7 @@
             </div>
           </button>
         </nav>
-        <div ref="timelineEl" class="timeline" @scroll.passive="handleTimelineScroll">
+        <div ref="timelineEl" class="timeline" @scroll.passive="handleTimelineScroll" @click="handleTimelineClick">
           <div v-if="!events.length" class="empty">
             <!-- 鲸鱼游动 → 知识库 logo（alpha webm，播一次停在 logo；点击重播） -->
             <video
@@ -533,7 +533,16 @@ async function ensureComposerModelUsable() {
     const providers = (providerPayload.providers || []).filter((item) => item.enabled !== false)
     llmProviders.value = providers
     const selected = selectedLlmProviderId.value
-    if (selected && providers.some((item) => item.id === selected)) return true
+    if (selected && providers.some((item) => item.id === selected)) {
+      if (activeSessionId.value) {
+        const current = sessions.value.find((item) => item.id === activeSessionId.value)
+        if (current?.llm_provider_id !== selected) {
+          const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: selected })
+          applySessionModel(activeSessionId.value, updated.llm_provider_id || selected)
+        }
+      }
+      return true
+    }
     if (!selected && providers[0]?.id) {
       selectedLlmProviderId.value = providers[0].id
       if (activeSessionId.value) {
@@ -1289,7 +1298,10 @@ async function deleteSession(sessionId: string) {
 async function ensureSession() {
   if (activeSessionId.value) return activeSessionId.value
   if (!vibeProject.value) throw new Error('Vibe 项目未初始化')
-  const session = await createVibeSession(vibeProject.value.id, { title: '新的需求对话' })
+  const session = await createVibeSession(vibeProject.value.id, {
+    title: '新的需求对话',
+    llm_provider_id: selectedLlmProviderId.value || undefined,
+  })
   activeSessionId.value = session.id
   selectedLlmProviderId.value = session.llm_provider_id || selectedLlmProviderId.value
   await refreshState()
@@ -1872,7 +1884,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
     }
     turnSessionId = sessionId || activeSessionId.value  // 锚定本轮归属的会话（#2 切换查看用）
-    await streamFoundationTurn({ project, text: content, session_id: sessionId, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined }, {
+    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined }, {
       onEvent,
       onError(message: string) { failed = failed || message },
     })
@@ -2033,11 +2045,64 @@ function conversationPreviewText(value: unknown, fallback = '') {
 }
 
 function renderMarkdown(content: string) {
-  const html = marked.parse(content || '') as string
-  return DOMPurify.sanitize(html, {
+  const html = marked.parse(normalizeCopyableMarkdownFence(content || '')) as string
+  const sanitized = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
     ADD_ATTR: ['target', 'rel'],
   })
+  return enhanceCopyableCodeBlocks(sanitized)
+}
+
+function normalizeCopyableMarkdownFence(content: string) {
+  const raw = String(content || '')
+  const stripped = raw.trim()
+  if (!stripped.startsWith('```') || !stripped.endsWith('```')) return raw
+  const firstNewline = stripped.indexOf('\n')
+  if (firstNewline <= 0) return raw
+  const opener = stripped.slice(0, firstNewline)
+  const body = stripped.slice(firstNewline + 1, -3)
+  if (!body.includes('```')) return raw
+  const runs = body.match(/`{3,}/g) || ['```']
+  const maxRun = Math.max(...runs.map((item) => item.length))
+  const fence = '`'.repeat(maxRun + 1)
+  const lang = opener.slice(3).trim()
+  const normalized = `${fence}${lang}\n${body}${fence}`
+  return `${raw.slice(0, raw.length - raw.trimStart().length)}${normalized}${raw.slice(raw.trimEnd().length)}`
+}
+
+function codeBlockLanguage(code: Element | null) {
+  const className = String(code?.getAttribute('class') || '')
+  const match = className.match(/(?:^|\s)language-([^\s]+)/)
+  return (match?.[1] || 'text').toLowerCase()
+}
+
+function enhanceCopyableCodeBlocks(html: string) {
+  if (!html || typeof document === 'undefined') return html
+  const tpl = document.createElement('template')
+  tpl.innerHTML = html
+  tpl.content.querySelectorAll('pre').forEach((pre) => {
+    if (pre.closest('.copyable-code')) return
+    const code = pre.querySelector('code')
+    const language = codeBlockLanguage(code)
+    const wrapper = document.createElement('div')
+    wrapper.className = 'copyable-code'
+    const header = document.createElement('div')
+    header.className = 'copyable-code-head'
+    const label = document.createElement('span')
+    label.className = 'copyable-code-lang'
+    label.textContent = language
+    const button = document.createElement('button')
+    button.className = 'copyable-code-copy'
+    button.type = 'button'
+    button.setAttribute('aria-label', '复制代码块内容')
+    button.setAttribute('title', '复制')
+    button.setAttribute('data-copy-code', '1')
+    button.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+    header.append(label, button)
+    pre.replaceWith(wrapper)
+    wrapper.append(header, pre)
+  })
+  return tpl.innerHTML
 }
 
 function eventDisplayContent(event: any) {
@@ -2353,6 +2418,29 @@ async function copyUserMessage(event: VibeEvent) {
   if (!text) return
   try {
     await writeClipboardText(text)
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+async function handleTimelineClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const button = target?.closest?.('[data-copy-code="1"]') as HTMLButtonElement | null
+  if (!button) return
+  event.preventDefault()
+  event.stopPropagation()
+  const block = button.closest('.copyable-code')
+  const text = block?.querySelector('pre code')?.textContent || ''
+  if (!text) return
+  try {
+    await writeClipboardText(text)
+    const previous = button.getAttribute('title') || '复制'
+    button.classList.add('copied')
+    button.setAttribute('title', '已复制')
+    setTimeout(() => {
+      button.classList.remove('copied')
+      button.setAttribute('title', previous)
+    }, 1100)
   } catch {
     ElMessage.error('复制失败')
   }
@@ -4185,19 +4273,85 @@ function isStreamingUnderEvent(event: any) {
     font-size: 12px;
   }
 
+  :deep(.copyable-code) {
+    max-width: 100%;
+    min-width: 0;
+    margin: 10px 0 12px;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #ececec;
+    box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.035);
+  }
+
+  :deep(.copyable-code-head) {
+    height: 38px;
+    padding: 0 10px 0 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: rgba(15, 15, 15, 0.56);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  :deep(.copyable-code-lang) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.copyable-code-copy) {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(15, 15, 15, 0.48);
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+  }
+
+  :deep(.copyable-code-copy:hover),
+  :deep(.copyable-code-copy.copied) {
+    background: rgba(15, 15, 15, 0.07);
+    color: rgba(15, 15, 15, 0.78);
+  }
+
+  :deep(.copyable-code-copy.copied) {
+    transform: scale(0.94);
+  }
+
   :deep(pre) {
     max-width: 100%;
     overflow: auto;
     margin: 8px 0;
     padding: 10px 12px;
     border-radius: 10px;
-    background: rgba(15, 15, 15, 0.07);
+    background: #ececec;
+  }
+
+  :deep(.copyable-code pre) {
+    margin: 0;
+    padding: 0 14px 14px;
+    border-radius: 0;
+    background: transparent;
   }
 
   :deep(pre code) {
     padding: 0;
     background: transparent;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    color: rgba(15, 15, 15, 0.88);
+    font-size: 13px;
+    line-height: 1.7;
   }
 
   :deep(table) {

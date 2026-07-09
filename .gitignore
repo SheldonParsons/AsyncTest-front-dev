@@ -30,7 +30,7 @@ CLAUDE.md
 graphify-out/
 .agents
 .opencode
-
+asynctest-mind-mcp-visual-execution-plan.html
 # LLM
 .prompt/
 ui-style-guide.md

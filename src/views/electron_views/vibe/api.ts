@@ -199,6 +199,65 @@ export function updateVibeTraceAuditConfig(enabled: boolean): Promise<{ ok: bool
   return request('PATCH', '/vibe/admin/feature-configs/trace_audit', { enabled })
 }
 
+
+export interface VibeSystemKnowledgeItem {
+  id: number
+  slug?: string
+  category: string
+  title: string
+  content_markdown: string
+  status: 'enabled' | 'disabled' | 'deleted' | string
+  priority: number
+  tags: string[]
+  source_note?: string
+  created_by?: number | null
+  updated_by?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface VibeSystemKnowledgePayload {
+  slug?: string
+  category: string
+  title: string
+  content_markdown: string
+  status?: 'enabled' | 'disabled' | 'deleted' | string
+  priority?: number
+  tags?: string[] | string
+  source_note?: string
+}
+
+export function listVibeSystemKnowledge(params: {
+  q?: string
+  category?: string
+  status?: string
+  limit?: number
+  cursor?: string | number
+} = {}): Promise<{
+  items: VibeSystemKnowledgeItem[]
+  next_cursor: string
+  categories?: Array<{ category: string; count: number }>
+}> {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) query.set(key, String(value))
+  })
+  const qs = query.toString()
+  return request('GET', `/vibe/admin/system-knowledge${qs ? `?${qs}` : ''}`)
+}
+
+export function createVibeSystemKnowledge(payload: VibeSystemKnowledgePayload): Promise<{ ok: boolean; item: VibeSystemKnowledgeItem }> {
+  return request('POST', '/vibe/admin/system-knowledge', payload)
+}
+
+export function updateVibeSystemKnowledge(itemId: number, payload: VibeSystemKnowledgePayload): Promise<{ ok: boolean; item: VibeSystemKnowledgeItem }> {
+  return request('PUT', `/vibe/admin/system-knowledge/${itemId}`, payload)
+}
+
+export function deleteVibeSystemKnowledge(itemId: number): Promise<{ ok: boolean; item: VibeSystemKnowledgeItem }> {
+  return request('DELETE', `/vibe/admin/system-knowledge/${itemId}`)
+}
+
 export interface VibeAdminConfigTransferPayload {
   schema: string
   version: number
@@ -752,7 +811,7 @@ export function streamFoundationTurn(
   // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
   // mode='document' + document：文件整篇录入——document 放整篇原文(切段进 passage 库)，text 只作"导入《X》"干净消息。
   // apply_edit：改原文确认后回传的 diff 提案（passage_id+new_body…），后端确定性落库。
-  payload: { project: string; text: string; session_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean },
+  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean },
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
   return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)
