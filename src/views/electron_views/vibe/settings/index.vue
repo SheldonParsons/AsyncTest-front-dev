@@ -1820,7 +1820,11 @@ onMounted(async () => {
   ])
   if (!canViewTraceAudit.value && activeKey.value === 'trace') activeKey.value = 'profile'
   if (!canViewSystemKnowledgeAdmin.value && activeKey.value === 'admin-system-knowledge') activeKey.value = 'profile'
-  if (activeKey.value === 'trace' && canViewTraceAudit.value) await loadTraceRuns(true)
+  if (activeKey.value === 'trace' && canViewTraceAudit.value) {
+    await loadTraceRuns(true)
+    const targetTraceId = String(route.query.trace_id || '').trim()
+    if (targetTraceId && targetTraceId !== selectedTraceId.value) await selectTrace(targetTraceId)
+  }
   if (activeKey.value === 'admin-model' && canViewTraceAudit.value) await loadAdminModelDefaults()
   if (activeKey.value === 'admin-scenes' && canViewTraceAudit.value) await loadAdminModelScenes()
   if (activeKey.value === 'admin-system-knowledge' && canViewSystemKnowledgeAdmin.value) await loadSystemKnowledge(true)

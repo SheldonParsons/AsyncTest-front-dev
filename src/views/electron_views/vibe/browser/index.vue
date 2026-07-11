@@ -17,7 +17,7 @@
       </div>
 
       <div class="top-metrics" aria-label="知识库概况">
-        <button v-for="item in statCards" :key="item.label" class="metric-chip" type="button" @click="activeTab = item.target">
+        <button v-for="item in displayStatCards" :key="item.label" class="metric-chip" type="button" @click="activeTab = item.target">
           <b>{{ item.value }}</b>
           <i>{{ item.label }}</i>
         </button>
@@ -37,7 +37,7 @@
             <span class="select-trigger">
               <span class="select-main">
                 <span class="select-label">{{ label || placeholder }}</span>
-                <span class="select-hint">{{ summary?.passages.active ?? 0 }} 段原文</span>
+                <span class="select-hint">{{ knowledgeStatus?.current ? `连续文档 · v${knowledgeStatus.current.version}` : '尚无现行知识文档' }}</span>
               </span>
               <svg class="select-caret" :class="{ open }" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </span>
@@ -51,14 +51,14 @@
 
     <nav class="view-tabs" :style="tabIndicatorStyle" aria-label="知识库浏览视图">
       <span class="tab-indicator" aria-hidden="true" />
-      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
+      <button v-for="tab in displayTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
         <span>{{ tab.label }}</span>
         <small>{{ tab.hint }}</small>
       </button>
     </nav>
 
     <section v-if="errorText" class="state-line error">{{ errorText }}</section>
-    <section v-else-if="loading && !summary" class="state-line">正在读取知识库…</section>
+    <section v-else-if="loading && !knowledgeStatus" class="state-line">正在读取知识库…</section>
 
     <section
       v-else
@@ -70,32 +70,24 @@
       }"
     >
       <aside v-if="activeTab === 'document'" class="module-pane">
-        <div class="pane-head">
+        <div class="pane-head document-pane-head">
           <div>
-            <strong>结构</strong>
-            <span>{{ treeModules.length }} 个模块</span>
+            <strong>文档结构</strong>
+            <span>{{ documentOutline.length }} 个章节</span>
           </div>
-          <label class="toggle-check">
-            <input v-model="includeDeleted" type="checkbox" @change="reloadDocument" />
-            <span aria-hidden="true" />
-            <em>删除段</em>
-          </label>
         </div>
-        <button class="module-row" :class="{ active: !selectedNamespace }" type="button" @click="selectModule('')">
-          <span>全部</span>
-          <em>{{ summary?.passages.active ?? 0 }}</em>
-        </button>
         <button
-          v-for="module in treeModules"
-          :key="module.module"
-          class="module-row"
-          :class="{ active: selectedNamespace === module.module }"
+          v-for="item in documentOutline"
+          :key="item.section_id"
+          class="module-row document-outline-row"
+          :style="{ '--outline-depth': String(item.level - 1) }"
           type="button"
-          @click="selectModule(module.module)"
+          @click="jumpToDocumentHeading(item.section_id)"
         >
-          <span>{{ module.module }}</span>
-          <em>{{ module.active_count }}</em>
+          <span>{{ item.title }}</span>
+          <em>H{{ item.level }}</em>
         </button>
+        <p v-if="!documentOutline.length" class="empty-note">尚无文档结构。</p>
       </aside>
 
       <section class="content-pane">
@@ -121,7 +113,7 @@
             @mouseenter="hoveredPreviewIndex = index"
             @focus="hoveredPreviewIndex = index"
             @blur="hoveredPreviewIndex = null"
-            @click="jumpToDocumentPassage(item.id)"
+            @click="jumpToDocumentHeading(item.id)"
           >
             <span class="minimap-line" aria-hidden="true" />
             <div
@@ -177,47 +169,41 @@
               </button>
               <p v-if="!summary?.recent_changes?.length" class="empty-note">暂无变更。</p>
             </section>
+
+            <section class="plain-section source-section">
+              <div class="section-title">
+                <h2>来源文件</h2>
+                <span>{{ knowledgeStatus?.sources.length || 0 }} 份</span>
+              </div>
+              <button
+                v-for="source in knowledgeStatus?.sources || []"
+                :key="source.id"
+                class="source-row"
+                type="button"
+                title="下载原始来源"
+                @click="downloadSource(source.id)"
+              >
+                <span>{{ source.filename || '未命名来源' }}</span>
+                <small>{{ source.mime_type || 'application/octet-stream' }}</small>
+                <em>{{ shortHash(source.content_hash) }}</em>
+              </button>
+              <p v-if="!knowledgeStatus?.sources.length" class="empty-note">暂无来源文件。</p>
+            </section>
           </div>
         </template>
 
         <template v-else-if="activeTab === 'document'">
           <div class="doc-toolbar">
             <div>
-              <strong>{{ selectedNamespace || '全部原文' }}</strong>
-              <span>{{ documentPassages.length }} 段</span>
+              <strong>{{ knowledgeStatus?.current?.title || '现行知识文档' }}</strong>
+              <span v-if="hasKnowledgeDocument">版本 {{ knowledgeStatus?.current?.version }} · {{ shortHash(knowledgeStatus?.current?.content_hash) }}</span>
+              <span v-else>尚未初始化</span>
             </div>
-            <input v-model="documentFilter" type="search" placeholder="过滤当前文档…" />
           </div>
 
           <div class="document-shell">
-            <article class="document-flow">
-              <section
-                v-for="(passage, index) in visibleDocumentPassages"
-                :id="`passage-${passage.id}`"
-                :key="passage.id"
-                class="doc-block"
-                :class="{ deleted: passage.status === 'deleted' }"
-              >
-                <div class="doc-index">
-                  <span>{{ formatDocIndex(index) }}</span>
-                  <i>{{ passage.status === 'deleted' ? 'DEL' : `H${headingLevel(passage.level)}` }}</i>
-                </div>
-                <div class="doc-main">
-                <div class="doc-heading-line">
-                  <component
-                    :is="headingTag(passage.level)"
-                    class="doc-heading"
-                    v-html="highlightSearchText(passage.title || lastCrumb(passage.breadcrumb), documentFilter)"
-                  />
-                  <span>{{ passage.namespace || '未分组' }}</span>
-                </div>
-                <div class="doc-path" v-html="highlightSearchText(passage.breadcrumb, documentFilter)" />
-                <div class="markdown-body" v-html="renderHighlightedMarkdown(passage.body, documentFilter)" />
-                </div>
-              </section>
-              <p v-if="hasMoreDocumentPassages" class="empty-note document-load-more">已显示 {{ visibleDocumentPassages.length }} / {{ filteredDocumentPassages.length }}，继续向下滚动加载更多。</p>
-              <p v-if="!filteredDocumentPassages.length" class="empty-note">当前条件下没有原文段。</p>
-            </article>
+            <article v-if="knowledgeStatus?.current" class="knowledge-document markdown-body" v-html="renderMarkdown(knowledgeStatus.current.markdown)" />
+            <p v-else class="empty-note document-empty">尚无现行知识文档。首次录入后，这里会以一份连续 Markdown 展示当前完整需求。</p>
           </div>
         </template>
 
@@ -236,7 +222,7 @@
             <p v-else-if="searchRan && searchResults.length && !searchHasMore" class="empty-note">已到底。</p>
             <div v-if="searchRan && !searchResults.length && !searchLoadingMore" class="empty-search">
               <strong>没有命中</strong>
-              <span>试试模块名、标题关键词，或勾选“删除段”后再搜。</span>
+              <span>试试模块名、标题关键词或正文中的原话。</span>
             </div>
           </div>
         </template>
@@ -305,6 +291,7 @@
                   <i class="count-insert"><b>{{ item.inserted }}</b>录入</i>
                   <i class="count-update"><b>{{ item.updated }}</b>修改</i>
                   <i class="count-delete"><b>{{ item.deleted }}</b>删除</i>
+                  <i class="count-structure"><b>{{ item.structured }}</b>结构</i>
                 </span>
                 <time>{{ formatTime(item.ended_at || item.started_at) }}</time>
               </button>
@@ -336,8 +323,8 @@
                       </span>
                       <i aria-hidden="true">查看</i>
                     </button>
-                    <div v-if="detail.op === 'update'" class="receipt-mini-diff">
-                      <div v-for="(line, idx) in lineDiff(detail.body_before || '', detail.body_after || '').slice(0, 32)" :key="`${detail.id}-${idx}-${line.text}`" class="diff-line" :class="line.kind">
+                    <div v-if="detail.op !== 'insert'" class="receipt-mini-diff">
+                      <div v-for="(line, idx) in (detail.diff_lines || []).slice(0, 32)" :key="`${detail.id}-${idx}-${line.text}`" class="diff-line" :class="line.kind">
                         <span class="diff-num">{{ idx + 1 }}</span>
                         <span class="diff-mark">{{ diffPrefix(line.kind) }}</span>
                         <code>{{ line.text || ' ' }}</code>
@@ -356,40 +343,10 @@
       </section>
 
       <aside v-if="activeTab === 'history'" class="detail-pane">
-        <template v-if="selectedPassage">
-          <div class="detail-head">
-            <strong>{{ selectedPassage.title || lastCrumb(selectedPassage.breadcrumb) }}</strong>
-            <button class="icon-btn sm" type="button" title="关闭" aria-label="关闭" @click="selectedPassage = null">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
-          </div>
-          <dl class="detail-meta">
-            <dt>位置</dt><dd>{{ selectedPassage.breadcrumb }}</dd>
-            <dt>状态</dt><dd>{{ selectedPassage.status }}</dd>
-          </dl>
-          <div class="detail-body markdown-body" v-html="renderMarkdown(selectedPassage.body)" />
-          <div class="mini-history">
-            <strong>最近历史</strong>
-            <button v-for="item in selectedHistoryList" :key="item.id" type="button" @click="openHistoryItem(item)">
-              {{ opLabel(item.op) }} · {{ formatTime(item.edited_at) }}
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="selectedHistory">
+        <template v-if="selectedHistory">
           <div class="detail-head">
             <strong>{{ opLabel(selectedHistory.op) }}记录</strong>
             <span class="detail-actions">
-              <button
-                v-if="canUndoHistory(selectedHistory)"
-                class="undo-history-btn"
-                type="button"
-                :disabled="undoingHistoryId === selectedHistory.id"
-                @click="undoHistoryItem(selectedHistory)"
-              >
-                {{ undoingHistoryId === selectedHistory.id ? '撤销中' : '撤销本次变更' }}
-              </button>
-              <span v-else-if="selectedHistory.undone" class="history-undone">已撤销</span>
               <button class="icon-btn sm" type="button" title="关闭" aria-label="关闭" @click="selectedHistory = null">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               </button>
@@ -399,11 +356,14 @@
             <dt>段落</dt><dd>{{ selectedHistory.title || lastCrumb(selectedHistory.breadcrumb) }}</dd>
             <dt>用户</dt><dd>{{ actorLabel(selectedHistory) }}</dd>
             <dt>批次</dt><dd>{{ selectedHistory.batch_id || '无批次' }}</dd>
-            <dt>状态</dt><dd>{{ selectedHistory.undone ? '已撤销' : '有效' }}</dd>
+            <dt>会话</dt><dd><code>{{ selectedHistory.session_id || '无会话' }}</code></dd>
+            <dt>审计</dt><dd><button v-if="selectedHistory.trace_id" class="trace-link" type="button" @click="openTrace(selectedHistory.trace_id)">{{ traceMarker(selectedHistory.trace_id) }}</button><span v-else>无 Trace</span></dd>
+            <dt>版本</dt><dd>v{{ selectedHistory.version }}（基于 v{{ selectedHistory.base_version }}）</dd>
             <dt>时间</dt><dd>{{ formatTime(selectedHistory.edited_at) }}</dd>
           </dl>
 
-          <div v-if="selectedHistory.op === 'update'" class="diff-view">
+          <p v-if="selectedHistory.loading" class="empty-note">正在读取版本 diff…</p>
+          <div v-else-if="selectedHistory.op !== 'insert'" class="diff-view">
             <div class="diff-header">
               <span>{{ selectedHistory.title || lastCrumb(selectedHistory.breadcrumb) }}</span>
               <strong>{{ selectedHistoryDiff.length }} 行 diff</strong>
@@ -417,8 +377,8 @@
             </div>
           </div>
           <div v-else class="history-content">
-            <span>{{ selectedHistory.op === 'delete' ? '删除内容' : '录入内容' }}</span>
-            <div class="markdown-body" v-html="renderMarkdown(selectedHistory.op === 'delete' ? selectedHistory.body_before : selectedHistory.body_after)" />
+            <span>录入内容</span>
+            <div class="markdown-body" v-html="renderMarkdown(selectedHistory.body_after)" />
           </div>
         </template>
 
@@ -429,34 +389,75 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import {
-  getKbBrowserDocument,
-  getKbBrowserHistory,
-  getKbBrowserPassageDetail,
-  getKbBrowserReceiptDetail,
-  getKbBrowserReceipts,
-  getKbBrowserSummary,
-  getKbBrowserTree,
+  getKnowledgeDiff,
+  getKnowledgeSections,
+  getKnowledgeSource,
+  getKnowledgeStatus,
+  getKnowledgeVersions,
   getVibeProjectByAsyncProject,
   initVibeProject,
-  searchKbBrowserPassages,
-  undoKbBrowserHistory,
-  type KbBrowserHistoryItem,
-  type KbBrowserPassage,
-  type KbBrowserReceipt,
-  type KbBrowserSummary,
-  type KbBrowserTreeModule,
+  type KnowledgeOutlineItem,
+  type KnowledgeSection,
+  type KnowledgeStatus,
+  type KnowledgeVersionSummary,
 } from '../api'
 
 type TabKey = 'overview' | 'document' | 'search' | 'history' | 'receipts'
 type DiffKind = 'same' | 'add' | 'remove'
+
+interface DiffLine {
+  kind: DiffKind
+  text: string
+}
+
+interface HistoryItem {
+  id: number
+  version: number
+  base_version: number
+  project: string
+  op: string
+  edit_request: string
+  batch_id: string | null
+  actor_user_id?: number | null
+  actor_name?: string
+  undone: false
+  edited_at: string
+  breadcrumb: string
+  title: string
+  body_before?: string | null
+  body_after?: string | null
+  body_before_preview?: string
+  body_after_preview?: string
+  source_ids: string[]
+  session_id: string
+  trace_id: string
+  diff_lines?: DiffLine[]
+  loading?: boolean
+}
+
+interface ReceiptItem {
+  batch_id: string
+  operation_kind: string
+  common_prefix: string
+  affected_count: number
+  started_at: string
+  ended_at: string
+  total: number
+  inserted: number
+  updated: number
+  deleted: number
+  structured: number
+  edit_request: string
+  versions: HistoryItem[]
+}
 
 interface ReceiptDetailMeta {
   operation_kind?: string
@@ -466,7 +467,7 @@ interface ReceiptDetailMeta {
 
 interface ReceiptDetailCacheEntry {
   meta: ReceiptDetailMeta
-  items: KbBrowserHistoryItem[]
+  items: HistoryItem[]
 }
 
 const route = useRoute()
@@ -490,27 +491,19 @@ const historyOptions = [
 const projects = ref<any[]>([])
 const selectedAsyncProjectId = ref('')
 const vibeProjectId = ref('')
-const summary = ref<KbBrowserSummary | null>(null)
-const treeModules = ref<KbBrowserTreeModule[]>([])
-const documentPassages = ref<KbBrowserPassage[]>([])
-const historyItems = ref<KbBrowserHistoryItem[]>([])
-const receipts = ref<KbBrowserReceipt[]>([])
-const receiptItems = ref<KbBrowserHistoryItem[]>([])
+const knowledgeStatus = ref<KnowledgeStatus | null>(null)
+const historyItems = ref<HistoryItem[]>([])
+const receipts = ref<ReceiptItem[]>([])
+const receiptItems = ref<HistoryItem[]>([])
 const selectedReceiptBatchId = ref('')
 const receiptDetailMeta = ref<ReceiptDetailMeta | null>(null)
 const receiptDetailCache = ref<Record<string, ReceiptDetailCacheEntry>>({})
 const receiptLoading = ref(false)
 const receiptError = ref('')
-const selectedHistory = ref<KbBrowserHistoryItem | null>(null)
-const selectedPassage = ref<KbBrowserPassage | null>(null)
-const selectedHistoryItems = ref<KbBrowserHistoryItem[]>([])
-const undoingHistoryId = ref<number | null>(null)
+const selectedHistory = ref<HistoryItem | null>(null)
 const activeTab = ref<TabKey>('document')
-const selectedNamespace = ref('')
-const includeDeleted = ref(false)
-const documentFilter = ref('')
 const searchText = ref('')
-const searchResults = ref<KbBrowserPassage[]>([])
+const searchResults = ref<KnowledgeSection[]>([])
 const searchRan = ref(false)
 const searchCursor = ref<number | null>(null)
 const searchHasMore = ref(false)
@@ -523,12 +516,8 @@ const historyLoadingMore = ref(false)
 const loading = ref(false)
 const errorText = ref('')
 const tabSurfaceRef = ref<HTMLElement | null>(null)
-const activePreviewPassageId = ref<number | null>(null)
+const activePreviewSectionId = ref<string | null>(null)
 const hoveredPreviewIndex = ref<number | null>(null)
-const DOCUMENT_RENDER_STEP = 80
-const DOCUMENT_RENDER_AHEAD = 620
-const visibleDocumentLimit = ref(DOCUMENT_RENDER_STEP)
-let previewRaf = 0
 
 const projectOptions = computed(() => projects.value.map((project: any) => ({
   value: String(project.id),
@@ -536,54 +525,55 @@ const projectOptions = computed(() => projects.value.map((project: any) => ({
   hint: project.description || project.owner_name || project.creator_name || '',
 })))
 
+const hasKnowledgeDocument = computed(() => Boolean(knowledgeStatus.value?.current))
+const displayTabs = computed(() => tabs)
+const documentOutline = computed<KnowledgeOutlineItem[]>(() => knowledgeStatus.value?.outline || [])
+const recentChanges = computed(() => (knowledgeStatus.value?.summary.recent_changes || []).map(mapVersion))
+const summary = computed(() => ({
+  project: vibeProjectId.value,
+  passages: {
+    active: knowledgeStatus.value?.summary.section_count || 0,
+    deleted: 0,
+    total: knowledgeStatus.value?.summary.section_count || 0,
+  },
+  modules: knowledgeStatus.value?.summary.module_count || 0,
+  sources: knowledgeStatus.value?.summary.source_count || 0,
+  history: knowledgeStatus.value?.summary.version_count || 0,
+  top_modules: knowledgeStatus.value?.summary.top_modules || [],
+  recent_changes: recentChanges.value,
+}))
+const treeModules = computed(() => knowledgeStatus.value?.summary.top_modules || [])
+
 const selectedProjectName = computed(() => {
   const item = projects.value.find((project: any) => String(project.id) === selectedAsyncProjectId.value)
   return item?.name || item?.project_name || '当前项目'
 })
 
 const activeTabName = computed(() => tabs.find(tab => tab.key === activeTab.value)?.label || '原文')
-const activeTabIndex = computed(() => Math.max(0, tabs.findIndex(tab => tab.key === activeTab.value)))
+const activeTabIndex = computed(() => Math.max(0, displayTabs.value.findIndex(tab => tab.key === activeTab.value)))
 const tabIndicatorStyle = computed(() => ({
   '--active-tab-index': String(activeTabIndex.value),
 }))
 
-const statCards = computed<Array<{ label: string; value: number; target: TabKey }>>(() => [
-  { label: '活跃原文', value: summary.value?.passages.active ?? 0, target: 'document' },
-  { label: '模块', value: summary.value?.modules ?? 0, target: 'overview' },
-  { label: '历史动作', value: summary.value?.history ?? 0, target: 'history' },
-  { label: '删除段', value: summary.value?.passages.deleted ?? 0, target: 'document' },
+const displayStatCards = computed<Array<{ label: string; value: number; target: TabKey }>>(() => [
+  { label: '当前版本', value: knowledgeStatus.value?.current?.version || 0, target: 'document' },
+  { label: '章节', value: documentOutline.value.length, target: 'document' },
+  { label: '来源', value: knowledgeStatus.value?.sources?.length || 0, target: 'overview' },
+  { label: '历史版本', value: knowledgeStatus.value?.summary.version_count || 0, target: 'history' },
 ])
 
-const compactStats = computed(() => {
-  const active = summary.value?.passages.active ?? 0
-  const modules = summary.value?.modules ?? 0
-  const history = summary.value?.history ?? 0
-  const deleted = summary.value?.passages.deleted ?? 0
-  return `${active} 段 · ${modules} 模块 · ${history} 次变更 · ${deleted} 删除`
-})
-
-const filteredDocumentPassages = computed(() => {
-  const q = documentFilter.value.trim().toLowerCase()
-  if (!q) return documentPassages.value
-  return documentPassages.value.filter(item =>
-    `${item.breadcrumb}\n${item.title}\n${item.body}`.toLowerCase().includes(q))
-})
-
-const visibleDocumentPassages = computed(() => filteredDocumentPassages.value.slice(0, visibleDocumentLimit.value))
-const hasMoreDocumentPassages = computed(() => visibleDocumentLimit.value < filteredDocumentPassages.value.length)
-
-const documentPreviewItems = computed(() => samplePreviewPassages(filteredDocumentPassages.value).map(({ item, sourceIndex }) => ({
-  id: item.id,
-  title: item.title || lastCrumb(item.breadcrumb),
-  excerpt: previewExcerpt(item, filteredDocumentPassages.value, sourceIndex),
-  status: item.status,
+const documentPreviewItems = computed(() => sampleOutline(documentOutline.value).map(({ item, sourceIndex }) => ({
+  id: item.section_id,
+  title: item.title,
+  excerpt: outlineExcerpt(item),
+  status: 'active',
   sourceIndex,
 })))
 
 const activePreviewIndex = computed(() => {
   const items = documentPreviewItems.value
   if (!items.length) return -1
-  const activeSourceIndex = filteredDocumentPassages.value.findIndex(item => item.id === activePreviewPassageId.value)
+  const activeSourceIndex = documentOutline.value.findIndex(item => item.section_id === activePreviewSectionId.value)
   if (activeSourceIndex < 0) return 0
   let bestIndex = 0
   let bestDistance = Number.POSITIVE_INFINITY
@@ -597,8 +587,7 @@ const activePreviewIndex = computed(() => {
   return bestIndex
 })
 
-const selectedHistoryList = computed(() => selectedHistoryItems.value.slice(0, 8))
-const selectedHistoryDiff = computed(() => lineDiff(selectedHistory.value?.body_before || '', selectedHistory.value?.body_after || ''))
+const selectedHistoryDiff = computed(() => selectedHistory.value?.diff_lines || [])
 const selectedReceipt = computed(() => receipts.value.find(item => item.batch_id === selectedReceiptBatchId.value) || null)
 const selectedReceiptOperation = computed(() => ({
   operation_kind: receiptDetailMeta.value?.operation_kind || selectedReceipt.value?.operation_kind || '',
@@ -609,7 +598,6 @@ const selectedReceiptOperation = computed(() => ({
 watch(activeTab, async (tab) => {
   if (!vibeProjectId.value) return
   if (tab === 'document') {
-    selectedPassage.value = null
     selectedHistory.value = null
     receiptItems.value = []
     receiptDetailMeta.value = null
@@ -625,14 +613,6 @@ watch(activeTab, async (tab) => {
 })
 
 onMounted(bootstrap)
-onBeforeUnmount(() => {
-  if (previewRaf) cancelAnimationFrame(previewRaf)
-})
-
-watch(filteredDocumentPassages, async () => {
-  visibleDocumentLimit.value = DOCUMENT_RENDER_STEP
-  await nextTick(updateActivePreview)
-})
 
 async function bootstrap() {
   loading.value = true
@@ -671,9 +651,10 @@ async function selectProject(project: any) {
       vp = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
     }
     vibeProjectId.value = String(vp.id)
-    selectedNamespace.value = ''
-    selectedPassage.value = null
+    knowledgeStatus.value = null
     selectedHistory.value = null
+    historyItems.value = []
+    receipts.value = []
     receiptItems.value = []
     receiptDetailMeta.value = null
     receiptError.value = ''
@@ -697,13 +678,9 @@ async function reloadAll() {
   loading.value = true
   errorText.value = ''
   try {
-    const [sum, tree] = await Promise.all([
-      getKbBrowserSummary(vibeProjectId.value),
-      getKbBrowserTree(vibeProjectId.value, includeDeleted.value),
-    ])
-    summary.value = sum
-    treeModules.value = tree.modules || []
-    await reloadDocument()
+    knowledgeStatus.value = await getKnowledgeStatus(vibeProjectId.value)
+    historyItems.value = []
+    receipts.value = []
     if (activeTab.value === 'search') {
       searchAutoLoaded.value = true
       await runSearch(true)
@@ -719,19 +696,32 @@ async function reloadAll() {
 
 async function reloadDocument() {
   if (!vibeProjectId.value) return
-  const data = await getKbBrowserDocument(vibeProjectId.value, {
-    namespace: selectedNamespace.value || undefined,
-    include_deleted: includeDeleted.value,
-  })
-  documentPassages.value = data.passages || []
+  knowledgeStatus.value = await getKnowledgeStatus(vibeProjectId.value)
 }
 
 async function selectModule(namespace: string) {
-  selectedNamespace.value = namespace
   activeTab.value = 'document'
-  selectedPassage.value = null
   selectedHistory.value = null
-  await reloadDocument()
+  await nextTick()
+  const item = documentOutline.value.find(row => row.path[0] === namespace)
+  if (item) jumpToDocumentHeading(item.section_id)
+}
+
+function shortHash(value?: string) {
+  return value ? value.slice(0, 10) : ''
+}
+
+function jumpToDocumentHeading(sectionId: string) {
+  const root = tabSurfaceRef.value
+  const index = documentOutline.value.findIndex(item => item.section_id === sectionId)
+  if (index === 0) {
+    root?.scrollTo({ top: 0, behavior: 'smooth' })
+    activePreviewSectionId.value = sectionId
+    return
+  }
+  const target = index >= 0 ? root?.querySelectorAll<HTMLElement>('.knowledge-document h1, .knowledge-document h2, .knowledge-document h3, .knowledge-document h4, .knowledge-document h5, .knowledge-document h6')[index] : null
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  activePreviewSectionId.value = sectionId
 }
 
 async function runSearch(reset = true) {
@@ -746,9 +736,8 @@ async function runSearch(reset = true) {
   searchRan.value = true
   searchLoadingMore.value = true
   try {
-    const data = await searchKbBrowserPassages(vibeProjectId.value, {
+    const data = await getKnowledgeSections(vibeProjectId.value, {
       q: searchText.value.trim(),
-      status: includeDeleted.value ? '' : 'active',
       limit: 60,
       cursor: reset ? undefined : searchCursor.value || undefined,
     })
@@ -767,12 +756,13 @@ async function loadHistory(reset = true) {
   if (!reset && !historyHasMore.value) return
   historyLoadingMore.value = true
   try {
-    const data = await getKbBrowserHistory(vibeProjectId.value, {
-      op: historyOp.value || undefined,
+    const data = await getKnowledgeVersions(vibeProjectId.value, {
+      action: historyOp.value || undefined,
       limit: 60,
-      cursor: reset ? undefined : historyCursor.value || undefined,
+      before: reset ? undefined : historyCursor.value || undefined,
     })
-    historyItems.value = reset ? (data.items || []) : [...historyItems.value, ...(data.items || [])]
+    const items = (data.items || []).map(mapVersion)
+    historyItems.value = reset ? items : [...historyItems.value, ...items]
     historyCursor.value = data.next_cursor || null
     historyHasMore.value = Boolean(data.next_cursor)
   } finally {
@@ -790,8 +780,8 @@ async function selectHistoryOp(op: string | number) {
 
 async function loadReceipts() {
   if (!vibeProjectId.value) return
-  const data = await getKbBrowserReceipts(vibeProjectId.value, 80)
-  receipts.value = data.items || []
+  const versions = await fetchAllVersions()
+  receipts.value = groupReceipts(versions.map(mapVersion))
   selectedReceiptBatchId.value = ''
   receiptItems.value = []
   receiptDetailMeta.value = null
@@ -811,7 +801,6 @@ async function openReceipt(batchId: string) {
     return
   }
   selectedReceiptBatchId.value = batchId
-  selectedPassage.value = null
   selectedHistory.value = null
   receiptError.value = ''
 
@@ -825,13 +814,14 @@ async function openReceipt(batchId: string) {
   receiptItems.value = []
   receiptLoading.value = true
   try {
-    const data = await getKbBrowserReceiptDetail(vibeProjectId.value, batchId)
+    const receipt = receipts.value.find(item => item.batch_id === batchId)
+    if (!receipt) throw new Error('回执批次不存在')
     const meta = {
-      operation_kind: data.operation_kind || selectedReceipt.value?.operation_kind || '',
-      common_prefix: data.common_prefix || selectedReceipt.value?.common_prefix || '',
-      affected_count: data.affected_count ?? selectedReceipt.value?.affected_count ?? 0,
+      operation_kind: receipt.operation_kind,
+      common_prefix: receipt.common_prefix,
+      affected_count: receipt.affected_count,
     }
-    const items = data.items || []
+    const items = await Promise.all(receipt.versions.map(loadHistoryDiff))
     receiptDetailMeta.value = meta
     receiptItems.value = items
     receiptDetailCache.value = {
@@ -850,89 +840,51 @@ async function openReceipt(batchId: string) {
   }
 }
 
-async function openPassage(id: number) {
-  if (!vibeProjectId.value) return
-  try {
-    const data = await getKbBrowserPassageDetail(vibeProjectId.value, id)
-    selectedPassage.value = data.passage
-    selectedHistoryItems.value = data.history || []
-    selectedHistory.value = null
-    receiptItems.value = []
-    receiptDetailMeta.value = null
-    receiptError.value = ''
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : String(error))
-  }
-}
-
-function openHistoryItem(item: KbBrowserHistoryItem) {
-  selectedHistory.value = item
-  selectedPassage.value = null
+async function openHistoryItem(item: HistoryItem) {
+  selectedHistory.value = { ...item, loading: true }
   receiptItems.value = []
   receiptDetailMeta.value = null
   receiptError.value = ''
-}
-
-function canUndoHistory(item?: KbBrowserHistoryItem | null) {
-  return !!item && !item.undone && ['insert', 'update', 'delete', 'structure'].includes(String(item.op || ''))
-}
-
-async function undoHistoryItem(item: KbBrowserHistoryItem) {
-  if (!vibeProjectId.value || !canUndoHistory(item) || undoingHistoryId.value) return
   try {
-    await ElMessageBox.confirm(
-      '撤销会把知识库恢复到这条变更发生前的状态。撤销后会刷新原文、历史和回执。',
-      '撤销本次变更？',
-      {
-        confirmButtonText: '撤销',
-        cancelButtonText: '取消',
-        type: 'warning',
-        distinguishCancelAndClose: true,
-      },
-    )
-  } catch {
-    return
-  }
-  undoingHistoryId.value = item.id
-  try {
-    const res = await undoKbBrowserHistory(vibeProjectId.value, item.id)
-    const after = res.after || { ...item, undone: true }
-    selectedHistory.value = after
-    historyItems.value = historyItems.value.map(row => row.id === item.id ? { ...row, undone: true } : row)
-    receiptDetailCache.value = {}
-    await Promise.all([
-      getKbBrowserSummary(vibeProjectId.value).then(data => { summary.value = data }),
-      getKbBrowserTree(vibeProjectId.value, includeDeleted.value).then(data => { treeModules.value = data.modules || [] }),
-      reloadDocument(),
-      loadHistory(true),
-      activeTab.value === 'receipts' ? loadReceipts() : Promise.resolve(),
-    ])
-    ElMessage.success('已撤销本次变更')
+    selectedHistory.value = await loadHistoryDiff(item)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    undoingHistoryId.value = null
+    selectedHistory.value = { ...item, loading: false }
   }
 }
 
-async function focusHistoryItem(item: KbBrowserHistoryItem, ensureLoaded = false) {
+async function loadHistoryDiff(item: HistoryItem): Promise<HistoryItem> {
+  if (item.diff_lines && item.body_after !== undefined) return { ...item, loading: false }
+  const data = await getKnowledgeDiff(vibeProjectId.value, item.base_version, item.version)
+  const loaded = {
+    ...item,
+    body_before: data.before_markdown,
+    body_after: data.after_markdown,
+    diff_lines: parseUnifiedDiff(data.diff),
+    loading: false,
+  }
+  historyItems.value = historyItems.value.map(row => row.id === loaded.id ? loaded : row)
+  return loaded
+}
+
+async function focusHistoryItem(item: HistoryItem, ensureLoaded = false) {
   activeTab.value = 'history'
   if (ensureLoaded && !historyItems.value.length) await loadHistory(true)
   if (!historyItems.value.some(h => h.id === item.id)) {
     historyItems.value = [item, ...historyItems.value]
   }
-  openHistoryItem(item)
+  await openHistoryItem(item)
   await nextTick()
   requestAnimationFrame(() => {
     document.getElementById(`history-row-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
 
-async function openHistoryFromOverview(item: KbBrowserHistoryItem) {
+async function openHistoryFromOverview(item: HistoryItem) {
   await focusHistoryItem(item, true)
 }
 
-async function openHistoryFromReceipt(item: KbBrowserHistoryItem) {
+async function openHistoryFromReceipt(item: HistoryItem) {
   await focusHistoryItem(item)
 }
 
@@ -952,28 +904,14 @@ async function handleHistoryScroll(event: Event) {
   }
 }
 
-async function jumpToPassage(item: KbBrowserPassage) {
-  selectedNamespace.value = item.namespace || ''
+async function jumpToPassage(item: KnowledgeSection) {
   activeTab.value = 'document'
-  selectedPassage.value = null
   selectedHistory.value = null
   receiptItems.value = []
   receiptDetailMeta.value = null
   receiptError.value = ''
-  await reloadDocument()
-  requestAnimationFrame(() => {
-    document.getElementById(`passage-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
-}
-
-async function jumpToDocumentPassage(id: number) {
-  const index = filteredDocumentPassages.value.findIndex(item => item.id === id)
-  if (index >= visibleDocumentLimit.value) {
-    visibleDocumentLimit.value = Math.min(filteredDocumentPassages.value.length, index + DOCUMENT_RENDER_STEP)
-    await nextTick()
-  }
-  activePreviewPassageId.value = id
-  document.getElementById(`passage-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  await nextTick()
+  jumpToDocumentHeading(item.section_id)
 }
 
 function hoverDistance(index: number) {
@@ -983,44 +921,31 @@ function hoverDistance(index: number) {
 
 function handleTabScroll() {
   if (activeTab.value !== 'document') return
-  const extended = extendVisibleDocumentPassagesIfNeeded()
-  if (previewRaf) cancelAnimationFrame(previewRaf)
-  previewRaf = requestAnimationFrame(async () => {
-    previewRaf = 0
-    if (extended) await nextTick()
-    updateActivePreview()
-  })
-}
-
-function extendVisibleDocumentPassagesIfNeeded() {
-  const surface = tabSurfaceRef.value
-  if (!surface || !hasMoreDocumentPassages.value) return false
-  if (surface.scrollTop + surface.clientHeight < surface.scrollHeight - DOCUMENT_RENDER_AHEAD) return false
-  visibleDocumentLimit.value = Math.min(filteredDocumentPassages.value.length, visibleDocumentLimit.value + DOCUMENT_RENDER_STEP)
-  return true
+  requestAnimationFrame(updateActivePreview)
 }
 
 function updateActivePreview() {
   if (activeTab.value !== 'document') return
-  const items = visibleDocumentPassages.value
+  const items = documentOutline.value
   if (!items.length) {
-    activePreviewPassageId.value = null
+    activePreviewSectionId.value = null
     return
   }
   const surface = tabSurfaceRef.value
   const surfaceTop = surface?.getBoundingClientRect().top ?? 0
-  let candidate = items[0].id
+  const headings = surface?.querySelectorAll<HTMLElement>('.knowledge-document h1, .knowledge-document h2, .knowledge-document h3, .knowledge-document h4, .knowledge-document h5, .knowledge-document h6') || []
+  let candidate = items[0].section_id
   let bestTop = Number.NEGATIVE_INFINITY
-  for (const item of items) {
-    const el = document.getElementById(`passage-${item.id}`)
-    if (!el) continue
+  items.forEach((item, index) => {
+    const el = headings[index]
+    if (!el) return
     const top = el.getBoundingClientRect().top - surfaceTop
     if (top <= 96 && top > bestTop) {
-      candidate = item.id
+      candidate = item.section_id
       bestTop = top
     }
-  }
-  activePreviewPassageId.value = candidate
+  })
+  activePreviewSectionId.value = candidate
 }
 
 function goChat() {
@@ -1033,36 +958,14 @@ function renderMarkdown(content?: string | null) {
   })
 }
 
-function renderHighlightedMarkdown(content?: string | null, q = '') {
-  return highlightHtmlText(renderMarkdown(content), q)
-}
-
-function lineDiff(beforeText: string, afterText: string): Array<{ kind: DiffKind; text: string }> {
-  const a = beforeText.split(/\r?\n/)
-  const b = afterText.split(/\r?\n/)
-  const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0))
-  for (let i = a.length - 1; i >= 0; i -= 1) {
-    for (let j = b.length - 1; j >= 0; j -= 1) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
-    }
-  }
-  const out: Array<{ kind: DiffKind; text: string }> = []
-  let i = 0
-  let j = 0
-  while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) {
-      out.push({ kind: 'same', text: a[i] })
-      i += 1
-      j += 1
-    } else if (j < b.length && (i === a.length || dp[i][j + 1] >= dp[i + 1][j])) {
-      out.push({ kind: 'add', text: b[j] })
-      j += 1
-    } else if (i < a.length) {
-      out.push({ kind: 'remove', text: a[i] })
-      i += 1
-    }
-  }
-  return out
+function parseUnifiedDiff(value: string): DiffLine[] {
+  return String(value || '').split(/\r?\n/).reduce<DiffLine[]>((out, line) => {
+    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) return out
+    if (line.startsWith('+')) out.push({ kind: 'add', text: line.slice(1) })
+    else if (line.startsWith('-')) out.push({ kind: 'remove', text: line.slice(1) })
+    else if (line.startsWith(' ')) out.push({ kind: 'same', text: line.slice(1) })
+    return out
+  }, [])
 }
 
 function diffPrefix(kind: DiffKind) {
@@ -1076,35 +979,21 @@ function modulePercent(count: number) {
   return Math.max(6, Math.round((count / max) * 100))
 }
 
-function headingLevel(level?: number) {
-  const n = Math.min(4, Math.max(2, Number(level || 3)))
-  return n
-}
-
-function headingTag(level?: number) {
-  const n = headingLevel(level)
-  return `h${n}`
-}
-
 function opLabel(op?: string) {
   return ({ insert: '录入', update: '修改', delete: '删除', structure: '结构' } as Record<string, string>)[String(op || '')] || (op || '动作')
 }
 
-function actorLabel(item?: Pick<KbBrowserHistoryItem, 'actor_name' | 'actor_user_id'> | null) {
+function actorLabel(item?: Pick<HistoryItem, 'actor_name' | 'actor_user_id'> | null) {
   const name = String(item?.actor_name || '').trim()
   if (name && name !== 'null' && name !== 'undefined') return name
   return item?.actor_user_id ? `用户 ${item.actor_user_id}` : '未知'
 }
 
-function formatDocIndex(index: number) {
-  return String(index + 1).padStart(2, '0')
-}
-
-function samplePreviewPassages(items: KbBrowserPassage[]) {
+function sampleOutline(items: KnowledgeOutlineItem[]) {
   const maxLines = 40
   if (!items.length) return []
   if (items.length <= maxLines) return items.map((item, sourceIndex) => ({ item, sourceIndex }))
-  const sampled: Array<{ item: KbBrowserPassage; sourceIndex: number }> = []
+  const sampled: Array<{ item: KnowledgeOutlineItem; sourceIndex: number }> = []
   const used = new Set<number>()
   for (let i = 0; i < maxLines; i += 1) {
     const sourceIndex = Math.round((i * (items.length - 1)) / (maxLines - 1))
@@ -1115,42 +1004,11 @@ function samplePreviewPassages(items: KbBrowserPassage[]) {
   return sampled
 }
 
-function previewExcerpt(item: KbBrowserPassage, items: KbBrowserPassage[] = [], sourceIndex = -1) {
-  const passage = item as KbBrowserPassage & Record<string, unknown>
-  const direct = [
-    passage.body,
-    passage.body_preview,
-    passage.content,
-    passage.raw_content,
-    passage.text,
-  ].map(cleanMarkdownPreview).find(Boolean)
-
-  const child = direct ? '' : previewChildExcerpt(item, items, sourceIndex)
-  const fallback = cleanMarkdownPreview(`${item.title || ''} ${item.breadcrumb || ''}`)
-  return (direct || child || fallback || '暂无可预览内容').slice(0, 118)
-}
-
-function previewChildExcerpt(item: KbBrowserPassage, items: KbBrowserPassage[], sourceIndex: number) {
-  if (sourceIndex < 0 || !items.length) return ''
-  const baseCrumb = String(item.breadcrumb || item.title || '').trim()
-  const baseLevel = Number(item.level || 0)
-  const chunks: string[] = []
-
-  for (let i = sourceIndex + 1; i < items.length && chunks.length < 3; i += 1) {
-    const child = items[i]
-    const childCrumb = String(child.breadcrumb || '').trim()
-    const isCrumbChild = Boolean(baseCrumb) && (
-      childCrumb.startsWith(`${baseCrumb}>`)
-      || childCrumb.startsWith(`${baseCrumb} >`)
-    )
-    const isLevelChild = Number(child.level || 0) > baseLevel
-
-    if (!isCrumbChild && !isLevelChild) break
-    const text = cleanMarkdownPreview(child.body || child.title || child.breadcrumb)
-    if (text) chunks.push(text)
-  }
-
-  return cleanMarkdownPreview(chunks.join(' '))
+function outlineExcerpt(item: KnowledgeOutlineItem) {
+  const markdown = knowledgeStatus.value?.current?.markdown || ''
+  const [start, end] = item.source_range
+  const body = cleanMarkdownPreview(markdown.slice(start, Math.min(end, start + 900)))
+  return (body || item.path.join(' > ') || '暂无可预览内容').slice(0, 118)
 }
 
 function cleanMarkdownPreview(value: unknown) {
@@ -1208,40 +1066,7 @@ function highlightSearchText(value: string, q: string) {
   return html
 }
 
-function highlightHtmlText(html: string, q: string) {
-  const terms = q.trim().split(/\s+/).filter(Boolean)
-  if (!terms.length || typeof document === 'undefined') return html
-  const pattern = new RegExp(terms.map(escapeRegex).sort((a, b) => b.length - a.length).join('|'), 'gi')
-  const box = document.createElement('div')
-  box.innerHTML = html
-  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
-  const nodes: Text[] = []
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-  nodes.forEach((node) => {
-    const text = node.nodeValue || ''
-    if (!pattern.test(text)) {
-      pattern.lastIndex = 0
-      return
-    }
-    pattern.lastIndex = 0
-    const fragment = document.createDocumentFragment()
-    let last = 0
-    let match: RegExpExecArray | null
-    while ((match = pattern.exec(text)) !== null) {
-      fragment.appendChild(document.createTextNode(text.slice(last, match.index)))
-      const mark = document.createElement('mark')
-      mark.className = 'search-hit'
-      mark.textContent = match[0]
-      fragment.appendChild(mark)
-      last = match.index + match[0].length
-    }
-    fragment.appendChild(document.createTextNode(text.slice(last)))
-    node.parentNode?.replaceChild(fragment, node)
-  })
-  return box.innerHTML
-}
-
-function receiptTitle(item?: Partial<KbBrowserReceipt & ReceiptDetailMeta> | null) {
+function receiptTitle(item?: Partial<ReceiptItem & ReceiptDetailMeta> | null) {
   const editRequest = String(item?.edit_request || '').trim()
   if (editRequest) return editRequest
   if (isModuleDeleteReceipt(item)) {
@@ -1252,20 +1077,112 @@ function receiptTitle(item?: Partial<KbBrowserReceipt & ReceiptDetailMeta> | nul
   return label === '批次' ? '批次回执' : `${label}批次`
 }
 
-function isModuleDeleteReceipt(item?: Partial<KbBrowserReceipt & ReceiptDetailMeta> | null) {
+function isModuleDeleteReceipt(item?: Partial<ReceiptItem & ReceiptDetailMeta> | null) {
   return item?.operation_kind === 'module_delete'
 }
 
-function receiptOpLabel(item?: Partial<KbBrowserReceipt & ReceiptDetailMeta> | null) {
+function receiptOpLabel(item?: Partial<ReceiptItem & ReceiptDetailMeta> | null) {
   if (isModuleDeleteReceipt(item)) return '模块删除'
   if (item?.operation_kind === 'delete') return '删除'
   if (item?.operation_kind === 'insert') return '录入'
   if (item?.operation_kind === 'update') return '修改'
+  if (item?.operation_kind === 'structure') return '结构'
   return '批次'
 }
 
-function receiptBody(item: KbBrowserHistoryItem) {
+function receiptBody(item: HistoryItem) {
   return item.op === 'delete' ? (item.body_before || item.body_before_preview || '') : (item.body_after || item.body_after_preview || '')
+}
+
+function mapVersion(item: KnowledgeVersionSummary): HistoryItem {
+  return {
+    id: item.version,
+    version: item.version,
+    base_version: Number(item.base_version || 0),
+    project: item.project_id,
+    op: item.action || 'update',
+    edit_request: item.reason || item.operation || '无备注',
+    batch_id: item.batch_id || `version-${item.version}`,
+    actor_user_id: item.actor_user_id,
+    actor_name: item.actor_name,
+    undone: false,
+    edited_at: item.created_at,
+    breadcrumb: item.title || '现行知识文档',
+    title: `版本 ${item.version}`,
+    body_before_preview: '',
+    body_after_preview: '',
+    source_ids: item.source_ids || [],
+    session_id: item.session_id || '',
+    trace_id: item.trace_id || '',
+  }
+}
+
+function traceMarker(traceId: string) {
+  const raw = String(traceId || '').replace(/[^a-z0-9]/gi, '')
+  return raw ? `DTA-${raw.slice(0, 8).toUpperCase()}` : 'DTA-UNKNOWN'
+}
+
+function openTrace(traceId: string) {
+  router.push({
+    name: 'vibeSettingsTrace',
+    query: { ...route.query, trace_id: traceId },
+  })
+}
+
+async function fetchAllVersions(): Promise<KnowledgeVersionSummary[]> {
+  const out: KnowledgeVersionSummary[] = []
+  let before: number | undefined
+  for (let page = 0; page < 100; page += 1) {
+    const data = await getKnowledgeVersions(vibeProjectId.value, { limit: 200, before })
+    out.push(...(data.items || []))
+    if (!data.next_cursor) break
+    before = data.next_cursor
+  }
+  return out
+}
+
+function groupReceipts(items: HistoryItem[]): ReceiptItem[] {
+  const groups = new Map<string, HistoryItem[]>()
+  items.forEach((item) => {
+    const batchId = item.batch_id || `version-${item.version}`
+    groups.set(batchId, [...(groups.get(batchId) || []), item])
+  })
+  return Array.from(groups.entries()).map(([batchId, versions]) => {
+    const newest = versions[0]
+    const oldest = versions[versions.length - 1]
+    const count = (op: string) => versions.filter(item => item.op === op).length
+    return {
+      batch_id: batchId,
+      operation_kind: versions.length === 1 ? newest.op : 'batch',
+      common_prefix: newest.breadcrumb,
+      affected_count: versions.length,
+      started_at: oldest.edited_at,
+      ended_at: newest.edited_at,
+      total: versions.length,
+      inserted: count('insert'),
+      updated: count('update'),
+      deleted: count('delete'),
+      structured: count('structure'),
+      edit_request: newest.edit_request,
+      versions,
+    }
+  })
+}
+
+async function downloadSource(sourceId: string) {
+  if (!vibeProjectId.value) return
+  try {
+    const data = await getKnowledgeSource(vibeProjectId.value, sourceId)
+    const blob = new Blob([data.source.content || ''], { type: data.source.mime_type || 'application/octet-stream' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = data.source.filename || `knowledge-source-${sourceId}`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : String(error))
+  }
 }
 
 function toDate(value?: string): Date {
@@ -1292,6 +1209,12 @@ function formatTime(value?: string) {
 </script>
 
 <style scoped lang="scss">
+:global(html:has(.kb-browser)),
+:global(body:has(.kb-browser)),
+:global(#app:has(.kb-browser)) {
+  min-width: 0 !important;
+}
+
 .kb-browser {
   min-height: 100vh;
   background: #f6f6f5;
@@ -1528,6 +1451,14 @@ function formatTime(value?: string) {
   padding: 10px;
 }
 
+.document-pane-head {
+  padding: 4px 6px 8px;
+}
+
+.document-outline-row {
+  padding-left: calc(8px + var(--outline-depth, 0) * 10px);
+}
+
 .pane-head,
 .section-title,
 .detail-head,
@@ -1727,6 +1658,11 @@ function formatTime(value?: string) {
   overflow-x: hidden;
 }
 
+.document-empty {
+  padding: 48px 24px;
+  text-align: center;
+}
+
 .overview-layout {
   height: 100%;
   min-height: 0;
@@ -1757,6 +1693,48 @@ function formatTime(value?: string) {
     color: #777;
     font-size: 12px;
   }
+}
+
+.source-section {
+  grid-column: 1 / -1;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.source-row {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-bottom: 1px solid #ececec;
+  background: transparent;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto) 80px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 4px;
+  color: #222;
+  text-align: left;
+  cursor: pointer;
+}
+
+.source-row:hover {
+  background: #f5f5f4;
+}
+
+.source-row span,
+.source-row small,
+.source-row em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-row small,
+.source-row em {
+  color: #777;
+  font-size: 11px;
+  font-style: normal;
 }
 
 .module-summary-list {
@@ -1835,6 +1813,22 @@ function formatTime(value?: string) {
   max-width: 880px;
   margin: 0 auto;
   padding: 4px 0 80px;
+}
+
+.knowledge-document {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 8px 20px 96px;
+  box-sizing: border-box;
+}
+
+.knowledge-document :deep(h1),
+.knowledge-document :deep(h2),
+.knowledge-document :deep(h3),
+.knowledge-document :deep(h4),
+.knowledge-document :deep(h5),
+.knowledge-document :deep(h6) {
+  scroll-margin-top: 24px;
 }
 
 .document-load-more {
@@ -2120,6 +2114,19 @@ h4.doc-heading { font-size: 15px; }
     margin: 0;
     word-break: break-word;
   }
+}
+
+.trace-link {
+  border: 0;
+  background: transparent;
+  color: #1f5f9f;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trace-link:hover {
+  text-decoration: underline;
 }
 
 .detail-body,
@@ -3001,6 +3008,10 @@ h4.doc-heading { font-size: 15px; }
   border-color: #ead8d8;
 }
 
+.receipt-counts .count-structure {
+  border-color: #e2dfd5;
+}
+
 .receipt-row time {
   color: var(--ink-3);
   font-size: 12px;
@@ -3372,9 +3383,13 @@ h4.doc-heading { font-size: 15px; }
   }
 
   .view-tabs {
-    grid-template-columns: repeat(5, 96px);
     overflow-x: auto;
     overflow-y: hidden;
+
+    button {
+      flex: 0 0 96px;
+      padding: 0 8px;
+    }
   }
 
   .tab-indicator {
@@ -3384,6 +3399,18 @@ h4.doc-heading { font-size: 15px; }
   .overview-layout,
   .receipt-row {
     grid-template-columns: 1fr;
+  }
+
+  .receipt-counts {
+    flex-wrap: wrap;
+  }
+
+  .source-row {
+    grid-template-columns: minmax(0, 1fr);
+
+    em {
+      display: none;
+    }
   }
 
   .history-row,
