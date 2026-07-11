@@ -979,3 +979,34 @@ export function getKbBrowserReceipts(project: string, limit = 30): Promise<{ pro
 export function getKbBrowserReceiptDetail(project: string, batchId: string): Promise<{ project: string; batch_id: string; operation_kind?: string; common_prefix?: string; affected_count?: number; items: KbBrowserHistoryItem[] }> {
   return request('GET', `/vibe/foundation/kb-browser/receipts/${encodeURIComponent(batchId)}${kbBrowserQuery({ project })}`)
 }
+
+export interface V4CanaryVersion {
+  id: string
+  project_id: string
+  document_id: string
+  version: number
+  content_hash: string
+  title: string
+  markdown: string
+  operation: string
+  reason: string
+  actor_name: string
+  created_at: string
+}
+
+export interface V4CanaryStatus {
+  ok: boolean
+  trace_marker: string
+  project: { project_id: string; title: string; current_version: number; current_hash: string } | null
+  current: V4CanaryVersion | null
+  versions: V4CanaryVersion[]
+  sources: Array<{ id: string; filename: string; mime_type: string; content_hash: string; created_at: string }>
+}
+
+export function getV4CanaryStatus(project: string): Promise<V4CanaryStatus> {
+  return request('GET', `/vibe/foundation/v4/canary/status${kbBrowserQuery({ project })}`)
+}
+
+export function probeV4Canary(project: string): Promise<{ canary: boolean; project_id: string }> {
+  return request('GET', `/vibe/foundation/v4/canary/probe${kbBrowserQuery({ project })}`)
+}

@@ -17,7 +17,7 @@
       </div>
 
       <div class="top-metrics" aria-label="知识库概况">
-        <button v-for="item in statCards" :key="item.label" class="metric-chip" type="button" @click="activeTab = item.target">
+        <button v-for="item in displayStatCards" :key="item.label" class="metric-chip" type="button" @click="activeTab = item.target">
           <b>{{ item.value }}</b>
           <i>{{ item.label }}</i>
         </button>
@@ -37,7 +37,7 @@
             <span class="select-trigger">
               <span class="select-main">
                 <span class="select-label">{{ label || placeholder }}</span>
-                <span class="select-hint">{{ summary?.passages.active ?? 0 }} 段原文</span>
+                <span class="select-hint">{{ isV4Canary ? `连续文档 · v${canaryStatus?.current?.version || 1}` : `${summary?.passages.active ?? 0} 段原文` }}</span>
               </span>
               <svg class="select-caret" :class="{ open }" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </span>
@@ -49,9 +49,9 @@
       <span v-if="loading" class="loading-thread" aria-hidden="true" />
     </header>
 
-    <nav class="view-tabs" :style="tabIndicatorStyle" aria-label="知识库浏览视图">
+    <nav class="view-tabs" :class="{ 'is-canary': isV4Canary }" :style="tabIndicatorStyle" aria-label="知识库浏览视图">
       <span class="tab-indicator" aria-hidden="true" />
-      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
+      <button v-for="tab in displayTabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">
         <span>{{ tab.label }}</span>
         <small>{{ tab.hint }}</small>
       </button>
@@ -70,6 +70,26 @@
       }"
     >
       <aside v-if="activeTab === 'document'" class="module-pane">
+        <template v-if="isV4Canary">
+          <div class="pane-head canary-pane-head">
+            <div>
+              <strong>文档结构</strong>
+              <span>{{ canaryOutline.length }} 个章节</span>
+            </div>
+          </div>
+          <button
+            v-for="item in canaryOutline"
+            :key="item.anchor"
+            class="module-row canary-outline-row"
+            :style="{ '--outline-depth': String(item.level - 1) }"
+            type="button"
+            @click="jumpToCanaryHeading(item.anchor)"
+          >
+            <span>{{ item.title }}</span>
+            <em>H{{ item.level }}</em>
+          </button>
+        </template>
+        <template v-else>
         <div class="pane-head">
           <div>
             <strong>结构</strong>
@@ -96,11 +116,12 @@
           <span>{{ module.module }}</span>
           <em>{{ module.active_count }}</em>
         </button>
+        </template>
       </aside>
 
       <section class="content-pane">
         <nav
-          v-if="activeTab === 'document' && documentPreviewItems.length"
+          v-if="activeTab === 'document' && !isV4Canary && documentPreviewItems.length"
           class="source-minimap-float"
           aria-label="原文位置预览"
           @mouseleave="hoveredPreviewIndex = null"
@@ -183,14 +204,16 @@
         <template v-else-if="activeTab === 'document'">
           <div class="doc-toolbar">
             <div>
-              <strong>{{ selectedNamespace || '全部原文' }}</strong>
-              <span>{{ documentPassages.length }} 段</span>
+              <strong>{{ isV4Canary ? (canaryStatus?.current?.title || '现行知识文档') : (selectedNamespace || '全部原文') }}</strong>
+              <span v-if="isV4Canary">版本 {{ canaryStatus?.current?.version }} · {{ shortHash(canaryStatus?.current?.content_hash) }}</span>
+              <span v-else>{{ documentPassages.length }} 段</span>
             </div>
-            <input v-model="documentFilter" type="search" placeholder="过滤当前文档…" />
+            <input v-if="!isV4Canary" v-model="documentFilter" type="search" placeholder="过滤当前文档…" />
           </div>
 
           <div class="document-shell">
-            <article class="document-flow">
+            <article v-if="isV4Canary" class="canary-document markdown-body" v-html="renderMarkdown(canaryStatus?.current?.markdown || '')" />
+            <article v-else class="document-flow">
               <section
                 v-for="(passage, index) in visibleDocumentPassages"
                 :id="`passage-${passage.id}`"
@@ -444,8 +467,10 @@ import {
   getKbBrowserReceipts,
   getKbBrowserSummary,
   getKbBrowserTree,
+  getV4CanaryStatus,
   getVibeProjectByAsyncProject,
   initVibeProject,
+  probeV4Canary,
   searchKbBrowserPassages,
   undoKbBrowserHistory,
   type KbBrowserHistoryItem,
@@ -453,6 +478,7 @@ import {
   type KbBrowserReceipt,
   type KbBrowserSummary,
   type KbBrowserTreeModule,
+  type V4CanaryStatus,
 } from '../api'
 
 type TabKey = 'overview' | 'document' | 'search' | 'history' | 'receipts'
@@ -493,6 +519,7 @@ const vibeProjectId = ref('')
 const summary = ref<KbBrowserSummary | null>(null)
 const treeModules = ref<KbBrowserTreeModule[]>([])
 const documentPassages = ref<KbBrowserPassage[]>([])
+const canaryStatus = ref<V4CanaryStatus | null>(null)
 const historyItems = ref<KbBrowserHistoryItem[]>([])
 const receipts = ref<KbBrowserReceipt[]>([])
 const receiptItems = ref<KbBrowserHistoryItem[]>([])
@@ -536,13 +563,30 @@ const projectOptions = computed(() => projects.value.map((project: any) => ({
   hint: project.description || project.owner_name || project.creator_name || '',
 })))
 
+const isV4Canary = computed(() => Boolean(canaryStatus.value?.current))
+const displayTabs = computed(() => isV4Canary.value ? tabs.filter(tab => tab.key === 'document') : tabs)
+
+const canaryOutline = computed(() => {
+  const markdown = canaryStatus.value?.current?.markdown || ''
+  const counts = new Map<string, number>()
+  return markdown.split('\n').flatMap((line) => {
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    if (!match) return []
+    const title = match[2].trim()
+    const base = title.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s+/g, '-') || 'section'
+    const count = (counts.get(base) || 0) + 1
+    counts.set(base, count)
+    return [{ title, level: match[1].length, anchor: count === 1 ? base : `${base}-${count}` }]
+  })
+})
+
 const selectedProjectName = computed(() => {
   const item = projects.value.find((project: any) => String(project.id) === selectedAsyncProjectId.value)
   return item?.name || item?.project_name || '当前项目'
 })
 
 const activeTabName = computed(() => tabs.find(tab => tab.key === activeTab.value)?.label || '原文')
-const activeTabIndex = computed(() => Math.max(0, tabs.findIndex(tab => tab.key === activeTab.value)))
+const activeTabIndex = computed(() => Math.max(0, displayTabs.value.findIndex(tab => tab.key === activeTab.value)))
 const tabIndicatorStyle = computed(() => ({
   '--active-tab-index': String(activeTabIndex.value),
 }))
@@ -553,6 +597,16 @@ const statCards = computed<Array<{ label: string; value: number; target: TabKey 
   { label: '历史动作', value: summary.value?.history ?? 0, target: 'history' },
   { label: '删除段', value: summary.value?.passages.deleted ?? 0, target: 'document' },
 ])
+
+const displayStatCards = computed<Array<{ label: string; value: number; target: TabKey }>>(() => {
+  if (!isV4Canary.value) return statCards.value
+  return [
+    { label: '当前版本', value: canaryStatus.value?.current?.version || 0, target: 'document' },
+    { label: '章节', value: canaryOutline.value.length, target: 'document' },
+    { label: '来源', value: canaryStatus.value?.sources?.length || 0, target: 'document' },
+    { label: '历史版本', value: canaryStatus.value?.versions?.length || 0, target: 'document' },
+  ]
+})
 
 const compactStats = computed(() => {
   const active = summary.value?.passages.active ?? 0
@@ -671,6 +725,7 @@ async function selectProject(project: any) {
       vp = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
     }
     vibeProjectId.value = String(vp.id)
+    canaryStatus.value = null
     selectedNamespace.value = ''
     selectedPassage.value = null
     selectedHistory.value = null
@@ -697,6 +752,23 @@ async function reloadAll() {
   loading.value = true
   errorText.value = ''
   try {
+    try {
+      const probe = await probeV4Canary(vibeProjectId.value)
+      if (probe.canary) {
+        const canary = await getV4CanaryStatus(vibeProjectId.value)
+        if (!canary.current) throw new Error('第四代 canary 尚未初始化现行文档')
+        canaryStatus.value = canary
+        activeTab.value = 'document'
+        summary.value = null
+        treeModules.value = []
+        documentPassages.value = []
+        historyItems.value = []
+        receipts.value = []
+        return
+      }
+    } catch {
+      canaryStatus.value = null
+    }
     const [sum, tree] = await Promise.all([
       getKbBrowserSummary(vibeProjectId.value),
       getKbBrowserTree(vibeProjectId.value, includeDeleted.value),
@@ -719,6 +791,10 @@ async function reloadAll() {
 
 async function reloadDocument() {
   if (!vibeProjectId.value) return
+  if (isV4Canary.value) {
+    canaryStatus.value = await getV4CanaryStatus(vibeProjectId.value)
+    return
+  }
   const data = await getKbBrowserDocument(vibeProjectId.value, {
     namespace: selectedNamespace.value || undefined,
     include_deleted: includeDeleted.value,
@@ -732,6 +808,17 @@ async function selectModule(namespace: string) {
   selectedPassage.value = null
   selectedHistory.value = null
   await reloadDocument()
+}
+
+function shortHash(value?: string) {
+  return value ? value.slice(0, 10) : ''
+}
+
+function jumpToCanaryHeading(anchor: string) {
+  const root = tabSurfaceRef.value
+  const index = canaryOutline.value.findIndex(item => item.anchor === anchor)
+  const target = index >= 0 ? root?.querySelectorAll<HTMLElement>('.canary-document h1, .canary-document h2, .canary-document h3, .canary-document h4, .canary-document h5, .canary-document h6')[index] : null
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 async function runSearch(reset = true) {
@@ -1490,6 +1577,14 @@ function formatTime(value?: string) {
   transition: transform 260ms cubic-bezier(.22, 1, .36, 1), width 260ms cubic-bezier(.22, 1, .36, 1);
 }
 
+.view-tabs.is-canary {
+  width: 112px;
+
+  .tab-indicator {
+    width: calc(100% - 6px);
+  }
+}
+
 .state-line {
   border-radius: 8px;
   padding: 12px;
@@ -1526,6 +1621,14 @@ function formatTime(value?: string) {
   border-right: 1px solid #e4e4e4;
   background: #fafafa;
   padding: 10px;
+}
+
+.canary-pane-head {
+  padding: 4px 6px 8px;
+}
+
+.canary-outline-row {
+  padding-left: calc(8px + var(--outline-depth, 0) * 10px);
 }
 
 .pane-head,
@@ -1835,6 +1938,22 @@ function formatTime(value?: string) {
   max-width: 880px;
   margin: 0 auto;
   padding: 4px 0 80px;
+}
+
+.canary-document {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 8px 20px 96px;
+  box-sizing: border-box;
+}
+
+.canary-document :deep(h1),
+.canary-document :deep(h2),
+.canary-document :deep(h3),
+.canary-document :deep(h4),
+.canary-document :deep(h5),
+.canary-document :deep(h6) {
+  scroll-margin-top: 24px;
 }
 
 .document-load-more {
