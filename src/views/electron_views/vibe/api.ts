@@ -861,78 +861,7 @@ export function actFoundationProposal(taskId: number, action: 'approve' | 'rejec
   return request('POST', `/vibe/foundation/proposals/${taskId}/${action}`)
 }
 
-// ===== T31 知识库原文视角浏览 =====
-
-export interface KbBrowserPassage {
-  id: number
-  project: string
-  ord: number
-  breadcrumb: string
-  title: string
-  level: number
-  namespace: string
-  module: string
-  body: string
-  status: 'active' | 'deleted' | string
-  parent_ord?: number | null
-  has_recent_change?: boolean
-  is_chat_appended?: boolean
-}
-
-export interface KbBrowserHistoryItem {
-  id: number
-  passage_id: number
-  project: string
-  op: 'insert' | 'update' | 'delete' | string
-  edit_request?: string
-  batch_id?: string | null
-  actor_user_id?: number | null
-  actor_name?: string
-  undone: boolean
-  edited_at?: string
-  breadcrumb?: string
-  title?: string
-  namespace?: string
-  module?: string
-  status?: string
-  body_before?: string | null
-  body_after?: string | null
-  body_before_preview?: string
-  body_after_preview?: string
-}
-
-export interface KbBrowserSummary {
-  project: string
-  passages: { active: number; deleted: number; total: number }
-  modules: number
-  sources: number
-  history: number
-  top_modules: Array<{ module: string; active_count: number }>
-  recent_changes: KbBrowserHistoryItem[]
-  legacy_note?: string
-}
-
-export interface KbBrowserTreeModule {
-  module: string
-  active_count: number
-  deleted_count: number
-  first_ord: number
-  passages: Array<Pick<KbBrowserPassage, 'id' | 'ord' | 'breadcrumb' | 'title' | 'level' | 'status'>>
-}
-
-export interface KbBrowserReceipt {
-  batch_id: string
-  operation_kind?: string
-  common_prefix?: string
-  affected_count?: number
-  started_at?: string
-  ended_at?: string
-  total: number
-  inserted: number
-  updated: number
-  deleted: number
-  edit_request?: string
-}
+// ===== 第四代现行知识浏览 =====
 
 function kbBrowserQuery(params: Record<string, any>) {
   const usp = new URLSearchParams()
@@ -944,69 +873,119 @@ function kbBrowserQuery(params: Record<string, any>) {
   return qs ? `?${qs}` : ''
 }
 
-export function getKbBrowserSummary(project: string): Promise<KbBrowserSummary> {
-  return request('GET', `/vibe/foundation/kb-browser/summary${kbBrowserQuery({ project })}`)
-}
-
-export function getKbBrowserTree(project: string, includeDeleted = false): Promise<{ project: string; modules: KbBrowserTreeModule[]; include_deleted: boolean }> {
-  return request('GET', `/vibe/foundation/kb-browser/tree${kbBrowserQuery({ project, include_deleted: includeDeleted ? '1' : '' })}`)
-}
-
-export function getKbBrowserDocument(project: string, params: { namespace?: string; include_deleted?: boolean } = {}): Promise<{ project: string; namespace: string; include_deleted: boolean; passages: KbBrowserPassage[] }> {
-  return request('GET', `/vibe/foundation/kb-browser/document${kbBrowserQuery({ project, namespace: params.namespace, include_deleted: params.include_deleted ? '1' : '' })}`)
-}
-
-export function searchKbBrowserPassages(project: string, params: { q?: string; namespace?: string; status?: string; limit?: number; cursor?: number } = {}): Promise<{ project: string; items: KbBrowserPassage[]; next_cursor?: number | null }> {
-  return request('GET', `/vibe/foundation/kb-browser/passages${kbBrowserQuery({ project, ...params })}`)
-}
-
-export function getKbBrowserPassageDetail(project: string, passageId: number): Promise<{ project: string; passage: KbBrowserPassage; history: KbBrowserHistoryItem[] }> {
-  return request('GET', `/vibe/foundation/kb-browser/passages/${passageId}${kbBrowserQuery({ project })}`)
-}
-
-export function getKbBrowserHistory(project: string, params: { op?: string; batch_id?: string; passage_id?: number; limit?: number; cursor?: number; include_undone?: boolean } = {}): Promise<{ project: string; items: KbBrowserHistoryItem[]; next_cursor?: number | null }> {
-  return request('GET', `/vibe/foundation/kb-browser/history${kbBrowserQuery({ project, ...params, include_undone: params.include_undone ? '1' : '' })}`)
-}
-
-export function undoKbBrowserHistory(project: string, historyId: number): Promise<{ project: string; history_id: number; undone: boolean; before?: KbBrowserHistoryItem; after?: KbBrowserHistoryItem; passage?: KbBrowserPassage | null }> {
-  return request('POST', `/vibe/foundation/kb-browser/history/${historyId}/undo${kbBrowserQuery({ project })}`)
-}
-
-export function getKbBrowserReceipts(project: string, limit = 30): Promise<{ project: string; items: KbBrowserReceipt[] }> {
-  return request('GET', `/vibe/foundation/kb-browser/receipts${kbBrowserQuery({ project, limit })}`)
-}
-
-export function getKbBrowserReceiptDetail(project: string, batchId: string): Promise<{ project: string; batch_id: string; operation_kind?: string; common_prefix?: string; affected_count?: number; items: KbBrowserHistoryItem[] }> {
-  return request('GET', `/vibe/foundation/kb-browser/receipts/${encodeURIComponent(batchId)}${kbBrowserQuery({ project })}`)
-}
-
-export interface V4CanaryVersion {
+export interface KnowledgeVersionSummary {
   id: string
   project_id: string
   document_id: string
   version: number
+  base_version: number
+  base_hash: string
   content_hash: string
   title: string
-  markdown: string
   operation: string
   reason: string
-  actor_name: string
+  actor_user_id?: number | null
+  actor_name?: string
+  session_id?: string
+  trace_id?: string
+  batch_id?: string
+  source_ids: string[]
+  change_plan: Record<string, any>
+  verification: Record<string, any>
+  action: 'insert' | 'update' | 'delete' | 'structure' | string
+  action_kinds: string[]
+  action_counts: Record<'insert' | 'update' | 'delete' | 'structure', number>
   created_at: string
 }
 
-export interface V4CanaryStatus {
+export interface KnowledgeCurrentVersion extends KnowledgeVersionSummary {
+  markdown: string
+  section_ids: string[]
+}
+
+export interface KnowledgeOutlineItem {
+  section_id: string
+  ordinal: number
+  level: number
+  title: string
+  path: string[]
+  parent_id?: string | null
+  children_ids: string[]
+  source_range: [number, number]
+}
+
+export interface KnowledgeStatus {
   ok: boolean
-  trace_marker: string
   project: { project_id: string; title: string; current_version: number; current_hash: string } | null
-  current: V4CanaryVersion | null
-  versions: V4CanaryVersion[]
-  sources: Array<{ id: string; filename: string; mime_type: string; content_hash: string; created_at: string }>
+  current: KnowledgeCurrentVersion | null
+  versions: KnowledgeVersionSummary[]
+  sources: Array<{ id: string; filename: string; mime_type: string; content_hash: string; metadata?: Record<string, any>; created_at: string }>
+  outline: KnowledgeOutlineItem[]
+  summary: {
+    section_count: number
+    module_count: number
+    version_count: number
+    source_count: number
+    top_modules: Array<{ module: string; section_id: string; active_count: number }>
+    recent_changes: KnowledgeVersionSummary[]
+  }
+  index_generation?: Record<string, any> | null
 }
 
-export function getV4CanaryStatus(project: string): Promise<V4CanaryStatus> {
-  return request('GET', `/vibe/foundation/v4/canary/status${kbBrowserQuery({ project })}`)
+export interface KnowledgeSection {
+  id: string
+  section_id: string
+  ordinal: number
+  breadcrumb: string
+  path: string[]
+  title: string
+  level: number
+  body: string
+  source_range: [number, number]
+  status: 'active'
 }
 
-export function probeV4Canary(project: string): Promise<{ canary: boolean; project_id: string }> {
-  return request('GET', `/vibe/foundation/v4/canary/probe${kbBrowserQuery({ project })}`)
+export function getKnowledgeStatus(project: string, params: { limit?: number; before?: number } = {}): Promise<KnowledgeStatus> {
+  return request('GET', `/vibe/foundation/knowledge/status${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeVersions(project: string, params: { action?: string; limit?: number; before?: number } = {}): Promise<{
+  ok: boolean
+  project_id: string
+  items: KnowledgeVersionSummary[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/versions${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeSections(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{
+  ok: boolean
+  project_id: string
+  query: string
+  total: number
+  items: KnowledgeSection[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/sections${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeDiff(project: string, from: number, to: number): Promise<{
+  ok: boolean
+  project_id: string
+  from: number
+  to: number
+  from_hash: string
+  to_hash: string
+  before_markdown: string
+  after_markdown: string
+  diff: string
+}> {
+  return request('GET', `/vibe/foundation/knowledge/diff${kbBrowserQuery({ project, from, to })}`)
+}
+
+export function getKnowledgeSource(project: string, sourceId: string): Promise<{
+  ok: boolean
+  source: { id: string; filename: string; mime_type: string; content: string; content_hash: string; metadata?: Record<string, any>; created_at: string }
+}> {
+  return request('GET', `/vibe/foundation/knowledge/sources/${encodeURIComponent(sourceId)}${kbBrowserQuery({ project })}`)
 }
