@@ -773,44 +773,14 @@ export function cleanupAllVibeLab(confirmToken: string): Promise<{ ok: boolean; 
   return request('POST', '/vibe/lab/cleanup-all', { confirm_token: confirmToken })
 }
 
-// ===== foundation 新管线（前端唯一管线；后端 views_foundation.py）=====
-
-export interface FoundationStatement {
-  fact_id: number
-  quote: string
-  coarse: string
-  anchors: number[]
-  anchor_names: string[]
-  tiers: string[]
-  conflict: boolean
-}
-
-export interface FoundationMaterial {
-  fact_id: number
-  quote: string
-  source_id: number
-  project: string
-  coarse: string
-  fine: string | null
-  confidence: number
-  score: number
-  flags: string[]
-}
-
-export interface FoundationProposal {
-  task_id: number
-  kind: string
-  trigger: string
-  created_at: string
-  payload: Record<string, any>
-}
+// ===== 第四代主对话管线 =====
 
 /** 主入口：后端先做意图分析（提问/录入/混合），再自动路由 ingest/recall */
 export function streamFoundationTurn(
   // seed_messages：回答上一轮反问时回传的"挂起草稿"，让后端【续跑同一思考】（不另起新轮）。
   // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
-  // mode='document' + document：文件整篇录入——document 放整篇原文(切段进 passage 库)，text 只作"导入《X》"干净消息。
-  // apply_edit：改原文确认后回传的 diff 提案（passage_id+new_body…），后端确定性落库。
+  // mode='document' + attachments：文件原文与输入框意图一起交给第四代整体变更规划。
+  // apply_edit：确认时只回传服务端 confirmation_id；客户端预览内容不参与写入。
   payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean },
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
@@ -836,29 +806,15 @@ export function listFoundationRunningTurns(params: { project?: string; session_i
   return request('GET', `/vibe/foundation/turn/running${qs ? `?${qs}` : ''}`)
 }
 
-export function listFoundationProposals(): Promise<{ items: FoundationProposal[] }> {
-  return request('GET', '/vibe/foundation/proposals')
-}
-
 /** T26 停止本轮：置位后端取消令牌。流会自己发 cancelled+已停止回执+done 正常收尾，无需 abort。 */
 export function cancelFoundationTurn(turnId: string): Promise<{ ok: boolean; cancelled: boolean }> {
   return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId })
 }
 
-/** 左栏只读"知识库概览"：原文段数 + 覆盖模块数（按 project 隔离）。 */
-export function getFoundationPassageStats(project: string): Promise<{ passages: number; modules: number }> {
-  return request('GET', `/vibe/foundation/passage-stats?project=${encodeURIComponent(project)}`)
-}
-
-/** 批量版：一次取多个项目的段/模块（下拉里逐项目显示读数）。返回 { [projectId]: {passages, modules} }。 */
-export function getFoundationPassageStatsMany(
+export function getFoundationKnowledgeStatsMany(
   projects: string[],
-): Promise<Record<string, { passages: number; modules: number }>> {
-  return request('GET', `/vibe/foundation/passage-stats?projects=${encodeURIComponent(projects.join(','))}`)
-}
-
-export function actFoundationProposal(taskId: number, action: 'approve' | 'reject'): Promise<{ message: string; pending: number }> {
-  return request('POST', `/vibe/foundation/proposals/${taskId}/${action}`)
+): Promise<{ ok: boolean; items: Record<string, { sections: number; modules: number }> }> {
+  return request('GET', `/vibe/foundation/knowledge/stats?projects=${encodeURIComponent(projects.join(','))}`)
 }
 
 // ===== 第四代现行知识浏览 =====

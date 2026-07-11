@@ -41,7 +41,7 @@
             </span>
             <span class="proj-main">
               <span class="proj-name">{{ label || placeholder }}</span>
-              <span class="proj-kb">{{ kbStats.passages }} 段原文 · {{ kbStats.modules }} 模块</span>
+              <span class="proj-kb">{{ kbStats.sections }} 个章节 · {{ kbStats.modules }} 模块</span>
             </span>
             <svg class="proj-caret" :class="{ open }" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </template>
@@ -50,7 +50,7 @@
       <button class="kb-browser-entry" type="button" :disabled="!vibeProject || loading" @click="openKbBrowser">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-icon lucide-book-open"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
         <span>原文浏览</span>
-        <em>{{ kbStats.passages }} 段</em>
+        <em>{{ kbStats.sections }} 章</em>
       </button>
 
       <section class="convs">
@@ -440,13 +440,9 @@ import {
   listFoundationRunningTurns,
   streamFoundationTurn,
   cancelFoundationTurn,
-  listFoundationProposals,
-  actFoundationProposal,
-  getFoundationPassageStatsMany,
+  getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
-  type FoundationMaterial,
-  type FoundationStatement,
   type FoundationRunningTurn,
   type VibeAttachment,
   type VibeCapabilityUser,
@@ -496,11 +492,9 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-// 左栏知识库读数。关键：passages 表按【vibe 工程 UUID】存（turn/录入用的是 vibeProject.id），
-// 而左栏项目下拉是【async 项目 id】，两者不同。所以这里要先把 async id 解析成 vibe UUID，
-// 再按 UUID 批量取段/模块——否则用 async id 查 passages 永远是 0。
+// 左栏知识库读数按 vibe 工程 UUID 隔离；先批量解析 async 项目，再一次取第四代章节/模块数。
 const asyncToVibe = reactive<Record<string, string>>({})                                 // async 项目 id -> vibe UUID
-const projectStatsMap = reactive<Record<string, { passages: number; modules: number }>>({}) // 按 vibe UUID 存读数
+const projectStatsMap = reactive<Record<string, { sections: number; modules: number }>>({}) // 按 vibe UUID 存读数
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
   if (!opts.silent) modelConfigLoading.value = true
   try {
@@ -593,17 +587,17 @@ async function loadKbStats() {
   const uuids = Array.from(new Set(Object.values(asyncToVibe))).filter(Boolean)
   if (!uuids.length) return
   try {
-    const map = await getFoundationPassageStatsMany(uuids)
+    const payload = await getFoundationKnowledgeStatsMany(uuids)
     uuids.forEach((u) => {
-      const s = map?.[u]
-      projectStatsMap[u] = { passages: Number(s?.passages || 0), modules: Number(s?.modules || 0) }
+      const s = payload.items?.[u]
+      projectStatsMap[u] = { sections: Number(s?.sections || 0), modules: Number(s?.modules || 0) }
     })
   } catch { /* 概览读取失败不阻塞主流程 */ }
 }
 // 当前项目读数（项目卡 + 底部概览卡共用）：按 vibe UUID 取
 const kbStats = computed(() => {
   const u = vibeProject.value?.id ? String(vibeProject.value.id) : (asyncToVibe[String(selectedProjectId.value ?? '')] || '')
-  return (u && projectStatsMap[u]) || { passages: 0, modules: 0 }
+  return (u && projectStatsMap[u]) || { sections: 0, modules: 0 }
 })
 // 对话行"等待回复中"：本轮 turn 跑在活动会话上，故活动会话 + 后端忙 = 等待
 function isSessionWaiting(id: string): boolean {
@@ -648,7 +642,6 @@ function stopElapsedTicker() {
 const procRunning = computed(() => foundationBusy.value || streamingProcess.status === 'running')
 const procDurationMs = computed(() =>
   foundationBusy.value ? streamingElapsedMs.value : streamingProcess.durationMs)
-const foundationPending = ref(0)
 const processExpanded = ref(false)
 const streamingProcess = createProcessState()
 // 历史事件渲染（eventDisplayContent）仍需读取方案包状态展示，保留只读覆盖表
@@ -681,8 +674,8 @@ const projectOptions = computed(() => projects.value.map(project => {
   return {
     value: String(project.id),
     label: project.name || project.project_name || `项目 ${project.id}`,
-    // 下拉里逐项目显示原文段数 + 模块数（拿不到时退回原描述）
-    hint: st ? `${st.passages} 段 · ${st.modules} 模块` : (project.description || project.owner_name || project.creator_name || ''),
+    // 下拉里逐项目显示第四代章节数 + 模块数（拿不到时退回原描述）
+    hint: st ? `${st.sections} 章 · ${st.modules} 模块` : (project.description || project.owner_name || project.creator_name || ''),
   }
 }))
 const activeSessionSending = computed(() =>
@@ -713,63 +706,20 @@ const composerQuestion = computed(() => {
   const raw: any = c.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
 
-  // ① 改原文·待确认：显示 diff 预览 + 就这么改/先不改（0703 与后端问句"就这么改吗"统一口吻）
-  if (kind === 'edit') {
+  // 第四代整体变更确认：小文档显示完整 diff；大文件只显示摘要，提交只带 confirmation_id。
+  if (kind === 'knowledge_change') {
+    const hasDiff = raw.old_body != null && raw.new_body != null
+      && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
     return {
       title: c.question,
-      description: raw.summary || '看下面的改动预览，就这么改吗？',
-      diff: { breadcrumb: raw.breadcrumb, oldBody: raw.old_body, newBody: raw.new_body },
+      description: raw.summary || (raw.preview_truncated
+        ? '变更范围较大，已完成服务端校验；确认后生成新的现行文档版本。'
+        : '查看整体文档变更，确认后生成新的现行文档版本。'),
+      ...(hasDiff ? { diff: { breadcrumb: '现行知识文档', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         { type: 'choice' as const, label: '就这么改', value: '__APPLY_EDIT__' },
         { type: 'choice' as const, label: '先不改', value: '__CANCEL_EDIT__' },
         { type: 'input' as const, placeholder: '或者说说要怎么改…' },
-      ],
-    }
-  }
-  // ①b 录入单条·待确认：新段预览（diff 全绿）+ 确认录入/取消
-  if (kind === 'insert') {
-    return {
-      title: c.question,
-      description: raw.summary || '把这条作为新原文段录进知识库，就这么录吗？',
-      diff: { breadcrumb: raw.breadcrumb, oldBody: '', newBody: raw.body },
-      items: [
-        { type: 'choice' as const, label: '就这么录', value: '__APPLY_EDIT__' },
-        { type: 'choice' as const, label: '先不录', value: '__CANCEL_EDIT__' },
-        { type: 'input' as const, placeholder: '或者说说要怎么改…' },
-      ],
-    }
-  }
-  // ①c 模块删除：展示会被删除的原文块清单，确认后批量 soft delete
-  if (kind === 'delete_many') {
-    const items = Array.isArray(raw.items) ? raw.items : []
-    return {
-      title: c.question,
-      description: raw.summary || '这是批量删除操作，请确认下面这些原文块都应该删除。',
-      deleteMany: {
-        prefix: raw.prefix || '',
-        items: items.map((it: any) => ({
-          id: it.passage_id, breadcrumb: it.breadcrumb, title: it.title, bodyPreview: it.body_preview || '',
-        })),
-      },
-      items: [
-        { type: 'choice' as const, label: `就这么删（${items.length} 个原文块）`, value: '__APPLY_EDIT__' },
-        { type: 'choice' as const, label: '先不删', value: '__CANCEL_EDIT__' },
-      ],
-    }
-  }
-  // ①c 连锁（Phase 3）：主改后发现多处也该一起改 → 多处 diff、逐项勾选、一次确认
-  if (kind === 'cascade') {
-    const cands = Array.isArray(raw.candidates) ? raw.candidates : []
-    return {
-      title: c.question,
-      description: '勾选要一起改的地方，确认后批量应用；取消勾选的那处保持不变。',
-      cascade: cands.map((cd: any) => ({
-        id: cd.passage_id, breadcrumb: cd.breadcrumb, oldBody: cd.old_body, newBody: cd.new_body,
-        reason: cd.reason || '', mode: cd.mode || 'literal', checked: cd.checked !== false,
-      })),
-      items: [
-        { type: 'choice' as const, label: '就改勾选的这些', value: '__APPLY_EDIT__' },
-        { type: 'choice' as const, label: '都不改了', value: '__CANCEL_EDIT__' },
       ],
     }
   }
@@ -937,7 +887,7 @@ function replayIntro(event: MouseEvent) {
   el.play().catch(() => {})
 }
 
-onMounted(() => { bootstrap(); refreshFoundationPending(); loadVibeCapabilities(); trackMaximizeState() })
+onMounted(() => { bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
 
 watch(
   () => [events.value.length, streamingAssistantContent.value],
@@ -1315,7 +1265,7 @@ async function send() {
   await sendFoundationTurn()
 }
 
-// 录入意图关键词：附件 + 这些词之一 → 把文件【整篇录入知识库】（切段进 passage 库），而不是当提问资料。
+// 录入意图关键词：附件 + 这些词之一 → 把文件原文交给第四代整体变更规划，而不是只当问答材料。
 const INGEST_INTENT_RE = /录入|导入|入库|收录|沉淀|存进|存入|记进|加进知识库|存到知识库/
 
 async function prepareComposerAttachments(files: File[]): Promise<VibeAttachment[]> {
@@ -1351,7 +1301,7 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   if (sending.value) return
   const attachments = fileList.length ? await prepareComposerAttachments(fileList) : []
 
-  // ① 录入文件：附件整篇录入知识库（切段进 passage 库），但【保留用户自己输入的那句话】作为气泡，不替换。
+  // ① 录入文件：附件原文与输入框意图一起送入第四代规划，并保留用户原话作为气泡。
   // （附件本身后续在 UI 上挂到提问处展示；这里只把文件正文走 document 字段切段，不动可见消息。）
   if (attachments.length && INGEST_INTENT_RE.test(base)) {
     if (attachments.some((item) => String(item.content || item.text || '').trim())) {
@@ -1387,8 +1337,8 @@ async function onComposerAnswer(value: string) {
   // 反问从此有下文(历史闭环,刷新不再重弹)。话术作用域钉在"这件事",不污染后续轮的反问纪律。
   const SKIP_PHRASE = '跳过这个问题，按照你认为的最佳决策继续；拿不准的先收尾，这件事不用再追问了'
 
-  // 改原文 / 录入单条 / 模块删除·确认提案：确认 → 回传 apply_edit 确定性落库；取消/跳过 → 收起不动；输入 → 当作新的说法。
-  if (kind === 'edit' || kind === 'insert' || kind === 'delete_many') {
+  // 第四代确认只回传不可伪造的服务端 confirmation_id，预览正文不参与提交。
+  if (kind === 'knowledge_change') {
     const parentId = lastClarificationAssistantId()  // 在清空前取：让"确认+已更新"挂到反问之下，合成一条思考
     clarificationActive.value = null
     if (value === '__CANCEL_EDIT__' || value === '__SKIP__') {
@@ -1397,12 +1347,10 @@ async function onComposerAnswer(value: string) {
     }
     if (value === '__APPLY_EDIT__') {
       if (sending.value) return
-      const label = kind === 'insert'
-        ? `就这么录（${raw.breadcrumb}）`
-        : kind === 'delete_many'
-          ? `就这么删（${raw.prefix || raw.breadcrumb || ''}）`
-          : `就这么改（${raw.breadcrumb}）`
-      await sendFoundationTurn(label, { applyEdit: raw, continuationParentId: parentId })
+      await sendFoundationTurn('就这么改', {
+        applyEdit: { kind: 'knowledge_change', confirmation_id: raw.confirmation_id },
+        continuationParentId: parentId,
+      })
       return
     }
     const vv = (value || '').trim()
@@ -1410,25 +1358,6 @@ async function onComposerAnswer(value: string) {
     return
   }
 
-  // 连锁（Phase 3）：勾选确认 → 批量落库；都不改 → 收起不动。挂到同一条思考下。
-  if (kind === 'cascade') {
-    const parentId = lastClarificationAssistantId()
-    const cands = Array.isArray(raw?.candidates) ? raw.candidates : []
-    clarificationActive.value = null
-    if (value === '__CANCEL_EDIT__' || !value.startsWith('__CASCADE_APPLY__:')) {
-      await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
-      return
-    }
-    const ids = new Set(value.slice('__CASCADE_APPLY__:'.length).split(',').map((s: string) => Number(s)).filter((n: number) => !Number.isNaN(n)))
-    const items = cands.filter((cd: any) => ids.has(cd.passage_id)).map((cd: any) => ({
-      passage_id: cd.passage_id, breadcrumb: cd.breadcrumb, ops: cd.ops, edit_request: `连锁同步：${cd.term || ''}`,
-    }))
-    if (!items.length || sending.value) return
-    await sendFoundationTurn(`就改勾选的这 ${items.length} 处`, {
-      applyEdit: { kind: 'cascade_apply', items, origin: raw?.origin || '' }, continuationParentId: parentId,
-    })
-    return
-  }
   // 开放式反问（改原文没定准）：取消/跳过 → 收起不动；说得更具体 → 当作一条新的修改请求重试。
   if (kind === 'ask') {
     const parentId = lastClarificationAssistantId()
@@ -1472,54 +1401,6 @@ function fndPushStep(text: string) {
   streamingProcess.steps.push({ kind: 'message', key: `fnd-${Date.now()}-${streamingProcess.steps.length}`, text })
 }
 
-const FND_FLAG_LABELS: Record<string, string> = {
-  conflict: '⚠ 未决冲突',
-  suspect: '疑似',
-  superseded: '已被取代',
-  degraded: '降级',
-  text_path: '文本路',
-}
-
-function fndMaterialLine(m: FoundationMaterial): string {
-  const flags = (m.flags || []).filter(f => f !== 'text_path').map(f => FND_FLAG_LABELS[f] || f)
-  return `- ${m.quote}（source#${m.source_id}${flags.length ? '，' + flags.join('，') : ''}）`
-}
-
-function fndIngestMarkdown(summary: any): string {
-  // passage（原文段）录入：用"段"口径，别套用旧的"N 条事实"文案（否则显示"undefined 条事实"）。
-  if (summary?.mode === 'passage_batch') {
-    const files = Array.isArray(summary?.files) ? summary.files : []
-    const lines = [`已按原文段录入 ${files.length} 份文件，共 ${summary?.passages ?? 0} 段。`]
-    files.forEach((file: any) => {
-      let status = `${file?.passages ?? 0} 段`
-      if (file?.error) status = `失败：${file.error}`
-      else if (file?.warning_kind === 'empty') status = '未切出内容'
-      else if (file?.warning_kind === 'no_structure') status += '（无标题结构，按段落兜底）'
-      lines.push(`- ${file?.filename || '未命名文件'}：${status}`)
-    })
-    return lines.join('\n')
-  }
-  if (summary?.mode === 'passage' || summary?.passages != null) {
-    if (summary?.warning_kind === 'empty') return '这篇没切出任何内容（空白或纯符号），未录入。'
-    const n = summary?.passages ?? 0
-    const nm = Object.keys(summary?.by_namespace || {}).length
-    let line = `已按原文段录入 ${n} 段（覆盖 ${nm} 个模块）。`
-    if (summary?.warning_kind === 'no_structure') {
-      line += '这篇没有标题结构，已按段落兜底切段——可召回、可溯源，建议补上层级标题再录。'
-    }
-    return line
-  }
-  const lines: string[] = []
-  const statements: FoundationStatement[] = summary?.statements || []
-  lines.push(`本轮录入 ${summary?.facts ?? statements.length} 条事实：`)
-  statements.forEach((s) => {
-    const anchors = (s.anchor_names || []).join('、')
-    lines.push(`- ${s.quote} ·${s.coarse}·${anchors ? ` → ${anchors}` : ''}${s.conflict ? '（⚠ 与既有结论冲突，已置为候选待裁决）' : ''}`)
-  })
-  if (summary?.whole_fallback) lines.push('\n> 本轮未能拆出原子陈述，已整段兜底保存（未定类）。')
-  if (summary?.degraded) lines.push(`\n> 其中 ${summary.degraded} 条为非正式知识（降级），只作线索不作依据。`)
-  return lines.join('\n')
-}
 
 function fndSyntheticEvent(role: 'user' | 'assistant', content: string, mode: string, meta: Record<string, any> = {}, attachments: VibeAttachment[] = []): VibeEvent {
   return {
@@ -1628,47 +1509,11 @@ function fndSerializeSteps(): any[] {
     .map(s => ({ kind: 'message', text: (s as any).text }))
 }
 
-async function refreshFoundationPending() {
-  try {
-    const data = await listFoundationProposals()
-    foundationPending.value = data.items.length
-  } catch {
-    /* 静默：提案数只是提示 */
-  }
-}
-
-async function showFoundationProposals() {
-  try {
-    const data = await listFoundationProposals()
-    foundationPending.value = data.items.length
-    if (!data.items.length) {
-      ElMessage.info('当前没有待批准提案')
-      return
-    }
-    for (const p of data.items) {
-      const text = p.kind === 'alias_add'
-        ? `把「${p.payload.mention}」收为节点「${p.payload.node_name}」的别名？`
-        : `${p.kind}：${JSON.stringify(p.payload)}`
-      // eslint-disable-next-line no-await-in-loop
-      const action = await ElMessageBox.confirm(text, `提案 #${p.task_id}`, {
-        confirmButtonText: '批准',
-        cancelButtonText: '驳回',
-        distinguishCancelAndClose: true,
-      }).then(() => 'approve' as const).catch((why: string) => (why === 'cancel' ? 'reject' as const : null))
-      if (!action) break
-      // eslint-disable-next-line no-await-in-loop
-      const res = await actFoundationProposal(p.task_id, action)
-      ElMessage.success(res.message)
-      foundationPending.value = res.pending
-    }
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : String(error))
-  }
-}
-
 function isLikelyDeleteIntentText(text: string, applyEdit?: any) {
   const kind = String(applyEdit?.kind || '')
-  if (kind === 'delete' || kind === 'delete_many') return true
+  if (kind === 'knowledge_change' && Array.isArray(applyEdit?.operations)) {
+    return applyEdit.operations.some((item: any) => String(item?.op || item?.kind || '').startsWith('delete_'))
+  }
   const t = String(text || '').trim()
   if (!t) return false
   return /(删除|删掉|移除|清除|去掉|撤掉).{0,80}(模块|分类|原文|原文块|整段|知识库|规则|内容)/.test(t)
@@ -1732,10 +1577,6 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
 
   let assistantContent = ''
   let actions: string[] = []
-  let ingestSummary: any = null
-  let recallRan = false
-  let recallMaterials: FoundationMaterial[] = []
-  let recallNotes: string[] = []
   let recallSources: any[] = []
   let recallVerification: any | null = null
   const answers: string[] = []
@@ -1804,29 +1645,6 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         answerStreamDoneText = answerStreamText
         if (live && answerStreamDoneText) streamingAssistantContent.value = answerStreamDoneText
         break
-      case 'fact': {
-        const f = event.fact || {}
-        if (live) fndPushStep(`落库：${f.quote}（${f.coarse}${f.conflict ? '，⚠ 冲突候选' : ''}）`)
-        break
-      }
-      case 'summary':
-        ingestSummary = event
-        if (live) {
-          if (event.mode === 'passage' || event.passages != null) {
-            fndPushStep(`完成：录入 ${event.passages ?? 0} 段（原文段）`)
-          } else {
-            fndPushStep(`完成：${event.facts} 条事实` + (event.degraded ? `，降级 ${event.degraded}` : '')
-              + (event.conflicts?.length ? `，冲突 ${event.conflicts.length}` : ''))
-          }
-        }
-        break
-      case 'materials':
-        recallRan = true
-        recallMaterials = event.items || []
-        if (live) fndPushStep(recallMaterials.length
-          ? `命中 ${recallMaterials.length} 条材料，合成答案中…`
-          : '未命中材料')
-        break
       case 'answer': {
         const text = String(event.text || '')
         if (text && answers[answers.length - 1] !== text) answers.push(text)
@@ -1860,14 +1678,6 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         if (live) streamingVerification.value = recallVerification
         break
       }
-      case 'notes':
-        recallNotes = (event.items || []).map(String)
-        if (live) recallNotes.forEach(n => fndPushStep(n))
-        break
-      case 'proposals':
-        foundationPending.value = Number(event.pending || 0)
-        if (live && foundationPending.value > 0) fndPushStep(`有 ${foundationPending.value} 条待批准提案（侧边栏可处理）`)
-        break
       case 'error':
         failed = String(event.detail || '执行失败')
         break
@@ -1889,15 +1699,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       onError(message: string) { failed = failed || message },
     })
     if (!failed) {
-      const parts: string[] = []
-      if (ingestSummary) parts.push(fndIngestMarkdown(ingestSummary))
-      if (answers.length) parts.push(answers.join('\n\n'))
-      else if (recallRan && !recallMaterials.length) parts.push('当前知识库中没有命中相关材料。')
-      if (recallMaterials.length) {
-        parts.push(`**依据材料（${recallMaterials.length} 条）**\n${recallMaterials.slice(0, 5).map(fndMaterialLine).join('\n')}`)
-      }
-      if (recallNotes.length) parts.push(`> ${recallNotes.join('\n> ')}`)
-      assistantContent = parts.join('\n\n')
+      assistantContent = answers.join('\n\n') || answerStreamDoneText
     }
   } catch (error) {
     failed = failed || (error instanceof Error ? error.message : String(error))
@@ -1929,7 +1731,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
     // 后面的服务器刷新是后台事，不该让按钮继续转。
     foundationBusy.value = false
-    if (ingestSummary) loadKbStats()  // 本轮有录入 → 段数/模块数可能变，刷新概览
+    if (applyEdit?.kind === 'knowledge_change') loadKbStats()
     // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
     if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
       try {
@@ -2139,26 +1941,8 @@ function eventClarificationQuestion(event: any) {
   return clarifyCard?.question ? String(clarifyCard.question) : ''
 }
 
-function eventClarificationRaw(event: any) {
-  const raw = event?.meta?.clarification?.raw
-  return raw && typeof raw === 'object' ? raw : null
-}
-
-// 主修改已经完成后追加的连锁候选是“可选后续”，不是阻塞式反问。
-// 它仍然保留在输入/选择区可处理，但不能吞掉主回答或把过程头标成“等你选择”。
-function isOptionalCascadeClarification(event: any): boolean {
-  const raw = eventClarificationRaw(event)
-  if (raw?.kind !== 'cascade') return false
-  const content = String(event?.content || '').trim()
-  if (!content) return false
-  return !!event?.meta?.continuation_context?.parent_event_id
-    || eventSources(event).length > 0
-    || (Array.isArray(event?.meta?.structure_reviews) && event.meta.structure_reviews.length > 0)
-    || /^已(更新|连锁|删除|录入)/.test(content)
-}
-
 function isBlockingClarificationEvent(event: any): boolean {
-  return !!eventClarificationQuestion(event) && !isOptionalCascadeClarification(event)
+  return !!eventClarificationQuestion(event)
 }
 
 function eventProcessSteps(event: any): ProcessStep[] {
@@ -2624,18 +2408,11 @@ function mergedThreadSteps(root: any): any[] {
   for (const n of clarifyThreadNodes(root)) {
     for (const s of eventProcessSteps(n)) out.push(s)
     if (eventClarificationQuestion(n)) {
-      // 改原文反问：把 diff 作为思考里的一环展示（红删绿增）
+      // 第四代小文档确认把整体 diff 作为思考的一环；大文档只保留摘要。
       const raw = n?.meta?.clarification?.raw
-      if (raw && raw.kind === 'edit' && raw.old_body != null) {
+      if (raw && raw.kind === 'knowledge_change' && raw.old_body != null && raw.new_body != null
+        && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)) {
         out.push({ kind: 'diff', key: `diff-${n.id}`, lines: diffLines(raw.old_body, raw.new_body) })
-      } else if (raw && raw.kind === 'insert' && raw.body != null) {
-        out.push({ kind: 'diff', key: `diff-${n.id}`, lines: diffLines('', raw.body) })  // 新段：全绿
-      } else if (raw && raw.kind === 'cascade' && Array.isArray(raw.candidates)) {
-        // 连锁：把每处受影响段的面包屑 + diff 都摆进这条思考里
-        for (const cd of raw.candidates) {
-          out.push({ kind: 'message', key: `casc-bc-${n.id}-${cd.passage_id}`, text: `↳ ${cd.breadcrumb}` })
-          out.push({ kind: 'diff', key: `casc-diff-${n.id}-${cd.passage_id}`, lines: diffLines(cd.old_body, cd.new_body) })
-        }
       }
       const choice = clarificationReplyContent(n)
       if (choice) out.push({ kind: 'choice', key: `choice-${n.id}`, question: eventClarificationQuestion(n), text: choice })

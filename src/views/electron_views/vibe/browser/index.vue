@@ -422,7 +422,6 @@ interface HistoryItem {
   id: number
   version: number
   base_version: number
-  passage_id: number
   project: string
   op: string
   edit_request: string
@@ -1100,7 +1099,6 @@ function mapVersion(item: KnowledgeVersionSummary): HistoryItem {
     id: item.version,
     version: item.version,
     base_version: Number(item.base_version || 0),
-    passage_id: item.version,
     project: item.project_id,
     op: item.action || 'update',
     edit_request: item.reason || item.operation || '无备注',
