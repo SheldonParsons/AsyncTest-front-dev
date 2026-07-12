@@ -80,12 +80,15 @@
           v-for="item in documentOutline"
           :key="item.section_id"
           class="module-row document-outline-row"
-          :style="{ '--outline-depth': String(item.level - 1) }"
+          :class="{ active: activePreviewSectionId === item.section_id, root: item.level === 1 }"
+          :style="{ '--outline-indent': `${Math.max(0, item.level - 1) * 13}px` }"
           type="button"
+          :title="item.path.join(' > ')"
+          :aria-current="activePreviewSectionId === item.section_id ? 'location' : undefined"
           @click="jumpToDocumentHeading(item.section_id)"
         >
-          <span>{{ item.title }}</span>
-          <em>H{{ item.level }}</em>
+          <span class="outline-tree-mark" aria-hidden="true"><i /></span>
+          <span class="outline-label">{{ item.title }}</span>
         </button>
         <p v-if="!documentOutline.length" class="empty-note">尚无文档结构。</p>
       </aside>
@@ -202,7 +205,7 @@
           </div>
 
           <div class="document-shell">
-            <article v-if="knowledgeStatus?.current" class="knowledge-document markdown-body" v-html="renderMarkdown(knowledgeStatus.current.markdown)" />
+            <article v-if="knowledgeStatus?.current" class="knowledge-document markdown-body" v-html="renderedDocumentHtml" />
             <p v-else class="empty-note document-empty">尚无现行知识文档。首次录入后，这里会以一份连续 Markdown 展示当前完整需求。</p>
           </div>
         </template>
@@ -528,6 +531,7 @@ const projectOptions = computed(() => projects.value.map((project: any) => ({
 const hasKnowledgeDocument = computed(() => Boolean(knowledgeStatus.value?.current))
 const displayTabs = computed(() => tabs)
 const documentOutline = computed<KnowledgeOutlineItem[]>(() => knowledgeStatus.value?.outline || [])
+const renderedDocumentHtml = computed(() => renderDocumentMarkdown(knowledgeStatus.value?.current?.markdown || ''))
 const recentChanges = computed(() => (knowledgeStatus.value?.summary.recent_changes || []).map(mapVersion))
 const summary = computed(() => ({
   project: vibeProjectId.value,
@@ -713,13 +717,12 @@ function shortHash(value?: string) {
 
 function jumpToDocumentHeading(sectionId: string) {
   const root = tabSurfaceRef.value
-  const index = documentOutline.value.findIndex(item => item.section_id === sectionId)
-  if (index === 0) {
+  const target = root?.querySelector<HTMLElement>(`#knowledge-section-${sectionId}`)
+  if (!target || target.classList.contains('document-root-heading')) {
     root?.scrollTo({ top: 0, behavior: 'smooth' })
     activePreviewSectionId.value = sectionId
     return
   }
-  const target = index >= 0 ? root?.querySelectorAll<HTMLElement>('.knowledge-document h1, .knowledge-document h2, .knowledge-document h3, .knowledge-document h4, .knowledge-document h5, .knowledge-document h6')[index] : null
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   activePreviewSectionId.value = sectionId
 }
@@ -933,19 +936,25 @@ function updateActivePreview() {
   }
   const surface = tabSurfaceRef.value
   const surfaceTop = surface?.getBoundingClientRect().top ?? 0
-  const headings = surface?.querySelectorAll<HTMLElement>('.knowledge-document h1, .knowledge-document h2, .knowledge-document h3, .knowledge-document h4, .knowledge-document h5, .knowledge-document h6') || []
-  let candidate = items[0].section_id
-  let bestTop = Number.NEGATIVE_INFINITY
-  items.forEach((item, index) => {
-    const el = headings[index]
-    if (!el) return
-    const top = el.getBoundingClientRect().top - surfaceTop
-    if (top <= 96 && top > bestTop) {
-      candidate = item.section_id
-      bestTop = top
+  const headings = Array.from(
+    surface?.querySelectorAll<HTMLElement>('.knowledge-document [data-section-id]:not(.document-root-heading)') || [],
+  )
+  let low = 0
+  let high = headings.length - 1
+  let activeIndex = -1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const top = headings[middle].getBoundingClientRect().top - surfaceTop
+    if (top <= 96) {
+      activeIndex = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
     }
-  })
-  activePreviewSectionId.value = candidate
+  }
+  activePreviewSectionId.value = activeIndex >= 0
+    ? headings[activeIndex].dataset.sectionId || items[0].section_id
+    : items[0].section_id
 }
 
 function goChat() {
@@ -956,6 +965,66 @@ function renderMarkdown(content?: string | null) {
   return DOMPurify.sanitize(String(marked.parse(content || '')), {
     USE_PROFILES: { html: true },
   })
+}
+
+function renderDocumentMarkdown(content?: string | null) {
+  const safeHtml = renderMarkdown(content)
+  if (typeof DOMParser === 'undefined') return safeHtml
+  const parsed = new DOMParser().parseFromString(`<div>${safeHtml}</div>`, 'text/html')
+  const source = parsed.body.firstElementChild
+  if (!source) return safeHtml
+
+  const headings = Array.from(source.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6'))
+  headings.forEach((heading, index) => {
+    const outline = documentOutline.value[index]
+    if (!outline) return
+    heading.dataset.sectionId = outline.section_id
+    heading.id = `knowledge-section-${outline.section_id}`
+    if (heading.tagName === 'H1') heading.classList.add('document-root-heading')
+  })
+
+  const readingRoot = parsed.createElement('div')
+  readingRoot.className = 'document-reading-root'
+  let currentModuleBody: HTMLElement | null = null
+  let preamble: HTMLElement | null = null
+  let moduleIndex = 0
+
+  Array.from(source.childNodes).forEach((node) => {
+    const element = node.nodeType === 1 ? node as HTMLElement : null
+    if (element?.tagName === 'H1') {
+      readingRoot.appendChild(node)
+      currentModuleBody = null
+      return
+    }
+    if (element?.tagName === 'H2') {
+      moduleIndex += 1
+      const section = parsed.createElement('section')
+      section.className = 'document-module'
+      const header = parsed.createElement('header')
+      header.className = 'document-module-heading'
+      const number = parsed.createElement('span')
+      number.className = 'document-module-number'
+      number.textContent = String(moduleIndex).padStart(2, '0')
+      header.append(number, element)
+      const body = parsed.createElement('div')
+      body.className = 'document-module-body'
+      section.append(header, body)
+      readingRoot.appendChild(section)
+      currentModuleBody = body
+      return
+    }
+    if (currentModuleBody) {
+      currentModuleBody.appendChild(node)
+      return
+    }
+    if (!preamble) {
+      preamble = parsed.createElement('div')
+      preamble.className = 'document-preamble'
+      readingRoot.appendChild(preamble)
+    }
+    preamble.appendChild(node)
+  })
+  return readingRoot.innerHTML
 }
 
 function parseUnifiedDiff(value: string): DiffLine[] {
@@ -2429,6 +2498,89 @@ h4.doc-heading { font-size: 15px; }
   color: rgba(255, 255, 255, .72);
 }
 
+.module-pane {
+  padding: 9px 7px 12px;
+  overflow-x: hidden;
+}
+
+.document-pane-head {
+  padding: 7px 9px 9px;
+  margin-bottom: 2px;
+}
+
+.document-outline-row {
+  position: relative;
+  min-height: 29px;
+  margin: 0;
+  padding: 4px 8px 4px calc(8px + var(--outline-indent, 0px));
+  border-radius: 5px;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  justify-content: initial;
+  gap: 5px;
+  color: #555;
+  font-size: 12.5px;
+}
+
+.document-outline-row:hover:not(.active) {
+  background: #f0f0ef;
+  color: #1f1f1f;
+}
+
+.document-outline-row.active,
+.document-outline-row.active:hover {
+  background: #e9e9e7;
+  color: #111;
+}
+
+.document-outline-row.root {
+  color: #1f1f1f;
+  font-weight: 650;
+}
+
+.document-outline-row:not(.root)::before {
+  content: '';
+  position: absolute;
+  left: calc(7px + var(--outline-indent, 0px) - 7px);
+  top: -1px;
+  bottom: -1px;
+  border-left: 1px solid #dededb;
+}
+
+.outline-tree-mark {
+  position: relative;
+  width: 12px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+}
+
+.outline-tree-mark i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #b7b7b3;
+}
+
+.document-outline-row.root .outline-tree-mark i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: #202020;
+}
+
+.document-outline-row.active .outline-tree-mark i {
+  background: #111;
+}
+
+.outline-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .doc-toolbar {
   position: sticky;
   top: 0;
@@ -2767,6 +2919,99 @@ h4.doc-heading { font-size: 15px; }
   min-width: 0;
   box-sizing: border-box;
   padding-top: 10px;
+}
+
+.knowledge-document {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 0 34px 88px;
+}
+
+.knowledge-document :deep(.document-root-heading) {
+  display: none;
+}
+
+.knowledge-document :deep(.document-preamble) {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 0 26px;
+}
+
+.knowledge-document :deep(.document-module) {
+  display: grid;
+  grid-template-columns: minmax(160px, 210px) minmax(0, 1fr);
+  column-gap: clamp(28px, 4vw, 56px);
+  padding: 27px 0 34px;
+  border-top: 1px solid #dededb;
+}
+
+.knowledge-document :deep(.document-module:first-of-type) {
+  border-top-color: #c9c9c5;
+}
+
+.knowledge-document :deep(.document-module-heading) {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-content: start;
+  gap: 9px;
+}
+
+.knowledge-document :deep(.document-module-number) {
+  padding-top: 2px;
+  color: #9a9a96;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.knowledge-document :deep(.document-module-heading h2) {
+  margin: 0;
+  color: #171717;
+  font-size: 16px;
+  font-weight: 680;
+  line-height: 1.45;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-document :deep(.document-module-body) {
+  min-width: 0;
+  max-width: 780px;
+  color: #333;
+  font-size: 14.5px;
+  line-height: 1.86;
+}
+
+.knowledge-document :deep(.document-module-body > p:first-child) {
+  margin-top: -2px;
+}
+
+.knowledge-document :deep(.document-module-body h3) {
+  margin: 26px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid #ececea;
+  color: #1d1d1d;
+  font-size: 15px;
+  font-weight: 670;
+  line-height: 1.5;
+}
+
+.knowledge-document :deep(.document-module-body h3:first-child) {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.knowledge-document :deep(.document-module-body h4),
+.knowledge-document :deep(.document-module-body h5),
+.knowledge-document :deep(.document-module-body h6) {
+  margin: 20px 0 8px;
+  color: #303030;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
 }
 
 .markdown-body {
@@ -3364,6 +3609,11 @@ h4.doc-heading { font-size: 15px; }
   .detail-pane {
     display: none;
   }
+
+  .knowledge-document :deep(.document-module) {
+    grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
+    column-gap: 28px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -3399,6 +3649,20 @@ h4.doc-heading { font-size: 15px; }
   .overview-layout,
   .receipt-row {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-document {
+    padding-inline: 18px;
+  }
+
+  .knowledge-document :deep(.document-module) {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 23px 0 28px;
+  }
+
+  .knowledge-document :deep(.document-module-heading) {
+    grid-template-columns: 23px minmax(0, 1fr);
   }
 
   .receipt-counts {

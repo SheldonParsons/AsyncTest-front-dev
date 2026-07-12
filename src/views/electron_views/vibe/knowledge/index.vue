@@ -706,6 +706,34 @@ const composerQuestion = computed(() => {
   const raw: any = c.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
 
+  // clarification.v2 的所有交互语义均由后端提供。前端只按顺序渲染，
+  // 并回传 option_id 或补充文本；禁止在这里补标题、说明、取消或 placeholder。
+  if (raw?.schema === 'clarification.v2') {
+    const options = Array.isArray(raw.options) ? raw.options : []
+    const input = raw.input && typeof raw.input === 'object' ? raw.input : {}
+    const hasDiff = raw.old_body != null && raw.new_body != null
+      && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
+    return {
+      title: String(raw.title),
+      description: String(raw.description),
+      ...(hasDiff ? { diff: { breadcrumb: '现行知识文档', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
+      items: [
+        ...options.map((item: any) => ({
+          type: 'choice' as const,
+          label: String(item.label),
+          description: String(item.description || item.effect),
+          value: `__CLARIFICATION_OPTION__:${String(item.id)}`,
+        })),
+        ...(input.enabled ? [{
+          type: 'input' as const,
+          placeholder: String(input.placeholder),
+          showSkip: false,
+          submitLabel: String(input.submit_label),
+        }] : []),
+      ],
+    }
+  }
+
   // 第四代整体变更确认：小文档显示完整 diff；大文件只显示摘要，提交只带 confirmation_id。
   if (kind === 'knowledge_change') {
     const hasDiff = raw.old_body != null && raw.new_body != null
@@ -720,6 +748,20 @@ const composerQuestion = computed(() => {
         { type: 'choice' as const, label: '就这么改', value: '__APPLY_EDIT__' },
         { type: 'choice' as const, label: '先不改', value: '__CANCEL_EDIT__' },
         { type: 'input' as const, placeholder: '或者说说要怎么改…' },
+      ],
+    }
+  }
+  if (kind === 'empty_library_change') {
+    const canInsert = !!String(raw.insert_request || '').trim()
+    return {
+      title: c.question,
+      description: canInsert
+        ? '当前项目没有可更新的原文。只有确认后，目标内容才会作为新知识写入。'
+        : '当前项目没有可操作的现行知识，请切换项目或取消。',
+      items: [
+        ...(canInsert ? [{ type: 'choice' as const, label: '作为新知识录入', value: '__CREATE_EMPTY_LIBRARY_KNOWLEDGE__' }] : []),
+        { type: 'choice' as const, label: '取消', value: '__CANCEL_EDIT__' },
+        { type: 'input' as const, placeholder: '或者重新说明要处理的项目或内容…' },
       ],
     }
   }
@@ -1333,9 +1375,48 @@ async function onComposerAnswer(value: string) {
   const c = clarificationActive.value
   const raw: any = c?.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
-  // T26 后续·显式跳过(Claude 式闭环):普通反问的跳过=一条真实的续跑回答,让脑按最佳判断继续或收尾——
-  // 反问从此有下文(历史闭环,刷新不再重弹)。话术作用域钉在"这件事",不污染后续轮的反问纪律。
-  const SKIP_PHRASE = '跳过这个问题，按照你认为的最佳决策继续；拿不准的先收尾，这件事不用再追问了'
+  if (raw?.schema === 'clarification.v2') {
+    const parentId = lastClarificationAssistantId()
+    const optionPrefix = '__CLARIFICATION_OPTION__:'
+    clarificationActive.value = null
+    if (value.startsWith(optionPrefix)) {
+      const optionId = value.slice(optionPrefix.length)
+      const selected = (Array.isArray(raw.options) ? raw.options : [])
+        .find((item: any) => String(item?.id || '') === optionId)
+      if (!selected || sending.value) return
+      await sendFoundationTurn(String(selected.label || ''), {
+        continuationParentId: parentId,
+        clarificationResponse: { type: 'option', option_id: optionId },
+      })
+      return
+    }
+    const inputText = String(value || '').trim()
+    if (!inputText || sending.value) return
+    await sendFoundationTurn(inputText, {
+      continuationParentId: parentId,
+      clarificationResponse: { type: 'input', text: inputText },
+    })
+    return
+  }
+
+  if (kind === 'empty_library_change') {
+    const parentId = lastClarificationAssistantId()
+    clarificationActive.value = null
+    if (value === '__CANCEL_EDIT__' || value === '__SKIP__') {
+      await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
+      return
+    }
+    if (value === '__CREATE_EMPTY_LIBRARY_KNOWLEDGE__') {
+      const insertRequest = String(raw.insert_request || '').trim()
+      if (insertRequest && !sending.value) {
+        await sendFoundationTurn(insertRequest, { continuationParentId: parentId })
+      }
+      return
+    }
+    const vv = (value || '').trim()
+    if (vv && !sending.value) await sendFoundationTurn(vv)
+    return
+  }
 
   // 第四代确认只回传不可伪造的服务端 confirmation_id，预览正文不参与提交。
   if (kind === 'knowledge_change') {
@@ -1375,7 +1456,14 @@ async function onComposerAnswer(value: string) {
   // 续跑挂到"反问那条 assistant"之下 → 渲染成同一条思考。反问 = 当前最后一条 assistant 事件。
   const parentId = lastClarificationAssistantId()
   clarificationActive.value = null
-  const v = value === '__SKIP__' ? SKIP_PHRASE : (value || '').trim()
+  if (value === '__SKIP__') {
+    await sendFoundationTurn('取消这次操作', {
+      clarificationCancel: true,
+      continuationParentId: parentId,
+    })
+    return
+  }
+  const v = (value || '').trim()
   if (!v || sending.value) return
   await sendFoundationTurn(v, {
     seedMessages: Array.isArray(seed) && seed.length ? seed : undefined,
@@ -1530,7 +1618,11 @@ function intentStepLabel(actions: string[], text: string, applyEdit?: any) {
 
 const FND_ACTION_LABELS: Record<string, string> = {
   save: '录入新知识',
+  insert: '录入新知识',
   edit: '修改原文',
+  update: '修改原文',
+  move: '移动原文',
+  delete: '删除原文',
   candidate_save: '疑似录入，待确认',
   overview: '盘点知识库',
   kb: '检索知识库',
@@ -1540,7 +1632,7 @@ const FND_ACTION_LABELS: Record<string, string> = {
   needs_clarification: '待澄清',
 }
 
-async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean }) {
+async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean; clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string } }) {
   const content = (overrideText ?? draft.value).trim()
   if (!content || sending.value) return
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
@@ -1694,7 +1786,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
     }
     turnSessionId = sessionId || activeSessionId.value  // 锚定本轮归属的会话（#2 切换查看用）
-    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined }, {
+    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
       onEvent,
       onError(message: string) { failed = failed || message },
     })

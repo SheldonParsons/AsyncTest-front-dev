@@ -110,9 +110,9 @@
                 />
               </span>
               <span class="question-actions">
-                <button class="skip-button" type="button" @click="emitAnswer('__SKIP__')">跳过</button>
+                <button v-if="item.showSkip !== false" class="skip-button" type="button" @click="emitAnswer('__SKIP__')">跳过</button>
                 <button class="submit-button" type="button" @click="submitCustom(i)">
-                  提交
+                  {{ item.submitLabel || '提交' }}
                   <svg class="enter-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 4v7a4 4 0 0 1-4 4H4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 10-5 5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </span>
@@ -127,7 +127,10 @@
               @click="emitAnswer(item.value || item.label || '')"
             >
               <span class="choice-number">{{ i + 1 }}</span>
-              <span class="choice-label" v-html="item.label"></span>
+              <span class="choice-copy">
+                <span class="choice-label" v-html="item.label"></span>
+                <small v-if="item.description" class="choice-description">{{ item.description }}</small>
+              </span>
               <span class="question-nav" aria-hidden="true">
                 <svg v-if="activeIndex === i" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
               </span>
@@ -249,7 +252,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
-interface QuestionItem { type: 'choice' | 'input'; label?: string; value?: string; placeholder?: string }
+interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
 // 连锁（Phase 3）：多处受影响段，逐项可勾选。mode=literal(同词)/semantic(措辞不同)；reason=为什么提议改它；checked=默认是否勾。
 interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBody?: string; reason?: string; mode?: string; checked?: boolean }
@@ -502,8 +505,10 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .choice-row.is-active { background: #ececed; outline: none; }  /* 键盘选中：更深一档 + 右侧 ↑↓，与 hover 区分 */
 .choice-number { width: 24px; height: 24px; display: grid; place-items: center; border: 1.5px solid #d8dadd; border-radius: 999px; color: #8c929b; background: #f9fafb; font-size: 12px; font-weight: 600; line-height: 1; }
 .choice-row.is-active .choice-number { border-color: #171b21; color: #fff; background: #171b21; }
+.choice-copy { min-width: 0; display: grid; gap: 2px; }
 .choice-label { min-width: 0; color: inherit; font-size: 14px; font-weight: 500; line-height: 1.35; }
 .choice-label :deep(.muted) { color: #8f939a; font-weight: 400; }
+.choice-description { color: #92969d; font-size: 11.5px; font-weight: 400; line-height: 1.35; overflow-wrap: anywhere; }
 .question-nav { color: #a3a8b0; line-height: 1; white-space: nowrap; display: inline-flex; align-items: center; }
 
 .custom-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; }

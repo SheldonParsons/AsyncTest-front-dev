@@ -1478,7 +1478,21 @@ function compactJson(value: any) {
 const EVENT_TYPE_LABELS: Record<string, string> = {
   'request.accepted': '请求已接收',
   'request.continuation_accepted': '确认回复并入父链路',
+  'request.free_text_continuation_resolved': '自由文本承接已解析',
   'clarification.cancelled': '用户取消反问/确认',
+  'clarification.resolved': '反问/确认已解决',
+  'confirmation_guard.created': '确认卡已绑定知识库版本',
+  'confirmation_guard.checked': '确认卡版本校验通过',
+  'confirmation_guard.claimed': '确认卡版本已原子认领',
+  'confirmation_guard.rejected': '确认卡已过期或被拒绝',
+  'write_transaction.started': '统一写入开始',
+  'write_transaction.committed': '统一写入完成',
+  'write_transaction.failed': '统一写入失败',
+  'structure.reviewed': '结构重审完成',
+  'structure.review_failed': '结构重审失败（正文已提交）',
+  'post_commit.delivery_registered': '跨库交付已登记',
+  'post_commit.delivery_pending': '跨库交付待补偿',
+  'post_commit.delivery_completed': '跨库交付完成',
   'trace.config_resolved': '审计配置已解析',
   'session.loaded': '会话上下文已加载',
   'session.load_failed': '会话上下文加载失败',
@@ -1564,6 +1578,8 @@ const STAGE_LABELS: Record<string, string> = {
   converge: '收敛处理',
   memory: '历史上下文',
   overview: '知识库总览',
+  confirmation_guard: '确认并发保护',
+  write_transaction: '统一写入事务',
 }
 
 const ACTION_LABELS: Record<string, string> = {

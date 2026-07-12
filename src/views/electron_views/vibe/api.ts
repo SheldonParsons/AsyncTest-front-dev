@@ -781,7 +781,7 @@ export function streamFoundationTurn(
   // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
   // mode='document' + attachments：文件原文与输入框意图一起交给第四代整体变更规划。
   // apply_edit：确认时只回传服务端 confirmation_id；客户端预览内容不参与写入。
-  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean },
+  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean; clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string } },
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
   return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)
