@@ -6,11 +6,53 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
-export const ASYNCTEST_MIND_MCP_VERSION = '0.3.0';
-export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 7;
+export const ASYNCTEST_MIND_MCP_VERSION = '0.5.0';
+export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 9;
 export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
-export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-07-08';
+export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-07-13';
 export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
+export const ASYNCTEST_MIND_MCP_INSTRUCTIONS = [
+  'Prefer outline -> subtree when needed -> one batched write -> save.',
+  'Use mind_apply_node_operations for mixed edits and mind_create_nodes for large additions.',
+  'Write tools edit the open window and already return a compact changed summary.',
+  'Do not close an open document or rewrite its .amind file offline unless the user explicitly asks.',
+  'Do not call diagnostic tools in the normal edit path unless a result requires investigation.',
+  'The first business tool call automatically starts an Agent control session and shows Agent 操作中... in AsyncTest Mind.',
+  'Before finishing the user task, always call mind_end_agent_session exactly once, whether the task succeeded, failed, or no more Mind tools are needed.',
+  'If MCP_CONTROL_REVOKED is returned, stop all AsyncTest Mind calls immediately. Only call mind_request_control_restore after the user explicitly asks to restore control; restoration still requires approval in AsyncTest.',
+].join('\n');
+
+const TOOL_TIERS = {
+  preferred: [
+    'mind_list_windows',
+    'mind_get_document_outline',
+    'mind_get_subtree',
+    'mind_create_nodes',
+    'mind_apply_node_operations',
+    'mind_save_document',
+    'mind_save_as_document',
+  ],
+  scenario: [
+    'mind_read_file',
+    'mind_create_document',
+    'mind_import_file_subtree',
+    'mind_close_window',
+    'mind_close_all_windows',
+  ],
+  diagnostic: [
+    'mind_get_mcp_capabilities',
+    'mind_get_agent_briefing',
+    'mind_get_operation_status',
+    'mind_get_changed_summary',
+    'mind_get_app_status',
+    'mind_get_active_window',
+  ],
+  control: [
+    'mind_get_control_status',
+    'mind_end_agent_session',
+    'mind_request_control_restore',
+  ],
+};
 
 export function getAsyncTestMindMcpCapabilities() {
   return {
@@ -20,12 +62,16 @@ export function getAsyncTestMindMcpCapabilities() {
     updatedAt: ASYNCTEST_MIND_MCP_UPDATED_AT,
     timezone: ASYNCTEST_MIND_MCP_TIMEZONE,
     responseProfile: ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
-    summary: 'AsyncTest Mind MCP 默认返回精简响应。只有在需要额外节点细节时，才显式传入 include 相关参数。',
+    summary: 'AsyncTest Mind MCP 以已打开窗口内的一次批量事务为默认编辑路径，并默认返回精简响应。',
     breakingOrBehaviorChanges: [
       '编辑类工具默认只返回精简摘要。',
       'mind_create_nodes 默认不再返回 created[]；需要时请传 includeCreated=true。',
       'mind_apply_node_operations 默认不再返回 results[]；需要时请传 includeResults=true。',
       '读取类工具默认不返回备注、图片、metadata、样式和完整原始 JSON；需要时请显式传 include 参数或 mode=rawJson。',
+      'MCP 写入使用单步撤销、revision 冲突保护、局部增量播放和用户停止锁。',
+      '长请求一旦发送，不会跨 socket、TCP 或文件桥自动重放。',
+      'MCP 业务调用会自动建立 Agent 控制会话；Agent 结束任务前必须调用 mind_end_agent_session。',
+      '用户退出控制后，所有业务工具统一返回 MCP_CONTROL_REVOKED；恢复必须由 Agent 发起请求并由用户在 AsyncTest 中确认。',
     ],
     recommendedUsage: [
       '读取精简树结构时，优先使用 mind_get_subtree 或 mind_get_document_outline。',
@@ -34,7 +80,16 @@ export function getAsyncTestMindMcpCapabilities() {
       '编辑已打开且已有文件路径的文档后，使用 mind_save_document 保存。',
       '未保存窗口需要指定保存路径时，使用 mind_save_as_document。',
       '除非用户明确要求关闭窗口，否则不要关闭窗口后离线编辑 .amind 文件。',
+      '收到 USER_STOPPED 后立即停止当前对话中的所有 Mind 写调用，等待用户在 AsyncTest 中恢复。',
+      '完成当前用户任务前始终调用一次 mind_end_agent_session，使 Agent 操作中状态及时消失。',
     ],
+    goldenPath: [
+      'mind_get_document_outline',
+      'mind_get_subtree (only when local detail is needed)',
+      'mind_apply_node_operations or mind_create_nodes',
+      'mind_save_document or mind_save_as_document',
+    ],
+    toolTiers: TOOL_TIERS,
     compactResponseDefaults: {
       node: ['id', 'text', 'parentId', 'childIds', 'hasChildren'],
       outlineNode: ['id', 'text', 'childCount', 'children'],
@@ -49,6 +104,30 @@ export function getAsyncTestMindMcpCapabilities() {
       'includeResults',
       'mode=rawJson',
     ],
+  };
+}
+
+export function getAsyncTestMindAgentBriefing() {
+  return {
+    server: 'asynctest-mind',
+    version: ASYNCTEST_MIND_MCP_VERSION,
+    capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    purpose: 'Refresh an old Agent conversation with the current AsyncTest Mind editing contract.',
+    goldenPath: [
+      'Read mind_get_document_outline first.',
+      'Use mind_get_subtree only when the target branch needs more context.',
+      'Send one mind_apply_node_operations request for mixed edits, or mind_create_nodes for a large tree.',
+      'Save with mind_save_document; use mind_save_as_document only for an unsaved window.',
+    ],
+    hardRules: [
+      'Edit the open window. Never close it to rewrite .amind offline.',
+      'Do not call capabilities, status, validation, or changed-summary tools in a normal edit path.',
+      'Write responses already contain the compact decision summary.',
+      'If USER_STOPPED is returned, make no more Mind write calls until the user explicitly resumes in AsyncTest.',
+      'Always call mind_end_agent_session exactly once before finishing the user task.',
+      'If MCP_CONTROL_REVOKED is returned, stop every Mind call. Request restoration only after the user explicitly asks, and wait for AsyncTest approval.',
+    ],
+    toolTiers: TOOL_TIERS,
   };
 }
 
@@ -73,13 +152,66 @@ function getEndpoints() {
 const tools = [
   {
     name: 'mind_get_mcp_capabilities',
-    description: 'Get the current AsyncTest Mind MCP version, capability revision, response profile, behavior changes, and recommended tool usage. Call this after AsyncTest Mind MCP updates or when an old conversation may have stale assumptions.',
+    description: '[Diagnostic] Get version, behavior changes, and tool tiers. Call only after an MCP update or when an old conversation has stale assumptions; do not call in a normal edit flow.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     localHandler: getAsyncTestMindMcpCapabilities,
   },
   {
+    name: 'mind_get_agent_briefing',
+    description: '[Diagnostic] Refresh an old conversation with the current golden path and hard rules. Call after an MCP update, not before normal edits.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    localHandler: getAsyncTestMindAgentBriefing,
+  },
+  {
+    name: 'mind_get_control_status',
+    description: '[Control] Read the application-wide Agent control state. This is one of the only tools allowed after MCP_CONTROL_REVOKED.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    bridgeMethod: 'mind.controlStatus',
+  },
+  {
+    name: 'mind_end_agent_session',
+    description: '[Required finalizer] Call exactly once before finishing the current user task, whether it succeeded, failed, or no more Mind calls are needed. This closes the Agent 操作中... state; it does not close any Mind window.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Optional short completion reason.' },
+      },
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.endAgentSession',
+  },
+  {
+    name: 'mind_request_control_restore',
+    description: '[Control] Call only after MCP_CONTROL_REVOKED and only when the user explicitly asks to restore control. This merely requests restoration; the user must still approve it inside AsyncTest before business tools work again.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    bridgeMethod: 'mind.requestControlRestore',
+  },
+  {
+    name: 'mind_get_operation_status',
+    description: 'Diagnostic only. Get the current visual write operation state for a Mind window. Normal edits do not need to call this tool.',
+    inputSchema: {
+      type: 'object',
+      properties: { windowKey: { type: 'string' } },
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.operationStatus',
+  },
+  {
+    name: 'mind_get_changed_summary',
+    description: 'Diagnostic drill-down for a completed transaction. Write tools already return a compact changed summary, so call this only when transaction details are needed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        transactionId: { type: 'string' },
+        windowKey: { type: 'string', description: 'Omit when transactionId is provided.' },
+      },
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.changedSummary',
+  },
+  {
     name: 'mind_get_app_status',
-    description: 'Check whether AsyncTest Mind bridge is available and list currently open Mind windows.',
+    description: '[Diagnostic] Check bridge availability. Normal document work should start with mind_list_windows instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,7 +241,7 @@ const tools = [
   },
   {
     name: 'mind_list_windows',
-    description: 'List currently open AsyncTest Mind windows. Default is compact and does not ask renderers for dirty state.',
+    description: '[Preferred] Start here when the target window is unknown. List open Mind windows compactly; request runtime state only when dirty/save state affects the decision.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -172,12 +304,13 @@ const tools = [
   },
   {
     name: 'mind_get_document_outline',
-    description: 'Read a lightweight outline of an open Mind document.',
+    description: '[Preferred] First content read for an open document. Defaults to depth=1 and limit=80, and reports truncation; request only the relevant detailed subtree next.',
     inputSchema: {
       type: 'object',
       properties: {
         windowKey: { type: 'string' },
-        depth: { type: 'number', description: 'Optional max depth. Omit for all levels.' },
+        depth: { type: 'number', description: 'Default 1. Increase only when the whole deeper outline is needed.' },
+        limit: { type: 'number', description: 'Default 80 returned nodes. Increase explicitly only when needed.' },
       },
       additionalProperties: false,
     },
@@ -229,13 +362,15 @@ const tools = [
   },
   {
     name: 'mind_get_subtree',
-    description: 'Read a node and descendants from an open Mind document.',
+    description: '[Preferred] Focused read after outline identifies a target. Include ancestors or siblings only when local context is needed.',
     inputSchema: {
       type: 'object',
       properties: {
         windowKey: { type: 'string' },
         nodeId: { type: 'string' },
         depth: { type: 'number' },
+        includeAncestors: { type: 'boolean', description: 'Default false. Include the compact root-to-parent chain.' },
+        includeSiblings: { type: 'boolean', description: 'Default false. Include direct siblings of the target node.' },
         includeNotes: { type: 'boolean' },
         includeImages: { type: 'boolean' },
         includeMetadata: { type: 'boolean' },
@@ -491,7 +626,7 @@ const tools = [
   },
   {
     name: 'mind_create_nodes',
-    description: 'Preferred tool for adding many nodes or large trees to an open document. It edits the open window in place; do not close the window or modify .amind files directly.',
+    description: '[Preferred] Add many nodes or a large tree in one open-window transaction. Do not loop single-node tools, close the window, or modify .amind files directly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -558,7 +693,7 @@ const tools = [
   },
   {
     name: 'mind_apply_node_operations',
-    description: 'Apply multiple node operations to an open Mind document. This edits the open window in place; use create_nodes for large tree creation and do not close the window to edit files offline.',
+    description: '[Preferred] Apply mixed edits as one revision-protected, single-undo open-window transaction. Use mind_create_nodes for large pure additions. Use dryRun only when the requested edit is genuinely risky.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -566,6 +701,7 @@ const tools = [
         operations: { type: 'array', items: { type: 'object' } },
         saveAfterApply: { type: 'boolean' },
         rollbackOnError: { type: 'boolean' },
+        dryRun: { type: 'boolean', description: 'Default false. Validate and summarize without committing; use only for genuinely risky edits.' },
         expectedRevision: { type: 'string' },
         includeResults: { type: 'boolean', description: 'Default false. Include per-operation results only when needed.' },
       },
@@ -639,6 +775,8 @@ const tools = [
         nodeId: { type: 'string' },
         query: { type: 'string' },
         depth: { type: 'number' },
+        includeAncestors: { type: 'boolean' },
+        includeSiblings: { type: 'boolean' },
         includeNotes: { type: 'boolean' },
         includeImages: { type: 'boolean' },
         includeMetadata: { type: 'boolean' },
@@ -686,12 +824,13 @@ const tools = [
   },
   {
     name: 'mind_read_file_outline',
-    description: 'Read a lightweight outline from a .amind or .xmind file without opening it. Read-only; do not use this result to rewrite .amind files directly.',
+    description: 'Read a lightweight outline from a .amind or .xmind file without opening it. Defaults to depth=1 and limit=80, and reports truncation; request a relevant file subtree next.',
     inputSchema: {
       type: 'object',
       properties: {
         filePath: { type: 'string' },
-        depth: { type: 'number' },
+        depth: { type: 'number', description: 'Default 1. Increase only when the whole deeper outline is needed.' },
+        limit: { type: 'number', description: 'Default 80 returned nodes. Increase explicitly only when needed.' },
         format: { type: 'string', enum: ['json', 'markdown'] },
       },
       required: ['filePath'],
@@ -708,6 +847,8 @@ const tools = [
         filePath: { type: 'string' },
         nodeId: { type: 'string' },
         depth: { type: 'number' },
+        includeAncestors: { type: 'boolean' },
+        includeSiblings: { type: 'boolean' },
         includeNotes: { type: 'boolean' },
         includeImages: { type: 'boolean' },
         includeMetadata: { type: 'boolean' },
@@ -749,7 +890,10 @@ const tools = [
         titleOverride: { type: 'string' },
         includeNotes: { type: 'boolean' },
         includeImages: { type: 'boolean', description: 'Default false. Image asset copying is not guaranteed across files yet.' },
+        includeIdMap: { type: 'boolean', description: 'Default false. Include the potentially large source-to-target node id map only when needed.' },
         index: { type: 'number' },
+        expectedRevision: { type: ['string', 'number'], description: 'Optional optimistic concurrency guard.' },
+        dryRun: { type: 'boolean', description: 'Validate and summarize the import without changing the open window.' },
         saveAfterApply: { type: 'boolean' },
       },
       required: ['sourceFilePath', 'targetParentId'],
@@ -827,8 +971,11 @@ const tools = [
 
 const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
 let bridgeRequestId = 1;
+const mcpClientId = `stdio-${process.pid}-${randomUUID()}`;
 const FILE_BRIDGE_TIMEOUT_MS = 45000;
 const FILE_BRIDGE_POLL_MS = 80;
+const SOCKET_CONNECT_TIMEOUT_MS = 5000;
+const SOCKET_RESPONSE_TIMEOUT_MS = 120000;
 
 async function appendDebugLog(message, detail) {
   try {
@@ -870,7 +1017,17 @@ function createBridgeErrorFromPayload(payload, fallbackMessage = 'AsyncTest brid
     error.code = payload.code;
     error.recoverable = payload.recoverable;
     error.suggestedAction = payload.suggestedAction;
+    error.retryAllowed = payload.retryAllowed;
+    if (payload.details && typeof payload.details === 'object') error.details = payload.details;
   }
+  return error;
+}
+
+function createBridgeConnectionError(message) {
+  const error = new Error(message);
+  error.code = 'BRIDGE_UNAVAILABLE';
+  error.recoverable = true;
+  error.safeToRetry = true;
   return error;
 }
 
@@ -881,6 +1038,8 @@ function formatToolError(error) {
     message: error instanceof Error ? error.message : String(error),
     recoverable: error?.recoverable,
     suggestedAction: error?.suggestedAction,
+    ...(typeof error?.retryAllowed === 'boolean' ? { retryAllowed: error.retryAllowed } : {}),
+    ...(error?.details && typeof error.details === 'object' ? { details: error.details } : {}),
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -922,6 +1081,7 @@ function callBridge(method, params = {}) {
       : net.createConnection(endpoint.path);
     let buffer = '';
     let settled = false;
+    let requestSent = false;
 
     const finish = (fn, value) => {
       if (settled) return;
@@ -930,11 +1090,16 @@ function callBridge(method, params = {}) {
       fn(value);
     };
 
-    socket.setTimeout(10000, () => {
-      finish(reject, new Error('Timed out connecting to AsyncTest. Open AsyncTest first.'));
+    socket.setTimeout(SOCKET_CONNECT_TIMEOUT_MS, () => {
+      const error = requestSent
+        ? new Error('Timed out waiting for AsyncTest Mind to finish the request.')
+        : createBridgeConnectionError('Timed out connecting to AsyncTest. Open AsyncTest first.');
+      finish(reject, error);
     });
 
     socket.on('connect', () => {
+      requestSent = true;
+      socket.setTimeout(SOCKET_RESPONSE_TIMEOUT_MS);
       socket.write(`${JSON.stringify({ id, method, params })}\n`);
     });
 
@@ -953,10 +1118,19 @@ function callBridge(method, params = {}) {
       }
     });
 
-    socket.on('error', () => {
-      finish(reject, new Error('Cannot connect to AsyncTest. Open AsyncTest first.'));
+    socket.on('error', (cause) => {
+      if (requestSent) {
+        const error = new Error(`AsyncTest bridge connection closed while executing ${method}.`);
+        error.cause = cause;
+        finish(reject, error);
+      } else {
+        finish(reject, createBridgeConnectionError('Cannot connect to AsyncTest. Open AsyncTest first.'));
+      }
     });
-  }).catch((error) => tryEndpoint(index + 1, error));
+  }).catch((error) => {
+    if (error?.safeToRetry === true) return tryEndpoint(index + 1, error);
+    throw error;
+  });
   }
 
   return tryEndpoint(0);
@@ -1013,6 +1187,7 @@ async function callAppBridge(method, params = {}) {
   try {
     return await callBridge(method, params);
   } catch (socketError) {
+    if (socketError?.safeToRetry !== true) throw socketError;
     try {
       return await callFileBridge(method, params);
     } catch (fileError) {
@@ -1039,17 +1214,37 @@ async function handleToolsCall(id, params = {}) {
     params.name === 'mind_create_window'
       ? { payload: input.title ? { title: input.title } : {} }
       : { ...input };
+  bridgeParams.mcpClientId = mcpClientId;
+  bridgeParams.mcpToolName = params.name;
   if (params.name === 'mind_read_file_outline') bridgeParams = { ...bridgeParams, mode: 'outline' };
   if (params.name === 'mind_read_file_subtree') bridgeParams = { ...bridgeParams, mode: 'subtree' };
   if (params.name === 'mind_search_file_nodes') bridgeParams = { ...bridgeParams, mode: 'search' };
   if (params.name === 'mind_import_file_subtree' && input.targetWindowKey) {
     bridgeParams = { ...bridgeParams, windowKey: input.targetWindowKey };
   }
+  if (
+    ['mind_get_document_outline', 'mind_read_file_outline'].includes(params.name)
+  ) {
+    if (bridgeParams.depth == null) bridgeParams.depth = 1;
+    if (bridgeParams.limit == null) bridgeParams.limit = 80;
+  }
+  if (
+    ['mind_read_open_document', 'mind_read_file'].includes(params.name)
+    && (!bridgeParams.mode || bridgeParams.mode === 'outline')
+    && bridgeParams.depth == null
+  ) {
+    bridgeParams.depth = 1;
+    if (bridgeParams.limit == null) bridgeParams.limit = 80;
+  }
 
   try {
-    const result = typeof tool.localHandler === 'function'
-      ? await tool.localHandler(bridgeParams)
-      : await callAppBridge(tool.bridgeMethod, bridgeParams);
+    let result;
+    if (typeof tool.localHandler === 'function') {
+      await callAppBridge('mind.touchAgentSession', bridgeParams);
+      result = await tool.localHandler(bridgeParams);
+    } else {
+      result = await callAppBridge(tool.bridgeMethod, bridgeParams);
+    }
     const safeResult = sanitizeForMcpOutput(result);
     writeResult(id, {
       content: [
@@ -1081,6 +1276,7 @@ async function handleMessage(message) {
       protocolVersion: params?.protocolVersion || '2024-11-05',
       capabilities: { tools: {} },
       serverInfo: { name: 'asynctest-mind', version: ASYNCTEST_MIND_MCP_VERSION },
+      instructions: ASYNCTEST_MIND_MCP_INSTRUCTIONS,
     });
     return;
   }
@@ -1112,6 +1308,16 @@ export function startMindMcpStdioServer() {
     platform: process.platform,
   });
   let inputBuffer = '';
+  let transportCleanupStarted = false;
+  const cleanupAgentSession = async (reason) => {
+    if (transportCleanupStarted) return;
+    transportCleanupStarted = true;
+    await callAppBridge('mind.endAgentSession', {
+      mcpClientId,
+      mcpToolName: 'transport-cleanup',
+      reason,
+    }).catch(() => {});
+  };
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => {
     inputBuffer += chunk;
@@ -1128,6 +1334,9 @@ export function startMindMcpStdioServer() {
         writeError(null, -32700, error instanceof Error ? error.message : String(error));
       }
     }
+  });
+  process.stdin.on('end', () => {
+    void cleanupAgentSession('transport-closed');
   });
   process.on('uncaughtException', (error) => {
     void appendDebugLog('uncaughtException', { message: error.message, stack: error.stack });

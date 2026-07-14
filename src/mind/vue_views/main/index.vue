@@ -192,6 +192,17 @@
     </div>
 
     <div class="main-container" ref="viewportRef" tabindex="0">
+      <MindAgentControlBar
+        :visible="mindAgentControlVisible"
+        :pending="mindAgentControlPending"
+        :collapsed="mindAgentControlCollapsed"
+        :state="mindAgentControlState"
+        @exit="exitMindAgentControl"
+        @approve-restore="approveMindAgentControlRestore"
+        @reject-restore="rejectMindAgentControlRestore"
+        @collapse="collapseMindAgentControl"
+        @expand="expandMindAgentControl"
+      />
       <canvas ref="canvasRef" class="mind-canvas" :width="canvasPixelW" :height="canvasPixelH" :style="canvasStyle"
         @dblclick="onCanvasDoubleClick" @pointerdown="onCanvasPointerDown" @pointermove="onCanvasPointerMove"
         @pointerleave="onCanvasPointerLeave" @pointerup="onCanvasPointerUp" @pointercancel="onCanvasPointerCancel"
@@ -205,6 +216,15 @@
         :initial-state="editingDisplayLexicalState" :mode="editingSession?.mode ?? 'append'"
         :caret-placement="editingSession?.caretPlacement ?? 'end'" @change="onLexicalEditorChange" @commit="commitEditingSession"
         @cancel="cancelEditingSession"></LexicalNodeEditorOverlay>
+      <div
+        v-if="isMindAiInteractionLocked"
+        class="mind-ai-input-lock"
+        aria-label="Agent 正在操作，导图编辑已暂时锁定"
+        @pointerdown.prevent.stop
+        @mousedown.prevent.stop
+        @click.prevent.stop
+        @contextmenu.prevent.stop
+      />
       <textarea ref="pendingDirectTypeInputRef" class="mind-ime-capture" tabindex="-1" autocomplete="off"
         autocapitalize="off" autocorrect="off" spellcheck="false" @input="onPendingDirectTypeInput"
         @compositionstart.stop="onPendingDirectTypeCaptureCompositionStart"
@@ -819,6 +839,12 @@ import {
 } from '@/mind/core/nodeContent';
 import type { DragDropState, DragDropTarget } from '@/mind/core/drag/types';
 import { createHistory, type Command, type HistorySnapshot } from '@/mind/core/history';
+import { createMindTransactionCommand } from '@/mind/mcp/transactionCommand';
+import { buildMindDocumentPatch } from '@/mind/mcp/documentPatch';
+import { animateMindCamera } from '@/mind/mcp/cameraAnimation';
+import { playMindTransactionPatch } from '@/mind/mcp/transactionPlayback';
+import { useMindAgentControl } from '@/mind/mcp/useMindAgentControl';
+import MindAgentControlBar from './components/MindAgentControlBar.vue';
 import { lexicalEditorManager } from '@/mind/core/lexicalEditorManager';
 import {
   cloneLexicalState,
@@ -1012,6 +1038,18 @@ const emit = defineEmits<{
 
 const viewportRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const {
+  state: mindAgentControlState,
+  requestPending: mindAgentControlPending,
+  isCollapsed: mindAgentControlCollapsed,
+  isInteractionLocked: isMindAiInteractionLocked,
+  isVisible: mindAgentControlVisible,
+  exitControl: exitMindAgentControl,
+  approveRestore: approveMindAgentControlRestore,
+  rejectRestore: rejectMindAgentControlRestore,
+  collapseStatus: collapseMindAgentControl,
+  expandStatus: expandMindAgentControl,
+} = useMindAgentControl();
 const SEARCH_TEXT_QUERY_DEBOUNCE_MS = 300;
 const searchPanelTab = ref<'text' | 'mark'>('text');
 const searchTextQuery = ref('');
@@ -3262,6 +3300,8 @@ let pendingMutationReason = 'mutation';
 let pendingMutationEnsureVisibleNodeIds = new Set<string>();
 let pendingMutationResolvers: Array<() => void> = [];
 let pendingMutationShouldMarkDirty = false;
+let pendingMutationSmoothEnsureVisible = false;
+let cancelMindAiCameraAnimation: (() => void) | null = null;
 let localDocWatchSuppressionHolds = 0;
 let globalDragListenersActive = false;
 let isFinalizingInteraction = false;
@@ -7184,6 +7224,7 @@ async function flushScheduledDocumentMutation() {
   const reason = pendingMutationReason;
   const resolvers = pendingMutationResolvers;
   const shouldMarkDirty = pendingMutationShouldMarkDirty;
+  const shouldSmoothEnsureVisible = pendingMutationSmoothEnsureVisible;
   const layoutInvalidationNodeIds = [...pendingLayoutInvalidationNodeIds];
   const addedNodeInfos = [...pendingAddedNodeInfos];
   const removedNodeIds = [...pendingRemovedNodeIds];
@@ -7199,6 +7240,7 @@ async function flushScheduledDocumentMutation() {
   pendingMutationResolvers = [];
   pendingMutationReason = 'mutation';
   pendingMutationShouldMarkDirty = false;
+  pendingMutationSmoothEnsureVisible = false;
   pendingLayoutInvalidationNodeIds = new Set();
   pendingAddedNodeInfos = [];
   pendingRemovedNodeIds = new Set();
@@ -7243,7 +7285,10 @@ async function flushScheduledDocumentMutation() {
     useLayoutChangedNodeIds,
   });
   const ensureVisibleStartedAt = performance.now();
-  if (ensureVisibleNodeIds.length) ensureNodesVisible(ensureVisibleNodeIds);
+  if (ensureVisibleNodeIds.length) {
+    if (shouldSmoothEnsureVisible) smoothEnsureNodeVisible(ensureVisibleNodeIds[ensureVisibleNodeIds.length - 1]);
+    else ensureNodesVisible(ensureVisibleNodeIds);
+  }
   const ensureVisibleMs = performance.now() - ensureVisibleStartedAt;
   if (shouldMarkDirty) markContentDirty();
 
@@ -7314,9 +7359,11 @@ async function applyDocumentMutation(
     options?: {
       ensureVisibleNodeId?: string | null;
       ensureVisibleNodeIds?: string[];
+      smoothEnsureVisible?: boolean;
       markDirty?: boolean;
       invalidateSubtreeHeightNodeIds?: string[];
       addedNodeInfo?: { nodeId: string; parentId: string | null };
+      addedNodeInfos?: Array<{ nodeId: string; parentId: string | null }>;
       removedNodeIds?: string[];
       hiddenNodeIds?: string[];
       touchedParentIds?: string[];
@@ -7332,6 +7379,7 @@ async function applyDocumentMutation(
   const releaseDocWatchSuppression = holdLocalDocWatchSuppression();
   pendingMutationReason = reason;
   pendingMutationShouldMarkDirty = pendingMutationShouldMarkDirty || options?.markDirty !== false;
+  pendingMutationSmoothEnsureVisible = pendingMutationSmoothEnsureVisible || options?.smoothEnsureVisible === true;
   queueEnsureVisibleNodeIds(options?.ensureVisibleNodeIds);
   queueEnsureVisibleNodeIds(options?.ensureVisibleNodeId ? [options.ensureVisibleNodeId] : []);
   if (options?.invalidateSubtreeHeightNodeIds?.length) {
@@ -7341,6 +7389,11 @@ async function applyDocumentMutation(
   }
   if (options?.addedNodeInfo?.nodeId) {
     pendingAddedNodeInfos.push(options.addedNodeInfo);
+  }
+  if (options?.addedNodeInfos?.length) {
+    options.addedNodeInfos.forEach((item) => {
+      if (item?.nodeId) pendingAddedNodeInfos.push(item);
+    });
   }
   if (options?.removedNodeIds?.length) {
     options.removedNodeIds.forEach((nodeId) => {
@@ -7372,7 +7425,7 @@ async function applyDocumentMutation(
   noteMindPerfMutationQueued(reason, {
     ensureVisibleCount: options?.ensureVisibleNodeId ? 1 : options?.ensureVisibleNodeIds?.length ?? 0,
     invalidateCount: options?.invalidateSubtreeHeightNodeIds?.length ?? 0,
-    addedNodeCount: options?.addedNodeInfo?.nodeId ? 1 : 0,
+    addedNodeCount: (options?.addedNodeInfo?.nodeId ? 1 : 0) + (options?.addedNodeInfos?.length ?? 0),
   });
   noteMindPerfOperationMutationQueued(reason);
 
@@ -11862,13 +11915,13 @@ async function redrawAll(reason = 'redrawAll') {
   await redrawAllInternal(reason, { restoreViewport: true });
 }
 
-function ensureNodeVisible(nodeId: string) {
+function getCameraEnsuringNodeVisible(nodeId: string) {
   const rect = worldBoxes.value.get(nodeId);
   const canvas = canvasRef.value;
-  if (!rect || !canvas) return;
+  if (!rect || !canvas) return null;
 
   const viewportRect = getWorldViewportRect(camera.value, viewportW.value, viewportH.value);
-  if (rectContains(viewportRect, rect)) return;
+  if (rectContains(viewportRect, rect)) return null;
 
   const topLeft = worldToScreen(camera.value, rect.x1, rect.y1);
   const bottomRight = worldToScreen(camera.value, rect.x2, rect.y2);
@@ -11881,14 +11934,39 @@ function ensureNodeVisible(nodeId: string) {
   if (topLeft.y < 0) dy = -topLeft.y;
   else if (bottomRight.y > viewportH.value) dy = viewportH.value - bottomRight.y;
 
-  if (dx === 0 && dy === 0) return;
+  if (dx === 0 && dy === 0) return null;
 
-  setCamera({
+  return {
     ...camera.value,
     tx: camera.value.tx + dx,
     ty: camera.value.ty + dy,
-  });
+  };
+}
+
+function ensureNodeVisible(nodeId: string) {
+  const targetCamera = getCameraEnsuringNodeVisible(nodeId);
+  if (!targetCamera) return;
+
+  cancelMindAiCameraAnimation?.();
+  cancelMindAiCameraAnimation = null;
+  setCamera(targetCamera);
   requestRender();
+}
+
+function smoothEnsureNodeVisible(nodeId: string) {
+  const targetCamera = getCameraEnsuringNodeVisible(nodeId);
+  if (!targetCamera) return;
+
+  cancelMindAiCameraAnimation?.();
+  cancelMindAiCameraAnimation = animateMindCamera({
+    from: { ...camera.value },
+    to: targetCamera,
+    durationMs: 180,
+    onFrame: (nextCamera) => {
+      setCamera(nextCamera);
+      requestRender();
+    },
+  });
 }
 
 function getNodeBodyViewportRect(nodeId: string) {
@@ -13251,6 +13329,11 @@ function onWindowKeyDown(event: KeyboardEvent) {
     void onCloseDialogCancel();
     return;
   }
+  if (isMindAiInteractionLocked.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (nodeWidthInteraction.value?.resizing && event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
@@ -13962,9 +14045,16 @@ function mcpSerializeNode(nodeId: string, options: any = {}) {
   return result;
 }
 
-function mcpBuildOutlineNode(nodeId: string, depth: number, maxDepth: number | null): any {
+function mcpBuildOutlineNode(
+  nodeId: string,
+  depth: number,
+  maxDepth: number | null,
+  budget: { remaining: number } | null = null,
+): any {
+  if (budget && budget.remaining <= 0) return null;
   const node = getMindNodes()?.[nodeId];
   if (!node) return null;
+  if (budget) budget.remaining -= 1;
   const children = Array.isArray(node.children) ? node.children : [];
   const result: any = {
     id: nodeId,
@@ -13972,7 +14062,9 @@ function mcpBuildOutlineNode(nodeId: string, depth: number, maxDepth: number | n
     childCount: children.length,
   };
   if (maxDepth == null || depth < maxDepth) {
-    const childOutlines = children.map((childId: string) => mcpBuildOutlineNode(childId, depth + 1, maxDepth)).filter(Boolean);
+    const childOutlines = children
+      .map((childId: string) => mcpBuildOutlineNode(childId, depth + 1, maxDepth, budget))
+      .filter(Boolean);
     if (childOutlines.length) result.children = childOutlines;
   }
   return result;
@@ -13983,12 +14075,37 @@ function mcpGetDocumentOutline(params: any = {}) {
   const roots = getMindRoots();
   if (!nodes) throw new Error('Mind document is not ready');
   const maxDepth = Number.isInteger(params.depth) ? params.depth : null;
+  const limit = Number.isInteger(params.limit) ? Math.max(1, params.limit) : null;
+  const budget = limit == null ? null : { remaining: limit };
+  const outlineRoots = roots
+    .map((root: any) => mcpBuildOutlineNode(root.rootId, 0, maxDepth, budget))
+    .filter(Boolean);
+  const countOutlineNodes = (items: any[]): number => items.reduce(
+    (total, item) => total + 1 + countOutlineNodes(Array.isArray(item?.children) ? item.children : []),
+    0,
+  );
+  const reachableNodeIds = new Set<string>();
+  const collectReachableNodeIds = (nodeId: string) => {
+    if (!nodeId || reachableNodeIds.has(nodeId) || !nodes[nodeId]) return;
+    reachableNodeIds.add(nodeId);
+    const children = Array.isArray(nodes[nodeId].children) ? nodes[nodeId].children : [];
+    children.forEach(collectReachableNodeIds);
+  };
+  roots.forEach((root: any) => collectReachableNodeIds(root.rootId));
+  const nodeCount = Object.keys(nodes).length;
+  const reachableNodeCount = reachableNodeIds.size;
+  const returnedNodeCount = countOutlineNodes(outlineRoots);
   return {
     docId: props.docId,
     filePath: props.filePath ?? null,
     title: props.doc?.manifest?.title ?? null,
-    nodeCount: Object.keys(nodes).length,
-    roots: roots.map((root: any) => mcpBuildOutlineNode(root.rootId, 0, maxDepth)).filter(Boolean),
+    nodeCount,
+    reachableNodeCount,
+    returnedNodeCount,
+    truncated: returnedNodeCount < reachableNodeCount,
+    depth: maxDepth,
+    limit,
+    roots: outlineRoots,
   };
 }
 
@@ -14004,7 +14121,20 @@ function mcpGetSubtree(nodeId: string, params: any = {}) {
   }
   const subtree = walk(nodeId, 0);
   if (!subtree) throw new Error(`Node not found: ${nodeId}`);
-  return { subtree };
+  const result: any = { subtree };
+  const node = getMindNodes()?.[nodeId];
+  const parentId = node?.parentId ?? findParentAndIndexFromNodes(nodeId)?.parentId ?? null;
+  if (params.includeAncestors === true) {
+    result.ancestors = mcpGetParentChain(nodeId, params).chain.slice(0, -1);
+  }
+  if (params.includeSiblings === true && parentId) {
+    const parent = getMindNodes()?.[parentId];
+    result.siblings = (Array.isArray(parent?.children) ? parent.children : [])
+      .filter((siblingId: string) => siblingId !== nodeId)
+      .map((siblingId: string) => mcpSerializeNode(siblingId, params))
+      .filter(Boolean);
+  }
+  return result;
 }
 
 function mcpGetParentChain(nodeId: string, params: any = {}) {
@@ -14303,6 +14433,121 @@ function mcpReadOpenDocument(params: any = {}) {
 
 async function handleMindMcpRequest(method: string, params: any = {}) {
   switch (method) {
+    case 'mind.getSaveSnapshot': {
+      clearPersistTimer();
+      if (editingSession.value) commitEditingSession();
+      await flushPendingDocumentMutation();
+      ensureMindRoots(props.doc);
+      writeViewportToDoc();
+      return {
+        doc: toPlainDoc(props.doc),
+        revision: String(contentRevision.value),
+        isDirty: isDirty.value,
+      };
+    }
+    case 'mind.applySaveResult': {
+      props.doc.manifest = props.doc.manifest || {};
+      if (typeof params.savedAt === 'string' && params.savedAt) props.doc.manifest.updatedAt = params.savedAt;
+      if (typeof params.title === 'string' && params.title) props.doc.manifest.title = params.title;
+      if (typeof params.filePath === 'string' && params.filePath) emit('filePathChange', params.filePath);
+      lastSavedContentRevision.value = contentRevision.value;
+      saveError.value = null;
+      emitSaveState(params.filePath ?? props.filePath ?? null);
+      return { ok: true, isDirty: isDirty.value };
+    }
+    case 'mind.getTransactionSnapshot':
+      return {
+        doc: toPlainDoc(props.doc),
+        revision: String(contentRevision.value),
+        isDirty: isDirty.value,
+        history: history.snapshot(),
+      };
+    case 'mind.getHistoryState':
+      return { revision: String(contentRevision.value), history: history.snapshot() };
+    case 'mind.commitDocumentTransaction': {
+      const expectedRevision = params.expectedRevision == null ? null : String(params.expectedRevision);
+      const currentRevision = String(contentRevision.value);
+      if (expectedRevision != null && expectedRevision !== currentRevision) {
+        const error: any = new Error(`Document revision mismatch. Expected ${expectedRevision}, current ${currentRevision}`);
+        error.code = 'REVISION_MISMATCH';
+        error.recoverable = true;
+        throw error;
+      }
+      const beforeDoc = toPlainDoc(props.doc);
+      const patch = buildMindDocumentPatch(beforeDoc, params.afterDoc);
+      let playback;
+      try {
+        playback = await playMindTransactionPatch({
+          target: props.doc,
+          patch,
+          activeBoardId: getActiveMind(props.doc)?.id ?? null,
+          applyMutation: applyDocumentMutation,
+          selectNode: (nodeId) => setSingleSelected(nodeId, { suppressRender: true }),
+          isCancelled: async () => {
+            const status: any = await window.electronAPI.invoke('mind:mcpGetOperationStatus');
+            if (status?.stop?.reason === 'control-exited') {
+              return {
+                code: 'MCP_CONTROL_REVOKED',
+                message: '用户已主动退出 AsyncTest Mind MCP 控制。',
+              };
+            }
+            return status?.blocked === true || ['stopping', 'stopped'].includes(status?.status);
+          },
+          onProgress: async (progress) => {
+            await window.electronAPI.invoke('mind:mcpUpdateOperationProgress', progress);
+          },
+        });
+      } catch (error) {
+        const nodes = getMindNodes();
+        const survivingSelection = [...selectedIds.value].filter((nodeId) => !!nodes[nodeId]);
+        setSelection(survivingSelection, primarySelectedNodeId.value, {
+          suppressRender: true,
+          suppressFocus: true,
+        });
+        scheduleNodeCountStateEmit();
+        throw error;
+      }
+      if (playback.completedCount > 0 || playback.totalCount === 0) {
+        const committedDoc = toPlainDoc(props.doc);
+        const command = createMindTransactionCommand({
+          transactionId: String(params.transactionId || ''),
+          expectedRevision,
+          afterDoc: committedDoc,
+          changed: params.changed,
+        }, {
+          getCurrentDoc: () => beforeDoc,
+          getMutableDoc: () => props.doc,
+          getActiveBoardId: () => getActiveMind(props.doc)?.id ?? null,
+          bumpRevision: markContentDirty,
+          applyMutation: applyDocumentMutation,
+        });
+        markContentDirty();
+        history.recordExecuted(command);
+      }
+      const plain = toPlainDoc(props.doc);
+      await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+      if (playback.stopped) {
+        const error: any = new Error('User stopped AsyncTest Mind MCP operations for this window.');
+        error.code = 'USER_STOPPED';
+        error.recoverable = true;
+        error.details = {
+          transactionId: params.transactionId,
+          completedCount: playback.completedCount,
+          skippedCount: Math.max(0, playback.totalCount - playback.completedCount),
+          dirty: isDirty.value,
+          revision: String(contentRevision.value),
+        };
+        throw error;
+      }
+      return {
+        ok: true,
+        transactionId: params.transactionId,
+        revision: String(contentRevision.value),
+        dirty: isDirty.value,
+        history: history.snapshot(),
+        playback,
+      };
+    }
     case 'mind.getWindowDocument':
       return {
         docId: props.docId,
@@ -14311,6 +14556,8 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         isDirty: isDirty.value,
         isSaving: isSaving.value,
         nodeCount: Object.keys(getMindNodes() || {}).length,
+        revision: String(contentRevision.value),
+        history: history.snapshot(),
       };
     case 'mind.getDocumentOutline':
       return mcpGetDocumentOutline(params);
@@ -14375,7 +14622,14 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
     }
     case 'mind.saveDocument': {
       const saved = await saveDocument();
-      return { ok: saved, filePath: props.filePath ?? null };
+      return {
+        ok: saved,
+        needSaveAs: !props.filePath,
+        docId: props.docId,
+        filePath: props.filePath ?? null,
+        savedAt: props.doc?.manifest?.updatedAt ?? null,
+        title: props.doc?.manifest?.title ?? null,
+      };
     }
     case 'mind.readOpenDocument':
       return await mcpReadOpenDocument(params);
@@ -14638,6 +14892,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  cancelMindAiCameraAnimation?.();
+  cancelMindAiCameraAnimation = null;
   clearSearchTextQueryDebounceTimer();
   stopSearchResultScrollbarDrag();
   teardownSearchResultResizeObserver();
@@ -14734,6 +14990,14 @@ onBeforeUnmount(() => {
 .main-container:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+.mind-ai-input-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  cursor: wait;
+  background: transparent;
 }
 
 .search-panel-shell,

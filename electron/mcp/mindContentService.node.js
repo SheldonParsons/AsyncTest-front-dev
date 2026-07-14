@@ -17,9 +17,19 @@ export function getActiveBoard(doc, boardId) {
 export function getNodeText(node) {
   if (!node || typeof node !== 'object') return '';
   if (typeof node.text === 'string') return node.text;
+  if (typeof node.text?.plain === 'string') return node.text.plain;
+  if (typeof node.textPlain === 'string') return node.textPlain;
+  if (typeof node.title === 'string') return node.title;
   const richText = node.richText;
   if (Array.isArray(richText)) {
     return richText.map((run) => (typeof run?.text === 'string' ? run.text : '')).join('');
+  }
+  if (Array.isArray(richText?.blocks)) {
+    return richText.blocks
+      .map((block) => (Array.isArray(block?.inlines)
+        ? block.inlines.map((inline) => (typeof inline?.text === 'string' ? inline.text : '')).join('')
+        : ''))
+      .join('\n');
   }
   return '';
 }
@@ -91,9 +101,11 @@ export function serializeNode(board, nodeId, options = {}) {
   return base;
 }
 
-export function buildOutlineNode(board, nodeId, depth, maxDepth) {
+export function buildOutlineNode(board, nodeId, depth, maxDepth, budget = null) {
+  if (budget && budget.remaining <= 0) return null;
   const node = board?.nodes?.[nodeId];
   if (!node) return null;
+  if (budget) budget.remaining -= 1;
   const result = {
     id: nodeId,
     text: getNodeText(node),
@@ -101,21 +113,50 @@ export function buildOutlineNode(board, nodeId, depth, maxDepth) {
   };
   if (maxDepth == null || depth < maxDepth) {
     const children = (Array.isArray(node.children) ? node.children : [])
-      .map((childId) => buildOutlineNode(board, childId, depth + 1, maxDepth))
+      .map((childId) => buildOutlineNode(board, childId, depth + 1, maxDepth, budget))
       .filter(Boolean);
     if (children.length) result.children = children;
   }
   return result;
 }
 
+function countReachableOutlineNodes(board, roots) {
+  const visited = new Set();
+  const visit = (nodeId) => {
+    if (!nodeId || visited.has(nodeId) || !board?.nodes?.[nodeId]) return;
+    visited.add(nodeId);
+    const children = Array.isArray(board.nodes[nodeId].children) ? board.nodes[nodeId].children : [];
+    children.forEach(visit);
+  };
+  roots.forEach((root) => visit(root?.rootId));
+  return visited.size;
+}
+
 export function summarizeMindDoc(doc, options = {}) {
   const { boardId, board } = getActiveBoard(doc, options.boardId);
   const roots = Array.isArray(board.roots) ? board.roots : [];
+  const nodeCount = Object.keys(board.nodes || {}).length;
+  const limit = Number.isInteger(options.limit) ? Math.max(1, options.limit) : null;
+  const budget = limit == null ? null : { remaining: limit };
+  const outlineRoots = roots
+    .map((root) => buildOutlineNode(board, root.rootId, 0, options.depth, budget))
+    .filter(Boolean);
+  const countOutlineNodes = (nodes) => (Array.isArray(nodes) ? nodes : []).reduce(
+    (total, node) => total + 1 + countOutlineNodes(node?.children),
+    0,
+  );
+  const returnedNodeCount = countOutlineNodes(outlineRoots);
+  const reachableNodeCount = countReachableOutlineNodes(board, roots);
   return {
     title: doc?.manifest?.title ?? board?.title ?? null,
     boardId,
-    nodeCount: Object.keys(board.nodes || {}).length,
-    roots: roots.map((root) => buildOutlineNode(board, root.rootId, 0, options.depth)),
+    nodeCount,
+    reachableNodeCount,
+    returnedNodeCount,
+    truncated: returnedNodeCount < reachableNodeCount,
+    depth: Number.isInteger(options.depth) ? options.depth : null,
+    limit,
+    roots: outlineRoots,
   };
 }
 
@@ -139,7 +180,30 @@ export function getMindDocSubtree(doc, nodeId, options = {}) {
   }
   const subtree = walk(nodeId, 0);
   if (!subtree) throw new Error(`Node not found: ${nodeId}`);
-  return { boardId, subtree };
+  const result = { boardId, subtree };
+  const node = board.nodes?.[nodeId];
+  const parentId = node?.parentId ?? findParentId(board, nodeId);
+  if (options.includeAncestors === true) {
+    const ancestors = [];
+    let currentId = parentId;
+    const seen = new Set();
+    while (currentId && !seen.has(currentId)) {
+      seen.add(currentId);
+      const current = serializeNode(board, currentId, options);
+      if (!current) break;
+      ancestors.unshift(current);
+      currentId = current.parentId;
+    }
+    result.ancestors = ancestors;
+  }
+  if (options.includeSiblings === true && parentId) {
+    const parent = board.nodes?.[parentId];
+    result.siblings = (Array.isArray(parent?.children) ? parent.children : [])
+      .filter((siblingId) => siblingId !== nodeId)
+      .map((siblingId) => serializeNode(board, siblingId, options))
+      .filter(Boolean);
+  }
+  return result;
 }
 
 export function getMindDocNodes(doc, nodeIds, options = {}) {
@@ -271,6 +335,9 @@ export function updateMindDocNodeText(doc, nodeId, text, options = {}) {
   if (!node) throw new Error(`Node not found: ${nodeId}`);
   node.text = String(text ?? '');
   delete node.richText;
+  delete node.textLexical;
+  delete node.textPlain;
+  delete node.title;
   touchDoc(doc);
   const result = { boardId, ok: true, nodeId, changedCount: 1, dirty: true };
   if (options.includeNode === true) {

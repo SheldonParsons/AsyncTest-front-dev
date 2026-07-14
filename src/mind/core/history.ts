@@ -38,6 +38,12 @@ export function createHistory(onChange?: (snapshot: HistorySnapshot) => void) {
     emit();
   }
 
+  function recordExecuted(command: Command) {
+    undoStack.push(command);
+    redoStack.length = 0;
+    emit();
+  }
+
   function undo() {
     const command = undoStack.pop();
     if (!command) return;
@@ -56,6 +62,7 @@ export function createHistory(onChange?: (snapshot: HistorySnapshot) => void) {
 
   return {
     execute,
+    recordExecuted,
     undo,
     redo,
     snapshot,

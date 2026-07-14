@@ -3,8 +3,28 @@ import fsp from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { writeAmindFile } from '../amind/amindFileService.node.js';
 import { getAsyncTestMindMcpCapabilities } from './asynctest-mind-mcp.mjs';
+import {
+  endMindAgentSession,
+  getMindAgentControlState,
+  pruneExpiredMindAgentSessions,
+  requestMindAgentControlRestore,
+  subscribeMindAgentControl,
+  touchMindAgentSession,
+} from './mindAgentControlManager.node.js';
+import {
+  buildMindDocumentTransaction,
+  buildPreparedMindDocumentTransaction,
+  summarizeMindDocumentChanges,
+} from './mindTransactionService.node.js';
+import {
+  assertMindOperationActive,
+  beginMindOperation,
+  completeMindOperation,
+  failMindOperation,
+  getMindChangedSummary,
+  getMindOperationStatus,
+} from './mindOperationManager.node.js';
 import {
   cloneJson,
   copyMindDocSubtree,
@@ -59,7 +79,9 @@ function toErrorPayload(error) {
     code,
     message: error instanceof Error ? error.message : String(error || 'Unknown error'),
     recoverable: isRecoverableBridgeErrorCode(code),
-    suggestedAction: getBridgeErrorSuggestedAction(code),
+    suggestedAction: error?.suggestedAction || getBridgeErrorSuggestedAction(code),
+    ...(typeof error?.retryAllowed === 'boolean' ? { retryAllowed: error.retryAllowed } : {}),
+    ...(error?.details && typeof error.details === 'object' ? { details: error.details } : {}),
   };
 }
 
@@ -86,6 +108,10 @@ function isRecoverableBridgeErrorCode(code) {
     'FILE_PERMISSION_DENIED',
     'INVALID_ARGUMENT',
     'REVISION_MISMATCH',
+    'USER_STOPPED',
+    'OPERATION_IN_PROGRESS',
+    'MCP_CONTROL_REVOKED',
+    'MCP_CLIENT_ID_REQUIRED',
   ].includes(code);
 }
 
@@ -108,6 +134,10 @@ function getBridgeErrorSuggestedAction(code) {
       return 'Check required parameters and retry.';
     case 'REVISION_MISMATCH':
       return 'Read the latest document state, then retry with the current revision.';
+    case 'USER_STOPPED':
+      return 'Do not call AsyncTest Mind write tools again until the user explicitly resumes in AsyncTest.';
+    case 'OPERATION_IN_PROGRESS':
+      return 'Wait for the current AsyncTest Mind operation to finish or be stopped by the user.';
     default:
       return null;
   }
@@ -230,7 +260,7 @@ async function closeMindWindowWithPolicy(context, params = {}) {
       error.code = 'NEED_SAVE_AS';
       throw error;
     }
-    await saveOpenMindEntry(context, docId, entry);
+    await saveOpenMindRendererDocument(context, { docId, entry, windowKey });
   }
   const closed = await context.windowManager.requestManagedClose(windowKey, {
     source: 'mcp',
@@ -258,12 +288,6 @@ function getOpenMindEntry(context, params = {}) {
   return { docId, entry, windowKey };
 }
 
-function markOpenDocChanged(entry) {
-  if (!entry?.doc) return;
-  if (!entry.doc.manifest || typeof entry.doc.manifest !== 'object') entry.doc.manifest = {};
-  entry.doc.manifest.updatedAt = new Date().toISOString();
-}
-
 function updateOpenWindowTitle(context, windowKey, entry) {
   const win = context.windowManager.get(windowKey);
   if (!win) return;
@@ -273,35 +297,46 @@ function updateOpenWindowTitle(context, windowKey, entry) {
   win.setTitle(label);
 }
 
-function notifyOpenMindDocumentUpdated(context, windowKey, docId, entry) {
+function notifyMindOperation(context, windowKey, payload) {
   const win = context.windowManager.get(windowKey);
-  if (!win) return;
-  win.webContents.send('mind:mcp-doc-updated', {
-    docId,
-    windowKey,
-    filePath: entry.filePath ?? null,
-    doc: entry.doc,
-  });
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('mind:mcp-operation', payload);
 }
 
-async function saveOpenMindEntry(context, docId, entry) {
+async function syncOpenMindEntryFromRenderer(context, openEntry) {
+  const { docId, entry, windowKey } = openEntry;
+  const snapshot = await requestMindRenderer(context, 'mind.getSaveSnapshot', { windowKey });
+  if (!snapshot?.doc || typeof snapshot.doc !== 'object') {
+    throw new Error('Mind renderer did not return a document snapshot for saving');
+  }
+  context.amindMain.docStore.setDoc(docId, snapshot.doc);
+  entry.doc = context.amindMain.docStore.mustGet(docId).doc;
+  return snapshot;
+}
+
+async function saveOpenMindRendererDocument(context, openEntry) {
+  const { docId, entry, windowKey } = openEntry;
   if (!entry.filePath) return { ok: false, needSaveAs: true, docId, filePath: null };
-  const { path: abs, doc: saved } = await writeAmindFile(entry.filePath, entry.doc);
-  context.amindMain.docStore.setFilePath(docId, abs);
-  context.amindMain.docStore.setDoc(docId, saved);
-  entry.filePath = abs;
-  entry.doc = saved;
+  const result = await requestMindRenderer(context, 'mind.saveDocument', { windowKey });
+  if (result?.ok !== true) {
+    throw new Error('AsyncTest Mind window failed to save the current document');
+  }
+  const latestEntry = context.amindMain.docStore.mustGet(docId);
+  entry.filePath = latestEntry.filePath;
+  entry.doc = latestEntry.doc;
   return {
     ok: true,
     needSaveAs: false,
     docId,
-    filePath: abs,
-    savedAt: saved?.manifest?.updatedAt ?? null,
-    title: saved?.manifest?.title ?? null,
+    filePath: latestEntry.filePath ?? result.filePath ?? null,
+    savedAt: latestEntry.doc?.manifest?.updatedAt ?? result.savedAt ?? null,
+    title: latestEntry.doc?.manifest?.title ?? result.title ?? null,
   };
 }
 
-async function saveOpenMindEntryAs(context, docId, entry, params = {}) {
+async function saveOpenMindEntryAs(context, openEntry, params = {}) {
+  const { docId, entry } = openEntry;
+  await syncOpenMindEntryFromRenderer(context, openEntry);
   const result = await context.amindMain.saveAsDocument({
     docId,
     filePath: params.filePath,
@@ -314,25 +349,131 @@ async function saveOpenMindEntryAs(context, docId, entry, params = {}) {
   return result;
 }
 
-function setDocTitle(doc, title) {
-  if (!doc.manifest || typeof doc.manifest !== 'object') doc.manifest = {};
-  doc.manifest.title = String(title ?? '').trim() || '思维导图';
-  doc.manifest.updatedAt = new Date().toISOString();
-  return doc.manifest.title;
+function assertMindExpectedRevision(snapshot, params = {}) {
+  const expectedRevision = params.expectedRevision == null ? null : String(params.expectedRevision);
+  if (expectedRevision != null && expectedRevision !== String(snapshot.revision)) {
+    const error = new Error(`Document revision mismatch. Expected ${expectedRevision}, current ${snapshot.revision}`);
+    error.code = 'REVISION_MISMATCH';
+    throw error;
+  }
 }
 
-function setBoardTitle(doc, boardId, title) {
-  const targetBoardId = boardId || doc?.mind?.activeMindId || doc?.mind?.order?.[0];
-  const board = targetBoardId ? doc?.mind?.minds?.[targetBoardId] : null;
-  if (!board) throw new Error(`Mind board not found: ${targetBoardId || '<active>'}`);
-  board.title = String(title ?? '').trim() || '思维导图';
-  if (!doc.manifest || typeof doc.manifest !== 'object') doc.manifest = {};
-  doc.manifest.updatedAt = new Date().toISOString();
-  return { boardId: targetBoardId, title: board.title };
+async function commitPreparedMindTransaction(context, openEntry, transaction, snapshot, params = {}) {
+  const { docId, entry, windowKey } = openEntry;
+  if (params.dryRun === true) {
+    const result = {
+      ok: true,
+      dryRun: true,
+      transactionId: transaction.transactionId,
+      windowKey,
+      docId,
+      appliedCount: transaction.appliedCount,
+      changed: transaction.changed,
+      dirty: snapshot.isDirty === true,
+      revision: String(snapshot.revision),
+    };
+    if (params.includeResults === true) result.results = transaction.results;
+    return result;
+  }
+  const operation = beginMindOperation({
+    windowKey,
+    transactionId: transaction.transactionId,
+    clientId: params.mcpClientId,
+    totalCount: transaction.changed.affectedNodeCount || transaction.appliedCount,
+  });
+  notifyMindOperation(context, windowKey, {
+    status: 'running',
+    transactionId: operation.transactionId,
+    totalCount: operation.totalCount,
+    completedCount: 0,
+    currentNodeId: null,
+  });
+  try {
+    assertMindOperationActive(operation);
+    const committed = await requestMindRenderer(context, 'mind.commitDocumentTransaction', {
+      windowKey,
+      transactionId: transaction.transactionId,
+      expectedRevision: snapshot.revision,
+      afterDoc: transaction.afterDoc,
+      changed: transaction.changed,
+      totalCount: operation.totalCount,
+    });
+    entry.doc = context.amindMain.docStore.mustGet(docId).doc;
+    const saved = params.saveAfterApply === true
+      ? await saveOpenMindRendererDocument(context, openEntry)
+      : null;
+    const result = {
+      ok: true,
+      transactionId: transaction.transactionId,
+      windowKey,
+      docId,
+      appliedCount: transaction.appliedCount,
+      changed: transaction.changed,
+      dirty: params.saveAfterApply !== true,
+      revision: committed.revision,
+      saved,
+    };
+    if (params.includeOperationResult === true && transaction.results?.[0]) {
+      Object.assign(result, transaction.results[0]);
+    } else if (params.includeResults === true) {
+      result.results = transaction.results;
+    }
+    completeMindOperation(operation, result);
+    notifyMindOperation(context, windowKey, {
+      status: 'completed',
+      transactionId: operation.transactionId,
+      totalCount: operation.totalCount,
+      completedCount: operation.totalCount,
+      currentNodeId: null,
+    });
+    return result;
+  } catch (error) {
+    let partialChanged = null;
+    if (error?.code === 'USER_STOPPED') {
+      entry.doc = context.amindMain.docStore.mustGet(docId).doc;
+      partialChanged = summarizeMindDocumentChanges(snapshot.doc, entry.doc);
+      error.details = {
+        ...(error.details && typeof error.details === 'object' ? error.details : {}),
+        changed: partialChanged,
+      };
+    }
+    failMindOperation(operation, error, {
+      changed: partialChanged,
+      plannedChanged: transaction.changed,
+      appliedCount: transaction.appliedCount,
+      completedCount: error?.details?.completedCount,
+      skippedCount: error?.details?.skippedCount,
+      revision: error?.details?.revision,
+    });
+    notifyMindOperation(context, windowKey, {
+      status: error?.code === 'USER_STOPPED' ? 'stopped' : 'failed',
+      transactionId: operation.transactionId,
+      totalCount: operation.totalCount,
+      completedCount: operation.completedCount,
+      currentNodeId: operation.currentNodeId,
+      errorMessage: error instanceof Error ? error.message : String(error || 'Unknown error'),
+    });
+    throw error;
+  }
+}
+
+async function commitMindOperations(context, openEntry, operations, params = {}) {
+  const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+    windowKey: openEntry.windowKey,
+  });
+  assertMindExpectedRevision(snapshot, params);
+  const transaction = buildMindDocumentTransaction({
+    beforeDoc: snapshot.doc,
+    operations,
+    transactionId: params.transactionId,
+    includeResults: params.includeResults === true || params.includeOperationResult === true,
+  });
+  return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, params);
 }
 
 async function handleOpenMindDocumentRequest(context, method, params = {}) {
-  const { docId, entry, windowKey } = getOpenMindEntry(context, params);
+  const openEntry = getOpenMindEntry(context, params);
+  const { docId, entry, windowKey } = openEntry;
   const doc = entry.doc;
   switch (method) {
     case 'mind.getWindowDocument':
@@ -374,165 +515,105 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       return { ok: true, ...selection };
     }
     case 'mind.updateNodeText': {
-      const result = updateMindDocNodeText(doc, params.nodeId, params.text, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'update_text', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.updateNodeNote': {
-      const result = updateMindDocNodeNote(doc, params.nodeId, params.note, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'update_note', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.updateNodeMetadata': {
-      const result = updateMindDocNodeMetadata(doc, params.nodeId, params.metadata, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'update_metadata', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.createNode': {
-      const result = createMindDocNode(doc, params.parentId, params.text, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'create_node', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.createNodes': {
-      const result = createMindDocNodes(doc, params.parentId, params.nodes, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const saved = params.saveAfterApply === true ? await saveOpenMindEntry(context, docId, entry) : null;
-      return { ...result, windowKey, saved };
+      return await commitMindOperations(context, openEntry, [{ type: 'create_nodes', ...params }], {
+        ...params,
+        includeOperationResult: params.includeCreated === true,
+      });
     }
     case 'mind.deleteNode': {
-      const result = deleteMindDocNode(doc, params.nodeId, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'delete_node', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.moveNode': {
-      const result = moveMindDocNode(doc, params.nodeId, params.newParentId, params.index, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'move_node', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.copySubtree': {
-      const result = copyMindDocSubtree(doc, params.nodeId, params.newParentId, params.index, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'copy_subtree', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.applyNodeOperations': {
       const operations = Array.isArray(params.operations) ? params.operations : [];
-      const results = [];
-      const expectedRevision = params.expectedRevision;
-      if (expectedRevision && doc?.manifest?.updatedAt && expectedRevision !== doc.manifest.updatedAt) {
-        const error = new Error(`Document revision mismatch. Expected ${expectedRevision}, current ${doc.manifest.updatedAt}`);
-        error.code = 'REVISION_MISMATCH';
-        throw error;
-      }
-      const beforeDoc = params.rollbackOnError === true ? cloneJson(doc) : null;
-      try {
-        for (const op of operations) {
-          if (!op || typeof op !== 'object') continue;
-          const merged = { ...op, windowKey };
-          if (op.type === 'update_text') results.push(await handleOpenMindDocumentRequest(context, 'mind.updateNodeText', merged));
-          else if (op.type === 'update_note') results.push(await handleOpenMindDocumentRequest(context, 'mind.updateNodeNote', merged));
-          else if (op.type === 'update_metadata') results.push(await handleOpenMindDocumentRequest(context, 'mind.updateNodeMetadata', merged));
-          else if (op.type === 'set_markers') results.push(await handleOpenMindDocumentRequest(context, 'mind.setNodeMarkers', merged));
-          else if (op.type === 'add_marker') results.push(await handleOpenMindDocumentRequest(context, 'mind.addNodeMarker', merged));
-          else if (op.type === 'remove_marker') results.push(await handleOpenMindDocumentRequest(context, 'mind.removeNodeMarker', merged));
-          else if (op.type === 'set_root_secrecy') results.push(await handleOpenMindDocumentRequest(context, 'mind.setRootSecrecy', merged));
-          else if (op.type === 'create_node') results.push(await handleOpenMindDocumentRequest(context, 'mind.createNode', merged));
-          else if (op.type === 'create_nodes') results.push(await handleOpenMindDocumentRequest(context, 'mind.createNodes', merged));
-          else if (op.type === 'delete_node') results.push(await handleOpenMindDocumentRequest(context, 'mind.deleteNode', merged));
-          else if (op.type === 'move_node') results.push(await handleOpenMindDocumentRequest(context, 'mind.moveNode', merged));
-          else if (op.type === 'copy_subtree') results.push(await handleOpenMindDocumentRequest(context, 'mind.copySubtree', merged));
-          else throw new Error(`Unsupported operation type: ${op.type}`);
-        }
-      } catch (error) {
-        if (beforeDoc) {
-          context.amindMain.docStore.setDoc(docId, beforeDoc);
-          entry.doc = beforeDoc;
-          notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-        }
-        throw error;
-      }
-      const saved = params.saveAfterApply === true ? await saveOpenMindEntry(context, docId, entry) : null;
-      const result = { ok: true, windowKey, docId, appliedCount: operations.length, dirty: true, saved };
-      if (params.includeResults === true) result.results = results;
-      return result;
+      return await commitMindOperations(context, openEntry, operations, params);
     }
     case 'mind.saveDocument': {
-      const saved = await saveOpenMindEntry(context, docId, entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return saved;
+      return await saveOpenMindRendererDocument(context, openEntry);
     }
     case 'mind.saveAsDocument': {
-      const saved = await saveOpenMindEntryAs(context, docId, entry, params);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { ...saved, windowKey, dirty: false };
+      const saved = await saveOpenMindEntryAs(context, openEntry, params);
+      const rendererState = await requestMindRenderer(context, 'mind.applySaveResult', {
+        windowKey,
+        filePath: saved.filePath,
+        savedAt: saved.savedAt,
+        title: saved.title,
+      });
+      return { ...saved, windowKey, dirty: rendererState?.isDirty === true };
     }
     case 'mind.updateDocumentTitle': {
-      const title = setDocTitle(doc, params.title);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { ok: true, docId, windowKey, title };
+      return await commitMindOperations(context, openEntry, [{ type: 'update_document_title', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.updateBoardTitle': {
-      const result = setBoardTitle(doc, params.boardId, params.title);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      return { ok: true, ...result };
+      return await commitMindOperations(context, openEntry, [{ type: 'update_board_title', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.setNodeMarkers': {
-      const { boardId, board } = getActiveBoard(doc, params.boardId);
-      const node = board?.nodes?.[params.nodeId];
-      if (!node) throw new Error(`Node not found: ${params.nodeId}`);
-      node.markers = Array.isArray(params.markers) ? [...new Set(params.markers.map(String).filter(Boolean))] : [];
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const result = { boardId, ok: true, nodeId: params.nodeId, markers: node.markers, changedCount: 1, dirty: true };
-      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'set_markers', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.addNodeMarker': {
-      const { boardId, board } = getActiveBoard(doc, params.boardId);
-      const node = board?.nodes?.[params.nodeId];
-      if (!node) throw new Error(`Node not found: ${params.nodeId}`);
-      const markerKey = String(params.markerKey ?? '').trim();
-      if (!markerKey) throw new Error('markerKey is required');
-      const current = Array.isArray(node.markers) ? node.markers : [];
-      node.markers = current.includes(markerKey) ? current : [...current, markerKey];
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const result = { boardId, ok: true, nodeId: params.nodeId, markerKey, markers: node.markers, changedCount: 1, dirty: true };
-      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'add_marker', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.removeNodeMarker': {
-      const { boardId, board } = getActiveBoard(doc, params.boardId);
-      const node = board?.nodes?.[params.nodeId];
-      if (!node) throw new Error(`Node not found: ${params.nodeId}`);
-      const markerKey = String(params.markerKey ?? '').trim();
-      node.markers = (Array.isArray(node.markers) ? node.markers : []).filter((item) => item !== markerKey);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const result = { boardId, ok: true, nodeId: params.nodeId, markerKey, markers: node.markers, changedCount: 1, dirty: true };
-      if (params.includeNode === true) result.node = getMindDocNode(doc, params.nodeId, { ...params, boardId }).node;
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'remove_marker', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.setRootSecrecy': {
-      const { boardId, board } = getActiveBoard(doc, params.boardId);
-      const rootId = params.nodeId || board?.roots?.[0]?.rootId;
-      const node = rootId ? board?.nodes?.[rootId] : null;
-      if (!node) throw new Error(`Root node not found: ${rootId || '<active>'}`);
-      node.secrecy = params.secrecy == null ? null : cloneJson(params.secrecy);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const result = { boardId, ok: true, nodeId: rootId, secrecy: node.secrecy ?? null, changedCount: 1, dirty: true };
-      if (params.includeNode === true) result.node = getMindDocNode(doc, rootId, { ...params, boardId }).node;
-      return result;
+      return await commitMindOperations(context, openEntry, [{ type: 'set_root_secrecy', ...params }], {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.readOpenDocument': {
       const mode = params.mode || 'outline';
@@ -545,11 +626,22 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       return { docId, windowKey, filePath: entry.filePath ?? null, outline };
     }
     case 'mind.importFileSubtree': {
-      const result = await importMindFileSubtree(doc, params);
-      markOpenDocChanged(entry);
-      notifyOpenMindDocumentUpdated(context, windowKey, docId, entry);
-      const saved = params.saveAfterApply === true ? await saveOpenMindEntry(context, docId, entry) : null;
-      return { ...result, docId, windowKey, saved };
+      const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', { windowKey });
+      assertMindExpectedRevision(snapshot, params);
+      const afterDoc = cloneJson(snapshot.doc);
+      const importResult = await importMindFileSubtree(afterDoc, params);
+      if (params.includeIdMap !== true) delete importResult.idMap;
+      const transaction = buildPreparedMindDocumentTransaction({
+        beforeDoc: snapshot.doc,
+        afterDoc,
+        transactionId: params.transactionId,
+        appliedCount: 1,
+        results: [importResult],
+      });
+      return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, {
+        ...params,
+        includeOperationResult: true,
+      });
     }
     case 'mind.exportDocument': {
       const format = params.format || 'outline';
@@ -588,7 +680,13 @@ export function handleMindMcpRendererResponse(senderWindowKey, payload = {}) {
   if (payload.ok) {
     pending.resolve(payload.result);
   } else {
-    pending.reject(new Error(payload.error?.message || 'Mind renderer request failed'));
+    const error = new Error(payload.error?.message || 'Mind renderer request failed');
+    if (payload.error?.code) error.code = payload.error.code;
+    if (typeof payload.error?.recoverable === 'boolean') error.recoverable = payload.error.recoverable;
+    if (typeof payload.error?.retryAllowed === 'boolean') error.retryAllowed = payload.error.retryAllowed;
+    if (payload.error?.suggestedAction) error.suggestedAction = payload.error.suggestedAction;
+    if (payload.error?.details) error.details = payload.error.details;
+    pending.reject(error);
   }
   return true;
 }
@@ -597,9 +695,43 @@ async function handleMindBridgeRequest(context, method, params = {}) {
   const { amindMain, windowManager } = context;
   if (!amindMain || !windowManager) throw new Error('AsyncTest Mind is not ready');
 
+  if (method === 'mind.controlStatus') return getMindAgentControlState();
+  if (method === 'mind.endAgentSession') {
+    return endMindAgentSession(params?.mcpClientId, params?.reason || 'agent-finished');
+  }
+  if (method === 'mind.requestControlRestore') {
+    return requestMindAgentControlRestore(params?.mcpClientId);
+  }
+  if (method === 'mind.touchAgentSession') {
+    return touchMindAgentSession({
+      clientId: params?.mcpClientId,
+      toolName: params?.mcpToolName || method,
+    });
+  }
+  touchMindAgentSession({
+    clientId: params?.mcpClientId,
+    toolName: params?.mcpToolName || method,
+  });
+
   switch (method) {
     case 'mind.capabilities':
       return getAsyncTestMindMcpCapabilities();
+
+    case 'mind.operationStatus': {
+      const windowKey = params?.windowKey || resolveWindowKeyFromParams(context, params || {});
+      return getMindOperationStatus(windowKey);
+    }
+
+    case 'mind.changedSummary': {
+      const windowKey = params?.windowKey || (!params?.transactionId ? resolveWindowKeyFromParams(context, params || {}) : null);
+      const summary = getMindChangedSummary({ transactionId: params?.transactionId, windowKey });
+      if (!summary) {
+        const error = new Error('No completed AsyncTest Mind transaction summary found.');
+        error.code = 'TRANSACTION_NOT_FOUND';
+        throw error;
+      }
+      return summary;
+    }
 
     case 'mind.status':
       return {
@@ -669,6 +801,10 @@ async function handleMindBridgeRequest(context, method, params = {}) {
     case 'mind.findNodesByFilter':
     case 'mind.getSelection':
     case 'mind.setSelection':
+    case 'mind.readOpenDocument':
+    case 'mind.exportDocument':
+      return await requestMindRenderer(context, method, params || {});
+
     case 'mind.updateNodeText':
     case 'mind.updateNodeNote':
     case 'mind.updateNodeMetadata':
@@ -687,8 +823,6 @@ async function handleMindBridgeRequest(context, method, params = {}) {
     case 'mind.saveAsDocument':
     case 'mind.updateDocumentTitle':
     case 'mind.updateBoardTitle':
-    case 'mind.readOpenDocument':
-    case 'mind.exportDocument':
       return await handleOpenMindDocumentRequest(context, method, params || {});
 
     case 'mind.readFile':
@@ -745,6 +879,12 @@ export function initMindMcpAppBridgeServer({ amindMain, windowManager }) {
   const activeEndpoints = [];
   const processingFiles = new Set();
   let fileBridgeTimer = null;
+  const unsubscribeControl = subscribeMindAgentControl((state) => {
+    windowManager.broadcast('mind:mcp-control', state);
+  });
+  const controlSessionTimer = setInterval(() => {
+    pruneExpiredMindAgentSessions();
+  }, 15000);
 
   function createServer() {
     return net.createServer((socket) => {
@@ -897,6 +1037,8 @@ export function initMindMcpAppBridgeServer({ amindMain, windowManager }) {
       return [...activeEndpoints];
     },
     close: () => {
+      clearInterval(controlSessionTimer);
+      unsubscribeControl();
       if (fileBridgeTimer) {
         clearInterval(fileBridgeTimer);
         fileBridgeTimer = null;

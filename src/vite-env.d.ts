@@ -29,7 +29,7 @@ export interface IElectronAPI {
   openExternal: (url: string) => void;
   on: (event: any, params: any) => (() => void);
   send: (event: any) => void;
-  invoke: (event: any) => void;
+  invoke: (event: any, params?: any) => Promise<any>;
   wm: any,
   platform: any,
   mcp?: {

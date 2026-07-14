@@ -257,7 +257,14 @@ onMounted(async () => {
                 await window.electronAPI.invoke('mind:mcpResponse', {
                     requestId,
                     ok: false,
-                    error: { message: error instanceof Error ? error.message : String(error) },
+                    error: {
+                        message: error instanceof Error ? error.message : String(error),
+                        code: (error as any)?.code,
+                        recoverable: (error as any)?.recoverable,
+                        retryAllowed: (error as any)?.retryAllowed,
+                        suggestedAction: (error as any)?.suggestedAction,
+                        details: (error as any)?.details,
+                    },
                 });
             }
         });

@@ -13,6 +13,18 @@ import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
 import { handleMindMcpRendererResponse, initMindMcpAppBridgeServer } from './mcp/appBridgeServer.node.js';
 import {
+  getMindOperationStatus,
+  resumeMindOperations,
+  stopMindOperation,
+  updateMindOperationProgressForWindow,
+} from './mcp/mindOperationManager.node.js';
+import {
+  approveMindAgentControlRestore,
+  getMindAgentControlState,
+  rejectMindAgentControlRestore,
+  revokeMindAgentControl,
+} from './mcp/mindAgentControlManager.node.js';
+import {
   ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
   ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
   ASYNCTEST_MIND_MCP_TIMEZONE,
@@ -366,6 +378,69 @@ ipcMain.handle('mind:mcpResponse', async (event, payload = {}) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
   if (!senderKey?.startsWith('mind:')) return false;
   return handleMindMcpRendererResponse(senderKey, payload);
+});
+
+ipcMain.handle('mind:mcpStopOperation', async (event, payload = {}) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return false;
+  const result = stopMindOperation(senderKey, payload?.reason || 'user');
+  event.sender.send('mind:mcp-operation', {
+    status: 'stopped',
+    transactionId: result.transactionId,
+    totalCount: result.totalCount,
+    completedCount: result.completedCount,
+    currentNodeId: null,
+  });
+  return result;
+});
+
+ipcMain.handle('mind:mcpResumeOperations', async (event) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return false;
+  const result = resumeMindOperations(senderKey);
+  event.sender.send('mind:mcp-operation', { status: 'idle', transactionId: null });
+  return result;
+});
+
+ipcMain.handle('mind:mcpGetOperationStatus', async (event) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return { status: 'idle', blocked: false };
+  return getMindOperationStatus(senderKey);
+});
+
+ipcMain.handle('mind:mcpUpdateOperationProgress', async (event, payload = {}) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return false;
+  const currentStatus = getMindOperationStatus(senderKey);
+  if (currentStatus.blocked) return currentStatus;
+  const status = updateMindOperationProgressForWindow(senderKey, payload);
+  event.sender.send('mind:mcp-operation', status);
+  return status;
+});
+
+ipcMain.handle('mind:mcpGetControlStatus', async () => {
+  return getMindAgentControlState();
+});
+
+ipcMain.handle('mind:mcpExitControl', async () => {
+  const mindWindowKeys = windowManager.listKeys().filter((key) => key.startsWith('mind:'));
+  const result = revokeMindAgentControl('user-exited-control');
+  for (const windowKey of mindWindowKeys) {
+    stopMindOperation(windowKey, 'control-exited');
+  }
+  return result;
+});
+
+ipcMain.handle('mind:mcpApproveControlRestore', async () => {
+  const result = approveMindAgentControlRestore();
+  for (const windowKey of windowManager.listKeys().filter((key) => key.startsWith('mind:'))) {
+    resumeMindOperations(windowKey);
+  }
+  return result;
+});
+
+ipcMain.handle('mind:mcpRejectControlRestore', async () => {
+  return rejectMindAgentControlRestore();
 });
 
 ipcMain.handle('wm:close', async (event, key) => {
