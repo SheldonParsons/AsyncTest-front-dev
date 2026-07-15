@@ -651,6 +651,8 @@ const expandedUserMessageIds = ref<string[]>([])
 const expandedAttachmentEventIds = ref<string[]>([])
 const deletingSessionId = ref('')
 const streamingAssistantContent = ref('')
+// assistant event_saved 到达后，正式事件接管过程与答案渲染；避免临时思考块落到答案下方。
+const streamingAssistantEventId = ref('')
 const streamingSources = ref<any[]>([])        // T1 溯源：本轮答案的来源段（流式渲染用）
 const streamingVerification = ref<any | null>(null) // T8 核验：{checked, issues, clean}
 const streamingContinuationParentId = ref('')
@@ -818,9 +820,12 @@ function restoreClarificationFromEvents() {
   }
 }
 const streamingTurnVisible = computed(() =>
-  !!streamingAssistantContent.value
-  || procRunning.value
-  || streamingProcess.steps.length > 0,
+  !streamingAssistantEventId.value
+  && (
+    !!streamingAssistantContent.value
+    || procRunning.value
+    || streamingProcess.steps.length > 0
+  ),
 )
 const streamingAssistantStandaloneVisible = computed(() =>
   streamingTurnVisible.value
@@ -1118,6 +1123,7 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   cancelRequested.value = false
   resetProcessState(streamingProcess)
   streamingProcess.status = 'running'
+  streamingAssistantEventId.value = ''
   streamingAssistantContent.value = ''
   streamingSources.value = []
   streamingVerification.value = null
@@ -1138,6 +1144,7 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
           const parentId = String((saved as any)?.meta?.parent_event_id || '')
           if (parentId) streamingContinuationParentId.value = parentId
         } else if (event.role === 'assistant') {
+          streamingAssistantEventId.value = String(saved?.id || '')
           streamingAssistantContent.value = ''
           streamingSources.value = []
           streamingVerification.value = null
@@ -1218,6 +1225,7 @@ async function recoverRunningTurnForSession(sessionId: string) {
       activeTurnId.value = ''
       recoveredTurnId.value = ''
       foundationBusy.value = false
+      streamingAssistantEventId.value = ''
       clearStreamingAssistant()
       resetProcessState(streamingProcess)
       events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
@@ -1233,15 +1241,16 @@ async function recoverRunningTurnForSession(sessionId: string) {
     activeTurnId.value = ''
     recoveredTurnId.value = ''
     foundationBusy.value = false
+    streamingAssistantEventId.value = ''
     clearStreamingAssistant()
     resetProcessState(streamingProcess)
     events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
     restoreClarificationFromEvents()
-    await scrollBottom()
+    await scrollBottomIfFollowing()
     return
   }
   scheduleRunningTurnPolling(sessionId)
-  await scrollBottom()
+  await scrollBottomIfFollowing()
 }
 
 function newConversation() {
@@ -1307,9 +1316,6 @@ async function send() {
   await sendFoundationTurn()
 }
 
-// 录入意图关键词：附件 + 这些词之一 → 把文件原文交给第四代整体变更规划，而不是只当问答材料。
-const INGEST_INTENT_RE = /录入|导入|入库|收录|沉淀|存进|存入|记进|加进知识库|存到知识库/
-
 async function prepareComposerAttachments(files: File[]): Promise<VibeAttachment[]> {
   const items: VibeAttachment[] = []
   for (const [index, file] of files.entries()) {
@@ -1334,30 +1340,14 @@ async function prepareComposerAttachments(files: File[]): Promise<VibeAttachment
   return items
 }
 
-// 新输入框发送：
-//  ① 附件 + 录入意图 → 整篇文件录入知识库（document 切段，干净显示"导入《X》"，不塞 markdown 进提问）；
-//  ② 否则 → 文件作本轮提问的资料（附在问题后，不入库）。
+// 前端只提交输入框和完整附件批次，不通过关键词决定录入/总结/问答。
+// 输入框是目的轴心，后端目标计划是唯一语义权威。
 async function onComposerSend({ text, files }: { text: string; files: File[] }) {
   const base = (text || '').trim()
   const fileList = files || []
   if (sending.value) return
   const attachments = fileList.length ? await prepareComposerAttachments(fileList) : []
 
-  // ① 录入文件：附件原文与输入框意图一起送入第四代规划，并保留用户原话作为气泡。
-  // （附件本身后续在 UI 上挂到提问处展示；这里只把文件正文走 document 字段切段，不动可见消息。）
-  if (attachments.length && INGEST_INTENT_RE.test(base)) {
-    if (attachments.some((item) => String(item.content || item.text || '').trim())) {
-      draft.value = ''
-      await sendFoundationTurn(base, {
-        documentMode: true,
-        attachments,
-        filename: attachments.map((item) => attachmentName(item)).filter(Boolean).join('、'),
-      })
-      return
-    }
-  }
-
-  // ② 文件作提问资料
   const combined = base || (attachments.length
     ? `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
     : '')
@@ -1656,6 +1646,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   startElapsedTicker(startedAt)  // "已处理 Xs"前端秒表:整轮在途一直数,不听 process_done
   processExpanded.value = true
   clearStreamingAssistant()
+  streamingAssistantEventId.value = ''
   streamingContinuationParentId.value = contParent  // 必须在 clearStreamingAssistant 之后（它会清空）
   resetProcessState(streamingProcess)
   streamingProcess.status = 'running'
@@ -1686,7 +1677,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     // 后端始终持久化，切回本轮会话会通过 event_saved / 重载补全。
     const live = !turnSessionId || activeSessionId.value === turnSessionId
     if (String(event?.type || '').startsWith('process_')) {
-      if (live) { consumeProcessEvent(streamingProcess, event); scrollBottom() }
+      if (live) { consumeProcessEvent(streamingProcess, event); scrollBottomIfFollowing() }
       return
     }
     switch (String(event?.type || '')) {
@@ -1709,6 +1700,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
           // 0704 防闪:持久化气泡即将插入列表,同帧清掉流式气泡——否则"流式份+持久份"双显一瞬,
           // finally 再清时肉眼看到答案闪一下/整块跳动。
           if (live) {
+            streamingAssistantEventId.value = String(saved?.id || '')
             streamingAssistantContent.value = ''
             streamingSources.value = []
             streamingVerification.value = null
@@ -1776,7 +1768,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       default:
         break
     }
-    if (live) scrollBottom()
+    if (live) scrollBottomIfFollowing()
   }
 
   try {
@@ -1823,6 +1815,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
     // 后面的服务器刷新是后台事，不该让按钮继续转。
     foundationBusy.value = false
+    streamingAssistantEventId.value = ''
     if (applyEdit?.kind === 'knowledge_change') loadKbStats()
     // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
     if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
@@ -1836,7 +1829,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         if (!sameIds) events.value = fresh
       } catch { /* 刷新失败不影响本轮结果展示 */ }
     }
-    await scrollBottom()
+    await scrollBottomIfFollowing()
   }
 }
 
@@ -2107,6 +2100,7 @@ function uniqueTextList(items: string[]) {
 }
 
 async function scrollBottom() {
+  timelineFollow.value = true
   await nextTick()
   const el = timelineEl.value
   if (el) el.scrollTop = el.scrollHeight
@@ -2116,6 +2110,17 @@ async function scrollBottom() {
 
 // 是否已滚动到底部（用于控制"回到底部"悬浮按钮的显隐）
 const isAtBottom = ref(true)
+const timelineFollow = ref(true)
+
+async function scrollBottomIfFollowing() {
+  if (!timelineFollow.value) return
+  await nextTick()
+  if (!timelineFollow.value) return
+  const el = timelineEl.value
+  if (el) el.scrollTop = el.scrollHeight
+  isAtBottom.value = true
+  updateActiveConversationRail()
+}
 
 function isTimelineNearBottom(el: HTMLElement, threshold = 56) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
@@ -2124,7 +2129,9 @@ function isTimelineNearBottom(el: HTMLElement, threshold = 56) {
 function handleTimelineScroll() {
   const el = timelineEl.value
   if (!el) return
-  isAtBottom.value = isTimelineNearBottom(el)
+  const nearBottom = isTimelineNearBottom(el)
+  isAtBottom.value = nearBottom
+  timelineFollow.value = nearBottom
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
   conversationRailRaf = requestAnimationFrame(() => {
     conversationRailRaf = 0
@@ -2160,6 +2167,7 @@ function updateActiveConversationRail() {
 
 function jumpToConversationTurn(id: string, index = -1) {
   activeConversationEventId.value = id
+  timelineFollow.value = false
   const el = timelineEl.value
   if (index === 0 && el) {
     el.scrollTo({ top: 0, behavior: 'smooth' })
@@ -2177,6 +2185,7 @@ function conversationRailHoverDistance(index: number) {
 function scrollBottomSmooth() {
   const el = timelineEl.value
   if (!el) return
+  timelineFollow.value = true
   el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   isAtBottom.value = true
   activeConversationEventId.value = conversationRailItems.value.at(-1)?.id || ''

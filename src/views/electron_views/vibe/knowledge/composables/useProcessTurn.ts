@@ -15,7 +15,7 @@ export interface ProcessActionStep {
   actionType: string
   title: string
   summary: string
-  status: 'running' | 'success' | 'error'
+  status: 'running' | 'success' | 'error' | 'cancelled'
   durationMs?: number
   model?: string
   useCase?: string

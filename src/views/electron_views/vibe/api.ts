@@ -361,8 +361,8 @@ export function getVibeProjectByAsyncProject(projectId: number): Promise<VibePro
 }
 
 export function getVibeProjectsByAsyncProjects(projectIds: number[]): Promise<{ items: VibeProject[] }> {
-  const ids = Array.from(new Set(projectIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))).join(',')
-  return request('GET', `/vibe/projects/by-async-projects${ids ? `?ids=${encodeURIComponent(ids)}` : ''}`)
+  const ids = Array.from(new Set(projectIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))))
+  return request('POST', '/vibe/projects/by-async-projects', { project_ids: ids })
 }
 
 export function initVibeProject(projectId: number, payload: {
@@ -813,11 +813,11 @@ export function cancelFoundationTurn(turnId: string): Promise<{ ok: boolean; can
 
 export function getFoundationKnowledgeStatsMany(
   projects: string[],
-): Promise<{ ok: boolean; items: Record<string, { sections: number; modules: number }> }> {
-  return request('GET', `/vibe/foundation/knowledge/stats?projects=${encodeURIComponent(projects.join(','))}`)
+): Promise<{ ok: boolean; items: Record<string, { commits: number; sources: number; spans: number; sections: number; modules: number }> }> {
+  return request('POST', '/vibe/foundation/knowledge/stats', { projects })
 }
 
-// ===== 第四代现行知识浏览 =====
+// ===== 源优先时序知识浏览 =====
 
 function kbBrowserQuery(params: Record<string, any>) {
   const usp = new URLSearchParams()
@@ -829,119 +829,157 @@ function kbBrowserQuery(params: Record<string, any>) {
   return qs ? `?${qs}` : ''
 }
 
-export interface KnowledgeVersionSummary {
+export interface KnowledgeCommitSummary {
   id: string
   project_id: string
-  document_id: string
-  version: number
-  base_version: number
-  base_hash: string
-  content_hash: string
-  title: string
-  operation: string
+  seq: number
+  kind: 'ingest' | 'modify' | 'delete' | 'structure' | 'rebuild'
+  base_commit_seq: number
   reason: string
   actor_user_id?: number | null
-  actor_name?: string
-  session_id?: string
-  trace_id?: string
-  batch_id?: string
-  source_ids: string[]
-  change_plan: Record<string, any>
-  verification: Record<string, any>
-  action: 'insert' | 'update' | 'delete' | 'structure' | string
-  action_kinds: string[]
-  action_counts: Record<'insert' | 'update' | 'delete' | 'structure', number>
+  actor_name: string
+  session_id: string
+  trace_id: string
+  confirmation_id: string
+  request_text: string
+  metadata: Record<string, any>
+  action: string
+  action_counts: { sources: number; tombstones: number; structures: number }
   created_at: string
 }
 
-export interface KnowledgeCurrentVersion extends KnowledgeVersionSummary {
-  markdown: string
-  section_ids: string[]
+export interface KnowledgeSourceSummary {
+  id: string
+  project_id: string
+  commit_id: string
+  commit_seq: number
+  source_kind: 'text' | 'file' | 'synthetic'
+  filename: string
+  display_name: string
+  display_kind: '对话输入' | '文件' | '文本来源' | '系统来源'
+  mime_type: string
+  content_hash: string
+  metadata: Record<string, any>
+  created_at: string
+  chars: number
+  span_count: number
 }
 
-export interface KnowledgeOutlineItem {
-  section_id: string
+export interface KnowledgeSourceSpan {
+  id: string
+  project_id: string
+  source_id: string
+  commit_seq: number
   ordinal: number
-  level: number
+  start_offset: number
+  end_offset: number
+  content_hash: string
+  title_path: string[]
+  heading_level: number
+  metadata: Record<string, any>
+  text: string
+}
+
+export interface KnowledgeSourceDetail extends Omit<KnowledgeSourceSummary, 'chars' | 'span_count'> {
+  content: string
+  spans: KnowledgeSourceSpan[]
+}
+
+export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
+  source_kind: 'text' | 'file' | 'synthetic'
+  filename: string
+  display_name: string
+  display_kind: '对话输入' | '文件' | '文本来源' | '系统来源'
+  mime_type: string
+  breadcrumb: string
+  rank: number
+}
+
+export interface KnowledgeModuleSummary {
+  id: string
   title: string
   path: string[]
-  parent_id?: string | null
-  children_ids: string[]
-  source_range: [number, number]
+  summary: string
+  span_count: number
 }
 
 export interface KnowledgeStatus {
   ok: boolean
-  project: { project_id: string; title: string; current_version: number; current_hash: string } | null
-  current: KnowledgeCurrentVersion | null
-  versions: KnowledgeVersionSummary[]
-  sources: Array<{ id: string; filename: string; mime_type: string; content_hash: string; metadata?: Record<string, any>; created_at: string }>
-  outline: KnowledgeOutlineItem[]
+  schema: { initialized: boolean; current_version: number; expected_version: number; pending_versions: number[] }
+  project: { project_id: string; title: string; current_commit_seq: number; current_index_generation_id: string; created_at: string; updated_at: string } | null
+  index_generation: (Record<string, any> & { status: 'ready' | 'stale' }) | null
   summary: {
-    section_count: number
-    module_count: number
-    version_count: number
+    commit_count: number
     source_count: number
-    top_modules: Array<{ module: string; section_id: string; active_count: number }>
-    recent_changes: KnowledgeVersionSummary[]
+    span_count: number
+    module_count: number
+    tombstone_count: number
+    structure_count: number
+    top_modules: KnowledgeModuleSummary[]
+    recent_commits: KnowledgeCommitSummary[]
   }
-  index_generation?: Record<string, any> | null
 }
 
-export interface KnowledgeSection {
-  id: string
-  section_id: string
-  ordinal: number
-  breadcrumb: string
-  path: string[]
-  title: string
-  level: number
-  body: string
-  source_range: [number, number]
-  status: 'active'
+export interface KnowledgeCommitDetail extends KnowledgeCommitSummary {
+  sources: KnowledgeSourceSummary[]
+  tombstones: Array<Record<string, any>>
+  structure_directives: Array<Record<string, any> & { target_path: string[] }>
+  confirmation?: Record<string, any> | null
+}
+
+export interface KnowledgeReceipt extends KnowledgeCommitSummary {
+  receipt_id: string
+  status: 'applied'
 }
 
 export function getKnowledgeStatus(project: string, params: { limit?: number; before?: number } = {}): Promise<KnowledgeStatus> {
   return request('GET', `/vibe/foundation/knowledge/status${kbBrowserQuery({ project, ...params })}`)
 }
 
-export function getKnowledgeVersions(project: string, params: { action?: string; limit?: number; before?: number } = {}): Promise<{
+export function getKnowledgeSources(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{
   ok: boolean
-  project_id: string
-  items: KnowledgeVersionSummary[]
+  items: KnowledgeSourceSummary[]
   next_cursor?: number | null
 }> {
-  return request('GET', `/vibe/foundation/knowledge/versions${kbBrowserQuery({ project, ...params })}`)
+  return request('GET', `/vibe/foundation/knowledge/sources${kbBrowserQuery({ project, ...params })}`)
 }
 
-export function getKnowledgeSections(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{
-  ok: boolean
-  project_id: string
-  query: string
-  total: number
-  items: KnowledgeSection[]
-  next_cursor?: number | null
-}> {
-  return request('GET', `/vibe/foundation/knowledge/sections${kbBrowserQuery({ project, ...params })}`)
-}
-
-export function getKnowledgeDiff(project: string, from: number, to: number): Promise<{
-  ok: boolean
-  project_id: string
-  from: number
-  to: number
-  from_hash: string
-  to_hash: string
-  before_markdown: string
-  after_markdown: string
-  diff: string
-}> {
-  return request('GET', `/vibe/foundation/knowledge/diff${kbBrowserQuery({ project, from, to })}`)
-}
-
-export function getKnowledgeSource(project: string, sourceId: string): Promise<{
-  ok: boolean
-  source: { id: string; filename: string; mime_type: string; content: string; content_hash: string; metadata?: Record<string, any>; created_at: string }
-}> {
+export function getKnowledgeSource(project: string, sourceId: string): Promise<{ ok: boolean; source: KnowledgeSourceDetail }> {
   return request('GET', `/vibe/foundation/knowledge/sources/${encodeURIComponent(sourceId)}${kbBrowserQuery({ project })}`)
+}
+
+export function searchKnowledge(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{
+  ok: boolean
+  query: string
+  items: KnowledgeSearchHit[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/search${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeCommits(project: string, params: { kind?: string; limit?: number; before?: number } = {}): Promise<{
+  ok: boolean
+  items: KnowledgeCommitSummary[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/commits${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeCommit(project: string, seq: number): Promise<{ ok: boolean; commit: KnowledgeCommitDetail }> {
+  return request('GET', `/vibe/foundation/knowledge/commits/${seq}${kbBrowserQuery({ project })}`)
+}
+
+export function getKnowledgeReceipts(project: string, params: { limit?: number; before?: number } = {}): Promise<{
+  ok: boolean
+  items: KnowledgeReceipt[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/receipts${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeReceipt(project: string, seq: number): Promise<{
+  ok: boolean
+  receipt: KnowledgeCommitDetail & { receipt_id: string }
+}> {
+  return request('GET', `/vibe/foundation/knowledge/receipts/${seq}${kbBrowserQuery({ project })}`)
 }

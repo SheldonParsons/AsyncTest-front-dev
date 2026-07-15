@@ -49,6 +49,7 @@
             <span class="proc-action-icon">
               <RunningDots v-if="step.status === 'running'" />
               <CheckComplete v-else-if="step.status === 'success'" />
+              <span v-else-if="step.status === 'cancelled'" class="proc-action-dot cancelled" />
               <span v-else class="proc-action-dot error" />
             </span>
             <span class="proc-action-title" :class="{ shimmer: step.status === 'running' }">{{ actionHeadLabel(step) }}</span>
@@ -66,6 +67,7 @@
             </svg>
           </button>
           <p v-if="step.status === 'error' && step.summary" class="proc-action-error">{{ step.summary }}</p>
+          <p v-else-if="step.status === 'cancelled' && step.summary" class="proc-action-cancelled">{{ step.summary }}</p>
           <div v-show="actionOpen.has(step.key)" class="proc-action-detail">
             <dl>
               <template v-if="step.model"><dt>模型</dt><dd>{{ step.model }}</dd></template>
@@ -338,6 +340,13 @@ function fmt(ms?: number): string {
   line-height: 1.5;
 }
 
+.proc-action-cancelled {
+  margin: 2px 0 2px 12px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .proc-action { margin: 0; }
 
 .proc-action-head {
@@ -374,6 +383,14 @@ function fmt(ms?: number): string {
   height: 7px;
   border-radius: 50%;
   background: #dc2626;
+  display: block;
+}
+
+.proc-action-dot.cancelled {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9ca3af;
   display: block;
 }
 

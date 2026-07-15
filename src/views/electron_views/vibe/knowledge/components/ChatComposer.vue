@@ -244,13 +244,15 @@
       </div>
     </div>
 
-    <span v-if="statusText" class="composer-status">{{ statusText }}</span>
+    <span v-if="attachmentError" class="composer-status composer-error" role="alert">{{ attachmentError }}</span>
+    <span v-else-if="statusText" class="composer-status">{{ statusText }}</span>
     <input ref="fileInputEl" type="file" accept=".md,.markdown,text/markdown,text/plain" multiple hidden @change="onFileChange" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { admitAttachmentSelection } from '../composables/attachmentAdmission'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
@@ -285,6 +287,7 @@ const rootEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
+const attachmentError = ref('')
 const menuOpen = ref(false)
 const modelMenuOpen = ref(false)
 const activeIndex = ref(0)
@@ -363,6 +366,7 @@ function onSend() {
   if (sendDisabled.value) return
   emit('send', { text: props.modelValue, files: [...selectedFiles.value] })
   selectedFiles.value = []
+  attachmentError.value = ''
   if (fileInputEl.value) fileInputEl.value.value = ''
   nextTick(autoGrow)
 }
@@ -372,11 +376,15 @@ function fileKey(f: File) { return `${f.name}-${f.size}-${f.lastModified}` }
 function onFileChange() {
   const picked = Array.from(fileInputEl.value?.files || [])
   if (!picked.length) return
-  const existing = new Set(selectedFiles.value.map(fileKey))
-  selectedFiles.value = [...selectedFiles.value, ...picked.filter(f => !existing.has(fileKey(f)))]
+  const admission = admitAttachmentSelection(selectedFiles.value, picked)
+  selectedFiles.value = admission.files
+  attachmentError.value = admission.error
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
-function removeFile(i: number) { selectedFiles.value = selectedFiles.value.filter((_, idx) => idx !== i) }
+function removeFile(i: number) {
+  selectedFiles.value = selectedFiles.value.filter((_, idx) => idx !== i)
+  attachmentError.value = ''
+}
 
 function emitAnswer(value: string) {
   // 连锁确认：把勾选的段 id 一并带出（__CASCADE_APPLY__:id,id,…）；没勾任何项就当取消。
@@ -595,6 +603,7 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .send-button.is-sending { color: #fff; background: #1f2937; cursor: pointer; } /* T26:处理中=停止按钮,必须可点 */
 
 .composer-status { padding: 0 6px; color: #8a8f98; font-size: 12px; }
+.composer-status.composer-error { color: #b42318; }
 
 /* —— 动效（移植自 motion 组件） —— */
 .send-button .orbit { opacity: 0; stroke-dasharray: 30 96; transform-origin: 20px 20px; }
