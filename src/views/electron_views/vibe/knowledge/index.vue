@@ -198,10 +198,10 @@
               <template v-if="threadFinalAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(threadFinalAnswer(event))" />
                 <div
-                  v-if="threadFinalNode(event) && eventSources(threadFinalNode(event)).length"
+                  v-if="threadSources(event).length"
                   class="answer-trust"
                 >
-                  <SourceChips :items="eventSources(threadFinalNode(event))" />
+                  <SourceChips :items="threadSources(event)" />
                 </div>
                 <AssistantActions
                   v-if="threadFinalNode(event)"
@@ -308,8 +308,8 @@
                 <strong>{{ eventPackageActionTitle(event) }}</strong>
                 <span>{{ eventPackageActionDetail(event) }}</span>
               </div>
-              <!-- 待回答的反问：还在思考、别出加粗回复（选项框在输入区） -->
-              <template v-else-if="!isPendingClarification(event)">
+              <!-- 纯反问不显示正文；复合目标已经完成的只读答案必须在确认写入前正常显示。 -->
+              <template v-else-if="!isPendingClarification(event) || eventHasAnswerContent(event)">
                 <div class="message-md" v-html="renderMarkdown(eventDisplayContent(event))" />
                 <div v-if="eventSources(event).length" class="answer-trust">
                   <SourceChips :items="eventSources(event)" />
@@ -1978,13 +1978,29 @@ function enhanceCopyableCodeBlocks(html: string) {
   return tpl.innerHTML
 }
 
-function eventDisplayContent(event: any) {
+function comparableMessageText(value: any): string {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function eventIndependentAnswerText(event: any): string {
   const content = String(event?.content || '')
   const answerCard = answerCards(event).find((card: any) => card?.type === 'answer' && card?.answer_text)
   const answerText = String(event?.meta?.answer?.answer_text || answerCard?.answer_text || '')
-  const base = event?.role === 'assistant' && answerText && answerText.length > content.length
+  const preferred = event?.role === 'assistant' && answerText && answerText.length > content.length
     ? answerText
     : (content || answerText || event?.meta?.package?.summary || '')
+  const clarification = comparableMessageText(eventClarificationQuestion(event))
+  if (!clarification || comparableMessageText(preferred) !== clarification) return preferred
+
+  // 纯反问的 content 通常就是 clarification.question，不是最终答案。
+  // 复合目标可能同时带独立 answer_text；只有与问题不同的内容才算已完成回答。
+  return [answerText, content]
+    .find((candidate) => comparableMessageText(candidate)
+      && comparableMessageText(candidate) !== clarification) || ''
+}
+
+function eventDisplayContent(event: any) {
+  const base = eventIndependentAnswerText(event)
   const extra: string[] = []
   const supplement = eventAnswerSupplement(event)
   if (supplement?.missing?.length) {
@@ -1998,6 +2014,10 @@ function eventDisplayContent(event: any) {
     extra.push(`**${packageStatusLabel(pkg)}：${pkg.title || '未命名方案包'}**\n\n${pkg.summary || '确认后才写入正式知识。'}`)
   }
   return [base, ...extra].filter(Boolean).join('\n\n')
+}
+
+function eventHasAnswerContent(event: any): boolean {
+  return !!eventIndependentAnswerText(event).trim()
 }
 
 function answerCards(event: any) {
@@ -2527,17 +2547,38 @@ function threadDurationMs(root: any): number {
   return threadRunning(root) ? base + streamingElapsedMs.value : base
 }
 
-// 线程的最终答案节点 = 最后一个【非反问】节点；若最后还是反问(还在问)则没有最终答案。
+function threadAnswerNodes(root: any): any[] {
+  return clarifyThreadNodes(root).filter((node: any) => eventHasAnswerContent(node))
+}
+
+// 一个复合目标可以在写入确认前已完成只读回答；最后节点不能覆盖前面已经完成的答案。
 function threadFinalNode(root: any): any {
-  const nodes = clarifyThreadNodes(root)
-  const last = nodes[nodes.length - 1]
-  return isBlockingClarificationEvent(last) ? null : last
+  const nodes = threadAnswerNodes(root)
+  return nodes[nodes.length - 1] || null
 }
 
 function threadFinalAnswer(root: any): string {
-  const node = threadFinalNode(root)
-  if (node) return eventDisplayContent(node)
+  const answers = uniqueTextList(
+    threadAnswerNodes(root)
+      .map((node: any) => eventDisplayContent(node).trim())
+      .filter(Boolean),
+  )
+  if (answers.length) return answers.join('\n\n')
   return isStreamingUnderEvent(root) ? (streamingAssistantContent.value || '') : ''
+}
+
+function threadSources(root: any): any[] {
+  const seen = new Set<string>()
+  const sources: any[] = []
+  for (const node of threadAnswerNodes(root)) {
+    for (const source of eventSources(node)) {
+      const key = String(source?.span_id || source?.source_id || JSON.stringify(source))
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      sources.push(source)
+    }
+  }
+  return sources
 }
 
 function compareEvents(a: any, b: any) {
