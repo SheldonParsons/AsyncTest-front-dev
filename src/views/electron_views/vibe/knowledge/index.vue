@@ -1006,37 +1006,22 @@ function isDefaultSessionTitle(title?: string) {
   return !value || ['新的需求对话', 'Vibe 需求对话', '未命名对话'].includes(value)
 }
 
-function summarizeSessionTitleFromContent(content: string) {
-  const normalized = content
-    .replace(/\s+/g, ' ')
-    .replace(/^[请帮我帮我想要我想现在需要]+/u, '')
-    .trim()
-  const systemIntro = normalized.match(/(?:这是|这是一个|这个是|当前是|系统是)([^，,。；;：:]{2,24})(?:，|,|。|；|;|用于|主要|是一个|$)/u)
-  if (systemIntro?.[1]) return `${systemIntro[1].trim()}介绍`
-  const firstSentence = normalized.split(/[。！？!?；;]/u).find(Boolean) || normalized
-  const compact = firstSentence
-    .replace(/^(请|帮我|我想|需要|现在)/u, '')
-    .replace(/[，,：:]+$/u, '')
-    .trim()
-  return compact.length > 24 ? `${compact.slice(0, 24)}…` : compact || '新的需求对话'
-}
-
 function applySessionTitle(sessionId: string, title: string) {
   if (!title) return
   sessionTitleOverrides.value = { ...sessionTitleOverrides.value, [sessionId]: title }
   sessions.value = sessions.value.map(item => item.id === sessionId ? { ...item, title } : item)
 }
 
+const sessionTitleRequests = new Set<string>()
+
 async function autoNameSessionFromFirstInput(sessionId: string, content: string) {
   const session = sessions.value.find(item => item.id === sessionId)
-  if (!session || !isDefaultSessionTitle(session.title) || events.value.length) return
-  // 1) 先用本地启发式标题占位，即时反馈，不阻塞发送。
-  const placeholder = summarizeSessionTitleFromContent(content)
-  applySessionTitle(sessionId, placeholder)
-  // 2) 后台请求后端用 LLM 总结一个更精炼的标题；成功则替换，失败回退占位并落库。
+  if (!session || !isDefaultSessionTitle(session.title) || sessionTitleRequests.has(sessionId)) return
+  sessionTitleRequests.add(sessionId)
+  // 标题请求与主对话并行；后端负责 LLM 总结与确定性失败兜底，前端不再落库首句截断。
   autoTitleVibeSession(sessionId, content)
-    .then((updated) => { applySessionTitle(sessionId, updated?.title || placeholder) })
-    .catch(() => { updateVibeSession(sessionId, { title: placeholder }).catch(() => {}) })
+    .then((updated) => { if (updated?.title) applySessionTitle(sessionId, updated.title) })
+    .catch(() => { sessionTitleRequests.delete(sessionId) })
 }
 
 function addBaselineGoal() {
@@ -1774,6 +1759,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   try {
     try {
       sessionId = await ensureSession()
+      if (!contParent) void autoNameSessionFromFirstInput(sessionId, content)
     } catch {
       sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
     }

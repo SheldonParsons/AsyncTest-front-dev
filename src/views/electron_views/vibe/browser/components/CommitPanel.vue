@@ -3,9 +3,7 @@
     <aside>
       <div class="filter">
         <div><strong>提交流水</strong><span>不可变记录</span></div>
-        <AppSelect :model-value="kind" :options="kindOptions" placeholder="全部" @change="changeKind">
-          <template #trigger="{ open, label, placeholder }"><span class="select-trigger">{{ label || placeholder }}<svg :class="{ open }" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span></template>
-        </AppSelect>
+        <AppSelect class="action-filter" :model-value="kind" :options="kindOptions" placeholder="全部动作" @change="changeKind" />
       </div>
       <div class="commit-list" @scroll.passive="loadMore">
         <button v-for="item in items" :id="`commit-${item.seq}`" :key="item.id" type="button" :class="{ active: detail?.seq === item.seq }" @click="open(item.seq)">
@@ -73,7 +71,7 @@ function formatFullTime(value: string) { return new Date(value).toLocaleString('
 .commit-panel { display: grid; grid-template-columns: 330px minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
 aside { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; border-right: 1px solid #ddd; background: #fafafa; }
 .filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px; border-bottom: 1px solid #e4e4e4; } .filter strong, .filter span { display: block; } .filter strong { font-size: 13px; } .filter > div > span { color: #999; font-size: 10px; }
-.select-trigger { display: flex; align-items: center; gap: 5px; min-width: 92px; padding: 7px 8px; border-radius: 5px; background: #eee; font-size: 11px; } .select-trigger svg { margin-left: auto; transition: transform .15s; } .select-trigger svg.open { transform: rotate(180deg); }
+.action-filter :deep(.app-select-trigger) { min-width: 108px; height: 30px; font-size: 11px; }
 .commit-list { min-height: 0; overflow-y: auto; padding: 7px; }
 .commit-list button { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 10px 8px; border: 0; border-radius: 5px; background: transparent; color: #333; text-align: left; cursor: pointer; }
 .commit-list button:hover { background: #eee; } .commit-list button.active { background: #dedede; }

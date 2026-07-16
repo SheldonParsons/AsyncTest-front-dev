@@ -44,7 +44,7 @@
             class="proc-action-head"
             type="button"
             :disabled="!hasDetails(step)"
-            @click="toggleAction(step.key)"
+            @click="toggleAction(step)"
           >
             <span class="proc-action-icon">
               <RunningDots v-if="step.status === 'running'" />
@@ -57,7 +57,7 @@
             <svg
               v-if="hasDetails(step)"
               class="proc-chevron small"
-              :class="{ open: actionOpen.has(step.key) }"
+              :class="{ open: isActionOpen(step) }"
               viewBox="0 0 16 16"
               width="12"
               height="12"
@@ -68,7 +68,7 @@
           </button>
           <p v-if="step.status === 'error' && step.summary" class="proc-action-error">{{ step.summary }}</p>
           <p v-else-if="step.status === 'cancelled' && step.summary" class="proc-action-cancelled">{{ step.summary }}</p>
-          <div v-show="actionOpen.has(step.key)" class="proc-action-detail">
+          <div v-show="isActionOpen(step)" class="proc-action-detail">
             <dl>
               <template v-if="step.model"><dt>模型</dt><dd>{{ step.model }}</dd></template>
               <template v-if="step.useCase"><dt>用途</dt><dd>{{ step.useCase }}</dd></template>
@@ -81,6 +81,11 @@
     </div>
   </div>
 </template>
+
+<script lang="ts">
+// 流式轮次落盘时组件会重建；按后端 actionId 记住用户展开状态。
+const rememberedActionOpenIds = new Set<string>()
+</script>
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
@@ -100,7 +105,7 @@ const props = withDefaults(defineProps<{
 })
 
 const open = ref(false)
-const actionOpen = reactive(new Set<string>())
+const actionOpen = reactive(rememberedActionOpenIds)
 
 const bodyVisible = computed(() => props.running || open.value)
 const durationLabel = computed(() => formatDuration(props.durationMs || 0))
@@ -110,9 +115,24 @@ function toggle() {
   open.value = !open.value
 }
 
-function toggleAction(key: string) {
+function actionIdentity(step: ProcessActionStep): string {
+  return step.actionId || step.key
+}
+
+function isActionOpen(step: ProcessActionStep): boolean {
+  return actionOpen.has(actionIdentity(step))
+}
+
+function toggleAction(step: ProcessActionStep) {
+  const key = actionIdentity(step)
   if (actionOpen.has(key)) actionOpen.delete(key)
-  else actionOpen.add(key)
+  else {
+    actionOpen.add(key)
+    if (actionOpen.size > 500) {
+      const oldest = actionOpen.values().next().value
+      if (oldest) actionOpen.delete(oldest)
+    }
+  }
 }
 
 const STAT_LABELS: Record<string, string> = {

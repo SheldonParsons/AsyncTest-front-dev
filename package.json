@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.0.4",
+  "version": "3.0.5",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -20,7 +20,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n\\n### 知识库相关\\n\\n#### 召回优化\",\"publishDate\":\"2026-07-15\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### 系统优化\\n\\n### 知识库相关\\n\\n#### 功能优化：召回、录入优化\\n#### 功能优化：修复了一些前端内容\",\"publishDate\":\"2026-07-16\"}"
     },
     "publish": [
       {

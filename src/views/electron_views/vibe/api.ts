@@ -856,7 +856,7 @@ export interface KnowledgeSourceSummary {
   source_kind: 'text' | 'file' | 'synthetic'
   filename: string
   display_name: string
-  display_kind: '对话输入' | '文件' | '文本来源' | '系统来源'
+  display_kind: string
   mime_type: string
   content_hash: string
   metadata: Record<string, any>
@@ -889,7 +889,7 @@ export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
   source_kind: 'text' | 'file' | 'synthetic'
   filename: string
   display_name: string
-  display_kind: '对话输入' | '文件' | '文本来源' | '系统来源'
+  display_kind: string
   mime_type: string
   breadcrumb: string
   rank: number
