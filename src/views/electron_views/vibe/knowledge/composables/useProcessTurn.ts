@@ -15,7 +15,12 @@ export interface ProcessActionStep {
   actionType: string
   title: string
   summary: string
-  status: 'running' | 'success' | 'error' | 'cancelled'
+  status: 'running' | 'success' | 'error' | 'cancelled' | 'unknown' | 'aborted' | 'superseded'
+  itemId?: string
+  sequence?: number
+  phase?: string
+  source?: string
+  authority?: string
   durationMs?: number
   model?: string
   useCase?: string
@@ -29,6 +34,11 @@ export interface ProcessMessageStep {
   text: string
   messageId?: string   // 真 ReAct 流式旁白的累积锚点
   streaming?: boolean  // 是否仍在逐字流入（用于光标动画）
+  itemId?: string
+  sequence?: number
+  phase?: string
+  source?: string
+  authority?: string
 }
 
 // 反问续跑：把"反问 + 用户的选择/回答"作为思考中的一环（气泡）插在过程步里
@@ -61,6 +71,22 @@ let _seq = 0
 function nextKey(prefix: string): string {
   _seq += 1
   return `${prefix}-${_seq}`
+}
+
+function stableKey(event: any, prefix: string): string {
+  return String(event?.item_id || event?.step_id || '') || nextKey(prefix)
+}
+
+function eventSequence(event: any): number | undefined {
+  return typeof event?.sequence === 'number' ? event.sequence : undefined
+}
+
+function sortProcessSteps(state: ProcessState) {
+  state.steps.sort((a: any, b: any) => {
+    const left = typeof a.sequence === 'number' ? a.sequence : Number.MAX_SAFE_INTEGER
+    const right = typeof b.sequence === 'number' ? b.sequence : Number.MAX_SAFE_INTEGER
+    return left - right
+  })
 }
 
 export function createProcessState(): ProcessState {
@@ -99,7 +125,21 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
       return true
     case 'process_message':
       if (state.status === 'idle') state.status = 'running'
-      state.steps.push({ kind: 'message', key: nextKey('msg'), text: String(event.message || '') })
+      {
+        const key = stableKey(event, 'msg')
+        const existing = state.steps.find((step) => step.kind === 'message' && step.key === key) as ProcessMessageStep | undefined
+        const patch = {
+          text: String(event.message || ''),
+          itemId: String(event.item_id || '') || undefined,
+          sequence: eventSequence(event),
+          phase: event.phase || undefined,
+          source: event.source || undefined,
+          authority: event.authority || undefined,
+        }
+        if (existing) Object.assign(existing, patch)
+        else state.steps.push({ kind: 'message', key, ...patch })
+        sortProcessSteps(state)
+      }
       return true
     case 'process_message_delta': {
       // 真 ReAct 流式旁白：按 message_id 把增量累积到同一条旁白上，实现打字机式丝滑。
@@ -114,8 +154,16 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
       if (!delta) return true
       let step = findMessageById(state, id)
       if (!step) {
-        step = { kind: 'message', key: nextKey('msg'), text: '', messageId: id, streaming: true }
+        step = {
+          kind: 'message', key: stableKey(event, 'msg'), text: '', messageId: id, streaming: true,
+          itemId: String(event.item_id || '') || undefined,
+          sequence: eventSequence(event),
+          phase: event.phase || undefined,
+          source: event.source || undefined,
+          authority: event.authority || undefined,
+        }
         state.steps.push(step)
+        sortProcessSteps(state)
       }
       step.text += delta
       step.streaming = true
@@ -123,9 +171,11 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
     }
     case 'process_action_started': {
       if (state.status === 'idle') state.status = 'running'
+      const itemId = String(event.item_id || '')
+      const existing = findAction(state, itemId, String(event.action_id || ''))
       const action: ProcessActionStep = {
         kind: 'action',
-        key: nextKey('act'),
+        key: stableKey(event, 'act'),
         actionId: String(event.action_id || ''),
         actionType: String(event.action_type || 'action'),
         title: String(event.title || event.action_id || '执行动作'),
@@ -133,12 +183,20 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
         status: 'running',
         model: event.model || undefined,
         useCase: event.use_case || undefined,
+        itemId: itemId || undefined,
+        sequence: eventSequence(event),
+        phase: event.phase || undefined,
+        source: event.source || undefined,
+        authority: event.authority || undefined,
       }
-      state.steps.push(action)
+      if (existing) Object.assign(existing, action)
+      else state.steps.push(action)
+      sortProcessSteps(state)
       return true
     }
     case 'process_action_done': {
-      const existing = findRunningAction(state, String(event.action_id || ''))
+      const itemId = String(event.item_id || '')
+      const existing = findAction(state, itemId, String(event.action_id || ''))
       const patch: Partial<ProcessActionStep> = {
         actionType: String(event.action_type || existing?.actionType || 'action'),
         title: String(event.title || existing?.title || '执行动作'),
@@ -149,13 +207,18 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
         useCase: event.use_case || existing?.useCase,
         stats: event.stats && typeof event.stats === 'object' ? event.stats : existing?.stats,
         details: event.details && typeof event.details === 'object' ? event.details : existing?.details,
+        itemId: itemId || existing?.itemId,
+        sequence: eventSequence(event) ?? existing?.sequence,
+        phase: event.phase || existing?.phase,
+        source: event.source || existing?.source,
+        authority: event.authority || existing?.authority,
       }
       if (existing) {
         Object.assign(existing, patch)
       } else {
         state.steps.push({
           kind: 'action',
-          key: nextKey('act'),
+          key: stableKey(event, 'act'),
           actionId: String(event.action_id || ''),
           actionType: patch.actionType || 'action',
           title: patch.title || '执行动作',
@@ -168,6 +231,7 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
           details: patch.details,
         })
       }
+      sortProcessSteps(state)
       return true
     }
     case 'process_done':
@@ -175,9 +239,9 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
       state.durationMs = typeof event.duration_ms === 'number' ? event.duration_ms : state.durationMs
       state.summary = String(event.summary || '')
       state.stats = event.stats && typeof event.stats === 'object' ? event.stats : state.stats
-      // Any action left running gets settled so the UI never hangs.
+      // 流关闭不等于动作成功。没有真实终态的动作只能标记 unknown。
       state.steps.forEach((step) => {
-        if (step.kind === 'action' && step.status === 'running') step.status = 'success'
+        if (step.kind === 'action' && step.status === 'running') step.status = 'unknown'
         if (step.kind === 'message' && step.streaming) step.streaming = false
       })
       return true
@@ -186,10 +250,12 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
   }
 }
 
-function findRunningAction(state: ProcessState, actionId: string): ProcessActionStep | undefined {
+function findAction(state: ProcessState, itemId: string, actionId: string): ProcessActionStep | undefined {
   for (let i = state.steps.length - 1; i >= 0; i -= 1) {
     const step = state.steps[i]
-    if (step.kind === 'action' && step.actionId === actionId && step.status === 'running') return step
+    if (step.kind !== 'action') continue
+    if (itemId && step.itemId === itemId) return step
+    if (!itemId && actionId && step.actionId === actionId) return step
   }
   return undefined
 }
@@ -211,11 +277,18 @@ export function stepsFromMeta(meta: any): ProcessStep[] {
   raw.forEach((item: any, index: number) => {
     if (!item || typeof item !== 'object') return
     if (item.kind === 'message') {
-      steps.push({ kind: 'message', key: `m-${index}`, text: String(item.text || '') })
+      steps.push({
+        kind: 'message', key: String(item.item_id || item.step_id || `m-${index}`), text: String(item.text || ''),
+        itemId: item.item_id || undefined,
+        sequence: typeof item.sequence === 'number' ? item.sequence : undefined,
+        phase: item.phase || undefined,
+        source: item.source || undefined,
+        authority: item.authority || undefined,
+      })
     } else if (item.kind === 'action') {
       steps.push({
         kind: 'action',
-        key: `a-${index}`,
+        key: String(item.item_id || item.step_id || `a-${index}`),
         actionId: String(item.action_id || ''),
         actionType: String(item.action_type || 'action'),
         title: String(item.title || '执行动作'),
@@ -226,10 +299,19 @@ export function stepsFromMeta(meta: any): ProcessStep[] {
         useCase: item.use_case || undefined,
         stats: item.stats && typeof item.stats === 'object' ? item.stats : undefined,
         details: item.details && typeof item.details === 'object' ? item.details : undefined,
+        itemId: item.item_id || undefined,
+        sequence: typeof item.sequence === 'number' ? item.sequence : undefined,
+        phase: item.phase || undefined,
+        source: item.source || undefined,
+        authority: item.authority || undefined,
       })
     }
   })
-  return steps
+  return steps.sort((a: any, b: any) => {
+    const left = typeof a.sequence === 'number' ? a.sequence : Number.MAX_SAFE_INTEGER
+    const right = typeof b.sequence === 'number' ? b.sequence : Number.MAX_SAFE_INTEGER
+    return left - right
+  })
 }
 
 export function durationFromMeta(meta: any): number {

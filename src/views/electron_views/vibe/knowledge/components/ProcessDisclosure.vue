@@ -50,6 +50,7 @@
               <RunningDots v-if="step.status === 'running'" />
               <CheckComplete v-else-if="step.status === 'success'" />
               <span v-else-if="step.status === 'cancelled'" class="proc-action-dot cancelled" />
+              <span v-else-if="step.status === 'unknown' || step.status === 'aborted' || step.status === 'superseded'" class="proc-action-dot unknown" />
               <span v-else class="proc-action-dot error" />
             </span>
             <span class="proc-action-title" :class="{ shimmer: step.status === 'running' }">{{ actionHeadLabel(step) }}</span>
@@ -68,6 +69,7 @@
           </button>
           <p v-if="step.status === 'error' && step.summary" class="proc-action-error">{{ step.summary }}</p>
           <p v-else-if="step.status === 'cancelled' && step.summary" class="proc-action-cancelled">{{ step.summary }}</p>
+          <p v-else-if="['unknown', 'aborted', 'superseded'].includes(step.status) && step.summary" class="proc-action-cancelled">{{ step.summary }}</p>
           <div v-show="isActionOpen(step)" class="proc-action-detail">
             <dl>
               <template v-if="step.model"><dt>模型</dt><dd>{{ step.model }}</dd></template>
@@ -411,6 +413,15 @@ function fmt(ms?: number): string {
   height: 7px;
   border-radius: 50%;
   background: #9ca3af;
+  display: block;
+}
+
+.proc-action-dot.unknown {
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #9ca3af;
+  border-radius: 50%;
+  background: transparent;
   display: block;
 }
 
