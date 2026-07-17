@@ -801,6 +801,9 @@ export interface FoundationRunningTurn {
   terminal_at?: number
   deadline_at?: number
   events: any[]
+  protocol_events?: any[]
+  protocol_state?: 'queued' | 'running' | 'waiting_user' | 'cancelling' | 'cancelled' | 'interrupted' | 'succeeded' | 'failed'
+  protocol_terminal?: string | null
 }
 
 export interface FoundationCancelResult {

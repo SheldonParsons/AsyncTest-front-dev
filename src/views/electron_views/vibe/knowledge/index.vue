@@ -427,6 +427,15 @@ import {
   type ProcessStep,
 } from './composables/useProcessTurn'
 import {
+  applyTurnProtocolPacket,
+  createTurnProtocolState,
+  hasTurnProtocolPacket,
+  readTurnProtocolFromMeta,
+  replayTurnProtocol,
+  type TurnProtocolReadModel,
+  type TurnProtocolState,
+} from './composables/turnProtocol'
+import {
   autoTitleVibeSession,
   createVibeSession,
   deleteVibeSession,
@@ -815,7 +824,7 @@ function restoreClarificationFromEvents() {
   const last = evs[evs.length - 1]
   if (last && last.role === 'assistant') {
     const q = eventClarificationQuestion(last)
-    const clar = last?.meta?.clarification
+    const clar = eventClarificationData(last)
     // 可选连锁候选仍允许恢复到输入区处理，但不会触发消息头“等你选择”。
     clarificationActive.value = q
       ? { question: q, raw: clar?.raw, pending: Array.isArray(clar?.pending) ? clar.pending : [] }
@@ -1086,6 +1095,26 @@ function setSessionRunning(sessionId: string, running: boolean) {
   runningSessionIds.value = Array.from(next)
 }
 
+function applyCanonicalReadModel(model: TurnProtocolReadModel) {
+  streamingProcess.steps = model.process
+  streamingProcess.status = ['queued', 'running', 'cancelling'].includes(model.state) ? 'running' : 'done'
+  streamingProcess.durationMs = Number(model.processSummary?.duration_ms || streamingProcess.durationMs || 0)
+  streamingProcess.summary = String(model.processSummary?.summary || '')
+  streamingProcess.stats = model.processSummary?.stats && typeof model.processSummary.stats === 'object'
+    ? model.processSummary.stats
+    : {}
+  streamingAssistantContent.value = model.content
+  streamingSources.value = model.sources
+  streamingVerification.value = model.verification
+  clarificationActive.value = model.clarification?.question
+    ? {
+        question: model.clarification.question,
+        raw: model.clarification.raw,
+        pending: model.clarification.pending,
+      }
+    : null
+}
+
 async function refreshProjectRunningTurns() {
   if (!vibeProject.value?.id) {
     runningSessionIds.value = []
@@ -1118,6 +1147,24 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   streamingSources.value = []
   streamingVerification.value = null
 
+  const protocolEvents = Array.isArray(turn.protocol_events) ? turn.protocol_events : []
+  if (protocolEvents.length) {
+    // 传输层只负责把已持久化事件放回列表；回答、反问、过程和终态全部由规范日志重放。
+    for (const event of turn.events || []) {
+      if (String(event?.type || '') !== 'event_saved') continue
+      const saved = event.event as VibeEvent
+      if (event.role === 'user') {
+        const parentId = String((saved as any)?.meta?.parent_event_id || '')
+        if (parentId) streamingContinuationParentId.value = parentId
+      } else if (event.role === 'assistant') {
+        streamingAssistantEventId.value = String(saved?.id || '')
+      }
+      upsertEvent(saved)
+    }
+    applyCanonicalReadModel(replayTurnProtocol(protocolEvents))
+    return
+  }
+
   const answers: string[] = []
   let answerStreamText = ''
   let answerStreamDoneText = ''
@@ -1146,7 +1193,7 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
         activeTurnId.value = String(event.turn_id || turnId)
         break
       case 'intent':
-        fndPushStep(intentStepLabel((event.actions || []).map(String), '', undefined))
+        fndPushStep(legacyIntentStepLabel((event.actions || []).map(String)))
         break
       case 'stage':
         fndPushStep(String(event.message || ''))
@@ -1580,39 +1627,8 @@ function fndSerializeSteps(): any[] {
     .map(s => ({ kind: 'message', text: (s as any).text }))
 }
 
-function isLikelyDeleteIntentText(text: string, applyEdit?: any) {
-  const kind = String(applyEdit?.kind || '')
-  if (kind === 'knowledge_change' && Array.isArray(applyEdit?.operations)) {
-    return applyEdit.operations.some((item: any) => String(item?.op || item?.kind || '').startsWith('delete_'))
-  }
-  const t = String(text || '').trim()
-  if (!t) return false
-  return /(删除|删掉|移除|清除|去掉|撤掉).{0,80}(模块|分类|原文|原文块|整段|知识库|规则|内容)/.test(t)
-}
-
-function intentStepLabel(actions: string[], text: string, applyEdit?: any) {
-  if (isLikelyDeleteIntentText(text, applyEdit) && actions.some(a => a === 'save' || a === 'candidate_save')) {
-    return '意图：删除原文'
-  }
-  return actions.length
-    ? `意图：${actions.map(a => FND_ACTION_LABELS[a] || a).join('＋')}`
-    : '意图：待判断'
-}
-
-const FND_ACTION_LABELS: Record<string, string> = {
-  save: '录入新知识',
-  insert: '录入新知识',
-  edit: '修改原文',
-  update: '修改原文',
-  move: '移动原文',
-  delete: '删除原文',
-  candidate_save: '疑似录入，待确认',
-  overview: '盘点知识库',
-  kb: '检索知识库',
-  system: '使用向导',
-  external: '库外问题（待接工具）',
-  smalltalk: '寒暄/边界',
-  needs_clarification: '待澄清',
+function legacyIntentStepLabel(actions: string[]) {
+  return actions.length ? `意图：${actions.join('＋')}` : '意图：待判断'
 }
 
 async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean; clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string } }) {
@@ -1664,17 +1680,36 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   let userEventSaved = false
   let assistantEventSaved = false
   let turnCancelled = false
+  const canonicalState: TurnProtocolState = createTurnProtocolState()
+  let canonicalSeen = false
+  let canonicalModel: TurnProtocolReadModel | null = null
 
   const onEvent = (event: any) => {
     // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
     // （answers / 标志位 / 来源等都要收，否则切回来本轮回答会丢——这是上一版回答消失的根因）。
     // 后端始终持久化，切回本轮会话会通过 event_saved / 重载补全。
     const live = !turnSessionId || activeSessionId.value === turnSessionId
-    if (String(event?.type || '').startsWith('process_')) {
+    const type = String(event?.type || '')
+    if (hasTurnProtocolPacket(event)) {
+      canonicalSeen = true
+      canonicalModel = applyTurnProtocolPacket(canonicalState, event.turn_protocol)
+      actions = canonicalModel.actions
+      recallSources = canonicalModel.sources
+      recallVerification = canonicalModel.verification
+      failed = canonicalModel.failed
+      turnCancelled = canonicalModel.state === 'cancelled'
+      if (live) applyCanonicalReadModel(canonicalModel)
+      // 外层 SSE 在阶段 5 只承担连接、turn id 和持久化通知；其余语义不得再解释第二次。
+      if (!['turn_started', 'event_saved'].includes(type)) {
+        if (live) scrollBottomIfFollowing()
+        return
+      }
+    }
+    if (type.startsWith('process_')) {
       if (live) { consumeProcessEvent(streamingProcess, event); scrollBottomIfFollowing() }
       return
     }
-    switch (String(event?.type || '')) {
+    switch (type) {
       case 'turn_started':
         // T26：后端本轮令牌 id——停止按钮凭它调 cancel 接口
         activeTurnId.value = String(event.turn_id || '')
@@ -1709,7 +1744,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         break
       case 'intent':
         actions = (event.actions || []).map(String)
-        if (live) fndPushStep(intentStepLabel(actions, content, applyEdit))
+        if (live) fndPushStep(legacyIntentStepLabel(actions))
         break
       case 'answer_start':
         answerStreamText = ''
@@ -1779,7 +1814,9 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       onError(message: string) { failed = failed || message },
     })
     if (!failed) {
-      assistantContent = answers.join('\n\n') || answerStreamDoneText
+      assistantContent = canonicalSeen && canonicalModel
+        ? canonicalModel.content
+        : (answers.join('\n\n') || answerStreamDoneText)
     }
   } catch (error) {
     failed = failed || (error instanceof Error ? error.message : String(error))
@@ -1801,6 +1838,14 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       events.value.push(fndSyntheticEvent('assistant', assistantContent, actions.includes('save') ? 'entry' : 'chat', {
         process: fndSerializeSteps(),
         process_summary: { duration_ms: Date.now() - startedAt },
+        ...(canonicalSeen ? {
+          turn_protocol: {
+            schema_version: 2,
+            events: [...canonicalState.events.values()].sort((a, b) => a.sequence - b.sequence),
+            state: canonicalModel?.state,
+            terminal: canonicalModel?.terminal || null,
+          },
+        } : {}),
         ...(recallSources.length ? { sources: recallSources } : {}),
         ...(recallVerification ? { verification: recallVerification } : {}),
         // 续跑兜底：嵌套挂到反问之下，保持"同一条思考"的视觉（与后端持久化路径一致）。
@@ -1993,7 +2038,24 @@ function comparableMessageText(value: any): string {
   return String(value || '').replace(/\s+/g, ' ').trim()
 }
 
+const turnProtocolMetaCache = new WeakMap<object, { signature: string; model: TurnProtocolReadModel }>()
+
+function eventTurnProtocol(event: any): TurnProtocolReadModel | null {
+  const meta = event?.meta
+  const rows = meta?.turn_protocol?.events
+  if (!meta || typeof meta !== 'object' || !Array.isArray(rows) || !rows.length) return null
+  const last = rows[rows.length - 1]
+  const signature = `${rows.length}:${String(last?.event_id || '')}:${String(last?.event_type || '')}`
+  const cached = turnProtocolMetaCache.get(meta)
+  if (cached?.signature === signature) return cached.model
+  const model = readTurnProtocolFromMeta(meta)
+  if (model) turnProtocolMetaCache.set(meta, { signature, model })
+  return model
+}
+
 function eventIndependentAnswerText(event: any): string {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return canonical.content
   const content = String(event?.content || '')
   const answerCard = answerCards(event).find((card: any) => card?.type === 'answer' && card?.answer_text)
   const answerText = String(event?.meta?.answer?.answer_text || answerCard?.answer_text || '')
@@ -2037,10 +2099,19 @@ function answerCards(event: any) {
 }
 
 function eventClarificationQuestion(event: any) {
+  const canonical = eventClarificationData(event)
+  if (canonical?.question) return canonical.question
   const direct = event?.meta?.clarification?.question
   if (direct) return String(direct)
   const clarifyCard = answerCards(event).find((card: any) => card?.type === 'clarify' && card?.question)
   return clarifyCard?.question ? String(clarifyCard.question) : ''
+}
+
+function eventClarificationData(event: any): { question: string; raw?: any; pending?: any[] } | null {
+  const canonical = eventTurnProtocol(event)?.clarification
+  if (canonical?.question) return canonical
+  const legacy = event?.meta?.clarification
+  return legacy?.question ? legacy : null
 }
 
 function isBlockingClarificationEvent(event: any): boolean {
@@ -2048,11 +2119,15 @@ function isBlockingClarificationEvent(event: any): boolean {
 }
 
 function eventProcessSteps(event: any): ProcessStep[] {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return canonical.process
   return stepsFromMeta(event?.meta)
 }
 
 // T1 溯源：历史消息从 meta.sources 复原；兼容 answer cards 里附带的 sources。
 function eventSources(event: any): any[] {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return canonical.sources
   const fromMeta = event?.meta?.sources
   if (Array.isArray(fromMeta) && fromMeta.length) return fromMeta
   const card = answerCards(event).find((c: any) => c?.type === 'sources' && Array.isArray(c?.items))
@@ -2061,6 +2136,8 @@ function eventSources(event: any): any[] {
 
 // T8 核验：历史消息从 meta.verification 复原。
 function eventVerification(event: any): any | null {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return canonical.verification
   const v = event?.meta?.verification
   if (v && typeof v === 'object' && v.checked) {
     return {
@@ -2073,6 +2150,8 @@ function eventVerification(event: any): any | null {
 }
 
 function eventProcessDuration(event: any): number {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return Number(canonical.processSummary?.duration_ms || 0)
   return durationFromMeta(event?.meta)
 }
 
@@ -2527,7 +2606,7 @@ function mergedThreadSteps(root: any): any[] {
     for (const s of eventProcessSteps(n)) out.push(s)
     if (eventClarificationQuestion(n)) {
       // 第四代小文档确认把整体 diff 作为思考的一环；大文档只保留摘要。
-      const raw = n?.meta?.clarification?.raw
+      const raw = eventClarificationData(n)?.raw
       if (raw && raw.kind === 'knowledge_change' && raw.old_body != null && raw.new_body != null
         && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)) {
         out.push({ kind: 'diff', key: `diff-${n.id}`, lines: diffLines(raw.old_body, raw.new_body) })
