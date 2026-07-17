@@ -792,10 +792,25 @@ export interface FoundationRunningTurn {
   session_id: string
   project: string
   done: boolean
+  state: 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed' | 'interrupted'
+  stop?: { source?: string; reason?: string; scope?: string; requested_at?: number; detail?: string }
+  commit_state?: 'not_started' | 'in_transaction' | 'committed' | 'rolled_back'
   failed?: string
   started_at?: number
   updated_at?: number
+  terminal_at?: number
+  deadline_at?: number
   events: any[]
+}
+
+export interface FoundationCancelResult {
+  ok: boolean
+  accepted: boolean
+  cancelled: boolean
+  idempotent?: boolean
+  current_state: string
+  reason: string
+  committed: boolean
 }
 
 export function listFoundationRunningTurns(params: { project?: string; session_id?: string } = {}): Promise<{ items: FoundationRunningTurn[] }> {
@@ -807,8 +822,8 @@ export function listFoundationRunningTurns(params: { project?: string; session_i
 }
 
 /** T26 停止本轮：置位后端取消令牌。流会自己发 cancelled+已停止回执+done 正常收尾，无需 abort。 */
-export function cancelFoundationTurn(turnId: string): Promise<{ ok: boolean; cancelled: boolean }> {
-  return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId })
+export function cancelFoundationTurn(turnId: string, sessionId = ''): Promise<FoundationCancelResult> {
+  return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId, session_id: sessionId })
 }
 
 export function getFoundationKnowledgeStatsMany(

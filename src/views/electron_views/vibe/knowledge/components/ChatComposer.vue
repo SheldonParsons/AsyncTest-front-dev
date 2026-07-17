@@ -219,11 +219,11 @@
 
           <button
             class="icon-button send-button"
-            :class="{ 'is-sending': sending }"
+            :class="{ 'is-sending': sending, 'is-stopping': stopping }"
             type="button"
-            :aria-label="sending ? '停止本轮' : '发送'"
-            :title="sending ? '停止本轮' : '发送'"
-            :disabled="!sending && sendDisabled"
+            :aria-label="stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
+            :title="stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
+            :disabled="stopping || (!sending && sendDisabled)"
             @click="onSend"
           >
             <svg class="send-arrow-flow" viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -265,6 +265,7 @@ interface Question { title: string; description?: string; items: QuestionItem[];
 const props = withDefaults(defineProps<{
   modelValue: string
   sending?: boolean
+  stopping?: boolean
   placeholder?: string
   statusText?: string
   question?: Question | null
@@ -272,7 +273,7 @@ const props = withDefaults(defineProps<{
   modelOptions?: ModelOption[]
   modelValueId?: string
   modelDisabled?: boolean
-}>(), { sending: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false })
+}>(), { sending: false, stopping: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -362,6 +363,7 @@ function selectModel(value: string) {
 }
 
 function onSend() {
+  if (props.stopping) return
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   if (sendDisabled.value) return
   emit('send', { text: props.modelValue, files: [...selectedFiles.value] })

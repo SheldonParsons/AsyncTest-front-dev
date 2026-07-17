@@ -382,6 +382,7 @@
           <ChatComposer
             v-model="composerDraft"
             :sending="sending"
+            :stopping="cancelRequested"
             :placeholder="composerPlaceholder"
             :status-text="composerStatusText"
             :question="composerQuestion"
@@ -621,7 +622,10 @@ async function stopFoundationTurn() {
   if (!activeTurnId.value || cancelRequested.value) return
   cancelRequested.value = true
   try {
-    await cancelFoundationTurn(activeTurnId.value)
+    const result = await cancelFoundationTurn(activeTurnId.value, activeSessionId.value)
+    if (!result.accepted && result.current_state !== 'cancel_requested') {
+      cancelRequested.value = false
+    }
     // 不 abort 流：后端置位后会自己发 cancelled + 已停止回执 + done 正常收尾
   } catch { cancelRequested.value = false /* 失败允许再点 */ }
 }
@@ -693,6 +697,7 @@ const activeConversationRailIndex = computed(() => {
 const sending = computed(() => preparingSend.value || foundationBusy.value || sendingSessionIds.value.length > 0)
 const composerStatusText = computed(() => {
   if (preparingSend.value) return '正在创建对话…'
+  if (cancelRequested.value) return '正在停止…'
   return ''  // 0704 用户定:输入框下不再显示"正在思考/收尾"——状态由过程区"已处理 Xs"+按钮■表达
 })
 const composerPlaceholder = computed(() =>
@@ -1105,7 +1110,7 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   }
   foundationBusy.value = true
   activeTurnId.value = turnId
-  cancelRequested.value = false
+  cancelRequested.value = turn.state === 'cancel_requested'
   resetProcessState(streamingProcess)
   streamingProcess.status = 'running'
   streamingAssistantEventId.value = ''
@@ -1186,6 +1191,9 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
         break
       }
       case 'done':
+        streamingProcess.status = 'done'
+        break
+      case 'cancelled':
         streamingProcess.status = 'done'
         break
       default:
@@ -1655,6 +1663,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   let turnSessionId = ''
   let userEventSaved = false
   let assistantEventSaved = false
+  let turnCancelled = false
 
   const onEvent = (event: any) => {
     // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
@@ -1671,6 +1680,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         activeTurnId.value = String(event.turn_id || '')
         break
       case 'cancelled':
+        turnCancelled = true
         if (live) fndPushStep('已停止本轮处理')
         break
       case 'event_saved': {
@@ -1784,7 +1794,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       draft.value = content
       resizeDraft()
     }
-    if (!assistantEventSaved && (!turnSessionId || activeSessionId.value === turnSessionId)) {
+    if (!assistantEventSaved && (assistantContent || failed) && !turnCancelled
+      && (!turnSessionId || activeSessionId.value === turnSessionId)) {
       // 兜底：后端没存上（无会话/持久化失败）才用本地合成事件呈现本轮回答；
       // 若用户已切去别的会话查看，则不把本轮兜底气泡写进所看会话（避免串会话）。
       events.value.push(fndSyntheticEvent('assistant', assistantContent, actions.includes('save') ? 'entry' : 'chat', {
