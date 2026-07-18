@@ -903,7 +903,41 @@ export interface KnowledgeSourceDetail extends Omit<KnowledgeSourceSummary, 'cha
   spans: KnowledgeSourceSpan[]
 }
 
+export interface KnowledgeDocumentSummary {
+  id: string
+  document_id: string
+  project_id: string
+  title: string
+  mime_type: string
+  current_generation_id: string
+  generation_id: string
+  generation_no: number
+  materialized_source_id: string
+  source_id: string
+  source_kind: 'text' | 'file' | 'synthetic'
+  filename: string
+  display_name: string
+  display_kind: '现行文档'
+  content_hash: string
+  metadata: Record<string, any>
+  generation_metadata: Record<string, any>
+  source_metadata: Record<string, any>
+  commit_seq: number
+  created_at: string
+  updated_at: string
+  chars: number
+  span_count: number
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocumentSummary {
+  content: string
+  spans: Array<KnowledgeSourceSpan & { document_id: string; generation_id: string }>
+}
+
 export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
+  document_id: string
+  generation_id: string
+  title: string
   source_kind: 'text' | 'file' | 'synthetic'
   filename: string
   display_name: string
@@ -929,6 +963,7 @@ export interface KnowledgeStatus {
   summary: {
     commit_count: number
     source_count: number
+    document_count: number
     span_count: number
     module_count: number
     tombstone_count: number
@@ -964,6 +999,18 @@ export function getKnowledgeSources(project: string, params: { q?: string; limit
 
 export function getKnowledgeSource(project: string, sourceId: string): Promise<{ ok: boolean; source: KnowledgeSourceDetail }> {
   return request('GET', `/vibe/foundation/knowledge/sources/${encodeURIComponent(sourceId)}${kbBrowserQuery({ project })}`)
+}
+
+export function getKnowledgeDocuments(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{
+  ok: boolean
+  items: KnowledgeDocumentSummary[]
+  next_cursor?: number | null
+}> {
+  return request('GET', `/vibe/foundation/knowledge/documents${kbBrowserQuery({ project, ...params })}`)
+}
+
+export function getKnowledgeDocument(project: string, documentId: string): Promise<{ ok: boolean; document: KnowledgeDocumentDetail }> {
+  return request('GET', `/vibe/foundation/knowledge/documents/${encodeURIComponent(documentId)}${kbBrowserQuery({ project })}`)
 }
 
 export function searchKnowledge(project: string, params: { q?: string; limit?: number; cursor?: number } = {}): Promise<{

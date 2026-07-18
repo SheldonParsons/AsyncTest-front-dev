@@ -2,17 +2,17 @@
   <div class="search-panel">
     <div class="search-bar">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      <input v-model="query" type="search" placeholder="搜索来源标题、路径或原文…" @keydown.enter="search(true)" />
+      <input v-model="query" type="search" placeholder="搜索现行文档标题、路径或原文…" @keydown.enter="search(true)" />
       <button type="button" @click="search(true)">搜索</button>
     </div>
     <div class="results" @scroll.passive="loadMore">
-      <button v-for="item in items" :key="item.id" type="button" @click="$emit('open-source', item.source_id, item.start_offset)">
+      <button v-for="item in items" :key="item.id" type="button" @click="$emit('open-document', item.document_id, item.start_offset)">
         <div><strong v-html="highlight(item.title_path[item.title_path.length - 1] || item.display_name || item.filename)"/><span>#{{ item.commit_seq }} · {{ item.display_name || item.filename }}</span></div>
         <small v-if="item.breadcrumb" v-html="highlight(item.breadcrumb)" />
         <p v-html="highlight(snippet(item.text))" />
       </button>
       <p v-if="loading" class="state">正在读取…</p>
-      <div v-else-if="!items.length" class="empty"><strong>没有可显示的结果</strong><span>{{ query ? '换一个更接近原文的关键词。' : '当前项目还没有可浏览的来源跨度。' }}</span></div>
+      <div v-else-if="!items.length" class="empty"><strong>没有可显示的结果</strong><span>{{ query ? '换一个更接近原文的关键词。' : '当前项目还没有可浏览的现行文档。' }}</span></div>
       <p v-else-if="cursor === null" class="state">已显示全部结果。</p>
     </div>
   </div>
@@ -23,7 +23,7 @@ import { ref, watch } from 'vue'
 import { searchKnowledge, type KnowledgeSearchHit } from '../../api'
 
 const props = defineProps<{ projectId: string }>()
-defineEmits<{ 'open-source': [sourceId: string, offset: number] }>()
+defineEmits<{ 'open-document': [documentId: string, offset: number] }>()
 const query = ref('')
 const items = ref<KnowledgeSearchHit[]>([])
 const cursor = ref<number | null>(null)

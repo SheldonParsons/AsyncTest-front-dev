@@ -13,7 +13,7 @@
       </div>
 
       <div v-if="status" class="metrics" aria-label="知识库概况">
-        <button type="button" @click="activeTab = 'document'"><b>{{ status.summary.source_count }}</b><span>来源</span></button>
+        <button type="button" @click="activeTab = 'document'"><b>{{ status.summary.document_count }}</b><span>文档</span></button>
         <button type="button" @click="activeTab = 'document'"><b>{{ status.summary.span_count }}</b><span>跨度</span></button>
         <button type="button" @click="activeTab = 'history'"><b>{{ status.summary.commit_count }}</b><span>提交</span></button>
         <button type="button" @click="activeTab = 'history'"><b>{{ status.summary.tombstone_count }}</b><span>删除</span></button>
@@ -36,8 +36,8 @@
     <section v-else-if="status" class="workspace">
       <Transition name="tab" mode="out-in">
         <OverviewPanel v-if="activeTab === 'overview'" :key="`overview-${vibeProjectId}`" :project-id="vibeProjectId" :status="status" @open-source="openSource" @open-commit="openCommit" @open-module="openModule" />
-        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${vibeProjectId}`" :project-id="vibeProjectId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
-        <SearchPanel v-else-if="activeTab === 'search'" :key="`search-${vibeProjectId}`" :project-id="vibeProjectId" @open-source="openSource" />
+        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${vibeProjectId}`" :project-id="vibeProjectId" :requested-document-id="requestedDocumentId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
+        <SearchPanel v-else-if="activeTab === 'search'" :key="`search-${vibeProjectId}`" :project-id="vibeProjectId" @open-document="openDocument" />
         <CommitPanel v-else-if="activeTab === 'history'" :key="`history-${vibeProjectId}`" :project-id="vibeProjectId" :requested-seq="requestedCommitSeq" @open-source="openSource" />
         <ReceiptPanel v-else :key="`receipts-${vibeProjectId}`" :project-id="vibeProjectId" @open-commit="openCommit" />
       </Transition>
@@ -71,6 +71,7 @@ const selectedAsyncProjectId = ref('')
 const vibeProjectId = ref('')
 const status = ref<KnowledgeStatus | null>(null)
 const activeTab = ref<TabKey>('document')
+const requestedDocumentId = ref('')
 const requestedSourceId = ref('')
 const requestedPath = ref<string[]>([])
 const requestedOffset = ref(0)
@@ -115,7 +116,7 @@ async function selectProject(project: any) {
   selectedAsyncProjectId.value = String(project.id)
   localStorage.setItem('vibe_project_source_project_id', selectedAsyncProjectId.value)
   loading.value = true; error.value = ''; status.value = null
-  requestedSourceId.value = ''; requestedPath.value = []; requestedCommitSeq.value = undefined
+  requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedPath.value = []; requestedCommitSeq.value = undefined
   try {
     let vibe
     try { vibe = await getVibeProjectByAsyncProject(Number(project.id)) }
@@ -134,12 +135,13 @@ async function reload() {
   finally { loading.value = false }
 }
 
-function openSource(id: string, offset = 0) { requestedSourceId.value = id; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
+function openSource(id: string, offset = 0) { requestedSourceId.value = id; requestedDocumentId.value = ''; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
+function openDocument(id: string, offset = 0) { requestedDocumentId.value = id; requestedSourceId.value = ''; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
 async function openModule(path: string[]) {
   const query = path[path.length - 1] || ''
   const hit = query ? (await searchKnowledge(vibeProjectId.value, { q: query, limit: 20 })).items.find(item => path.every((part, index) => item.title_path[index] === part)) : undefined
-  if (hit) openSource(hit.source_id, hit.start_offset)
-  else { requestedPath.value = [...path]; requestedSourceId.value = ''; requestedOffset.value = 0; activeTab.value = 'document' }
+  if (hit) openDocument(hit.document_id, hit.start_offset)
+  else { requestedPath.value = [...path]; requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedOffset.value = 0; activeTab.value = 'document' }
 }
 function openCommit(seq: number) { requestedCommitSeq.value = seq; activeTab.value = 'history' }
 function goChat() { router.push({ name: 'vibeKnowledge', query: { ...route.query, project: selectedAsyncProjectId.value || undefined } }) }

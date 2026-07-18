@@ -1,15 +1,15 @@
 <template>
   <div class="source-reader">
     <aside>
-      <div class="aside-head"><strong>来源</strong><span>{{ sourceItems.length }}</span></div>
+      <div class="aside-head"><strong>现行文档</strong><span>{{ documentItems.length }}</span></div>
       <div class="source-list" @scroll.passive="loadMoreOnScroll">
-        <button v-for="item in sourceItems" :key="item.id" type="button" :class="{ active: detail?.id === item.id }" @click="selectSource(item.id)">
+        <button v-for="item in documentItems" :key="item.id" type="button" :class="{ active: detailMode === 'document' && detail?.id === item.id }" @click="selectDocument(item.id)">
           <strong>{{ item.display_name || item.filename }}</strong>
-          <small>{{ item.display_kind }} · 提交 #{{ item.commit_seq }} · {{ formatChars(item.chars) }} 字</small>
+          <small>第 {{ item.generation_no }} 代 · 提交 #{{ item.commit_seq }} · {{ formatChars(item.chars) }} 字</small>
         </button>
-        <p v-if="sourceLoading" class="muted">读取来源…</p>
+        <p v-if="documentLoading" class="muted">读取现行文档…</p>
       </div>
-      <div class="aside-head structure-head"><strong>当前来源结构</strong><span>{{ outline.length }} 标题</span></div>
+      <div class="aside-head structure-head"><strong>{{ detailMode === 'source' ? '来源结构' : '文档结构' }}</strong><span>{{ outline.length }} 标题</span></div>
       <div class="outline-list">
         <button v-for="item in outline" :key="item.key" type="button" @click="jumpToOffset(item.offset)">
           <i :style="{ marginLeft: `${Math.max(0, item.level - 1) * 12}px` }" />
@@ -32,7 +32,7 @@
       <div ref="scrollEl" class="document-scroll" @scroll.passive="syncActiveSpan">
         <article v-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
         <article v-else-if="detail" class="plain-body">{{ detail.content }}</article>
-        <p v-else class="empty">尚无来源。录入后的完整原文会显示在这里。</p>
+        <p v-else class="empty">尚无现行文档。确认录入后的知识会显示在这里。</p>
       </div>
 
       <nav v-if="minimap.length" class="minimap" aria-label="原文位置预览" @mouseleave="hoverIndex = null">
@@ -51,13 +51,23 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { getKnowledgeSource, getKnowledgeSources, type KnowledgeSourceDetail, type KnowledgeSourceSpan, type KnowledgeSourceSummary } from '../../api'
+import {
+  getKnowledgeDocument,
+  getKnowledgeDocuments,
+  getKnowledgeSource,
+  type KnowledgeDocumentDetail,
+  type KnowledgeDocumentSummary,
+  type KnowledgeSourceDetail,
+  type KnowledgeSourceSpan,
+} from '../../api'
 
-const props = defineProps<{ projectId: string; requestedSourceId?: string; requestedPath?: string[]; requestedOffset?: number }>()
-const sourceItems = ref<KnowledgeSourceSummary[]>([])
-const sourceCursor = ref<number | null>(null)
-const sourceLoading = ref(false)
-const detail = ref<KnowledgeSourceDetail | null>(null)
+const props = defineProps<{ projectId: string; requestedDocumentId?: string; requestedSourceId?: string; requestedPath?: string[]; requestedOffset?: number }>()
+type ReadableDetail = KnowledgeDocumentDetail | KnowledgeSourceDetail
+const documentItems = ref<KnowledgeDocumentSummary[]>([])
+const documentCursor = ref<number | null>(null)
+const documentLoading = ref(false)
+const detail = ref<ReadableDetail | null>(null)
+const detailMode = ref<'document' | 'source'>('document')
 const scrollEl = ref<HTMLElement | null>(null)
 const hoverIndex = ref<number | null>(null)
 const activeSpan = ref(0)
@@ -77,7 +87,8 @@ const outline = computed(() => {
 const minimap = computed(() => sample(detail.value?.spans || [], 40))
 
 watch(() => props.projectId, async () => reset(), { immediate: true })
-watch(() => props.requestedSourceId, async (id) => { if (id && id !== detail.value?.id) await selectSource(id) })
+watch(() => props.requestedDocumentId, async (id) => { if (id && (detailMode.value !== 'document' || id !== detail.value?.id)) await selectDocument(id) })
+watch(() => props.requestedSourceId, async (id) => { if (id && (detailMode.value !== 'source' || id !== detail.value?.id)) await selectAuditSource(id) })
 watch(() => props.requestedPath, async (path) => {
   if (!path?.length || !detail.value) return
   const span = detail.value.spans.find(item => path.every((part, index) => item.title_path[index] === part))
@@ -86,29 +97,45 @@ watch(() => props.requestedPath, async (path) => {
 watch(() => props.requestedOffset, async (offset) => { if (offset && detail.value) await nextTick(() => jumpToOffset(offset)) })
 
 async function reset() {
-  sourceItems.value = []
-  sourceCursor.value = null
+  documentItems.value = []
+  documentCursor.value = null
   detail.value = null
   if (!props.projectId) return
-  await loadSources(true)
-  const target = props.requestedSourceId || sourceItems.value[0]?.id
-  if (target) await selectSource(target)
+  await loadDocuments(true)
+  if (props.requestedSourceId) await selectAuditSource(props.requestedSourceId)
+  else {
+    const target = props.requestedDocumentId || documentItems.value[0]?.id
+    if (target) await selectDocument(target)
+  }
 }
 
-async function loadSources(resetList = false) {
-  if (!props.projectId || sourceLoading.value || (!resetList && sourceCursor.value === null)) return
-  sourceLoading.value = true
+async function loadDocuments(resetList = false) {
+  if (!props.projectId || documentLoading.value || (!resetList && documentCursor.value === null)) return
+  documentLoading.value = true
   try {
-    const page = await getKnowledgeSources(props.projectId, { limit: 50, cursor: resetList ? 0 : sourceCursor.value || 0 })
-    sourceItems.value = resetList ? page.items : [...sourceItems.value, ...page.items]
-    sourceCursor.value = page.next_cursor ?? null
-  } finally { sourceLoading.value = false }
+    const page = await getKnowledgeDocuments(props.projectId, { limit: 50, cursor: resetList ? 0 : documentCursor.value || 0 })
+    documentItems.value = resetList ? page.items : [...documentItems.value, ...page.items]
+    documentCursor.value = page.next_cursor ?? null
+  } finally { documentLoading.value = false }
 }
 
-async function selectSource(id: string) {
+async function selectDocument(id: string) {
+  if (!props.projectId) return
+  detail.value = (await getKnowledgeDocument(props.projectId, id)).document
+  detailMode.value = 'document'
+  activeSpan.value = 0
+  await resetScroll()
+}
+
+async function selectAuditSource(id: string) {
   if (!props.projectId) return
   detail.value = (await getKnowledgeSource(props.projectId, id)).source
+  detailMode.value = 'source'
   activeSpan.value = 0
+  await resetScroll()
+}
+
+async function resetScroll() {
   await nextTick(() => {
     if (props.requestedOffset) jumpToOffset(props.requestedOffset)
     else scrollEl.value?.scrollTo({ top: 0 })
@@ -117,7 +144,7 @@ async function selectSource(id: string) {
 
 async function loadMoreOnScroll(event: Event) {
   const el = event.currentTarget as HTMLElement
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) await loadSources(false)
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) await loadDocuments(false)
 }
 
 function jumpToOffset(offset: number) {
@@ -146,7 +173,15 @@ function downloadSource() {
   const url = URL.createObjectURL(new Blob([detail.value.content], { type: detail.value.mime_type || 'text/plain' }))
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = detail.value.source_kind === 'text' ? `${detail.value.display_name || '对话输入'}.txt` : detail.value.filename
+  if (detailMode.value === 'document') {
+    const extension = isMarkdown.value ? '.md' : '.txt'
+    const filename = detail.value.display_name || '现行文档'
+    anchor.download = filename.toLowerCase().endsWith(extension) ? filename : `${filename}${extension}`
+  } else {
+    anchor.download = detail.value.source_kind === 'text'
+      ? `${detail.value.display_name || '对话输入'}.txt`
+      : detail.value.filename
+  }
   anchor.click()
   URL.revokeObjectURL(url)
 }
