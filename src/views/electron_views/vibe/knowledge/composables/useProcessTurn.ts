@@ -130,6 +130,7 @@ export function consumeProcessEvent(state: ProcessState, event: any): boolean {
         const existing = state.steps.find((step) => step.kind === 'message' && step.key === key) as ProcessMessageStep | undefined
         const patch = {
           text: String(event.message || ''),
+          streaming: false,
           itemId: String(event.item_id || '') || undefined,
           sequence: eventSequence(event),
           phase: event.phase || undefined,

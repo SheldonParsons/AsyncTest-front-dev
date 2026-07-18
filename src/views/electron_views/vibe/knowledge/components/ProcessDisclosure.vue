@@ -31,7 +31,7 @@
           v-if="step.kind === 'message'"
           class="proc-narration"
           :class="{ streaming: step.streaming }"
-        >{{ step.text }}<span v-if="step.streaming" class="proc-caret" aria-hidden="true" /></p>
+        >{{ step.text }}</p>
         <div v-else-if="step.kind === 'diff'" class="proc-diff">
           <div v-for="(ln, j) in step.lines" :key="j" class="proc-diff-line" :class="'pd-' + ln.t">{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
         </div>
@@ -282,23 +282,6 @@ function fmt(ms?: number): string {
   color: var(--vibe-process-narration, #4b5563);
   line-height: 1.55;
   white-space: pre-wrap;
-}
-
-/* 流式旁白打字光标 */
-.proc-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: -0.15em;
-  background: currentColor;
-  opacity: 0.7;
-  animation: proc-caret-blink 1s steps(1) infinite;
-}
-
-@keyframes proc-caret-blink {
-  0%, 50% { opacity: 0.7; }
-  50.01%, 100% { opacity: 0; }
 }
 
 /* 反问续跑：思考中"我问的话 + 你的回答"那一环（小卡片） */
