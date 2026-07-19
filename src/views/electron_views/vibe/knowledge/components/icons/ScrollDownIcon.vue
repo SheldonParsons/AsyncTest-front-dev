@@ -1,44 +1,33 @@
-<!-- 滚动到底部：向下箭头，常驻循环轻微下坠动画。 -->
+<!-- motion:down-arrow-settle · /Users/sheldon/Documents/GithubProject/Sheldon-motion/outputs/down-arrow-settle.svg -->
 <template>
-  <svg class="scroll-down" viewBox="8 8 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g class="sd-arrow">
+  <svg class="down-arrow-settle" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g class="down-arrow">
       <path d="M20 11V27" stroke="currentColor" stroke-width="2.45" stroke-linecap="round" />
       <path d="M12.9 19.9L20 27L27.1 19.9" stroke="currentColor" stroke-width="2.45" stroke-linecap="round" stroke-linejoin="round" />
     </g>
-    <path class="sd-line" d="M13.5 31.2H26.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
   </svg>
 </template>
 
 <style scoped>
-.scroll-down {
+.down-arrow-settle {
   display: block;
   width: 100%;
   height: 100%;
+  color: #111827;
   overflow: visible;
 }
-.sd-arrow {
+
+.down-arrow {
   transform-origin: 20px 20px;
-  animation: sd-drop 1500ms ease-in-out infinite;
-}
-.sd-line {
-  opacity: 0;
-  animation: sd-line 1500ms ease-in-out infinite;
+  animation: down-arrow-drop 1100ms cubic-bezier(.45, 0, .55, 1) infinite;
 }
 
-@keyframes sd-drop {
+@keyframes down-arrow-drop {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(1.6px); }
-}
-
-/* 箭头下坠到底时，落地横线短暂闪现 */
-@keyframes sd-line {
-  0%, 36% { opacity: 0; }
-  50% { opacity: 0.8; }
-  64%, 100% { opacity: 0; }
+  50% { transform: translateY(4px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sd-arrow,
-  .sd-line { animation: none; }
+  .down-arrow { animation: none; }
 }
 </style>

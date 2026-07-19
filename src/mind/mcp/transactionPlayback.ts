@@ -50,6 +50,7 @@ function throwStopped(cancellation: boolean | { code?: string; message?: string 
       : 'User stopped AsyncTest Mind MCP operations for this window.'
   );
   error.code = controlRevoked ? 'MCP_CONTROL_REVOKED' : 'USER_STOPPED';
+  error.retryAllowed = false;
   error.recoverable = true;
   if (controlRevoked) {
     error.retryAllowed = false;

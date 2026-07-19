@@ -106,6 +106,7 @@ export interface VibeLLMProviderConfig {
   max_retries: number
   model_config: Record<string, string>
   enabled: boolean
+  available_to_all: boolean
   is_active?: boolean
   is_system_default?: boolean
   source?: string
@@ -124,6 +125,7 @@ export interface VibeLLMProviderPayload {
   max_retries?: number
   model_config?: Record<string, string>
   enabled?: boolean
+  available_to_all?: boolean
 }
 
 export interface VibeLLMSceneConfig {

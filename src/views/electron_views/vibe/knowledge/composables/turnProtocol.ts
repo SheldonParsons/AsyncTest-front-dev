@@ -218,6 +218,8 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
         }
       }
     } else if (itemType === 'clarification') {
+      const completedReadAnswer = String(payload.raw?.completed_read_answer || '').trim()
+      if (completedReadAnswer && !answers.includes(completedReadAnswer)) answers.push(completedReadAnswer)
       clarification = {
         question: content,
         raw: payload.raw,

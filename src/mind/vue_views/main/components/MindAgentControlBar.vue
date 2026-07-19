@@ -27,7 +27,7 @@
         </div>
 
         <button
-          v-if="state.status !== 'active'"
+          v-if="!['connected', 'executing'].includes(state.status)"
           class="mind-agent-control-collapse"
           type="button"
           aria-label="收起 Agent 控制状态"
@@ -39,7 +39,7 @@
 
         <div class="mind-agent-control-actions">
           <button
-            v-if="state.status === 'active'"
+            v-if="['connected', 'executing'].includes(state.status)"
             class="mind-agent-control-action mind-agent-control-action--exit"
             type="button"
             :disabled="pending"
@@ -91,19 +91,31 @@ defineEmits<{
 }>();
 
 const title = computed(() => {
-  if (props.state.status === 'active') return 'Agent 操作中...';
   if (props.state.status === 'restore_requested') return 'Agent 请求恢复控制';
-  return 'Agent 控制已退出';
+  if (props.state.status === 'revoked') return 'Agent 控制已退出';
+  if (props.state.hasVersionMismatch) return '当前 Agent 使用的是旧版 MCP';
+  if (props.state.status === 'executing') return 'Agent 操作中...';
+  return 'Agent 已连接';
 });
 
 const compactTitle = computed(() =>
-  props.state.status === 'restore_requested' ? '等待恢复确认' : 'Agent 已暂停'
+  props.state.status === 'restore_requested'
+    ? '等待恢复确认'
+    : props.state.status === 'revoked'
+      ? 'Agent 已暂停'
+      : props.state.hasVersionMismatch
+        ? 'MCP 版本不一致'
+        : props.state.status === 'connected'
+      ? 'Agent 已连接'
+      : 'Agent 操作中'
 );
 
 const detail = computed(() => {
-  if (props.state.status === 'active') return '操作期间导图已暂时锁定';
   if (props.state.status === 'restore_requested') return '确认后 Agent 才能继续调用 AsyncTest Mind';
-  return '后续 AsyncTest Mind MCP 调用已阻止';
+  if (props.state.status === 'revoked') return '后续 AsyncTest Mind MCP 调用已阻止';
+  if (props.state.hasVersionMismatch) return '请重启 AI Agent，使其加载 AsyncTest 内置的最新 MCP';
+  if (props.state.status === 'executing') return '写操作执行时目标窗口会暂时锁定';
+  return '等待下一次操作，导图仍可正常编辑';
 });
 </script>
 

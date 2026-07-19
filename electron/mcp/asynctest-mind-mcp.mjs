@@ -5,20 +5,35 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
+import {
+  ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+  ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
+  ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
+  ASYNCTEST_MIND_MCP_TIMEZONE,
+  ASYNCTEST_MIND_MCP_UPDATED_AT,
+  ASYNCTEST_MIND_MCP_VERSION,
+  getAsyncTestMindMcpIdentity,
+  normalizeMindMcpError,
+} from './mindMcpProtocol.node.js';
 
-export const ASYNCTEST_MIND_MCP_VERSION = '0.5.0';
-export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 9;
-export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
-export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-07-13';
-export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
+export {
+  ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+  ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
+  ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
+  ASYNCTEST_MIND_MCP_TIMEZONE,
+  ASYNCTEST_MIND_MCP_UPDATED_AT,
+  ASYNCTEST_MIND_MCP_VERSION,
+};
 export const ASYNCTEST_MIND_MCP_INSTRUCTIONS = [
   'Prefer outline -> subtree when needed -> one batched write -> save.',
   'Use mind_apply_node_operations for mixed edits and mind_create_nodes for large additions.',
   'Write tools edit the open window and already return a compact changed summary.',
+  'When multiple Mind windows are open, every write must pass the intended windowKey. Never infer a destructive target from window focus.',
   'Do not close an open document or rewrite its .amind file offline unless the user explicitly asks.',
   'Do not call diagnostic tools in the normal edit path unless a result requires investigation.',
-  'The first business tool call automatically starts an Agent control session and shows Agent 操作中... in AsyncTest Mind.',
-  'Before finishing the user task, always call mind_end_agent_session exactly once, whether the task succeeded, failed, or no more Mind tools are needed.',
+  'The first tool call establishes an Agent connection. Only active write calls lock their target Mind window.',
+  'Call mind_end_agent_session when finishing; transport close and idle timeout also clean up stale sessions automatically.',
   'If MCP_CONTROL_REVOKED is returned, stop all AsyncTest Mind calls immediately. Only call mind_request_control_restore after the user explicitly asks to restore control; restoration still requires approval in AsyncTest.',
 ].join('\n');
 
@@ -27,6 +42,7 @@ const TOOL_TIERS = {
     'mind_list_windows',
     'mind_get_document_outline',
     'mind_get_subtree',
+    'mind_search_nodes',
     'mind_create_nodes',
     'mind_apply_node_operations',
     'mind_save_document',
@@ -34,24 +50,19 @@ const TOOL_TIERS = {
   ],
   scenario: [
     'mind_read_file',
+    'mind_manage_windows',
     'mind_create_document',
     'mind_import_file_subtree',
-    'mind_close_window',
-    'mind_close_all_windows',
   ],
   diagnostic: [
     'mind_get_mcp_capabilities',
-    'mind_get_agent_briefing',
-    'mind_get_operation_status',
-    'mind_get_changed_summary',
-    'mind_get_app_status',
-    'mind_get_active_window',
+    'mind_get_diagnostics',
   ],
   control: [
-    'mind_get_control_status',
     'mind_end_agent_session',
     'mind_request_control_restore',
   ],
+  compatibility: 'Legacy tools remain callable by cached conversations but are omitted from tools/list.',
 };
 
 export function getAsyncTestMindMcpCapabilities() {
@@ -59,6 +70,7 @@ export function getAsyncTestMindMcpCapabilities() {
     server: 'asynctest-mind',
     version: ASYNCTEST_MIND_MCP_VERSION,
     capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    protocolRevision: ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
     updatedAt: ASYNCTEST_MIND_MCP_UPDATED_AT,
     timezone: ASYNCTEST_MIND_MCP_TIMEZONE,
     responseProfile: ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
@@ -70,8 +82,13 @@ export function getAsyncTestMindMcpCapabilities() {
       '读取类工具默认不返回备注、图片、metadata、样式和完整原始 JSON；需要时请显式传 include 参数或 mode=rawJson。',
       'MCP 写入使用单步撤销、revision 冲突保护、局部增量播放和用户停止锁。',
       '长请求一旦发送，不会跨 socket、TCP 或文件桥自动重放。',
-      'MCP 业务调用会自动建立 Agent 控制会话；Agent 结束任务前必须调用 mind_end_agent_session。',
+      'MCP 调用会自动建立连接；只有执行中的写操作锁定目标窗口，写操作结束后自动解除锁定。',
+      '连接断开或连续 120 秒无调用时会自动结束会话；mind_end_agent_session 仍是推荐的主动结束方式。',
+      '工具错误统一返回 { ok: false, error: { code, message, recoverable, retryAllowed, suggestedAction, details? } }。',
+      'tools/list 仅公开核心、控制和诊断工具；旧工具名继续接受调用，用于兼容已缓存工具定义的会话。',
+      '窗口和概要中的 nodeCount 仅统计从画板 roots 可达的节点；totalNodeCount 和 detachedNodeCount 用于诊断孤立记录。',
       '用户退出控制后，所有业务工具统一返回 MCP_CONTROL_REVOKED；恢复必须由 Agent 发起请求并由用户在 AsyncTest 中确认。',
+      '多窗口环境下写工具必须显式传入 windowKey；Agent 只锁定实际写入的窗口。',
     ],
     recommendedUsage: [
       '读取精简树结构时，优先使用 mind_get_subtree 或 mind_get_document_outline。',
@@ -80,8 +97,10 @@ export function getAsyncTestMindMcpCapabilities() {
       '编辑已打开且已有文件路径的文档后，使用 mind_save_document 保存。',
       '未保存窗口需要指定保存路径时，使用 mind_save_as_document。',
       '除非用户明确要求关闭窗口，否则不要关闭窗口后离线编辑 .amind 文件。',
-      '收到 USER_STOPPED 后立即停止当前对话中的所有 Mind 写调用，等待用户在 AsyncTest 中恢复。',
-      '完成当前用户任务前始终调用一次 mind_end_agent_session，使 Agent 操作中状态及时消失。',
+      '收到 USER_STOPPED 后停止当前操作，不要重试被暂停的窗口；其他窗口不受影响。',
+      '完成当前用户任务时调用 mind_end_agent_session；异常断开和长时间空闲也会自动清理状态。',
+      '同时打开多个 Mind 窗口时，先使用 mind_list_windows 确认目标，再把明确的 windowKey 传给所有写工具。',
+      '向用户报告节点数量时使用 nodeCount；只有排查数据问题时才使用 totalNodeCount 和 detachedNodeCount。',
     ],
     goldenPath: [
       'mind_get_document_outline',
@@ -90,6 +109,12 @@ export function getAsyncTestMindMcpCapabilities() {
       'mind_save_document or mind_save_as_document',
     ],
     toolTiers: TOOL_TIERS,
+    advertisedToolCount: 16,
+    errorProtocol: {
+      shape: '{ ok: false, error: { code, message, recoverable, retryAllowed, suggestedAction, details? } }',
+      userStopped: 'USER_STOPPED only stops the current window operation.',
+      controlRevoked: 'MCP_CONTROL_REVOKED blocks all AsyncTest Mind calls until approved restoration.',
+    },
     compactResponseDefaults: {
       node: ['id', 'text', 'parentId', 'childIds', 'hasChildren'],
       outlineNode: ['id', 'text', 'childCount', 'children'],
@@ -112,6 +137,7 @@ export function getAsyncTestMindAgentBriefing() {
     server: 'asynctest-mind',
     version: ASYNCTEST_MIND_MCP_VERSION,
     capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    protocolRevision: ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
     purpose: 'Refresh an old Agent conversation with the current AsyncTest Mind editing contract.',
     goldenPath: [
       'Read mind_get_document_outline first.',
@@ -123,9 +149,10 @@ export function getAsyncTestMindAgentBriefing() {
       'Edit the open window. Never close it to rewrite .amind offline.',
       'Do not call capabilities, status, validation, or changed-summary tools in a normal edit path.',
       'Write responses already contain the compact decision summary.',
-      'If USER_STOPPED is returned, make no more Mind write calls until the user explicitly resumes in AsyncTest.',
-      'Always call mind_end_agent_session exactly once before finishing the user task.',
+      'If USER_STOPPED is returned, stop the current operation and do not retry that paused window. Other windows remain available.',
+      'Call mind_end_agent_session before finishing when possible; disconnect and idle timeout are automatic fallbacks.',
       'If MCP_CONTROL_REVOKED is returned, stop every Mind call. Request restoration only after the user explicitly asks, and wait for AsyncTest approval.',
+      'When multiple Mind windows are open, call mind_list_windows and pass the intended windowKey to every write tool. Never choose a destructive target from focus alone.',
     ],
     toolTiers: TOOL_TIERS,
   };
@@ -154,7 +181,20 @@ const tools = [
     name: 'mind_get_mcp_capabilities',
     description: '[Diagnostic] Get version, behavior changes, and tool tiers. Call only after an MCP update or when an old conversation has stale assumptions; do not call in a normal edit flow.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    localHandler: getAsyncTestMindMcpCapabilities,
+    bridgeMethod: 'mind.capabilities',
+  },
+  {
+    name: 'mind_get_diagnostics',
+    description: '[Diagnostic] Read recent MCP timing traces. Use only to investigate a slow or failed call; normal edit flows should not call this tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        traceId: { type: 'string' },
+        limit: { type: 'number', description: 'Recent trace count, default 20 and maximum 100.' },
+      },
+      additionalProperties: false,
+    },
+    bridgeMethod: 'mind.diagnostics',
   },
   {
     name: 'mind_get_agent_briefing',
@@ -170,7 +210,7 @@ const tools = [
   },
   {
     name: 'mind_end_agent_session',
-    description: '[Required finalizer] Call exactly once before finishing the current user task, whether it succeeded, failed, or no more Mind calls are needed. This closes the Agent 操作中... state; it does not close any Mind window.',
+    description: '[Recommended finalizer] Call before finishing the current user task. This closes the compact Agent 已连接 state; active write locks already end automatically. Transport close and idle timeout are fallbacks.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -226,6 +266,36 @@ const tools = [
     description: 'Get recently opened .amind files from AsyncTest.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     bridgeMethod: 'mind.recentFiles',
+  },
+  {
+    name: 'mind_manage_windows',
+    description: '[Scenario] Perform less frequent window actions through one entry point. Never use close_window or close_all_windows unless the user explicitly asks to close windows.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['app_status', 'recent_files', 'create_window', 'focus_window', 'close_window', 'close_all_windows', 'open_amind', 'open_xmind'],
+        },
+        windowKey: { type: 'string' },
+        filePath: { type: 'string' },
+        title: { type: 'string' },
+        mode: { type: 'string', enum: ['save', 'discard', 'prompt'] },
+        includeRuntimeState: { type: 'boolean' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    bridgeMethodByAction: {
+      app_status: 'mind.status',
+      recent_files: 'mind.recentFiles',
+      create_window: 'mind.createWindow',
+      focus_window: 'mind.focusWindow',
+      close_window: 'mind.closeWindow',
+      close_all_windows: 'mind.closeAllWindows',
+      open_amind: 'mind.openAmindFile',
+      open_xmind: 'mind.openXmindFile',
+    },
   },
   {
     name: 'mind_create_window',
@@ -970,8 +1040,39 @@ const tools = [
 ];
 
 const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
+const ADVERTISED_TOOL_NAMES = new Set([
+  'mind_get_mcp_capabilities',
+  'mind_get_diagnostics',
+  'mind_list_windows',
+  'mind_get_document_outline',
+  'mind_get_subtree',
+  'mind_search_nodes',
+  'mind_create_nodes',
+  'mind_apply_node_operations',
+  'mind_save_document',
+  'mind_save_as_document',
+  'mind_create_document',
+  'mind_import_file_subtree',
+  'mind_read_file',
+  'mind_manage_windows',
+  'mind_end_agent_session',
+  'mind_request_control_restore',
+]);
+const advertisedTools = tools.filter((tool) => ADVERTISED_TOOL_NAMES.has(tool.name));
+
+export function getAdvertisedAsyncTestMindMcpTools() {
+  return advertisedTools.map(({ bridgeMethod, bridgeMethodByAction, localHandler, ...tool }) => tool);
+}
+
+export function resolveAsyncTestMindToolBridgeMethod(toolName, input = {}) {
+  const tool = toolByName.get(toolName);
+  return tool?.bridgeMethodByAction?.[input.action] || tool?.bridgeMethod || null;
+}
 let bridgeRequestId = 1;
 const mcpClientId = `stdio-${process.pid}-${randomUUID()}`;
+const mcpIdentity = getAsyncTestMindMcpIdentity();
+const stdioDiagnostics = [];
+const MAX_STDIO_DIAGNOSTICS = 100;
 const FILE_BRIDGE_TIMEOUT_MS = 45000;
 const FILE_BRIDGE_POLL_MS = 80;
 const SOCKET_CONNECT_TIMEOUT_MS = 5000;
@@ -1032,16 +1133,31 @@ function createBridgeConnectionError(message) {
 }
 
 function formatToolError(error) {
-  const payload = {
-    ok: false,
-    code: error?.code || 'UNKNOWN_ERROR',
-    message: error instanceof Error ? error.message : String(error),
-    recoverable: error?.recoverable,
-    suggestedAction: error?.suggestedAction,
-    ...(typeof error?.retryAllowed === 'boolean' ? { retryAllowed: error.retryAllowed } : {}),
-    ...(error?.details && typeof error.details === 'object' ? { details: error.details } : {}),
-  };
+  const payload = { ok: false, error: normalizeMindMcpError(error) };
   return JSON.stringify(payload, null, 2);
+}
+
+function recordStdioDiagnostic(entry) {
+  stdioDiagnostics.unshift(entry);
+  if (stdioDiagnostics.length > MAX_STDIO_DIAGNOSTICS) stdioDiagnostics.length = MAX_STDIO_DIAGNOSTICS;
+}
+
+function mergeStdioDiagnostics(result) {
+  if (!result || !Array.isArray(result.entries)) return result;
+  const byTraceId = new Map(stdioDiagnostics.map((entry) => [entry.traceId, entry]));
+  return {
+    ...result,
+    entries: result.entries.map((entry) => ({
+      ...entry,
+      stdioRoundTripMs: byTraceId.get(entry.traceId)?.stdioRoundTripMs ?? null,
+      agentWaitMs: null,
+    })),
+    measurementNotes: {
+      stdioRoundTripMs: 'Time observed inside the MCP stdio process, including bridge round-trip.',
+      rendererMs: 'Time waiting for the Mind renderer request when applicable.',
+      agentWaitMs: 'Unavailable inside MCP. Time between calls must not be treated as exact Agent thinking time.',
+    },
+  };
 }
 
 function sanitizeForMcpOutput(value) {
@@ -1210,12 +1326,16 @@ async function handleToolsCall(id, params = {}) {
   }
 
   const input = params.arguments || {};
+  const traceId = randomUUID();
+  const startedAt = performance.now();
   let bridgeParams =
     params.name === 'mind_create_window'
       ? { payload: input.title ? { title: input.title } : {} }
       : { ...input };
   bridgeParams.mcpClientId = mcpClientId;
   bridgeParams.mcpToolName = params.name;
+  bridgeParams.mcpTraceId = traceId;
+  bridgeParams.mcpIdentity = mcpIdentity;
   if (params.name === 'mind_read_file_outline') bridgeParams = { ...bridgeParams, mode: 'outline' };
   if (params.name === 'mind_read_file_subtree') bridgeParams = { ...bridgeParams, mode: 'subtree' };
   if (params.name === 'mind_search_file_nodes') bridgeParams = { ...bridgeParams, mode: 'search' };
@@ -1236,6 +1356,10 @@ async function handleToolsCall(id, params = {}) {
     bridgeParams.depth = 1;
     if (bridgeParams.limit == null) bridgeParams.limit = 80;
   }
+  const bridgeMethod = resolveAsyncTestMindToolBridgeMethod(params.name, input);
+  if (params.name === 'mind_manage_windows' && input.action === 'create_window') {
+    bridgeParams = { ...bridgeParams, payload: input.title ? { title: input.title } : {} };
+  }
 
   try {
     let result;
@@ -1243,10 +1367,17 @@ async function handleToolsCall(id, params = {}) {
       await callAppBridge('mind.touchAgentSession', bridgeParams);
       result = await tool.localHandler(bridgeParams);
     } else {
-      result = await callAppBridge(tool.bridgeMethod, bridgeParams);
+      if (!bridgeMethod) {
+        const error = new Error(`Unsupported action for ${params.name}: ${input.action || '(missing)'}`);
+        error.code = 'INVALID_ARGUMENT';
+        throw error;
+      }
+      result = await callAppBridge(bridgeMethod, bridgeParams);
     }
+    if (params.name === 'mind_get_diagnostics') result = mergeStdioDiagnostics(result);
     const safeResult = sanitizeForMcpOutput(result);
     writeResult(id, {
+      _meta: { traceId },
       content: [
         {
           type: 'text',
@@ -1257,12 +1388,20 @@ async function handleToolsCall(id, params = {}) {
   } catch (error) {
     writeResult(id, {
       isError: true,
+      _meta: { traceId },
       content: [
         {
           type: 'text',
           text: formatToolError(error),
         },
       ],
+    });
+  } finally {
+    recordStdioDiagnostic({
+      traceId,
+      toolName: params.name,
+      finishedAt: new Date().toISOString(),
+      stdioRoundTripMs: Math.round((performance.now() - startedAt) * 100) / 100,
     });
   }
 }
@@ -1272,6 +1411,11 @@ async function handleMessage(message) {
   const { id, method, params } = message;
 
   if (method === 'initialize') {
+    void callBridge('mind.registerMcpClient', {
+      mcpClientId,
+      mcpToolName: 'initialize',
+      mcpIdentity,
+    }).catch(() => {});
     writeResult(id, {
       protocolVersion: params?.protocolVersion || '2024-11-05',
       capabilities: { tools: {} },
@@ -1283,7 +1427,7 @@ async function handleMessage(message) {
 
   if (method === 'tools/list') {
     writeResult(id, {
-      tools: tools.map(({ bridgeMethod, localHandler, ...tool }) => tool),
+      tools: getAdvertisedAsyncTestMindMcpTools(),
     });
     return;
   }
@@ -1309,10 +1453,19 @@ export function startMindMcpStdioServer() {
   });
   let inputBuffer = '';
   let transportCleanupStarted = false;
+  const clientHeartbeatTimer = setInterval(() => {
+    void callBridge('mind.registerMcpClient', {
+      mcpClientId,
+      mcpToolName: 'heartbeat',
+      mcpIdentity,
+      establishSession: false,
+    }).catch(() => {});
+  }, 30000);
   const cleanupAgentSession = async (reason) => {
     if (transportCleanupStarted) return;
     transportCleanupStarted = true;
-    await callAppBridge('mind.endAgentSession', {
+    clearInterval(clientHeartbeatTimer);
+    await callAppBridge('mind.unregisterMcpClient', {
       mcpClientId,
       mcpToolName: 'transport-cleanup',
       reason,

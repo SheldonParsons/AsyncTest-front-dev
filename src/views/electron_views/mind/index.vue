@@ -27,6 +27,11 @@
             </div>
         </section>
 
+        <section v-if="mcpConnectionState?.hasVersionMismatch" class="mcp-version-warning" role="status">
+            <strong>当前 AI Agent 仍在使用旧版 MCP</strong>
+            <span>请重启 AI Agent，使其加载 AsyncTest 内置的最新 MCP。</span>
+        </section>
+
         <section class="mind-recents-shell">
             <section v-if="recentMindEntries.length" class="mind-recents-grid">
                 <article
@@ -73,9 +78,16 @@
                         <p class="mcp-config-eyebrow">MCP</p>
                         <h2 id="mcp-config-title" class="mcp-config-title">stdio 配置</h2>
                         <p v-if="mcpConfig?.version" class="mcp-config-version">
-                            当前版本 v{{ mcpConfig.version }}
+                            应用内置版本 v{{ mcpConfig.version }}
                             <span v-if="mcpConfig.capabilityRevision"> · 能力版本 {{ mcpConfig.capabilityRevision }}</span>
+                            <span v-if="mcpConfig.protocolRevision"> · 协议版本 {{ mcpConfig.protocolRevision }}</span>
                             <span v-if="mcpConfig.updatedAt"> · 更新日期 {{ mcpConfig.updatedAt }}</span>
+                        </p>
+                        <p v-if="connectedMcpVersionText" class="mcp-config-version">
+                            当前连接 {{ connectedMcpVersionText }}
+                        </p>
+                        <p v-if="mcpConfig?.connection?.hasVersionMismatch" class="mcp-config-version-warning">
+                            当前 AI Agent 仍在使用旧版 MCP，请重启 AI Agent。
                         </p>
                     </div>
                     <button class="mcp-config-close" type="button" aria-label="关闭" @click="closeMcpConfigDialog"></button>
@@ -156,7 +168,7 @@
 <script lang="ts" setup>
 import mindLogo from '@/mind/core/action_icon/mind.svg';
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 type RecentMindEntry = {
     filePath: string;
@@ -170,6 +182,7 @@ type MindMcpConfig = {
     transport: string;
     version?: string;
     capabilityRevision?: number;
+    protocolRevision?: number;
     updatedAt?: string;
     timezone?: string;
     responseProfile?: string;
@@ -185,6 +198,17 @@ type MindMcpConfig = {
     stdioJsonText: string;
     codexToml: string;
     note?: string;
+    connection?: MindMcpConnectionState;
+};
+
+type MindMcpConnectionState = {
+    hasVersionMismatch?: boolean;
+    connectedMcpClients?: Array<{
+        version?: string | null;
+        capabilityRevision?: number | null;
+        protocolRevision?: number | null;
+        mismatch?: boolean;
+    }>;
 };
 
 const recentMindEntries = ref<RecentMindEntry[]>([]);
@@ -192,8 +216,19 @@ const mcpConfigVisible = ref(false);
 const mcpConfigLoading = ref(false);
 const mcpConfigError = ref<string | null>(null);
 const mcpConfig = ref<MindMcpConfig | null>(null);
+const mcpConnectionState = ref<MindMcpConnectionState | null>(null);
+const connectedMcpVersionText = computed(() => {
+    const clients = mcpConfig.value?.connection?.connectedMcpClients || [];
+    if (!clients.length) return '';
+    return [...new Set(clients.map((client) => {
+        const version = client.version ? `v${client.version}` : '未知版本';
+        const capability = client.capabilityRevision == null ? '' : ` / 能力版本 ${client.capabilityRevision}`;
+        return `${version}${capability}`;
+    }))].join('、');
+});
 const mcpRefreshPrompt = 'AsyncTest Mind MCP 已更新。请先调用 mind_get_mcp_capabilities 查看当前能力版本和推荐用法，并以最新返回信息为准重新评估工具选择，不要沿用旧会话中对旧版 MCP 的判断。';
 let removeRecentUpdateListener: (() => void) | null = null;
+let removeMcpControlListener: (() => void) | null = null;
 
 onMounted(() => {
     void loadRecentMindEntries();
@@ -201,11 +236,20 @@ onMounted(() => {
         void loadRecentMindEntries();
     });
     window.addEventListener('focus', handleWindowFocus);
+    removeMcpControlListener = window.electronAPI.on('mind:mcp-control', (_event: unknown, payload: MindMcpConnectionState) => {
+        mcpConnectionState.value = payload;
+        if (mcpConfig.value) mcpConfig.value = { ...mcpConfig.value, connection: payload };
+    });
+    void window.electronAPI.invoke('mind:mcpGetControlStatus').then((payload: MindMcpConnectionState) => {
+        mcpConnectionState.value = payload;
+    });
 });
 
 onBeforeUnmount(() => {
     removeRecentUpdateListener?.();
     removeRecentUpdateListener = null;
+    removeMcpControlListener?.();
+    removeMcpControlListener = null;
     window.removeEventListener('focus', handleWindowFocus);
 });
 
@@ -407,6 +451,23 @@ function formatUpdatedAt(value?: string | null) {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 4px 4px 8px 0;
+}
+
+.mcp-version-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid #f1c98f;
+    border-radius: 8px;
+    background: #fff8ed;
+    color: #7a4510;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.mcp-version-warning strong {
+    white-space: nowrap;
 }
 
 .mind-hero {
@@ -702,6 +763,13 @@ function formatUpdatedAt(value?: string | null) {
 .mcp-config-version {
     margin: 7px 0 0;
     color: #6b7280;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.mcp-config-version-warning {
+    margin: 8px 0 0;
+    color: #9a4e0b;
     font-size: 12px;
     font-weight: 700;
 }

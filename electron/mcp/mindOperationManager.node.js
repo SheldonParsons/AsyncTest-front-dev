@@ -16,7 +16,8 @@ function userStoppedError(windowKey) {
   const error = new Error('User stopped AsyncTest Mind MCP operations for this window.');
   error.code = 'USER_STOPPED';
   error.recoverable = true;
-  error.suggestedAction = 'Do not call AsyncTest Mind write tools again until the user explicitly resumes in AsyncTest.';
+  error.retryAllowed = false;
+  error.suggestedAction = 'Stop the current operation. Do not retry this window until the user explicitly resumes it in AsyncTest.';
   error.stop = blocked || null;
   return error;
 }

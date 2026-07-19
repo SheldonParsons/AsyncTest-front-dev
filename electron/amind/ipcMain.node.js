@@ -11,6 +11,7 @@ import { createRecentStore } from './recentStore.js';
 import { createDocStore } from './docStore.node.js';
 import { createMindFontService } from './fontService.node.js';
 import { migrateLegacyMindStyles } from './styleMigration.node.js';
+import { removeMindRootDescendants } from './mcpDocumentService.node.js';
 
 function readRichTextPlain(richText) {
   if (!richText || typeof richText !== 'object' || !Array.isArray(richText.blocks)) return '';
@@ -337,7 +338,7 @@ export function initAmindMain({ userDataPath, windowManager }) {
     if (options.rootSecrecy !== undefined) rootNode.secrecy = options.rootSecrecy == null ? null : cloneForMcpDoc(options.rootSecrecy);
 
     if (Array.isArray(options.children)) {
-      rootNode.children = [];
+      removeMindRootDescendants(board, rootId);
       const appendNodeTree = (parentId, rawSpec, indexPath) => {
         const spec = normalizeMcpNodeSpec(rawSpec);
         const nodeId = `mcp-node-${Date.now().toString(36)}-${indexPath.join('-')}`;

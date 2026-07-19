@@ -3,15 +3,33 @@ import fsp from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { getAsyncTestMindMcpCapabilities } from './asynctest-mind-mcp.mjs';
 import {
+  assertMindAgentControlEnabled,
+  beginMindAgentExecution,
   endMindAgentSession,
+  endMindAgentExecution,
   getMindAgentControlState,
   pruneExpiredMindAgentSessions,
+  registerMindAgentClient,
   requestMindAgentControlRestore,
   subscribeMindAgentControl,
   touchMindAgentSession,
+  unregisterMindAgentClient,
 } from './mindAgentControlManager.node.js';
+import {
+  beginMindMcpDiagnostic,
+  finishMindMcpDiagnostic,
+  getMindMcpDiagnostics,
+  recordMindMcpDiagnosticPhase,
+} from './mindMcpDiagnostics.node.js';
+import { assertMindMcpIdentityCompatible, normalizeMindMcpError } from './mindMcpProtocol.node.js';
+import {
+  isMindWindowWriteMethod,
+  resolveMindExecutionWindowKey,
+  resolveMindWriteWindowKey,
+} from './mindWindowTargeting.node.js';
 import {
   buildMindDocumentTransaction,
   buildPreparedMindDocumentTransaction,
@@ -38,6 +56,7 @@ import {
   getMindDocNodes,
   getMindDocParentChain,
   getMindDocSubtree,
+  getMindBoardNodeStatistics,
   importMindFileSubtree,
   moveMindDocNode,
   outlineToMarkdown,
@@ -75,14 +94,14 @@ export function getAsyncTestMindBridgeEndpoints() {
 
 function toErrorPayload(error) {
   const code = error?.code || classifyBridgeError(error);
-  return {
+  return normalizeMindMcpError({
     code,
     message: error instanceof Error ? error.message : String(error || 'Unknown error'),
-    recoverable: isRecoverableBridgeErrorCode(code),
+    recoverable: error?.recoverable ?? isRecoverableBridgeErrorCode(code),
+    retryAllowed: error?.retryAllowed,
     suggestedAction: error?.suggestedAction || getBridgeErrorSuggestedAction(code),
-    ...(typeof error?.retryAllowed === 'boolean' ? { retryAllowed: error.retryAllowed } : {}),
-    ...(error?.details && typeof error.details === 'object' ? { details: error.details } : {}),
-  };
+    details: error?.details,
+  }, code === 'UNKNOWN_ERROR' ? 'INTERNAL_ERROR' : code);
 }
 
 function classifyBridgeError(error) {
@@ -94,7 +113,7 @@ function classifyBridgeError(error) {
   if (/permission|EACCES|EPERM/i.test(message)) return 'FILE_PERMISSION_DENIED';
   if (/already exists/i.test(message)) return 'FILE_ALREADY_EXISTS';
   if (/required|invalid/i.test(message)) return 'INVALID_ARGUMENT';
-  return 'UNKNOWN_ERROR';
+  return 'INTERNAL_ERROR';
 }
 
 function isRecoverableBridgeErrorCode(code) {
@@ -112,6 +131,7 @@ function isRecoverableBridgeErrorCode(code) {
     'OPERATION_IN_PROGRESS',
     'MCP_CONTROL_REVOKED',
     'MCP_CLIENT_ID_REQUIRED',
+    'AMBIGUOUS_WINDOW',
   ].includes(code);
 }
 
@@ -126,6 +146,8 @@ function getBridgeErrorSuggestedAction(code) {
       return 'Only call mind_close_window when the user explicitly asks to close a window, and pass mode as save, discard, or prompt.';
     case 'WINDOW_NOT_FOUND':
       return 'Call mind_list_windows and choose an existing windowKey.';
+    case 'AMBIGUOUS_WINDOW':
+      return 'Call mind_list_windows, choose the intended windowKey, then retry the write with that explicit windowKey.';
     case 'FILE_ALREADY_EXISTS':
       return 'Pass overwrite=true or choose another filePath.';
     case 'FILE_PERMISSION_DENIED':
@@ -178,6 +200,7 @@ function listMindWindows({ amindMain, windowManager }) {
       const doc = entry?.doc || null;
       const activeBoardId = doc?.mind?.activeMindId;
       const board = activeBoardId ? doc?.mind?.minds?.[activeBoardId] : null;
+      const nodeStatistics = getMindBoardNodeStatistics(board);
       return {
         docId,
         windowKey,
@@ -188,7 +211,7 @@ function listMindWindows({ amindMain, windowManager }) {
         isDirty: null,
         isSaving: null,
         isUnsaved: !entry?.filePath,
-        nodeCount: board?.nodes ? Object.keys(board.nodes).length : null,
+        ...nodeStatistics,
         focused: win.isFocused(),
         minimized: win.isMinimized(),
       };
@@ -303,9 +326,9 @@ function notifyMindOperation(context, windowKey, payload) {
   win.webContents.send('mind:mcp-operation', payload);
 }
 
-async function syncOpenMindEntryFromRenderer(context, openEntry) {
+async function syncOpenMindEntryFromRenderer(context, openEntry, traceId = null) {
   const { docId, entry, windowKey } = openEntry;
-  const snapshot = await requestMindRenderer(context, 'mind.getSaveSnapshot', { windowKey });
+  const snapshot = await requestMindRenderer(context, 'mind.getSaveSnapshot', { windowKey, mcpTraceId: traceId });
   if (!snapshot?.doc || typeof snapshot.doc !== 'object') {
     throw new Error('Mind renderer did not return a document snapshot for saving');
   }
@@ -314,10 +337,12 @@ async function syncOpenMindEntryFromRenderer(context, openEntry) {
   return snapshot;
 }
 
-async function saveOpenMindRendererDocument(context, openEntry) {
+async function saveOpenMindRendererDocument(context, openEntry, traceId = null) {
   const { docId, entry, windowKey } = openEntry;
   if (!entry.filePath) return { ok: false, needSaveAs: true, docId, filePath: null };
-  const result = await requestMindRenderer(context, 'mind.saveDocument', { windowKey });
+  const startedAt = performance.now();
+  const result = await requestMindRenderer(context, 'mind.saveDocument', { windowKey, mcpTraceId: traceId });
+  recordMindMcpDiagnosticPhase(traceId, 'saveMs', performance.now() - startedAt);
   if (result?.ok !== true) {
     throw new Error('AsyncTest Mind window failed to save the current document');
   }
@@ -336,7 +361,8 @@ async function saveOpenMindRendererDocument(context, openEntry) {
 
 async function saveOpenMindEntryAs(context, openEntry, params = {}) {
   const { docId, entry } = openEntry;
-  await syncOpenMindEntryFromRenderer(context, openEntry);
+  const startedAt = performance.now();
+  await syncOpenMindEntryFromRenderer(context, openEntry, params.mcpTraceId);
   const result = await context.amindMain.saveAsDocument({
     docId,
     filePath: params.filePath,
@@ -346,6 +372,7 @@ async function saveOpenMindEntryAs(context, openEntry, params = {}) {
   entry.filePath = result.filePath;
   entry.doc = context.amindMain.docStore.mustGet(docId).doc;
   updateOpenWindowTitle(context, entry.windowKey, entry);
+  recordMindMcpDiagnosticPhase(params.mcpTraceId, 'saveMs', performance.now() - startedAt);
   return result;
 }
 
@@ -392,6 +419,7 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
     assertMindOperationActive(operation);
     const committed = await requestMindRenderer(context, 'mind.commitDocumentTransaction', {
       windowKey,
+      mcpTraceId: params.mcpTraceId,
       transactionId: transaction.transactionId,
       expectedRevision: snapshot.revision,
       afterDoc: transaction.afterDoc,
@@ -400,7 +428,7 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
     });
     entry.doc = context.amindMain.docStore.mustGet(docId).doc;
     const saved = params.saveAfterApply === true
-      ? await saveOpenMindRendererDocument(context, openEntry)
+      ? await saveOpenMindRendererDocument(context, openEntry, params.mcpTraceId)
       : null;
     const result = {
       ok: true,
@@ -460,14 +488,17 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
 async function commitMindOperations(context, openEntry, operations, params = {}) {
   const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
     windowKey: openEntry.windowKey,
+    mcpTraceId: params.mcpTraceId,
   });
   assertMindExpectedRevision(snapshot, params);
+  const computeStartedAt = performance.now();
   const transaction = buildMindDocumentTransaction({
     beforeDoc: snapshot.doc,
     operations,
     transactionId: params.transactionId,
     includeResults: params.includeResults === true || params.includeOperationResult === true,
   });
+  recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
   return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, params);
 }
 
@@ -490,29 +521,29 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
         nodeCount: summary.nodeCount,
       };
     case 'mind.getDocumentOutline':
-      return summarizeMindDoc(doc, params);
+      return { windowKey, ...summarizeMindDoc(doc, params) };
     case 'mind.getNode':
-      return getMindDocNode(doc, params.nodeId, params);
+      return { windowKey, ...getMindDocNode(doc, params.nodeId, params) };
     case 'mind.getNodes':
-      return getMindDocNodes(doc, params.nodeIds, params);
+      return { windowKey, ...getMindDocNodes(doc, params.nodeIds, params) };
     case 'mind.getSubtree':
-      return getMindDocSubtree(doc, params.nodeId, params);
+      return { windowKey, ...getMindDocSubtree(doc, params.nodeId, params) };
     case 'mind.getParentChain':
-      return getMindDocParentChain(doc, params.nodeId, params);
+      return { windowKey, ...getMindDocParentChain(doc, params.nodeId, params) };
     case 'mind.getChildren':
-      return getMindDocChildren(doc, params.nodeId, params);
+      return { windowKey, ...getMindDocChildren(doc, params.nodeId, params) };
     case 'mind.searchNodes':
-      return searchMindDocNodes(doc, params.query, params);
+      return { windowKey, ...searchMindDocNodes(doc, params.query, params) };
     case 'mind.findNodesByFilter':
-      return findMindDocNodesByFilter(doc, params);
+      return { windowKey, ...findMindDocNodesByFilter(doc, params) };
     case 'mind.getSelection':
-      return openDocumentSelections.get(windowKey) || { nodeIds: [], primaryId: null };
+      return { windowKey, ...(openDocumentSelections.get(windowKey) || { nodeIds: [], primaryId: null }) };
     case 'mind.setSelection': {
       const nodeIds = Array.isArray(params.nodeIds) ? params.nodeIds : [];
       const primaryId = params.primaryId ?? nodeIds[nodeIds.length - 1] ?? null;
       const selection = { nodeIds, primaryId };
       openDocumentSelections.set(windowKey, selection);
-      return { ok: true, ...selection };
+      return { ok: true, windowKey, ...selection };
     }
     case 'mind.updateNodeText': {
       return await commitMindOperations(context, openEntry, [{ type: 'update_text', ...params }], {
@@ -567,12 +598,13 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       return await commitMindOperations(context, openEntry, operations, params);
     }
     case 'mind.saveDocument': {
-      return await saveOpenMindRendererDocument(context, openEntry);
+      return await saveOpenMindRendererDocument(context, openEntry, params.mcpTraceId);
     }
     case 'mind.saveAsDocument': {
       const saved = await saveOpenMindEntryAs(context, openEntry, params);
       const rendererState = await requestMindRenderer(context, 'mind.applySaveResult', {
         windowKey,
+        mcpTraceId: params.mcpTraceId,
         filePath: saved.filePath,
         savedAt: saved.savedAt,
         title: saved.title,
@@ -626,8 +658,12 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       return { docId, windowKey, filePath: entry.filePath ?? null, outline };
     }
     case 'mind.importFileSubtree': {
-      const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', { windowKey });
+      const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+        windowKey,
+        mcpTraceId: params.mcpTraceId,
+      });
       assertMindExpectedRevision(snapshot, params);
+      const computeStartedAt = performance.now();
       const afterDoc = cloneJson(snapshot.doc);
       const importResult = await importMindFileSubtree(afterDoc, params);
       if (params.includeIdMap !== true) delete importResult.idMap;
@@ -638,6 +674,7 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
         appliedCount: 1,
         results: [importResult],
       });
+      recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
       return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, {
         ...params,
         includeOperationResult: true,
@@ -645,10 +682,10 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
     }
     case 'mind.exportDocument': {
       const format = params.format || 'outline';
-      if (format === 'rawJson') return { doc: cloneJson(doc) };
+      if (format === 'rawJson') return { windowKey, doc: cloneJson(doc) };
       const outline = summarizeMindDoc(doc, params);
-      if (format === 'markdown') return { markdown: outlineToMarkdown(outline) };
-      return { outline };
+      if (format === 'markdown') return { windowKey, markdown: outlineToMarkdown(outline) };
+      return { windowKey, outline };
     }
     default:
       throw new Error(`Unsupported open Mind document method: ${method}`);
@@ -660,14 +697,19 @@ async function requestMindRenderer(context, method, params = {}) {
   const win = context.windowManager.get(windowKey);
   if (!win) throw new Error(`Mind window not found: ${windowKey}`);
   const requestId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return await new Promise((resolve, reject) => {
+  const startedAt = performance.now();
+  try {
+    return await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRendererRequests.delete(requestId);
       reject(new Error(`Timed out waiting for Mind window response: ${method}`));
     }, RENDERER_REQUEST_TIMEOUT_MS);
     pendingRendererRequests.set(requestId, { windowKey, resolve, reject, timer });
     win.webContents.send('mind:mcp-request', { requestId, method, params: { ...params, windowKey } });
-  });
+    });
+  } finally {
+    recordMindMcpDiagnosticPhase(params?.mcpTraceId, 'rendererMs', performance.now() - startedAt);
+  }
 }
 
 export function handleMindMcpRendererResponse(senderWindowKey, payload = {}) {
@@ -706,16 +748,67 @@ async function handleMindBridgeRequest(context, method, params = {}) {
     return touchMindAgentSession({
       clientId: params?.mcpClientId,
       toolName: params?.mcpToolName || method,
+      identity: params?.mcpIdentity,
     });
   }
-  touchMindAgentSession({
+  if (method === 'mind.registerMcpClient') {
+    return registerMindAgentClient({
+      clientId: params?.mcpClientId,
+      toolName: 'initialize',
+      identity: params?.mcpIdentity,
+      establishSession: params?.establishSession !== false,
+    });
+  }
+  if (method === 'mind.unregisterMcpClient') {
+    return unregisterMindAgentClient(params?.mcpClientId, params?.reason || 'transport-closed');
+  }
+  assertMindAgentControlEnabled();
+  if (method === 'mind.capabilities') {
+    touchMindAgentSession({
+      clientId: params?.mcpClientId,
+      toolName: params?.mcpToolName || method,
+      identity: params?.mcpIdentity,
+    });
+    return getAsyncTestMindMcpCapabilities();
+  }
+  try {
+    assertMindMcpIdentityCompatible(params?.mcpIdentity);
+  } catch (error) {
+    touchMindAgentSession({
+      clientId: params?.mcpClientId,
+      toolName: params?.mcpToolName || method,
+      identity: params?.mcpIdentity,
+    });
+    throw error;
+  }
+  let targetWindowKey = null;
+  if (isMindWindowWriteMethod(method)) {
+    targetWindowKey = resolveMindWriteWindowKey(params, listMindWindows(context));
+    params = { ...params, windowKey: targetWindowKey };
+  }
+  const traceId = params?.mcpTraceId || `${params?.mcpClientId || 'unknown'}:${Date.now()}`;
+  params = { ...params, mcpTraceId: traceId };
+  beginMindMcpDiagnostic({
+    traceId,
+    toolName: params?.mcpToolName,
+    method,
+    windowKey: targetWindowKey,
+  });
+  const executionWindowKey = targetWindowKey || resolveMindExecutionWindowKey(method, params, listMindWindows(context));
+  beginMindAgentExecution({
     clientId: params?.mcpClientId,
     toolName: params?.mcpToolName || method,
+    traceId,
+    windowKey: executionWindowKey,
+    locksWindow: !!targetWindowKey,
+    identity: params?.mcpIdentity,
   });
 
-  switch (method) {
-    case 'mind.capabilities':
-      return getAsyncTestMindMcpCapabilities();
+  let requestError = null;
+  try {
+    switch (method) {
+    case 'mind.diagnostics':
+      return getMindMcpDiagnostics(params || {});
 
     case 'mind.operationStatus': {
       const windowKey = params?.windowKey || resolveWindowKeyFromParams(context, params || {});
@@ -870,6 +963,20 @@ async function handleMindBridgeRequest(context, method, params = {}) {
 
     default:
       throw new Error(`Unknown bridge method: ${method}`);
+    }
+  } catch (error) {
+    requestError = error;
+    throw error;
+  } finally {
+    finishMindMcpDiagnostic(traceId, {
+      status: requestError ? 'error' : 'ok',
+      errorCode: requestError?.code || null,
+      windowKey: targetWindowKey,
+    });
+    endMindAgentExecution({
+      clientId: params?.mcpClientId,
+      traceId,
+    });
   }
 }
 

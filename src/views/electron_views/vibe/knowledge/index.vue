@@ -32,7 +32,7 @@
           :model-value="selectedProjectId"
           :options="projectOptions"
           placeholder="选择项目"
-          :disabled="sending || loading"
+          :disabled="loading"
           @change="handleProjectChange"
         >
           <template #trigger="{ open, label, placeholder }">
@@ -47,16 +47,10 @@
           </template>
         </AppSelect>
       </section>
-      <button class="kb-browser-entry" type="button" :disabled="!vibeProject || loading" @click="openKbBrowser">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open-icon lucide-book-open"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-        <span>原文浏览</span>
-        <em>{{ kbStats.sections }} 章</em>
-      </button>
-
       <section class="convs">
         <div class="convs-head">
           <span class="convs-title">需求对话</span>
-          <button class="round-btn" type="button" title="新建对话" :disabled="sending" @click="newConversation">
+          <button class="round-btn" type="button" title="新建对话" @click="newConversation">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
         </div>
@@ -68,13 +62,11 @@
             :class="['session-row', { active: activeSessionId === item.id }]"
           >
             <button class="session-open" type="button" @click="openSession(item.id)">
-              <span class="session-ic" aria-hidden="true">
-                <!-- 正在对话：灰色实心点·呼吸闪烁（motion:solid-dot-blink）；空闲：空心圆点（motion:hollow-status-dot） -->
-                <svg v-if="isSessionWaiting(item.id)" class="dot-blink" width="15" height="15" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle class="dot-blink-core" cx="20" cy="20" r="7" fill="currentColor" /></svg>
-                <svg v-else width="15" height="15" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6" /></svg>
-              </span>
               <span class="session-body">
                 <span class="session-title">{{ sessionDisplayTitle(item) }}</span>
+              </span>
+              <span v-if="isSessionWaiting(item.id)" class="session-running" aria-label="对话运行中">
+                <RingSpinner />
               </span>
             </button>
             <button
@@ -91,15 +83,27 @@
         </div>
       </section>
 
-      <button class="side-user-card" type="button" @click="openVibeSettings">
-        <span class="side-user-avatar avatar-container">
-          <el-avatar :size="32" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
-          <span class="online-indicator" aria-hidden="true" />
-        </span>
-        <span class="side-user-main">
-          <strong>{{ currentUserName }}</strong>
-        </span>
-      </button>
+      <section class="side-user-card" aria-label="用户与知识库入口">
+        <button class="side-user-profile" type="button" @click="openVibeSettings">
+          <span class="side-user-avatar avatar-container">
+            <el-avatar :size="32" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+            <span class="online-indicator" aria-hidden="true" />
+          </span>
+          <span class="side-user-main">
+            <strong>{{ currentUserName }}</strong>
+          </span>
+        </button>
+        <button
+          class="side-user-kb"
+          type="button"
+          title="原文浏览"
+          aria-label="打开原文浏览"
+          :disabled="!vibeProject || loading"
+          @click="openKbBrowser"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+        </button>
+      </section>
 
     </aside>
 
@@ -415,6 +419,7 @@ import { ApiGetJoinProjects } from '@/api/project/index'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
+import RingSpinner from './components/icons/RingSpinner.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
 import ChatComposer from './components/ChatComposer.vue'
@@ -604,15 +609,27 @@ async function loadKbStats() {
     })
   } catch { /* 概览读取失败不阻塞主流程 */ }
 }
+
+async function loadCurrentKbStats() {
+  const projectId = String(vibeProject.value?.id || '')
+  if (!projectId) return
+  try {
+    const payload = await getFoundationKnowledgeStatsMany([projectId])
+    const stats = payload.items?.[projectId]
+    projectStatsMap[projectId] = {
+      sections: Number(stats?.sections || 0),
+      modules: Number(stats?.modules || 0),
+    }
+  } catch { /* 当前项目计数读取失败不阻塞对话 */ }
+}
 // 当前项目读数（项目卡 + 底部概览卡共用）：按 vibe UUID 取
 const kbStats = computed(() => {
   const u = vibeProject.value?.id ? String(vibeProject.value.id) : (asyncToVibe[String(selectedProjectId.value ?? '')] || '')
   return (u && projectStatsMap[u]) || { sections: 0, modules: 0 }
 })
-// 对话行"等待回复中"：本轮 turn 跑在活动会话上，故活动会话 + 后端忙 = 等待
+// 对话行运行态：本地刚发送时立即显示；随后由项目级 running 快照统一校准所有会话。
 function isSessionWaiting(id: string): boolean {
-  return ((foundationBusy.value || preparingSend.value) && id === activeSessionId.value)
-    || runningSessionIds.value.includes(id)
+  return sendingSessionIds.value.includes(id) || runningSessionIds.value.includes(id)
 }
 const preparingSend = ref(false)
 const sendingSessionIds = ref<string[]>([])
@@ -621,17 +638,27 @@ const liveLogs = ref<{ id: string; type: string; message: string }[]>([])
 // foundation 新管线（知识库前端唯一管线，不再有灰度开关）
 const foundationBusy = ref(false)
 const runningSessionIds = ref<string[]>([])
+const runningTurns = ref<FoundationRunningTurn[]>([])
 const recoveredTurnId = ref('')
+// 临时过程区必须有明确会话所有者。窗口级 busy 只表示本窗口有请求，不能决定当前会话显示什么。
+const streamingOwnerSessionId = ref('')
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
+let runningTurnPollInFlight = false
+const RUNNING_POLL_ACTIVE_MS = 1500
+const RUNNING_POLL_IDLE_MS = 3500
 // T26 停止：本轮后端令牌 id（turn_started 事件带来）+ 防连点
 const activeTurnId = ref('')
+const activeTurnSessionId = ref('')
 const cancelRequested = ref(false)
 
 async function stopFoundationTurn() {
   if (!activeTurnId.value || cancelRequested.value) return
   cancelRequested.value = true
   try {
-    const result = await cancelFoundationTurn(activeTurnId.value, activeSessionId.value)
+    const result = await cancelFoundationTurn(
+      activeTurnId.value,
+      activeTurnSessionId.value || activeSessionId.value,
+    )
     if (!result.accepted && result.current_state !== 'cancel_requested') {
       cancelRequested.value = false
     }
@@ -652,9 +679,13 @@ function stopElapsedTicker() {
   if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null }
 }
 // 思考态=整轮在途(SSE 没关就没结束);计时=在途时前端秒表、结束后用最终值。
-const procRunning = computed(() => foundationBusy.value || streamingProcess.status === 'running')
+const visibleStreamingOwner = computed(() =>
+  !!activeSessionId.value && streamingOwnerSessionId.value === activeSessionId.value,
+)
+const procRunning = computed(() => visibleStreamingOwner.value
+  && (foundationBusy.value || streamingProcess.status === 'running'))
 const procDurationMs = computed(() =>
-  foundationBusy.value ? streamingElapsedMs.value : streamingProcess.durationMs)
+  procRunning.value ? streamingElapsedMs.value : streamingProcess.durationMs)
 const processExpanded = ref(false)
 const streamingProcess = createProcessState()
 // 历史事件渲染（eventDisplayContent）仍需读取方案包状态展示，保留只读覆盖表
@@ -709,10 +740,12 @@ const composerStatusText = computed(() => {
   if (cancelRequested.value) return '正在停止…'
   return ''  // 0704 用户定:输入框下不再显示"正在思考/收尾"——状态由过程区"已处理 Xs"+按钮■表达
 })
-const composerPlaceholder = computed(() =>
-  sending.value
-    ? '正在处理上一条，请稍候…'
-    : '描述需求原文或直接提问，系统会自动判断录入还是检索…')
+const composerPlaceholder = computed(() => '随心输入')
+const KNOWLEDGE_WRITE_ACTIONS = new Set(['save', 'insert', 'edit', 'delete', 'delete_many', 'cascade_apply'])
+function turnMayChangeKnowledge(actions: string[], applyEdit?: any) {
+  return applyEdit?.kind === 'knowledge_change'
+    || actions.some(action => KNOWLEDGE_WRITE_ACTIONS.has(String(action || '').trim()))
+}
 // 询问模式（Codex 反问）：后端 ask_clarification（录入纪律"这段要不要记进知识库"拿不准时）→ 输入框变选项
 // pending = 后端反问挂起时的"思考草稿"；用户回答时原样回传 → 续跑同一思考（不另起新轮）。
 const clarificationActive = ref<{ question: string; raw?: any; pending?: any[] } | null>(null)
@@ -834,7 +867,8 @@ function restoreClarificationFromEvents() {
   }
 }
 const streamingTurnVisible = computed(() =>
-  !streamingAssistantEventId.value
+  visibleStreamingOwner.value
+  && !streamingAssistantEventId.value
   && (
     !!streamingAssistantContent.value
     || procRunning.value
@@ -987,14 +1021,18 @@ async function selectProject(project: any) {
 }
 
 async function handleProjectChange(value: string | number) {
-  if (sending.value) return
   const project = projects.value.find(item => String(item.id) === String(value))
   if (!project) return
   activeSessionId.value = ''
   events.value = []
   liveLogs.value = []
   processExpanded.value = false
+  clarificationActive.value = null
+  stopElapsedTicker()
+  recoveredTurnId.value = ''
+  streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
+  resetProcessState(streamingProcess)
   currentView.value = 'conversation'
   await selectProject(project)
 }
@@ -1062,13 +1100,17 @@ async function openSession(sessionId: string) {
   currentView.value = 'conversation'
   liveLogs.value = []
   processExpanded.value = false
+  stopElapsedTicker()
+  recoveredTurnId.value = ''
+  streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
+  resetProcessState(streamingProcess)
   const currentSession = sessions.value.find(item => item.id === sessionId)
   selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
   await loadModelConfig(sessionId).catch(() => {})
   events.value = sortEvents(await listVibeEvents(sessionId))
   restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
-  await recoverRunningTurnForSession(sessionId)
+  await refreshProjectRunningTurns()
   await scrollBottom()
 }
 
@@ -1079,12 +1121,12 @@ function stopRunningTurnPolling() {
   }
 }
 
-function scheduleRunningTurnPolling(sessionId: string) {
+function scheduleRunningTurnPolling(delay?: number) {
   stopRunningTurnPolling()
-  if (!sessionId) return
+  if (!vibeProject.value?.id) return
   runningTurnPollTimer = setTimeout(() => {
-    recoverRunningTurnForSession(sessionId).catch(() => {})
-  }, 900)
+    refreshProjectRunningTurns().catch(() => {})
+  }, delay ?? (runningSessionIds.value.length ? RUNNING_POLL_ACTIVE_MS : RUNNING_POLL_IDLE_MS))
 }
 
 function setSessionRunning(sessionId: string, running: boolean) {
@@ -1118,13 +1160,30 @@ function applyCanonicalReadModel(model: TurnProtocolReadModel) {
 async function refreshProjectRunningTurns() {
   if (!vibeProject.value?.id) {
     runningSessionIds.value = []
+    runningTurns.value = []
     return
   }
+  if (runningTurnPollInFlight) return
+  runningTurnPollInFlight = true
+  const projectId = String(vibeProject.value.id)
   try {
-    const res = await listFoundationRunningTurns({ project: String(vibeProject.value.id) })
-    runningSessionIds.value = (res.items || []).map(item => String(item.session_id || '')).filter(Boolean)
+    const res = await listFoundationRunningTurns({ project: projectId })
+    if (String(vibeProject.value?.id || '') !== projectId) return
+    const items = Array.isArray(res.items) ? res.items : []
+    const previousIds = new Set(runningSessionIds.value)
+    runningTurns.value = items
+    runningSessionIds.value = Array.from(new Set(items
+      .map(item => String(item.session_id || ''))
+      .filter(Boolean)))
+    if (Array.from(previousIds).some(id => !runningSessionIds.value.includes(id))) {
+      void loadCurrentKbStats()
+    }
+    await recoverRunningTurnForSession(activeSessionId.value, items)
   } catch {
-    runningSessionIds.value = []
+    // 短暂网络失败时保留上一帧，避免所有运行图标闪烁消失。
+  } finally {
+    runningTurnPollInFlight = false
+    scheduleRunningTurnPolling()
   }
 }
 
@@ -1132,12 +1191,13 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   const turnId = String(turn.turn_id || '')
   const sessionId = String(turn.session_id || '')
   if (!turnId || !sessionId || activeSessionId.value !== sessionId) return
+  streamingOwnerSessionId.value = sessionId
+  activeTurnSessionId.value = sessionId
   const startedAt = Number(turn.started_at || 0) > 0 ? Number(turn.started_at) * 1000 : Date.now()
   if (recoveredTurnId.value !== turnId) {
     recoveredTurnId.value = turnId
     startElapsedTicker(startedAt)
   }
-  foundationBusy.value = true
   activeTurnId.value = turnId
   cancelRequested.value = turn.state === 'cancel_requested'
   resetProcessState(streamingProcess)
@@ -1249,22 +1309,24 @@ function replayRunningTurn(turn: FoundationRunningTurn) {
   }
 }
 
-async function recoverRunningTurnForSession(sessionId: string) {
+async function recoverRunningTurnForSession(
+  sessionId: string,
+  snapshot: FoundationRunningTurn[] = runningTurns.value,
+) {
   if (!sessionId || !vibeProject.value?.id) return
-  let turn: FoundationRunningTurn | null = null
-  try {
-    const res = await listFoundationRunningTurns({ project: String(vibeProject.value.id), session_id: sessionId })
-    turn = (res.items || [])[0] || null
-  } catch {
-    turn = null
-  }
+  const turn = snapshot.find(item => String(item.session_id || '') === sessionId) || null
   if (!turn) {
     setSessionRunning(sessionId, false)
-    if (activeSessionId.value === sessionId && recoveredTurnId.value) {
+    if (
+      activeSessionId.value === sessionId
+      && streamingOwnerSessionId.value === sessionId
+      && recoveredTurnId.value
+    ) {
       stopElapsedTicker()
       activeTurnId.value = ''
+      activeTurnSessionId.value = ''
       recoveredTurnId.value = ''
-      foundationBusy.value = false
+      streamingOwnerSessionId.value = ''
       streamingAssistantEventId.value = ''
       clearStreamingAssistant()
       resetProcessState(streamingProcess)
@@ -1274,13 +1336,20 @@ async function recoverRunningTurnForSession(sessionId: string) {
     return
   }
   setSessionRunning(sessionId, true)
+  // 当前窗口自己的 SSE 已实时驱动界面，不用再拿同一份运行快照覆盖一次。
+  if (
+    foundationBusy.value
+    && streamingOwnerSessionId.value === sessionId
+    && sendingSessionIds.value.includes(sessionId)
+  ) return
   replayRunningTurn(turn)
   if (turn.done || turn.failed) {
     setSessionRunning(sessionId, false)
     stopElapsedTicker()
     activeTurnId.value = ''
+    activeTurnSessionId.value = ''
     recoveredTurnId.value = ''
-    foundationBusy.value = false
+    streamingOwnerSessionId.value = ''
     streamingAssistantEventId.value = ''
     clearStreamingAssistant()
     resetProcessState(streamingProcess)
@@ -1289,18 +1358,20 @@ async function recoverRunningTurnForSession(sessionId: string) {
     await scrollBottomIfFollowing()
     return
   }
-  scheduleRunningTurnPolling(sessionId)
   await scrollBottomIfFollowing()
 }
 
 function newConversation() {
-  if (sending.value) return
   activeSessionId.value = ''
   events.value = []
   liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
+  stopElapsedTicker()
+  recoveredTurnId.value = ''
+  streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
+  resetProcessState(streamingProcess)
   currentView.value = 'conversation'
   draft.value = ''
   resizeDraft()
@@ -1327,7 +1398,11 @@ async function deleteSession(sessionId: string) {
       events.value = []
       liveLogs.value = []
       processExpanded.value = false
+      stopElapsedTicker()
+      recoveredTurnId.value = ''
+      streamingOwnerSessionId.value = ''
       clearStreamingAssistant()
+      resetProcessState(streamingProcess)
       currentView.value = 'conversation'
     }
     await refreshState({ autoOpenLatest: deletingActive })
@@ -1628,7 +1703,7 @@ function fndSerializeSteps(): any[] {
 }
 
 function legacyIntentStepLabel(actions: string[]) {
-  return actions.length ? `意图：${actions.join('＋')}` : '意图：待判断'
+  return actions.length ? `本轮处理：${actions.join('＋')}` : '本轮处理：待判断'
 }
 
 async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean; clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string } }) {
@@ -1651,6 +1726,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
   const project = String(vibeProject.value.id)
   const startedAt = Date.now()
+  streamingOwnerSessionId.value = activeSessionId.value
+  activeTurnSessionId.value = activeSessionId.value
   foundationBusy.value = true
   startElapsedTicker(startedAt)  // "已处理 Xs"前端秒表:整轮在途一直数,不听 process_done
   processExpanded.value = true
@@ -1713,6 +1790,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       case 'turn_started':
         // T26：后端本轮令牌 id——停止按钮凭它调 cancel 接口
         activeTurnId.value = String(event.turn_id || '')
+        activeTurnSessionId.value = turnSessionId
         break
       case 'cancelled':
         turnCancelled = true
@@ -1809,6 +1887,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
       sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
     }
     turnSessionId = sessionId || activeSessionId.value  // 锚定本轮归属的会话（#2 切换查看用）
+    activeTurnSessionId.value = turnSessionId
+    markSessionSending(turnSessionId, true)
+    setSessionRunning(turnSessionId, true)
+    if (activeSessionId.value === turnSessionId) streamingOwnerSessionId.value = turnSessionId
     await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
       onEvent,
       onError(message: string) { failed = failed || message },
@@ -1821,11 +1903,20 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   } catch (error) {
     failed = failed || (error instanceof Error ? error.message : String(error))
   } finally {
-    stopElapsedTicker()
-    activeTurnId.value = ''
-    cancelRequested.value = false
-    streamingProcess.status = 'done'
-    streamingProcess.durationMs = Date.now() - startedAt
+    markSessionSending(turnSessionId, false)
+    setSessionRunning(turnSessionId, false)
+    const ownsVisibleStream = !!turnSessionId
+      && streamingOwnerSessionId.value === turnSessionId
+    if (ownsVisibleStream) {
+      stopElapsedTicker()
+      streamingProcess.status = 'done'
+      streamingProcess.durationMs = Date.now() - startedAt
+    }
+    if (activeTurnSessionId.value === turnSessionId) {
+      activeTurnId.value = ''
+      activeTurnSessionId.value = ''
+      cancelRequested.value = false
+    }
     if (failed) {
       assistantContent = `本轮处理失败：${failed}`
       draft.value = content
@@ -1852,13 +1943,16 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         ...(contParent ? { continuation_context: { parent_event_id: contParent } } : {}),
       }))
     }
-    clearStreamingAssistant()
-    resetProcessState(streamingProcess)
+    if (ownsVisibleStream) {
+      streamingOwnerSessionId.value = ''
+      clearStreamingAssistant()
+      resetProcessState(streamingProcess)
+    }
     // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
     // 后面的服务器刷新是后台事，不该让按钮继续转。
     foundationBusy.value = false
     streamingAssistantEventId.value = ''
-    if (applyEdit?.kind === 'knowledge_change') loadKbStats()
+    if (!failed && !turnCancelled && turnMayChangeKnowledge(actions, applyEdit)) void loadCurrentKbStats()
     // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
     if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
       try {
@@ -2995,54 +3089,6 @@ function isStreamingUnderEvent(event: any) {
   letter-spacing: 0.04em;
 }
 
-.kb-browser-entry {
-  flex: 0 0 auto;
-  height: 38px;
-  border: 1px solid color-mix(in srgb, var(--ink-1) 10%, transparent);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--ink-2);
-  display: grid;
-  grid-template-columns: 17px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
-}
-
-.kb-browser-entry svg {
-  width: 16px;
-  height: 16px;
-}
-
-.kb-browser-entry:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.96);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  color: var(--ink-1);
-}
-
-.kb-browser-entry:disabled {
-  cursor: not-allowed;
-  opacity: .55;
-}
-
-.kb-browser-entry span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.kb-browser-entry em {
-  font-style: normal;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-
 .side-user-card {
   flex: 0 0 auto;
   width: 100%;
@@ -3052,18 +3098,53 @@ function isStreamingUnderEvent(event: any) {
   background: rgba(255, 255, 255, 0.64);
   color: var(--ink-1);
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 32px;
   align-items: center;
-  gap: 11px;
-  padding: 10px 11px;
-  cursor: pointer;
-  text-align: left;
+  gap: 8px;
+  padding: 8px 9px;
   transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .side-user-card:hover {
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 0 0 1px var(--hairline), 0 8px 20px rgba(15, 15, 15, 0.06);
+}
+
+.side-user-profile {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.side-user-kb {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.side-user-kb:hover:not(:disabled) {
+  background: rgba(15, 15, 15, 0.07);
+  color: var(--ink-1);
+}
+
+.side-user-kb:disabled {
+  cursor: not-allowed;
+  opacity: .4;
 }
 
 .side-user-avatar.avatar-container {
@@ -3091,7 +3172,7 @@ function isStreamingUnderEvent(event: any) {
   animation: user-pulse 2s ease-in-out infinite;
 }
 
-.side-user-card:hover .side-user-avatar .user-avatar {
+.side-user-profile:hover .side-user-avatar .user-avatar {
   transform: scale(1.1) rotate(5deg);
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
@@ -3215,18 +3296,10 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   /* 去掉时间后变单行，行高收窄；左起对齐 10px 基准线 */
   min-height: 28px;
   padding: 5px 28px 5px 10px;
-}
-
-.session-ic {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--ink-3);
-  transition: color 150ms ease;
 }
 
 .session-body {
@@ -3251,37 +3324,20 @@ function isStreamingUnderEvent(event: any) {
   font-size: 11px;
 }
 
-/* 正在对话的实心闪烁点：压灰（比默认 icon 色更淡），hover/active 也只到中灰、不跟黑 */
-.session-ic .dot-blink { color: rgba(15, 15, 15, 0.3); }
 
-.dot-blink-core {
-  transform-origin: 20px 20px;
-  animation: dot-blink 1.35s ease-in-out infinite;
-}
-
-@keyframes dot-blink {
-  0%, 100% { opacity: 0.38; transform: scale(0.88); }
-  45% { opacity: 1; transform: scale(1); }
-  68% { opacity: 0.72; transform: scale(0.94); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dot-blink-core {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
+.session-running {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
 }
 
 /* 只有选中态加深（icon + 标题）；hover 不动文字色 */
-.session-row.active .session-ic,
 .session-row.active .session-title {
   color: var(--ink-1);
-}
-
-/* 选中行里的闪烁点也只到中灰，不跟标题变黑 */
-.session-row.active .session-ic .dot-blink {
-  color: rgba(15, 15, 15, 0.45);
 }
 
 .session-row:hover .session-delete,
@@ -3666,7 +3722,7 @@ function isStreamingUnderEvent(event: any) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 4px;
   border: 1px solid rgba(15, 15, 15, 0.1);
   border-radius: 50%;
   background: #fff;

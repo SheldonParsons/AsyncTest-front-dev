@@ -30,7 +30,10 @@
         <p
           v-if="step.kind === 'message'"
           class="proc-narration"
-          :class="{ streaming: step.streaming }"
+          :class="{
+            streaming: step.streaming,
+            'runtime-progress': step.phase === 'runtime_progress',
+          }"
         >{{ step.text }}</p>
         <div v-else-if="step.kind === 'diff'" class="proc-diff">
           <div v-for="(ln, j) in step.lines" :key="j" class="proc-diff-line" :class="'pd-' + ln.t">{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
@@ -279,9 +282,15 @@ function fmt(ms?: number): string {
 
 .proc-narration {
   margin: 2px 0;
-  color: var(--vibe-process-narration, #4b5563);
+  color: var(--vibe-process-narration, #171717);
+  font-weight: 500;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.proc-narration.runtime-progress {
+  color: var(--vibe-process-fg, #6b7280);
+  font-weight: 400;
 }
 
 /* 反问续跑：思考中"我问的话 + 你的回答"那一环（小卡片） */

@@ -38,6 +38,7 @@ export interface IElectronAPI {
       transport: string;
       version?: string;
       capabilityRevision?: number;
+      protocolRevision?: number;
       updatedAt?: string;
       timezone?: string;
       responseProfile?: string;
@@ -53,6 +54,7 @@ export interface IElectronAPI {
       stdioJsonText: string;
       codexToml: string;
       note?: string;
+      connection?: Record<string, unknown>;
     }>;
   },
   mindClipboard?: {

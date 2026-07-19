@@ -453,7 +453,7 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .chat-composer { position: relative; display: grid; gap: 6px; width: 100%; }
 
 .composer-shell {
-  position: relative; display: grid; gap: 10px; padding: 14px 16px;
+  position: relative; display: grid; gap: 6px; padding: 10px 12px 8px;
   border: 1px solid rgba(15, 15, 15, .1); border-radius: 20px;
   background: #fff;
   /* 组件嵌在已经是白卡的对话区里，不需要 demo 里那种悬浮重阴影（会看着像底下多一层灰）。 */
@@ -574,7 +574,7 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .item-text strong { font-size: 13px; font-weight: 700; }
 .item-text span { color: #8a8f98; font-size: 12px; }
 
-.normal-view { display: grid; gap: 8px; }
+.normal-view { display: grid; gap: 6px; }
 .attachment-list { display: none; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
 .attachment-list.is-visible { display: flex; }
 .attachment-chip { display: grid; width: fit-content; max-width: 100%; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px 6px 6px; border: 1px solid #e4e6ea; border-radius: 12px; background: #f9fafb; color: #374151; font-size: 12px; }
@@ -584,21 +584,32 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .chip-remove:hover { color: #171b21; background: #e5e7eb; }
 
 .input-row { min-height: 40px; }
-.composer-input { width: 100%; min-height: 40px; max-height: 170px; resize: none; border: 0; outline: none; overflow: auto; padding: 4px 8px; color: #171b21; background: transparent; font-size: 15px; font-weight: 500; line-height: 1.55; box-sizing: border-box; }
+.composer-input { width: 100%; min-height: 40px; max-height: 170px; resize: none; border: 0; outline: none; overflow: auto; padding: 3px 2px; color: #171b21; background: transparent; font-size: 14px; font-weight: 400; line-height: 1.5; box-sizing: border-box; }
 .composer-input::placeholder { font-weight: 400; }
 .composer-input::placeholder { color: #9ca3af; }
 
-.composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.composer-actions { min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .model-picker-anchor { position: relative; display: inline-flex; min-width: 0; margin-left: auto; }
-.model-picker { max-width: 180px; min-width: 0; height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; color: #5f6670; font-size: 12px; cursor: pointer; }
+.model-picker { max-width: 180px; min-width: 0; height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 999px; background: transparent; color: #5f6670; font-size: 12px; cursor: pointer; }
 .model-picker:hover, .model-picker[aria-expanded="true"] { background: #f3f4f6; color: #171b21; }
 .model-picker:disabled { opacity: .55; cursor: not-allowed; }
 .model-picker span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-picker svg { flex: 0 0 auto; }
-.icon-button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
-.icon-button svg { width: 25px; height: 25px; color: currentColor; overflow: visible; }
+.icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
+.icon-button svg { width: 22px; height: 22px; color: currentColor; overflow: visible; }
 .attach-button:hover, .attach-button[aria-expanded="true"] { background: #f3f4f6; }
-.send-button { color: #fff; background: #171b21; }
+.send-button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 0;
+  color: #fff;
+  background: #171b21;
+}
+.send-button svg { display: block; width: 22px; height: 22px; margin: 0; flex: 0 0 auto; }
 .send-button:disabled { color: #9ca3af; background: #f3f4f6; cursor: default; }
 .send-button:not(:disabled):hover { background: #030712; }
 .send-button:not(:disabled):active { transform: scale(.98); }

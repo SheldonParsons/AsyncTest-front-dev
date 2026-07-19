@@ -1049,7 +1049,7 @@ const {
   rejectRestore: rejectMindAgentControlRestore,
   collapseStatus: collapseMindAgentControl,
   expandStatus: expandMindAgentControl,
-} = useMindAgentControl();
+} = useMindAgentControl(() => typeof props.windowKey === 'string' ? props.windowKey : null);
 const SEARCH_TEXT_QUERY_DEBOUNCE_MS = 300;
 const searchPanelTab = ref<'text' | 'mark'>('text');
 const searchTextQuery = ref('');
@@ -2463,7 +2463,33 @@ function compactPerfData(data: Record<string, unknown>) {
 }
 
 function getMindPerfNodeCount() {
-  return Object.keys(getMindNodes() ?? {}).length;
+  return getCurrentMindNodeStatistics().nodeCount;
+}
+
+function getCurrentMindNodeStatistics() {
+  const nodes = getMindNodes() ?? {};
+  const roots = getMindRoots();
+  const reachable = new Set<string>();
+  const visible = new Set<string>();
+  const visit = (nodeId: string, target: Set<string>, respectCollapsed: boolean) => {
+    if (!nodeId || target.has(nodeId) || !nodes[nodeId]) return;
+    target.add(nodeId);
+    if (respectCollapsed && nodes[nodeId].collapsed === true) return;
+    const children = Array.isArray(nodes[nodeId].children) ? nodes[nodeId].children : [];
+    children.forEach((childId: string) => visit(childId, target, respectCollapsed));
+  };
+  roots.forEach((root: any) => {
+    visit(root?.rootId, reachable, false);
+    visit(root?.rootId, visible, true);
+  });
+  const totalNodeCount = Object.keys(nodes).length;
+  return {
+    nodeCount: reachable.size,
+    reachableNodeCount: reachable.size,
+    visibleNodeCount: visible.size,
+    totalNodeCount,
+    detachedNodeCount: Math.max(0, totalNodeCount - reachable.size),
+  };
 }
 
 function getActiveMindPerfProbe() {
@@ -14084,25 +14110,15 @@ function mcpGetDocumentOutline(params: any = {}) {
     (total, item) => total + 1 + countOutlineNodes(Array.isArray(item?.children) ? item.children : []),
     0,
   );
-  const reachableNodeIds = new Set<string>();
-  const collectReachableNodeIds = (nodeId: string) => {
-    if (!nodeId || reachableNodeIds.has(nodeId) || !nodes[nodeId]) return;
-    reachableNodeIds.add(nodeId);
-    const children = Array.isArray(nodes[nodeId].children) ? nodes[nodeId].children : [];
-    children.forEach(collectReachableNodeIds);
-  };
-  roots.forEach((root: any) => collectReachableNodeIds(root.rootId));
-  const nodeCount = Object.keys(nodes).length;
-  const reachableNodeCount = reachableNodeIds.size;
+  const statistics = getCurrentMindNodeStatistics();
   const returnedNodeCount = countOutlineNodes(outlineRoots);
   return {
     docId: props.docId,
     filePath: props.filePath ?? null,
     title: props.doc?.manifest?.title ?? null,
-    nodeCount,
-    reachableNodeCount,
+    ...statistics,
     returnedNodeCount,
-    truncated: returnedNodeCount < reachableNodeCount,
+    truncated: returnedNodeCount < statistics.reachableNodeCount,
     depth: maxDepth,
     limit,
     roots: outlineRoots,
@@ -14548,17 +14564,19 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         playback,
       };
     }
-    case 'mind.getWindowDocument':
+    case 'mind.getWindowDocument': {
+      const nodeStatistics = getCurrentMindNodeStatistics();
       return {
         docId: props.docId,
         filePath: props.filePath ?? null,
         title: props.doc?.manifest?.title ?? null,
         isDirty: isDirty.value,
         isSaving: isSaving.value,
-        nodeCount: Object.keys(getMindNodes() || {}).length,
+        ...nodeStatistics,
         revision: String(contentRevision.value),
         history: history.snapshot(),
       };
+    }
     case 'mind.getDocumentOutline':
       return mcpGetDocumentOutline(params);
     case 'mind.getNode': {

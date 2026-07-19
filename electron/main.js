@@ -26,6 +26,7 @@ import {
 } from './mcp/mindAgentControlManager.node.js';
 import {
   ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+  ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
   ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
   ASYNCTEST_MIND_MCP_TIMEZONE,
   ASYNCTEST_MIND_MCP_UPDATED_AT,
@@ -521,6 +522,7 @@ function getMindMcpLaunchConfig() {
     transport: 'stdio',
     version: ASYNCTEST_MIND_MCP_VERSION,
     capabilityRevision: ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
+    protocolRevision: ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
     updatedAt: ASYNCTEST_MIND_MCP_UPDATED_AT,
     timezone: ASYNCTEST_MIND_MCP_TIMEZONE,
     responseProfile: ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
@@ -531,6 +533,7 @@ function getMindMcpLaunchConfig() {
     stdioJsonText: JSON.stringify(stdioJson, null, 2),
     codexToml: toml,
     note: 'Open AsyncTest before using this stdio MCP server.',
+    connection: getMindAgentControlState(),
   };
 }
 

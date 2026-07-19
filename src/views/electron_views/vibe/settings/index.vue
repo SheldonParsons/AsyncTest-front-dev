@@ -91,7 +91,7 @@
             <button type="button" class="admin-model-refresh" :disabled="adminModelLoading || adminModelSaving" @click="loadAdminModelDefaults">刷新</button>
           </div>
           <div v-if="adminModelLoading && !adminModelProviders.length" class="admin-model-state">加载中...</div>
-          <div v-else-if="!adminModelProviders.length" class="admin-model-state">新增默认模型后，所有用户都可以在会话中选择它。</div>
+          <div v-else-if="!adminModelProviders.length" class="admin-model-state">新增默认模型后，可选择仅自己使用或开放给其他用户。</div>
           <div v-else class="admin-model-list" aria-label="默认模型列表">
             <article
               v-for="provider in adminModelProviders"
@@ -100,7 +100,8 @@
               :class="{ enabled: isAdminSystemDefault(provider.id) }"
               @click="startEditAdminProvider(provider)"
             >
-              <img class="admin-model-logo" :src="DEEPSEEK_LOGO" alt="DeepSeek" />
+              <img v-if="isDeepSeekProvider(provider.provider_type)" class="admin-model-logo" :src="DEEPSEEK_LOGO" alt="DeepSeek" />
+              <span v-else class="admin-model-generic-logo" aria-hidden="true">AI</span>
               <span class="admin-model-main">
                 <strong>{{ provider.name || 'DeepSeek' }}</strong>
                 <small>{{ provider.base_url || 'https://api.deepseek.com' }}</small>
@@ -108,6 +109,7 @@
               <span class="admin-model-badges">
                 <i v-if="isAdminSystemDefault(provider.id)">系统默认</i>
                 <em v-else>未启用</em>
+                <em class="visibility">{{ provider.available_to_all ? '其他用户可见' : '仅自己可见' }}</em>
               </span>
               <span class="admin-model-row-actions" @click.stop>
                 <button type="button" class="admin-model-icon" title="编辑模型" aria-label="编辑模型" :disabled="adminModelSaving || adminModelLoading" @click="startEditAdminProvider(provider)">
@@ -130,34 +132,53 @@
             <h1>{{ adminEditingProvider?.id ? '编辑默认模型' : '新增默认模型' }}</h1>
           </div>
           <section class="admin-model-form-card">
-            <div class="admin-model-provider-option">
-              <img class="admin-model-logo" :src="DEEPSEEK_LOGO" alt="DeepSeek" />
-              <span>
-                <strong>DeepSeek</strong>
-                <small>当前唯一可选模型服务</small>
-              </span>
-              <i>已选择</i>
+            <div class="admin-model-provider-picker">
+              <span>模型服务</span>
+              <AppSelect
+                class="admin-provider-select"
+                :model-value="adminDraft.provider_type"
+                :options="adminProviderTypeOptions"
+                dropdown-fit-content
+                @change="setAdminProviderType"
+              >
+                <template #trigger="{ label, open }">
+                  <span class="admin-provider-select-trigger" :class="{ open }">
+                    <span>{{ label || '选择模型服务' }}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </span>
+                </template>
+              </AppSelect>
             </div>
             <div class="admin-model-form-grid">
               <label>
                 <span>模型名称</span>
-                <input v-model="adminDraft.name" autocomplete="off" placeholder="例如 DeepSeek" @input="clearAdminStatus" />
+                <input v-model="adminDraft.name" autocomplete="off" :placeholder="isDeepSeekProvider(adminDraft.provider_type) ? '例如 DeepSeek' : '例如 Grok'" @input="clearAdminStatus" />
               </label>
               <label>
                 <span>Base Url</span>
-                <input v-model="adminDraft.base_url" autocomplete="off" placeholder="https://api.deepseek.com" @input="clearAdminStatus" />
+                <input v-model="adminDraft.base_url" autocomplete="off" :placeholder="isDeepSeekProvider(adminDraft.provider_type) ? DEEPSEEK_BASE_URL : 'https://api.example.com/v1'" @input="clearAdminStatus" />
               </label>
               <label class="wide">
                 <span>Api Key</span>
-                <input v-model="adminDraft.api_key" autocomplete="off" spellcheck="false" placeholder="请输入 DeepSeek Api Key" @input="clearAdminStatus" />
+                <input v-model="adminDraft.api_key" autocomplete="off" spellcheck="false" placeholder="请输入 Api Key" @input="clearAdminStatus" />
               </label>
               <label>
                 <span>增强模型</span>
-                <input :value="DEEPSEEK_ENHANCED_MODEL" readonly />
+                <input v-model="adminStrongModel" autocomplete="off" placeholder="例如 grok-4" @input="clearAdminStatus" />
               </label>
               <label>
                 <span>轻量模型</span>
-                <input :value="DEEPSEEK_LIGHT_MODEL" readonly />
+                <input v-model="adminLightModel" autocomplete="off" placeholder="例如 grok-3-mini" @input="clearAdminStatus" />
+              </label>
+              <label class="wide admin-model-visibility">
+                <input v-model="adminDraft.available_to_all" type="checkbox" @change="clearAdminStatus" />
+                <span class="admin-model-check" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+                </span>
+                <span class="admin-model-visibility-copy">
+                  <strong>开放给其他用户</strong>
+                  <small>勾选后，其他用户可在自己的会话中选择并使用这个模型。</small>
+                </span>
               </label>
             </div>
             <footer class="admin-model-edit-foot">
@@ -348,6 +369,16 @@
               </div>
             </div>
             <div class="trace-filter-bar">
+              <label class="trace-filter-field trace-marker-filter">
+                <span>审计标识</span>
+                <input
+                  v-model.trim="traceAuditMarkerFilter"
+                  type="text"
+                  placeholder="DTA-XXXXXXXX"
+                  spellcheck="false"
+                  @keydown.enter.prevent="loadTraceRuns(true)"
+                >
+              </label>
               <label class="trace-filter-field">
                 <span>项目</span>
                 <input
@@ -369,7 +400,7 @@
                 >
               </label>
               <button class="trace-filter-apply" type="button" :disabled="traceRunsLoading" @click="loadTraceRuns(true)">过滤</button>
-              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
+              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceAuditMarkerFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
               <datalist id="trace-project-options">
                 <option v-for="item in traceFilterOptions.projects" :key="item.project_id" :value="traceProjectOptionValue(item)">{{ traceProjectOptionLabel(item) }}</option>
               </datalist>
@@ -532,6 +563,7 @@ const selectedTraceIds = ref<Set<string>>(new Set())
 const traceExporting = ref(false)
 const copiedAuditMarker = ref('')
 const copiedAuditMarkerBatch = ref(false)
+const traceAuditMarkerFilter = ref('')
 const traceProjectFilter = ref('')
 const traceUserFilter = ref('')
 const adminModelProviders = ref<VibeLLMProviderConfig[]>([])
@@ -588,6 +620,7 @@ const adminDraft = reactive<VibeLLMProviderPayload>({
   max_retries: 0,
   model_config: {},
   enabled: true,
+  available_to_all: false,
 })
 
 const traceFilterOptions = ref<{
@@ -616,6 +649,22 @@ const sceneStrengthOptions = [
   { value: 'mini', label: '轻量模型' },
   { value: 'strong', label: '增强模型' },
 ]
+const adminProviderTypeOptions = [
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'openai-compatible', label: '其他 OpenAI 兼容模型' },
+]
+const adminStrongModel = computed({
+  get: () => String(adminDraft.model_config?.strong || ''),
+  set: (value: string) => {
+    adminDraft.model_config = { ...(adminDraft.model_config || {}), strong: value }
+  },
+})
+const adminLightModel = computed({
+  get: () => String(adminDraft.model_config?.mini || ''),
+  set: (value: string) => {
+    adminDraft.model_config = { ...(adminDraft.model_config || {}), mini: value }
+  },
+})
 const systemKnowledgeStatusOptions = [
   { value: '', label: '全部状态' },
   { value: 'enabled', label: '启用' },
@@ -719,6 +768,26 @@ function adminFixedModelConfig() {
   }
 }
 
+function isDeepSeekProvider(providerType: string | undefined) {
+  return String(providerType || '').toLowerCase() === 'deepseek'
+}
+
+function setAdminProviderType(value: string | number) {
+  const next = String(value) === 'deepseek' ? 'deepseek' : 'openai-compatible'
+  const previous = String(adminDraft.provider_type || '')
+  adminDraft.provider_type = next
+  if (next === 'deepseek' && previous !== 'deepseek') {
+    adminDraft.name = 'DeepSeek'
+    adminDraft.base_url = DEEPSEEK_BASE_URL
+    adminDraft.model_config = adminFixedModelConfig()
+  } else if (next !== 'deepseek' && previous === 'deepseek') {
+    adminDraft.name = ''
+    adminDraft.base_url = ''
+    adminDraft.model_config = { mini: '', strong: '' }
+  }
+  clearAdminStatus()
+}
+
 function setAdminStatus(text: string, kind: 'idle' | 'ok' | 'error') {
   adminStatusText.value = text
   adminStatusKind.value = kind
@@ -739,14 +808,15 @@ function resetAdminDraft() {
     max_retries: 0,
     model_config: adminFixedModelConfig(),
     enabled: true,
+    available_to_all: false,
   })
 }
 
 function applyAdminDraft(provider: VibeLLMProviderConfig) {
   Object.assign(adminDraft, {
-    name: provider.name || 'DeepSeek',
-    provider_type: 'deepseek',
-    base_url: provider.base_url || DEEPSEEK_BASE_URL,
+    name: provider.name || (isDeepSeekProvider(provider.provider_type) ? 'DeepSeek' : ''),
+    provider_type: isDeepSeekProvider(provider.provider_type) ? 'deepseek' : 'openai-compatible',
+    base_url: provider.base_url || (isDeepSeekProvider(provider.provider_type) ? DEEPSEEK_BASE_URL : ''),
     api_key: provider.api_key || '',
     proxy_url: provider.proxy_url || '',
     timeout_config: {
@@ -756,8 +826,12 @@ function applyAdminDraft(provider: VibeLLMProviderConfig) {
       pool: Number(provider.timeout_config?.pool ?? 30),
     },
     max_retries: Number(provider.max_retries ?? 0),
-    model_config: adminFixedModelConfig(),
+    model_config: {
+      mini: String(provider.model_config?.mini || ''),
+      strong: String(provider.model_config?.strong || ''),
+    },
     enabled: provider.enabled !== false,
+    available_to_all: provider.available_to_all === true,
   })
 }
 
@@ -785,20 +859,26 @@ function validateAdminDraft() {
   if (!String(adminDraft.name || '').trim()) return '请填写模型名称'
   if (!String(adminDraft.base_url || '').trim()) return '请填写 Base Url'
   if (!String(adminDraft.api_key || '').trim()) return '请填写 Api Key'
+  if (!adminLightModel.value.trim()) return '请填写轻量模型'
+  if (!adminStrongModel.value.trim()) return '请填写增强模型'
   return ''
 }
 
 function buildAdminPayload(): VibeLLMProviderPayload {
   return {
     name: String(adminDraft.name || '').trim(),
-    provider_type: 'deepseek',
-    base_url: String(adminDraft.base_url || DEEPSEEK_BASE_URL).trim(),
+    provider_type: String(adminDraft.provider_type || 'deepseek'),
+    base_url: String(adminDraft.base_url || '').trim(),
     api_key: String(adminDraft.api_key || '').trim(),
     proxy_url: String(adminDraft.proxy_url || '').trim(),
     timeout_config: adminDraft.timeout_config,
     max_retries: Number(adminDraft.max_retries || 0),
-    model_config: adminFixedModelConfig(),
+    model_config: {
+      mini: adminLightModel.value.trim(),
+      strong: adminStrongModel.value.trim(),
+    },
     enabled: true,
+    available_to_all: adminDraft.available_to_all === true,
   }
 }
 
@@ -846,7 +926,7 @@ async function testAdminProvider() {
   try {
     const provider = await persistAdminProvider()
     if (!provider?.id) return
-    const result = await testVibeLLMProvider(provider.id, { model: DEEPSEEK_LIGHT_MODEL })
+    const result = await testVibeLLMProvider(provider.id, { model: adminLightModel.value.trim() })
     setAdminStatus(
       result.ok ? `测试成功 · ${result.model} · ${result.elapsed_ms}ms` : `测试失败 · ${result.model} · ${result.error || '未知错误'}`,
       result.ok ? 'ok' : 'error',
@@ -1128,6 +1208,7 @@ async function loadTraceRuns(reset = false) {
     const res = await listVibeDialogueTraceRuns({
       limit: 30,
       cursor: reset ? '' : traceNextCursor.value,
+      q: traceAuditMarkerFilter.value,
       project: traceProjectFilter.value,
       user: traceUserFilter.value,
     })
@@ -1163,6 +1244,7 @@ async function selectTrace(traceId: string) {
 }
 
 function clearTraceFilters() {
+  traceAuditMarkerFilter.value = ''
   traceProjectFilter.value = ''
   traceUserFilter.value = ''
   loadTraceRuns(true)
@@ -2138,14 +2220,16 @@ onBeforeUnmount(() => {
 .admin-model-row:hover { background: #fcfcfc; }
 .admin-model-row.enabled { border-color: rgba(47, 107, 61, .18); background: #fbfdfb; }
 .admin-model-logo { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; }
+.admin-model-generic-logo { width: 38px; height: 38px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: #18181b; color: #fff; font-size: 12px; font-weight: 650; }
 .admin-model-main { min-width: 0; display: grid; gap: 4px; }
 .admin-model-main strong { color: var(--ink-1); font-size: 14px; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-model-main small { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-model-badges { display: flex; justify-content: flex-end; }
+.admin-model-badges { display: flex; justify-content: flex-end; gap: 5px; }
 .admin-model-badges i,
 .admin-model-badges em { height: 24px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; font-size: 11px; font-style: normal; font-weight: 500; white-space: nowrap; }
 .admin-model-badges i { background: #f0f7f1; color: #2f6b3d; }
 .admin-model-badges em { background: #f6f6f6; color: var(--ink-3); }
+.admin-model-badges em.visibility { background: #f2f2f2; color: rgba(29,29,31,.62); }
 .admin-model-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .admin-model-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; color: rgba(29, 29, 31, .72); padding: 0; cursor: pointer; }
 .admin-model-icon:hover { background: #f1f1f1; }
@@ -2166,6 +2250,11 @@ onBeforeUnmount(() => {
 .admin-model-provider-option strong { margin-bottom: 3px; font-size: 14px; font-weight: 560; }
 .admin-model-provider-option small { color: var(--ink-3); font-size: 12px; }
 .admin-model-provider-option i { font-size: 12px; font-style: normal; color: #2f6b3d; }
+.admin-model-provider-picker { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 16px; }
+.admin-model-provider-picker > span { color: var(--ink-3); font-size: 12px; }
+.admin-provider-select { width: 100%; }
+.admin-provider-select-trigger { width: 100%; height: 38px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; background: #fff; color: var(--ink-1); padding: 0 11px; font-size: 13px; }
+.admin-provider-select-trigger.open { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }
 .admin-model-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .admin-model-form-grid label { min-width: 0; }
 .admin-model-form-grid label.wide { grid-column: 1 / -1; }
@@ -2173,6 +2262,14 @@ onBeforeUnmount(() => {
 .admin-model-form-grid input { width: 100%; height: 38px; box-sizing: border-box; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; background: #fff; color: var(--ink-1); padding: 0 11px; font-size: 13px; outline: none; }
 .admin-model-form-grid input:focus { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }
 .admin-model-form-grid input[readonly] { background: #f6f6f6; color: rgba(29,29,31,.62); }
+.admin-model-form-grid .admin-model-visibility { min-height: 58px; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(15,15,15,.08); border-radius: 10px; cursor: pointer; }
+.admin-model-form-grid .admin-model-visibility > input { position: absolute; opacity: 0; pointer-events: none; }
+.admin-model-check { width: 18px; height: 18px; margin: 0; display: inline-flex !important; align-items: center; justify-content: center; border: 1px solid rgba(15,15,15,.2); border-radius: 5px; background: #fff; color: transparent; }
+.admin-model-check svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.admin-model-visibility > input:checked + .admin-model-check { background: #1d1d1f; border-color: #1d1d1f; color: #fff; }
+.admin-model-visibility-copy { display: grid !important; gap: 3px; margin: 0 !important; }
+.admin-model-visibility-copy strong { color: var(--ink-1); font-size: 13px; font-weight: 560; }
+.admin-model-visibility-copy small { color: var(--ink-3); font-size: 11px; line-height: 1.4; }
 .admin-model-edit-foot { display: grid; grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto; align-items: center; gap: 14px; margin-top: 18px; }
 .admin-model-left-actions,
 .admin-model-right-actions { display: flex; gap: 8px; }
@@ -2571,6 +2668,10 @@ onBeforeUnmount(() => {
   align-items: end;
 }
 
+.trace-marker-filter {
+  grid-column: 1 / -1;
+}
+
 .trace-filter-field {
   min-width: 0;
   display: flex;
@@ -2648,8 +2749,18 @@ onBeforeUnmount(() => {
 }
 
 .trace-run-row:hover { background: rgba(18, 18, 18, 0.035); }
-.trace-run-row.active { background: #fff; box-shadow: inset 3px 0 0 #111; }
+.trace-run-row.active,
+.trace-run-row.active.checked {
+  background: rgba(18, 18, 18, 0.075);
+  box-shadow: inset 3px 0 0 #111;
+}
 .trace-run-row.checked { background: rgba(18, 18, 18, 0.026); }
+.trace-run-row.active .trace-row-title { font-weight: 620; }
+.trace-run-row.active .trace-audit-marker {
+  border-color: rgba(18, 18, 18, 0.24);
+  background: #fff;
+  color: rgba(18, 18, 18, 0.76);
+}
 
 .trace-select-box {
   position: relative;

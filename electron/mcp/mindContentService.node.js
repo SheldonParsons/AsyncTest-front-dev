@@ -120,22 +120,36 @@ export function buildOutlineNode(board, nodeId, depth, maxDepth, budget = null) 
   return result;
 }
 
-function countReachableOutlineNodes(board, roots) {
-  const visited = new Set();
-  const visit = (nodeId) => {
-    if (!nodeId || visited.has(nodeId) || !board?.nodes?.[nodeId]) return;
-    visited.add(nodeId);
-    const children = Array.isArray(board.nodes[nodeId].children) ? board.nodes[nodeId].children : [];
-    children.forEach(visit);
+export function getMindBoardNodeStatistics(board) {
+  const nodes = board?.nodes && typeof board.nodes === 'object' ? board.nodes : {};
+  const roots = Array.isArray(board?.roots) ? board.roots : [];
+  const reachable = new Set();
+  const visible = new Set();
+  const visit = (nodeId, target, respectCollapsed) => {
+    if (!nodeId || target.has(nodeId) || !nodes[nodeId]) return;
+    target.add(nodeId);
+    if (respectCollapsed && nodes[nodeId].collapsed === true) return;
+    const children = Array.isArray(nodes[nodeId].children) ? nodes[nodeId].children : [];
+    children.forEach((childId) => visit(childId, target, respectCollapsed));
   };
-  roots.forEach((root) => visit(root?.rootId));
-  return visited.size;
+  roots.forEach((root) => {
+    visit(root?.rootId, reachable, false);
+    visit(root?.rootId, visible, true);
+  });
+  const totalNodeCount = Object.keys(nodes).length;
+  return {
+    nodeCount: reachable.size,
+    reachableNodeCount: reachable.size,
+    visibleNodeCount: visible.size,
+    totalNodeCount,
+    detachedNodeCount: Math.max(0, totalNodeCount - reachable.size),
+  };
 }
 
 export function summarizeMindDoc(doc, options = {}) {
   const { boardId, board } = getActiveBoard(doc, options.boardId);
   const roots = Array.isArray(board.roots) ? board.roots : [];
-  const nodeCount = Object.keys(board.nodes || {}).length;
+  const statistics = getMindBoardNodeStatistics(board);
   const limit = Number.isInteger(options.limit) ? Math.max(1, options.limit) : null;
   const budget = limit == null ? null : { remaining: limit };
   const outlineRoots = roots
@@ -146,14 +160,12 @@ export function summarizeMindDoc(doc, options = {}) {
     0,
   );
   const returnedNodeCount = countOutlineNodes(outlineRoots);
-  const reachableNodeCount = countReachableOutlineNodes(board, roots);
   return {
     title: doc?.manifest?.title ?? board?.title ?? null,
     boardId,
-    nodeCount,
-    reachableNodeCount,
+    ...statistics,
     returnedNodeCount,
-    truncated: returnedNodeCount < reachableNodeCount,
+    truncated: returnedNodeCount < statistics.reachableNodeCount,
     depth: Number.isInteger(options.depth) ? options.depth : null,
     limit,
     roots: outlineRoots,
