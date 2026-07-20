@@ -152,6 +152,8 @@ export default {
     addFavorite: '添加收藏项目成功。',
     cancelDefault: '取消默认项目成功',
     addDefault: '添加默认项目成功。',
+    projectsLoaded: '已加载 {count} 个项目',
+    allProjectsLoaded: '全部项目已加载完成',
     defaultProject: '默认项目',
     enterProject: '进入项目',
     search: {

@@ -290,14 +290,25 @@ jobs:
           set -euo pipefail
 
           DIST_DIR="dist_electron/${APP_ENV}/mac/${{ matrix.arch }}/"
-          echo "Cleaning up intermediate folders..."
           OSS_PREFIX="oss://${OSS_BUCKET}/core/updates/${APP_ENV}/mac/${{ matrix.arch }}/"
 
-          echo "Uploading ${DIST_DIR} -> ${OSS_PREFIX}"
-          ossutil cp -rf "${DIST_DIR}/" "${OSS_PREFIX}" \
-            -e "${OSS_ENDPOINT}" \
-            -i "${OSS_ACCESS_KEY_ID}" \
-            -k "${OSS_ACCESS_KEY_SECRET}"
+          # electron-builder 的可发布产物都在 DIST_DIR 顶层。
+          # 仅上传顶层文件，避免把 mac/mac-arm64 未压缩应用目录递归上传到 OSS。
+          echo "Uploading top-level release files from ${DIST_DIR} -> ${OSS_PREFIX}"
+          uploaded=0
+          while IFS= read -r -d '' f; do
+            echo "Upload: $(basename "$f")"
+            ossutil cp -f "$f" "${OSS_PREFIX}" \
+              -e "${OSS_ENDPOINT}" \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}"
+            uploaded=$((uploaded + 1))
+          done < <(find "${DIST_DIR}" -maxdepth 1 -type f -print0)
+
+          if [ "$uploaded" -eq 0 ]; then
+            echo "No release files found in ${DIST_DIR}"
+            exit 1
+          fi
 
           # latest*.yml 覆盖且 no-cache（在这个 arch 子目录里覆盖即可）
           shopt -s nullglob

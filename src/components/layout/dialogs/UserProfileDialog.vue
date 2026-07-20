@@ -11,7 +11,7 @@
       <div class="profile-sheet__hero">
         <div class="profile-sheet__identity">
           <div class="profile-sheet__avatar-wrap">
-            <el-avatar :size="72" :src="userAvatar" class="profile-sheet__avatar" />
+            <el-avatar :size="60" :src="userAvatar" class="profile-sheet__avatar" />
           </div>
 
           <div class="profile-sheet__headline">
@@ -310,20 +310,20 @@ defineExpose({ open, close })
 
 <style lang="scss" scoped>
 .profile-sheet {
-  width: 620px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 100px);
-  overflow: auto;
+  width: 720px;
+  max-width: calc(100vw - 48px);
+  overflow: hidden;
   color: #111111;
   background: #ffffff;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .profile-sheet__hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.85fr);
-  gap: 12px;
-  padding: 18px 18px 14px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid #e8e8e8;
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.015), rgba(0, 0, 0, 0)),
@@ -333,14 +333,14 @@ defineExpose({ open, close })
 .profile-sheet__identity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .profile-sheet__avatar-wrap {
   position: relative;
   flex-shrink: 0;
-  padding: 4px;
-  border-radius: 18px;
+  padding: 3px;
+  border-radius: 15px;
   border: 1px solid #d7d7d7;
   background: linear-gradient(135deg, #f9f9f9, #efefef);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
@@ -348,7 +348,7 @@ defineExpose({ open, close })
 
 .profile-sheet__avatar {
   border: 2px solid #ffffff;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .profile-sheet__headline {
@@ -363,8 +363,8 @@ defineExpose({ open, close })
 }
 
 .profile-sheet__name {
-  margin: 6px 0 4px;
-  font-size: 24px;
+  margin: 4px 0 3px;
+  font-size: 21px;
   line-height: 1.1;
   font-weight: 700;
   color: #111111;
@@ -378,21 +378,23 @@ defineExpose({ open, close })
 
 .profile-sheet__summary {
   display: grid;
-  gap: 8px;
-  align-content: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  align-content: center;
 }
 
 .profile-sheet__summary-item {
-  padding: 11px 12px;
+  min-width: 0;
+  padding: 9px 10px;
   border: 1px solid #e4e4e4;
-  border-radius: 14px;
+  border-radius: 11px;
   background: #fcfcfc;
 }
 
 .profile-sheet__summary-label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 10px;
+  margin-bottom: 3px;
+  font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #8b8b8b;
@@ -401,21 +403,26 @@ defineExpose({ open, close })
 
 .profile-sheet__summary-value {
   display: block;
-  font-size: 12px;
+  overflow: hidden;
+  font-size: 11px;
   font-weight: 600;
   color: #151515;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-sheet__content {
   display: grid;
-  gap: 12px;
-  padding: 14px 18px;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 16px;
   background: #ffffff;
 }
 
 .profile-card {
   border: 1px solid #e7e7e7;
-  border-radius: 16px;
+  border-radius: 13px;
   background: #ffffff;
   overflow: hidden;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.035);
@@ -429,14 +436,14 @@ defineExpose({ open, close })
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 12px;
+  gap: 8px;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid #efefef;
 }
 
 .profile-card__kicker {
-  margin: 0 0 4px;
-  font-size: 10px;
+  margin: 0 0 2px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -445,14 +452,15 @@ defineExpose({ open, close })
 
 .profile-card__title {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: #111111;
 }
 
 .profile-card__hint {
   margin: 0;
-  font-size: 11px;
+  max-width: 190px;
+  font-size: 10px;
   color: #7a7a7a;
   text-align: right;
 }
@@ -460,55 +468,60 @@ defineExpose({ open, close })
 .profile-readonly-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px 16px 16px;
+  gap: 6px;
+  padding: 8px 10px 10px;
 }
 
 .profile-readonly-item {
-  padding: 12px;
-  border-radius: 12px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
   border: 1px solid #ededed;
   background: #fafafa;
 }
 
 .profile-readonly-item__label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 11px;
+  margin-bottom: 2px;
+  font-size: 10px;
   color: #7a7a7a;
 }
 
 .profile-readonly-item__value {
   display: block;
-  font-size: 13px;
+  overflow: hidden;
+  font-size: 12px;
   font-weight: 600;
   color: #151515;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-form {
-  padding: 12px 16px 16px;
+  padding: 8px 12px 10px;
 }
 
 .profile-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 12px;
+  gap: 0 10px;
 }
 
 .profile-form :deep(.el-form-item__label) {
-  padding-bottom: 6px;
-  font-size: 12px;
+  height: 20px;
+  padding-bottom: 3px;
+  font-size: 11px;
   font-weight: 600;
   color: #252525;
 }
 
 .profile-form :deep(.el-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: 9px;
 }
 
 .profile-form :deep(.el-input__wrapper) {
-  min-height: 38px;
-  border-radius: 12px;
+  min-height: 34px;
+  border-radius: 9px;
   background: #f6f6f6;
   box-shadow: inset 0 0 0 1px #e6e6e6;
 }
@@ -523,11 +536,11 @@ defineExpose({ open, close })
 
 .profile-form__radio-group {
   display: flex;
-  gap: 12px;
-  min-height: 38px;
+  gap: 14px;
+  min-height: 34px;
   align-items: center;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: 9px;
   background: #f6f6f6;
   box-shadow: inset 0 0 0 1px #e6e6e6;
 }
@@ -549,18 +562,18 @@ defineExpose({ open, close })
 .profile-sheet__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 0 18px 18px;
+  gap: 7px;
+  padding: 0 16px 12px;
 }
 
 .profile-btn {
-  min-width: 88px;
-  height: 38px;
+  min-width: 76px;
+  height: 34px;
   border-radius: 999px;
   border: 1px solid #d9d9d9;
   background: #ffffff;
   color: #111111;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -592,22 +605,60 @@ defineExpose({ open, close })
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .profile-sheet {
     width: min(620px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
   }
 
-  .profile-sheet__hero,
-  .profile-form__grid,
-  .profile-readonly-grid {
+  .profile-sheet__hero {
     grid-template-columns: 1fr;
+  }
+
+  .profile-sheet__content {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-readonly-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .profile-sheet__hero,
   .profile-sheet__content,
   .profile-sheet__footer {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .profile-readonly-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-card__hint {
+    display: none;
+  }
+}
+
+@media (max-height: 680px) {
+  .profile-sheet__hero {
+    padding-top: 10px;
+    padding-bottom: 9px;
+  }
+
+  .profile-sheet__avatar {
+    width: 52px !important;
+    height: 52px !important;
+  }
+
+  .profile-sheet__content {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .profile-sheet__footer {
+    padding-bottom: 9px;
   }
 }
 </style>

@@ -152,6 +152,8 @@ export default {
     addFavorite: 'Added your favorite project.',
     cancelDefault: 'Has been cancel your default project.',
     addDefault: 'Added your default project.',
+    projectsLoaded: 'Loaded {count} projects.',
+    allProjectsLoaded: 'All projects have been loaded.',
     defaultProject: 'Default',
     enterProject: 'Enter',
     search: {

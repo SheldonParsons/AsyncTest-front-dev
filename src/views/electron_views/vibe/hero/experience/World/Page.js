@@ -159,21 +159,6 @@ export default class Page {
         // responsive" over "never double-advances").
         this.scrollLockDuration = 1100
 
-        const goToSection = (delta) => {
-            if (this.scrollLocked) return
-            const next = MathUtils.clamp(this.currentSectionIndex + delta, 0, this.sectionCount)
-            if (next === this.currentSectionIndex) return
-            this.currentSectionIndex = next
-            this.applyScrollTarget()
-            this.emitSection()
-
-            this.scrollLocked = true
-            clearTimeout(this._scrollLockTimeout)
-            this._scrollLockTimeout = setTimeout(() => {
-                this.scrollLocked = false
-            }, this.scrollLockDuration)
-        }
-
         const signal = this._ac.signal
 
         // —— 滚轮：动量「加速度」检测（借鉴 fullPage.js）——
@@ -209,7 +194,7 @@ export default class Page {
             if (this.scrollLocked) return // 动画中：已采样，等解锁后下一个 wheel 事件即刻据加速度判定
 
             const accelerating = avgOfLast(this._scrollSamples, 10) >= avgOfLast(this._scrollSamples, 70)
-            if (accelerating) goToSection(e.deltaY > 0 ? 1 : -1)
+            if (accelerating) this.goToSection(e.deltaY > 0 ? 1 : -1)
         }, { passive: false, signal })
 
         let touchStartY = null
@@ -224,13 +209,32 @@ export default class Page {
             const deltaY = touchStartY - e.changedTouches[0].clientY
             touchStartY = null
             if (Math.abs(deltaY) < 40) return // ignore tiny/accidental swipes
-            goToSection(deltaY > 0 ? 1 : -1)
+            this.goToSection(deltaY > 0 ? 1 : -1)
         }, { passive: true, signal })
 
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); goToSection(1) }
-            else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); goToSection(-1) }
+            if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); this.goToSection(1) }
+            else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); this.goToSection(-1) }
         }, { signal })
+    }
+
+    // 所有翻页入口（滚轮 / 触摸 / 键盘 / Vue 按钮）共用同一条状态更新链。
+    // force 仅用于明确点击“下一页”的操作，避免按钮被上一段滚轮动画的锁误吞。
+    goToSection(delta, force = false) {
+        if (this.scrollLocked && !force) return false
+        const next = MathUtils.clamp(this.currentSectionIndex + delta, 0, this.sectionCount)
+        if (next === this.currentSectionIndex) return false
+
+        this.currentSectionIndex = next
+        this.applyScrollTarget()
+        this.emitSection()
+
+        this.scrollLocked = true
+        clearTimeout(this._scrollLockTimeout)
+        this._scrollLockTimeout = setTimeout(() => {
+            this.scrollLocked = false
+        }, this.scrollLockDuration)
+        return true
     }
 
     // Recomputes scrollY/normalizedScrollY from currentSectionIndex against

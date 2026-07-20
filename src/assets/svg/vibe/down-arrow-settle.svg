@@ -1,0 +1,64 @@
+<svg
+  class="down-arrow-settle"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+  role="img"
+  aria-label="Down"
+>
+  <style>
+    .down-arrow-settle {
+      color: #111827;
+      overflow: visible;
+      cursor: pointer;
+    }
+
+    .down-arrow-settle .down-arrow {
+      transform-origin: 20px 20px;
+    }
+
+    .down-arrow-settle:hover .down-arrow,
+    .down-arrow-settle:focus-visible .down-arrow {
+      animation: down-arrow-drop 1000ms linear both;
+    }
+
+    .down-arrow-settle:focus-visible {
+      outline: none;
+      filter: drop-shadow(0 0 0 rgba(17, 24, 39, 0));
+    }
+
+    @keyframes down-arrow-drop {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(4px);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .down-arrow-settle:hover .down-arrow,
+      .down-arrow-settle:focus-visible .down-arrow {
+        animation: none;
+      }
+    }
+  </style>
+
+  <g class="down-arrow">
+    <path
+      d="M20 11V27"
+      stroke="currentColor"
+      stroke-width="2.45"
+      stroke-linecap="round"
+    />
+    <path
+      d="M12.9 19.9L20 27L27.1 19.9"
+      stroke="currentColor"
+      stroke-width="2.45"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

@@ -58,7 +58,7 @@
             </el-icon>
           </div>
           <div class="stat-content">
-            <span class="stat-value">{{ projects.list.length }}</span>
+            <span class="stat-value">{{ totalProjectCount }}</span>
             <span class="stat-label">全部项目</span>
           </div>
         </div>
@@ -136,11 +136,11 @@
             </div>
             <h2 class="section-title">全部项目</h2>
           </div>
-          <div class="section-badge">{{ projects.list.length }} 个项目</div>
+          <div class="section-badge">{{ totalProjectCount }} 个项目</div>
         </div>
 
         <div v-if="projects.list.length > 0" class="all-projects-grid" v-infinite-scroll="load"
-          :infinite-scroll-disabled="disInfinite">
+          :infinite-scroll-disabled="disInfinite" :infinite-scroll-immediate="false">
           <transition-group name="smooth-list">
             <div v-for="item in projects.list" :key="`proj-${item.id}`" class="project-card-wrapper">
               <PanelViewNewCard :project="item" :name="item.name" :creator="item.create_by"
@@ -196,7 +196,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import {
   Search,
   Close,
@@ -241,16 +241,21 @@ const search = ref("");
 const isScrolled = ref(false);
 // 当前页数
 const currentPage = ref(1);
-// 是否禁用无限滚动
-const disInfinite = ref(true);
-// 永久禁止无限滚动
-const alwaysDisInfinite = ref(false);
+// 当前筛选条件下的项目总数（由分页接口返回）
+const totalProjectCount = ref(0);
+// 项目分页请求状态
+const isLoadingProjects = ref(false);
+const hasMoreProjects = ref(true);
+const disInfinite = computed(() => isLoadingProjects.value || !hasMoreProjects.value);
 // 申请理由
 const approveDesc = ref("");
 // 当前项目
 const currentProject = ref(0);
 // 防抖定时器
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+// 搜索条件变化后，忽略旧条件仍在途中的响应
+let projectRequestVersion = 0;
+let favoriteRequestVersion = 0;
 // 项目列表对象
 const projects = reactive({
   list: [] as any,
@@ -261,9 +266,10 @@ const favoriteProjects = reactive({
 const clickAllowed = ref(true);
 
 onMounted(async () => {
-  disInfinite.value = true;
-  await getProjects(20, search.value);
-  await getFavoriteProject(30, search.value);
+  await Promise.all([
+    refreshProjects(20, search.value),
+    getFavoriteProject(30, search.value),
+  ]);
   // 监听滚动事件
   window.addEventListener("scroll", handleScroll);
 });
@@ -337,12 +343,7 @@ function handleSearch() {
 
 // 执行搜索
 function performSearch() {
-  disInfinite.value = true;
-  projects.list = [];
-  favoriteProjects.list = [];
-  currentPage.value = 1;
-  alwaysDisInfinite.value = false;
-  getProjects(20, search.value);
+  refreshProjects(20, search.value);
   getFavoriteProject(10, search.value);
 }
 
@@ -354,12 +355,7 @@ function clearSearch() {
 
 // 清空输入框，重新请求所有项目
 function clearDataFromSearch() {
-  alwaysDisInfinite.value = false;
-  disInfinite.value = true;
-  projects.list = [];
-  favoriteProjects.list = [];
-  currentPage.value = 1;
-  getProjects(20, search.value);
+  refreshProjects(20, search.value);
   getFavoriteProject(10, search.value);
 }
 
@@ -378,31 +374,82 @@ async function enterProject(project: any) {
   }
 }
 // 获取收藏项目
-function getFavoriteProject(size = 10, name = "") {
-  ApiGetFavoriteProjects({ page: 1, size, name }).then((data: any) => {
-    if (data.results && data.results.length > 0) {
-      intervalData(data, favoriteProjects, size, false);
-    } else {
-      clearStatus();
-    }
-  });
+async function getFavoriteProject(size = 10, name = "") {
+  const requestVersion = ++favoriteRequestVersion;
+  const data: any = await ApiGetFavoriteProjects({ page: 1, size, name });
+
+  if (requestVersion !== favoriteRequestVersion) {
+    return;
+  }
+
+  favoriteProjects.list = Array.isArray(data.results) ? data.results : [];
 }
-// 获取项目列表API，每成功调用一次page自增1
-async function getProjects(size = 10, name = "") {
-  ApiGetProjects({ page: currentPage.value, size, name }).then((data: any) => {
-    if (data.detail) {
-      window.$toast({ title: t("response.lessData") })
-      clearStatus();
-      alwaysDisInfinite.value = true;
+
+// 重置分页并加载第一批项目
+async function refreshProjects(size = 20, name = "") {
+  const requestVersion = ++projectRequestVersion;
+  currentPage.value = 1;
+  projects.list = [];
+  totalProjectCount.value = 0;
+  hasMoreProjects.value = true;
+  isLoadingProjects.value = false;
+  await getProjects(size, name, true, requestVersion);
+}
+
+// 获取项目列表 API，每成功调用一次 page 自增
+async function getProjects(
+  size = 10,
+  name = "",
+  replace = false,
+  requestVersion = projectRequestVersion
+) {
+  if (
+    requestVersion !== projectRequestVersion ||
+    isLoadingProjects.value ||
+    !hasMoreProjects.value
+  ) {
+    return;
+  }
+
+  const requestedPage = currentPage.value;
+  isLoadingProjects.value = true;
+
+  try {
+    const data: any = await ApiGetProjects({ page: requestedPage, size, name });
+
+    if (requestVersion !== projectRequestVersion) {
       return;
     }
-    if (data.results && data.results.length > 0) {
-      intervalData(data, projects, size, true);
-    } else {
-      // 未知错误，解锁无限滚动
-      clearStatus();
+
+    if (data.detail) {
+      hasMoreProjects.value = false;
+      return;
     }
-  });
+
+    const results = Array.isArray(data.results) ? data.results : [];
+    if (replace) {
+      projects.list = results;
+    } else {
+      projects.list.push(...results);
+    }
+
+    const responseTotal = Number(data.count ?? data.total ?? data.total_count);
+    totalProjectCount.value = Number.isFinite(responseTotal)
+      ? responseTotal
+      : projects.list.length;
+
+    if (results.length > 0) {
+      currentPage.value = requestedPage + size / 10;
+    }
+
+    const responseSaysNoNextPage =
+      Object.prototype.hasOwnProperty.call(data, "next") && data.next === null;
+    hasMoreProjects.value = results.length === size && !responseSaysNoNextPage;
+  } finally {
+    if (requestVersion === projectRequestVersion) {
+      isLoadingProjects.value = false;
+    }
+  }
 }
 
 function checkApproveProject() {
@@ -430,39 +477,21 @@ function confirmApproveProject() {
   });
 }
 
-// 有意延迟加载数据
-function intervalData(
-  data: any,
-  instance: any,
-  size: number,
-  isAllProject: any = false
-) {
-  let count = 0;
-  disInfinite.value = true;
-  instance.list = []
-  const timer = setInterval(() => {
-    instance.list.push(data.results[count]);
-    count = count + 1;
-    if (count >= data.results.length) {
-      if (isAllProject) {
-        currentPage.value = currentPage.value + size / 10;
-      }
-      clearStatus();
-      clearInterval(timer);
-    }
-  }, 10);
-}
-
-// 开启无限滚动
-function clearStatus() {
-  disInfinite.value = false;
-}
-
 // 滚动加载
 async function load() {
-  if (alwaysDisInfinite.value === false) {
-    disInfinite.value = true;
+  if (!isLoadingProjects.value && hasMoreProjects.value) {
+    const previousProjectCount = projects.list.length;
     await getProjects(10, search.value);
+    const loadedProjectCount = projects.list.length - previousProjectCount;
+
+    if (!hasMoreProjects.value) {
+      window.$toast({ title: t("project.allProjectsLoaded"), type: "success" });
+    } else if (loadedProjectCount > 0) {
+      window.$toast({
+        title: t("project.projectsLoaded", { count: loadedProjectCount }),
+        type: "success",
+      });
+    }
   }
 }
 // 设置默认项目

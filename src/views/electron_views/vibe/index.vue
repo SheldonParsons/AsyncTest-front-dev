@@ -37,6 +37,15 @@
               <h1 class="headline-cn">让知识开口</h1>
               <p class="headline-en">AsyncTest Vibe — Knowledge, Answered.</p>
               <p class="subtitle">有问，皆有据。</p>
+              <button
+                class="section-next-btn"
+                type="button"
+                aria-label="前往第二张画面"
+                :disabled="!sectionReady || advancingSection"
+                @click="goToNextSection"
+              >
+                <img class="section-next-btn__icon" :src="downArrowSettle" alt="">
+              </button>
             </div>
           </section>
 
@@ -45,6 +54,15 @@
               <h1 class="headline-cn">让知识生长</h1>
               <p class="headline-en">AsyncTest Vibe — Knowledge, Evolving.</p>
               <p class="subtitle">知识，自生长。</p>
+              <button
+                class="section-next-btn"
+                type="button"
+                aria-label="前往第三张画面"
+                :disabled="!sectionReady || advancingSection"
+                @click="goToNextSection"
+              >
+                <img class="section-next-btn__icon" :src="downArrowSettle" alt="">
+              </button>
             </div>
           </section>
 
@@ -71,6 +89,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VibeWindowControls from './knowledge/components/VibeWindowControls.vue'
+import downArrowSettle from '@/assets/svg/vibe/down-arrow-settle.svg'
 
 const router = useRouter()
 const route = useRoute()
@@ -81,15 +100,19 @@ let experience: any = null
 // 当前页码由粒子引擎（Page.js）通过 vibe:section 事件广播上来。
 const sectionIndex = ref(0)
 const sectionLast = ref(2) // 末页下标（3 段 → 2），引擎会用真实值覆盖
+const sectionReady = ref(false)
+const advancingSection = ref(false)
 const leaving = ref(false)
 const atLastSection = computed(() => sectionIndex.value >= sectionLast.value)
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 const winMaximized = ref(false)
 let offMaximizeState: (() => void) | null = null
+let advanceTimer: ReturnType<typeof setTimeout> | null = null
 
 function onSectionEvt(e: Event) {
   const d = (e as CustomEvent).detail || {}
+  sectionReady.value = true
   if (typeof d.index === 'number') sectionIndex.value = d.index
   if (typeof d.last === 'number') sectionLast.value = d.last
   // 背景帧序列由引擎（Page.js）按滚动位置自行驱动，这里只更新按钮所需的页码。
@@ -116,6 +139,7 @@ onBeforeUnmount(() => {
   offMaximizeState?.()
   window.removeEventListener('vibe:section', onSectionEvt)
   if (enterTimer) { clearTimeout(enterTimer); enterTimer = null }
+  if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null }
   // 停 RAF + 移除全部全局监听（滚轮/指针/resize）+ 置空单例，防泄漏、防死首屏劫持滚轮。
   try { experience && experience.destroy && experience.destroy() } catch (e) { /* noop */ }
   experience = null
@@ -127,6 +151,23 @@ function openKnowledge() {
   enterTimer = setTimeout(() => {
     router.push({ name: 'vibeKnowledge', query: route.query })
   }, 620)
+}
+
+function goToNextSection() {
+  if (!sectionReady.value || advancingSection.value || atLastSection.value) return
+  const page = experience?.world?.page
+  if (!page?.goToSection) return
+
+  // 按钮属于明确的下一页意图，允许接管尚未结束的滚轮锁；短暂禁用按钮防止双击越过一屏。
+  const moved = page.goToSection(1, true)
+  if (!moved) return
+
+  advancingSection.value = true
+  if (advanceTimer) clearTimeout(advanceTimer)
+  advanceTimer = setTimeout(() => {
+    advancingSection.value = false
+    advanceTimer = null
+  }, 700)
 }
 
 function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
@@ -252,6 +293,55 @@ function trackMaximizeState() {
 .headline-cn { font-family: 'PingFang SC', 'Microsoft YaHei', 'Jost', sans-serif; font-weight: 700; font-size: clamp(48px, 7vw, 104px); line-height: 1.08; color: #fff; margin: 0 0 18px; letter-spacing: 0.02em; }
 .headline-en { font-family: 'Jost', sans-serif; font-weight: 500; font-size: clamp(16px, 1.6vw, 22px); letter-spacing: 0.02em; color: rgba(245,246,255,.85); margin: 0 0 28px; }
 .subtitle { font-family: 'PingFang SC', 'Microsoft YaHei', 'Jost', sans-serif; font-weight: 400; font-size: clamp(16px, 1.5vw, 20px); letter-spacing: 0.08em; color: rgba(245,246,255,.6); margin: 0; }
+
+/* —— 前两屏：显式进入下一画面 —— */
+.section-next-btn {
+  position: absolute;
+  left: 50%;
+  bottom: max(40px, env(safe-area-inset-bottom));
+  z-index: 3;
+  -webkit-app-region: no-drag;
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 999px;
+  background: rgba(7,10,14,.24);
+  backdrop-filter: blur(12px) saturate(130%);
+  color: #f7f8ff;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 14px 40px rgba(0,0,0,.16);
+  transform: translateX(-50%);
+  transition: background .25s ease, border-color .25s ease, opacity .25s ease, box-shadow .25s ease;
+}
+.section-next-btn__icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  filter: invert(1) brightness(1.35);
+  animation: section-arrow-drop 1000ms linear infinite;
+}
+.section-next-btn:not(:disabled):hover {
+  border-color: rgba(255,255,255,.5);
+  background: rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 18px 44px rgba(0,0,0,.24);
+}
+.section-next-btn:not(:disabled):active { transform: translateX(-50%) scale(.97); }
+.section-next-btn:disabled { cursor: wait; opacity: .5; }
+.section-next-btn:focus-visible {
+  outline: 2px solid rgba(255,255,255,.9);
+  outline-offset: 4px;
+}
+@keyframes section-arrow-drop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-next-btn__icon { animation: none; }
+}
 
 /* —— 进入知识库 —— */
 .enter-btn {

@@ -7,7 +7,7 @@
  *  3. 通过 IPC 与 renderer 双向转发 LSP 消息
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,10 +24,26 @@ let bodyBuf = Buffer.alloc(0);
 let senderWebContents = null;
 let initialized = false;
 
-function getPyrightBinary() {
+function getPyrightLaunchConfig() {
+  if (app.isPackaged) {
+    const entryPath = path.join(process.resourcesPath, 'pyright', 'langserver.index.js');
+    return {
+      command: process.execPath,
+      args: [entryPath, '--stdio'],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      displayPath: entryPath,
+    };
+  }
+
   // electron/lsp/ → 上两层到项目根目录
   const base = path.resolve(__dirname, '..', '..', 'node_modules', '.bin', 'pyright-langserver');
-  return process.platform === 'win32' ? base + '.cmd' : base;
+  const command = process.platform === 'win32' ? base + '.cmd' : base;
+  return {
+    command,
+    args: ['--stdio'],
+    env: { ...process.env },
+    displayPath: command,
+  };
 }
 
 /**
@@ -135,10 +151,10 @@ async function startServer(webContents) {
 
   senderWebContents = webContents;
 
-  const binPath = getPyrightBinary();
-  serverProcess = spawn(binPath, ['--stdio'], {
+  const launch = getPyrightLaunchConfig();
+  serverProcess = spawn(launch.command, launch.args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: launch.env,
   });
 
   serverProcess.stdout.on('data', handleServerData);
@@ -163,7 +179,7 @@ async function startServer(webContents) {
     serverProcess = null;
   });
 
-  console.log('[pyright] spawned PID:', serverProcess.pid, 'binary:', binPath);
+  console.log('[pyright] spawned PID:', serverProcess.pid, 'binary:', launch.displayPath);
 
   // LSP initialize
   try {

@@ -633,7 +633,26 @@ function isSessionWaiting(id: string): boolean {
 }
 const preparingSend = ref(false)
 const sendingSessionIds = ref<string[]>([])
-const draft = ref('')
+// 输入草稿按项目 + 会话隔离。空 session 代表“尚未发送并创建会话的新对话”，
+// 因而切换 A/B 或从已有会话切到新对话时，都只切换草稿而不会清空其他会话的内容。
+const sessionDrafts = reactive<Record<string, string>>({})
+function sessionDraftKey(sessionId = activeSessionId.value) {
+  if (sessionId) return `session:${sessionId}`
+  const projectId = String(selectedProjectId.value || 'pending')
+  return `new:${projectId}`
+}
+function setDraftByKey(key: string, value: string) {
+  if (value) sessionDrafts[key] = value
+  else delete sessionDrafts[key]
+}
+function clearSessionDraft(sessionId: string) {
+  if (sessionId) delete sessionDrafts[sessionDraftKey(sessionId)]
+}
+const activeDraftKey = computed(() => sessionDraftKey())
+const draft = computed<string>({
+  get: () => sessionDrafts[activeDraftKey.value] || '',
+  set: (value) => { setDraftByKey(activeDraftKey.value, value) },
+})
 const liveLogs = ref<{ id: string; type: string; message: string }[]>([])
 // foundation 新管线（知识库前端唯一管线，不再有灰度开关）
 const foundationBusy = ref(false)
@@ -1373,7 +1392,6 @@ function newConversation() {
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
   currentView.value = 'conversation'
-  draft.value = ''
   resizeDraft()
 }
 
@@ -1393,6 +1411,7 @@ async function deleteSession(sessionId: string) {
   const deletingActive = activeSessionId.value === sessionId
   try {
     await deleteVibeSession(sessionId)
+    clearSessionDraft(sessionId)
     if (deletingActive) {
       activeSessionId.value = ''
       events.value = []
@@ -1467,7 +1486,6 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     ? `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
     : '')
   if (!combined) return
-  draft.value = ''
   await sendFoundationTurn(combined, {
     attachments,
     filename: attachments.map((item) => attachmentName(item)).filter(Boolean).join('、'),
@@ -1709,6 +1727,7 @@ function legacyIntentStepLabel(actions: string[]) {
 async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean; clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string } }) {
   const content = (overrideText ?? draft.value).trim()
   if (!content || sending.value) return
+  const originDraftKey = activeDraftKey.value
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
   const documentContent = opts?.documentContent  // 文件整篇录入：整篇原文走 document、text 只作干净消息
   const documentMode = !!opts?.documentMode
@@ -1740,7 +1759,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
   events.value.push(fndSyntheticEvent('user', content, 'entry',
     contParent ? { confirmation_reply: true, parent_event_id: contParent } : {},
     attachments))
-  draft.value = ''
+  setDraftByKey(originDraftKey, '')
   resizeDraft()
   scrollBottom()
 
@@ -1919,7 +1938,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     }
     if (failed) {
       assistantContent = `本轮处理失败：${failed}`
-      draft.value = content
+      // 用户可能在请求期间切到了别的会话；失败内容必须回到本轮所属草稿，不能覆盖当前会话。
+      setDraftByKey(turnSessionId ? sessionDraftKey(turnSessionId) : originDraftKey, content)
       resizeDraft()
     }
     if (!assistantEventSaved && (assistantContent || failed) && !turnCancelled
