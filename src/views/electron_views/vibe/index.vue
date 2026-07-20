@@ -39,9 +39,11 @@
               <p class="subtitle">有问，皆有据。</p>
               <button
                 class="section-next-btn"
+                :class="{ 'is-hidden': sectionTransitioning }"
                 type="button"
                 aria-label="前往第二张画面"
-                :disabled="!sectionReady || advancingSection"
+                :aria-hidden="sectionTransitioning"
+                :disabled="!sectionReady || advancingSection || sectionTransitioning"
                 @click="goToNextSection"
               >
                 <img class="section-next-btn__icon" :src="downArrowSettle" alt="">
@@ -56,9 +58,11 @@
               <p class="subtitle">知识，自生长。</p>
               <button
                 class="section-next-btn"
+                :class="{ 'is-hidden': sectionTransitioning }"
                 type="button"
                 aria-label="前往第三张画面"
-                :disabled="!sectionReady || advancingSection"
+                :aria-hidden="sectionTransitioning"
+                :disabled="!sectionReady || advancingSection || sectionTransitioning"
                 @click="goToNextSection"
               >
                 <img class="section-next-btn__icon" :src="downArrowSettle" alt="">
@@ -102,6 +106,7 @@ const sectionIndex = ref(0)
 const sectionLast = ref(2) // 末页下标（3 段 → 2），引擎会用真实值覆盖
 const sectionReady = ref(false)
 const advancingSection = ref(false)
+const sectionTransitioning = ref(false)
 const leaving = ref(false)
 const atLastSection = computed(() => sectionIndex.value >= sectionLast.value)
 const showWinControls = computed(() => !!window.electronAPI)
@@ -118,10 +123,16 @@ function onSectionEvt(e: Event) {
   // 背景帧序列由引擎（Page.js）按滚动位置自行驱动，这里只更新按钮所需的页码。
 }
 
+function onSectionTransitionEvt(e: Event) {
+  const d = (e as CustomEvent).detail || {}
+  sectionTransitioning.value = !!d.active
+}
+
 onMounted(async () => {
   trackMaximizeState()
   // 先挂监听，确保能收到引擎初始化时广播的第 0 页。
   window.addEventListener('vibe:section', onSectionEvt)
+  window.addEventListener('vibe:section-transition', onSectionTransitionEvt)
   // 只在客户端加载 three 引擎：动态 import 避免 SSR 阶段触碰 window / WebGL / .frag 着色器。
   try {
     const mod = await import('./hero/experience/Experience.js')
@@ -138,6 +149,7 @@ let enterTimer: ReturnType<typeof setTimeout> | null = null
 onBeforeUnmount(() => {
   offMaximizeState?.()
   window.removeEventListener('vibe:section', onSectionEvt)
+  window.removeEventListener('vibe:section-transition', onSectionTransitionEvt)
   if (enterTimer) { clearTimeout(enterTimer); enterTimer = null }
   if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null }
   // 停 RAF + 移除全部全局监听（滚轮/指针/resize）+ 置空单例，防泄漏、防死首屏劫持滚轮。
@@ -331,6 +343,11 @@ function trackMaximizeState() {
 }
 .section-next-btn:not(:disabled):active { transform: translateX(-50%) scale(.97); }
 .section-next-btn:disabled { cursor: wait; opacity: .5; }
+.section-next-btn.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(10px);
+}
 .section-next-btn:focus-visible {
   outline: 2px solid rgba(255,255,255,.9);
   outline-offset: 4px;

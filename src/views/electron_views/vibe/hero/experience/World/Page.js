@@ -56,6 +56,14 @@ export default class Page {
         }))
     }
 
+    // 让 Vue 层在画面切换期间隐藏翻页箭头，避免离场和入场箭头同时跟随内容移动。
+    emitSectionTransition(active) {
+        if (typeof window === 'undefined') return
+        window.dispatchEvent(new CustomEvent('vibe:section-transition', {
+            detail: { active },
+        }))
+    }
+
     // 背景帧序列：把视频离线抽成的独立图片（public/frames/*.jpg）当 scene.background。
     // 背景是一张 Texture，逐帧只换 image —— 因为每帧是独立图片，跳到任意帧都是瞬时贴图、
     // 无解码/seek，所以正放/倒放/软停成本完全一样、都不卡（这是取代 VideoTexture 的原因：
@@ -226,6 +234,7 @@ export default class Page {
         if (next === this.currentSectionIndex) return false
 
         this.currentSectionIndex = next
+        this.emitSectionTransition(true)
         this.applyScrollTarget()
         this.emitSection()
 
@@ -233,6 +242,7 @@ export default class Page {
         clearTimeout(this._scrollLockTimeout)
         this._scrollLockTimeout = setTimeout(() => {
             this.scrollLocked = false
+            this.emitSectionTransition(false)
         }, this.scrollLockDuration)
         return true
     }
