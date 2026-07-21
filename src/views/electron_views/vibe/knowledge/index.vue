@@ -795,6 +795,7 @@ const composerQuestion = computed(() => {
         ...(input.enabled ? [{
           type: 'input' as const,
           placeholder: String(input.placeholder),
+          required: Boolean(input.required),
           showSkip: false,
           submitLabel: String(input.submit_label),
         }] : []),
@@ -1501,12 +1502,12 @@ async function onComposerAnswer(value: string) {
   if (raw?.schema === 'clarification.v2') {
     const parentId = lastClarificationAssistantId()
     const optionPrefix = '__CLARIFICATION_OPTION__:'
-    clarificationActive.value = null
     if (value.startsWith(optionPrefix)) {
       const optionId = value.slice(optionPrefix.length)
       const selected = (Array.isArray(raw.options) ? raw.options : [])
         .find((item: any) => String(item?.id || '') === optionId)
       if (!selected || sending.value) return
+      clarificationActive.value = null
       await sendFoundationTurn(String(selected.label || ''), {
         continuationParentId: parentId,
         clarificationResponse: { type: 'option', option_id: optionId },
@@ -1515,6 +1516,7 @@ async function onComposerAnswer(value: string) {
     }
     const inputText = String(value || '').trim()
     if (!inputText || sending.value) return
+    clarificationActive.value = null
     await sendFoundationTurn(inputText, {
       continuationParentId: parentId,
       clarificationResponse: { type: 'input', text: inputText },

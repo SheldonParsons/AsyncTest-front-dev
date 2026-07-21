@@ -104,6 +104,8 @@
                   class="custom-input"
                   type="text"
                   :placeholder="item.placeholder || customPlaceholder"
+                  :required="item.required"
+                  :aria-required="item.required || undefined"
                   v-model="customValues[i]"
                   @focus="activeIndex = i"
                   @keydown="onCustomKeydown($event, i)"
@@ -111,7 +113,12 @@
               </span>
               <span class="question-actions">
                 <button v-if="item.showSkip !== false" class="skip-button" type="button" @click="emitAnswer('__SKIP__')">跳过</button>
-                <button class="submit-button" type="button" @click="submitCustom(i)">
+                <button
+                  class="submit-button"
+                  type="button"
+                  :disabled="isRequiredInputEmpty(item, i)"
+                  @click="submitCustom(i)"
+                >
                   {{ item.submitLabel || '提交' }}
                   <svg class="enter-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 4v7a4 4 0 0 1-4 4H4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 10-5 5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
@@ -254,7 +261,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { admitAttachmentSelection } from '../composables/attachmentAdmission'
 
-interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; showSkip?: boolean; submitLabel?: string }
+interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
 // 连锁（Phase 3）：多处受影响段，逐项可勾选。mode=literal(同词)/semantic(措辞不同)；reason=为什么提议改它；checked=默认是否勾。
 interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBody?: string; reason?: string; mode?: string; checked?: boolean }
@@ -397,11 +404,17 @@ function emitAnswer(value: string) {
   emit('answer', value); customValues[activeIndex.value] = ''
 }
 
+function isRequiredInputEmpty(item: QuestionItem, i: number) {
+  return item.type === 'input' && item.required === true && !(customValues[i] || '').trim()
+}
+
 // 提交按钮（0703 修交互陷阱）：输入框有字 → 提交手输；【为空但高亮着某个选项】→ 等同点击该选项——
 // 此前"选中『确认应用』再点提交"会发出空值,确认被静默吞掉(反问收起、什么都没发生)。
 // 没高亮任何选项且没输入 → 维持老行为(空值=跳过)。
 function submitCustom(i: number) {
   const typed = (customValues[i] || '').trim()
+  const item = (props.question?.items || [])[i]
+  if (item?.type === 'input' && item.required && !typed) return
   if (typed) { emitAnswer(typed); return }
   const act = (props.question?.items || [])[activeIndex.value]
   if (act && act.type === 'choice') { emitAnswer(act.value || act.label || ''); return }
@@ -536,6 +549,7 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .skip-button:hover { color: #4b5563; }
 .submit-button { display: inline-flex; align-items: center; gap: 7px; color: #fff; background: #171b21; }
 .submit-button:hover { background: #030712; }
+.submit-button:disabled { cursor: default; color: #9ca3af; background: #eef0f2; }
 .enter-mark { width: 18px; height: 18px; }
 
 .attachment-menu {
