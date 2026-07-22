@@ -1580,6 +1580,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   'session.load_failed': '会话上下文加载失败',
   'llm.call_started': 'LLM 调用开始',
   'llm.call_finished': 'LLM 调用完成',
+  'llm.transport_retry': '模型连接瞬时失败后重试',
   'sse.turn_started': '轮次开始',
   'sse.event_saved': '消息已保存',
   'sse.intent': '意图判定',
