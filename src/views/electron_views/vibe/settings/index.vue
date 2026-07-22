@@ -379,6 +379,16 @@
                   @keydown.enter.prevent="loadTraceRuns(true)"
                 >
               </label>
+              <label class="trace-filter-field trace-content-filter">
+                <span>提问/回答</span>
+                <input
+                  v-model.trim="traceContentFilter"
+                  type="text"
+                  placeholder="输入包含的文字"
+                  spellcheck="false"
+                  @keydown.enter.prevent="loadTraceRuns(true)"
+                >
+              </label>
               <label class="trace-filter-field">
                 <span>项目</span>
                 <input
@@ -400,7 +410,7 @@
                 >
               </label>
               <button class="trace-filter-apply" type="button" :disabled="traceRunsLoading" @click="loadTraceRuns(true)">过滤</button>
-              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceAuditMarkerFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
+              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceAuditMarkerFilter && !traceContentFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
               <datalist id="trace-project-options">
                 <option v-for="item in traceFilterOptions.projects" :key="item.project_id" :value="traceProjectOptionValue(item)">{{ traceProjectOptionLabel(item) }}</option>
               </datalist>
@@ -462,12 +472,13 @@
                 <div class="trace-markdown" v-html="renderMarkdown(selectedTrace.input_text || '')" />
                 <div v-if="traceAttachments(selectedTrace).length" class="trace-attachment-list" aria-label="本轮使用文件">
                   <button
-                    v-for="file in traceAttachments(selectedTrace)"
+                    v-for="(file, fileIndex) in traceAttachments(selectedTrace)"
                     :key="attachmentKey(file)"
                     class="trace-attachment-chip"
                     type="button"
                     :title="attachmentName(file)"
-                    @click="downloadAttachment(file)"
+                    :disabled="traceAttachmentDownloading === `${selectedTrace.trace_id}:${fileIndex}`"
+                    @click="downloadAttachment(file, fileIndex)"
                   >
                     <span class="trace-attachment-icon" aria-hidden="true">
                       <svg viewBox="0 0 24 24" fill="none"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v5h5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 17h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -478,6 +489,7 @@
                     </span>
                   </button>
                 </div>
+                <p v-if="traceAttachmentDownloadError" class="trace-attachment-error" role="alert">{{ traceAttachmentDownloadError }}</p>
               </div>
 
               <div v-if="traceFinalAnswer(selectedTrace)" class="trace-section">
@@ -533,7 +545,7 @@ import { useRoute, useRouter } from 'vue-router'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
-import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, listVibeSystemKnowledge, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, listVibeSystemKnowledge, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -564,8 +576,11 @@ const traceExporting = ref(false)
 const copiedAuditMarker = ref('')
 const copiedAuditMarkerBatch = ref(false)
 const traceAuditMarkerFilter = ref('')
+const traceContentFilter = ref('')
 const traceProjectFilter = ref('')
 const traceUserFilter = ref('')
+const traceAttachmentDownloading = ref('')
+const traceAttachmentDownloadError = ref('')
 const adminModelProviders = ref<VibeLLMProviderConfig[]>([])
 const adminSystemDefaultProviderIds = ref<string[]>([])
 const adminModelLoading = ref(false)
@@ -1208,7 +1223,8 @@ async function loadTraceRuns(reset = false) {
     const res = await listVibeDialogueTraceRuns({
       limit: 30,
       cursor: reset ? '' : traceNextCursor.value,
-      q: traceAuditMarkerFilter.value,
+      marker: traceAuditMarkerFilter.value,
+      q: traceContentFilter.value,
       project: traceProjectFilter.value,
       user: traceUserFilter.value,
     })
@@ -1245,6 +1261,7 @@ async function selectTrace(traceId: string) {
 
 function clearTraceFilters() {
   traceAuditMarkerFilter.value = ''
+  traceContentFilter.value = ''
   traceProjectFilter.value = ''
   traceUserFilter.value = ''
   loadTraceRuns(true)
@@ -1470,19 +1487,14 @@ function traceFinalAnswer(trace?: Partial<VibeDialogueTraceDetail> | null) {
     if (event?.event_type === 'answer.finished' && typeof payload.answer === 'string' && payload.answer.trim()) {
       return payload.answer
     }
+    if (event?.event_type === 'process.final_answer_finalized' && typeof payload.text === 'string' && payload.text.trim()) {
+      return payload.text
+    }
   }
   return String(trace?.summary || '')
 }
 
-function downloadAttachment(file: Partial<VibeAttachment> | any) {
-  const url = String(file?.download_url || '').trim()
-  if (url) {
-    window.open(url, '_blank', 'noopener,noreferrer')
-    return
-  }
-  const name = attachmentName(file)
-  const content = String(file?.content ?? file?.text ?? '')
-  const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
+function saveAttachmentBlob(blob: Blob, name: string) {
   const objectUrl = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = objectUrl
@@ -1491,6 +1503,30 @@ function downloadAttachment(file: Partial<VibeAttachment> | any) {
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+async function downloadAttachment(file: Partial<VibeAttachment> | any, index: number) {
+  const traceId = String(selectedTrace.value?.trace_id || '').trim()
+  const downloadUrl = String(file?.download_url || '').trim()
+  const downloadKey = `${traceId}:${index}`
+  traceAttachmentDownloadError.value = ''
+  traceAttachmentDownloading.value = downloadKey
+  try {
+    if (traceId && downloadUrl) {
+      const result = await downloadVibeDialogueTraceAttachment(traceId, index, downloadUrl)
+      saveAttachmentBlob(result.blob, result.filename || attachmentName(file))
+      return
+    }
+    const content = String(file?.content ?? file?.text ?? '')
+    if (!content) throw new Error('文件内容已不可用')
+    const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
+    if (blob.size <= 0) throw new Error('文件内容已不可用')
+    saveAttachmentBlob(blob, attachmentName(file))
+  } catch {
+    traceAttachmentDownloadError.value = '文件内容已不可用'
+  } finally {
+    if (traceAttachmentDownloading.value === downloadKey) traceAttachmentDownloading.value = ''
+  }
 }
 
 async function exportSelectedTraces() {
@@ -2669,7 +2705,8 @@ onBeforeUnmount(() => {
   align-items: end;
 }
 
-.trace-marker-filter {
+.trace-marker-filter,
+.trace-content-filter {
   grid-column: 1 / -1;
 }
 
@@ -2984,6 +3021,18 @@ onBeforeUnmount(() => {
 .trace-attachment-chip:hover {
   border-color: rgba(18, 18, 18, 0.18);
   background: #fafafa;
+}
+
+.trace-attachment-chip:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.trace-attachment-error {
+  margin: 7px 0 0;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .trace-attachment-icon {

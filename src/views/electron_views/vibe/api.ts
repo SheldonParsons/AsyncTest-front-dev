@@ -1,4 +1,4 @@
-import { harnessRequest, streamHarnessSse } from '@/api/harness'
+import { harnessBlobRequest, harnessRequest, streamHarnessSse } from '@/api/harness'
 
 const request = harnessRequest
 
@@ -337,6 +337,7 @@ export function listVibeDialogueTraceRuns(params: {
   project?: string
   user?: string
   status?: string
+  marker?: string
   q?: string
 } = {}): Promise<{
   items: VibeDialogueTraceRun[]
@@ -356,6 +357,15 @@ export function listVibeDialogueTraceRuns(params: {
 
 export function getVibeDialogueTraceDetail(traceId: string): Promise<VibeDialogueTraceDetail> {
   return request('GET', `/vibe/foundation/dialogue-trace/runs/${traceId}`)
+}
+
+export function downloadVibeDialogueTraceAttachment(
+  traceId: string,
+  index: number,
+  downloadUrl = '',
+) {
+  const path = downloadUrl || `/vibe/foundation/dialogue-trace/runs/${encodeURIComponent(traceId)}/attachments/${index}`
+  return harnessBlobRequest(path)
 }
 
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {

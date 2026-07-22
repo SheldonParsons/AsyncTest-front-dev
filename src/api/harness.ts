@@ -72,6 +72,59 @@ export async function harnessRequest<T = any>(method: string, path: string, body
   }
 }
 
+export interface HarnessBlobDownload {
+  blob: Blob
+  filename: string
+  contentType: string
+}
+
+function responseFilename(contentDisposition: unknown): string {
+  const raw = String(contentDisposition || '')
+  const encoded = raw.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      return encoded
+    }
+  }
+  return raw.match(/filename="?([^";]+)"?/i)?.[1] || ''
+}
+
+async function blobErrorMessage(error: unknown): Promise<string> {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    const raw = await error.response.data.text().catch(() => '')
+    try {
+      const data = raw ? JSON.parse(raw) : null
+      if (typeof data?.detail === 'string') return data.detail
+    } catch {
+      if (raw) return raw
+    }
+  }
+  return errorMessage(error)
+}
+
+export async function harnessBlobRequest(path: string): Promise<HarnessBlobDownload> {
+  try {
+    const response = await harnessHttp.request<Blob>({
+      method: 'GET',
+      url: path,
+      responseType: 'blob',
+      headers: getAuthHeader(),
+    })
+    const blob = response.data
+    if (!(blob instanceof Blob) || blob.size <= 0) throw new Error('文件内容已不可用')
+    return {
+      blob,
+      filename: responseFilename(response.headers['content-disposition']),
+      contentType: String(response.headers['content-type'] || blob.type || ''),
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === '文件内容已不可用') throw error
+    throw new Error(await blobErrorMessage(error))
+  }
+}
+
 export async function streamHarnessSse(
   path: string,
   body: Record<string, unknown>,
