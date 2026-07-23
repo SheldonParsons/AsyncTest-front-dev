@@ -260,6 +260,64 @@ export function deleteVibeSystemKnowledge(itemId: number): Promise<{ ok: boolean
   return request('DELETE', `/vibe/admin/system-knowledge/${itemId}`)
 }
 
+export interface VibeSystemKnowledgeTransferItem {
+  slug: string
+  category: string
+  title: string
+  content_markdown: string
+  status: 'enabled' | 'disabled'
+  priority: number
+  tags: string[]
+  source_note?: string
+  content_sha256: string
+}
+
+export interface VibeSystemKnowledgeBundle {
+  schema: string
+  version: number
+  revision?: string
+  exported_at?: string
+  package_fingerprint: string
+  items: VibeSystemKnowledgeTransferItem[]
+}
+
+export interface VibeSystemKnowledgeImportPlan {
+  ok?: boolean
+  dry_run?: boolean
+  mode: 'replace' | 'merge'
+  created: string[]
+  updated: string[]
+  unchanged: string[]
+  retired: string[]
+  counts: {
+    created: number
+    updated: number
+    unchanged: number
+    retired: number
+    incoming: number
+  }
+  package_fingerprint: string
+  revision?: string
+}
+
+export function exportVibeSystemKnowledge(): Promise<VibeSystemKnowledgeBundle> {
+  return request('GET', '/vibe/admin/system-knowledge-transfer')
+}
+
+export function previewVibeSystemKnowledgeImport(
+  config: VibeSystemKnowledgeBundle,
+  mode: 'replace' | 'merge' = 'replace',
+): Promise<VibeSystemKnowledgeImportPlan> {
+  return request('POST', '/vibe/admin/system-knowledge-transfer', { config, mode, dry_run: true })
+}
+
+export function importVibeSystemKnowledge(
+  config: VibeSystemKnowledgeBundle,
+  mode: 'replace' | 'merge' = 'replace',
+): Promise<VibeSystemKnowledgeImportPlan> {
+  return request('POST', '/vibe/admin/system-knowledge-transfer', { config, mode, dry_run: false })
+}
+
 export interface VibeAdminConfigTransferPayload {
   schema: string
   version: number

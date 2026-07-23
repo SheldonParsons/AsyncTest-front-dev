@@ -271,6 +271,9 @@
               <span>维护平台用法、最佳实践、FAQ、更新日志、上线防坑等主对话可检索的系统材料。</span>
             </div>
             <div class="system-knowledge-actions">
+              <button type="button" :disabled="systemKnowledgeTransferring" @click="exportSystemKnowledge">{{ systemKnowledgeExporting ? '导出中' : '导出知识包' }}</button>
+              <button type="button" :disabled="systemKnowledgeTransferring" @click="openSystemKnowledgeImport">导入知识包</button>
+              <input ref="systemKnowledgeImportInput" class="system-knowledge-file-input" type="file" accept="application/json,.json" @change="previewSystemKnowledgeFile" />
               <button type="button" :disabled="systemKnowledgeLoading" @click="loadSystemKnowledge(true)">刷新</button>
               <button type="button" class="primary" :disabled="systemKnowledgeSaving" @click="startNewSystemKnowledge">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
@@ -278,6 +281,26 @@
               </button>
             </div>
           </div>
+          <section v-if="systemKnowledgeImportPreview" class="system-knowledge-import-preview">
+            <div class="system-knowledge-import-copy">
+              <strong>替换导入预览</strong>
+              <span>{{ systemKnowledgeImportFilename }}{{ systemKnowledgeImportPreview.revision ? ` · ${systemKnowledgeImportPreview.revision}` : '' }}</span>
+              <p>导入后以知识包为准；本地存在但包内缺少的系统知识将退出启用集合。当前仅是预览，尚未修改数据。</p>
+              <code>{{ systemKnowledgeImportPreview.package_fingerprint }}</code>
+            </div>
+            <div class="system-knowledge-import-counts">
+              <span><b>{{ systemKnowledgeImportPreview.counts.incoming }}</b>包内</span>
+              <span><b>{{ systemKnowledgeImportPreview.counts.created }}</b>新增</span>
+              <span><b>{{ systemKnowledgeImportPreview.counts.updated }}</b>更新</span>
+              <span><b>{{ systemKnowledgeImportPreview.counts.unchanged }}</b>不变</span>
+              <span class="retired"><b>{{ systemKnowledgeImportPreview.counts.retired }}</b>退出</span>
+            </div>
+            <div class="system-knowledge-import-actions">
+              <button type="button" :disabled="systemKnowledgeImporting" @click="cancelSystemKnowledgeImport">取消</button>
+              <button type="button" class="danger" :disabled="systemKnowledgeImporting" @click="applySystemKnowledgeImport">{{ systemKnowledgeImporting ? '导入中' : '确认替换导入' }}</button>
+            </div>
+          </section>
+          <p v-if="systemKnowledgeStatusText" :class="['system-knowledge-list-status', { ok: systemKnowledgeStatusKind === 'ok', error: systemKnowledgeStatusKind === 'error' }]">{{ systemKnowledgeStatusText }}</p>
           <div class="system-knowledge-filters">
             <input v-model.trim="systemKnowledgeQuery" placeholder="搜索标题、标签、正文..." @keyup.enter="loadSystemKnowledge(true)" />
             <AppSelect
@@ -545,7 +568,7 @@ import { useRoute, useRouter } from 'vue-router'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
-import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, listVibeDialogueTraceRuns, listVibeSystemKnowledge, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAdminConfigTransferPayload, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -611,6 +634,13 @@ const systemKnowledgeStatusFilter = ref('')
 const systemKnowledgeTagsText = ref('')
 const systemKnowledgeStatusText = ref('')
 const systemKnowledgeStatusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const systemKnowledgeExporting = ref(false)
+const systemKnowledgeImporting = ref(false)
+const systemKnowledgeImportInput = ref<HTMLInputElement | null>(null)
+const systemKnowledgeImportBundle = ref<VibeSystemKnowledgeBundle | null>(null)
+const systemKnowledgeImportPreview = ref<VibeSystemKnowledgeImportPlan | null>(null)
+const systemKnowledgeImportFilename = ref('')
+const systemKnowledgeTransferring = computed(() => systemKnowledgeExporting.value || systemKnowledgeImporting.value)
 const DEEPSEEK_LOGO = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/other_band_logo/deepseek_logo.svg'
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 const DEEPSEEK_ENHANCED_MODEL = 'deepseek-v4-pro'
@@ -1004,7 +1034,7 @@ async function toggleTraceAudit() {
   }
 }
 
-function downloadJson(filename: string, payload: VibeAdminConfigTransferPayload) {
+function downloadJson(filename: string, payload: unknown) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -1014,6 +1044,83 @@ function downloadJson(filename: string, payload: VibeAdminConfigTransferPayload)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+async function exportSystemKnowledge() {
+  if (systemKnowledgeTransferring.value) return
+  systemKnowledgeExporting.value = true
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+  try {
+    const payload = await exportVibeSystemKnowledge()
+    downloadJson(`vibe-system-knowledge-${exportStamp()}.json`, payload)
+    systemKnowledgeStatusText.value = `已导出 ${payload.items?.length || 0} 条系统知识`
+    systemKnowledgeStatusKind.value = 'ok'
+  } catch (error: any) {
+    systemKnowledgeStatusText.value = `导出失败：${error?.message || String(error)}`
+    systemKnowledgeStatusKind.value = 'error'
+  } finally {
+    systemKnowledgeExporting.value = false
+  }
+}
+
+function openSystemKnowledgeImport() {
+  if (systemKnowledgeTransferring.value) return
+  if (systemKnowledgeImportInput.value) {
+    systemKnowledgeImportInput.value.value = ''
+    systemKnowledgeImportInput.value.click()
+  }
+}
+
+async function previewSystemKnowledgeFile(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file || systemKnowledgeTransferring.value) return
+  systemKnowledgeImporting.value = true
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+  try {
+    const bundle = JSON.parse(await file.text()) as VibeSystemKnowledgeBundle
+    const preview = await previewVibeSystemKnowledgeImport(bundle, 'replace')
+    systemKnowledgeImportBundle.value = bundle
+    systemKnowledgeImportPreview.value = preview
+    systemKnowledgeImportFilename.value = file.name
+  } catch (error: any) {
+    cancelSystemKnowledgeImport()
+    systemKnowledgeStatusText.value = `导入预览失败：${error?.message || String(error)}`
+    systemKnowledgeStatusKind.value = 'error'
+  } finally {
+    systemKnowledgeImporting.value = false
+    target.value = ''
+  }
+}
+
+function cancelSystemKnowledgeImport() {
+  systemKnowledgeImportBundle.value = null
+  systemKnowledgeImportPreview.value = null
+  systemKnowledgeImportFilename.value = ''
+}
+
+async function applySystemKnowledgeImport() {
+  if (systemKnowledgeImporting.value || !systemKnowledgeImportBundle.value || !systemKnowledgeImportPreview.value) return
+  const counts = systemKnowledgeImportPreview.value.counts
+  const warning = `确认以该知识包替换本地系统知识？\n\n新增 ${counts.created}，更新 ${counts.updated}，不变 ${counts.unchanged}，退出 ${counts.retired}。\n此操作只影响系统知识，不影响项目知识库。`
+  if (!window.confirm(warning)) return
+  systemKnowledgeImporting.value = true
+  systemKnowledgeStatusText.value = ''
+  systemKnowledgeStatusKind.value = 'idle'
+  try {
+    const result = await importVibeSystemKnowledge(systemKnowledgeImportBundle.value, 'replace')
+    cancelSystemKnowledgeImport()
+    await loadSystemKnowledge(true)
+    systemKnowledgeStatusText.value = `导入完成：新增 ${result.counts.created}，更新 ${result.counts.updated}，不变 ${result.counts.unchanged}，退出 ${result.counts.retired}`
+    systemKnowledgeStatusKind.value = 'ok'
+  } catch (error: any) {
+    systemKnowledgeStatusText.value = `导入失败：${error?.message || String(error)}`
+    systemKnowledgeStatusKind.value = 'error'
+  } finally {
+    systemKnowledgeImporting.value = false
+  }
 }
 
 async function exportAdminConfig() {
@@ -1119,6 +1226,10 @@ function systemKnowledgeCategoryLabel(category?: string) {
     faq: 'FAQ',
     changelog: '更新日志',
     launch_guard: '上线防坑',
+    concept: '核心概念',
+    safety: '安全与一致性',
+    template: '可复制模板',
+    admin_guide: '管理指引',
     general: '通用',
   }
   return labels[value] || value
@@ -2503,6 +2614,25 @@ onBeforeUnmount(() => {
 .system-knowledge-actions button:hover,
 .system-knowledge-filters button:hover { background: #ececec; }
 .system-knowledge-actions button.primary:hover { background: #111; }
+.system-knowledge-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.system-knowledge-file-input { display: none; }
+.system-knowledge-import-preview { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid #fed7aa; border-radius: 14px; background: #fffaf5; }
+.system-knowledge-import-copy { min-width: 0; display: grid; gap: 4px; }
+.system-knowledge-import-copy strong { font-size: 13px; font-weight: 600; color: var(--ink-1); }
+.system-knowledge-import-copy span,
+.system-knowledge-import-copy p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 1.55; }
+.system-knowledge-import-copy code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); font-size: 10px; }
+.system-knowledge-import-counts { display: grid; grid-template-columns: repeat(5, auto); gap: 10px; }
+.system-knowledge-import-counts span { display: grid; justify-items: center; gap: 2px; color: var(--ink-3); font-size: 10px; }
+.system-knowledge-import-counts b { color: var(--ink-1); font-size: 15px; font-weight: 600; }
+.system-knowledge-import-counts .retired b { color: #b42318; }
+.system-knowledge-import-actions { display: flex; align-items: center; gap: 7px; }
+.system-knowledge-import-actions button { height: 32px; border: 0; border-radius: 9px; background: #f1f1f1; color: var(--ink-1); padding: 0 11px; font-size: 12px; cursor: pointer; }
+.system-knowledge-import-actions button.danger { background: #b42318; color: #fff; }
+.system-knowledge-import-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.system-knowledge-list-status { margin: 0 0 12px; color: var(--ink-3); font-size: 12px; }
+.system-knowledge-list-status.ok { color: #2f6b3d; }
+.system-knowledge-list-status.error { color: #b42318; }
 .system-knowledge-filters { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; gap: 8px; margin-bottom: 14px; }
 .system-knowledge-filters input { width: 100%; height: 36px; box-sizing: border-box; border: 1px solid rgba(15,15,15,.1); border-radius: 10px; padding: 0 11px; outline: none; font-size: 13px; }
 .system-knowledge-filters input:focus { border-color: rgba(29,29,31,.34); box-shadow: 0 0 0 3px rgba(15,15,15,.06); }

@@ -190,13 +190,14 @@
             <button
               class="model-picker"
               type="button"
+              :style="modelPickerStyle"
               :disabled="modelDisabled || sending"
               :aria-expanded="modelMenuOpen ? 'true' : 'false'"
               aria-label="选择模型"
               @click.stop="toggleModelMenu"
             >
-              <span>{{ currentModelLabel }}</span>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <span ref="modelPickerLabelEl" class="model-picker-label">{{ currentModelLabel }}</span>
+              <svg class="model-picker-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </button>
             <div class="model-menu" :class="{ 'is-open': modelMenuOpen && !isQuestion }" role="menu" aria-label="选择模型">
               <div class="model-menu-head">
@@ -294,16 +295,26 @@ const emit = defineEmits<{
 const rootEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
+const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
 const attachmentError = ref('')
 const menuOpen = ref(false)
 const modelMenuOpen = ref(false)
+const modelPickerClosedWidth = ref(180)
+const modelPickerNarrow = ref(false)
 const activeIndex = ref(0)
 const customValues = reactive<Record<number, string>>({})
 const checkedIds = ref<Set<number>>(new Set())   // 连锁：默认全勾，用户可逐项取消
 
 const isQuestion = computed(() => !!props.question && Array.isArray(props.question.items) && props.question.items.length > 0)
 const currentModelLabel = computed(() => props.modelOptions.find(item => item.value === props.modelValueId)?.label || props.modelOptions[0]?.label || '模型')
+const modelPickerWidth = computed(() => {
+  if (modelMenuOpen.value) return modelPickerNarrow.value ? 210 : 232
+  return Math.min(modelPickerClosedWidth.value, modelPickerNarrow.value ? 152 : 180)
+})
+const modelPickerStyle = computed<Record<string, string>>(() => ({
+  width: `${modelPickerWidth.value}px`
+}))
 const cascadeRows = computed<CascadeRow[]>(() => props.question?.cascade || [])
 const deleteManyRows = computed<DeleteManyRow[]>(() => props.question?.deleteMany?.items || [])
 function toggleCascade(id: number) {
@@ -345,6 +356,12 @@ function autoGrow() {
   if (!el) return
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, 170)}px`
+}
+function measureModelPicker() {
+  const label = modelPickerLabelEl.value
+  if (!label) return
+  const contentWidth = Math.ceil(label.scrollWidth) + 16 + 7 + 20
+  modelPickerClosedWidth.value = Math.min(180, Math.max(76, contentWidth))
 }
 function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
@@ -450,16 +467,27 @@ function onDocKeydown(e: KeyboardEvent) {
 function onDocClick(e: MouseEvent) {
   if (rootEl.value && !rootEl.value.contains(e.target as Node)) { menuOpen.value = false; modelMenuOpen.value = false }
 }
+let modelPickerMediaQuery: MediaQueryList | null = null
+function syncModelPickerViewport(e?: MediaQueryListEvent) {
+  modelPickerNarrow.value = e?.matches ?? modelPickerMediaQuery?.matches ?? false
+}
 onMounted(() => {
   document.addEventListener('click', onDocClick, true)
   document.addEventListener('keydown', onDocKeydown, true)
+  modelPickerMediaQuery = window.matchMedia('(max-width: 420px)')
+  syncModelPickerViewport()
+  modelPickerMediaQuery.addEventListener('change', syncModelPickerViewport)
   autoGrow()
+  nextTick(measureModelPicker)
+  document.fonts?.ready.then(measureModelPicker)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick, true)
   document.removeEventListener('keydown', onDocKeydown, true)
+  modelPickerMediaQuery?.removeEventListener('change', syncModelPickerViewport)
 })
 watch(() => props.modelValue, () => nextTick(autoGrow))
+watch(currentModelLabel, () => nextTick(measureModelPicker))
 </script>
 
 <style scoped>
@@ -561,23 +589,24 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 }
 .attachment-menu.is-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
 .model-menu {
-  position: absolute; right: 0; bottom: calc(100% + 8px); width: 270px; max-width: min(270px, calc(100vw - 32px)); max-height: 260px; overflow: auto;
-  padding: 8px; border: 1px solid rgba(229, 231, 235, .92); border-radius: 16px; background: rgba(255, 255, 255, .98);
-  box-shadow: 0 18px 48px rgba(17, 24, 39, .13); backdrop-filter: blur(18px);
-  opacity: 0; transform: translateY(8px) scale(.98); transform-origin: calc(100% - 28px) 100%; pointer-events: none;
-  transition: opacity 160ms ease, transform 160ms ease; z-index: 7;
+  position: absolute; right: 0; bottom: calc(100% + 6px); width: 280px; max-width: min(280px, calc(100vw - 64px)); max-height: 268px; overflow: auto;
+  padding: 8px; border: 1px solid #e2e4e8; border-radius: 15px; background: rgba(255, 255, 255, .98);
+  box-shadow: 0 16px 42px rgba(17, 24, 39, .14), 0 2px 8px rgba(17, 24, 39, .05); backdrop-filter: blur(18px);
+  opacity: 0; transform: translateY(7px) scale(.985); transform-origin: calc(100% - 24px) 100%; pointer-events: none;
+  transition: opacity 170ms ease, transform 170ms ease; z-index: 7;
 }
 .model-menu.is-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
-.model-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px 7px; color: #8a8f98; font-size: 12px; }
+.model-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px 8px; color: #7b8089; font-size: 12px; }
 .model-menu-head em { font-style: normal; }
-.model-menu-item { width: 100%; min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 11px; background: transparent; color: #171b21; text-align: left; cursor: pointer; }
-.model-menu-item:hover { background: #f3f4f6; }
-.model-menu-item.active { background: #f0f0f0; }
+.model-menu-item { width: 100%; min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 9px; background: transparent; color: #25272b; text-align: left; cursor: pointer; }
+.model-menu-item:hover { background: #f4f5f6; }
+.model-menu-item.active { background: #eef0f2; box-shadow: inset 0 0 0 1px rgba(37, 39, 43, .045); }
 .model-menu-item:disabled { opacity: .58; cursor: not-allowed; }
 .model-menu-item span { min-width: 0; display: grid; gap: 2px; }
-.model-menu-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
-.model-menu-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8a8f98; font-size: 11px; }
-.model-menu-empty { padding: 14px 8px; color: #8a8f98; font-size: 12px; }
+.model-menu-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.model-menu-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #858a93; font-size: 11px; }
+.model-menu-item > svg { color: #4f5661; }
+.model-menu-empty { padding: 14px 9px; color: #858a93; font-size: 12px; }
 .menu-section { display: grid; gap: 6px; }
 .menu-title { padding: 4px 8px; color: #4b5563; font-size: 12px; font-weight: 650; }
 .menu-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 8px; color: #171b21; background: transparent; text-align: left; cursor: pointer; }
@@ -602,13 +631,28 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 .composer-input::placeholder { font-weight: 400; }
 .composer-input::placeholder { color: #9ca3af; }
 
-.composer-actions { min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.model-picker-anchor { position: relative; display: inline-flex; min-width: 0; margin-left: auto; }
-.model-picker { max-width: 180px; min-width: 0; height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border: 0; border-radius: 999px; background: transparent; color: #5f6670; font-size: 12px; cursor: pointer; }
-.model-picker:hover, .model-picker[aria-expanded="true"] { background: #f3f4f6; color: #171b21; }
+.composer-actions { min-width: 0; min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.model-picker-anchor {
+  position: relative; display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 76px); margin-left: auto;
+}
+.model-picker {
+  width: 180px; max-width: 100%; min-width: 0; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: #25272b;
+  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
+  transition: width 180ms cubic-bezier(.2, .8, .2, 1), background-color 180ms cubic-bezier(.2, .8, .2, 1), color 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.model-picker:hover { background: #f5f6f7; color: #17191d; }
+.model-picker[aria-expanded="true"] {
+  background: #f0f1f3; color: #202328;
+  box-shadow: inset 0 0 0 1px rgba(37, 39, 43, .035);
+}
 .model-picker:disabled { opacity: .55; cursor: not-allowed; }
-.model-picker span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-picker svg { flex: 0 0 auto; }
+.model-picker:disabled:hover { background: transparent; color: #25272b; }
+.model-picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker-chevron {
+  width: 16px; height: 16px; flex: 0 0 auto; color: #777d87; transition: color 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.model-picker[aria-expanded="true"] .model-picker-chevron { color: #555b65; }
 .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
 .icon-button svg { width: 22px; height: 22px; color: currentColor; overflow: visible; }
 .attach-button:hover, .attach-button[aria-expanded="true"] { background: #f3f4f6; }
@@ -658,5 +702,12 @@ watch(() => props.modelValue, () => nextTick(autoGrow))
 
 @media (prefers-reduced-motion: reduce) {
   .send-button .pause-block, .send-button .run-dot, .attach-button .upload-file, .attach-button .upload-pin, .send-button .orbit, .send-button .arrow-stem, .send-button .arrow-head { animation: none !important; }
+  .model-picker, .model-picker-chevron, .model-menu { transition-duration: 0ms !important; }
+}
+
+@media (max-width: 420px) {
+  .composer-actions { gap: 6px; }
+  .model-picker-anchor { max-width: calc(100% - 68px); }
+  .model-menu { max-width: calc(100vw - 56px); }
 }
 </style>
