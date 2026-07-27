@@ -1,10 +1,10 @@
 <template>
-  <section class="generator-page">
+  <section class="generator-page" :class="{ 'is-mobile-messages': currentView === 'mobile-messages' }">
     <div class="generator-shell">
       <div v-if="currentView === 'home'" class="generator-home">
         <section class="tool-grid">
           <article
-            v-for="tool in toolCards"
+            v-for="tool in visibleToolCards"
             :key="tool.key"
             class="tool-card"
             :class="{ 'is-primary': tool.key === 'test-report', 'is-disabled': tool.disabled }"
@@ -23,7 +23,8 @@
         </section>
       </div>
 
-      <ReportWorkspace v-else @back="currentView = 'home'" />
+      <ReportWorkspace v-else-if="currentView === 'test-report'" @back="currentView = 'home'" />
+      <MobileMessagesWorkspace v-else-if="currentView === 'mobile-messages'" @back="currentView = 'home'" />
     </div>
 
     <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
@@ -33,15 +34,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import asyncTest from "@/db";
 import GlobalStatus from "@/global";
 import { ApiCheckPermission } from "@/api/layout/cookies";
 import DialogAnimation from "@/components/common/general/dialog.vue";
 import LoginComponent from "@/views/electron_views/login.vue";
+import { http } from "@/utils/http";
 import ReportWorkspace from "./report/ReportWorkspace.vue";
+import MobileMessagesWorkspace from "./mobile_messages/MobileMessagesWorkspace.vue";
 
-type GeneratorView = "home" | "test-report";
+type GeneratorView = "home" | "test-report" | "mobile-messages";
 
 type ToolCard = {
   key: string;
@@ -52,9 +55,18 @@ type ToolCard = {
   disabled?: boolean;
 };
 
+type CurrentUserResponse = {
+  result: number;
+  data?: {
+    username?: string;
+  };
+};
+
 const currentView = ref<GeneratorView>("home");
 const loginDialogRef = ref<any>(null);
 const pendingView = ref<GeneratorView | null>(null);
+const mobileMessagesAccount = "a80646";
+const currentUsername = ref("");
 
 const toolCards: ToolCard[] = [
   {
@@ -65,6 +77,13 @@ const toolCards: ToolCard[] = [
     actionLabel: "进入工作台",
   },
   {
+    key: "mobile-messages",
+    title: "手机消息",
+    description: "查看由 iPhone 快捷指令采集的消息，支持按发件人和正文搜索。",
+    badge: "新功能",
+    actionLabel: "查看消息",
+  },
+  {
     key: "mock-template",
     title: "生成 Mock 模板",
     description: "预留后续生成能力入口，未来可在这里扩展数据模板与接口脚手架能力。",
@@ -72,6 +91,22 @@ const toolCards: ToolCard[] = [
     disabled: true,
   },
 ];
+
+const visibleToolCards = computed(() =>
+  toolCards.filter(
+    (tool) => tool.key !== "mobile-messages" || currentUsername.value === mobileMessagesAccount,
+  ),
+);
+
+async function refreshCurrentUser() {
+  const response = await http.httpGet<CurrentUserResponse>("/user/me/", {}).catch(() => null);
+  currentUsername.value =
+    response?.result === 1 ? String(response.data?.username ?? "").trim() : "";
+}
+
+onMounted(() => {
+  void refreshCurrentUser();
+});
 
 async function checkLoginStatus() {
   const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag);
@@ -91,11 +126,13 @@ async function checkLoginStatus() {
 
 async function openTool(tool: ToolCard) {
   if (tool.disabled) return;
-  if (tool.key === "test-report") {
-    pendingView.value = "test-report";
+  if (tool.key === "mobile-messages" && currentUsername.value !== mobileMessagesAccount) return;
+  if (tool.key === "test-report" || tool.key === "mobile-messages") {
+    const nextView = tool.key as GeneratorView;
+    pendingView.value = nextView;
     const loggedIn = await checkLoginStatus().catch(() => false);
     if (loggedIn) {
-      currentView.value = "test-report";
+      currentView.value = nextView;
       pendingView.value = null;
       return;
     }
@@ -103,12 +140,15 @@ async function openTool(tool: ToolCard) {
   }
 }
 
-function handleLoginSuccess() {
+async function handleLoginSuccess() {
   loginDialogRef.value?.close();
   if (window.$updateHeaderLoginStatus) {
     window.$updateHeaderLoginStatus();
   }
-  currentView.value = pendingView.value ?? "test-report";
+  await refreshCurrentUser();
+  const nextView = pendingView.value ?? "test-report";
+  currentView.value =
+    nextView === "mobile-messages" && currentUsername.value !== mobileMessagesAccount ? "home" : nextView;
   pendingView.value = null;
 }
 </script>
@@ -132,6 +172,21 @@ function handleLoginSuccess() {
   flex-direction: column;
   gap: 12px;
   min-height: 100%;
+}
+
+.generator-page.is-mobile-messages {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  padding: 14px 18px;
+  overflow: hidden;
+}
+
+.generator-page.is-mobile-messages .generator-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
 }
 
 .tool-card {
