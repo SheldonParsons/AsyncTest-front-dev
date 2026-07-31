@@ -446,7 +446,6 @@ import {
   deleteVibeSession,
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
-  getVibeProjectsByAsyncProjects,
   initVibeProject,
   getVibeLLMRuntimeConfig,
   listVibeEvents,
@@ -467,6 +466,13 @@ import {
   type VibeProject,
   type VibeSession,
 } from '../api'
+import {
+  collectKnowledgeStatsProjectIds,
+  knowledgeStatsProjectId,
+  readKnowledgeStats,
+  writeKnowledgeStats,
+  type KnowledgeStats,
+} from './projectStatsPolicy'
 
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
@@ -507,9 +513,8 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-// 左栏知识库读数按 vibe 工程 UUID 隔离；先批量解析 async 项目，再一次取第四代章节/模块数。
-const asyncToVibe = reactive<Record<string, string>>({})                                 // async 项目 id -> vibe UUID
-const projectStatsMap = reactive<Record<string, { sections: number; modules: number }>>({}) // 按 vibe UUID 存读数
+// Foundation 知识事实按外层 AsyncTest 数字项目 ID 隔离；Vibe UUID 只归属会话运行态。
+const projectStatsMap = reactive<Record<string, KnowledgeStats>>({})
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
   if (!opts.silent) modelConfigLoading.value = true
   try {
@@ -582,51 +587,24 @@ async function handleComposerModelChange(providerId: string) {
 }
 
 async function loadKbStats() {
-  // 当前项目的 UUID 已知（selectProject 解析过），先登记，项目卡/概览即时有数
-  const curAid = selectedProjectId.value != null ? String(selectedProjectId.value) : ''
-  if (curAid && vibeProject.value?.id) asyncToVibe[curAid] = String(vibeProject.value.id)
-
-  // 其余 async 项目一次性批量解析成 vibe UUID，避免进入主对话时按项目数量打满请求。
-  const unresolvedIds = Array.from(new Set((projects.value || [])
-    .map((p: any) => Number(p.id))
-    .filter((id) => Number.isFinite(id) && !asyncToVibe[String(id)])))
-  if (unresolvedIds.length) {
-    try {
-      const payload = await getVibeProjectsByAsyncProjects(unresolvedIds)
-      ;(payload.items || []).forEach((vp) => {
-        if (vp?.id) asyncToVibe[String(vp.project_id)] = String(vp.id)
-      })
-    } catch { /* 未初始化项目继续按 0 段处理，概览不阻塞主流程 */ }
-  }
-
-  const uuids = Array.from(new Set(Object.values(asyncToVibe))).filter(Boolean)
-  if (!uuids.length) return
+  const projectIds = collectKnowledgeStatsProjectIds(projects.value || [])
+  if (!projectIds.length) return
   try {
-    const payload = await getFoundationKnowledgeStatsMany(uuids)
-    uuids.forEach((u) => {
-      const s = payload.items?.[u]
-      projectStatsMap[u] = { sections: Number(s?.sections || 0), modules: Number(s?.modules || 0) }
-    })
+    const payload = await getFoundationKnowledgeStatsMany(projectIds)
+    projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
   } catch { /* 概览读取失败不阻塞主流程 */ }
 }
 
 async function loadCurrentKbStats() {
-  const projectId = String(vibeProject.value?.id || '')
+  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
   if (!projectId) return
   try {
     const payload = await getFoundationKnowledgeStatsMany([projectId])
-    const stats = payload.items?.[projectId]
-    projectStatsMap[projectId] = {
-      sections: Number(stats?.sections || 0),
-      modules: Number(stats?.modules || 0),
-    }
+    writeKnowledgeStats(projectStatsMap, payload, projectId)
   } catch { /* 当前项目计数读取失败不阻塞对话 */ }
 }
-// 当前项目读数（项目卡 + 底部概览卡共用）：按 vibe UUID 取
-const kbStats = computed(() => {
-  const u = vibeProject.value?.id ? String(vibeProject.value.id) : (asyncToVibe[String(selectedProjectId.value ?? '')] || '')
-  return (u && projectStatsMap[u]) || { sections: 0, modules: 0 }
-})
+// 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
+const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
 // 对话行运行态：本地刚发送时立即显示；随后由项目级 running 快照统一校准所有会话。
 function isSessionWaiting(id: string): boolean {
   return sendingSessionIds.value.includes(id) || runningSessionIds.value.includes(id)
@@ -734,8 +712,8 @@ const composerDraft = computed({
 })
 
 const projectOptions = computed(() => projects.value.map(project => {
-  const u = asyncToVibe[String(project.id)]
-  const st = u ? projectStatsMap[u] : undefined
+  const projectId = knowledgeStatsProjectId(project.id)
+  const st = projectId ? projectStatsMap[projectId] : undefined
   return {
     value: String(project.id),
     label: project.name || project.project_name || `项目 ${project.id}`,

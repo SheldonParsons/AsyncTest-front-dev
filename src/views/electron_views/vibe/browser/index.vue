@@ -35,11 +35,11 @@
     <section v-else-if="loading && !status" class="state">正在读取知识库…</section>
     <section v-else-if="status" class="workspace">
       <Transition name="tab" mode="out-in">
-        <OverviewPanel v-if="activeTab === 'overview'" :key="`overview-${vibeProjectId}`" :project-id="vibeProjectId" :status="status" @open-source="openSource" @open-commit="openCommit" @open-module="openModule" />
-        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${vibeProjectId}`" :project-id="vibeProjectId" :requested-document-id="requestedDocumentId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
-        <SearchPanel v-else-if="activeTab === 'search'" :key="`search-${vibeProjectId}`" :project-id="vibeProjectId" @open-document="openDocument" />
-        <CommitPanel v-else-if="activeTab === 'history'" :key="`history-${vibeProjectId}`" :project-id="vibeProjectId" :requested-seq="requestedCommitSeq" @open-source="openSource" />
-        <ReceiptPanel v-else :key="`receipts-${vibeProjectId}`" :project-id="vibeProjectId" @open-commit="openCommit" />
+        <OverviewPanel v-if="activeTab === 'overview'" :key="`overview-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :status="status" @open-source="openSource" @open-commit="openCommit" @open-module="openModule" />
+        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :requested-document-id="requestedDocumentId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
+        <SearchPanel v-else-if="activeTab === 'search'" :key="`search-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" @open-document="openDocument" />
+        <CommitPanel v-else-if="activeTab === 'history'" :key="`history-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :requested-seq="requestedCommitSeq" @open-source="openSource" />
+        <ReceiptPanel v-else :key="`receipts-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" @open-commit="openCommit" />
       </Transition>
     </section>
   </main>
@@ -55,7 +55,7 @@ import OverviewPanel from './components/OverviewPanel.vue'
 import ReceiptPanel from './components/ReceiptPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import SourceReader from './components/SourceReader.vue'
-import { getKnowledgeStatus, getVibeProjectByAsyncProject, initVibeProject, searchKnowledge, type KnowledgeStatus } from '../api'
+import { getKnowledgeStatus, searchKnowledge, type KnowledgeStatus } from '../api'
 
 type TabKey = 'overview' | 'document' | 'search' | 'history' | 'receipts'
 const tabs: Array<{ key: TabKey; label: string; hint: string }> = [
@@ -68,7 +68,6 @@ const route = useRoute()
 const router = useRouter()
 const projects = ref<any[]>([])
 const selectedAsyncProjectId = ref('')
-const vibeProjectId = ref('')
 const status = ref<KnowledgeStatus | null>(null)
 const activeTab = ref<TabKey>('document')
 const requestedDocumentId = ref('')
@@ -118,19 +117,15 @@ async function selectProject(project: any) {
   loading.value = true; error.value = ''; status.value = null
   requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedPath.value = []; requestedCommitSeq.value = undefined
   try {
-    let vibe
-    try { vibe = await getVibeProjectByAsyncProject(Number(project.id)) }
-    catch { vibe = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` }) }
-    vibeProjectId.value = String(vibe.id)
     await reload()
     await router.replace({ query: { ...route.query, project: selectedAsyncProjectId.value } })
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) } finally { loading.value = false }
 }
 
 async function reload() {
-  if (!vibeProjectId.value) return
+  if (!selectedAsyncProjectId.value) return
   loading.value = true; error.value = ''
-  try { status.value = await getKnowledgeStatus(vibeProjectId.value) }
+  try { status.value = await getKnowledgeStatus(selectedAsyncProjectId.value) }
   catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { loading.value = false }
 }
@@ -139,7 +134,7 @@ function openSource(id: string, offset = 0) { requestedSourceId.value = id; requ
 function openDocument(id: string, offset = 0) { requestedDocumentId.value = id; requestedSourceId.value = ''; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
 async function openModule(path: string[]) {
   const query = path[path.length - 1] || ''
-  const hit = query ? (await searchKnowledge(vibeProjectId.value, { q: query, limit: 20 })).items.find(item => path.every((part, index) => item.title_path[index] === part)) : undefined
+  const hit = query ? (await searchKnowledge(selectedAsyncProjectId.value, { q: query, limit: 20 })).items.find(item => path.every((part, index) => item.title_path[index] === part)) : undefined
   if (hit) openDocument(hit.document_id, hit.start_offset)
   else { requestedPath.value = [...path]; requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedOffset.value = 0; activeTab.value = 'document' }
 }
