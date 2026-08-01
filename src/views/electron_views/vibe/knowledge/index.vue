@@ -515,6 +515,8 @@ const userInitials = computed(() => {
 })
 // Foundation 知识事实按外层 AsyncTest 数字项目 ID 隔离；Vibe UUID 只归属会话运行态。
 const projectStatsMap = reactive<Record<string, KnowledgeStats>>({})
+let allKbStatsRequest: Promise<void> | null = null
+const currentKbStatsRequests = new Map<string, Promise<void>>()
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
   if (!opts.silent) modelConfigLoading.value = true
   try {
@@ -586,22 +588,35 @@ async function handleComposerModelChange(providerId: string) {
   }
 }
 
-async function loadKbStats() {
+function loadKbStats(): Promise<void> {
+  if (allKbStatsRequest) return allKbStatsRequest
   const projectIds = collectKnowledgeStatsProjectIds(projects.value || [])
-  if (!projectIds.length) return
-  try {
-    const payload = await getFoundationKnowledgeStatsMany(projectIds)
-    projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
-  } catch { /* 概览读取失败不阻塞主流程 */ }
+  if (!projectIds.length) return Promise.resolve()
+  allKbStatsRequest = (async () => {
+    try {
+      const payload = await getFoundationKnowledgeStatsMany(projectIds)
+      projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
+    } catch { /* 概览读取失败不阻塞主流程 */ }
+  })()
+  return allKbStatsRequest
 }
 
-async function loadCurrentKbStats() {
-  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
-  if (!projectId) return
-  try {
-    const payload = await getFoundationKnowledgeStatsMany([projectId])
-    writeKnowledgeStats(projectStatsMap, payload, projectId)
-  } catch { /* 当前项目计数读取失败不阻塞对话 */ }
+function loadCurrentKbStats(projectValue = selectedProjectId.value): Promise<void> {
+  const projectId = knowledgeStatsProjectId(projectValue)
+  if (!projectId) return Promise.resolve()
+  const existing = currentKbStatsRequests.get(projectId)
+  if (existing) return existing
+  const request = (async () => {
+    try {
+      const payload = await getFoundationKnowledgeStatsMany([projectId])
+      writeKnowledgeStats(projectStatsMap, payload, projectId)
+    } catch { /* 当前项目计数读取失败不阻塞对话 */ }
+  })()
+  currentKbStatsRequests.set(projectId, request)
+  void request.finally(() => {
+    if (currentKbStatsRequests.get(projectId) === request) currentKbStatsRequests.delete(projectId)
+  })
+  return request
 }
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
 const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
@@ -992,19 +1007,21 @@ async function bootstrap() {
   try {
     const response: any = await ApiGetJoinProjects({})
     projects.value = Array.isArray(response) ? response : (response?.results || [])
+    void loadKbStats()
     if (projects.value.length) {
       const saved = localStorage.getItem('vibe_project_source_project_id')
       const target = projects.value.find(item => String(item.id) === String(saved)) || projects.value[0]
-      await selectProject(target)
+      await selectProject(target, { refreshStats: false })
     }
   } finally {
     loading.value = false
   }
 }
 
-async function selectProject(project: any) {
+async function selectProject(project: any, options: { refreshStats?: boolean } = {}) {
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
+  if (options.refreshStats !== false) void loadCurrentKbStats(project.id)
   packageStatusOverrides.value = {}
   sessionTitleOverrides.value = {}
   localStorage.setItem('vibe_project_source_project_id', String(project.id))
@@ -1015,7 +1032,6 @@ async function selectProject(project: any) {
   }
   syncBaselineDraft()
   await refreshState({ autoOpenLatest: true })
-  loadKbStats()  // 切项目后刷新左栏知识库概览
 }
 
 async function handleProjectChange(value: string | number) {

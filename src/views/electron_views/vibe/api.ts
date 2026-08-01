@@ -995,13 +995,15 @@ export interface KnowledgeDocumentSummary {
   commit_seq: number
   created_at: string
   updated_at: string
-  chars: number
-  span_count: number
+  bytes: number
 }
 
 export interface KnowledgeDocumentDetail extends KnowledgeDocumentSummary {
   content: string
   spans: Array<KnowledgeSourceSpan & { document_id: string; generation_id: string }>
+  chars: number
+  span_count: number
+  outline_status: 'ready' | 'unavailable'
 }
 
 export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
