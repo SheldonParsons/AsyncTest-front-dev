@@ -402,6 +402,18 @@
         </footer>
       </section>
       </section>
+      <ConversationInfoRail
+        v-if="currentView === 'conversation'"
+        :collapsed="infoRailCollapsed"
+        :changes="recentKnowledgeChanges"
+        :changes-loading="knowledgeChangesLoading"
+        :changes-error="knowledgeChangesError"
+        :files="recentSessionFiles"
+        :files-loading="sessionFilesLoading"
+        :files-error="sessionFilesError"
+        :session-id="activeSessionId"
+        @toggle="toggleInfoRail"
+      />
     </section>
 
   </main>
@@ -423,6 +435,7 @@ import RingSpinner from './components/icons/RingSpinner.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
 import ChatComposer from './components/ChatComposer.vue'
+import ConversationInfoRail from './components/ConversationInfoRail.vue'
 import {
   createProcessState,
   consumeProcessEvent,
@@ -452,12 +465,16 @@ import {
   listVibeSessions,
   listVibeLLMProviders,
   listFoundationRunningTurns,
+  getKnowledgeCommits,
+  streamKnowledgeActivity,
   streamFoundationTurn,
   cancelFoundationTurn,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
   type FoundationRunningTurn,
+  type KnowledgeActivityEvent,
+  type KnowledgeCommitSummary,
   type VibeAttachment,
   type VibeCapabilityUser,
   type VibeEvent,
@@ -473,6 +490,10 @@ import {
   writeKnowledgeStats,
   type KnowledgeStats,
 } from './projectStatsPolicy'
+import {
+  advanceKnowledgeChangeCursor,
+  recentSessionFiles as deriveRecentSessionFiles,
+} from './conversationInfoRailPolicy'
 
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
@@ -490,6 +511,10 @@ const lastAssistantId = computed(() => {
   return ''
 })
 const activeSessionId = ref('')
+const recentSessionFiles = computed(() => deriveRecentSessionFiles(events.value, activeSessionId.value))
+const sessionFilesLoading = ref(false)
+const sessionFilesError = ref('')
+let sessionRequestEpoch = 0
 const currentView = ref<'conversation' | 'baseline'>('conversation')
 const loading = ref(false)
 const vibeCapabilities = ref<Record<string, boolean>>({})
@@ -515,6 +540,18 @@ const userInitials = computed(() => {
 })
 // Foundation 知识事实按外层 AsyncTest 数字项目 ID 隔离；Vibe UUID 只归属会话运行态。
 const projectStatsMap = reactive<Record<string, KnowledgeStats>>({})
+const recentKnowledgeChanges = ref<KnowledgeCommitSummary[]>([])
+const knowledgeChangesLoading = ref(false)
+const knowledgeChangesError = ref('')
+const infoRailCollapsed = ref(false)
+let projectContextEpoch = 0
+let knowledgeActivityEpoch = 0
+let knowledgeActivityAbort: AbortController | null = null
+let knowledgeActivityRetryTimer: ReturnType<typeof setTimeout> | null = null
+let knowledgeActivityCursor = 0
+let knowledgeChangesFetchedCursor = 0
+let knowledgeChangesRequest: Promise<void> | null = null
+let knowledgeChangesRequestKey = ''
 let allKbStatsRequest: Promise<void> | null = null
 const currentKbStatsRequests = new Map<string, Promise<void>>()
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
@@ -618,6 +655,135 @@ function loadCurrentKbStats(projectValue = selectedProjectId.value): Promise<voi
   })
   return request
 }
+
+function stopKnowledgeActivity() {
+  knowledgeActivityEpoch += 1
+  knowledgeActivityAbort?.abort()
+  knowledgeActivityAbort = null
+  if (knowledgeActivityRetryTimer) {
+    clearTimeout(knowledgeActivityRetryTimer)
+    knowledgeActivityRetryTimer = null
+  }
+  knowledgeChangesRequest = null
+  knowledgeChangesRequestKey = ''
+}
+
+function waitForKnowledgeActivityRetry(signal: AbortSignal, delay = 1800): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) { resolve(); return }
+    const finish = () => {
+      if (knowledgeActivityRetryTimer) clearTimeout(knowledgeActivityRetryTimer)
+      knowledgeActivityRetryTimer = null
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    knowledgeActivityRetryTimer = setTimeout(finish, delay)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+function loadRecentKnowledgeChanges(projectId: string, epoch: number): Promise<void> {
+  if (!projectId || epoch !== knowledgeActivityEpoch) return Promise.resolve()
+  const key = `${epoch}:${projectId}`
+  if (knowledgeChangesRequest && knowledgeChangesRequestKey === key) return knowledgeChangesRequest
+  knowledgeChangesLoading.value = true
+  knowledgeChangesError.value = ''
+  const request = (async () => {
+    try {
+      const page = await getKnowledgeCommits(projectId, { limit: 5 })
+      if (epoch !== knowledgeActivityEpoch || projectId !== knowledgeStatsProjectId(selectedProjectId.value)) return
+      recentKnowledgeChanges.value = Array.isArray(page.items) ? page.items.slice(0, 5) : []
+      knowledgeChangesFetchedCursor = Math.max(
+        0,
+        ...recentKnowledgeChanges.value.map(item => Number(item.seq || 0)),
+      )
+      knowledgeActivityCursor = Math.max(knowledgeActivityCursor, knowledgeChangesFetchedCursor)
+    } catch (reason) {
+      if (epoch !== knowledgeActivityEpoch) return
+      knowledgeChangesError.value = reason instanceof Error ? reason.message : String(reason)
+    } finally {
+      if (epoch === knowledgeActivityEpoch) knowledgeChangesLoading.value = false
+    }
+  })()
+  knowledgeChangesRequest = request
+  knowledgeChangesRequestKey = key
+  void request.finally(() => {
+    if (knowledgeChangesRequest === request) {
+      knowledgeChangesRequest = null
+      knowledgeChangesRequestKey = ''
+    }
+  })
+  return request
+}
+
+function acceptKnowledgeActivity(event: KnowledgeActivityEvent, projectId: string, epoch: number): boolean {
+  if (epoch !== knowledgeActivityEpoch) return false
+  const advanced = advanceKnowledgeChangeCursor(knowledgeActivityCursor, projectId, event)
+  if (!advanced.changed) return false
+  knowledgeActivityCursor = advanced.cursor
+  void loadRecentKnowledgeChanges(projectId, epoch)
+  return true
+}
+
+async function runKnowledgeActivity(
+  projectId: string,
+  epoch: number,
+  controller: AbortController,
+  initialRequest: Promise<void>,
+) {
+  await initialRequest
+  while (epoch === knowledgeActivityEpoch && !controller.signal.aborted) {
+    let opened = false
+    let receivedChange = false
+    try {
+      await streamKnowledgeActivity(projectId, knowledgeActivityCursor, controller.signal, {
+        onOpen: () => { opened = true },
+        onEvent: (event) => {
+          if (acceptKnowledgeActivity(event as KnowledgeActivityEvent, projectId, epoch)) {
+            receivedChange = true
+          }
+        },
+      })
+    } catch {
+      if (controller.signal.aborted || epoch !== knowledgeActivityEpoch) return
+    }
+    if (controller.signal.aborted || epoch !== knowledgeActivityEpoch) return
+    // 只有真正连上后又断开的连接才补拉一次摘要；Redis 不可用时不会退化成轮询。
+    if (opened && (!receivedChange || knowledgeChangesFetchedCursor < knowledgeActivityCursor)) {
+      await loadRecentKnowledgeChanges(projectId, epoch)
+    }
+    await waitForKnowledgeActivityRetry(controller.signal)
+  }
+}
+
+function startKnowledgeActivity(projectValue: unknown): void {
+  stopKnowledgeActivity()
+  recentKnowledgeChanges.value = []
+  knowledgeChangesError.value = ''
+  knowledgeChangesLoading.value = false
+  knowledgeActivityCursor = 0
+  knowledgeChangesFetchedCursor = 0
+  const projectId = knowledgeStatsProjectId(projectValue)
+  if (!projectId) return
+  const epoch = ++knowledgeActivityEpoch
+  const controller = new AbortController()
+  knowledgeActivityAbort = controller
+  const initialRequest = loadRecentKnowledgeChanges(projectId, epoch)
+  void runKnowledgeActivity(projectId, epoch, controller, initialRequest)
+}
+
+function initializeInfoRail() {
+  const stored = localStorage.getItem('vibe_conversation_info_rail_collapsed')
+  infoRailCollapsed.value = stored == null
+    ? window.matchMedia('(max-width: 1180px)').matches
+    : stored === '1'
+}
+
+function toggleInfoRail() {
+  infoRailCollapsed.value = !infoRailCollapsed.value
+  localStorage.setItem('vibe_conversation_info_rail_collapsed', infoRailCollapsed.value ? '1' : '0')
+}
+
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
 const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
 // 对话行运行态：本地刚发送时立即显示；随后由项目级 running 快照统一校准所有会话。
@@ -954,6 +1120,9 @@ function trackMaximizeState() {
 
 onBeforeUnmount(() => {
   offMaximizeState?.()
+  projectContextEpoch += 1
+  sessionRequestEpoch += 1
+  stopKnowledgeActivity()
   stopElapsedTicker()
   stopRunningTurnPolling()
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
@@ -995,7 +1164,7 @@ function replayIntro(event: MouseEvent) {
   el.play().catch(() => {})
 }
 
-onMounted(() => { bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
+onMounted(() => { initializeInfoRail(); bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
 
 watch(
   () => [events.value.length, streamingAssistantContent.value],
@@ -1019,26 +1188,35 @@ async function bootstrap() {
 }
 
 async function selectProject(project: any, options: { refreshStats?: boolean } = {}) {
+  const epoch = ++projectContextEpoch
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
+  void startKnowledgeActivity(project.id)
   if (options.refreshStats !== false) void loadCurrentKbStats(project.id)
   packageStatusOverrides.value = {}
   sessionTitleOverrides.value = {}
   localStorage.setItem('vibe_project_source_project_id', String(project.id))
+  let resolvedProject: VibeProject
   try {
-    vibeProject.value = await getVibeProjectByAsyncProject(Number(project.id))
+    resolvedProject = await getVibeProjectByAsyncProject(Number(project.id))
   } catch {
-    vibeProject.value = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
+    if (epoch !== projectContextEpoch) return
+    resolvedProject = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
   }
+  if (epoch !== projectContextEpoch) return
+  vibeProject.value = resolvedProject
   syncBaselineDraft()
-  await refreshState({ autoOpenLatest: true })
+  await refreshState({ autoOpenLatest: true }, epoch)
 }
 
 async function handleProjectChange(value: string | number) {
   const project = projects.value.find(item => String(item.id) === String(value))
   if (!project) return
+  sessionRequestEpoch += 1
   activeSessionId.value = ''
   events.value = []
+  sessionFilesLoading.value = false
+  sessionFilesError.value = ''
   liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
@@ -1098,10 +1276,17 @@ function removeBaselineGoal(idx: number) {
   baselineDraft.system_goals.splice(idx, 1)
 }
 
-async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
-  if (!vibeProject.value) return
-  sessions.value = await listVibeSessions(vibeProject.value.id)
+async function refreshState(
+  options: { autoOpenLatest?: boolean } = {},
+  contextEpoch = projectContextEpoch,
+) {
+  const ownerId = vibeProject.value?.id || ''
+  if (!ownerId) return
+  const loadedSessions = await listVibeSessions(ownerId)
+  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
+  sessions.value = loadedSessions
   await loadModelConfig(activeSessionId.value).catch(() => {})
+  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
   await refreshProjectRunningTurns()
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
@@ -1110,7 +1295,11 @@ async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
 
 async function openSession(sessionId: string) {
   // #2：答题进行中也允许切到别的会话【只读查看】（本轮 UI 由 turnSessionId 守住、不串会话）。
+  const epoch = ++sessionRequestEpoch
   activeSessionId.value = sessionId
+  events.value = []
+  sessionFilesLoading.value = true
+  sessionFilesError.value = ''
   currentView.value = 'conversation'
   liveLogs.value = []
   processExpanded.value = false
@@ -1121,11 +1310,24 @@ async function openSession(sessionId: string) {
   resetProcessState(streamingProcess)
   const currentSession = sessions.value.find(item => item.id === sessionId)
   selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
-  await loadModelConfig(sessionId).catch(() => {})
-  events.value = sortEvents(await listVibeEvents(sessionId))
-  restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
-  await refreshProjectRunningTurns()
-  await scrollBottom()
+  void loadModelConfig(sessionId).catch(() => {})
+  try {
+    const loadedEvents = await listVibeEvents(sessionId)
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    events.value = sortEvents(loadedEvents)
+    restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
+    await refreshProjectRunningTurns()
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    await scrollBottom()
+  } catch (reason) {
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    sessionFilesError.value = reason instanceof Error ? reason.message : String(reason)
+    throw reason
+  } finally {
+    if (epoch === sessionRequestEpoch && activeSessionId.value === sessionId) {
+      sessionFilesLoading.value = false
+    }
+  }
 }
 
 function stopRunningTurnPolling() {
@@ -1376,8 +1578,11 @@ async function recoverRunningTurnForSession(
 }
 
 function newConversation() {
+  sessionRequestEpoch += 1
   activeSessionId.value = ''
   events.value = []
+  sessionFilesLoading.value = false
+  sessionFilesError.value = ''
   liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
@@ -1408,8 +1613,11 @@ async function deleteSession(sessionId: string) {
     await deleteVibeSession(sessionId)
     clearSessionDraft(sessionId)
     if (deletingActive) {
+      sessionRequestEpoch += 1
       activeSessionId.value = ''
       events.value = []
+      sessionFilesLoading.value = false
+      sessionFilesError.value = ''
       liveLogs.value = []
       processExpanded.value = false
       stopElapsedTicker()
@@ -3535,8 +3743,9 @@ function isStreamingUnderEvent(event: any) {
 
 .main {
   position: relative;
+  flex: 1 1 auto;
   min-width: 0;
-  width: 100%;
+  width: auto;
   height: 100%;
   background: #fff;
   border-radius: 14px;

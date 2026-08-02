@@ -129,11 +129,13 @@ export async function streamHarnessSse(
   path: string,
   body: Record<string, unknown>,
   handlers: {
+    onOpen?: () => void
     onChunk?: (content: string) => void
     onEvent?: (event: any) => void
     onDone?: () => void
     onError?: (message: string) => void
   } = {},
+  signal?: AbortSignal,
 ) {
   const response = await fetch(buildUrl(path), {
     method: 'POST',
@@ -142,6 +144,7 @@ export async function streamHarnessSse(
       Accept: 'text/event-stream',
       ...getAuthHeader(),
     },
+    signal,
     body: JSON.stringify(normalizeBody(body) ?? {}),
   })
 
@@ -160,6 +163,7 @@ export async function streamHarnessSse(
     }
     throw new Error(message)
   }
+  handlers.onOpen?.()
 
   const reader = response.body?.getReader()
   if (!reader) throw new Error('当前环境不支持流式响应')

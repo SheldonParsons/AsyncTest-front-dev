@@ -929,7 +929,7 @@ export interface KnowledgeCommitSummary {
   session_id: string
   trace_id: string
   confirmation_id: string
-  request_text: string
+  request_text?: string
   metadata: Record<string, any>
   action: string
   action_counts: { sources: number; tombstones: number; structures: number }
@@ -1100,6 +1100,27 @@ export function getKnowledgeCommits(project: string, params: { kind?: string; li
   next_cursor?: number | null
 }> {
   return request('GET', `/vibe/foundation/knowledge/commits${kbBrowserQuery({ project, ...params })}`)
+}
+
+export interface KnowledgeActivityEvent {
+  schema: 'knowledge_activity.v1'
+  type: 'knowledge_change'
+  project_id: string
+  commit_seq: number
+}
+
+export function streamKnowledgeActivity(
+  project: string,
+  after: number,
+  signal: AbortSignal,
+  handlers: Parameters<typeof streamHarnessSse>[2] = {},
+) {
+  return streamHarnessSse(
+    '/vibe/foundation/knowledge/activity',
+    { project_id: project, after },
+    handlers,
+    signal,
+  )
 }
 
 export function getKnowledgeCommit(project: string, seq: number): Promise<{ ok: boolean; commit: KnowledgeCommitDetail }> {
