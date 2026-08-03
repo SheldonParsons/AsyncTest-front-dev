@@ -1,6 +1,10 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import GlobalStatus from "@/global";
 import asyncTest from "@/db";
+import {
+  handleAuthenticationFailure,
+  navigateToUnauthenticated,
+} from "@/utils/authNavigation";
 
 
 // 1. 定义环境判断
@@ -58,7 +62,7 @@ class Http {
           );
           // 如果获取不到token，直接跳转至login页面
           if (currentCookie === false) {
-            asyncTest.router.router.push({ name: GlobalStatus.anonymousPage });
+            void navigateToUnauthenticated();
           } else {
             const headers: any = config.headers;
             headers.Authorization = `token=${currentCookie}`;
@@ -78,33 +82,22 @@ class Http {
       (response: AxiosResponse) => {
         return response;
       },
-      (err: any) => {
+      async (err: any) => {
         console.log(err);
         if (axios.isCancel(err)) {
           return Promise.reject({ isCanceled: true });
         }
         // 如果需要身份验证，且后端返回无身份验证的响应，直接跳转至login页面
-        if (err.response.status === 403) {
-          // token鉴权失败
-          if (err.response.data.detail) {
-            if (import.meta.env.VITE_IS_ELECTRON === 'true') {
-              asyncTest.router.router.push({ name: GlobalStatus.anonymousElectronPage });
-            } else {
-              asyncTest.router.router.push({ name: GlobalStatus.anonymousPage });
-            }
-            
-          } else {
-            // 非项目成员鉴权
-            if (
-              err.response.data.code &&
-              Number(err.response.data.code) === 302
-            ) {
-              asyncTest.router.router.push({
-                name: GlobalStatus.projectAuthAbandonPath,
-              });
-            }
-            return Promise.reject(err);
-          }
+        const responseStatus = err.response?.status;
+        const responseData = err.response?.data;
+        if (await handleAuthenticationFailure(responseStatus, responseData)) {
+          return Promise.reject(err);
+        }
+        // 非项目成员鉴权保持原有项目页语义，不作为登录失效处理。
+        if (responseStatus === 403 && Number(responseData?.code) === 302) {
+          asyncTest.router.router.push({
+            name: GlobalStatus.projectAuthAbandonPath,
+          });
         }
         return Promise.reject(err);
       }

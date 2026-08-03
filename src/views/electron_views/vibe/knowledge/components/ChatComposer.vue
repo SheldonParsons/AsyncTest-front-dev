@@ -10,12 +10,7 @@
         <div class="menu-title">文件</div>
         <button class="menu-item" type="button" role="menuitem" @click="pickMarkdown">
           <span class="markdown-icon" aria-hidden="true">
-            <svg viewBox="0 0 32 32" fill="none">
-              <path d="M7 9.5H25C26.1 9.5 27 10.4 27 11.5V20.5C27 21.6 26.1 22.5 25 22.5H7C5.9 22.5 5 21.6 5 20.5V11.5C5 10.4 5.9 9.5 7 9.5Z" fill="rgba(255,255,255,.18)" stroke="currentColor" stroke-width="1.6"/>
-              <path d="M9 19V13L12 16.7L15 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M19 13V18.5M19 18.5L16.9 16.4M19 18.5L21.1 16.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M23.5 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
+            <MarkdownFileIcon />
           </span>
           <span class="item-text">
             <strong>Markdown 文件</strong>
@@ -176,13 +171,9 @@
             :aria-expanded="menuOpen"
             @click="menuOpen = !menuOpen"
           >
-            <svg class="file-upload-rise" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-              <g class="upload-file">
-                <path d="M13 8H22.2L28 13.8V27C28 28.2 27.2 29 26 29H13C11.8 29 11 28.2 11 27V10C11 8.8 11.8 8 13 8Z" fill="#fff" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
-                <path d="M22 8.4V14H27.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M15.2 20H24.8M15.2 24H22.8" stroke="currentColor" stroke-width="2.05" stroke-linecap="round"/>
-              </g>
-              <path class="upload-pin" d="M24.8 12.8L16.3 21.3C14.5 23.1 14.5 26 16.3 27.8C18.1 29.6 21 29.6 22.8 27.8L29.7 20.9C31 19.6 31 17.5 29.7 16.2C28.4 14.9 26.3 14.9 25 16.2L18.2 23C17.7 23.5 17.7 24.4 18.2 24.9C18.7 25.4 19.6 25.4 20.1 24.9L26.3 18.7" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus attach-plus-icon" aria-hidden="true">
+              <path d="M5 12h14"/>
+              <path d="M12 5v14"/>
             </svg>
           </button>
 
@@ -261,6 +252,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { admitAttachmentSelection } from '../composables/attachmentAdmission'
+import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
@@ -360,7 +352,7 @@ function autoGrow() {
 function measureModelPicker() {
   const label = modelPickerLabelEl.value
   if (!label) return
-  const contentWidth = Math.ceil(label.scrollWidth) + 16 + 7 + 20
+  const contentWidth = Math.ceil(label.scrollWidth) + 56
   modelPickerClosedWidth.value = Math.min(180, Math.max(76, contentWidth))
 }
 function onInput(e: Event) {
@@ -612,7 +604,7 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
 .menu-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 8px; color: #171b21; background: transparent; text-align: left; cursor: pointer; }
 .menu-item:hover { background: #f3f4f6; }
 .markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: linear-gradient(135deg, rgba(37,99,235,.95), rgba(124,58,237,.92) 52%, rgba(22,163,74,.9)); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 8px 18px rgba(37,99,235,.22); }
-.markdown-icon svg { width: 24px; height: 24px; }
+.markdown-icon :deep(.markdown-file-icon) { width: 24px; height: 24px; }
 .item-text { display: grid; gap: 1px; }
 .item-text strong { font-size: 13px; font-weight: 700; }
 .item-text span { color: #8a8f98; font-size: 12px; }
@@ -636,8 +628,9 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
   position: relative; display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 76px); margin-left: auto;
 }
 .model-picker {
+  position: relative;
   width: 180px; max-width: 100%; min-width: 0; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: #25272b;
+  padding: 0 28px; border: 0; border-radius: 999px; background: transparent; color: #25272b;
   font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
   transition: width 180ms cubic-bezier(.2, .8, .2, 1), background-color 180ms cubic-bezier(.2, .8, .2, 1), color 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms cubic-bezier(.2, .8, .2, 1);
 }
@@ -648,13 +641,16 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
 }
 .model-picker:disabled { opacity: .55; cursor: not-allowed; }
 .model-picker:disabled:hover { background: transparent; color: #25272b; }
-.model-picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 .model-picker-chevron {
+  position: absolute; top: 50%; right: 10px; transform: translateY(-50%);
   width: 16px; height: 16px; flex: 0 0 auto; color: #777d87; transition: color 180ms cubic-bezier(.2, .8, .2, 1);
 }
 .model-picker[aria-expanded="true"] .model-picker-chevron { color: #555b65; }
 .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
 .icon-button svg { width: 22px; height: 22px; color: currentColor; overflow: visible; }
+.attach-button { display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 0; }
+.attach-plus-icon { display: block; width: 17px; height: 17px; margin: 0; flex: 0 0 auto; }
 .attach-button:hover, .attach-button[aria-expanded="true"] { background: #f3f4f6; }
 .send-button {
   width: 28px;
@@ -668,7 +664,7 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
   background: #171b21;
 }
 .send-button svg { display: block; width: 22px; height: 22px; margin: 0; flex: 0 0 auto; }
-.send-button:disabled { color: #9ca3af; background: #f3f4f6; cursor: default; }
+.send-button:disabled { color: #fff; background: #9b9d9f; cursor: default; }
 .send-button:not(:disabled):hover { background: #030712; }
 .send-button:not(:disabled):active { transform: scale(.98); }
 .send-button.is-sending { color: #fff; background: #1f2937; cursor: pointer; } /* T26:处理中=停止按钮,必须可点 */
@@ -678,6 +674,7 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
 
 /* —— 动效（移植自 motion 组件） —— */
 .send-button .orbit { opacity: 0; stroke-dasharray: 30 96; transform-origin: 20px 20px; }
+.send-button:not(.is-sending) .send-arrow-shape { transform: scale(1.05); transform-origin: 20px 20px; }
 .send-button .arrow-stem, .send-button .arrow-head { transform-origin: 20px 20px; }
 .send-button .run-dot { opacity: 0; transform-origin: center; }
 .send-button.is-sending .send-arrow-shape { display: none; }
@@ -688,20 +685,13 @@ watch(currentModelLabel, () => nextTick(measureModelPicker))
 .send-button.is-sending .dot-3 { animation: cc-run-dot 1500ms cubic-bezier(.25,.1,.25,1) 180ms infinite both; }
 .send-button:not(:disabled):hover .orbit { animation: cc-orbit 1600ms cubic-bezier(.25,.1,.25,1) infinite both; }
 .send-button:not(:disabled):hover .arrow-stem, .send-button:not(:disabled):hover .arrow-head { animation: cc-arrow 1600ms cubic-bezier(.25,.1,.25,1) infinite both; }
-.attach-button .upload-file, .attach-button .upload-pin { transform-origin: 20px 20px; }
-.attach-button .upload-pin { opacity: 0; }
-.attach-button:hover .upload-file, .attach-button[aria-expanded="true"] .upload-file { animation: cc-upfile 1500ms cubic-bezier(.25,.1,.25,1) infinite both; }
-.attach-button:hover .upload-pin, .attach-button[aria-expanded="true"] .upload-pin { animation: cc-uppin 1500ms cubic-bezier(.25,.1,.25,1) infinite both; }
-
 @keyframes cc-pause-out { 0%,18% { opacity: 1; transform: scaleX(1); } 34%,72% { opacity: 0; transform: scaleX(.42); } 100% { opacity: 1; transform: scaleX(1); } }
 @keyframes cc-run-dot { 0%,18% { opacity: 0; transform: translateY(3px) scale(.72); } 34% { opacity: 1; transform: translateY(0) scale(1); } 50% { opacity: .55; transform: translateY(-2px) scale(.92); } 66% { opacity: 1; transform: translateY(0) scale(1); } 82%,100% { opacity: 0; transform: translateY(3px) scale(.72); } }
-@keyframes cc-upfile { 0%,18% { opacity: 1; transform: translateY(0) scale(1); } 34%,72% { opacity: 0; transform: translateY(-2px) scale(.72); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes cc-uppin { 0%,20% { opacity: 0; transform: translate(-1.5px,3px) rotate(-10deg) scale(.72); } 36% { opacity: 1; transform: translate(-1.5px,-1px) rotate(0) scale(1); } 52% { opacity: .78; transform: translate(-1.5px,-2px) rotate(4deg) scale(.96); } 68% { opacity: 1; transform: translate(-1.5px,-1px) rotate(0) scale(1); } 84%,100% { opacity: 0; transform: translate(-1.5px,3px) rotate(-8deg) scale(.72); } }
 @keyframes cc-orbit { 0%,18% { opacity: 0; transform: rotate(0); } 26% { opacity: .86; transform: rotate(0); } 78% { opacity: .86; transform: rotate(360deg); } 88%,100% { opacity: 0; transform: rotate(360deg); } }
 @keyframes cc-arrow { 0% { opacity: 1; } 22% { opacity: 0; } 72% { opacity: 0; } 90%,100% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .send-button .pause-block, .send-button .run-dot, .attach-button .upload-file, .attach-button .upload-pin, .send-button .orbit, .send-button .arrow-stem, .send-button .arrow-head { animation: none !important; }
+  .send-button .pause-block, .send-button .run-dot, .send-button .orbit, .send-button .arrow-stem, .send-button .arrow-head { animation: none !important; }
   .model-picker, .model-picker-chevron, .model-menu { transition-duration: 0ms !important; }
 }
 

@@ -1,21 +1,16 @@
 <template>
   <main class="vibe-shell" :class="{ 'side-collapsed': sideCollapsed }" :data-trace-audit="canViewTraceAudit ? '1' : '0'">
-    <div class="window-drag" />
-    <!-- 侧栏收起/展开：钉在窗口左上（mac 靠红绿灯右侧），收起后仍可见 -->
-    <button
+    <div class="window-drag" :class="{ 'reserve-info-toggle': currentView === 'conversation', 'workspace-open': workspaceWindowOpen }" />
+    <!-- 展开态：动效开关留在窗口左上；收起态实例移动到主对话标题左侧。 -->
+    <PanelStateToggle
+      v-if="!sideCollapsed"
       class="side-toggle"
       :class="{ mac: isMacPlatform }"
-      type="button"
-      :title="sideCollapsed ? '展开侧栏' : '收起侧栏'"
-      :aria-label="sideCollapsed ? '展开侧栏' : '收起侧栏'"
-      @click="toggleSide"
-    >
-      <!-- lucide: panel-left-open / panel-left-close -->
-      <svg v-if="sideCollapsed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /><path d="m14 9 3 3-3 3" /></svg>
-      <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></svg>
-    </button>
-    <!-- Windows 窗口控制（mac 有原生红绿灯，不显示）：默认隐藏，hover 右上角才浮现 -->
-    <div v-if="showWinControls" class="win-ctl-zone">
+      :collapsed="sideCollapsed"
+      @panel-toggle="setSideCollapsed"
+    />
+    <!-- 窗口级 header 只保留 Windows 三键；对话信息栏开关属于主对话 header。 -->
+    <div v-if="showWinControls" class="window-actions">
       <VibeWindowControls
         class="win-ctl"
         :maximized="winMaximized"
@@ -86,7 +81,7 @@
       <section class="side-user-card" aria-label="用户与知识库入口">
         <button class="side-user-profile" type="button" @click="openVibeSettings">
           <span class="side-user-avatar avatar-container">
-            <el-avatar :size="32" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+            <el-avatar :size="24" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
             <span class="online-indicator" aria-hidden="true" />
           </span>
           <span class="side-user-main">
@@ -101,22 +96,46 @@
           :disabled="!vibeProject || loading"
           @click="openKbBrowser"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-library-icon lucide-library" aria-hidden="true"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>
         </button>
       </section>
 
     </aside>
 
     <section class="main-frame">
-      <section class="main">
-        <header class="main-head" :class="{ compact: !headKicker }">
-          <div>
-            <p v-if="headKicker">{{ headKicker }}</p>
-            <h1>{{ headTitle }}</h1>
+      <section class="main" :class="{ 'workspace-open': workspaceWindowOpen }">
+        <header
+          class="main-head"
+          :class="{ compact: !headKicker }"
+        >
+          <div class="main-head-leading">
+            <PanelStateToggle
+              v-if="sideCollapsed"
+              class="main-head-side-toggle"
+              :collapsed="sideCollapsed"
+              @panel-toggle="setSideCollapsed"
+            />
+            <div class="main-head-copy">
+              <p v-if="headKicker">{{ headKicker }}</p>
+              <h1>{{ headTitle }}</h1>
+            </div>
+          </div>
+          <div v-if="currentView === 'conversation'" class="main-head-actions">
+            <button
+              class="info-rail-toggle"
+              type="button"
+              :title="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
+              :aria-label="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
+              :aria-expanded="!infoRailCollapsed"
+              @click="toggleInfoRail"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings2-icon lucide-settings-2" aria-hidden="true"><path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+            </button>
           </div>
         </header>
 
-      <section v-if="currentView === 'conversation'" class="conversation">
+        <div class="main-conversation-pane">
+          <section v-if="currentView === 'conversation'" class="conversation">
         <nav
           v-if="conversationRailItems.length"
           class="conversation-rail"
@@ -400,7 +419,28 @@
             @stop="stopFoundationTurn"
           />
         </footer>
-      </section>
+          </section>
+        </div>
+      <ConversationInfoRail
+        v-if="currentView === 'conversation'"
+        :collapsed="infoRailCollapsed"
+        :changes="recentKnowledgeChanges"
+        :changes-loading="knowledgeChangesLoading"
+        :changes-error="knowledgeChangesError"
+        :files="recentSessionFiles"
+        :files-loading="sessionFilesLoading"
+        :files-error="sessionFilesError"
+        :session-id="activeSessionId"
+      />
+      <Transition name="workspace-window">
+        <aside
+          v-if="currentView === 'conversation' && workspaceWindowOpen"
+          class="conversation-workspace-window"
+          aria-label="窗口区域"
+        >
+          <header class="workspace-window-head"></header>
+        </aside>
+      </Transition>
       </section>
     </section>
 
@@ -420,9 +460,11 @@ import AppSelect from '@/components/common/select/AppSelect.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
+import PanelStateToggle from './components/icons/PanelStateToggle.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
 import ChatComposer from './components/ChatComposer.vue'
+import ConversationInfoRail from './components/ConversationInfoRail.vue'
 import {
   createProcessState,
   consumeProcessEvent,
@@ -452,12 +494,16 @@ import {
   listVibeSessions,
   listVibeLLMProviders,
   listFoundationRunningTurns,
+  getKnowledgeCommits,
+  streamKnowledgeActivity,
   streamFoundationTurn,
   cancelFoundationTurn,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
   type FoundationRunningTurn,
+  type KnowledgeActivityEvent,
+  type KnowledgeCommitSummary,
   type VibeAttachment,
   type VibeCapabilityUser,
   type VibeEvent,
@@ -473,6 +519,10 @@ import {
   writeKnowledgeStats,
   type KnowledgeStats,
 } from './projectStatsPolicy'
+import {
+  advanceKnowledgeChangeCursor,
+  recentSessionFiles as deriveRecentSessionFiles,
+} from './conversationInfoRailPolicy'
 
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
@@ -490,6 +540,10 @@ const lastAssistantId = computed(() => {
   return ''
 })
 const activeSessionId = ref('')
+const recentSessionFiles = computed(() => deriveRecentSessionFiles(events.value, activeSessionId.value))
+const sessionFilesLoading = ref(false)
+const sessionFilesError = ref('')
+let sessionRequestEpoch = 0
 const currentView = ref<'conversation' | 'baseline'>('conversation')
 const loading = ref(false)
 const vibeCapabilities = ref<Record<string, boolean>>({})
@@ -515,6 +569,21 @@ const userInitials = computed(() => {
 })
 // Foundation 知识事实按外层 AsyncTest 数字项目 ID 隔离；Vibe UUID 只归属会话运行态。
 const projectStatsMap = reactive<Record<string, KnowledgeStats>>({})
+const recentKnowledgeChanges = ref<KnowledgeCommitSummary[]>([])
+const knowledgeChangesLoading = ref(false)
+const knowledgeChangesError = ref('')
+const infoRailCollapsed = ref(false)
+const workspaceWindowOpen = ref(false)
+let projectContextEpoch = 0
+let knowledgeActivityEpoch = 0
+let knowledgeActivityAbort: AbortController | null = null
+let knowledgeActivityRetryTimer: ReturnType<typeof setTimeout> | null = null
+let knowledgeActivityCursor = 0
+let knowledgeChangesFetchedCursor = 0
+let knowledgeChangesRequest: Promise<void> | null = null
+let knowledgeChangesRequestKey = ''
+let allKbStatsRequest: Promise<void> | null = null
+const currentKbStatsRequests = new Map<string, Promise<void>>()
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
   if (!opts.silent) modelConfigLoading.value = true
   try {
@@ -586,23 +655,174 @@ async function handleComposerModelChange(providerId: string) {
   }
 }
 
-async function loadKbStats() {
+function loadKbStats(): Promise<void> {
+  if (allKbStatsRequest) return allKbStatsRequest
   const projectIds = collectKnowledgeStatsProjectIds(projects.value || [])
-  if (!projectIds.length) return
-  try {
-    const payload = await getFoundationKnowledgeStatsMany(projectIds)
-    projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
-  } catch { /* 概览读取失败不阻塞主流程 */ }
+  if (!projectIds.length) return Promise.resolve()
+  allKbStatsRequest = (async () => {
+    try {
+      const payload = await getFoundationKnowledgeStatsMany(projectIds)
+      projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
+    } catch { /* 概览读取失败不阻塞主流程 */ }
+  })()
+  return allKbStatsRequest
 }
 
-async function loadCurrentKbStats() {
-  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
-  if (!projectId) return
-  try {
-    const payload = await getFoundationKnowledgeStatsMany([projectId])
-    writeKnowledgeStats(projectStatsMap, payload, projectId)
-  } catch { /* 当前项目计数读取失败不阻塞对话 */ }
+function loadCurrentKbStats(projectValue = selectedProjectId.value): Promise<void> {
+  const projectId = knowledgeStatsProjectId(projectValue)
+  if (!projectId) return Promise.resolve()
+  const existing = currentKbStatsRequests.get(projectId)
+  if (existing) return existing
+  const request = (async () => {
+    try {
+      const payload = await getFoundationKnowledgeStatsMany([projectId])
+      writeKnowledgeStats(projectStatsMap, payload, projectId)
+    } catch { /* 当前项目计数读取失败不阻塞对话 */ }
+  })()
+  currentKbStatsRequests.set(projectId, request)
+  void request.finally(() => {
+    if (currentKbStatsRequests.get(projectId) === request) currentKbStatsRequests.delete(projectId)
+  })
+  return request
 }
+
+function stopKnowledgeActivity() {
+  knowledgeActivityEpoch += 1
+  knowledgeActivityAbort?.abort()
+  knowledgeActivityAbort = null
+  if (knowledgeActivityRetryTimer) {
+    clearTimeout(knowledgeActivityRetryTimer)
+    knowledgeActivityRetryTimer = null
+  }
+  knowledgeChangesRequest = null
+  knowledgeChangesRequestKey = ''
+}
+
+function waitForKnowledgeActivityRetry(signal: AbortSignal, delay = 1800): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) { resolve(); return }
+    const finish = () => {
+      if (knowledgeActivityRetryTimer) clearTimeout(knowledgeActivityRetryTimer)
+      knowledgeActivityRetryTimer = null
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    knowledgeActivityRetryTimer = setTimeout(finish, delay)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+function loadRecentKnowledgeChanges(projectId: string, epoch: number): Promise<void> {
+  if (!projectId || epoch !== knowledgeActivityEpoch) return Promise.resolve()
+  const key = `${epoch}:${projectId}`
+  if (knowledgeChangesRequest && knowledgeChangesRequestKey === key) return knowledgeChangesRequest
+  knowledgeChangesLoading.value = true
+  knowledgeChangesError.value = ''
+  const request = (async () => {
+    try {
+      const page = await getKnowledgeCommits(projectId, { limit: 5 })
+      if (epoch !== knowledgeActivityEpoch || projectId !== knowledgeStatsProjectId(selectedProjectId.value)) return
+      recentKnowledgeChanges.value = Array.isArray(page.items) ? page.items.slice(0, 5) : []
+      knowledgeChangesFetchedCursor = Math.max(
+        0,
+        ...recentKnowledgeChanges.value.map(item => Number(item.seq || 0)),
+      )
+      knowledgeActivityCursor = Math.max(knowledgeActivityCursor, knowledgeChangesFetchedCursor)
+    } catch (reason) {
+      if (epoch !== knowledgeActivityEpoch) return
+      knowledgeChangesError.value = reason instanceof Error ? reason.message : String(reason)
+    } finally {
+      if (epoch === knowledgeActivityEpoch) knowledgeChangesLoading.value = false
+    }
+  })()
+  knowledgeChangesRequest = request
+  knowledgeChangesRequestKey = key
+  void request.finally(() => {
+    if (knowledgeChangesRequest === request) {
+      knowledgeChangesRequest = null
+      knowledgeChangesRequestKey = ''
+    }
+  })
+  return request
+}
+
+function acceptKnowledgeActivity(event: KnowledgeActivityEvent, projectId: string, epoch: number): boolean {
+  if (epoch !== knowledgeActivityEpoch) return false
+  const advanced = advanceKnowledgeChangeCursor(knowledgeActivityCursor, projectId, event)
+  if (!advanced.changed) return false
+  knowledgeActivityCursor = advanced.cursor
+  void loadRecentKnowledgeChanges(projectId, epoch)
+  return true
+}
+
+async function runKnowledgeActivity(
+  projectId: string,
+  epoch: number,
+  controller: AbortController,
+  initialRequest: Promise<void>,
+) {
+  await initialRequest
+  while (epoch === knowledgeActivityEpoch && !controller.signal.aborted) {
+    let opened = false
+    let receivedChange = false
+    try {
+      await streamKnowledgeActivity(projectId, knowledgeActivityCursor, controller.signal, {
+        onOpen: () => { opened = true },
+        onEvent: (event) => {
+          if (acceptKnowledgeActivity(event as KnowledgeActivityEvent, projectId, epoch)) {
+            receivedChange = true
+          }
+        },
+      })
+    } catch {
+      if (controller.signal.aborted || epoch !== knowledgeActivityEpoch) return
+    }
+    if (controller.signal.aborted || epoch !== knowledgeActivityEpoch) return
+    // 只有真正连上后又断开的连接才补拉一次摘要；Redis 不可用时不会退化成轮询。
+    if (opened && (!receivedChange || knowledgeChangesFetchedCursor < knowledgeActivityCursor)) {
+      await loadRecentKnowledgeChanges(projectId, epoch)
+    }
+    await waitForKnowledgeActivityRetry(controller.signal)
+  }
+}
+
+function startKnowledgeActivity(projectValue: unknown): void {
+  stopKnowledgeActivity()
+  recentKnowledgeChanges.value = []
+  knowledgeChangesError.value = ''
+  knowledgeChangesLoading.value = false
+  knowledgeActivityCursor = 0
+  knowledgeChangesFetchedCursor = 0
+  const projectId = knowledgeStatsProjectId(projectValue)
+  if (!projectId) return
+  const epoch = ++knowledgeActivityEpoch
+  const controller = new AbortController()
+  knowledgeActivityAbort = controller
+  const initialRequest = loadRecentKnowledgeChanges(projectId, epoch)
+  void runKnowledgeActivity(projectId, epoch, controller, initialRequest)
+}
+
+function initializeInfoRail() {
+  const stored = localStorage.getItem('vibe_conversation_info_rail_collapsed')
+  infoRailCollapsed.value = stored == null
+    ? window.matchMedia('(max-width: 1180px)').matches
+    : stored === '1'
+}
+
+function setInfoRailCollapsed(collapsed: boolean) {
+  infoRailCollapsed.value = collapsed
+  localStorage.setItem('vibe_conversation_info_rail_collapsed', collapsed ? '1' : '0')
+}
+
+function toggleInfoRail() {
+  setInfoRailCollapsed(!infoRailCollapsed.value)
+}
+
+function setWorkspaceWindowOpen(open: boolean) {
+  if (open) setInfoRailCollapsed(true)
+  workspaceWindowOpen.value = open
+}
+
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
 const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
 // 对话行运行态：本地刚发送时立即显示；随后由项目级 running 快照统一校准所有会话。
@@ -896,17 +1116,17 @@ const SIDE_COLLAPSED_KEY = 'vibe_kb_side_collapsed'
 const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSED_KEY) === '1')
 const isMacPlatform = window.electronAPI?.platform === 'darwin'
 
-function toggleSide() {
-  sideCollapsed.value = !sideCollapsed.value
-  localStorage.setItem(SIDE_COLLAPSED_KEY, sideCollapsed.value ? '1' : '0')
+function setSideCollapsed(collapsed: boolean) {
+  sideCollapsed.value = collapsed
+  localStorage.setItem(SIDE_COLLAPSED_KEY, collapsed ? '1' : '0')
 }
 
 // ===== Windows 窗口控制：关闭 / 最大化切换 / 最小化 =====
-// Vibe 窗口的控件默认 hover 才出现，所以在 Electron 全平台开放，避免 mac 自定义窗口缺少控制入口。
+// Windows 三键占用 mac 红绿灯的左上位置；macOS 使用原生红绿灯，不重复渲染。
 // windowKey 随 route.query 传递（dashboard 开 vibe 窗口时带 vibe-workbench，workbench→knowledge 跳转保留 query）。
 const route = useRoute()
 const router = useRouter()
-const showWinControls = computed(() => !!window.electronAPI)
+const showWinControls = computed(() => !!window.electronAPI && !isMacPlatform)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 
 function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
@@ -939,6 +1159,9 @@ function trackMaximizeState() {
 
 onBeforeUnmount(() => {
   offMaximizeState?.()
+  projectContextEpoch += 1
+  sessionRequestEpoch += 1
+  stopKnowledgeActivity()
   stopElapsedTicker()
   stopRunningTurnPolling()
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
@@ -980,7 +1203,7 @@ function replayIntro(event: MouseEvent) {
   el.play().catch(() => {})
 }
 
-onMounted(() => { bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
+onMounted(() => { initializeInfoRail(); bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
 
 watch(
   () => [events.value.length, streamingAssistantContent.value],
@@ -992,37 +1215,47 @@ async function bootstrap() {
   try {
     const response: any = await ApiGetJoinProjects({})
     projects.value = Array.isArray(response) ? response : (response?.results || [])
+    void loadKbStats()
     if (projects.value.length) {
       const saved = localStorage.getItem('vibe_project_source_project_id')
       const target = projects.value.find(item => String(item.id) === String(saved)) || projects.value[0]
-      await selectProject(target)
+      await selectProject(target, { refreshStats: false })
     }
   } finally {
     loading.value = false
   }
 }
 
-async function selectProject(project: any) {
+async function selectProject(project: any, options: { refreshStats?: boolean } = {}) {
+  const epoch = ++projectContextEpoch
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
+  void startKnowledgeActivity(project.id)
+  if (options.refreshStats !== false) void loadCurrentKbStats(project.id)
   packageStatusOverrides.value = {}
   sessionTitleOverrides.value = {}
   localStorage.setItem('vibe_project_source_project_id', String(project.id))
+  let resolvedProject: VibeProject
   try {
-    vibeProject.value = await getVibeProjectByAsyncProject(Number(project.id))
+    resolvedProject = await getVibeProjectByAsyncProject(Number(project.id))
   } catch {
-    vibeProject.value = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
+    if (epoch !== projectContextEpoch) return
+    resolvedProject = await initVibeProject(Number(project.id), { name: project.name || project.project_name || `项目 ${project.id}` })
   }
+  if (epoch !== projectContextEpoch) return
+  vibeProject.value = resolvedProject
   syncBaselineDraft()
-  await refreshState({ autoOpenLatest: true })
-  loadKbStats()  // 切项目后刷新左栏知识库概览
+  await refreshState({ autoOpenLatest: true }, epoch)
 }
 
 async function handleProjectChange(value: string | number) {
   const project = projects.value.find(item => String(item.id) === String(value))
   if (!project) return
+  sessionRequestEpoch += 1
   activeSessionId.value = ''
   events.value = []
+  sessionFilesLoading.value = false
+  sessionFilesError.value = ''
   liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
@@ -1082,10 +1315,17 @@ function removeBaselineGoal(idx: number) {
   baselineDraft.system_goals.splice(idx, 1)
 }
 
-async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
-  if (!vibeProject.value) return
-  sessions.value = await listVibeSessions(vibeProject.value.id)
+async function refreshState(
+  options: { autoOpenLatest?: boolean } = {},
+  contextEpoch = projectContextEpoch,
+) {
+  const ownerId = vibeProject.value?.id || ''
+  if (!ownerId) return
+  const loadedSessions = await listVibeSessions(ownerId)
+  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
+  sessions.value = loadedSessions
   await loadModelConfig(activeSessionId.value).catch(() => {})
+  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
   await refreshProjectRunningTurns()
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
@@ -1094,7 +1334,11 @@ async function refreshState(options: { autoOpenLatest?: boolean } = {}) {
 
 async function openSession(sessionId: string) {
   // #2：答题进行中也允许切到别的会话【只读查看】（本轮 UI 由 turnSessionId 守住、不串会话）。
+  const epoch = ++sessionRequestEpoch
   activeSessionId.value = sessionId
+  events.value = []
+  sessionFilesLoading.value = true
+  sessionFilesError.value = ''
   currentView.value = 'conversation'
   liveLogs.value = []
   processExpanded.value = false
@@ -1105,11 +1349,24 @@ async function openSession(sessionId: string) {
   resetProcessState(streamingProcess)
   const currentSession = sessions.value.find(item => item.id === sessionId)
   selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
-  await loadModelConfig(sessionId).catch(() => {})
-  events.value = sortEvents(await listVibeEvents(sessionId))
-  restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
-  await refreshProjectRunningTurns()
-  await scrollBottom()
+  void loadModelConfig(sessionId).catch(() => {})
+  try {
+    const loadedEvents = await listVibeEvents(sessionId)
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    events.value = sortEvents(loadedEvents)
+    restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
+    await refreshProjectRunningTurns()
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    await scrollBottom()
+  } catch (reason) {
+    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    sessionFilesError.value = reason instanceof Error ? reason.message : String(reason)
+    throw reason
+  } finally {
+    if (epoch === sessionRequestEpoch && activeSessionId.value === sessionId) {
+      sessionFilesLoading.value = false
+    }
+  }
 }
 
 function stopRunningTurnPolling() {
@@ -1360,8 +1617,11 @@ async function recoverRunningTurnForSession(
 }
 
 function newConversation() {
+  sessionRequestEpoch += 1
   activeSessionId.value = ''
   events.value = []
+  sessionFilesLoading.value = false
+  sessionFilesError.value = ''
   liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
@@ -1392,8 +1652,11 @@ async function deleteSession(sessionId: string) {
     await deleteVibeSession(sessionId)
     clearSessionDraft(sessionId)
     if (deletingActive) {
+      sessionRequestEpoch += 1
       activeSessionId.value = ''
       events.value = []
+      sessionFilesLoading.value = false
+      sessionFilesError.value = ''
       liveLogs.value = []
       processExpanded.value = false
       stopElapsedTicker()
@@ -1721,9 +1984,13 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     ElMessage.warning('请先选择项目')
     return
   }
+  const project = knowledgeStatsProjectId(selectedProjectId.value)
+  if (!project) {
+    ElMessage.warning('当前项目身份无效，请重新选择项目')
+    return
+  }
   if (!(await ensureComposerModelUsable())) return
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
-  const project = String(vibeProject.value.id)
   const startedAt = Date.now()
   streamingOwnerSessionId.value = activeSessionId.value
   activeTurnSessionId.value = activeSessionId.value
@@ -2816,6 +3083,8 @@ function isStreamingUnderEvent(event: any) {
   --vibe-glass-bg:
     linear-gradient(180deg, rgba(248, 248, 247, 0.9), rgba(242, 242, 240, 0.82)),
     rgba(245, 245, 244, 0.76);
+  --vibe-sidebar-bg: rgb(252, 252, 252);
+  --vibe-conversation-bg: rgb(255, 255, 255);
   --vibe-glass-filter: blur(22px) saturate(1.12);
   /* —— 全局 4 档灰阶 + 填充 token（左栏/主区共用）：颜色只从这里取，别再新造 —— */
   --ink-1: rgba(15, 15, 15, 0.9);    /* 主文字 */
@@ -2856,16 +3125,15 @@ function isStreamingUnderEvent(event: any) {
   pointer-events: none;
 }
 
-/* 侧栏收起/展开按钮：钉在窗口左上拖拽条上（需 no-drag），mac 时让出红绿灯的位置 */
+/* 展开态开关：沿用现有左上位置，仅向下微调 3px。 */
 .side-toggle {
   position: fixed;
-  top: 4px;
-  left: 8px;
+  top: 9px;
+  left: 98px;
   z-index: 20;
   -webkit-app-region: no-drag;
-  width: 28px;
-  height: 28px;
-  border: 0;
+  width: 22.4px;
+  height: 22.4px;
   border-radius: 8px;
   background: transparent;
   color: var(--ink-3);
@@ -2881,10 +3149,10 @@ function isStreamingUnderEvent(event: any) {
   }
 }
 
-/* mac：红绿灯在 (12,12)、灯珠 12px（垂直中心 ≈18px）——按钮 28px 取 top 4 与其对中，左侧紧贴灯组 */
+/* mac：继续位于原生红绿灯右侧，并同步下移。 */
 .side-toggle.mac {
   left: 72px;
-  top: 4px;
+  top: 9px;
 }
 
 :global(.main-router.vibe-shell),
@@ -2895,32 +3163,117 @@ function isStreamingUnderEvent(event: any) {
 .window-drag {
   position: fixed;
   inset: 0 0 auto 0;
-  height: 34px;
+  left: 140px;
+  height: 42px;
   -webkit-app-region: drag;
   z-index: 10;
 }
 
-/* Windows 窗口控制：钉在拖拽条右上，压在 drag 层之上。
-   默认透明、hover 感应区才浮现；感应区比按钮大一圈（padding 扩出），并显式 no-drag——
-   否则被 drag 区吞掉 mouse 事件，hover 永远不触发。 */
-.win-ctl-zone {
+/* Electron 原生拖拽命中不完全遵循普通 z-index；给右侧两枚 header 按钮留出非拖拽区域。 */
+.window-drag.reserve-info-toggle {
+  right: 56px;
+}
+
+/* 分屏后 Settings2 位于主对话 header 右缘；拖拽层在它之前收口，避免吞掉按钮上半区。 */
+.window-drag.reserve-info-toggle.workspace-open {
+  right: calc(min(62vw, 1040px) + 56px);
+}
+
+/* Windows 三键放在 mac 红绿灯对应的左上位置；macOS 不渲染本组件。 */
+.window-actions {
   position: fixed;
-  top: 0;
-  right: 0;
+  top: 5px;
+  left: 8px;
+  right: auto;
   z-index: 20;
-  padding: 6px 8px 10px 16px;
   -webkit-app-region: no-drag;
-  opacity: 0;
-  transition: opacity 150ms ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
 }
 
-.win-ctl-zone:hover {
-  opacity: 1;
-}
-
-/* 组件自带 absolute 定位，这里改由感应区排版 */
 .win-ctl {
   position: static;
+}
+
+.main-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.info-rail-toggle {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(15, 15, 15, .5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.info-rail-toggle:hover,
+.info-rail-toggle[aria-expanded='true'] {
+  background: rgba(15, 15, 15, .065);
+  color: rgba(15, 15, 15, .82);
+}
+
+.info-rail-toggle:focus-visible {
+  outline: 2px solid rgba(15, 15, 15, .28);
+  outline-offset: 2px;
+}
+
+.info-rail-toggle svg {
+  width: 17px;
+  height: 17px;
+}
+
+.workspace-window-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.workspace-window-toggle:hover {
+  background: rgba(15, 15, 15, 0.065);
+  color: var(--ink-1);
+}
+
+.workspace-window-toggle.selected {
+  background: rgba(15, 15, 15, 0.065);
+}
+
+.window-toggle-anchor {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 25;
+}
+
+.workspace-window-toggle:focus,
+.workspace-window-toggle:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .side,
@@ -2928,7 +3281,6 @@ function isStreamingUnderEvent(event: any) {
   position: relative;
   z-index: 1;
   min-width: 0;
-  background: var(--vibe-glass-bg);
   backdrop-filter: var(--vibe-glass-filter);
   -webkit-backdrop-filter: var(--vibe-glass-filter);
   box-sizing: border-box;
@@ -2942,7 +3294,28 @@ function isStreamingUnderEvent(event: any) {
   /* 高度自适应：side 自身不滚，由内部对话列表滚动——库再多也不外溢、项目卡常驻 */
   min-height: 0;
   overflow: hidden;
+  background: var(--vibe-sidebar-bg);
   transition: opacity 180ms ease, padding 240ms ease;
+}
+
+/* 主对话区左边缘的阴影向左投进菜单栏，靠分界处最深。 */
+.side::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  width: 8px;
+  background: linear-gradient(
+    to left,
+    rgba(15, 15, 15, 0.05) 0%,
+    rgba(15, 15, 15, 0.014) 45%,
+    rgba(15, 15, 15, 0) 100%
+  );
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 160ms ease;
 }
 
 /* 收起动画期间内容保持固有宽度（282 - 左右 padding 24 = 258），只被裁切、不被挤压回流 */
@@ -2957,6 +3330,10 @@ function isStreamingUnderEvent(event: any) {
   padding-right: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.side-collapsed .side::after {
+  opacity: 0;
 }
 
 .icon-btn,
@@ -3091,45 +3468,53 @@ function isStreamingUnderEvent(event: any) {
 
 .side-user-card {
   flex: 0 0 auto;
-  width: 100%;
-  min-height: 64px;
+  width: calc(100% + 24px);
+  min-height: 52px;
+  margin: 0 -12px -12px;
   border: 0;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.64);
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--vibe-sidebar-bg);
   color: var(--ink-1);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  gap: 6px;
+  padding: 7px 14px;
+  box-sizing: border-box;
+  transition: background 150ms ease;
 }
 
 .side-user-card:hover {
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: inset 0 0 0 1px var(--hairline), 0 8px 20px rgba(15, 15, 15, 0.06);
+  background: var(--vibe-sidebar-bg);
 }
 
 .side-user-profile {
   min-width: 0;
   border: 0;
+  border-radius: 12px;
   background: transparent;
   color: inherit;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 2px;
+  gap: 9px;
+  padding: 6px 9px;
   cursor: pointer;
   text-align: left;
+  transition: background 140ms ease;
+}
+
+.side-user-profile:hover {
+  background: var(--fill-1);
 }
 
 .side-user-kb {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--ink-2);
+  color: #8f8f8f;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3138,8 +3523,8 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .side-user-kb:hover:not(:disabled) {
-  background: rgba(15, 15, 15, 0.07);
-  color: var(--ink-1);
+  background: var(--fill-1);
+  color: #777;
 }
 
 .side-user-kb:disabled {
@@ -3149,32 +3534,25 @@ function isStreamingUnderEvent(event: any) {
 
 .side-user-avatar.avatar-container {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   cursor: pointer;
 }
 
 .side-user-avatar .user-avatar {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  border: 2px solid rgba(0, 0, 0, 0.08);
-  will-change: transform;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .side-user-avatar .online-indicator {
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 9px;
-  height: 9px;
+  width: 6px;
+  height: 6px;
   background: #10b981;
-  border: 2px solid #fff;
+  border: 1.5px solid #fff;
   border-radius: 50%;
   animation: user-pulse 2s ease-in-out infinite;
-}
-
-.side-user-profile:hover .side-user-avatar .user-avatar {
-  transform: scale(1.1) rotate(5deg);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
 @keyframes user-pulse {
@@ -3194,9 +3572,9 @@ function isStreamingUnderEvent(event: any) {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-1);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.35;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .side-user-main em {
@@ -3286,9 +3664,17 @@ function isStreamingUnderEvent(event: any) {
 .session-row {
   position: relative;
 
+  &:hover .session-open,
+  &:focus-within .session-open,
   &.active .session-open {
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.05), inset 0 0 0 1px var(--hairline);
+    background: rgba(15, 15, 15, 0.055);
+    box-shadow: none;
+  }
+
+  &:hover .session-title,
+  &:focus-within .session-title,
+  &.active .session-title {
+    color: var(--ink-1);
   }
 }
 
@@ -3298,8 +3684,9 @@ function isStreamingUnderEvent(event: any) {
   align-items: center;
   gap: 6px;
   /* 去掉时间后变单行，行高收窄；左起对齐 10px 基准线 */
-  min-height: 28px;
-  padding: 5px 28px 5px 10px;
+  min-height: 32px;
+  border-radius: 12px;
+  padding: 6px 28px 6px 12px;
 }
 
 .session-body {
@@ -3333,11 +3720,6 @@ function isStreamingUnderEvent(event: any) {
   align-items: center;
   justify-content: center;
   color: var(--ink-3);
-}
-
-/* 只有选中态加深（icon + 标题）；hover 不动文字色 */
-.session-row.active .session-title {
-  color: var(--ink-1);
 }
 
 .session-row:hover .session-delete,
@@ -3508,6 +3890,7 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .main-frame {
+  z-index: auto;
   left: -1px;
   margin: 0;
   padding: 10px;
@@ -3515,19 +3898,99 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   overflow: hidden;
   width: calc(100% + 1px);
+  background: var(--vibe-conversation-bg);
 }
 
 .main {
   position: relative;
+  flex: 1 1 auto;
   min-width: 0;
-  width: 100%;
+  width: auto;
   height: 100%;
-  background: #fff;
+  background: var(--vibe-conversation-bg);
   border-radius: 14px;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   box-shadow: none;
+}
+
+.main.workspace-open {
+  overflow: visible;
+}
+
+/* 主 header 脱离信息栏的 flex 收缩；仅在独立窗口打开时收口到主对话区域。 */
+.main.workspace-open .main-head {
+  right: min(62%, 1040px);
+}
+
+/* 独立窗口展开后，信息卡改为主对话上方的浮层，不参与两侧 flex 宽度计算。 */
+.main.workspace-open :deep(.conversation-info-rail) {
+  position: absolute;
+  top: 54px;
+  right: calc(min(62%, 1040px) + 10px);
+  z-index: 23;
+  flex: none;
+  width: min(324px, calc(100% - min(62%, 1040px) - 20px));
+  margin: 0;
+  transition: none;
+}
+
+.main-conversation-pane {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--vibe-conversation-bg);
+}
+
+.conversation-workspace-window {
+  position: relative;
+  flex: 0 0 min(62%, 1040px);
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--vibe-conversation-bg);
+  border-left: 0;
+  box-sizing: border-box;
+}
+
+.conversation-workspace-window::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: 0;
+  z-index: 22;
+  border-left: 1px solid rgba(15, 15, 15, 0.08);
+  pointer-events: none;
+}
+
+.workspace-window-enter-active {
+  transition: flex-basis 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.workspace-window-enter-from {
+  flex-basis: 0;
+}
+
+.workspace-window-head {
+  position: relative;
+  z-index: 21;
+  flex: 0 0 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(15, 15, 15, 0.06);
+  background: var(--vibe-conversation-bg);
+  box-sizing: border-box;
+  -webkit-app-region: no-drag;
 }
 
 /* header 浮在滚动内容之上：无 border，靠近 header 的内容经背后毛玻璃渐隐——
@@ -3537,7 +4000,7 @@ function isStreamingUnderEvent(event: any) {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 6;
+  z-index: 21;
   height: 68px;
   flex-shrink: 0;
   padding: 0 20px;
@@ -3546,10 +4009,10 @@ function isStreamingUnderEvent(event: any) {
   align-items: center;
   justify-content: space-between;
   pointer-events: none; /* 只是标题层，别挡住下面的滚动/悬停 */
-  background: #fff; /* header 本体实底不透明 */
+  background: var(--vibe-conversation-bg); /* header 本体实底不透明 */
 
-  /* 紧贴 header 下沿的柔边：纯白色渐隐（无 backdrop 模糊）——
-     文字滚过时渐渐没入白底，像轻微化开，但始终清晰可读。 */
+  /* 紧贴 header 下沿的柔边：surface 色渐隐（无 backdrop 模糊）——
+     文字滚过时渐渐没入背景，像轻微化开，但始终清晰可读。 */
   &::before {
     content: '';
     position: absolute;
@@ -3557,7 +4020,7 @@ function isStreamingUnderEvent(event: any) {
     left: 0;
     right: 0;
     height: 14px;
-    background: linear-gradient(to bottom, #fff, rgba(255, 255, 255, 0));
+    background: linear-gradient(to bottom, rgb(255, 255, 255), rgba(255, 255, 255, 0));
   }
 
 
@@ -3576,6 +4039,31 @@ function isStreamingUnderEvent(event: any) {
   &.compact {
     height: 48px;
   }
+}
+
+.main-head-leading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+}
+
+.main-head-copy {
+  min-width: 0;
+}
+
+.main-head-side-toggle {
+  flex: 0 0 auto;
+  width: 22.4px;
+  height: 22.4px;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.main-head-side-toggle:hover {
+  background: rgba(15, 15, 15, 0.07);
 }
 
 .ghost {
@@ -3601,7 +4089,7 @@ function isStreamingUnderEvent(event: any) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--vibe-conversation-bg);
   overflow: hidden;
   position: relative;
 }
@@ -3760,6 +4248,7 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  background-color: var(--vibe-conversation-bg);
 }
 
 .empty {

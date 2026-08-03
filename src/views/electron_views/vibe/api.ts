@@ -167,6 +167,13 @@ export interface VibeFeatureConfig {
   updated_at?: string | null
 }
 
+export interface VibeConversationControl {
+  disabled: boolean
+  message: string
+  source?: string
+  updated_at?: string | null
+}
+
 export interface VibeCapabilities {
   user_id: number
   account: string
@@ -177,6 +184,17 @@ export interface VibeCapabilities {
 
 export function getVibeCapabilities(): Promise<VibeCapabilities> {
   return request('GET', '/vibe/capabilities')
+}
+
+export function getVibeConversationControl(): Promise<{ item: VibeConversationControl }> {
+  return request('GET', '/vibe/admin/conversation-control')
+}
+
+export function updateVibeConversationControl(payload: {
+  disabled: boolean
+  message: string
+}): Promise<{ ok: boolean; item: VibeConversationControl }> {
+  return request('PATCH', '/vibe/admin/conversation-control', payload)
 }
 
 export interface VibeUsageSummary {
@@ -929,7 +947,7 @@ export interface KnowledgeCommitSummary {
   session_id: string
   trace_id: string
   confirmation_id: string
-  request_text: string
+  request_text?: string
   metadata: Record<string, any>
   action: string
   action_counts: { sources: number; tombstones: number; structures: number }
@@ -995,13 +1013,15 @@ export interface KnowledgeDocumentSummary {
   commit_seq: number
   created_at: string
   updated_at: string
-  chars: number
-  span_count: number
+  bytes: number
 }
 
 export interface KnowledgeDocumentDetail extends KnowledgeDocumentSummary {
   content: string
   spans: Array<KnowledgeSourceSpan & { document_id: string; generation_id: string }>
+  chars: number
+  span_count: number
+  outline_status: 'ready' | 'unavailable'
 }
 
 export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
@@ -1098,6 +1118,27 @@ export function getKnowledgeCommits(project: string, params: { kind?: string; li
   next_cursor?: number | null
 }> {
   return request('GET', `/vibe/foundation/knowledge/commits${kbBrowserQuery({ project, ...params })}`)
+}
+
+export interface KnowledgeActivityEvent {
+  schema: 'knowledge_activity.v1'
+  type: 'knowledge_change'
+  project_id: string
+  commit_seq: number
+}
+
+export function streamKnowledgeActivity(
+  project: string,
+  after: number,
+  signal: AbortSignal,
+  handlers: Parameters<typeof streamHarnessSse>[2] = {},
+) {
+  return streamHarnessSse(
+    '/vibe/foundation/knowledge/activity',
+    { project_id: project, after },
+    handlers,
+    signal,
+  )
 }
 
 export function getKnowledgeCommit(project: string, seq: number): Promise<{ ok: boolean; commit: KnowledgeCommitDetail }> {

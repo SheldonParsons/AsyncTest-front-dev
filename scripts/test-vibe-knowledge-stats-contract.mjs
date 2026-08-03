@@ -17,9 +17,14 @@ const browserPath = path.join(
   root,
   'src/views/electron_views/vibe/browser/index.vue',
 )
+const sourceReaderPath = path.join(
+  root,
+  'src/views/electron_views/vibe/browser/components/SourceReader.vue',
+)
 const policySource = fs.readFileSync(policyPath, 'utf8')
 const viewSource = fs.readFileSync(viewPath, 'utf8')
 const browserSource = fs.readFileSync(browserPath, 'utf8')
+const sourceReaderSource = fs.readFileSync(sourceReaderPath, 'utf8')
 const browserSfc = parse(browserSource, { filename: browserPath })
 assert.deepEqual(browserSfc.errors, [])
 const browserScript = browserSfc.descriptor.scriptSetup?.content || ''
@@ -101,7 +106,7 @@ assert.match(
 )
 assert.match(
   viewSource,
-  /knowledgeStatsProjectId\(selectedProjectId\.value\)/,
+  /function loadCurrentKbStats\(projectValue = selectedProjectId\.value\)[\s\S]*knowledgeStatsProjectId\(projectValue\)/,
 )
 assert.match(
   viewSource,
@@ -111,6 +116,22 @@ assert.match(
   viewSource,
   /turnMayChangeKnowledge[\s\S]*void loadCurrentKbStats\(\)/,
 )
+const bootstrapSection = viewSource.slice(
+  viewSource.indexOf('async function bootstrap()'),
+  viewSource.indexOf('async function selectProject('),
+)
+const selectProjectSection = viewSource.slice(
+  viewSource.indexOf('async function selectProject('),
+  viewSource.indexOf('async function handleProjectChange('),
+)
+assert.match(
+  bootstrapSection,
+  /projects\.value\s*=[\s\S]*void loadKbStats\(\)[\s\S]*await selectProject\(/,
+)
+assert.doesNotMatch(selectProjectSection, /loadKbStats\(/)
+assert.match(selectProjectSection, /void loadCurrentKbStats\(project\.id\)/)
+assert.match(viewSource, /let allKbStatsRequest:\s*Promise<void>\s*\|\s*null/)
+assert.match(viewSource, /const currentKbStatsRequests\s*=\s*new Map<string, Promise<void>>\(\)/)
 assert.doesNotMatch(viewSource, /getVibeProjectsByAsyncProjects/)
 assert.doesNotMatch(
   viewSource.slice(
@@ -194,28 +215,47 @@ assert.equal(
 assert.doesNotMatch(browserSource, /vibeProjectId/)
 assert.match(
   browserScript,
-  /getKnowledgeStatus\(selectedAsyncProjectId\.value\)/,
+  /async function reloadStatus\(projectId: string, epoch: number\)[\s\S]*getKnowledgeStatus\(projectId\)/,
 )
 assert.match(
   browserScript,
-  /searchKnowledge\(selectedAsyncProjectId\.value,/,
+  /async function openModule[\s\S]*searchKnowledge\(projectId,[\s\S]*epoch !== projectRequestEpoch/,
 )
 assert.equal(
   (browserSource.match(/:project-id="selectedAsyncProjectId"/g) || []).length,
   5,
 )
 assert.equal(
-  (browserSource.match(/:key="`[^`]*\$\{selectedAsyncProjectId\}`"/g) || []).length,
-  5,
+  (browserSource.match(/:key="`[^`]*\$\{selectedAsyncProjectId\}[^`]*`"/g) || []).length,
+  6,
 )
+assert.doesNotMatch(browserSource, /v-else-if="status" class="workspace"/)
+assert.match(browserSource, /v-else-if="selectedAsyncProjectId" class="workspace"/)
+assert.match(browserScript, /let projectRequestEpoch\s*=\s*0/)
 assert.match(
   browserScript,
-  /status\.value = null[\s\S]*requestedDocumentId\.value = ''[\s\S]*await reload\(\)/,
+  /const epoch = \+\+projectRequestEpoch[\s\S]*selectedAsyncProjectId\.value[\s\S]*void reloadStatus\([^\n]*epoch\)/,
 )
+assert.match(browserScript, /if \(epoch !== projectRequestEpoch[^)]*\) return/)
+assert.doesNotMatch(
+  browserScript.slice(
+    browserScript.indexOf('async function selectProject('),
+    browserScript.indexOf('function reload()'),
+  ),
+  /await getKnowledgeStatus|await reloadStatus/,
+)
+assert.match(browserSource, /statusError[\s\S]*概况加载失败/)
+
+assert.match(sourceReaderSource, /let requestEpoch\s*=\s*0/)
+assert.match(sourceReaderSource, /const epoch = \+\+requestEpoch/)
+assert.match(sourceReaderSource, /epoch !== requestEpoch/)
+assert.match(sourceReaderSource, /detailLoading/)
+assert.match(sourceReaderSource, /正在读取正文/)
+assert.match(sourceReaderSource, /正在读取文档列表/)
 
 const panelContracts = new Map([
   ['OverviewPanel.vue', [/getKnowledgeSources\(projectId/]],
-  ['SourceReader.vue', [/getKnowledgeDocuments\(props\.projectId/, /getKnowledgeDocument\(props\.projectId/, /getKnowledgeSource\(props\.projectId/]],
+  ['SourceReader.vue', [/getKnowledgeDocuments\(projectId/, /getKnowledgeDocument\(projectId/, /getKnowledgeSource\(projectId/]],
   ['SearchPanel.vue', [/searchKnowledge\(props\.projectId/]],
   ['CommitPanel.vue', [/getKnowledgeCommits\(props\.projectId/, /getKnowledgeCommit\(props\.projectId/]],
   ['ReceiptPanel.vue', [/getKnowledgeReceipts\(props\.projectId/, /getKnowledgeReceipt\(props\.projectId/]],

@@ -13,9 +13,14 @@
 <script setup lang="ts">
 import commonHeader from "./components/layout/headers/commonHeader.vue";
 import { useRoute, useRouter } from 'vue-router'
-import { onMounted, ref, computed } from "vue";
+import { onBeforeUnmount, onMounted, ref, computed } from "vue";
 import ToastView from '@/views/api/public_dialog/motion_dev_component/toast_animation.vue'
 import UpdateDialog from "@/views/electron_views/global/UpdateDialog.vue";
+import {
+  clearLocalAuthState,
+  navigateToUnauthenticated,
+  refreshLocalAuthState,
+} from '@/utils/authNavigation'
 
 const upHeaderZIndex = ref(false);
 const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true';
@@ -26,6 +31,8 @@ const commonHeaderRef = ref()
 const route = useRoute()
 const router = useRouter()
 const flag = ref(false);
+let removeVibeAuthLogoutListener: (() => void) | null = null
+let removeVibeAuthLoginListener: (() => void) | null = null
 
 onMounted(() => {
   // 异步延缓main-router加载时机
@@ -40,7 +47,27 @@ onMounted(() => {
   window.$updateHeaderLoginStatus = () => {
     commonHeaderRef.value?.updateLoginStatus()
   }
+
+  refreshLocalAuthState()
+  if (isElectron && window.electronAPI?.on) {
+    removeVibeAuthLogoutListener = window.electronAPI.on('auth:logout', () => {
+      if (!isVibeWorkbench.value) return
+      clearLocalAuthState()
+      void navigateToUnauthenticated({ forceVibe: true })
+    })
+    removeVibeAuthLoginListener = window.electronAPI.on('auth:login', () => {
+      if (!isVibeWorkbench.value) return
+      refreshLocalAuthState()
+    })
+  }
 });
+
+onBeforeUnmount(() => {
+  removeVibeAuthLogoutListener?.()
+  removeVibeAuthLogoutListener = null
+  removeVibeAuthLoginListener?.()
+  removeVibeAuthLoginListener = null
+})
 
 function check_login_status() {
   commonHeaderRef.value?.updateLoginStatus()

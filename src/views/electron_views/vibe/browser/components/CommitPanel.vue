@@ -7,7 +7,7 @@
       </div>
       <div class="commit-list" @scroll.passive="loadMore">
         <button v-for="item in items" :id="`commit-${item.seq}`" :key="item.id" type="button" :class="{ active: detail?.seq === item.seq }" @click="open(item.seq)">
-          <span class="dot" :class="`is-${item.kind}`" /><div><strong>{{ item.reason || item.request_text || `提交 #${item.seq}` }}</strong><small>{{ kindLabel(item.kind) }} · {{ item.actor_name || '未知用户' }} · {{ formatTime(item.created_at) }}</small></div><em>#{{ item.seq }}</em>
+          <span class="dot" :class="`is-${item.kind}`" /><div><strong>{{ knowledgeChangeTitle(item) }}</strong><small>{{ knowledgeChangeKindLabel(item.kind) }} · {{ item.actor_name || '未知用户' }} · {{ formatKnowledgeChangeTime(item.created_at) }}</small></div><em>#{{ item.seq }}</em>
         </button>
         <p v-if="loading" class="state">继续读取…</p>
       </div>
@@ -15,7 +15,7 @@
 
     <main>
       <div v-if="detail" class="detail">
-        <header><div><span>{{ kindLabel(detail.kind) }} · 提交 #{{ detail.seq }}</span><h2>{{ detail.reason || detail.request_text }}</h2></div><time>{{ formatFullTime(detail.created_at) }}</time></header>
+        <header><div><span>{{ knowledgeChangeKindLabel(detail.kind) }} · 提交 #{{ detail.seq }}</span><h2>{{ knowledgeChangeTitle(detail) }}</h2></div><time>{{ formatKnowledgeChangeTime(detail.created_at, true) }}</time></header>
         <dl><div><dt>发起用户</dt><dd>{{ detail.actor_name || '未知用户' }}</dd></div><div><dt>审计标识</dt><dd>{{ detail.trace_id || '无' }}</dd></div><div><dt>会话</dt><dd>{{ detail.session_id || '无' }}</dd></div><div><dt>基线</dt><dd>提交 #{{ detail.base_commit_seq }}</dd></div></dl>
         <section v-if="detail.sources.length" class="change-group additions"><h3>新增来源 <span>{{ detail.sources.length }}</span></h3><button v-for="item in detail.sources" :key="item.id" type="button" @click="$emit('open-source', item.id)"><strong>+ {{ item.display_name || item.filename }}</strong><small>{{ item.mime_type }} · {{ item.chars }} 字符 · {{ item.content_hash.slice(0, 12) }}</small></button></section>
         <section v-if="detail.tombstones.length" class="change-group removals"><h3>删除事件 <span>{{ detail.tombstones.length }}</span></h3><div v-for="item in detail.tombstones" :key="item.id"><strong>- {{ item.object_key || item.target_id || '知识对象' }}</strong><small>{{ item.reason || '用户确认删除' }} · {{ item.scope_key || 'global' }}</small></div></section>
@@ -31,6 +31,7 @@
 import { nextTick, ref, watch } from 'vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import { getKnowledgeCommit, getKnowledgeCommits, type KnowledgeCommitDetail, type KnowledgeCommitSummary } from '../../api'
+import { formatKnowledgeChangeTime, knowledgeChangeKindLabel, knowledgeChangeTitle } from '../knowledgeChangePresentation'
 
 const props = defineProps<{ projectId: string; requestedSeq?: number }>()
 defineEmits<{ 'open-source': [id: string] }>()
@@ -62,9 +63,6 @@ async function reveal(seq: number) {
 }
 async function changeKind(value: string | number) { kind.value = String(value); await reset() }
 async function loadMore(event: Event) { const el = event.currentTarget as HTMLElement; if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) await fetchPage(false) }
-function kindLabel(value: string) { return ({ ingest: '录入', modify: '修改', delete: '删除', structure: '结构', rebuild: '重建' } as Record<string, string>)[value] || value }
-function formatTime(value: string) { return new Date(value).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) }
-function formatFullTime(value: string) { return new Date(value).toLocaleString('zh-CN', { hour12: false }) }
 </script>
 
 <style scoped lang="scss">

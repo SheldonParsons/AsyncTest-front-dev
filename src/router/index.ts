@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory, createMemoryHistory, createWebHashHistory } from 'vue-router'
+import { readLocalAuthToken } from '@/utils/authNavigation'
+import { vibeWelcomeQuery } from '@/utils/authNavigationPolicy'
 
 
 ///Users/sheldon/Documents/GithubProject/AsyncTest-front-dev/src/views/electron_views/dashboard.vue
@@ -13,27 +15,32 @@ const vibeRoutes = [
   {
     path: '/vibe/knowledge',
     name: 'vibeKnowledge',
-    component: () => import('@/views/electron_views/vibe/knowledge/index.vue')
+    component: () => import('@/views/electron_views/vibe/knowledge/index.vue'),
+    meta: { requiresVibeAuth: true }
   },
   {
     path: '/vibe/browser',
     name: 'vibeKnowledgeBrowser',
-    component: () => import('@/views/electron_views/vibe/browser/index.vue')
+    component: () => import('@/views/electron_views/vibe/browser/index.vue'),
+    meta: { requiresVibeAuth: true }
   },
   {
     path: '/vibe/settings',
     name: 'vibeSettings',
-    component: () => import('@/views/electron_views/vibe/settings/index.vue')
+    component: () => import('@/views/electron_views/vibe/settings/index.vue'),
+    meta: { requiresVibeAuth: true }
   },
   {
     path: '/vibe/settings/trace',
     name: 'vibeSettingsTrace',
-    component: () => import('@/views/electron_views/vibe/settings/index.vue')
+    component: () => import('@/views/electron_views/vibe/settings/index.vue'),
+    meta: { requiresVibeAuth: true }
   },
   {
     path: '/vibe/chat',
     name: 'vibeChat',
-    component: () => import('@/views/electron_views/vibe/chat/index.vue')
+    component: () => import('@/views/electron_views/vibe/chat/index.vue'),
+    meta: { requiresVibeAuth: true }
   }
 ]
 const routes = [
@@ -238,4 +245,13 @@ const router = createRouter({
     : (isElectron ? createWebHashHistory() : createWebHistory()),
   routes
 })
+
+router.beforeEach((to) => {
+  if (!to.meta.requiresVibeAuth || readLocalAuthToken()) return true
+  return {
+    name: 'vibeWorkbench',
+    query: vibeWelcomeQuery(to.query),
+  }
+})
+
 export default router;

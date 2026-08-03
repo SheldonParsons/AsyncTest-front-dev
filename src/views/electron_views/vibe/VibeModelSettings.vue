@@ -94,11 +94,11 @@
               </label>
               <label>
                 <span>增强模型</span>
-                <input :value="DEEPSEEK_ENHANCED_MODEL" readonly />
+                <input v-model="enhancedModel" autocomplete="off" placeholder="例如 deepseek-v4-flash" @input="clearStatus" />
               </label>
               <label>
                 <span>轻量模型</span>
-                <input :value="DEEPSEEK_LIGHT_MODEL" readonly />
+                <input v-model="lightModel" autocomplete="off" placeholder="例如 deepseek-v4-flash" @input="clearStatus" />
               </label>
             </div>
 
@@ -142,7 +142,7 @@ import {
 
 const DEEPSEEK_LOGO = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/other_band_logo/deepseek_logo.svg'
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
-const DEEPSEEK_ENHANCED_MODEL = 'deepseek-v4-pro'
+const DEEPSEEK_ENHANCED_MODEL = 'deepseek-v4-flash'
 const DEEPSEEK_LIGHT_MODEL = 'deepseek-v4-flash'
 const pendingTestId = '__draft__'
 
@@ -168,8 +168,21 @@ const draft = reactive<VibeLLMProviderPayload>({
   proxy_url: '',
   timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
   max_retries: 0,
-  model_config: {},
+  model_config: defaultDeepSeekModelConfig(),
   enabled: true,
+})
+
+const enhancedModel = computed({
+  get: () => String(draft.model_config?.strong || ''),
+  set: (value: string) => {
+    draft.model_config = { ...(draft.model_config || {}), strong: value }
+  },
+})
+const lightModel = computed({
+  get: () => String(draft.model_config?.mini || ''),
+  set: (value: string) => {
+    draft.model_config = { ...(draft.model_config || {}), mini: value }
+  },
 })
 
 watch(open, (value) => {
@@ -187,7 +200,7 @@ function resetDraft() {
     proxy_url: '',
     timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
     max_retries: 0,
-    model_config: fixedModelConfig(),
+    model_config: defaultDeepSeekModelConfig(),
     enabled: true,
   })
 }
@@ -206,12 +219,15 @@ function applyDraft(provider: VibeLLMProviderConfig) {
       pool: Number(provider.timeout_config?.pool ?? 30),
     },
     max_retries: Number(provider.max_retries ?? 0),
-    model_config: fixedModelConfig(),
+    model_config: {
+      mini: String(provider.model_config?.mini || DEEPSEEK_LIGHT_MODEL),
+      strong: String(provider.model_config?.strong || DEEPSEEK_ENHANCED_MODEL),
+    },
     enabled: provider.enabled !== false,
   })
 }
 
-function fixedModelConfig() {
+function defaultDeepSeekModelConfig() {
   return {
     mini: DEEPSEEK_LIGHT_MODEL,
     strong: DEEPSEEK_ENHANCED_MODEL,
@@ -278,6 +294,8 @@ function validateDraft() {
   if (!String(draft.name || '').trim()) return '请填写模型名称'
   if (!String(draft.base_url || '').trim()) return '请填写 Base Url'
   if (!String(draft.api_key || '').trim()) return '请填写 Api Key'
+  if (!lightModel.value.trim()) return '请填写轻量模型'
+  if (!enhancedModel.value.trim()) return '请填写增强模型'
   return ''
 }
 
@@ -290,7 +308,10 @@ function buildPayload(): VibeLLMProviderPayload {
     proxy_url: '',
     timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
     max_retries: 0,
-    model_config: fixedModelConfig(),
+    model_config: {
+      mini: lightModel.value.trim(),
+      strong: enhancedModel.value.trim(),
+    },
     enabled: true,
   }
 }
@@ -357,7 +378,7 @@ async function testCurrentDraft() {
 async function runProviderTest(provider: VibeLLMProviderConfig) {
   setStatus('测试连接中...', 'idle')
   try {
-    const result = await testVibeLLMProvider(provider.id, { model: DEEPSEEK_LIGHT_MODEL })
+    const result = await testVibeLLMProvider(provider.id, { model: lightModel.value.trim() })
     setStatus(
       result.ok ? `测试成功 · ${result.model} · ${result.elapsed_ms}ms` : `测试失败 · ${result.model} · ${result.error || '未知错误'}`,
       result.ok ? 'ok' : 'error',

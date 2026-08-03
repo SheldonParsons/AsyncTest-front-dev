@@ -82,7 +82,7 @@
     </div>
 
     <!-- 进入知识库：仅第三张（末页）淡入 -->
-    <button class="enter-btn" :class="{ 'is-visible': atLastSection }" type="button" @click="openKnowledge">
+    <button class="enter-btn" :class="{ 'is-visible': atLastSection }" type="button" :disabled="checkingAuth" @click="openKnowledge">
       进入知识库
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
@@ -94,6 +94,13 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VibeWindowControls from './knowledge/components/VibeWindowControls.vue'
 import downArrowSettle from '@/assets/svg/vibe/down-arrow-settle.svg'
+import { ApiCheckPermissionStatus } from '@/api/layout/cookies'
+import {
+  clearLocalAuthState,
+  navigateToUnauthenticated,
+  readLocalAuthToken,
+  refreshLocalAuthState,
+} from '@/utils/authNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -108,6 +115,7 @@ const sectionReady = ref(false)
 const advancingSection = ref(false)
 const sectionTransitioning = ref(false)
 const leaving = ref(false)
+const checkingAuth = ref(false)
 const atLastSection = computed(() => sectionIndex.value >= sectionLast.value)
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
@@ -157,8 +165,32 @@ onBeforeUnmount(() => {
   experience = null
 })
 
-function openKnowledge() {
-  if (leaving.value) return
+async function openKnowledge() {
+  if (leaving.value || checkingAuth.value) return
+  if (!readLocalAuthToken()) {
+    window.$toast({ title: '请先进行登录', type: 'warning' })
+    return
+  }
+
+  checkingAuth.value = true
+  const permission = await ApiCheckPermissionStatus({})
+  checkingAuth.value = false
+  if (permission.status === 'unauthorized') {
+    clearLocalAuthState()
+    await navigateToUnauthenticated({ forceVibe: true })
+    window.$toast({ title: '请先进行登录', type: 'warning' })
+    return
+  }
+  if (permission.status === 'unavailable') {
+    refreshLocalAuthState()
+    window.$toast({
+      title: permission.message || '当前无法验证登录状态，请稍后重试',
+      type: 'warning',
+    })
+    return
+  }
+
+  refreshLocalAuthState()
   leaving.value = true // 触发 hero 缩放 + 淡出 + 模糊转场
   enterTimer = setTimeout(() => {
     router.push({ name: 'vibeKnowledge', query: route.query })

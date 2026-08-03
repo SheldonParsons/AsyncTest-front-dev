@@ -1,5 +1,5 @@
 <template>
-  <main class="kb-browser" :class="{ loading }">
+  <main class="kb-browser" :class="{ loading: loading || statusLoading }">
     <div class="window-drag" />
     <header class="topbar">
       <div class="title-block">
@@ -18,6 +18,7 @@
         <button type="button" @click="activeTab = 'history'"><b>{{ status.summary.commit_count }}</b><span>提交</span></button>
         <button type="button" @click="activeTab = 'history'"><b>{{ status.summary.tombstone_count }}</b><span>删除</span></button>
       </div>
+      <p v-else-if="statusError" class="metrics-error" :title="statusError">概况加载失败</p>
 
       <div class="actions">
         <AppSelect class="project-select" :model-value="selectedAsyncProjectId" :options="projectOptions" placeholder="选择项目" dropdown-fit-content @change="selectProjectById" />
@@ -32,11 +33,14 @@
     </nav>
 
     <section v-if="error" class="state error">{{ error }}</section>
-    <section v-else-if="loading && !status" class="state">正在读取知识库…</section>
-    <section v-else-if="status" class="workspace">
+    <section v-else-if="loading && !selectedAsyncProjectId" class="state">正在读取项目…</section>
+    <section v-else-if="selectedAsyncProjectId" class="workspace">
       <Transition name="tab" mode="out-in">
-        <OverviewPanel v-if="activeTab === 'overview'" :key="`overview-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :status="status" @open-source="openSource" @open-commit="openCommit" @open-module="openModule" />
-        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :requested-document-id="requestedDocumentId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
+        <template v-if="activeTab === 'overview'">
+          <OverviewPanel v-if="status" :key="`overview-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :status="status" @open-source="openSource" @open-commit="openCommit" @open-module="openModule" />
+          <section v-else :key="`overview-state-${selectedAsyncProjectId}`" class="state" :class="{ error: statusError }">{{ statusError || '正在读取知识库概况…' }}</section>
+        </template>
+        <SourceReader v-else-if="activeTab === 'document'" :key="`document-${selectedAsyncProjectId}-${readerRevision}`" :project-id="selectedAsyncProjectId" :requested-document-id="requestedDocumentId" :requested-source-id="requestedSourceId" :requested-path="requestedPath" :requested-offset="requestedOffset" />
         <SearchPanel v-else-if="activeTab === 'search'" :key="`search-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" @open-document="openDocument" />
         <CommitPanel v-else-if="activeTab === 'history'" :key="`history-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" :requested-seq="requestedCommitSeq" @open-source="openSource" />
         <ReceiptPanel v-else :key="`receipts-${selectedAsyncProjectId}`" :project-id="selectedAsyncProjectId" @open-commit="openCommit" />
@@ -77,6 +81,10 @@ const requestedOffset = ref(0)
 const requestedCommitSeq = ref<number>()
 const loading = ref(false)
 const error = ref('')
+const statusLoading = ref(false)
+const statusError = ref('')
+const readerRevision = ref(0)
+let projectRequestEpoch = 0
 
 const projectOptions = computed(() => projects.value.map(item => ({ value: String(item.id), label: item.name || item.project_name || `项目 ${item.id}`, hint: item.description || '' })))
 const selectedProjectName = computed(() => projects.value.find(item => String(item.id) === selectedAsyncProjectId.value)?.name || '当前项目')
@@ -87,7 +95,10 @@ onMounted(() => {
   setFluidPage(true)
   bootstrap()
 })
-onBeforeUnmount(() => setFluidPage(false))
+onBeforeUnmount(() => {
+  projectRequestEpoch += 1
+  setFluidPage(false)
+})
 
 function setFluidPage(enabled: boolean) {
   const roots = [document.documentElement, document.body, document.getElementById('app')].filter(Boolean) as HTMLElement[]
@@ -112,29 +123,49 @@ async function selectProjectById(value: string | number) {
 }
 
 async function selectProject(project: any) {
-  selectedAsyncProjectId.value = String(project.id)
-  localStorage.setItem('vibe_project_source_project_id', selectedAsyncProjectId.value)
-  loading.value = true; error.value = ''; status.value = null
+  const epoch = ++projectRequestEpoch
+  const projectId = String(project.id)
+  selectedAsyncProjectId.value = projectId
+  localStorage.setItem('vibe_project_source_project_id', projectId)
+  error.value = ''; status.value = null; statusError.value = ''
   requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedPath.value = []; requestedCommitSeq.value = undefined
-  try {
-    await reload()
-    await router.replace({ query: { ...route.query, project: selectedAsyncProjectId.value } })
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) } finally { loading.value = false }
+  void reloadStatus(projectId, epoch)
+  await router.replace({ query: { ...route.query, project: projectId } })
 }
 
-async function reload() {
-  if (!selectedAsyncProjectId.value) return
-  loading.value = true; error.value = ''
-  try { status.value = await getKnowledgeStatus(selectedAsyncProjectId.value) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { loading.value = false }
+function reload() {
+  const projectId = selectedAsyncProjectId.value
+  if (!projectId) return
+  readerRevision.value += 1
+  void reloadStatus(projectId, projectRequestEpoch)
+}
+
+async function reloadStatus(projectId: string, epoch: number) {
+  if (epoch !== projectRequestEpoch || projectId !== selectedAsyncProjectId.value) return
+  statusLoading.value = true
+  statusError.value = ''
+  try {
+    const payload = await getKnowledgeStatus(projectId)
+    if (epoch !== projectRequestEpoch || projectId !== selectedAsyncProjectId.value) return
+    status.value = payload
+  } catch (reason) {
+    if (epoch !== projectRequestEpoch || projectId !== selectedAsyncProjectId.value) return
+    statusError.value = reason instanceof Error ? reason.message : String(reason)
+  } finally {
+    if (epoch === projectRequestEpoch && projectId === selectedAsyncProjectId.value) {
+      statusLoading.value = false
+    }
+  }
 }
 
 function openSource(id: string, offset = 0) { requestedSourceId.value = id; requestedDocumentId.value = ''; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
 function openDocument(id: string, offset = 0) { requestedDocumentId.value = id; requestedSourceId.value = ''; requestedOffset.value = offset; requestedPath.value = []; activeTab.value = 'document' }
 async function openModule(path: string[]) {
+  const epoch = projectRequestEpoch
+  const projectId = selectedAsyncProjectId.value
   const query = path[path.length - 1] || ''
-  const hit = query ? (await searchKnowledge(selectedAsyncProjectId.value, { q: query, limit: 20 })).items.find(item => path.every((part, index) => item.title_path[index] === part)) : undefined
+  const hit = query ? (await searchKnowledge(projectId, { q: query, limit: 20 })).items.find(item => path.every((part, index) => item.title_path[index] === part)) : undefined
+  if (epoch !== projectRequestEpoch || projectId !== selectedAsyncProjectId.value) return
   if (hit) openDocument(hit.document_id, hit.start_offset)
   else { requestedPath.value = [...path]; requestedDocumentId.value = ''; requestedSourceId.value = ''; requestedOffset.value = 0; activeTab.value = 'document' }
 }
@@ -149,6 +180,7 @@ function goChat() { router.push({ name: 'vibeKnowledge', query: { ...route.query
 .title-block { display: flex; align-items: center; min-width: 0; gap: 9px; } h1, p { margin: 0; } h1 { font-size: 14px; font-weight: 650; } .title-block p { margin-top: 2px; color: #999; font-size: 10px; }
 .icon-button, .book-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #222; } .icon-button { cursor: pointer; } .icon-button:hover { background: #f1f1f1; }
 .metrics { display: flex; align-items: center; height: 30px; } .metrics button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 54px; height: 30px; padding: 0 10px; border: 0; background: transparent; cursor: pointer; } .metrics button + button::before { position: absolute; top: 7px; bottom: 7px; left: 0; width: 1px; background: #dedede; content: ''; } .metrics button:hover { background: #f5f5f5; } .metrics b { font-size: 12px; line-height: 1; } .metrics span { color: #8b8b8b; font-size: 10px; line-height: 1; }
+.metrics-error { margin: 0; color: #a33; font-size: 11px; }
 .actions { display: flex; justify-content: flex-end; align-items: center; min-width: 0; gap: 8px; } .actions > i { width: 1px; height: 24px; background: #ddd; }
 .project-select { width: min(250px, 46vw); } .project-select :deep(.app-select-trigger) { width: 100%; height: 34px; min-width: 0; padding: 0 10px 0 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; box-shadow: none; font-family: inherit; font-size: 11px; } .project-select :deep(.app-select-trigger:hover), .project-select :deep(.app-select-trigger.is-open) { border-color: #bcbcbc; background: #f7f7f7; box-shadow: none; } .project-select :deep(.app-select-value) { text-align: right; }
 .refresh { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px; border: 0; border-radius: 6px; background: #171717; color: #fff; cursor: pointer; } .refresh span { font-size: 11px; }

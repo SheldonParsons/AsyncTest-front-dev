@@ -1,0 +1,67 @@
+<svg
+  class="panel-state-toggle"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+  role="button"
+  tabindex="0"
+  aria-label="切换面板状态"
+  aria-pressed="false"
+>
+  <style>
+    .panel-state-toggle {
+      color: #8D8F91;
+      cursor: pointer;
+      overflow: visible;
+    }
+
+    .panel-state-toggle .panel-divider {
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 280ms cubic-bezier(.22, 1, .36, 1);
+      will-change: transform;
+    }
+
+    .panel-state-toggle.is-collapsed .panel-divider {
+      transform: translateX(-4px) scaleY(.42);
+    }
+
+    .panel-state-toggle:focus-visible {
+      outline: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .panel-state-toggle .panel-divider {
+        transition: none;
+      }
+    }
+  </style>
+
+  <rect x="8.5" y="10.5" width="23" height="19" rx="4" stroke="currentColor" stroke-width="2.2" />
+  <path class="panel-divider" d="M16.5 11.2V28.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+
+  <script><![CDATA[
+    (() => {
+      const icon = document.currentScript && document.currentScript.ownerSVGElement;
+      if (!icon) return;
+
+      const toggle = () => {
+        const collapsed = icon.classList.toggle("is-collapsed");
+        icon.setAttribute("aria-pressed", String(collapsed));
+        icon.dispatchEvent(new CustomEvent("paneltoggle", {
+          bubbles: true,
+          detail: { collapsed }
+        }));
+      };
+
+      icon.addEventListener("click", toggle);
+      icon.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        toggle();
+      });
+    })();
+  ]]></script>
+</svg>

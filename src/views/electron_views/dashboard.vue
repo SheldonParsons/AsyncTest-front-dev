@@ -185,6 +185,9 @@ const handleMoreFeatures = () => {
 // 登录成功回调
 const handleLoginSuccess = async () => {
   loginDialogRef.value?.close()
+  if (electronAPI?.wm?.broadcast) {
+    await electronAPI.wm.broadcast('auth:login', { sourceWindow: 'main' })
+  }
   // 更新 header 的登录状态
   if (window.$updateHeaderLoginStatus) {
     window.$updateHeaderLoginStatus()

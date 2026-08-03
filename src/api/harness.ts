@@ -1,6 +1,10 @@
 import axios from 'axios'
 import GlobalStatus from '@/global'
 import asyncTest from '@/db'
+import {
+  handleAuthenticationFailure,
+  navigateToUnauthenticated,
+} from '@/utils/authNavigation'
 
 const isElectron = typeof window !== 'undefined'
   && window.navigator.userAgent.toLowerCase().includes('electron')
@@ -18,11 +22,7 @@ function getBaseURL() {
 function getAuthHeader(): Record<string, string> {
   const currentCookie = asyncTest.cookies.getCookie(GlobalStatus.cookieTag)
   if (currentCookie === false) {
-    if (import.meta.env.VITE_IS_ELECTRON === 'true') {
-      asyncTest.router.router.push({ name: GlobalStatus.anonymousElectronPage })
-    } else {
-      asyncTest.router.router.push({ name: GlobalStatus.anonymousPage })
-    }
+    void navigateToUnauthenticated({ forceVibe: true })
     return {}
   }
   return { Authorization: `token=${currentCookie}` }
@@ -41,6 +41,27 @@ function errorMessage(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+async function responsePayload(error: unknown): Promise<unknown> {
+  if (!axios.isAxiosError(error)) return undefined
+  const data = error.response?.data
+  if (!(data instanceof Blob)) return data
+  const raw = await data.text().catch(() => '')
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return raw
+  }
+}
+
+async function handleHarnessAuthenticationFailure(error: unknown): Promise<boolean> {
+  if (!axios.isAxiosError(error)) return false
+  return handleAuthenticationFailure(
+    error.response?.status,
+    await responsePayload(error),
+    { forceVibe: true },
+  )
 }
 
 function buildUrl(path: string) {
@@ -68,6 +89,7 @@ export async function harnessRequest<T = any>(method: string, path: string, body
     })
     return response.data as T
   } catch (error) {
+    await handleHarnessAuthenticationFailure(error)
     throw new Error(errorMessage(error))
   }
 }
@@ -120,6 +142,7 @@ export async function harnessBlobRequest(path: string): Promise<HarnessBlobDownl
       contentType: String(response.headers['content-type'] || blob.type || ''),
     }
   } catch (error) {
+    await handleHarnessAuthenticationFailure(error)
     if (error instanceof Error && error.message === '文件内容已不可用') throw error
     throw new Error(await blobErrorMessage(error))
   }
@@ -129,11 +152,13 @@ export async function streamHarnessSse(
   path: string,
   body: Record<string, unknown>,
   handlers: {
+    onOpen?: () => void
     onChunk?: (content: string) => void
     onEvent?: (event: any) => void
     onDone?: () => void
     onError?: (message: string) => void
   } = {},
+  signal?: AbortSignal,
 ) {
   const response = await fetch(buildUrl(path), {
     method: 'POST',
@@ -142,14 +167,17 @@ export async function streamHarnessSse(
       Accept: 'text/event-stream',
       ...getAuthHeader(),
     },
+    signal,
     body: JSON.stringify(normalizeBody(body) ?? {}),
   })
 
   if (!response.ok) {
     let message = `HTTP ${response.status}`
     const raw = await response.text().catch(() => '')
+    let payload: unknown = raw
     try {
       const data = raw ? JSON.parse(raw) : null
+      payload = data
       if (typeof data?.detail === 'string') {
         message = data.detail
       } else if (data) {
@@ -158,8 +186,10 @@ export async function streamHarnessSse(
     } catch {
       if (raw) message = raw
     }
+    await handleAuthenticationFailure(response.status, payload, { forceVibe: true })
     throw new Error(message)
   }
+  handlers.onOpen?.()
 
   const reader = response.body?.getReader()
   if (!reader) throw new Error('当前环境不支持流式响应')

@@ -5,7 +5,7 @@
       <div class="source-list" @scroll.passive="loadMoreOnScroll">
         <button v-for="item in documentItems" :key="item.id" type="button" :class="{ active: detailMode === 'document' && detail?.id === item.id }" @click="selectDocument(item.id)">
           <strong>{{ item.display_name || item.filename }}</strong>
-          <small>第 {{ item.generation_no }} 代 · 提交 #{{ item.commit_seq }} · {{ formatChars(item.chars) }} 字</small>
+          <small>第 {{ item.generation_no }} 代 · 提交 #{{ item.commit_seq }} · {{ formatBytes(item.bytes) }}</small>
         </button>
         <p v-if="documentLoading" class="muted">读取现行文档…</p>
       </div>
@@ -17,7 +17,8 @@
         </button>
         <template v-if="detail && !outline.length">
           <button class="whole-source" type="button" @click="jumpToOffset(0)"><i /><span>整段原文</span></button>
-          <p class="outline-note">原文没有使用 Markdown 标题，内容仍已完整保存并建立检索跨度。</p>
+          <p v-if="outlineUnavailable" class="outline-note error-text">结构索引暂不可用；完整正文仍可阅读和下载。</p>
+          <p v-else class="outline-note">原文没有使用 Markdown 标题，内容仍已完整保存并建立检索跨度。</p>
         </template>
       </div>
     </aside>
@@ -30,8 +31,11 @@
         </button>
       </header>
       <div ref="scrollEl" class="document-scroll" @scroll.passive="syncActiveSpan">
-        <article v-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
+        <p v-if="detailLoading" class="empty">正在读取正文…</p>
+        <p v-else-if="readerError" class="empty error-text">{{ readerError }}</p>
+        <article v-else-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
         <article v-else-if="detail" class="plain-body">{{ detail.content }}</article>
+        <p v-else-if="documentLoading" class="empty">正在读取文档列表…</p>
         <p v-else class="empty">尚无现行文档。确认录入后的知识会显示在这里。</p>
       </div>
 
@@ -66,14 +70,20 @@ type ReadableDetail = KnowledgeDocumentDetail | KnowledgeSourceDetail
 const documentItems = ref<KnowledgeDocumentSummary[]>([])
 const documentCursor = ref<number | null>(null)
 const documentLoading = ref(false)
+const detailLoading = ref(false)
+const readerError = ref('')
 const detail = ref<ReadableDetail | null>(null)
 const detailMode = ref<'document' | 'source'>('document')
 const scrollEl = ref<HTMLElement | null>(null)
 const hoverIndex = ref<number | null>(null)
 const activeSpan = ref(0)
+let requestEpoch = 0
+let detailRequestEpoch = 0
 
 const isMarkdown = computed(() => /markdown|md$/i.test(detail.value?.mime_type || detail.value?.filename || ''))
 const renderedContent = computed(() => DOMPurify.sanitize(String(marked.parse(detail.value?.content || '')), { USE_PROFILES: { html: true } }))
+const outlineUnavailable = computed(() => detailMode.value === 'document'
+  && (detail.value as KnowledgeDocumentDetail | null)?.outline_status === 'unavailable')
 const outline = computed(() => {
   const seen = new Set<string>()
   return (detail.value?.spans || []).flatMap((span) => {
@@ -86,7 +96,7 @@ const outline = computed(() => {
 })
 const minimap = computed(() => sample(detail.value?.spans || [], 40))
 
-watch(() => props.projectId, async () => reset(), { immediate: true })
+watch(() => props.projectId, () => { void reset() }, { immediate: true })
 watch(() => props.requestedDocumentId, async (id) => { if (id && (detailMode.value !== 'document' || id !== detail.value?.id)) await selectDocument(id) })
 watch(() => props.requestedSourceId, async (id) => { if (id && (detailMode.value !== 'source' || id !== detail.value?.id)) await selectAuditSource(id) })
 watch(() => props.requestedPath, async (path) => {
@@ -97,11 +107,18 @@ watch(() => props.requestedPath, async (path) => {
 watch(() => props.requestedOffset, async (offset) => { if (offset && detail.value) await nextTick(() => jumpToOffset(offset)) })
 
 async function reset() {
+  const epoch = ++requestEpoch
+  const projectId = props.projectId
+  detailRequestEpoch += 1
   documentItems.value = []
   documentCursor.value = null
   detail.value = null
-  if (!props.projectId) return
-  await loadDocuments(true)
+  documentLoading.value = false
+  detailLoading.value = false
+  readerError.value = ''
+  if (!projectId) return
+  await loadDocuments(true, epoch, projectId)
+  if (epoch !== requestEpoch || projectId !== props.projectId) return
   if (props.requestedSourceId) await selectAuditSource(props.requestedSourceId)
   else {
     const target = props.requestedDocumentId || documentItems.value[0]?.id
@@ -109,30 +126,78 @@ async function reset() {
   }
 }
 
-async function loadDocuments(resetList = false) {
-  if (!props.projectId || documentLoading.value || (!resetList && documentCursor.value === null)) return
+async function loadDocuments(
+  resetList = false,
+  epoch = requestEpoch,
+  projectId = props.projectId,
+) {
+  if (!projectId || documentLoading.value || (!resetList && documentCursor.value === null)) return
   documentLoading.value = true
+  readerError.value = ''
   try {
-    const page = await getKnowledgeDocuments(props.projectId, { limit: 50, cursor: resetList ? 0 : documentCursor.value || 0 })
+    const page = await getKnowledgeDocuments(projectId, { limit: 50, cursor: resetList ? 0 : documentCursor.value || 0 })
+    if (epoch !== requestEpoch || projectId !== props.projectId) return
     documentItems.value = resetList ? page.items : [...documentItems.value, ...page.items]
     documentCursor.value = page.next_cursor ?? null
-  } finally { documentLoading.value = false }
+  } catch (reason) {
+    if (epoch === requestEpoch && projectId === props.projectId) {
+      readerError.value = reason instanceof Error ? reason.message : String(reason)
+    }
+  } finally {
+    if (epoch === requestEpoch && projectId === props.projectId) documentLoading.value = false
+  }
 }
 
 async function selectDocument(id: string) {
-  if (!props.projectId) return
-  detail.value = (await getKnowledgeDocument(props.projectId, id)).document
+  const projectId = props.projectId
+  const epoch = requestEpoch
+  if (!projectId) return
+  const detailEpoch = ++detailRequestEpoch
+  detail.value = null
   detailMode.value = 'document'
-  activeSpan.value = 0
-  await resetScroll()
+  detailLoading.value = true
+  readerError.value = ''
+  try {
+    const payload = await getKnowledgeDocument(projectId, id)
+    if (epoch !== requestEpoch || detailEpoch !== detailRequestEpoch || projectId !== props.projectId) return
+    detail.value = payload.document
+    activeSpan.value = 0
+    await resetScroll()
+  } catch (reason) {
+    if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
+      readerError.value = reason instanceof Error ? reason.message : String(reason)
+    }
+  } finally {
+    if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
+      detailLoading.value = false
+    }
+  }
 }
 
 async function selectAuditSource(id: string) {
-  if (!props.projectId) return
-  detail.value = (await getKnowledgeSource(props.projectId, id)).source
+  const projectId = props.projectId
+  const epoch = requestEpoch
+  if (!projectId) return
+  const detailEpoch = ++detailRequestEpoch
+  detail.value = null
   detailMode.value = 'source'
-  activeSpan.value = 0
-  await resetScroll()
+  detailLoading.value = true
+  readerError.value = ''
+  try {
+    const payload = await getKnowledgeSource(projectId, id)
+    if (epoch !== requestEpoch || detailEpoch !== detailRequestEpoch || projectId !== props.projectId) return
+    detail.value = payload.source
+    activeSpan.value = 0
+    await resetScroll()
+  } catch (reason) {
+    if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
+      readerError.value = reason instanceof Error ? reason.message : String(reason)
+    }
+  } finally {
+    if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
+      detailLoading.value = false
+    }
+  }
 }
 
 async function resetScroll() {
@@ -191,7 +256,11 @@ function sample<T>(items: T[], max: number) {
   return Array.from({ length: max }, (_, index) => items[Math.round(index * (items.length - 1) / (max - 1))])
 }
 function spanTitle(span: KnowledgeSourceSpan) { return span.title_path[span.title_path.length - 1] || detail.value?.display_name || detail.value?.filename || '原文片段' }
-function formatChars(chars: number) { return chars > 1000 ? `${(chars / 1000).toFixed(1)}k` : String(chars) }
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
 </script>
 
 <style scoped lang="scss">
@@ -205,6 +274,7 @@ aside { display: grid; grid-template-rows: auto minmax(110px, .44fr) auto minmax
 .source-list strong, .source-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .source-list strong { font-size: 12px; font-weight: 600; } .source-list small { margin-top: 3px; color: #999; font-size: 9px; }
 .outline-list button { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 9px; border-radius: 3px; color: #5f5f5f; font-size: 11px; } .outline-list button:hover { color: #111; background: #f4f4f4; } .outline-list button i { width: 4px; height: 4px; flex: 0 0 auto; border-radius: 50%; background: #bdbdbd; } .outline-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outline-note { margin: 4px 10px 0 20px; color: #999; font-size: 10px; line-height: 1.55; }
+.error-text { color: #a33; }
 .document-area { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
 .document-area > header { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 7px 18px; border-bottom: 1px solid #e8e8e8; }
 .document-area header strong, .document-area header span { display: block; } .document-area header strong { font-size: 13px; } .document-area header span { margin-top: 2px; color: #999; font-size: 10px; }
