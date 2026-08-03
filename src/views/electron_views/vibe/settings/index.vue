@@ -31,6 +31,10 @@
 
         <section v-if="canViewAdminSettings" class="nav-section">
           <h2>Admin Settings</h2>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-global' }" @click="activeKey = 'admin-global'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/><circle cx="12" cy="12" r="7"/></svg>
+            全局控制
+          </button>
           <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-model' }" @click="activeKey = 'admin-model'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg>
             默认模型
@@ -79,6 +83,10 @@
 
       <section v-else-if="activeKey === 'model'" class="model-panel">
         <VibeModelSettings embedded />
+      </section>
+
+      <section v-else-if="activeKey === 'admin-global' && canViewAdminSettings" class="global-control-panel">
+        <VibeGlobalControlSettings />
       </section>
 
       <section v-else-if="activeKey === 'admin-model' && canViewTraceAudit" class="admin-model-panel">
@@ -566,13 +574,14 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useRoute, useRouter } from 'vue-router'
 import VibeModelSettings from '../VibeModelSettings.vue'
+import VibeGlobalControlSettings from './VibeGlobalControlSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
-const activeKey = ref<'profile' | 'model' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
+const activeKey = ref<'profile' | 'model' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 const winMaximized = ref(false)
@@ -685,7 +694,7 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
+const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
   const ids = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
@@ -2247,6 +2256,7 @@ onBeforeUnmount(() => {
 
 .profile-panel,
 .model-panel,
+.global-control-panel,
 .admin-model-panel,
 .trace-panel {
   max-width: 920px;

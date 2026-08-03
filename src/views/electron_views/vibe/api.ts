@@ -167,6 +167,13 @@ export interface VibeFeatureConfig {
   updated_at?: string | null
 }
 
+export interface VibeConversationControl {
+  disabled: boolean
+  message: string
+  source?: string
+  updated_at?: string | null
+}
+
 export interface VibeCapabilities {
   user_id: number
   account: string
@@ -177,6 +184,17 @@ export interface VibeCapabilities {
 
 export function getVibeCapabilities(): Promise<VibeCapabilities> {
   return request('GET', '/vibe/capabilities')
+}
+
+export function getVibeConversationControl(): Promise<{ item: VibeConversationControl }> {
+  return request('GET', '/vibe/admin/conversation-control')
+}
+
+export function updateVibeConversationControl(payload: {
+  disabled: boolean
+  message: string
+}): Promise<{ ok: boolean; item: VibeConversationControl }> {
+  return request('PATCH', '/vibe/admin/conversation-control', payload)
 }
 
 export interface VibeUsageSummary {
