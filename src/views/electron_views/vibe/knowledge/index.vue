@@ -1945,9 +1945,13 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     ElMessage.warning('请先选择项目')
     return
   }
+  const project = knowledgeStatsProjectId(selectedProjectId.value)
+  if (!project) {
+    ElMessage.warning('当前项目身份无效，请重新选择项目')
+    return
+  }
   if (!(await ensureComposerModelUsable())) return
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
-  const project = String(vibeProject.value.id)
   const startedAt = Date.now()
   streamingOwnerSessionId.value = activeSessionId.value
   activeTurnSessionId.value = activeSessionId.value
