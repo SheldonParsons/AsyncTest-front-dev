@@ -43,6 +43,14 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>
             模型场景配置
           </button>
+          <button v-if="canViewTraceAudit" class="nav-row" type="button" :class="{ active: activeKey === 'admin-rerank-api' }" @click="activeKey = 'admin-rerank-api'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h12"/><path d="M4 12h8"/><path d="M4 18h4"/><path d="m15 15 3 3 3-3"/><path d="M18 18V8"/></svg>
+            ReRank API 模型配置
+          </button>
+          <button v-if="canViewTraceAudit" class="nav-row" type="button" :class="{ active: activeKey === 'admin-embedding-api' }" @click="activeKey = 'admin-embedding-api'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="19" r="2"/><path d="m6.5 10.5 4-4"/><path d="m13.5 6.5 4 4"/><path d="m17.5 13.5-4 4"/><path d="m10.5 17.5-4-4"/></svg>
+            Embedding API 模型配置
+          </button>
           <button class="nav-row" type="button" :class="{ active: activeKey === 'admin-config' }" @click="activeKey = 'admin-config'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/><path d="M19 5h1a1 1 0 0 1 1 1v3"/><path d="M5 5H4a1 1 0 0 0-1 1v3"/></svg>
             配置导入/导出
@@ -240,6 +248,14 @@
           </article>
         </div>
         <p v-if="adminSceneStatusText" :class="['admin-scenes-status', { ok: adminSceneStatusKind === 'ok', error: adminSceneStatusKind === 'error' }]">{{ adminSceneStatusText }}</p>
+      </section>
+
+      <section v-else-if="activeKey === 'admin-rerank-api' && canViewTraceAudit" class="knowledge-api-model-panel">
+        <VibeKnowledgeApiModelSettings role="rerank" />
+      </section>
+
+      <section v-else-if="activeKey === 'admin-embedding-api' && canViewTraceAudit" class="knowledge-api-model-panel">
+        <VibeKnowledgeApiModelSettings role="embedding" />
       </section>
 
       <section v-else-if="activeKey === 'admin-config' && canViewTraceAudit" class="admin-config-panel">
@@ -575,13 +591,14 @@ import { marked } from 'marked'
 import { useRoute, useRouter } from 'vue-router'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeGlobalControlSettings from './VibeGlobalControlSettings.vue'
+import VibeKnowledgeApiModelSettings from './VibeKnowledgeApiModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
-const activeKey = ref<'profile' | 'model' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
+const activeKey = ref<'profile' | 'model' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-rerank-api' | 'admin-embedding-api' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 const winMaximized = ref(false)
@@ -694,7 +711,7 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
+const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-rerank-api': 'ReRank API 模型配置', 'admin-embedding-api': 'Embedding API 模型配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
   const ids = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
@@ -2055,7 +2072,7 @@ function trackMaximizeState() {
 }
 
 watch(canViewTraceAudit, (allowed) => {
-  if (!allowed && activeKey.value === 'trace') activeKey.value = 'profile'
+  if (!allowed && ['trace', 'admin-rerank-api', 'admin-embedding-api'].includes(activeKey.value)) activeKey.value = 'profile'
 })
 
 watch(activeKey, (key) => {
@@ -2258,6 +2275,7 @@ onBeforeUnmount(() => {
 .model-panel,
 .global-control-panel,
 .admin-model-panel,
+.knowledge-api-model-panel,
 .trace-panel {
   max-width: 920px;
   margin: 78px auto 60px;
@@ -2361,6 +2379,11 @@ onBeforeUnmount(() => {
 
 .admin-model-panel {
   max-width: 760px;
+  margin-top: 24px;
+}
+
+.knowledge-api-model-panel {
+  max-width: 900px;
   margin-top: 24px;
 }
 

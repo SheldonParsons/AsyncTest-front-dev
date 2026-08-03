@@ -197,6 +197,47 @@ export function updateVibeConversationControl(payload: {
   return request('PATCH', '/vibe/admin/conversation-control', payload)
 }
 
+export type VibeKnowledgeApiModelRole = 'rerank' | 'embedding'
+
+export interface VibeKnowledgeApiModelConfig {
+  role: VibeKnowledgeApiModelRole
+  provider_type: 'dashscope'
+  enabled: boolean
+  endpoint: string
+  model: string
+  timeout_seconds: number
+  api_key_configured: boolean
+  dimension?: number | null
+  batch_size?: number | null
+  query_instruct?: string
+  updated_at?: string | null
+}
+
+export interface VibeKnowledgeApiModelPayload {
+  provider_type: 'dashscope'
+  enabled: boolean
+  endpoint: string
+  model: string
+  timeout_seconds: number
+  api_key?: string
+  dimension?: number
+  batch_size?: number
+  query_instruct?: string
+}
+
+export function getVibeKnowledgeApiModelConfig(
+  role: VibeKnowledgeApiModelRole,
+): Promise<{ item: VibeKnowledgeApiModelConfig }> {
+  return request('GET', `/vibe/admin/knowledge-model-configs/${role}`)
+}
+
+export function updateVibeKnowledgeApiModelConfig(
+  role: VibeKnowledgeApiModelRole,
+  payload: VibeKnowledgeApiModelPayload,
+): Promise<{ ok: boolean; item: VibeKnowledgeApiModelConfig }> {
+  return request('PATCH', `/vibe/admin/knowledge-model-configs/${role}`, payload)
+}
+
 export interface VibeUsageSummary {
   total_tokens: number
   peak_tokens: number
