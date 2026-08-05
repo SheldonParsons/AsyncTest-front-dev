@@ -1430,10 +1430,16 @@ async function refreshProjectRunningTurns() {
   }
   if (runningTurnPollInFlight) return
   runningTurnPollInFlight = true
-  const projectId = String(vibeProject.value.id)
+  // 后端按 row["project"] 精确比对，而发起提问时存进去的是
+  // knowledgeStatsProjectId(selectedProjectId) —— AsyncTest 数字 ID。
+  // 这里若用 vibeProject.id（UUID）查，永远匹配不上、items 恒为空，
+  // 复接就拿不到运行快照（切回会话看不到"正在思考"的真正原因）。
+  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
+    || String(vibeProject.value.id)
+  const guardId = String(vibeProject.value.id)
   try {
     const res = await listFoundationRunningTurns({ project: projectId })
-    if (String(vibeProject.value?.id || '') !== projectId) return
+    if (String(vibeProject.value?.id || '') !== guardId) return
     const items = Array.isArray(res.items) ? res.items : []
     const previousIds = new Set(runningSessionIds.value)
     runningTurns.value = items
