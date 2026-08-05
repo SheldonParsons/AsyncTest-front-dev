@@ -480,6 +480,22 @@ onBeforeUnmount(() => {
 })
 watch(() => props.modelValue, () => nextTick(autoGrow))
 watch(currentModelLabel, () => nextTick(measureModelPicker))
+
+function focusInput() {
+  // 反问挂起时焦点归反问首项（focusActive 已负责），不抢到输入框；
+  // 发送/停止过程中也不抢，避免打断正在进行的一轮。
+  if (isQuestion.value || props.sending || props.stopping) return
+  nextTick(() => {
+    const el = inputEl.value
+    if (!el) return
+    el.focus()
+    // 光标落到已有草稿末尾，而不是选中全部或跳到开头。
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+  })
+}
+
+defineExpose({ focusInput })
 </script>
 
 <style scoped>

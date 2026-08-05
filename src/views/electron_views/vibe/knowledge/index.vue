@@ -403,6 +403,7 @@
 
         <footer class="composer">
           <ChatComposer
+            ref="composerRef"
             v-model="composerDraft"
             :sending="sending"
             :stopping="cancelRequested"
@@ -541,6 +542,7 @@ const lastAssistantId = computed(() => {
   return ''
 })
 const activeSessionId = ref('')
+const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
 const recentSessionFiles = computed(() => deriveRecentSessionFiles(events.value, activeSessionId.value))
 const sessionFilesLoading = ref(false)
 const sessionFilesError = ref('')
@@ -1375,6 +1377,10 @@ async function openSession(sessionId: string) {
   } finally {
     if (epoch === sessionRequestEpoch && activeSessionId.value === sessionId) {
       sessionFilesLoading.value = false
+      // 进会话即把光标放到输入框。放在 finally 是刻意的：
+      // restoreClarificationFromEvents 已经跑完，composerQuestion 已定，
+      // 所以带未答反问的会话不会被抢焦点（focusInput 内部自己判断）。
+      composerRef.value?.focusInput()
     }
   }
 }
