@@ -493,6 +493,7 @@ import {
   listVibeEvents,
   listVibeSessions,
   listVibeLLMProviders,
+  downloadVibeSessionEventAttachment,
   listFoundationRunningTurns,
   getKnowledgeCommits,
   streamKnowledgeActivity,
@@ -1350,12 +1351,21 @@ async function openSession(sessionId: string) {
   const currentSession = sessions.value.find(item => item.id === sessionId)
   selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
   void loadModelConfig(sessionId).catch(() => {})
+  // 切回正在答题的会话时，先用上一帧 running 快照立刻把"正在思考"接上，
+  // 不等历史事件请求返回 —— 否则这段等待期内回复区是空的，看起来像思考中断，
+  // 直到答案一次性蹦出来。快照来自 refreshProjectRunningTurns 的轮询缓存。
+  const cachedTurn = runningTurns.value.find(
+    item => String(item.session_id || '') === sessionId,
+  ) || null
+  if (cachedTurn) replayRunningTurn(cachedTurn)
   try {
+    // 历史事件与 running 快照并行取，谁先回来谁先渲染。
+    const runningRefresh = refreshProjectRunningTurns().catch(() => {})
     const loadedEvents = await listVibeEvents(sessionId)
     if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
     events.value = sortEvents(loadedEvents)
     restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
-    await refreshProjectRunningTurns()
+    await runningRefresh
     if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
     await scrollBottom()
   } catch (reason) {
@@ -1938,19 +1948,31 @@ function toggleAttachmentsExpanded(eventId: string) {
   }
 }
 
-function downloadAttachment(file: Partial<VibeAttachment> | any) {
-  const url = String(file?.download_url || '').trim()
-  if (url) {
-    window.open(url, '_blank', 'noopener,noreferrer')
-    return
-  }
+async function downloadAttachment(file: Partial<VibeAttachment> | any) {
   const name = attachmentName(file)
+  const url = String(file?.download_url || '').trim()
+  // 正文不再随 events 列表返回，改为按需请求。必须走 harnessBlobRequest
+  // （带鉴权头），window.open 不带 Authorization，会 401。
+  if (url) {
+    try {
+      const result = await downloadVibeSessionEventAttachment('', '', 0, url)
+      saveAttachmentBlob(result.blob, result.filename || name)
+      return
+    } catch {
+      // 落到下面的内联兜底（老数据仍可能带 content/text）。
+    }
+  }
   const content = String(file?.content ?? file?.text ?? '')
+  if (!content) return
   const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
+  saveAttachmentBlob(blob, name)
+}
+
+function saveAttachmentBlob(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = objectUrl
-  link.download = name
+  link.download = filename || 'attachment'
   document.body.appendChild(link)
   link.click()
   link.remove()
