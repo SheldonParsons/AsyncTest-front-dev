@@ -1,4 +1,11 @@
-import { harnessBlobRequest, harnessRequest, streamHarnessSse } from '@/api/harness'
+import { harnessBlobRequest, harnessMultipartRequest, harnessRequest, streamHarnessSse } from '@/api/harness'
+import {
+  canonicalAttachmentUploadMime,
+  normalizeAttachmentResourceRef,
+} from './attachmentResourceContract'
+import type { VibeAttachmentResourceRef } from './attachmentResourceContract'
+
+export type { VibeAttachmentResourceRef } from './attachmentResourceContract'
 
 const request = harnessRequest
 
@@ -28,6 +35,8 @@ export interface VibeSession {
 }
 
 export interface VibeAttachment {
+  schema?: 'attachment_resource_ref.v1'
+  resource_id?: string
   id?: string
   name?: string
   filename?: string
@@ -38,6 +47,7 @@ export interface VibeAttachment {
   download_url?: string
   kind?: string
   chars?: number
+  content_sha256?: string
 }
 
 export interface VibeEvent {
@@ -170,6 +180,7 @@ export interface VibeFeatureConfig {
 export interface VibeConversationControl {
   disabled: boolean
   message: string
+  attachment_oss_base_url: string
   source?: string
   updated_at?: string | null
 }
@@ -193,6 +204,7 @@ export function getVibeConversationControl(): Promise<{ item: VibeConversationCo
 export function updateVibeConversationControl(payload: {
   disabled: boolean
   message: string
+  attachment_oss_base_url: string
 }): Promise<{ ok: boolean; item: VibeConversationControl }> {
   return request('PATCH', '/vibe/admin/conversation-control', payload)
 }
@@ -495,6 +507,55 @@ export function downloadVibeSessionEventAttachment(
   const path = downloadUrl || `/vibe/sessions/${encodeURIComponent(sessionId)}`
     + `/events/${encodeURIComponent(eventId)}/attachments/${index}`
   return harnessBlobRequest(path)
+}
+
+interface VibeAttachmentUploadResponse {
+  ok: true
+  resource: unknown
+  state: 'pending'
+  expires_at: string | null
+  idempotent_replay: boolean
+}
+
+export async function uploadVibeAttachmentResource(
+  sessionId: string,
+  file: File,
+  idempotencyKey: string,
+): Promise<VibeAttachmentResourceRef> {
+  if (!sessionId.trim()) throw new Error('上传附件前必须先创建会话')
+  if (!/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)) throw new Error('附件上传幂等键无效')
+  const canonicalMime = canonicalAttachmentUploadMime(file.name, file.type)
+  const uploadBody = file.type === canonicalMime ? file : file.slice(0, file.size, canonicalMime)
+  const formData = new FormData()
+  formData.append('file', uploadBody, file.name)
+  const response = await harnessMultipartRequest<VibeAttachmentUploadResponse>(
+    'POST',
+    `/vibe/sessions/${encodeURIComponent(sessionId)}/attachments`,
+    formData,
+    { 'Idempotency-Key': idempotencyKey },
+  )
+  if (response.ok !== true || response.state !== 'pending'
+    || (response.expires_at !== null
+      && (typeof response.expires_at !== 'string' || !response.expires_at))
+    || typeof response.idempotent_replay !== 'boolean') {
+    throw new Error('附件上传响应 envelope 无效')
+  }
+  const resource = normalizeAttachmentResourceRef(response.resource)
+  const expectedDownloadUrl = `/vibe/sessions/${encodeURIComponent(sessionId)}`
+    + `/attachments/${encodeURIComponent(resource.resource_id)}`
+  if (resource.download_url !== expectedDownloadUrl) throw new Error('附件下载地址与资源身份不一致')
+  return resource
+}
+
+export function deleteVibeAttachmentResource(
+  sessionId: string,
+  resourceId: string,
+): Promise<{ ok: boolean }> {
+  if (!sessionId.trim() || !resourceId.trim()) return Promise.reject(new Error('附件资源身份无效'))
+  return request(
+    'DELETE',
+    `/vibe/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(resourceId)}`,
+  )
 }
 
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {
@@ -920,9 +981,9 @@ export function cleanupAllVibeLab(confirmToken: string): Promise<{ ok: boolean; 
 export function streamFoundationTurn(
   // seed_messages：回答上一轮反问时回传的"挂起草稿"，让后端【续跑同一思考】（不另起新轮）。
   // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
-  // mode='document' + attachments：文件原文与输入框意图一起交给第四代整体变更规划。
+  // attachments：只携带已上传完成的 attachment_resource_ref.v1，不携带文件正文。
   // apply_edit：确认时只回传服务端 confirmation_id；客户端预览内容不参与写入。
-  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; mode?: string; document?: string; filename?: string; attachments?: VibeAttachment[]; apply_edit?: any; clarification_cancel?: boolean; clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string } },
+  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; attachments?: VibeAttachmentResourceRef[]; apply_edit?: any; clarification_cancel?: boolean; clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string } },
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
   return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)

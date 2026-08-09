@@ -3,6 +3,7 @@
     ref="rootEl"
     class="chat-composer"
     aria-label="聊天输入框"
+    :aria-busy="uploading ? 'true' : 'false'"
   >
     <!-- 添加内容菜单（文件） -->
     <div class="attachment-menu" :class="{ 'is-open': menuOpen && !isQuestion }" role="menu" aria-label="添加内容">
@@ -169,6 +170,7 @@
             type="button"
             aria-label="添加内容"
             :aria-expanded="menuOpen"
+            :disabled="sending || uploading"
             @click="menuOpen = !menuOpen"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus attach-plus-icon" aria-hidden="true">
@@ -220,9 +222,9 @@
             class="icon-button send-button"
             :class="{ 'is-sending': sending, 'is-stopping': stopping }"
             type="button"
-            :aria-label="stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
-            :title="stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
-            :disabled="stopping || (!sending && sendDisabled)"
+            :aria-label="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
+            :title="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
+            :disabled="uploading || stopping || (!sending && sendDisabled)"
             @click="onSend"
           >
             <svg class="send-arrow-flow" viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -243,6 +245,7 @@
       </div>
     </div>
 
+    <span v-if="uploading" class="visually-hidden" role="status" aria-live="polite">正在上传附件</span>
     <span v-if="attachmentError" class="composer-status composer-error" role="alert">{{ attachmentError }}</span>
     <span v-else-if="statusText" class="composer-status">{{ statusText }}</span>
     <input ref="fileInputEl" type="file" accept=".md,.markdown,text/markdown,text/plain" multiple hidden @change="onFileChange" />
@@ -273,7 +276,8 @@ const props = withDefaults(defineProps<{
   modelOptions?: ModelOption[]
   modelValueId?: string
   modelDisabled?: boolean
-}>(), { sending: false, stopping: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false })
+  uploading?: boolean
+}>(), { sending: false, stopping: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -379,19 +383,26 @@ function selectModel(value: string) {
 }
 
 function onSend() {
-  if (props.stopping) return
+  if (props.uploading || props.stopping) return
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   if (sendDisabled.value) return
-  emit('send', { text: props.modelValue, files: [...selectedFiles.value] })
-  selectedFiles.value = []
-  attachmentError.value = ''
-  if (fileInputEl.value) fileInputEl.value.value = ''
+  const outgoingFiles = [...selectedFiles.value]
+  emit('send', { text: props.modelValue, files: outgoingFiles })
+  clearAttachments()
   nextTick(autoGrow)
 }
 
-function pickMarkdown() { menuOpen.value = false; fileInputEl.value?.click() }
+function pickMarkdown() {
+  if (props.sending || props.uploading) return
+  menuOpen.value = false
+  fileInputEl.value?.click()
+}
 function fileKey(f: File) { return `${f.name}-${f.size}-${f.lastModified}` }
 function onFileChange() {
+  if (props.sending || props.uploading) {
+    if (fileInputEl.value) fileInputEl.value.value = ''
+    return
+  }
   const picked = Array.from(fileInputEl.value?.files || [])
   if (!picked.length) return
   const admission = admitAttachmentSelection(selectedFiles.value, picked)
@@ -402,6 +413,19 @@ function onFileChange() {
 function removeFile(i: number) {
   selectedFiles.value = selectedFiles.value.filter((_, idx) => idx !== i)
   attachmentError.value = ''
+}
+
+function clearAttachments() {
+  selectedFiles.value = []
+  attachmentError.value = ''
+  if (fileInputEl.value) fileInputEl.value.value = ''
+}
+
+function restoreAttachments(files: File[]) {
+  const admission = admitAttachmentSelection([], files)
+  selectedFiles.value = admission.files
+  attachmentError.value = admission.error
+  if (fileInputEl.value) fileInputEl.value.value = ''
 }
 
 function emitAnswer(value: string) {
@@ -495,11 +519,15 @@ function focusInput() {
   })
 }
 
-defineExpose({ focusInput })
+defineExpose({ clearAttachments, restoreAttachments, focusInput })
 </script>
 
 <style scoped>
 .chat-composer { position: relative; display: grid; gap: 6px; width: 100%; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 
 .composer-shell {
   position: relative; display: grid; gap: 6px; padding: 10px 12px 8px;

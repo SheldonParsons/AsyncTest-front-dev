@@ -1,0 +1,70 @@
+{
+  "schema": "vibe_confirmation_thread_broken_continuation.v1",
+  "session_id": "7d2ca28a-6cf5-4ae8-b56a-07e96616e8aa",
+  "events": [
+    {
+      "id": "4ed45992-0e52-4573-a478-ad2c2a6ee565",
+      "session_id": "7d2ca28a-6cf5-4ae8-b56a-07e96616e8aa",
+      "event_order": 1,
+      "role": "user",
+      "content": "录入需求",
+      "created_at": "2026-08-09T11:24:13.418764+00:00",
+      "meta": { "foundation": true }
+    },
+    {
+      "id": "65d4df4a-2e75-41d8-bdff-be7e83aa5bd8",
+      "session_id": "7d2ca28a-6cf5-4ae8-b56a-07e96616e8aa",
+      "event_order": 2,
+      "role": "assistant",
+      "content": "",
+      "created_at": "2026-08-09T11:24:34.185219+00:00",
+      "meta": {
+        "foundation": true,
+        "clarification": { "question": "确认录入这 1 份附件？" },
+        "process_summary": { "duration_ms": 19802 },
+        "process": [
+          { "kind": "message", "text": "我先读取本轮附件，确认文件实际包含的内容。" },
+          { "kind": "action", "status": "success", "title": "读取附件" },
+          { "kind": "message", "text": "附件范围已经由后端冻结；如需写入，确认卡将展示实际处理范围。" },
+          { "kind": "message", "text": "这批证据已经返回，我正在核对对象、条件、数值和适用范围；缺少的内容不会靠推测补齐。" },
+          { "kind": "message", "text": "我先核对本轮来源和现行知识，准备新增知识预览。" },
+          { "kind": "action", "status": "success", "title": "准备新增知识预览" }
+        ]
+      }
+    },
+    {
+      "id": "4dbe538a-ed51-44fe-915e-6a69463dfbcb",
+      "session_id": "7d2ca28a-6cf5-4ae8-b56a-07e96616e8aa",
+      "event_order": 3,
+      "role": "user",
+      "content": "确认录入附件",
+      "created_at": "2026-08-09T11:24:41.896182+00:00",
+      "meta": {
+        "foundation": true,
+        "confirmation_reply": true,
+        "parent_event_id": "65d4df4a-2e75-41d8-bdff-be7e83aa5bd8"
+      }
+    },
+    {
+      "id": "8e6119ba-f7ab-42ac-9376-a36c913a5bf7",
+      "session_id": "7d2ca28a-6cf5-4ae8-b56a-07e96616e8aa",
+      "event_order": 4,
+      "role": "assistant",
+      "content": "本轮处理没有正常完成，处理期间项目知识发生了新提交。请先刷新原文和变更记录，避免重复提交。",
+      "created_at": "2026-08-09T11:24:44.326280+00:00",
+      "meta": {
+        "foundation": true,
+        "failed": true,
+        "failure_reason": "unhandled_turn_failure",
+        "process_summary": { "duration_ms": 2468 }
+      }
+    }
+  ],
+  "expected": {
+    "thread_root_id": "65d4df4a-2e75-41d8-bdff-be7e83aa5bd8",
+    "inferred_continuation_id": "8e6119ba-f7ab-42ac-9376-a36c913a5bf7",
+    "visible_assistant_count": 1,
+    "empty_standalone_action_count": 0,
+    "thread_final_answer": "本轮处理没有正常完成，处理期间项目知识发生了新提交。请先刷新原文和变更记录，避免重复提交。"
+  }
+}

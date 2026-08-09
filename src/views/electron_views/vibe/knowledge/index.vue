@@ -332,7 +332,7 @@
                 <span>{{ eventPackageActionDetail(event) }}</span>
               </div>
               <!-- 纯反问不显示正文；复合目标已经完成的只读答案必须在确认写入前正常显示。 -->
-              <template v-else-if="!isPendingClarification(event) || eventHasAnswerContent(event)">
+              <template v-else-if="shouldRenderStandaloneAssistantAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(eventDisplayContent(event))" />
                 <div v-if="eventSources(event).length" class="answer-trust">
                   <SourceChips :items="eventSources(event)" />
@@ -407,6 +407,7 @@
             v-model="composerDraft"
             :sending="sending"
             :stopping="cancelRequested"
+            :uploading="preparingSend"
             :placeholder="composerPlaceholder"
             :status-text="composerStatusText"
             :question="composerQuestion"
@@ -459,6 +460,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
+import {
+  continuationParentEventId,
+  eventThreadRootId as resolveEventThreadRootId,
+  parentContinuationResponses as resolveParentContinuationResponses,
+  shouldRenderStandaloneAssistantBody,
+  shouldRenderThreadEvent,
+  threadFinalAnswerText,
+} from './conversationThreadPolicy'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
 import PanelStateToggle from './components/icons/PanelStateToggle.vue'
@@ -486,6 +495,7 @@ import {
 import {
   autoTitleVibeSession,
   createVibeSession,
+  deleteVibeAttachmentResource,
   deleteVibeSession,
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
@@ -503,10 +513,12 @@ import {
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
+  uploadVibeAttachmentResource,
   type FoundationRunningTurn,
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
   type VibeAttachment,
+  type VibeAttachmentResourceRef,
   type VibeCapabilityUser,
   type VibeEvent,
   type VibeLLMProviderConfig,
@@ -956,7 +968,6 @@ const activeConversationRailIndex = computed(() => {
 })
 const sending = computed(() => preparingSend.value || foundationBusy.value || sendingSessionIds.value.length > 0)
 const composerStatusText = computed(() => {
-  if (preparingSend.value) return '正在创建对话…'
   if (cancelRequested.value) return '正在停止…'
   return ''  // 0704 用户定:输入框下不再显示"正在思考/收尾"——状态由过程区"已处理 Xs"+按钮■表达
 })
@@ -1714,46 +1725,107 @@ async function send() {
   await sendFoundationTurn()
 }
 
-async function prepareComposerAttachments(files: File[]): Promise<VibeAttachment[]> {
-  const items: VibeAttachment[] = []
-  for (const [index, file] of files.entries()) {
-    let content = ''
-    try {
-      content = await file.text()
-    } catch {
-      content = ''
-    }
-    items.push({
-      id: `${Date.now()}-${index}-${file.name}-${file.size}`,
-      name: file.name,
-      filename: file.name,
-      mime: file.type || 'text/markdown',
-      size: file.size,
-      chars: content.length,
-      kind: 'document',
-      content,
-      text: content,
-    })
-  }
-  return items
+const attachmentIdempotencyKeys = new WeakMap<File, string>()
+type PendingComposerAttachment = { file: File; resource: VibeAttachmentResourceRef }
+
+function attachmentIdempotencyKey(file: File): string {
+  const current = attachmentIdempotencyKeys.get(file)
+  if (current) return current
+  const suffix = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const key = `vibe-attachment-${suffix}`
+  attachmentIdempotencyKeys.set(file, key)
+  return key
 }
 
-// 前端只提交输入框和完整附件批次，不通过关键词决定录入/总结/问答。
+async function cleanupUploadedPendingAttachments(
+  sessionId: string,
+  uploaded: PendingComposerAttachment[],
+): Promise<boolean> {
+  const cleanup = await Promise.allSettled(uploaded.map(async ({ file, resource }) => {
+    const result = await deleteVibeAttachmentResource(sessionId, resource.resource_id)
+    if (result?.ok !== true) throw new Error('临时附件清理失败')
+    attachmentIdempotencyKeys.delete(file)
+  }))
+  return cleanup.every(item => item.status === 'fulfilled')
+}
+
+// 前端先把完整附件批次换成私有资源引用，再提交输入框与 refs；
+// 不通过关键词决定录入/总结/问答，输入框仍是目的轴心。
 // 输入框是目的轴心，后端目标计划是唯一语义权威。
+function restoreComposerAttachments(files: File[]) {
+  const snapshot = [...files]
+  // emit('send') 的父处理器与子组件清空动作处于同一调用栈；延后一拍才能保证
+  // 同步校验失败时，恢复发生在子组件的立即清空之后。
+  void nextTick(() => composerRef.value?.restoreAttachments(snapshot))
+}
+
 async function onComposerSend({ text, files }: { text: string; files: File[] }) {
   const base = (text || '').trim()
-  const fileList = files || []
-  if (sending.value) return
-  const attachments = fileList.length ? await prepareComposerAttachments(fileList) : []
+  const fileList = [...(files || [])]
+  if (sending.value) {
+    restoreComposerAttachments(fileList)
+    return
+  }
+  if (!base && !fileList.length) return
+  if (!fileList.length) {
+    await sendFoundationTurn(base)
+    return
+  }
 
-  const combined = base || (attachments.length
-    ? `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
-    : '')
-  if (!combined) return
-  await sendFoundationTurn(combined, {
+  const uploaded: PendingComposerAttachment[] = []
+  let uploadSessionId = ''
+  preparingSend.value = true
+  try {
+    if (!vibeProject.value) throw new Error('请先选择项目')
+    const project = knowledgeStatsProjectId(selectedProjectId.value)
+    if (!project) throw new Error('当前项目身份无效，请重新选择项目')
+    if (!(await ensureComposerModelUsable())) {
+      restoreComposerAttachments(fileList)
+      return
+    }
+    uploadSessionId = await ensureSession()
+    for (const file of fileList) {
+      const resource = await uploadVibeAttachmentResource(
+        uploadSessionId,
+        file,
+        attachmentIdempotencyKey(file),
+      )
+      uploaded.push({ file, resource })
+    }
+    if (activeSessionId.value !== uploadSessionId) throw new Error('上传期间会话已切换，请重新发送附件')
+  } catch (reason) {
+    restoreComposerAttachments(fileList)
+    const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
+    const message = reason instanceof Error ? reason.message : String(reason)
+    ElMessage.error(cleaned ? message : `${message}；部分临时附件清理失败，请稍后重试`)
+    return
+  } finally {
+    preparingSend.value = false
+  }
+
+  const attachments = uploaded.map(item => item.resource)
+  const combined = base || `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
+  let attachmentBound = false
+  const turnOutcome = await sendFoundationTurn(combined, {
     attachments,
-    filename: attachments.map((item) => attachmentName(item)).filter(Boolean).join('、'),
+    modelValidated: true,
+    onUserEventSaved: () => {
+      attachmentBound = true
+    },
+  }).catch((reason) => {
+    ElMessage.error(`本轮发送失败：${reason instanceof Error ? reason.message : String(reason)}`)
+    return undefined
   })
+  if (attachmentBound || turnOutcome?.userEventSaved) return
+  restoreComposerAttachments(fileList)
+  const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
+  setDraftByKey(sessionDraftKey(uploadSessionId), base)
+  resizeDraft()
+  ElMessage.warning(cleaned
+    ? '本轮未能绑定附件，已保留文件，请重新发送'
+    : '本轮未能确认附件绑定状态，文件已保留，请稍后重试')
 }
 
 // 询问模式（clarification）选项被选/提交：把答案【续跑同一思考】发出去（空=跳过，仅收起反问）。
@@ -2001,15 +2073,23 @@ function legacyIntentStepLabel(actions: string[]) {
   return actions.length ? `本轮处理：${actions.join('＋')}` : '本轮处理：待判断'
 }
 
-async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?: any[]; continuationParentId?: string; documentContent?: string; documentMode?: boolean; filename?: string; attachments?: VibeAttachment[]; applyEdit?: any; clarificationCancel?: boolean; clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string } }) {
+interface SendFoundationTurnOptions {
+  seedMessages?: any[]
+  continuationParentId?: string
+  attachments?: VibeAttachmentResourceRef[]
+  modelValidated?: boolean
+  onUserEventSaved?: () => void
+  applyEdit?: any
+  clarificationCancel?: boolean
+  clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string }
+}
+
+async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTurnOptions) {
   const content = (overrideText ?? draft.value).trim()
   if (!content || sending.value) return
   const originDraftKey = activeDraftKey.value
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
-  const documentContent = opts?.documentContent  // 文件整篇录入：整篇原文走 document、text 只作干净消息
-  const documentMode = !!opts?.documentMode
   const attachments = opts?.attachments || []
-  const filename = opts?.filename || ''
   const applyEdit = opts?.applyEdit  // 改原文·确认：回传 diff 提案，后端确定性落库
   const clarificationCancel = !!opts?.clarificationCancel  // 取消反问/确认：写终态回执，避免刷新后旧反问复活
   // 续跑·视觉一体化：本轮(回答+续跑答案)挂到上一轮反问那条 assistant 之下，渲染成同一条思考。
@@ -2023,7 +2103,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     ElMessage.warning('当前项目身份无效，请重新选择项目')
     return
   }
-  if (!(await ensureComposerModelUsable())) return
+  if (!opts?.modelValidated && !(await ensureComposerModelUsable())) return
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
   const startedAt = Date.now()
   streamingOwnerSessionId.value = activeSessionId.value
@@ -2101,7 +2181,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
         // 只有【当前正看本轮会话】时才把服务器事件写进 events.value（避免串到别的会话）。
         const saved = event.event as VibeEvent
         if (event.role === 'user') {
-          userEventSaved = true
+          if (!userEventSaved) {
+            userEventSaved = true
+            opts?.onUserEventSaved?.()
+          }
           if (live) events.value = events.value.filter(e => !String(e.id).startsWith('fnd-user-'))
         } else if (event.role === 'assistant') {
           assistantEventSaved = true
@@ -2191,7 +2274,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     markSessionSending(turnSessionId, true)
     setSessionRunning(turnSessionId, true)
     if (activeSessionId.value === turnSessionId) streamingOwnerSessionId.value = turnSessionId
-    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, mode: (documentContent || documentMode) ? 'document' : undefined, document: documentContent || undefined, filename: filename || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
+    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
       onEvent,
       onError(message: string) { failed = failed || message },
     })
@@ -2268,6 +2351,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: { seedMessages?:
     }
     await scrollBottomIfFollowing()
   }
+  return { userEventSaved, failed: !!failed, turnCancelled }
 }
 
 function handleDraftKeydown(event: KeyboardEvent) {
@@ -2929,21 +3013,12 @@ function eventPackageActionDetail(event: any) {
   return lines.slice(1).join(' ') || lines[0] || ''
 }
 
-function isContinuationAssistantEvent(event: any) {
-  return event?.role === 'assistant' && !!event?.meta?.continuation_context?.parent_event_id
-}
-
 function shouldRenderEvent(event: any) {
-  if (event?.meta?.hidden_interaction_reply) return false
-  if (isContinuationAssistantEvent(event) && hasEvent(event.meta.continuation_context.parent_event_id)) return false
-  return !isConfirmationReplyEvent(event) || !event?.meta?.parent_event_id || !hasEvent(event.meta.parent_event_id)
+  return shouldRenderThreadEvent(events.value, event)
 }
 
 function parentContinuationResponses(event: any) {
-  if (!event?.id || event?.role !== 'assistant') return []
-  return events.value
-    .filter(item => isContinuationAssistantEvent(item) && eventThreadRootId(item) === event.id)
-    .sort(compareEvents)
+  return resolveParentContinuationResponses(events.value, event)
 }
 
 // 取挂在这条反问下的"选择回复"内容（confirmation_reply 的 user 事件），插进思考里作"你的选择"那一环。
@@ -2970,7 +3045,7 @@ function isPendingClarification(event: any): boolean {
 function isClarifyThreadRoot(event: any): boolean {
   return event?.role === 'assistant'
     && isBlockingClarificationEvent(event)
-    && !event?.meta?.continuation_context?.parent_event_id
+    && !continuationParentEventId(events.value, event)
     && (parentContinuationResponses(event).length > 0 || isStreamingUnderEvent(event))
 }
 
@@ -3043,13 +3118,17 @@ function threadFinalNode(root: any): any {
 }
 
 function threadFinalAnswer(root: any): string {
-  const answers = uniqueTextList(
-    threadAnswerNodes(root)
-      .map((node: any) => eventDisplayContent(node).trim())
-      .filter(Boolean),
+  const answer = threadFinalAnswerText(
+    events.value,
+    root,
+    (node: any) => eventHasAnswerContent(node) ? eventDisplayContent(node).trim() : '',
   )
-  if (answers.length) return answers.join('\n\n')
+  if (answer) return answer
   return isStreamingUnderEvent(root) ? (streamingAssistantContent.value || '') : ''
+}
+
+function shouldRenderStandaloneAssistantAnswer(event: any): boolean {
+  return shouldRenderStandaloneAssistantBody(event, eventHasAnswerContent(event))
 }
 
 function threadSources(root: any): any[] {
@@ -3078,24 +3157,7 @@ function hasEvent(eventId: string) {
 }
 
 function eventThreadRootId(event: any) {
-  let parentId = String(
-    event?.meta?.continuation_context?.parent_event_id
-    || event?.meta?.parent_event_id
-    || '',
-  )
-  const seen = new Set<string>()
-  while (parentId && !seen.has(parentId)) {
-    seen.add(parentId)
-    const parent = events.value.find(item => item.id === parentId)
-    const nextParentId = String(
-      parent?.meta?.continuation_context?.parent_event_id
-      || parent?.meta?.parent_event_id
-      || '',
-    )
-    if (!nextParentId) return parentId
-    parentId = nextParentId
-  }
-  return parentId
+  return resolveEventThreadRootId(events.value, event)
 }
 
 function isStreamingUnderEvent(event: any) {

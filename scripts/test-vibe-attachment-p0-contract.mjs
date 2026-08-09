@@ -77,8 +77,4 @@ assert.match(viewSource, /const url = String\(file\?\.download_url \|\| ''\)\.tr
 assert.match(viewSource, /const content = String\(file\?\.content \?\? file\?\.text \?\? ''\)/)
 assert.equal(policy.attachmentIdentity({ resource_id: 'resource-1' }), 'resource:resource-1')
 
-// P0 intentionally freezes the legacy upload path; P1 must replace this with refs.
-assert.match(viewSource, /content = await file\.text\(\)/)
-assert.match(viewSource, /content,\s*\n\s*text: content/)
-
 console.log('vibe attachment P0 contract: PASS')
