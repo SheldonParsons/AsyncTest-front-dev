@@ -1,0 +1,30 @@
+{
+  "schema": "vibe_attachment_p0_contract.v1",
+  "phase": "P0",
+  "scope": {
+    "max_attachment_count": 10,
+    "max_attachment_bytes": 20971520,
+    "max_batch_bytes": 52428800,
+    "accepted_content": "validated_utf8_text_only",
+    "independent_write_goals_per_turn": 1
+  },
+  "current_legacy_inline": {
+    "supported": true,
+    "fields": ["content", "text"],
+    "download_fallback_required": true
+  },
+  "p1_resource_ref": {
+    "implemented": false,
+    "schema": "attachment_resource_ref.v1",
+    "required_fields": [
+      "resource_id",
+      "filename",
+      "mime",
+      "size",
+      "chars",
+      "content_sha256",
+      "download_url"
+    ],
+    "turn_payload_must_not_include": ["content", "text"]
+  }
+}
