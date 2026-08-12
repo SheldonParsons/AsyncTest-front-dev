@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.1.17",
+  "version": "3.1.19",
   "type": "module",
   "bin": "server.js",
   "main": "electron/main.js",
@@ -30,7 +30,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"### AsyncTest Vibe 知识库更新\\n\\n### 知识录入\\n#### 优化：附件+录入+提问综合场景优化\\n#### 修复：不可重试的能力失败现在正确终止写入目标\\n#### 修复：非文本附件在入口被拒，不再白烧模型预算\\n\\n### 知识处理\\n#### 功能：附件写入契约与父级证据召回\\n\\n### 交互体验\\n#### 优化：进入会话后光标自动落在输入框\",\"publishDate\":\"2026-08-06\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"### AsyncTest 思维导图\\n\\n### 多文档页签\\n#### 功能：多个思维导图统一在同一个子窗口中打开\\n\\n### MCP\\n#### 架构：MCP 支持共享窗口下的多文档独立定位\",\"publishDate\":\"2026-08-12\"}"
     },
     "publish": [
       {
