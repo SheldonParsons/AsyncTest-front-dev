@@ -192,11 +192,14 @@ function isPathInside(parentPath, childPath) {
 
 function listMindWindows({ amindMain, windowManager }) {
   const docs = amindMain?.docStore?.entries?.() || [];
+  const activeDocId = amindMain?.getActiveWorkspaceDocId?.() ?? null;
   return docs
     .map(([docId, entry]) => {
-      const windowKey = entry?.windowKey || null;
-      const win = windowKey ? windowManager.get(windowKey) : null;
-      if (!windowKey || !win) return null;
+      const physicalWindowKey = entry?.windowKey || null;
+      const win = physicalWindowKey ? windowManager.get(physicalWindowKey) : null;
+      if (!physicalWindowKey || !win) return null;
+      const windowKey = amindMain?.getMindDocumentTargetKey?.(docId)
+        ?? `${physicalWindowKey}#${docId}`;
       const doc = entry?.doc || null;
       const activeBoardId = doc?.mind?.activeMindId;
       const board = activeBoardId ? doc?.mind?.minds?.[activeBoardId] : null;
@@ -204,6 +207,7 @@ function listMindWindows({ amindMain, windowManager }) {
       return {
         docId,
         windowKey,
+        physicalWindowKey,
         filePath: entry?.filePath || null,
         title: doc?.manifest?.title ?? board?.title ?? win.getTitle(),
         windowTitle: win.getTitle(),
@@ -212,7 +216,7 @@ function listMindWindows({ amindMain, windowManager }) {
         isSaving: null,
         isUnsaved: !entry?.filePath,
         ...nodeStatistics,
-        focused: win.isFocused(),
+        focused: win.isFocused() && docId === activeDocId,
         minimized: win.isMinimized(),
       };
     })
@@ -240,33 +244,29 @@ async function listMindWindowsDetailed(context) {
   );
 }
 
-async function closeMindWindow({ windowManager }, windowKey) {
-  if (!windowKey || typeof windowKey !== 'string') {
-    throw new Error('windowKey is required');
-  }
-  if (!windowKey.startsWith('mind:')) {
-    throw new Error(`Not a Mind window: ${windowKey}`);
-  }
-  return await windowManager.requestManagedClose(windowKey, {
-    source: 'mcp',
-    forceSaveBeforeClose: true,
-  });
+function normalizeMindDocumentOpenResult(context, result) {
+  if (!result || typeof result !== 'object' || typeof result.docId !== 'string') return result;
+  const entry = context.amindMain?.docStore?.get?.(result.docId);
+  const physicalWindowKey = result.physicalWindowKey || result.windowKey || entry?.windowKey || null;
+  if (!physicalWindowKey) return result;
+  const windowKey = context.amindMain?.getMindDocumentTargetKey?.(result.docId)
+    ?? `${physicalWindowKey}#${result.docId}`;
+  return {
+    ...result,
+    windowKey,
+    physicalWindowKey,
+  };
 }
 
 async function closeMindWindowWithPolicy(context, params = {}) {
-  const windowKey = params.windowKey;
-  if (!windowKey || typeof windowKey !== 'string') throw new Error('windowKey is required');
-  if (!windowKey.startsWith('mind:')) throw new Error(`Not a Mind window: ${windowKey}`);
+  const openEntry = getOpenMindEntry(context, params);
+  const { docId, entry, windowKey } = openEntry;
   const mode = params.mode || (params.save === true ? 'save' : params.discard === true ? 'discard' : null);
   if (!['save', 'discard', 'prompt'].includes(mode)) {
     const error = new Error('close mode is required: save, discard, or prompt');
     error.code = 'CLOSE_MODE_REQUIRED';
     throw error;
   }
-  const docs = context.amindMain?.docStore?.entries?.() || [];
-  const match = docs.find(([, entry]) => entry?.windowKey === windowKey);
-  if (!match) throw new Error(`Mind window not found: ${windowKey}`);
-  const [docId, entry] = match;
   if (mode === 'prompt') {
     try {
       const detail = await requestMindRenderer(context, 'mind.getWindowDocument', { windowKey });
@@ -283,19 +283,30 @@ async function closeMindWindowWithPolicy(context, params = {}) {
       error.code = 'NEED_SAVE_AS';
       throw error;
     }
-    await saveOpenMindRendererDocument(context, { docId, entry, windowKey });
+    await saveOpenMindRendererDocument(context, openEntry);
   }
-  const closed = await context.windowManager.requestManagedClose(windowKey, {
-    source: 'mcp',
-    forceSaveBeforeClose: mode === 'save',
-    discardChanges: mode === 'discard',
-  });
+  const closeResult = context.amindMain?.closeWorkspaceDocument?.(docId);
+  const closed = closeResult?.closed === true;
   return { ok: closed, windowKey, docId, mode, saved: mode === 'save', discarded: mode === 'discard' };
 }
 
 function resolveWindowKeyFromParams(context, params = {}) {
-  if (typeof params.windowKey === 'string' && params.windowKey) return params.windowKey;
   const windows = listMindWindows(context);
+  if (typeof params.docId === 'string' && params.docId) {
+    const byDocId = windows.find((item) => item.docId === params.docId);
+    if (!byDocId) throw new Error(`Mind document not found: ${params.docId}`);
+    return byDocId.windowKey;
+  }
+  if (typeof params.windowKey === 'string' && params.windowKey) {
+    const exact = windows.find((item) => item.windowKey === params.windowKey);
+    if (exact) return exact.windowKey;
+
+    const physicalMatches = windows.filter((item) => item.physicalWindowKey === params.windowKey);
+    const activePhysicalDocument = physicalMatches.find((item) => item.docId === context.amindMain?.getActiveWorkspaceDocId?.());
+    if (activePhysicalDocument) return activePhysicalDocument.windowKey;
+    if (physicalMatches.length === 1) return physicalMatches[0].windowKey;
+    throw new Error(`Mind document not found for window: ${params.windowKey}`);
+  }
   const focused = windows.find((item) => item.focused);
   if (focused?.windowKey) return focused.windowKey;
   if (windows.length === 1) return windows[0].windowKey;
@@ -305,14 +316,20 @@ function resolveWindowKeyFromParams(context, params = {}) {
 function getOpenMindEntry(context, params = {}) {
   const windowKey = resolveWindowKeyFromParams(context, params);
   const docs = context.amindMain?.docStore?.entries?.() || [];
-  const match = docs.find(([, entry]) => entry?.windowKey === windowKey);
+  const match = docs.find(([docId, entry]) => {
+    const logicalWindowKey = context.amindMain?.getMindDocumentTargetKey?.(docId)
+      ?? `${entry?.windowKey}#${docId}`;
+    return logicalWindowKey === windowKey;
+  });
   if (!match) throw new Error(`Mind document not found for window: ${windowKey}`);
   const [docId, entry] = match;
-  return { docId, entry, windowKey };
+  return { docId, entry, windowKey, physicalWindowKey: entry.windowKey };
 }
 
 function updateOpenWindowTitle(context, windowKey, entry) {
-  const win = context.windowManager.get(windowKey);
+  const openEntry = getOpenMindEntry(context, { windowKey });
+  if (context.amindMain?.getActiveWorkspaceDocId?.() !== openEntry.docId) return;
+  const win = context.windowManager.get(openEntry.physicalWindowKey);
   if (!win) return;
   const label = entry?.filePath
     ? `AsyncTest Mind - ${path.basename(entry.filePath)}`
@@ -321,9 +338,19 @@ function updateOpenWindowTitle(context, windowKey, entry) {
 }
 
 function notifyMindOperation(context, windowKey, payload) {
-  const win = context.windowManager.get(windowKey);
+  let openEntry;
+  try {
+    openEntry = getOpenMindEntry(context, { windowKey });
+  } catch {
+    return;
+  }
+  const win = context.windowManager.get(openEntry.physicalWindowKey);
   if (!win || win.isDestroyed()) return;
-  win.webContents.send('mind:mcp-operation', payload);
+  win.webContents.send('mind:mcp-operation', {
+    ...payload,
+    docId: openEntry.docId,
+    windowKey: openEntry.windowKey,
+  });
 }
 
 async function syncOpenMindEntryFromRenderer(context, openEntry, traceId = null) {
@@ -371,7 +398,7 @@ async function saveOpenMindEntryAs(context, openEntry, params = {}) {
   });
   entry.filePath = result.filePath;
   entry.doc = context.amindMain.docStore.mustGet(docId).doc;
-  updateOpenWindowTitle(context, entry.windowKey, entry);
+  updateOpenWindowTitle(context, openEntry.windowKey, entry);
   recordMindMcpDiagnosticPhase(params.mcpTraceId, 'saveMs', performance.now() - startedAt);
   return result;
 }
@@ -693,9 +720,10 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
 }
 
 async function requestMindRenderer(context, method, params = {}) {
-  const windowKey = resolveWindowKeyFromParams(context, params);
-  const win = context.windowManager.get(windowKey);
-  if (!win) throw new Error(`Mind window not found: ${windowKey}`);
+  const openEntry = getOpenMindEntry(context, params);
+  const { docId, windowKey, physicalWindowKey } = openEntry;
+  const win = context.windowManager.get(physicalWindowKey);
+  if (!win) throw new Error(`Mind window not found: ${physicalWindowKey}`);
   const requestId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const startedAt = performance.now();
   try {
@@ -704,8 +732,12 @@ async function requestMindRenderer(context, method, params = {}) {
       pendingRendererRequests.delete(requestId);
       reject(new Error(`Timed out waiting for Mind window response: ${method}`));
     }, RENDERER_REQUEST_TIMEOUT_MS);
-    pendingRendererRequests.set(requestId, { windowKey, resolve, reject, timer });
-    win.webContents.send('mind:mcp-request', { requestId, method, params: { ...params, windowKey } });
+    pendingRendererRequests.set(requestId, { windowKey: physicalWindowKey, resolve, reject, timer });
+    win.webContents.send('mind:mcp-request', {
+      requestId,
+      method,
+      params: { ...params, windowKey, docId },
+    });
     });
   } finally {
     recordMindMcpDiagnosticPhase(params?.mcpTraceId, 'rendererMs', performance.now() - startedAt);
@@ -838,12 +870,12 @@ async function handleMindBridgeRequest(context, method, params = {}) {
       return await amindMain.recentStore.loadRendererEntries();
 
     case 'mind.createWindow':
-      return await amindMain.newAndOpenWindow(params?.payload || {});
+      return normalizeMindDocumentOpenResult(context, await amindMain.newAndOpenWindow(params?.payload || {}));
 
     case 'mind.createFile': {
       const { filePath } = params || {};
       if (!filePath || typeof filePath !== 'string') throw new Error('filePath is required');
-      return await amindMain.createFileAt(filePath, {
+      return normalizeMindDocumentOpenResult(context, await amindMain.createFileAt(filePath, {
         title: params.title,
         rootText: params.rootText,
         children: params.children,
@@ -851,12 +883,12 @@ async function handleMindBridgeRequest(context, method, params = {}) {
         rootSecrecy: params.rootSecrecy,
         overwrite: params.overwrite === true,
         openWindow: params.openWindow === true,
-      });
+      }));
     }
 
     case 'mind.createDocument': {
       if (params.filePath) {
-        return await amindMain.createFileAt(params.filePath, {
+        return normalizeMindDocumentOpenResult(context, await amindMain.createFileAt(params.filePath, {
           title: params.title,
           rootText: params.rootText,
           children: params.children,
@@ -864,15 +896,15 @@ async function handleMindBridgeRequest(context, method, params = {}) {
           rootSecrecy: params.rootSecrecy,
           overwrite: params.overwrite === true,
           openWindow: params.open === true || params.openWindow === true,
-        });
+        }));
       }
-      return await amindMain.newAndOpenWindow({
+      return normalizeMindDocumentOpenResult(context, await amindMain.newAndOpenWindow({
         title: params.title,
         rootText: params.rootText,
         children: params.children,
         rootMarkers: params.rootMarkers,
         rootSecrecy: params.rootSecrecy,
-      });
+      }));
     }
 
     case 'mind.listWindows':
@@ -880,7 +912,8 @@ async function handleMindBridgeRequest(context, method, params = {}) {
 
     case 'mind.getActiveWindow': {
       const windows = await listMindWindowsDetailed({ ...context, includeRuntimeState: params?.includeRuntimeState === true });
-      return windows.find((item) => item.focused) || windows[0] || null;
+      const activeDocId = amindMain.getActiveWorkspaceDocId?.() ?? null;
+      return windows.find((item) => item.docId === activeDocId) || windows.find((item) => item.focused) || windows[0] || null;
     }
 
     case 'mind.getWindowDocument':
@@ -925,11 +958,10 @@ async function handleMindBridgeRequest(context, method, params = {}) {
       return await readMindFileContent(params?.filePath, params || {});
 
     case 'mind.focusWindow': {
-      const { windowKey } = params || {};
-      if (!windowKey) throw new Error('windowKey is required');
-      if (!windowKey.startsWith('mind:')) throw new Error(`Not a Mind window: ${windowKey}`);
-      windowManager.focus(windowKey);
-      return { ok: true, windowKey };
+      const openEntry = getOpenMindEntry(context, params || {});
+      amindMain.activateWorkspaceDocument(openEntry.docId);
+      windowManager.focus(openEntry.physicalWindowKey);
+      return { ok: true, windowKey: openEntry.windowKey, docId: openEntry.docId };
     }
 
     case 'mind.closeWindow': {
@@ -952,13 +984,13 @@ async function handleMindBridgeRequest(context, method, params = {}) {
     case 'mind.openAmindFile': {
       const { filePath } = params || {};
       if (!filePath || typeof filePath !== 'string') throw new Error('filePath is required');
-      return await amindMain.openFileInWindow(filePath);
+      return normalizeMindDocumentOpenResult(context, await amindMain.openFileInWindow(filePath));
     }
 
     case 'mind.openXmindFile': {
       const { filePath } = params || {};
       if (!filePath || typeof filePath !== 'string') throw new Error('filePath is required');
-      return await amindMain.importXmindFileInWindow(filePath);
+      return normalizeMindDocumentOpenResult(context, await amindMain.importXmindFileInWindow(filePath));
     }
 
     default:

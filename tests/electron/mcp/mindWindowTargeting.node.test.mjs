@@ -34,6 +34,32 @@ test('multi-window writes require an explicit windowKey even when one window is 
   );
 });
 
+test('documents in one workspace window remain distinct write targets', () => {
+  const workspaceDocuments = [
+    {
+      windowKey: 'mind:workspace#doc:a',
+      physicalWindowKey: 'mind:workspace',
+      docId: 'doc:a',
+      focused: true,
+    },
+    {
+      windowKey: 'mind:workspace#doc:b',
+      physicalWindowKey: 'mind:workspace',
+      docId: 'doc:b',
+      focused: false,
+    },
+  ];
+
+  assert.throws(
+    () => resolveMindWriteWindowKey({}, workspaceDocuments),
+    (error) => error.code === 'AMBIGUOUS_WINDOW'
+  );
+  assert.equal(
+    resolveMindWriteWindowKey({ windowKey: 'mind:workspace#doc:b' }, workspaceDocuments),
+    'mind:workspace#doc:b'
+  );
+});
+
 test('explicit write target must identify an open Mind window', () => {
   assert.equal(resolveMindWriteWindowKey({ windowKey: 'mind:b' }, windows), 'mind:b');
   assert.throws(

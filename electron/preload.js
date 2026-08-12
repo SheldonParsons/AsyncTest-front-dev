@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
         docGet: (payload) => ipcRenderer.invoke('amind:docGet', payload),
         docUpdate: (payload) => ipcRenderer.invoke('amind:docUpdate', payload),
+        workspaceGet: () => ipcRenderer.invoke('amind:workspaceGet'),
+        workspaceActivateDocument: (payload) => ipcRenderer.invoke('amind:workspaceActivateDocument', payload),
+        workspaceCloseDocument: (payload) => ipcRenderer.invoke('amind:workspaceCloseDocument', payload),
 
         save: (payload) => ipcRenderer.invoke('amind:save', payload),
         saveAsDialog: (payload) => ipcRenderer.invoke('amind:saveAsDialog', payload),

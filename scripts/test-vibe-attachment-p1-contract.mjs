@@ -141,6 +141,19 @@ const emptyStandaloneActions = visibleAssistants.filter(event =>
   threadPolicy.shouldRenderStandaloneAssistantBody(event, Boolean(String(event.content || '').trim())))
 assert.equal(emptyStandaloneActions.length, brokenContinuation.expected.empty_standalone_action_count)
 
+// 旧确认链的子答案可能重复父节点已展示的 completed_read_answer；线程投影只保留新增回执。
+const readAnswer = '已读取本轮 5 份附件，并按原始文件名形成独立文档。'
+const receipt = '已录入 5 份附件。'
+const repeatedThread = [
+  { id: 'root', event_order: 1, role: 'assistant', content: readAnswer, meta: {} },
+  { id: 'reply', event_order: 2, role: 'user', content: '确认', meta: { confirmation_reply: true, parent_event_id: 'root' } },
+  { id: 'child', event_order: 3, role: 'assistant', content: `${readAnswer}\n\n${receipt}`, meta: { continuation_context: { parent_event_id: 'root' } } },
+]
+assert.equal(
+  threadPolicy.threadFinalAnswerText(repeatedThread, repeatedThread[0], event => String(event.content || '')),
+  `${readAnswer}\n\n${receipt}`,
+)
+
 // 未来后端恢复显式 continuation_context 后，显式身份必须优先于邻接推断。
 const explicitParent = 'explicit-root-id'
 assert.equal(threadPolicy.continuationParentEventId([

@@ -121,7 +121,14 @@ export function threadFinalAnswerText(
   const seen = new Set<string>()
   const answers: string[] = []
   for (const event of [root, ...parentContinuationResponses(events, root)]) {
-    const answer = String(displayContent(event) || '').trim()
+    let answer = String(displayContent(event) || '').trim()
+    for (const previous of answers) {
+      if (!answer.startsWith(previous)) continue
+      const suffix = answer.slice(previous.length)
+      if (suffix && !/^\s+/.test(suffix)) continue
+      answer = suffix.trim()
+      break
+    }
     const key = answer.replace(/\s+/g, ' ')
     if (!key || seen.has(key)) continue
     seen.add(key)

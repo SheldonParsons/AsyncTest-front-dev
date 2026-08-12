@@ -528,6 +528,7 @@ import {
 } from '../api'
 import {
   collectKnowledgeStatsProjectIds,
+  hasKnowledgeWriteCommit,
   knowledgeStatsProjectId,
   readKnowledgeStats,
   writeKnowledgeStats,
@@ -2140,6 +2141,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   const canonicalState: TurnProtocolState = createTurnProtocolState()
   let canonicalSeen = false
   let canonicalModel: TurnProtocolReadModel | null = null
+  let knowledgeCommitObserved = false
 
   const onEvent = (event: any) => {
     // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
@@ -2155,6 +2157,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
       recallVerification = canonicalModel.verification
       failed = canonicalModel.failed
       turnCancelled = canonicalModel.state === 'cancelled'
+      if (hasKnowledgeWriteCommit(canonicalModel) && !knowledgeCommitObserved) {
+        knowledgeCommitObserved = true
+        if (live) void loadCurrentKbStats(project)
+      }
       if (live) applyCanonicalReadModel(canonicalModel)
       // 外层 SSE 在阶段 5 只承担连接、turn id 和持久化通知；其余语义不得再解释第二次。
       if (!['turn_started', 'event_saved'].includes(type)) {
@@ -2336,7 +2342,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     // 后面的服务器刷新是后台事，不该让按钮继续转。
     foundationBusy.value = false
     streamingAssistantEventId.value = ''
-    if (!failed && !turnCancelled && turnMayChangeKnowledge(actions, applyEdit)) void loadCurrentKbStats()
+    if (!failed && !turnCancelled
+      && (knowledgeCommitObserved || turnMayChangeKnowledge(actions, applyEdit))) {
+      void loadCurrentKbStats(project)
+    }
     // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
     if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
       try {

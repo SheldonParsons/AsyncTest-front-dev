@@ -82,17 +82,36 @@
                 </div>
             </div>
         </MindHeader>
-        <MindMain ref="mindMainRef" class="mind-main-container" :doc="doc" :filePath="filePath" :docId="docId"
-            :windowKey="windowKey" :show-search-panel="showSearchPanel" :show-format-panel="showFormatPanel"
-            @filePathChange="changeFilePath"
-            @saveStateChange="updateSaveState" @nodeCountChange="updateNodeCountState"
-            @toggleSearchPanel="toggleSearchPanel" @toggleFormatPanel="toggleFormatPanel"
-            @scaleChange="onScaleChange">
-        </MindMain>
-        <MindFooter class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
+        <MindDocumentTabs :documents="documentTabs" :active-doc-id="activeDocumentId"
+            @activate="activateDocument" @close="closeDocumentTab" @new="onQuickNewClick" />
+        <div v-if="openDocuments.length" class="mind-document-stage"
+            :class="{ 'is-first-document-active': activeDocumentId === openDocuments[0]?.docId }">
+            <MindMain v-for="session in openDocuments" v-show="session.docId === activeDocumentId"
+                :key="session.docId" :ref="(element) => setMindMainRef(session.docId, element)"
+                class="mind-document-surface" :doc="session.doc" :filePath="session.filePath" :docId="session.docId"
+                :windowKey="getMindDocumentWindowKey(session.docId)" :active="session.docId === activeDocumentId"
+                :show-search-panel="session.showSearchPanel" :show-format-panel="session.showFormatPanel"
+                @filePathChange="(value) => changeFilePath(session.docId, value)"
+                @saveStateChange="(value) => updateSaveState(session.docId, value)"
+                @nodeCountChange="(value) => updateNodeCountState(session.docId, value)"
+                @toggleSearchPanel="toggleSearchPanelFor(session.docId)"
+                @toggleFormatPanel="toggleFormatPanelFor(session.docId)"
+                @scaleChange="(value) => onScaleChange(session.docId, value)">
+            </MindMain>
+        </div>
+        <div v-else class="mind-empty-workspace">
+            <img class="mind-empty-workspace-icon" :src="homeIcon" alt="" />
+            <p class="mind-empty-workspace-title">打开一张思维导图</p>
+            <div class="mind-empty-workspace-actions">
+                <button type="button" class="mind-empty-workspace-primary" @click="onQuickNewClick">新建</button>
+                <button type="button" @click="onOpenLocalClick">打开文件</button>
+            </div>
+        </div>
+        <MindFooter v-if="activeSession" class="mind-footer-container" :total-nodes="nodeCountState.totalNodes"
             :selected-nodes="nodeCountState.selectedNodes" :boards="mindBoards" :active-board-id="activeBoardId"
             :has-local-file-binding="!!filePath" :scale="currentScale"
             @switch-board="onSwitchBoard" @rename-board="onRenameBoard" @zoom-to="onZoomTo"></MindFooter>
+        <div v-else class="mind-empty-footer"></div>
         <UserProfileDialog ref="userProfileDialogRef" />
         <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
             <LoginComponent :redirect-on-success="false" @loginSuccess="handleLoginSuccess" />
@@ -108,6 +127,7 @@
 import MindHeader from '@/mind/vue_views/headers/index.vue'
 import MindMain from '@/mind/vue_views/main/index.vue'
 import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
+import MindDocumentTabs from '@/mind/vue_views/components/MindDocumentTabs.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import RemoteBindingDialog from '@/mind/vue_views/components/RemoteBindingDialog.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
@@ -126,7 +146,7 @@ import { ensureMultiMindDoc, getActiveMind, getActiveMindId, listMindBoards } fr
 import { getNodePlainText } from '@/mind/core/nodeContent'
 import { ApiCheckProjectFileExists } from '@/api/project/index'
 import { ensureAmindFileName, getRemoteBinding, type MindRemoteBinding } from '@/mind/vue_views/remoteBinding'
-import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from '@/store'
 import { ApiCheckPermission, ClearServerCookie } from '@/api/layout/cookies'
@@ -153,20 +173,70 @@ type MindMainExpose = {
     triggerHeaderSummaryAction: () => boolean;
     zoomTo: (scale: number) => void;
     handleMindMcpRequest: (method: string, params?: any) => Promise<any>;
+    needsCloseConfirmation: () => boolean;
+    requestDocumentClose: () => Promise<boolean>;
 };
 
-const docId = ref<string>('');
-const filePath = ref<string | null>(null);
-const doc = ref<any>(null);
+type MindDocumentSession = {
+    docId: string;
+    filePath: string | null;
+    doc: any;
+    showSearchPanel: boolean;
+    showFormatPanel: boolean;
+    saveState: {
+        isDirty: boolean;
+        isSaving: boolean;
+        displayName: string;
+    };
+    nodeCountState: {
+        totalNodes: number;
+        selectedNodes: number;
+        canCreateRelation: boolean;
+        canCreateSummary: boolean;
+    };
+    currentScale: number;
+};
+
+const openDocuments = ref<MindDocumentSession[]>([]);
+const activeDocumentId = ref<string | null>(null);
 const windowKey = ref<any>(null);
-const mindMainRef = ref<MindMainExpose | null>(null);
+const mindMainRefs = new Map<string, MindMainExpose>();
 const recentPaths = ref<string[]>([]);
-const showSearchPanel = ref(false);
-const showFormatPanel = ref(false);
-const saveState = ref({
+const activeSession = computed(() =>
+    openDocuments.value.find((session) => session.docId === activeDocumentId.value) ?? null
+);
+const docId = computed(() => activeSession.value?.docId ?? '');
+const filePath = computed<string | null>({
+    get: () => activeSession.value?.filePath ?? null,
+    set: (value) => {
+        if (activeSession.value) activeSession.value.filePath = value;
+    },
+});
+const doc = computed<any>({
+    get: () => activeSession.value?.doc ?? null,
+    set: (value) => {
+        if (activeSession.value) activeSession.value.doc = value;
+    },
+});
+const showSearchPanel = computed<boolean>({
+    get: () => activeSession.value?.showSearchPanel ?? false,
+    set: (value) => {
+        if (activeSession.value) activeSession.value.showSearchPanel = value;
+    },
+});
+const showFormatPanel = computed<boolean>({
+    get: () => activeSession.value?.showFormatPanel ?? false,
+    set: (value) => {
+        if (activeSession.value) activeSession.value.showFormatPanel = value;
+    },
+});
+const saveState = computed(() => activeSession.value?.saveState ?? {
     isDirty: false,
     isSaving: false,
     displayName: '思维导图',
+});
+const mindMainRef = computed(() => {
+    return activeDocumentId.value ? mindMainRefs.get(activeDocumentId.value) ?? null : null;
 });
 const isLoggedIn = ref(checkLoginStatus());
 const userImage = ref("https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png");
@@ -178,7 +248,9 @@ let removeAuthLogoutListener: (() => void) | null = null;
 let removeAuthLoginListener: (() => void) | null = null;
 let removeMcpRequestListener: (() => void) | null = null;
 let removeMcpDocUpdatedListener: (() => void) | null = null;
-const nodeCountState = ref({
+let removeWorkspaceChangedListener: (() => void) | null = null;
+let removeBeforeCloseListener: (() => void) | null = null;
+const nodeCountState = computed(() => activeSession.value?.nodeCountState ?? {
     totalNodes: 0,
     selectedNodes: 0,
     canCreateRelation: false,
@@ -188,10 +260,18 @@ const hasSelectedNodes = computed(() => nodeCountState.value.selectedNodes > 0);
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const mindBoards = computed(() => listMindBoards(doc.value));
 const activeBoardId = computed(() => getActiveMindId(doc.value));
-const currentScale = ref(1);
+const currentScale = computed(() => activeSession.value?.currentScale ?? 1);
 
-function onScaleChange(scale: number) {
-    currentScale.value = scale;
+const documentTabs = computed(() => openDocuments.value.map((session) => ({
+    docId: session.docId,
+    label: session.saveState.displayName || session.doc?.manifest?.title || '思维导图',
+    isDirty: session.saveState.isDirty,
+    isSaving: session.saveState.isSaving,
+})));
+
+function onScaleChange(targetDocId: string, scale: number) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (session) session.currentScale = scale;
 }
 
 function onZoomTo(scale: number) {
@@ -219,22 +299,134 @@ const remoteBindingDefaultFileName = computed(() => {
     const localFileBaseName = getLocalFileBaseName(filePath.value);
     return ensureAmindFileName(localFileBaseName || getCurrentMainRootTitle() || '思维导图');
 });
+
+function getSessionDisplayName(filePathValue: string | null, documentValue: any) {
+    if (filePathValue) {
+        return String(filePathValue).split(/[\\/]/).filter(Boolean).pop() || '思维导图';
+    }
+    const remoteFileName = getRemoteBinding(documentValue)?.fileName;
+    return remoteFileName || `${documentValue?.manifest?.title ?? '思维导图'}`.trim() || '思维导图';
+}
+
+function createDocumentSession(payload: any): MindDocumentSession | null {
+    const nextDocId = typeof payload?.docId === 'string' ? payload.docId : '';
+    if (!nextDocId || !payload?.doc) return null;
+    ensureMultiMindDoc(payload.doc);
+    const nextFilePath = typeof payload.filePath === 'string' ? payload.filePath : null;
+    return {
+        docId: nextDocId,
+        filePath: nextFilePath,
+        doc: payload.doc,
+        showSearchPanel: false,
+        showFormatPanel: false,
+        saveState: {
+            isDirty: false,
+            isSaving: false,
+            displayName: getSessionDisplayName(nextFilePath, payload.doc),
+        },
+        nodeCountState: {
+            totalNodes: 0,
+            selectedNodes: 0,
+            canCreateRelation: false,
+            canCreateSummary: false,
+        },
+        currentScale: 1,
+    };
+}
+
+function applyWorkspaceSnapshot(snapshot: any) {
+    const incomingDocuments = Array.isArray(snapshot?.documents) ? snapshot.documents : [];
+    const existingById = new Map(openDocuments.value.map((session) => [session.docId, session]));
+    const nextSessions: MindDocumentSession[] = [];
+    for (const payload of incomingDocuments) {
+        const incomingDocId = typeof payload?.docId === 'string' ? payload.docId : '';
+        if (!incomingDocId) continue;
+        const existing = existingById.get(incomingDocId);
+        if (existing) {
+            if (typeof payload.filePath === 'string' || payload.filePath === null) {
+                existing.filePath = payload.filePath ?? null;
+            }
+            nextSessions.push(existing);
+            continue;
+        }
+        const created = createDocumentSession(payload);
+        if (created) nextSessions.push(created);
+    }
+    openDocuments.value = nextSessions;
+    const nextActiveDocId = typeof snapshot?.activeDocId === 'string' ? snapshot.activeDocId : null;
+    activeDocumentId.value = nextSessions.some((session) => session.docId === nextActiveDocId)
+        ? nextActiveDocId
+        : nextSessions[0]?.docId ?? null;
+    for (const storedDocId of [...mindMainRefs.keys()]) {
+        if (!nextSessions.some((session) => session.docId === storedDocId)) mindMainRefs.delete(storedDocId);
+    }
+}
+
+function setMindMainRef(targetDocId: string, element: any) {
+    if (element) mindMainRefs.set(targetDocId, element as MindMainExpose);
+    else mindMainRefs.delete(targetDocId);
+}
+
+function getMindDocumentWindowKey(targetDocId: string) {
+    const physicalWindowKey = typeof windowKey.value === 'string' && windowKey.value ? windowKey.value : 'mind:workspace';
+    return `${physicalWindowKey}#${targetDocId}`;
+}
+
+async function activateDocument(targetDocId: string) {
+    if (!openDocuments.value.some((session) => session.docId === targetDocId)) return;
+    remoteBindingDialogVisible.value = false;
+    invalidRemoteBinding.value = null;
+    activeDocumentId.value = targetDocId;
+    const snapshot = await window.electronAPI.amind.workspaceActivateDocument({ docId: targetDocId });
+    applyWorkspaceSnapshot(snapshot);
+}
+
+async function closeDocumentTab(targetDocId: string) {
+    let controller = mindMainRefs.get(targetDocId) ?? null;
+    if (!controller) {
+        await nextTick();
+        controller = mindMainRefs.get(targetDocId) ?? null;
+    }
+    if (controller?.needsCloseConfirmation() && targetDocId !== activeDocumentId.value) {
+        await activateDocument(targetDocId);
+        await nextTick();
+        controller = mindMainRefs.get(targetDocId) ?? controller;
+    }
+    if (controller && !(await controller.requestDocumentClose())) return;
+    const snapshot = await window.electronAPI.amind.workspaceCloseDocument({ docId: targetDocId });
+    applyWorkspaceSnapshot(snapshot);
+}
+
+let handlingWorkspaceClose = false;
+async function handleWorkspaceBeforeClose(key: string) {
+    if (handlingWorkspaceClose) return;
+    handlingWorkspaceClose = true;
+    try {
+        const orderedSessions = [...openDocuments.value].sort((left, right) => {
+            if (left.docId === activeDocumentId.value) return -1;
+            if (right.docId === activeDocumentId.value) return 1;
+            return 0;
+        });
+        for (const session of orderedSessions) {
+            let controller = mindMainRefs.get(session.docId);
+            if (controller?.needsCloseConfirmation() && session.docId !== activeDocumentId.value) {
+                await activateDocument(session.docId);
+                await nextTick();
+                controller = mindMainRefs.get(session.docId) ?? controller;
+            }
+            if (controller && !(await controller.requestDocumentClose())) {
+                await window.electronAPI.wm.closeResponse({ key, allow: false });
+                return;
+            }
+        }
+        await window.electronAPI.wm.closeResponse({ key, allow: true });
+    } finally {
+        handlingWorkspaceClose = false;
+    }
+}
+
 onMounted(async () => {
-    const qDocId = route.query.docId;
     windowKey.value = route.query.windowKey
-    if (typeof qDocId !== 'string' || !qDocId) {
-        throw new Error('Mind window missing query.docId');
-    }
-
-    docId.value = qDocId;
-
-    const res = await window.electronAPI.amind.docGet({ docId: docId.value });
-    filePath.value = res.filePath;
-    ensureMultiMindDoc(res.doc);
-    doc.value = res.doc;
-    if (isLoggedIn.value) {
-        await getUserImage();
-    }
     if (window.electronAPI?.on) {
         removeAuthLogoutListener = window.electronAPI.on('auth:logout', (_event: any, payload: { sourceWindow?: string } = {}) => {
             if (payload?.sourceWindow === windowKey.value) return;
@@ -248,10 +440,25 @@ onMounted(async () => {
             const requestId = payload?.requestId;
             if (!requestId) return;
             try {
-                if (!mindMainRef.value?.handleMindMcpRequest) {
+                const requestedDocId = typeof payload?.params?.docId === 'string'
+                    ? payload.params.docId
+                    : `${payload?.params?.windowKey ?? ''}`.split('#').at(-1);
+                const targetDocId = openDocuments.value.some((session) => session.docId === requestedDocId)
+                    ? requestedDocId
+                    : activeDocumentId.value;
+                if (!targetDocId) throw new Error('Mind document target is missing');
+                let targetController = mindMainRefs.get(targetDocId);
+                if (!targetController) {
+                    await nextTick();
+                    targetController = mindMainRefs.get(targetDocId);
+                }
+                if (!targetController?.handleMindMcpRequest) {
                     throw new Error('Mind content view is not ready');
                 }
-                const result = await mindMainRef.value.handleMindMcpRequest(payload?.method, payload?.params || {});
+                const result = await targetController.handleMindMcpRequest(payload?.method, {
+                    ...(payload?.params || {}),
+                    docId: targetDocId,
+                });
                 await window.electronAPI.invoke('mind:mcpResponse', { requestId, ok: true, result });
             } catch (error) {
                 await window.electronAPI.invoke('mind:mcpResponse', {
@@ -269,13 +476,25 @@ onMounted(async () => {
             }
         });
         removeMcpDocUpdatedListener = window.electronAPI.on('mind:mcp-doc-updated', (_event: any, payload: any) => {
-            if (payload?.docId !== docId.value || !payload?.doc) return;
-            doc.value = payload.doc;
+            const targetSession = openDocuments.value.find((session) => session.docId === payload?.docId);
+            if (!targetSession || !payload?.doc) return;
+            ensureMultiMindDoc(payload.doc);
+            targetSession.doc = payload.doc;
             if (Object.prototype.hasOwnProperty.call(payload, 'filePath')) {
-                filePath.value = payload.filePath ?? null;
+                targetSession.filePath = payload.filePath ?? null;
             }
         });
+        removeWorkspaceChangedListener = window.electronAPI.on('amind:workspace-changed', (_event: any, payload: any) => {
+            applyWorkspaceSnapshot(payload);
+        });
+        removeBeforeCloseListener = window.electronAPI.on('wm:before-close', (_event: any, payload: any) => {
+            if (payload?.key !== windowKey.value) return;
+            void handleWorkspaceBeforeClose(payload.key);
+        });
     }
+    const workspace = await window.electronAPI.amind.workspaceGet();
+    applyWorkspaceSnapshot(workspace);
+    if (isLoggedIn.value) await getUserImage();
     await loadRecentPaths();
 });
 
@@ -288,18 +507,31 @@ onBeforeUnmount(() => {
     removeMcpRequestListener = null;
     removeMcpDocUpdatedListener?.();
     removeMcpDocUpdatedListener = null;
+    removeWorkspaceChangedListener?.();
+    removeWorkspaceChangedListener = null;
+    removeBeforeCloseListener?.();
+    removeBeforeCloseListener = null;
 });
 
-function changeFilePath(value: any) {
-    filePath.value = value
+function changeFilePath(targetDocId: string, value: any) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (session) session.filePath = value ?? null;
 }
 
-function updateSaveState(value: { isDirty: boolean; isSaving: boolean; displayName: string }) {
-    saveState.value = value;
+function updateSaveState(targetDocId: string, value: { isDirty: boolean; isSaving: boolean; displayName: string }) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (session) session.saveState = value;
 }
 
-function updateNodeCountState(value: { totalNodes: number; selectedNodes: number; canCreateSummary?: boolean; canCreateRelation?: boolean }) {
-    nodeCountState.value = value;
+function updateNodeCountState(targetDocId: string, value: { totalNodes: number; selectedNodes: number; canCreateSummary?: boolean; canCreateRelation?: boolean }) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (!session) return;
+    session.nodeCountState = {
+        totalNodes: value.totalNodes,
+        selectedNodes: value.selectedNodes,
+        canCreateSummary: value.canCreateSummary === true,
+        canCreateRelation: value.canCreateRelation === true,
+    };
 }
 
 function onHeaderBranchClick() {
@@ -322,8 +554,18 @@ function toggleFormatPanel() {
     showFormatPanel.value = !showFormatPanel.value;
 }
 
+function toggleFormatPanelFor(targetDocId: string) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (session) session.showFormatPanel = !session.showFormatPanel;
+}
+
 function toggleSearchPanel() {
     showSearchPanel.value = !showSearchPanel.value;
+}
+
+function toggleSearchPanelFor(targetDocId: string) {
+    const session = openDocuments.value.find((item) => item.docId === targetDocId);
+    if (session) session.showSearchPanel = !session.showSearchPanel;
 }
 
 async function showMainWindow() {
@@ -595,9 +837,97 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
     flex-direction: column;
     border-radius: 10px;
 
-    .mind-main-container {
-        flex: 1;
+    .mind-document-stage {
+        position: relative;
+        flex: 1 1 auto;
         min-height: 0;
+        min-width: 0;
+        margin-left: 10px;
+        margin-right: 10px;
+    }
+
+    .mind-document-surface {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .mind-document-stage.is-first-document-active :deep(.main-container) {
+        border-top-left-radius: 0;
+    }
+
+    .mind-empty-workspace {
+        flex: 1 1 auto;
+        min-height: 0;
+        margin: 0 10px;
+        border-radius: 10px;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+    }
+
+    .mind-empty-workspace-icon {
+        width: 28px;
+        height: 28px;
+        opacity: 0.48;
+    }
+
+    .mind-empty-workspace-title {
+        margin: 0;
+        color: #596579;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .mind-empty-workspace-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .mind-empty-workspace-actions button {
+        height: 30px;
+        padding: 0 13px;
+        border: 1px solid rgba(100, 116, 139, 0.22);
+        border-radius: 7px;
+        background: #ffffff;
+        color: #435066;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .mind-empty-workspace-actions button:hover {
+        border-color: rgba(71, 85, 105, 0.38);
+        background: #f8fafc;
+    }
+
+    .mind-empty-workspace-actions .mind-empty-workspace-primary {
+        border-color: #111418;
+        background: #111418;
+        color: #ffffff;
+    }
+
+    .mind-empty-workspace-actions .mind-empty-workspace-primary:hover {
+        border-color: #252a31;
+        background: #252a31;
+        color: #ffffff;
+    }
+
+    .mind-empty-workspace-actions .mind-empty-workspace-primary:active {
+        border-color: #090b0e;
+        background: #090b0e;
+        color: #ffffff;
+    }
+
+    .mind-empty-footer {
+        height: 30px;
+        flex: 0 0 30px;
     }
 
     .mind-header-user-section {
@@ -923,8 +1253,7 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
         pointer-events: none;
     }
 
-    .mind-footer-container,
-    .mind-main-container {
+    .mind-footer-container {
         margin-left: 10px;
         margin-right: 10px;
     }

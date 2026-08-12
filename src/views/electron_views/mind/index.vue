@@ -166,9 +166,10 @@
 </template>
 
 <script lang="ts" setup>
-import mindLogo from '@/mind/core/action_icon/mind.svg';
 import { DEBUG_NEW_MIND_SEED } from '@/mind/vue_views/main/constants';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+
+const mindLogo = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/mind_full.svg';
 
 type RecentMindEntry = {
     filePath: string;
@@ -507,9 +508,10 @@ function formatUpdatedAt(value?: string | null) {
 }
 
 .mind-hero-logo {
-    width: 34px;
-    height: 34px;
+    width: 38px;
+    height: 30px;
     display: block;
+    object-fit: contain;
 }
 
 .mind-hero-copy {
@@ -639,9 +641,10 @@ function formatUpdatedAt(value?: string | null) {
 }
 
 .mind-recent-placeholder-logo {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 17px;
     display: block;
+    object-fit: contain;
 }
 
 .mind-recent-placeholder-label {

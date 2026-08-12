@@ -1024,9 +1024,11 @@ const props = defineProps<{
   filePath?: any;
   docId?: string;
   windowKey?: any;
+  active?: boolean;
   showSearchPanel?: boolean;
   showFormatPanel?: boolean;
 }>();
+const isDocumentActive = computed(() => props.active !== false);
 const emit = defineEmits<{
   (event: 'filePathChange', value: string | null): void;
   (event: 'saveStateChange', value: { isDirty: boolean; isSaving: boolean; displayName: string }): void;
@@ -3331,7 +3333,7 @@ let cancelMindAiCameraAnimation: (() => void) | null = null;
 let localDocWatchSuppressionHolds = 0;
 let globalDragListenersActive = false;
 let isFinalizingInteraction = false;
-let removeBeforeCloseListener: null | (() => void) = null;
+let pendingDocumentCloseResolver: ((allow: boolean) => void) | null = null;
 let collapseTagHideTimer: number | null = null;
 const closeDialogState = ref({
   visible: false,
@@ -8599,6 +8601,8 @@ defineExpose({
   triggerHeaderSummaryAction,
   zoomTo,
   handleMindMcpRequest,
+  needsCloseConfirmation: () => shouldConfirmClose.value,
+  requestDocumentClose,
 });
 
 function findParentAndIndexFromNodes(nodeId: string) {
@@ -11868,6 +11872,7 @@ function withCameraResetLog(reason: string, mutate: () => void) {
 }
 
 function requestRender() {
+  if (!isDocumentActive.value) return;
   const perfProbe = getActiveMindPerfProbe();
   const isPreFlushProbeRender = !!perfProbe && perfProbe.flushStartedAt == null;
   if (perfProbe && isPreFlushProbeRender) {
@@ -13305,13 +13310,33 @@ async function handleBeforeCloseRequest(key: string, options: { forceSaveBeforeC
   };
 }
 
+async function requestDocumentClose() {
+  if (isSaving.value) return false;
+  if (!shouldConfirmClose.value) return true;
+  if (pendingDocumentCloseResolver) return false;
+  return await new Promise<boolean>((resolve) => {
+    pendingDocumentCloseResolver = resolve;
+    closeDialogState.value = {
+      visible: true,
+      key: null,
+      submitting: false,
+    };
+  });
+}
+
 async function resolveCloseDialog(allow: boolean) {
   const key = closeDialogState.value.key;
+  const documentResolver = pendingDocumentCloseResolver;
+  pendingDocumentCloseResolver = null;
   closeDialogState.value = {
     visible: false,
     key: null,
     submitting: false,
   };
+  if (documentResolver) {
+    documentResolver(allow);
+    return;
+  }
   if (!key) return;
   await window.electronAPI.wm.closeResponse({ key, allow });
 }
@@ -13326,7 +13351,7 @@ async function onCloseDialogDiscard() {
 
 async function onCloseDialogSave() {
   const key = closeDialogState.value.key;
-  if (!key || closeDialogState.value.submitting || isSaving.value) return;
+  if ((!key && !pendingDocumentCloseResolver) || closeDialogState.value.submitting || isSaving.value) return;
   closeDialogState.value = {
     ...closeDialogState.value,
     submitting: true,
@@ -14500,7 +14525,7 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
           applyMutation: applyDocumentMutation,
           selectNode: (nodeId) => setSingleSelected(nodeId, { suppressRender: true }),
           isCancelled: async () => {
-            const status: any = await window.electronAPI.invoke('mind:mcpGetOperationStatus');
+            const status: any = await window.electronAPI.invoke('mind:mcpGetOperationStatus', { docId: props.docId });
             if (status?.stop?.reason === 'control-exited') {
               return {
                 code: 'MCP_CONTROL_REVOKED',
@@ -14510,7 +14535,7 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
             return status?.blocked === true || ['stopping', 'stopped'].includes(status?.status);
           },
           onProgress: async (progress) => {
-            await window.electronAPI.invoke('mind:mcpUpdateOperationProgress', progress);
+            await window.electronAPI.invoke('mind:mcpUpdateOperationProgress', { ...progress, docId: props.docId });
           },
         });
       } catch (error) {
@@ -14695,31 +14720,20 @@ function onViewportNativeScrollGuard() {
   if (el.scrollLeft !== 0) el.scrollLeft = 0;
 }
 
-onMounted(() => {
-  logRendererDebugInstructions();
-  setupMindAgentBridgeIfDev();
-  removeBeforeCloseListener = window.electronAPI.on('wm:before-close', async (_event: any, payload: any) => {
-    await handleBeforeCloseRequest(payload?.key, {
-      forceSaveBeforeClose: payload?.forceSaveBeforeClose === true,
-      discardChanges: payload?.discardChanges === true,
-    });
-  });
-  // 监听 wheel 在 viewport 上（必须 passive:false 才能 preventDefault）
+let documentRuntimeListenersAttached = false;
+let documentRuntimeActivatedOnce = false;
+
+function attachDocumentRuntimeListeners() {
+  if (documentRuntimeListenersAttached) return;
+  documentRuntimeListenersAttached = true;
   if (viewportRef.value) viewportRef.value.addEventListener('wheel', onWheel as any, { passive: false });
-  // 滚动守卫：视口容器是 overflow: hidden，但编辑超长节点时浮层会撑出滚动余量，
-  // 浏览器的 caret scrollIntoView（聚焦/输入/粘贴时）会程序化滚动它，把 canvas
-  // 一起滚出视口（表现为"视口缩小/画布错位露白"）。此容器永远不该有原生滚动，
-  // 光标可见性由相机平移（caret follow）负责。
   if (viewportRef.value) viewportRef.value.addEventListener('scroll', onViewportNativeScrollGuard, { passive: true });
   if (viewportRef.value) {
     resizeObserver = new ResizeObserver(() => {
-      handleResize();
+      if (isDocumentActive.value) handleResize();
     });
     resizeObserver.observe(viewportRef.value);
   }
-
-  redrawAll('mounted');
-
   window.addEventListener('resize', handleResize);
   window.addEventListener('keydown', onWindowKeyDown, true);
   window.addEventListener('copy', onWindowCopy, true);
@@ -14729,10 +14743,71 @@ onMounted(() => {
   window.addEventListener('pointermove', trackGlobalPointerPosition, true);
   window.addEventListener('pointerdown', trackGlobalPointerPosition, true);
   window.addEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
+}
+
+function detachDocumentRuntimeListeners() {
+  if (!documentRuntimeListenersAttached) return;
+  documentRuntimeListenersAttached = false;
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  if (viewportRef.value) viewportRef.value.removeEventListener('wheel', onWheel as any);
+  if (viewportRef.value) viewportRef.value.removeEventListener('scroll', onViewportNativeScrollGuard);
+  window.removeEventListener('resize', handleResize);
+  window.removeEventListener('keydown', onWindowKeyDown, true);
+  window.removeEventListener('copy', onWindowCopy, true);
+  window.removeEventListener('paste', onWindowPaste, true);
+  window.removeEventListener('compositionstart', onCompositionStart, true);
+  window.removeEventListener('compositionend', onCompositionEnd, true);
+  window.removeEventListener('pointermove', trackGlobalPointerPosition, true);
+  window.removeEventListener('pointerdown', trackGlobalPointerPosition, true);
+  window.removeEventListener('pointerdown', onSearchExportDropdownPointerDown, true);
+  cleanup();
+}
+
+async function activateDocumentRuntime(reason: string) {
+  if (!isDocumentActive.value) return;
+  attachDocumentRuntimeListeners();
+  setupMindAgentBridgeIfDev();
+  await nextTick();
+  if (!isDocumentActive.value) return;
+  resizeToViewport();
+  await redrawAll(documentRuntimeActivatedOnce ? `reactivate:${reason}` : 'mounted');
+  documentRuntimeActivatedOnce = true;
+  emitSaveState();
+  emitNodeCountState();
+  syncStylePanelFromSelection();
+}
+
+function deactivateDocumentRuntime() {
+  if (editingSession.value) commitEditingSession();
+  cancelMindAiCameraAnimation?.();
+  cancelMindAiCameraAnimation = null;
+  cancelInteraction('document-deactivated');
+  detachDocumentRuntimeListeners();
+  if (drawRafId != null) cancelAnimationFrame(drawRafId);
+  drawRafId = null;
+  canvasPixelW.value = 1;
+  canvasPixelH.value = 1;
+}
+
+onMounted(() => {
+  logRendererDebugInstructions();
   removeMindFontUpdateListener = window.electronAPI.on('amind:mind-fonts-updated', async (_event: any, payload: MindFontCatalogPayload) => {
     await applyMindFontCatalog(payload);
   });
-  void bootstrapMindFonts();
+  if (isDocumentActive.value) {
+    void bootstrapMindFonts();
+    void activateDocumentRuntime('initial');
+  }
+});
+
+watch(isDocumentActive, (active) => {
+  if (active) {
+    void bootstrapMindFonts();
+    void activateDocumentRuntime('tab-switch');
+    return;
+  }
+  deactivateDocumentRuntime();
 });
 
 watch(
@@ -14743,6 +14818,7 @@ watch(
       return;
     }
     ensureMindRoots(props.doc);
+    if (!isDocumentActive.value) return;
     if (isLocalDocWatchSuppressed()) return;
     redrawAll('watch:doc');
     scheduleNodeCountStateEmit();
@@ -14917,8 +14993,9 @@ onBeforeUnmount(() => {
   teardownSearchResultResizeObserver();
   if (activeMindPerfCameraFpsSession) finishMindPerfCameraFpsSession(activeMindPerfCameraFpsSession, 'unmount');
   clearCollapseTagHideTimer();
-  removeBeforeCloseListener?.();
-  removeBeforeCloseListener = null;
+  detachDocumentRuntimeListeners();
+  pendingDocumentCloseResolver?.(false);
+  pendingDocumentCloseResolver = null;
   removeMindFontUpdateListener?.();
   removeMindFontUpdateListener = null;
   clearNodeWidthInteraction('beforeUnmount');

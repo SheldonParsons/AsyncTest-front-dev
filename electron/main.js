@@ -381,10 +381,16 @@ ipcMain.handle('mind:mcpResponse', async (event, payload = {}) => {
   return handleMindMcpRendererResponse(senderKey, payload);
 });
 
+function resolveMindDocumentOperationKey(senderKey, payload = {}) {
+  const docId = typeof payload?.docId === 'string' ? payload.docId.trim() : '';
+  return docId ? `${senderKey}#${docId}` : senderKey;
+}
+
 ipcMain.handle('mind:mcpStopOperation', async (event, payload = {}) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
   if (!senderKey?.startsWith('mind:')) return false;
-  const result = stopMindOperation(senderKey, payload?.reason || 'user');
+  const operationKey = resolveMindDocumentOperationKey(senderKey, payload);
+  const result = stopMindOperation(operationKey, payload?.reason || 'user');
   event.sender.send('mind:mcp-operation', {
     status: 'stopped',
     transactionId: result.transactionId,
@@ -395,26 +401,27 @@ ipcMain.handle('mind:mcpStopOperation', async (event, payload = {}) => {
   return result;
 });
 
-ipcMain.handle('mind:mcpResumeOperations', async (event) => {
+ipcMain.handle('mind:mcpResumeOperations', async (event, payload = {}) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
   if (!senderKey?.startsWith('mind:')) return false;
-  const result = resumeMindOperations(senderKey);
+  const result = resumeMindOperations(resolveMindDocumentOperationKey(senderKey, payload));
   event.sender.send('mind:mcp-operation', { status: 'idle', transactionId: null });
   return result;
 });
 
-ipcMain.handle('mind:mcpGetOperationStatus', async (event) => {
+ipcMain.handle('mind:mcpGetOperationStatus', async (event, payload = {}) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
   if (!senderKey?.startsWith('mind:')) return { status: 'idle', blocked: false };
-  return getMindOperationStatus(senderKey);
+  return getMindOperationStatus(resolveMindDocumentOperationKey(senderKey, payload));
 });
 
 ipcMain.handle('mind:mcpUpdateOperationProgress', async (event, payload = {}) => {
   const senderKey = resolveWindowKeyFromWebContents(event.sender);
   if (!senderKey?.startsWith('mind:')) return false;
-  const currentStatus = getMindOperationStatus(senderKey);
+  const operationKey = resolveMindDocumentOperationKey(senderKey, payload);
+  const currentStatus = getMindOperationStatus(operationKey);
   if (currentStatus.blocked) return currentStatus;
-  const status = updateMindOperationProgressForWindow(senderKey, payload);
+  const status = updateMindOperationProgressForWindow(operationKey, payload);
   event.sender.send('mind:mcp-operation', status);
   return status;
 });
@@ -424,18 +431,27 @@ ipcMain.handle('mind:mcpGetControlStatus', async () => {
 });
 
 ipcMain.handle('mind:mcpExitControl', async () => {
-  const mindWindowKeys = windowManager.listKeys().filter((key) => key.startsWith('mind:'));
+  const controlStateBeforeExit = getMindAgentControlState();
+  const mindOperationKeys = [...new Set([
+    ...(controlStateBeforeExit.executingWindowKeys || []),
+    ...(controlStateBeforeExit.lockedWindowKeys || []),
+  ])];
   const result = revokeMindAgentControl('user-exited-control');
-  for (const windowKey of mindWindowKeys) {
-    stopMindOperation(windowKey, 'control-exited');
+  for (const operationKey of mindOperationKeys) {
+    stopMindOperation(operationKey, 'control-exited');
   }
   return result;
 });
 
 ipcMain.handle('mind:mcpApproveControlRestore', async () => {
+  const controlStateBeforeRestore = getMindAgentControlState();
   const result = approveMindAgentControlRestore();
-  for (const windowKey of windowManager.listKeys().filter((key) => key.startsWith('mind:'))) {
-    resumeMindOperations(windowKey);
+  const mindOperationKeys = [...new Set([
+    ...(controlStateBeforeRestore.executingWindowKeys || []),
+    ...(controlStateBeforeRestore.lockedWindowKeys || []),
+  ])];
+  for (const operationKey of mindOperationKeys) {
+    resumeMindOperations(operationKey);
   }
   return result;
 });

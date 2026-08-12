@@ -7,6 +7,10 @@ export interface KnowledgeStatsPayload {
   items?: Record<string, Partial<KnowledgeStats> | undefined>
 }
 
+export interface KnowledgeWriteModel {
+  writeCommits?: unknown[]
+}
+
 const EMPTY_KNOWLEDGE_STATS: Readonly<KnowledgeStats> = Object.freeze({
   sections: 0,
   modules: 0,
@@ -59,4 +63,9 @@ export function readKnowledgeStats(
 ): KnowledgeStats {
   const key = knowledgeStatsProjectId(projectId)
   return (key && source[key]) || EMPTY_KNOWLEDGE_STATS
+}
+
+/** 只以规范 write_commit 判断知识已经真正提交，不从意图动作猜测。 */
+export function hasKnowledgeWriteCommit(model: KnowledgeWriteModel | null | undefined): boolean {
+  return Array.isArray(model?.writeCommits) && model.writeCommits.length > 0
 }

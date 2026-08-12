@@ -13,6 +13,8 @@ import { createMindFontService } from './fontService.node.js';
 import { migrateLegacyMindStyles } from './styleMigration.node.js';
 import { removeMindRootDescendants } from './mcpDocumentService.node.js';
 
+const MIND_WORKSPACE_WINDOW_KEY = 'mind:workspace';
+
 function readRichTextPlain(richText) {
   if (!richText || typeof richText !== 'object' || !Array.isArray(richText.blocks)) return '';
   return richText.blocks
@@ -83,6 +85,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
 
   // fileKey -> docId （用于：同文件单窗口）
   const fileIndex = new Map();
+  const workspaceDocumentIds = [];
+  let activeWorkspaceDocId = null;
 
   function newDocId() {
     return `doc:${Date.now()}:${Math.random().toString(16).slice(2)}`;
@@ -124,6 +128,113 @@ export function initAmindMain({ userDataPath, windowManager }) {
     return title ? `AsyncTest Mind - ${title}` : 'AsyncTest Mind';
   }
 
+  function showMindWindow(windowKey = MIND_WORKSPACE_WINDOW_KEY) {
+    if (!windowKey || !windowManager) return false;
+    const shown = typeof windowManager.bringToFront === 'function'
+      ? windowManager.bringToFront(windowKey)
+      : false;
+    if (!shown) {
+      const win = windowManager.get(windowKey);
+      if (!win) return false;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    return true;
+  }
+
+  function getWorkspaceSnapshot() {
+    return {
+      windowKey: MIND_WORKSPACE_WINDOW_KEY,
+      activeDocId: activeWorkspaceDocId,
+      documents: workspaceDocumentIds
+        .map((docId) => {
+          const entry = docStore.get(docId);
+          if (!entry) return null;
+          return {
+            docId,
+            filePath: entry.filePath ?? null,
+            doc: entry.doc,
+          };
+        })
+        .filter(Boolean),
+    };
+  }
+
+  function getActiveWorkspaceDocId() {
+    return activeWorkspaceDocId;
+  }
+
+  function getMindDocumentTargetKey(docId) {
+    return `${MIND_WORKSPACE_WINDOW_KEY}#${docId}`;
+  }
+
+  function refreshWorkspaceWindowTitle() {
+    if (!windowManager) return;
+    const win = windowManager.get(MIND_WORKSPACE_WINDOW_KEY);
+    if (!win) return;
+    const entry = activeWorkspaceDocId ? docStore.get(activeWorkspaceDocId) : null;
+    const title = entry?.filePath
+      ? buildMindWindowTitle(entry.filePath)
+      : buildImportWindowTitle(entry?.doc?.manifest?.title);
+    win.setTitle(title || 'AsyncTest Mind');
+  }
+
+  function notifyWorkspaceChanged(reason, docId = activeWorkspaceDocId) {
+    if (!windowManager?.get(MIND_WORKSPACE_WINDOW_KEY)) return;
+    windowManager.sendTo(MIND_WORKSPACE_WINDOW_KEY, 'amind:workspace-changed', {
+      ...getWorkspaceSnapshot(),
+      reason,
+      docId: docId ?? null,
+    });
+  }
+
+  function attachDocumentToWorkspace(docId, { activate = true } = {}) {
+    const entry = docStore.mustGet(docId);
+    if (!workspaceDocumentIds.includes(docId)) workspaceDocumentIds.push(docId);
+    entry.windowKey = MIND_WORKSPACE_WINDOW_KEY;
+    if (activate || !activeWorkspaceDocId) activeWorkspaceDocId = docId;
+    return entry;
+  }
+
+  function activateWorkspaceDocument(docId, { notify = true } = {}) {
+    if (!workspaceDocumentIds.includes(docId) || !docStore.get(docId)) return false;
+    activeWorkspaceDocId = docId;
+    refreshWorkspaceWindowTitle();
+    if (notify) notifyWorkspaceChanged('activate-document', docId);
+    return true;
+  }
+
+  function removeDocumentFromIndexes(docId) {
+    const entry = docStore.get(docId);
+    if (!entry) return;
+    if (entry.filePath) {
+      const fk = normalizeFileKey(entry.filePath);
+      if (fileIndex.get(fk) === docId) fileIndex.delete(fk);
+    }
+    docStore.remove(docId);
+  }
+
+  function closeWorkspaceDocument(docId, { notify = true } = {}) {
+    const index = workspaceDocumentIds.indexOf(docId);
+    if (index < 0) return { closed: false, ...getWorkspaceSnapshot() };
+    workspaceDocumentIds.splice(index, 1);
+    removeDocumentFromIndexes(docId);
+    if (activeWorkspaceDocId === docId) {
+      activeWorkspaceDocId = workspaceDocumentIds[index] ?? workspaceDocumentIds[index - 1] ?? null;
+    }
+    refreshWorkspaceWindowTitle();
+    if (notify) notifyWorkspaceChanged('close-document', docId);
+    return { closed: true, ...getWorkspaceSnapshot() };
+  }
+
+  function clearMindWorkspaceDocuments() {
+    const documentIds = [...workspaceDocumentIds];
+    workspaceDocumentIds.length = 0;
+    activeWorkspaceDocId = null;
+    documentIds.forEach(removeDocumentFromIndexes);
+  }
+
   function normalizeRemoteBindingKey(remoteBinding) {
     if (!remoteBinding || typeof remoteBinding !== 'object') return null;
     const projectId = `${remoteBinding.projectId ?? ''}`.trim();
@@ -152,19 +263,17 @@ export function initAmindMain({ userDataPath, windowManager }) {
   function refreshWindowTitle(docId) {
     if (!windowManager) return;
     const entry = docStore.get(docId);
-    if (!entry?.windowKey) return;
-    const win = windowManager.get(entry.windowKey);
-    if (!win) return;
-    win.setTitle(buildMindWindowTitle(entry.filePath));
+    if (!entry?.windowKey || activeWorkspaceDocId !== docId) return;
+    refreshWorkspaceWindowTitle();
   }
 
   async function openMindWindow({ docId, filePath, title }) {
     if (!windowManager) throw new Error('initAmindMain requires windowManager');
 
-    const windowKey = `mind:${docId}`;
-    const existedBefore = windowManager.has(windowKey);
+    const windowKey = MIND_WORKSPACE_WINDOW_KEY;
+    attachDocumentToWorkspace(docId, { activate: true });
 
-    const win = await windowManager.createOrFocus(windowKey, {
+    await windowManager.createOrFocus(windowKey, {
       key: windowKey,
       title: title || 'AsyncTest Mind',
       route: '/mind',
@@ -179,18 +288,10 @@ export function initAmindMain({ userDataPath, windowManager }) {
       openDevTools: true,
       closeBehavior: 'platform',
       managedCloseAction: 'destroy',
-      query: { windowKey, docId, filePath: filePath || null },
+      query: { windowKey },
 
       onClosed: () => {
-        const entry = docStore.get(docId);
-        if (!entry) return;
-
-        if (entry.filePath) {
-          const fk = normalizeFileKey(entry.filePath);
-          if (fileIndex.get(fk) === docId) fileIndex.delete(fk);
-        }
-
-        docStore.remove(docId);
+        clearMindWorkspaceDocuments();
       },
 
       beforeClose: async (closeOptions = {}) => {
@@ -205,14 +306,10 @@ export function initAmindMain({ userDataPath, windowManager }) {
       },
     });
 
-    docStore.setWindowKey(docId, windowKey);
-
-    win.show();
-    win.focus();
-    if (!existedBefore) {
-      windowManager.hide('main');
-    }
-    return { windowKey };
+    refreshWorkspaceWindowTitle();
+    notifyWorkspaceChanged('open-document', docId);
+    showMindWindow(windowKey);
+    return { windowKey, documentKey: getMindDocumentTargetKey(docId) };
   }
 
   async function newAndOpenWindow(payload = {}) {
@@ -237,7 +334,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const existingDocId = fileIndex.get(fkInput);
     if (existingDocId) {
       const entry = docStore.mustGet(existingDocId);
-      if (entry.windowKey) windowManager.focus(entry.windowKey);
+      activateWorkspaceDocument(existingDocId);
+      if (entry.windowKey) showMindWindow(entry.windowKey);
       return { reused: true, docId: existingDocId, filePath: entry.filePath, windowKey: entry.windowKey ?? null };
     }
 
@@ -249,7 +347,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const existingDocId2 = fileIndex.get(fkReal);
     if (existingDocId2) {
       const entry = docStore.mustGet(existingDocId2);
-      if (entry.windowKey) windowManager.focus(entry.windowKey);
+      activateWorkspaceDocument(existingDocId2);
+      if (entry.windowKey) showMindWindow(entry.windowKey);
       return { reused: true, docId: existingDocId2, filePath: entry.filePath, windowKey: entry.windowKey ?? null };
     }
 
@@ -564,7 +663,8 @@ export function initAmindMain({ userDataPath, windowManager }) {
     const existingDocId = findDocIdByRemoteBinding(remoteBinding);
     if (existingDocId) {
       const entry = docStore.mustGet(existingDocId);
-      if (entry.windowKey) windowManager.focus(entry.windowKey);
+      activateWorkspaceDocument(existingDocId);
+      if (entry.windowKey) showMindWindow(entry.windowKey);
       return {
         reused: true,
         docId: existingDocId,
@@ -624,6 +724,19 @@ export function initAmindMain({ userDataPath, windowManager }) {
   ipcMain.handle('amind:docUpdate', async (event, { docId, doc }) => {
     const entry = docStore.setDoc(docId, doc);
     return { docId, filePath: entry.filePath };
+  });
+
+  ipcMain.handle('amind:workspaceGet', async () => getWorkspaceSnapshot());
+
+  ipcMain.handle('amind:workspaceActivateDocument', async (event, { docId } = {}) => {
+    const activated = activateWorkspaceDocument(docId);
+    if (activated) showMindWindow();
+    return { activated, ...getWorkspaceSnapshot() };
+  });
+
+  ipcMain.handle('amind:workspaceCloseDocument', async (event, { docId } = {}) => {
+    if (!docId) return { closed: false, ...getWorkspaceSnapshot() };
+    return closeWorkspaceDocument(docId);
   });
 
   ipcMain.handle('amind:prepareMindFonts', async () => {
@@ -920,5 +1033,10 @@ export function initAmindMain({ userDataPath, windowManager }) {
     openFileInWindow,
     importXmindFileInWindow,
     importMarkdownFileInWindow,
+    getWorkspaceSnapshot,
+    getActiveWorkspaceDocId,
+    getMindDocumentTargetKey,
+    activateWorkspaceDocument,
+    closeWorkspaceDocument,
   };
 }

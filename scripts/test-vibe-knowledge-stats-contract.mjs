@@ -70,6 +70,9 @@ assert.deepEqual(policy.readKnowledgeStats(stats, 19), {
   sections: 4,
   modules: 4,
 })
+assert.equal(policy.hasKnowledgeWriteCommit(null), false)
+assert.equal(policy.hasKnowledgeWriteCommit({ writeCommits: [] }), false)
+assert.equal(policy.hasKnowledgeWriteCommit({ writeCommits: [{ commit_seq: 1 }] }), true)
 assert.deepEqual(policy.readKnowledgeStats(stats, 20), {
   sections: 0,
   modules: 0,
@@ -115,6 +118,10 @@ assert.match(
 assert.match(
   viewSource,
   /turnMayChangeKnowledge[\s\S]*void loadCurrentKbStats\(\)/,
+)
+assert.match(
+  viewSource,
+  /hasKnowledgeWriteCommit\(canonicalModel\)[\s\S]*loadCurrentKbStats\(project\)/,
 )
 const bootstrapSection = viewSource.slice(
   viewSource.indexOf('async function bootstrap()'),
