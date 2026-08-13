@@ -32,6 +32,7 @@ export const ASYNCTEST_MIND_MCP_INSTRUCTIONS = [
   'When multiple Mind windows are open, every write must pass the intended windowKey. Never infer a destructive target from window focus.',
   'Do not close an open document or rewrite its .amind file offline unless the user explicitly asks.',
   'Do not call diagnostic tools in the normal edit path unless a result requires investigation.',
+  'If a write is slow, times out, or has an uncertain result, call mind_get_operation_status and follow agentAction; never repeat a write while inProgress=true.',
   'The first tool call establishes an Agent connection. Only active write calls lock their target Mind window.',
   'Call mind_end_agent_session when finishing; transport close and idle timeout also clean up stale sessions automatically.',
   'If MCP_CONTROL_REVOKED is returned, stop all AsyncTest Mind calls immediately. Only call mind_request_control_restore after the user explicitly asks to restore control; restoration still requires approval in AsyncTest.',
@@ -57,6 +58,7 @@ const TOOL_TIERS = {
   diagnostic: [
     'mind_get_mcp_capabilities',
     'mind_get_diagnostics',
+    'mind_get_operation_status',
   ],
   control: [
     'mind_end_agent_session',
@@ -81,6 +83,8 @@ export function getAsyncTestMindMcpCapabilities() {
       'mind_apply_node_operations 默认不再返回 results[]；需要时请传 includeResults=true。',
       '读取类工具默认不返回备注、图片、metadata、样式和完整原始 JSON；需要时请显式传 include 参数或 mode=rawJson。',
       'MCP 写入使用单步撤销、revision 冲突保护、局部增量播放和用户停止锁。',
+      '大批量写入会优先渲染首个新节点，再按帧渐进追加，让用户尽快看到反馈并感知节点增长。',
+      'mind_get_operation_status 会返回进度、健康状态、Agent 下一步动作和是否允许重试。',
       '长请求一旦发送，不会跨 socket、TCP 或文件桥自动重放。',
       'MCP 调用会自动建立连接；只有执行中的写操作锁定目标窗口，写操作结束后自动解除锁定。',
       '连接断开或连续 120 秒无调用时会自动结束会话；mind_end_agent_session 仍是推荐的主动结束方式。',
@@ -98,6 +102,7 @@ export function getAsyncTestMindMcpCapabilities() {
       '未保存窗口需要指定保存路径时，使用 mind_save_as_document。',
       '除非用户明确要求关闭窗口，否则不要关闭窗口后离线编辑 .amind 文件。',
       '收到 USER_STOPPED 后停止当前操作，不要重试被暂停的窗口；其他窗口不受影响。',
+      '写调用结果未知或客户端超时时，先调用 mind_get_operation_status；状态为 working 时等待，failed 时遵循 retryAllowed 和 suggestedAction。',
       '完成当前用户任务时调用 mind_end_agent_session；异常断开和长时间空闲也会自动清理状态。',
       '同时打开多个 Mind 窗口时，先使用 mind_list_windows 确认目标，再把明确的 windowKey 传给所有写工具。',
       '向用户报告节点数量时使用 nodeCount；只有排查数据问题时才使用 totalNodeCount 和 detachedNodeCount。',
@@ -109,7 +114,7 @@ export function getAsyncTestMindMcpCapabilities() {
       'mind_save_document or mind_save_as_document',
     ],
     toolTiers: TOOL_TIERS,
-    advertisedToolCount: 16,
+    advertisedToolCount: 17,
     errorProtocol: {
       shape: '{ ok: false, error: { code, message, recoverable, retryAllowed, suggestedAction, details? } }',
       userStopped: 'USER_STOPPED only stops the current window operation.',
@@ -228,7 +233,7 @@ const tools = [
   },
   {
     name: 'mind_get_operation_status',
-    description: 'Diagnostic only. Get the current visual write operation state for a Mind window. Normal edits do not need to call this tool.',
+    description: '[Recovery and progress] Inspect a visual write transaction after a slow, timed-out, or uncertain call. Returns progress, health, whether to wait or verify, and whether retry is safe. Do not repeat a write while inProgress=true.',
     inputSchema: {
       type: 'object',
       properties: { windowKey: { type: 'string' } },
@@ -1043,6 +1048,7 @@ const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
 const ADVERTISED_TOOL_NAMES = new Set([
   'mind_get_mcp_capabilities',
   'mind_get_diagnostics',
+  'mind_get_operation_status',
   'mind_list_windows',
   'mind_get_document_outline',
   'mind_get_subtree',
@@ -1073,10 +1079,10 @@ const mcpClientId = `stdio-${process.pid}-${randomUUID()}`;
 const mcpIdentity = getAsyncTestMindMcpIdentity();
 const stdioDiagnostics = [];
 const MAX_STDIO_DIAGNOSTICS = 100;
-const FILE_BRIDGE_TIMEOUT_MS = 45000;
+const FILE_BRIDGE_TIMEOUT_MS = 330000;
 const FILE_BRIDGE_POLL_MS = 80;
 const SOCKET_CONNECT_TIMEOUT_MS = 5000;
-const SOCKET_RESPONSE_TIMEOUT_MS = 120000;
+const SOCKET_RESPONSE_TIMEOUT_MS = 330000;
 
 async function appendDebugLog(message, detail) {
   try {

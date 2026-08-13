@@ -367,6 +367,15 @@ function setMindMainRef(targetDocId: string, element: any) {
     else mindMainRefs.delete(targetDocId);
 }
 
+async function reportMindMcpRendererReady() {
+    await nextTick();
+    await window.electronAPI.invoke('mind:mcpRendererReady', {
+        docIds: openDocuments.value
+            .filter((session) => mindMainRefs.has(session.docId))
+            .map((session) => session.docId),
+    });
+}
+
 function getMindDocumentWindowKey(targetDocId: string) {
     const physicalWindowKey = typeof windowKey.value === 'string' && windowKey.value ? windowKey.value : 'mind:workspace';
     return `${physicalWindowKey}#${targetDocId}`;
@@ -486,6 +495,7 @@ onMounted(async () => {
         });
         removeWorkspaceChangedListener = window.electronAPI.on('amind:workspace-changed', (_event: any, payload: any) => {
             applyWorkspaceSnapshot(payload);
+            void reportMindMcpRendererReady();
         });
         removeBeforeCloseListener = window.electronAPI.on('wm:before-close', (_event: any, payload: any) => {
             if (payload?.key !== windowKey.value) return;
@@ -494,6 +504,7 @@ onMounted(async () => {
     }
     const workspace = await window.electronAPI.amind.workspaceGet();
     applyWorkspaceSnapshot(workspace);
+    await reportMindMcpRendererReady();
     if (isLoggedIn.value) await getUserImage();
     await loadRecentPaths();
 });

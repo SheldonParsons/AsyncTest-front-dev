@@ -27,11 +27,12 @@
           @click.stop="emit('close', document.docId)"
         >×</span>
       </button>
-    </div>
 
-    <button class="mind-document-tool" type="button" aria-label="新建思维导图" title="新建思维导图" @click="emit('new')">
-      <span class="mind-document-plus" aria-hidden="true"></span>
-    </button>
+      <button ref="newTabButtonRef" class="mind-document-tool mind-document-new" type="button"
+        aria-label="新建思维导图" title="新建思维导图" @click="emit('new')">
+        <span class="mind-document-plus" aria-hidden="true"></span>
+      </button>
+    </div>
 
     <div class="mind-document-list-shell">
       <button
@@ -97,6 +98,7 @@ const emit = defineEmits<{
 
 const barRef = ref<HTMLElement | null>(null);
 const tabsRef = ref<HTMLElement | null>(null);
+const newTabButtonRef = ref<HTMLElement | null>(null);
 const tabRefs = new Map<string, HTMLElement>();
 const listOpen = ref(false);
 
@@ -112,7 +114,11 @@ function setTabRef(docId: string, element: Element | null) {
 function revealActiveTab() {
   if (!props.activeDocId) return;
   void nextTick(() => {
-    tabRefs.get(props.activeDocId || '')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const activeDocId = props.activeDocId || '';
+    tabRefs.get(activeDocId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (props.documents.at(-1)?.docId === activeDocId) {
+      newTabButtonRef.value?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   });
 }
 
@@ -142,6 +148,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
 watch(() => props.activeDocId, revealActiveTab);
 watch(() => props.documents.length, () => {
   if (!props.documents.length) listOpen.value = false;
+  revealActiveTab();
 });
 
 onMounted(() => {
@@ -302,6 +309,14 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.mind-document-new {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  margin-bottom: 2px;
+  border-radius: 5px;
 }
 
 .mind-document-tool:hover,

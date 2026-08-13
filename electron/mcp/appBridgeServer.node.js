@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import net from 'node:net';
@@ -42,6 +43,7 @@ import {
   failMindOperation,
   getMindChangedSummary,
   getMindOperationStatus,
+  startMindOperation,
 } from './mindOperationManager.node.js';
 import {
   cloneJson,
@@ -70,8 +72,12 @@ import {
 
 const FILE_BRIDGE_POLL_MS = 120;
 const FILE_BRIDGE_MAX_AGE_MS = 30000;
-const RENDERER_REQUEST_TIMEOUT_MS = 30000;
+const RENDERER_REQUEST_IDLE_TIMEOUT_MS = 30000;
+const RENDERER_REQUEST_HARD_TIMEOUT_MS = 300000;
+const RENDERER_READY_TIMEOUT_MS = 15000;
 const pendingRendererRequests = new Map();
+const readyRendererDocuments = new Map();
+const rendererReadyWaiters = new Map();
 const openDocumentSelections = new Map();
 
 export function getAsyncTestMindBridgeEndpoint() {
@@ -429,10 +435,13 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
     if (params.includeResults === true) result.results = transaction.results;
     return result;
   }
-  const operation = beginMindOperation({
+  const operation = params.preparingOperation || beginMindOperation({
     windowKey,
     transactionId: transaction.transactionId,
     clientId: params.mcpClientId,
+    totalCount: transaction.changed.affectedNodeCount || transaction.appliedCount,
+  });
+  startMindOperation(operation, {
     totalCount: transaction.changed.affectedNodeCount || transaction.appliedCount,
   });
   notifyMindOperation(context, windowKey, {
@@ -467,6 +476,7 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
       dirty: params.saveAfterApply !== true,
       revision: committed.revision,
       saved,
+      execution: committed.execution ?? null,
     };
     if (params.includeOperationResult === true && transaction.results?.[0]) {
       Object.assign(result, transaction.results[0]);
@@ -513,20 +523,35 @@ async function commitPreparedMindTransaction(context, openEntry, transaction, sn
 }
 
 async function commitMindOperations(context, openEntry, operations, params = {}) {
-  const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+  const preparingOperation = params.dryRun === true ? null : beginMindOperation({
     windowKey: openEntry.windowKey,
-    mcpTraceId: params.mcpTraceId,
+    transactionId: params.transactionId || `mind-tx-${randomUUID()}`,
+    clientId: params.mcpClientId,
+    totalCount: operations.length,
+    status: 'preparing',
   });
-  assertMindExpectedRevision(snapshot, params);
-  const computeStartedAt = performance.now();
-  const transaction = buildMindDocumentTransaction({
-    beforeDoc: snapshot.doc,
-    operations,
-    transactionId: params.transactionId,
-    includeResults: params.includeResults === true || params.includeOperationResult === true,
-  });
-  recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
-  return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, params);
+  try {
+    const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+      windowKey: openEntry.windowKey,
+      mcpTraceId: params.mcpTraceId,
+    });
+    assertMindExpectedRevision(snapshot, params);
+    const computeStartedAt = performance.now();
+    const transaction = buildMindDocumentTransaction({
+      beforeDoc: snapshot.doc,
+      operations,
+      transactionId: preparingOperation?.transactionId || params.transactionId,
+      includeResults: params.includeResults === true || params.includeOperationResult === true,
+    });
+    recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
+    return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, {
+      ...params,
+      preparingOperation,
+    });
+  } catch (error) {
+    if (preparingOperation?.status === 'preparing') failMindOperation(preparingOperation, error);
+    throw error;
+  }
 }
 
 async function handleOpenMindDocumentRequest(context, method, params = {}) {
@@ -685,27 +710,40 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
       return { docId, windowKey, filePath: entry.filePath ?? null, outline };
     }
     case 'mind.importFileSubtree': {
-      const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+      const preparingOperation = params.dryRun === true ? null : beginMindOperation({
         windowKey,
-        mcpTraceId: params.mcpTraceId,
+        transactionId: params.transactionId || `mind-tx-${randomUUID()}`,
+        clientId: params.mcpClientId,
+        totalCount: 1,
+        status: 'preparing',
       });
-      assertMindExpectedRevision(snapshot, params);
-      const computeStartedAt = performance.now();
-      const afterDoc = cloneJson(snapshot.doc);
-      const importResult = await importMindFileSubtree(afterDoc, params);
-      if (params.includeIdMap !== true) delete importResult.idMap;
-      const transaction = buildPreparedMindDocumentTransaction({
-        beforeDoc: snapshot.doc,
-        afterDoc,
-        transactionId: params.transactionId,
-        appliedCount: 1,
-        results: [importResult],
-      });
-      recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
-      return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, {
-        ...params,
-        includeOperationResult: true,
-      });
+      try {
+        const snapshot = await requestMindRenderer(context, 'mind.getTransactionSnapshot', {
+          windowKey,
+          mcpTraceId: params.mcpTraceId,
+        });
+        assertMindExpectedRevision(snapshot, params);
+        const computeStartedAt = performance.now();
+        const afterDoc = cloneJson(snapshot.doc);
+        const importResult = await importMindFileSubtree(afterDoc, params);
+        if (params.includeIdMap !== true) delete importResult.idMap;
+        const transaction = buildPreparedMindDocumentTransaction({
+          beforeDoc: snapshot.doc,
+          afterDoc,
+          transactionId: preparingOperation?.transactionId || params.transactionId,
+          appliedCount: 1,
+          results: [importResult],
+        });
+        recordMindMcpDiagnosticPhase(params.mcpTraceId, 'transactionComputeMs', performance.now() - computeStartedAt);
+        return await commitPreparedMindTransaction(context, openEntry, transaction, snapshot, {
+          ...params,
+          includeOperationResult: true,
+          preparingOperation,
+        });
+      } catch (error) {
+        if (preparingOperation?.status === 'preparing') failMindOperation(preparingOperation, error);
+        throw error;
+      }
     }
     case 'mind.exportDocument': {
       const format = params.format || 'outline';
@@ -727,21 +765,170 @@ async function requestMindRenderer(context, method, params = {}) {
   const requestId = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const startedAt = performance.now();
   try {
+    await waitForMindRendererDocumentReady(win, physicalWindowKey, docId, method);
     return await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingRendererRequests.delete(requestId);
-      reject(new Error(`Timed out waiting for Mind window response: ${method}`));
-    }, RENDERER_REQUEST_TIMEOUT_MS);
-    pendingRendererRequests.set(requestId, { windowKey: physicalWindowKey, resolve, reject, timer });
-    win.webContents.send('mind:mcp-request', {
-      requestId,
-      method,
-      params: { ...params, windowKey, docId },
-    });
+      const pending = {
+        requestId,
+        windowKey: physicalWindowKey,
+        logicalWindowKey: windowKey,
+        docId,
+        method,
+        transactionId: params.transactionId || null,
+        resolve,
+        reject,
+        idleTimer: null,
+        hardTimer: null,
+        startedAt: Date.now(),
+        lastProgressAt: Date.now(),
+        progress: null,
+      };
+      pendingRendererRequests.set(requestId, pending);
+      armMindRendererIdleTimeout(pending);
+      pending.hardTimer = setTimeout(() => {
+        rejectTimedOutMindRendererRequest(pending, 'hard');
+      }, RENDERER_REQUEST_HARD_TIMEOUT_MS);
+      win.webContents.send('mind:mcp-request', {
+        requestId,
+        method,
+        params: { ...params, windowKey, docId },
+      });
     });
   } finally {
     recordMindMcpDiagnosticPhase(params?.mcpTraceId, 'rendererMs', performance.now() - startedAt);
   }
+}
+
+function getMindRendererDocumentReadyKey(windowKey, docId) {
+  return `${windowKey}#${docId}`;
+}
+
+function createMindRendererNotReadyError(windowKey, docId, method) {
+  const error = new Error(`Mind renderer document is not ready: ${method}`);
+  error.code = 'BRIDGE_NOT_READY';
+  error.recoverable = true;
+  error.retryAllowed = true;
+  error.suggestedAction = 'Wait for the target Mind document tab to finish opening, then retry.';
+  error.details = { windowKey, docId, method, readyTimeoutMs: RENDERER_READY_TIMEOUT_MS };
+  return error;
+}
+
+async function waitForMindRendererDocumentReady(win, windowKey, docId, method) {
+  if (win.isDestroyed()) throw createMindRendererNotReadyError(windowKey, docId, method);
+  if (win.webContents.isLoadingMainFrame()) readyRendererDocuments.delete(windowKey);
+  if (readyRendererDocuments.get(windowKey)?.has(docId)) return;
+
+  const readyKey = getMindRendererDocumentReadyKey(windowKey, docId);
+  await new Promise((resolve, reject) => {
+    const waiters = rendererReadyWaiters.get(readyKey) || new Set();
+    const waiter = {
+      resolve: () => {
+        clearTimeout(waiter.timer);
+        waiters.delete(waiter);
+        if (!waiters.size) rendererReadyWaiters.delete(readyKey);
+        resolve();
+      },
+      reject: (error) => {
+        clearTimeout(waiter.timer);
+        waiters.delete(waiter);
+        if (!waiters.size) rendererReadyWaiters.delete(readyKey);
+        reject(error);
+      },
+      timer: null,
+    };
+    waiter.timer = setTimeout(() => {
+      waiter.reject(createMindRendererNotReadyError(windowKey, docId, method));
+    }, RENDERER_READY_TIMEOUT_MS);
+    waiters.add(waiter);
+    rendererReadyWaiters.set(readyKey, waiters);
+  });
+}
+
+export function handleMindMcpRendererReady(senderWindowKey, payload = {}) {
+  if (!senderWindowKey) return false;
+  const docIds = new Set(
+    (Array.isArray(payload?.docIds) ? payload.docIds : [])
+      .map((docId) => String(docId || '').trim())
+      .filter(Boolean)
+  );
+  readyRendererDocuments.set(senderWindowKey, docIds);
+  for (const docId of docIds) {
+    const readyKey = getMindRendererDocumentReadyKey(senderWindowKey, docId);
+    const waiters = rendererReadyWaiters.get(readyKey);
+    if (!waiters) continue;
+    [...waiters].forEach((waiter) => waiter.resolve());
+  }
+  return true;
+}
+
+function clearMindRendererRequestTimers(pending) {
+  if (pending?.idleTimer) clearTimeout(pending.idleTimer);
+  if (pending?.hardTimer) clearTimeout(pending.hardTimer);
+  if (pending) {
+    pending.idleTimer = null;
+    pending.hardTimer = null;
+  }
+}
+
+function buildMindRendererTimeoutError(pending, timeoutKind) {
+  const error = new Error(`Timed out waiting for Mind window response: ${pending.method}`);
+  error.code = 'RENDERER_RESPONSE_TIMEOUT';
+  error.recoverable = true;
+  error.retryAllowed = false;
+  error.suggestedAction = 'Call mind_get_operation_status and read the current document before deciding whether a retry is needed.';
+  error.details = {
+    requestId: pending.requestId,
+    method: pending.method,
+    windowKey: pending.logicalWindowKey,
+    docId: pending.docId,
+    transactionId: pending.transactionId,
+    timeoutKind,
+    idleTimeoutMs: RENDERER_REQUEST_IDLE_TIMEOUT_MS,
+    hardTimeoutMs: RENDERER_REQUEST_HARD_TIMEOUT_MS,
+    elapsedMs: Date.now() - pending.startedAt,
+    idleForMs: Date.now() - pending.lastProgressAt,
+    lastProgressAt: new Date(pending.lastProgressAt).toISOString(),
+    progress: pending.progress,
+    outcome: 'unknown',
+  };
+  return error;
+}
+
+function rejectTimedOutMindRendererRequest(pending, timeoutKind) {
+  if (!pending || pendingRendererRequests.get(pending.requestId) !== pending) return false;
+  pendingRendererRequests.delete(pending.requestId);
+  clearMindRendererRequestTimers(pending);
+  pending.reject(buildMindRendererTimeoutError(pending, timeoutKind));
+  return true;
+}
+
+function armMindRendererIdleTimeout(pending) {
+  if (!pending || pendingRendererRequests.get(pending.requestId) !== pending) return false;
+  if (pending.idleTimer) clearTimeout(pending.idleTimer);
+  pending.idleTimer = setTimeout(() => {
+    rejectTimedOutMindRendererRequest(pending, 'idle');
+  }, RENDERER_REQUEST_IDLE_TIMEOUT_MS);
+  return true;
+}
+
+export function handleMindMcpRendererProgress(senderWindowKey, payload = {}) {
+  const transactionId = typeof payload?.transactionId === 'string' ? payload.transactionId : null;
+  const docId = typeof payload?.docId === 'string' ? payload.docId : null;
+  let touched = 0;
+  for (const pending of pendingRendererRequests.values()) {
+    if (senderWindowKey && pending.windowKey !== senderWindowKey) continue;
+    if (pending.method !== 'mind.commitDocumentTransaction') continue;
+    if (transactionId && pending.transactionId !== transactionId) continue;
+    if (docId && pending.docId !== docId) continue;
+    pending.lastProgressAt = Date.now();
+    pending.progress = {
+      completedCount: payload.completedCount ?? null,
+      totalCount: payload.totalCount ?? null,
+      currentNodeId: payload.currentNodeId ?? null,
+    };
+    armMindRendererIdleTimeout(pending);
+    touched += 1;
+  }
+  return touched;
 }
 
 export function handleMindMcpRendererResponse(senderWindowKey, payload = {}) {
@@ -749,7 +936,7 @@ export function handleMindMcpRendererResponse(senderWindowKey, payload = {}) {
   const pending = requestId ? pendingRendererRequests.get(requestId) : null;
   if (!pending) return false;
   if (senderWindowKey && pending.windowKey !== senderWindowKey) return false;
-  clearTimeout(pending.timer);
+  clearMindRendererRequestTimers(pending);
   pendingRendererRequests.delete(requestId);
   if (payload.ok) {
     pending.resolve(payload.result);

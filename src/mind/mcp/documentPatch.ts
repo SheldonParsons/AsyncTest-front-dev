@@ -111,6 +111,14 @@ export function getMindDocumentPatchNodeIds(patch: MindDocumentPatch, activeBoar
   return (boardPatch?.nodes ?? []).map((item) => item.nodeId);
 }
 
+export function getMindDocumentPatchPlaybackNodeIds(patch: MindDocumentPatch, activeBoardId?: string | null): string[] {
+  const boardPatch = patch.boards.find((item) => item.boardId === activeBoardId) ?? patch.boards[0];
+  const nodePatches = boardPatch?.nodes ?? [];
+  const created = nodePatches.filter((item) => !item.before && item.after);
+  const remaining = nodePatches.filter((item) => item.before || !item.after);
+  return [...created, ...remaining].map((item) => item.nodeId);
+}
+
 function getSemanticPlainText(node: any) {
   if (typeof node?.text === 'string') return node.text;
   if (typeof node?.text?.plain === 'string') return node.text.plain;

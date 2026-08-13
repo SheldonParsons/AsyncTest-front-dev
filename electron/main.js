@@ -11,7 +11,12 @@ import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
-import { handleMindMcpRendererResponse, initMindMcpAppBridgeServer } from './mcp/appBridgeServer.node.js';
+import {
+  handleMindMcpRendererProgress,
+  handleMindMcpRendererReady,
+  handleMindMcpRendererResponse,
+  initMindMcpAppBridgeServer,
+} from './mcp/appBridgeServer.node.js';
 import {
   getMindOperationStatus,
   resumeMindOperations,
@@ -381,6 +386,12 @@ ipcMain.handle('mind:mcpResponse', async (event, payload = {}) => {
   return handleMindMcpRendererResponse(senderKey, payload);
 });
 
+ipcMain.handle('mind:mcpRendererReady', async (event, payload = {}) => {
+  const senderKey = resolveWindowKeyFromWebContents(event.sender);
+  if (!senderKey?.startsWith('mind:')) return false;
+  return handleMindMcpRendererReady(senderKey, payload);
+});
+
 function resolveMindDocumentOperationKey(senderKey, payload = {}) {
   const docId = typeof payload?.docId === 'string' ? payload.docId.trim() : '';
   return docId ? `${senderKey}#${docId}` : senderKey;
@@ -422,6 +433,10 @@ ipcMain.handle('mind:mcpUpdateOperationProgress', async (event, payload = {}) =>
   const currentStatus = getMindOperationStatus(operationKey);
   if (currentStatus.blocked) return currentStatus;
   const status = updateMindOperationProgressForWindow(operationKey, payload);
+  handleMindMcpRendererProgress(senderKey, {
+    ...payload,
+    transactionId: status.transactionId,
+  });
   event.sender.send('mind:mcp-operation', status);
   return status;
 });

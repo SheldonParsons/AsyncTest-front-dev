@@ -3326,7 +3326,11 @@ const MARQUEE_START_THRESHOLD_PX = 5;
 let mutationFlushRafId: number | null = null;
 let pendingMutationReason = 'mutation';
 let pendingMutationEnsureVisibleNodeIds = new Set<string>();
-let pendingMutationResolvers: Array<() => void> = [];
+let pendingMutationResolvers: Array<{
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  release: () => void;
+}> = [];
 let pendingMutationShouldMarkDirty = false;
 let pendingMutationSmoothEnsureVisible = false;
 let cancelMindAiCameraAnimation: (() => void) | null = null;
@@ -7281,6 +7285,7 @@ async function flushScheduledDocumentMutation() {
   pendingTrustExistingNodeMeasureCache = false;
   pendingUseLayoutChangedNodeIds = false;
 
+  try {
   const perfProbe = getActiveMindPerfProbe();
   const shouldProfileProbeFlush = !!perfProbe && perfProbe.mutationReason === reason;
   const flushStartedAt = shouldProfileProbeFlush ? performance.now() : 0;
@@ -7378,8 +7383,14 @@ async function flushScheduledDocumentMutation() {
     finishMindPerfOperationProbe(operationProbe, 'flush');
   }
 
-  resolvers.forEach((resolve) => resolve());
+  resolvers.forEach((resolver) => resolver.resolve());
   if (perfProbe && shouldProfileProbeFlush) finishMindPerfProbe(perfProbe);
+  } catch (error) {
+    resolvers.forEach((resolver) => resolver.reject(error));
+    throw error;
+  } finally {
+    resolvers.forEach((resolver) => resolver.release());
+  }
 }
 
 async function applyDocumentMutation(
@@ -7400,6 +7411,7 @@ async function applyDocumentMutation(
       forceFullEdgeRebuild?: boolean;
       trustExistingNodeMeasureCache?: boolean;
       useLayoutChangedNodeIds?: boolean;
+      flushImmediately?: boolean;
       rootAnchorSnapshots?: Array<{ rootId: string; bodyRect: { x1: number; y1: number; x2: number; y2: number } }>;
   }
 ) {
@@ -7457,14 +7469,21 @@ async function applyDocumentMutation(
   });
   noteMindPerfOperationMutationQueued(reason);
 
-  return await new Promise<void>((resolve) => {
-    pendingMutationResolvers.push(() => {
-      releaseDocWatchSuppression();
-      resolve();
-    });
+  return await new Promise<void>((resolve, reject) => {
+    pendingMutationResolvers.push({ resolve, reject, release: releaseDocWatchSuppression });
+    if (options?.flushImmediately === true) {
+      if (mutationFlushRafId != null) cancelAnimationFrame(mutationFlushRafId);
+      mutationFlushRafId = null;
+      void flushScheduledDocumentMutation().catch((error) => {
+        console.error('[mind-mutation-flush] immediate flush failed', error);
+      });
+      return;
+    }
     if (mutationFlushRafId != null) return;
     mutationFlushRafId = requestAnimationFrame(() => {
-      void flushScheduledDocumentMutation();
+      void flushScheduledDocumentMutation().catch((error) => {
+        console.error('[mind-mutation-flush] scheduled flush failed', error);
+      });
     });
   });
 }
@@ -14506,6 +14525,7 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
     case 'mind.getHistoryState':
       return { revision: String(contentRevision.value), history: history.snapshot() };
     case 'mind.commitDocumentTransaction': {
+      const transactionStartedAt = performance.now();
       const expectedRevision = params.expectedRevision == null ? null : String(params.expectedRevision);
       const currentRevision = String(contentRevision.value);
       if (expectedRevision != null && expectedRevision !== currentRevision) {
@@ -14515,8 +14535,11 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         throw error;
       }
       const beforeDoc = toPlainDoc(props.doc);
+      const patchStartedAt = performance.now();
       const patch = buildMindDocumentPatch(beforeDoc, params.afterDoc);
+      const patchBuildMs = performance.now() - patchStartedAt;
       let playback;
+      const playbackStartedAt = performance.now();
       try {
         playback = await playMindTransactionPatch({
           target: props.doc,
@@ -14548,6 +14571,7 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         scheduleNodeCountStateEmit();
         throw error;
       }
+      const playbackMs = performance.now() - playbackStartedAt;
       if (playback.completedCount > 0 || playback.totalCount === 0) {
         const committedDoc = toPlainDoc(props.doc);
         const command = createMindTransactionCommand({
@@ -14566,7 +14590,9 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         history.recordExecuted(command);
       }
       const plain = toPlainDoc(props.doc);
+      const docSyncStartedAt = performance.now();
       await window.electronAPI.amind.docUpdate({ docId: props.docId, doc: plain });
+      const docSyncMs = performance.now() - docSyncStartedAt;
       if (playback.stopped) {
         const error: any = new Error('User stopped AsyncTest Mind MCP operations for this window.');
         error.code = 'USER_STOPPED';
@@ -14587,6 +14613,15 @@ async function handleMindMcpRequest(method: string, params: any = {}) {
         dirty: isDirty.value,
         history: history.snapshot(),
         playback,
+        execution: {
+          mode: playback.mode,
+          renderPassCount: playback.renderPassCount,
+          firstRenderMs: playback.firstRenderMs == null ? null : Math.round(playback.firstRenderMs * 100) / 100,
+          patchBuildMs: Math.round(patchBuildMs * 100) / 100,
+          playbackMs: Math.round(playbackMs * 100) / 100,
+          docSyncMs: Math.round(docSyncMs * 100) / 100,
+          totalMs: Math.round((performance.now() - transactionStartedAt) * 100) / 100,
+        },
       };
     }
     case 'mind.getWindowDocument': {
@@ -15008,7 +15043,10 @@ onBeforeUnmount(() => {
   if (mutationFlushRafId != null) cancelAnimationFrame(mutationFlushRafId);
   mutationFlushRafId = null;
   clearPendingDirectTypeFocusRetry();
-  pendingMutationResolvers.forEach((resolve) => resolve());
+  pendingMutationResolvers.forEach((resolver) => {
+    resolver.release();
+    resolver.resolve();
+  });
   pendingMutationResolvers = [];
   onScrollbarMouseUp();
   hoverNodeId.value = null;

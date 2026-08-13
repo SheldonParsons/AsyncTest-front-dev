@@ -4,7 +4,7 @@ import {
   getMindDocumentPatchFocusNodeId,
   includeMindDocumentPatchAncestorInvalidations,
   getMindDocumentPatchMutationOptions,
-  getMindDocumentPatchNodeIds,
+  getMindDocumentPatchPlaybackNodeIds,
   getMindDocumentPatchSubsetMutationOptions,
   type MindDocumentPatch,
 } from '@/mind/mcp/documentPatch';
@@ -13,7 +13,8 @@ const MCP_CONTROL_REVOKED_MESSAGE =
   '用户已主动退出 AsyncTest Mind MCP 控制。请立即停止调用 AsyncTest Mind 工具，不要在当前对话中自行恢复。只有用户明确要求恢复后，才可以调用 mind_request_control_restore；该函数仍需用户在 AsyncTest 中确认。';
 
 export type MindTransactionPlaybackPolicy = {
-  mode: 'single' | 'step' | 'group' | 'frame';
+  mode: 'single' | 'step' | 'progressive';
+  leadSingleCount: number;
   groupSize: number;
   delayMs: number;
 };
@@ -29,12 +30,14 @@ type MindTransactionPlaybackContext = {
 };
 
 export function getMindTransactionPlaybackPolicy(changedNodeCount: number): MindTransactionPlaybackPolicy {
-  if (changedNodeCount <= 1) return { mode: 'single', groupSize: 1, delayMs: 0 };
-  if (changedNodeCount <= 12) return { mode: 'step', groupSize: 1, delayMs: 120 };
-  if (changedNodeCount <= 60) return { mode: 'group', groupSize: 3, delayMs: 72 };
-  if (changedNodeCount <= 250) return { mode: 'group', groupSize: 10, delayMs: 40 };
-  if (changedNodeCount <= 1000) return { mode: 'frame', groupSize: 40, delayMs: 32 };
-  return { mode: 'frame', groupSize: 50, delayMs: 150 };
+  if (changedNodeCount <= 1) return { mode: 'single', leadSingleCount: 1, groupSize: 1, delayMs: 0 };
+  if (changedNodeCount <= 12) {
+    return { mode: 'step', leadSingleCount: changedNodeCount, groupSize: 1, delayMs: 80 };
+  }
+  if (changedNodeCount <= 60) return { mode: 'progressive', leadSingleCount: 6, groupSize: 6, delayMs: 16 };
+  if (changedNodeCount <= 120) return { mode: 'progressive', leadSingleCount: 6, groupSize: 16, delayMs: 0 };
+  if (changedNodeCount <= 1000) return { mode: 'progressive', leadSingleCount: 8, groupSize: 40, delayMs: 0 };
+  return { mode: 'progressive', leadSingleCount: 6, groupSize: 96, delayMs: 0 };
 }
 
 function wait(delayMs: number) {
@@ -60,15 +63,22 @@ function throwStopped(cancellation: boolean | { code?: string; message?: string 
 }
 
 export async function playMindTransactionPatch(context: MindTransactionPlaybackContext) {
-  const nodeIds = getMindDocumentPatchNodeIds(context.patch, context.activeBoardId);
+  const playbackStartedAt = performance.now();
+  const nodeIds = getMindDocumentPatchPlaybackNodeIds(context.patch, context.activeBoardId);
   const policy = getMindTransactionPlaybackPolicy(nodeIds.length);
   const groups: string[][] = [];
-  for (let index = 0; index < nodeIds.length; index += policy.groupSize) {
+  const leadSingleCount = Math.min(policy.leadSingleCount, nodeIds.length);
+  for (let index = 0; index < leadSingleCount; index += 1) {
+    groups.push([nodeIds[index]]);
+  }
+  for (let index = leadSingleCount; index < nodeIds.length; index += policy.groupSize) {
     groups.push(nodeIds.slice(index, index + policy.groupSize));
   }
 
   let completedCount = 0;
   let currentNodeId: string | null = null;
+  let renderPassCount = 0;
+  let firstRenderMs: number | null = null;
   try {
     if (!groups.length) {
       applyMindDocumentPatch(context.target, context.patch, 'after');
@@ -80,9 +90,12 @@ export async function playMindTransactionPatch(context: MindTransactionPlaybackC
       await context.applyMutation('mcp:transaction-finalize', {
         ...mutationOptions,
         useLayoutChangedNodeIds: true,
+        flushImmediately: true,
         markDirty: false,
       });
-      return { ...policy, stopped: false, completedCount: 0, totalCount: 0, currentNodeId: null };
+      renderPassCount += 1;
+      firstRenderMs = performance.now() - playbackStartedAt;
+      return { ...policy, stopped: false, completedCount: 0, totalCount: 0, currentNodeId: null, renderPassCount, firstRenderMs };
     }
 
     for (const group of groups) {
@@ -106,8 +119,11 @@ export async function playMindTransactionPatch(context: MindTransactionPlaybackC
         ensureVisibleNodeIds: currentNodeId ? [currentNodeId] : [],
         smoothEnsureVisible: true,
         useLayoutChangedNodeIds: true,
+        flushImmediately: true,
         markDirty: false,
       });
+      renderPassCount += 1;
+      firstRenderMs ??= performance.now() - playbackStartedAt;
       completedCount += group.length;
       await context.onProgress({ completedCount, totalCount: nodeIds.length, currentNodeId });
       if (completedCount < nodeIds.length) await wait(policy.delayMs);
@@ -125,9 +141,11 @@ export async function playMindTransactionPatch(context: MindTransactionPlaybackC
       smoothEnsureVisible: true,
       forceFullEdgeRebuild: true,
       useLayoutChangedNodeIds: true,
+      flushImmediately: true,
       markDirty: false,
     });
-    return { ...policy, stopped: false, completedCount, totalCount: nodeIds.length, currentNodeId };
+    renderPassCount += 1;
+    return { ...policy, stopped: false, completedCount, totalCount: nodeIds.length, currentNodeId, renderPassCount, firstRenderMs };
   } catch (error) {
     if ((error as any)?.code === 'USER_STOPPED') {
       return {
@@ -136,6 +154,8 @@ export async function playMindTransactionPatch(context: MindTransactionPlaybackC
         completedCount,
         totalCount: nodeIds.length,
         currentNodeId,
+        renderPassCount,
+        firstRenderMs,
       };
     }
     applyMindDocumentPatch(context.target, context.patch, 'before');
@@ -147,6 +167,7 @@ export async function playMindTransactionPatch(context: MindTransactionPlaybackC
     await context.applyMutation('mcp:transaction-rollback', {
       ...rollbackOptions,
       useLayoutChangedNodeIds: true,
+      flushImmediately: true,
       markDirty: false,
     });
     throw error;

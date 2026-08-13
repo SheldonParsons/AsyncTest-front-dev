@@ -8,9 +8,10 @@ import {
 
 test('tools/list exposes a compact core while compatibility tools stay internal', () => {
   const names = getAdvertisedAsyncTestMindMcpTools().map((tool) => tool.name);
-  assert.equal(names.length, 16);
+  assert.equal(names.length, 17);
   assert.ok(names.includes('mind_apply_node_operations'));
   assert.ok(names.includes('mind_get_diagnostics'));
+  assert.ok(names.includes('mind_get_operation_status'));
   assert.ok(names.includes('mind_request_control_restore'));
   assert.ok(names.includes('mind_read_file'));
   assert.ok(names.includes('mind_manage_windows'));

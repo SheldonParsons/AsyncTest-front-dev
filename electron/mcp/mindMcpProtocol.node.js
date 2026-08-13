@@ -1,8 +1,9 @@
-export const ASYNCTEST_MIND_MCP_VERSION = '0.6.1';
-export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 12;
+export const ASYNCTEST_MIND_MCP_VERSION = '0.7.0';
+export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 13;
+export const ASYNCTEST_MIND_MCP_MIN_COMPATIBLE_CAPABILITY_REVISION = 12;
 export const ASYNCTEST_MIND_MCP_PROTOCOL_REVISION = 2;
 export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
-export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-07-18';
+export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-08-12';
 export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
 
 const ERROR_DEFINITIONS = {
@@ -56,6 +57,21 @@ const ERROR_DEFINITIONS = {
     retryAllowed: false,
     suggestedAction: 'Read the current document state before deciding whether to continue.',
   },
+  OPERATION_IN_PROGRESS: {
+    recoverable: true,
+    retryAllowed: false,
+    suggestedAction: 'Call mind_get_operation_status, wait for the current transaction to finish, and do not submit a duplicate write.',
+  },
+  RENDERER_RESPONSE_TIMEOUT: {
+    recoverable: true,
+    retryAllowed: false,
+    suggestedAction: 'Call mind_get_operation_status and read the current document before deciding whether a retry is needed.',
+  },
+  TRANSACTION_NOT_FOUND: {
+    recoverable: true,
+    retryAllowed: false,
+    suggestedAction: 'Read the current document state instead of repeating an unknown transaction.',
+  },
   INTERNAL_ERROR: {
     recoverable: false,
     retryAllowed: false,
@@ -80,10 +96,17 @@ export function compareMindMcpIdentity(identity) {
   if (Number(identity.protocolRevision || 0) !== current.protocolRevision) {
     return { mismatch: true, reason: 'protocol-revision', current };
   }
-  if (identity.version !== current.version || Number(identity.capabilityRevision) !== current.capabilityRevision) {
-    return { mismatch: true, reason: 'version-or-capability', current };
+  const capabilityRevision = Number(identity.capabilityRevision);
+  if (
+    capabilityRevision < ASYNCTEST_MIND_MCP_MIN_COMPATIBLE_CAPABILITY_REVISION ||
+    capabilityRevision > current.capabilityRevision
+  ) {
+    return { mismatch: true, reason: 'incompatible-capability', current };
   }
-  return { mismatch: false, reason: null, current };
+  if (identity.version !== current.version || capabilityRevision !== current.capabilityRevision) {
+    return { mismatch: false, reason: 'compatible-older-capability', current, upgradeAvailable: true };
+  }
+  return { mismatch: false, reason: null, current, upgradeAvailable: false };
 }
 
 export function assertMindMcpIdentityCompatible(identity) {
