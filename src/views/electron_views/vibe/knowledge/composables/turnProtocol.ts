@@ -65,6 +65,31 @@ const TERMINAL_STATE: Record<string, TurnProtocolStateName> = {
   interrupted: 'interrupted',
   cancelled: 'cancelled',
 }
+const PROVIDER_TOOL_CALL_ID = /^call_[A-Za-z0-9_-]{8,}$/
+const GENERIC_ACTION_SEMANTICS = new Set([
+  'action',
+  'tool_call',
+  'process_action_started',
+  'process_action_done',
+])
+
+function hasFormalActionSemantic(value: unknown): boolean {
+  const normalized = String(value || '').trim()
+  return !!normalized
+    && !GENERIC_ACTION_SEMANTICS.has(normalized)
+    && !PROVIDER_TOOL_CALL_ID.test(normalized)
+}
+
+function isInternalOrphanToolCall(content: string, payload: Record<string, any>): boolean {
+  const title = String(payload.title || content || '').trim()
+  if (!PROVIDER_TOOL_CALL_ID.test(title)) return false
+  return ![
+    payload.title,
+    payload.action_code,
+    payload.code,
+    payload.action_type,
+  ].some(hasFormalActionSemantic)
+}
 
 export function createTurnProtocolState(initialEvents: any[] = []): TurnProtocolState {
   const state: TurnProtocolState = { events: new Map() }
@@ -188,6 +213,8 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
       if (legacyType === 'intent') actions = (payload.actions || []).map(String)
       if (legacyType === 'notes') notes.push(...(payload.items || []).map(String).filter(Boolean))
     } else if (itemType === 'tool_call') {
+      // 纵深防御：原始 Canonical 事件仍留在 state，只从可见过程投影中排除无正式语义的孤立调用 ID。
+      if (isInternalOrphanToolCall(content, payload)) continue
       process.push({
         kind: 'action',
         key: itemId,
