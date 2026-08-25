@@ -15,7 +15,7 @@
           </span>
           <span class="item-text">
             <strong>Markdown 文件</strong>
-            <span>.md / .markdown（默认作提问资料；说"录入/导入"则整篇入库）</span>
+            <span>.md / .markdown</span>
           </span>
         </button>
       </div>
@@ -146,7 +146,9 @@
       <div v-else class="normal-view">
         <div class="attachment-list" :class="{ 'is-visible': selectedFiles.length > 0 }" aria-live="polite">
           <span v-for="(file, i) in selectedFiles" :key="fileKey(file)" class="attachment-chip">
-            <span class="chip-icon">MD</span>
+            <span class="chip-icon" aria-hidden="true">
+              <MarkdownFileIcon />
+            </span>
             <span class="chip-name">{{ file.name }}</span>
             <button class="chip-remove" type="button" :aria-label="`移除附件 ${file.name}`" @click="removeFile(i)">×</button>
           </span>
@@ -173,7 +175,7 @@
             :disabled="sending || uploading"
             @click="menuOpen = !menuOpen"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus attach-plus-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus attach-plus-icon" aria-hidden="true">
               <path d="M5 12h14"/>
               <path d="M12 5v14"/>
             </svg>
@@ -230,8 +232,8 @@
             <svg class="send-arrow-flow" viewBox="0 0 40 40" fill="none" aria-hidden="true">
               <g class="send-arrow-shape">
                 <circle class="orbit" cx="20" cy="20" r="15.25" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" />
-                <path class="arrow-stem" d="M20 29V12.25" stroke="currentColor" stroke-width="2.45" stroke-linecap="round" />
-                <path class="arrow-head" d="M12.9 19.35L20 12.25L27.1 19.35" stroke="currentColor" stroke-width="2.45" stroke-linecap="round" stroke-linejoin="round" />
+                <path class="arrow-stem" d="M20 29V12.25" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+                <path class="arrow-head" d="M12.9 19.35L20 12.25L27.1 19.35" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
               </g>
               <g class="send-running-shape">
                 <rect class="pause-block" x="12" y="12" width="16" height="16" rx="3.5" fill="currentColor" />
@@ -246,8 +248,6 @@
     </div>
 
     <span v-if="uploading" class="visually-hidden" role="status" aria-live="polite">正在上传附件</span>
-    <span v-if="attachmentError" class="composer-status composer-error" role="alert">{{ attachmentError }}</span>
-    <span v-else-if="statusText" class="composer-status">{{ statusText }}</span>
     <input ref="fileInputEl" type="file" accept=".md,.markdown,text/markdown,text/plain" multiple hidden @change="onFileChange" />
   </section>
 </template>
@@ -264,20 +264,20 @@ interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBod
 interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyPreview?: string }
 interface ModelOption { value: string; label: string; hint?: string }
 interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
+interface ComposerNotice { title: string; type: 'error' | 'info'; duration?: number }
 
 const props = withDefaults(defineProps<{
   modelValue: string
   sending?: boolean
   stopping?: boolean
   placeholder?: string
-  statusText?: string
   question?: Question | null
   customPlaceholder?: string
   modelOptions?: ModelOption[]
   modelValueId?: string
   modelDisabled?: boolean
   uploading?: boolean
-}>(), { sending: false, stopping: false, placeholder: '询问任何问题', statusText: '', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false })
+}>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -286,6 +286,7 @@ const emit = defineEmits<{
   (e: 'stop'): void
   (e: 'model-open'): void
   (e: 'model-change', value: string): void
+  (e: 'notice', notice: ComposerNotice): void
 }>()
 
 const rootEl = ref<HTMLElement | null>(null)
@@ -293,7 +294,6 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
-const attachmentError = ref('')
 const menuOpen = ref(false)
 const modelMenuOpen = ref(false)
 const modelPickerClosedWidth = ref(180)
@@ -398,6 +398,11 @@ function pickMarkdown() {
   fileInputEl.value?.click()
 }
 function fileKey(f: File) { return `${f.name}-${f.size}-${f.lastModified}` }
+function emitAttachmentNotice(error: string): void {
+  const title = String(error || '').trim()
+  if (!title) return
+  emit('notice', { title, type: 'error', duration: 5000 })
+}
 function onFileChange() {
   if (props.sending || props.uploading) {
     if (fileInputEl.value) fileInputEl.value.value = ''
@@ -407,24 +412,22 @@ function onFileChange() {
   if (!picked.length) return
   const admission = admitAttachmentSelection(selectedFiles.value, picked)
   selectedFiles.value = admission.files
-  attachmentError.value = admission.error
+  emitAttachmentNotice(admission.error)
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
 function removeFile(i: number) {
   selectedFiles.value = selectedFiles.value.filter((_, idx) => idx !== i)
-  attachmentError.value = ''
 }
 
 function clearAttachments() {
   selectedFiles.value = []
-  attachmentError.value = ''
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
 
 function restoreAttachments(files: File[]) {
   const admission = admitAttachmentSelection([], files)
   selectedFiles.value = admission.files
-  attachmentError.value = admission.error
+  emitAttachmentNotice(admission.error)
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
 
@@ -481,7 +484,22 @@ function onDocKeydown(e: KeyboardEvent) {
 }
 
 function onDocClick(e: MouseEvent) {
-  if (rootEl.value && !rootEl.value.contains(e.target as Node)) { menuOpen.value = false; modelMenuOpen.value = false }
+  const root = rootEl.value
+  const target = e.target
+  if (!root || !(target instanceof Node) || !root.contains(target)) {
+    menuOpen.value = false
+    modelMenuOpen.value = false
+    return
+  }
+
+  // 输入框属于 composer，但不属于任一弹出菜单；点击这里也应收起菜单。
+  // 每个菜单只保留自己的面板和触发按钮，避免一个宽泛的 root 边界吞掉关闭交互。
+  if (!(target instanceof Element) || !target.closest('.attachment-menu, .attach-button')) {
+    menuOpen.value = false
+  }
+  if (!(target instanceof Element) || !target.closest('.model-menu, .model-picker')) {
+    modelMenuOpen.value = false
+  }
 }
 let modelPickerMediaQuery: MediaQueryList | null = null
 function syncModelPickerViewport(e?: MediaQueryListEvent) {
@@ -533,8 +551,7 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
   position: relative; display: grid; gap: 6px; padding: 10px 12px 8px;
   border: 1px solid rgba(15, 15, 15, .1); border-radius: 20px;
   background: #fff;
-  /* 组件嵌在已经是白卡的对话区里，不需要 demo 里那种悬浮重阴影（会看着像底下多一层灰）。 */
-  box-shadow: 0 1px 2px rgba(17, 24, 39, .04);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, .06), 0 2px 6px rgba(17, 24, 39, .035);
 }
 .composer-shell.is-question { gap: 14px; padding: 18px 20px 14px; }
 
@@ -647,8 +664,8 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
 .menu-title { padding: 4px 8px; color: #4b5563; font-size: 12px; font-weight: 650; }
 .menu-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 8px; color: #171b21; background: transparent; text-align: left; cursor: pointer; }
 .menu-item:hover { background: #f3f4f6; }
-.markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: linear-gradient(135deg, rgba(37,99,235,.95), rgba(124,58,237,.92) 52%, rgba(22,163,74,.9)); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 8px 18px rgba(37,99,235,.22); }
-.markdown-icon :deep(.markdown-file-icon) { width: 24px; height: 24px; }
+.markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; --markdown-file-icon-font-size: 11px; }
+.markdown-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
 .item-text { display: grid; gap: 1px; }
 .item-text strong { font-size: 13px; font-weight: 700; }
 .item-text span { color: #8a8f98; font-size: 12px; }
@@ -657,7 +674,8 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
 .attachment-list { display: none; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
 .attachment-list.is-visible { display: flex; }
 .attachment-chip { display: grid; width: fit-content; max-width: 100%; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px 6px 6px; border: 1px solid #e4e6ea; border-radius: 12px; background: #f9fafb; color: #374151; font-size: 12px; }
-.chip-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-size: 9px; font-weight: 800; }
+.chip-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; }
+.chip-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
 .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove { width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #6b7280; background: transparent; cursor: pointer; }
 .chip-remove:hover { color: #171b21; background: #e5e7eb; }
@@ -673,19 +691,22 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
 }
 .model-picker {
   position: relative;
-  width: 180px; max-width: 100%; min-width: 0; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  width: 180px; max-width: 100%; min-width: 0; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 0 28px; border: 0; border-radius: 999px; background: transparent; color: #25272b;
-  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
+  font-size: 14px; font-weight: 450; line-height: 1; cursor: pointer;
   transition: width 180ms cubic-bezier(.2, .8, .2, 1), background-color 180ms cubic-bezier(.2, .8, .2, 1), color 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms cubic-bezier(.2, .8, .2, 1);
 }
 .model-picker:hover { background: #f5f6f7; color: #17191d; }
 .model-picker[aria-expanded="true"] {
-  background: #f0f1f3; color: #202328;
-  box-shadow: inset 0 0 0 1px rgba(37, 39, 43, .035);
+  background: rgba(15, 15, 15, .025); color: #202328;
+  box-shadow: inset 0 0 0 1px rgba(37, 39, 43, .018);
 }
 .model-picker:disabled { opacity: .55; cursor: not-allowed; }
 .model-picker:disabled:hover { background: transparent; color: #25272b; }
-.model-picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+.model-picker-label {
+  display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  line-height: 1.4; padding: 0;
+}
 .model-picker-chevron {
   position: absolute; top: 50%; right: 10px; transform: translateY(-50%);
   width: 16px; height: 16px; flex: 0 0 auto; color: #777d87; transition: color 180ms cubic-bezier(.2, .8, .2, 1);
@@ -694,7 +715,7 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
 .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #171b21; background: transparent; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, transform 140ms ease; }
 .icon-button svg { width: 22px; height: 22px; color: currentColor; overflow: visible; }
 .attach-button { display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 0; }
-.attach-plus-icon { display: block; width: 17px; height: 17px; margin: 0; flex: 0 0 auto; }
+.attach-button .attach-plus-icon { display: block; width: 18px; height: 18px; margin: 0; flex: 0 0 auto; }
 .attach-button:hover, .attach-button[aria-expanded="true"] { background: #f3f4f6; }
 .send-button {
   width: 28px;
@@ -712,9 +733,6 @@ defineExpose({ clearAttachments, restoreAttachments, focusInput })
 .send-button:not(:disabled):hover { background: #030712; }
 .send-button:not(:disabled):active { transform: scale(.98); }
 .send-button.is-sending { color: #fff; background: #1f2937; cursor: pointer; } /* T26:处理中=停止按钮,必须可点 */
-
-.composer-status { padding: 0 6px; color: #8a8f98; font-size: 12px; }
-.composer-status.composer-error { color: #b42318; }
 
 /* —— 动效（移植自 motion 组件） —— */
 .send-button .orbit { opacity: 0; stroke-dasharray: 30 96; transform-origin: 20px 20px; }

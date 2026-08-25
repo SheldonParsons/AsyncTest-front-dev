@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Vibe 知识库前端模块优化方案 · 2026-08-19</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --paper: rgba(255, 255, 255, .94);
+      --ink: #172033;
+      --muted: #647087;
+      --line: #dfe5ee;
+      --brand: #3157d5;
+      --brand-soft: #edf1ff;
+      --green: #177653;
+      --green-soft: #e9f7f1;
+      --amber: #9a6208;
+      --amber-soft: #fff6df;
+      --red: #b33a45;
+      --red-soft: #fff0f1;
+      --slate: #28334b;
+      --shadow: 0 18px 50px rgba(37, 49, 77, .09);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 5% 0%, rgba(80, 110, 225, .13), transparent 29rem),
+        radial-gradient(circle at 96% 20%, rgba(21, 157, 112, .09), transparent 27rem),
+        var(--bg);
+      color: var(--ink);
+      font: 14px/1.7 Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    a { color: inherit; }
+    code {
+      padding: 2px 6px;
+      border: 1px solid #e2e7f0;
+      border-radius: 6px;
+      background: #f5f7fb;
+      color: #33415f;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .9em;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      width: min(1500px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+    }
+
+    .side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 34px 22px;
+      border-right: 1px solid rgba(208, 216, 229, .8);
+      background: rgba(247, 249, 253, .82);
+      backdrop-filter: blur(18px);
+    }
+
+    .side-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      margin-bottom: 22px;
+      place-items: center;
+      border-radius: 13px;
+      background: linear-gradient(145deg, #365dde, #243e9e);
+      color: #fff;
+      box-shadow: 0 12px 24px rgba(49, 87, 213, .24);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+
+    .side h1 {
+      margin: 0 0 7px;
+      font-size: 19px;
+      line-height: 1.35;
+    }
+
+    .side > p {
+      margin: 0 0 26px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .side nav { display: grid; gap: 5px; }
+    .side nav a {
+      padding: 8px 10px;
+      border-radius: 9px;
+      color: #5e6a81;
+      text-decoration: none;
+      transition: background .15s ease, color .15s ease;
+    }
+    .side nav a:hover {
+      background: #e9edf7;
+      color: var(--ink);
+    }
+
+    .side-foot {
+      position: absolute;
+      right: 22px;
+      bottom: 28px;
+      left: 22px;
+      padding-top: 17px;
+      border-top: 1px solid var(--line);
+      color: #788399;
+      font-size: 11px;
+    }
+
+    main { min-width: 0; padding: 34px clamp(22px, 4vw, 64px) 90px; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(30px, 5vw, 60px);
+      border: 1px solid rgba(210, 217, 232, .88);
+      border-radius: 30px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.98), rgba(245,248,255,.96)),
+        #fff;
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      position: absolute;
+      top: -90px;
+      right: -70px;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(49,87,213,.17), rgba(49,87,213,0) 68%);
+      content: "";
+      pointer-events: none;
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .hero h2 {
+      max-width: 820px;
+      margin: 0;
+      font-size: clamp(34px, 5vw, 64px);
+      line-height: 1.06;
+      letter-spacing: -.045em;
+    }
+    .hero .lead {
+      max-width: 780px;
+      margin: 22px 0 0;
+      color: #56637a;
+      font-size: 16px;
+      line-height: 1.9;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 26px;
+    }
+
+    .pill, .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      width: fit-content;
+      border-radius: 999px;
+      font-weight: 650;
+      line-height: 1;
+    }
+    .pill {
+      min-height: 29px;
+      padding: 0 11px;
+      border: 1px solid #dce2ed;
+      background: #fff;
+      color: #56637a;
+      font-size: 11px;
+    }
+    .pill::before, .tag::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+    .pill.good { color: var(--green); }
+    .pill.warn { color: var(--amber); }
+    .pill.locked { color: var(--brand); }
+
+    section { scroll-margin-top: 28px; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 18px;
+      margin: 62px 0 18px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: clamp(25px, 3vw, 36px);
+      letter-spacing: -.025em;
+    }
+    .section-head p {
+      max-width: 780px;
+      margin: 7px 0 0;
+      color: var(--muted);
+    }
+    .section-no {
+      color: #a3adbe;
+      font: 700 12px/1 "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .08em;
+    }
+
+    .callout {
+      padding: 19px 21px;
+      border: 1px solid;
+      border-radius: 15px;
+    }
+    .callout strong { display: block; margin-bottom: 3px; }
+    .callout p { margin: 0; }
+    .callout.green { border-color: #cae9dc; background: var(--green-soft); color: #225e49; }
+    .callout.amber { border-color: #f0ddb0; background: var(--amber-soft); color: #75500d; }
+    .callout.red { border-color: #efccd0; background: var(--red-soft); color: #84353d; }
+    .callout.blue { border-color: #d9e0fb; background: var(--brand-soft); color: #344d9a; }
+
+    .grid-3, .grid-2 {
+      display: grid;
+      gap: 14px;
+    }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      min-width: 0;
+      padding: 21px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: 0 10px 30px rgba(42, 55, 83, .05);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); }
+    .card ul { margin: 12px 0 0; padding-left: 19px; color: #536078; }
+    .card li + li { margin-top: 5px; }
+
+    .tag {
+      min-height: 24px;
+      margin-bottom: 13px;
+      padding: 0 9px;
+      font-size: 10px;
+    }
+    .tag.no { background: var(--green-soft); color: var(--green); }
+    .tag.maybe { background: var(--amber-soft); color: var(--amber); }
+    .tag.yes { background: var(--red-soft); color: var(--red); }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,.92);
+      box-shadow: 0 10px 30px rgba(42, 55, 83, .04);
+    }
+    table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 15px 16px;
+      border-bottom: 1px solid #e8ecf3;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f7f9fc;
+      color: #58657b;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .03em;
+    }
+    tr:last-child td { border-bottom: 0; }
+    td { color: #4c5970; }
+    td strong { color: var(--ink); }
+    .status {
+      display: inline-flex;
+      min-height: 24px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 9px;
+      white-space: nowrap;
+      font-size: 10px;
+      font-weight: 750;
+    }
+    .status.no { background: var(--green-soft); color: var(--green); }
+    .status.maybe { background: var(--amber-soft); color: var(--amber); }
+    .status.yes { background: var(--red-soft); color: var(--red); }
+    .status.done { background: var(--green-soft); color: var(--green); }
+    .status.p0 { background: #fff0f1; color: #b02e3b; }
+    .status.p1 { background: #fff6df; color: #986008; }
+    .status.p2 { background: #eef1f6; color: #5b677d; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(90px, 1fr));
+      align-items: stretch;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .flow-node {
+      position: relative;
+      display: grid;
+      min-height: 92px;
+      place-content: center;
+      padding: 12px;
+      border: 1px solid #dce2ed;
+      border-radius: 14px;
+      background: #fff;
+      text-align: center;
+    }
+    .flow-node strong { font-size: 12px; }
+    .flow-node span { color: #778297; font-size: 10px; }
+    .flow-node.owner {
+      border-color: #9eb1f4;
+      background: var(--brand-soft);
+      color: #294496;
+    }
+    .flow-arrow {
+      display: grid;
+      place-items: center;
+      color: #a2adbe;
+      font-size: 16px;
+    }
+
+    .checkpoint {
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 22px;
+      padding: 27px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,.94);
+      box-shadow: 0 12px 34px rgba(42, 55, 83, .05);
+    }
+    .checkpoint + .checkpoint { margin-top: 13px; }
+    .checkpoint-id {
+      display: grid;
+      width: 66px;
+      height: 66px;
+      place-items: center;
+      border-radius: 20px;
+      background: var(--slate);
+      color: #fff;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .checkpoint.recommended .checkpoint-id {
+      background: linear-gradient(145deg, #365dde, #2441aa);
+      box-shadow: 0 12px 24px rgba(49, 87, 213, .2);
+    }
+    .checkpoint h3 { margin: 0; font-size: 20px; }
+    .checkpoint .summary { margin: 5px 0 16px; color: var(--muted); }
+    .checkpoint-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .checkpoint-grid > div {
+      padding: 13px;
+      border-radius: 12px;
+      background: #f7f9fc;
+    }
+    .checkpoint-grid strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #3f4d66;
+      font-size: 11px;
+    }
+    .checkpoint-grid p { margin: 0; color: #657188; font-size: 12px; }
+    .checkpoint ul { margin: 14px 0 0; padding-left: 19px; color: #526079; }
+
+    .effect-grid {
+      display: grid;
+      grid-template-columns: 1fr 42px 1fr;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .effect-card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+    }
+    .effect-card.before { background: #fff8f8; }
+    .effect-card.after { background: #f2fbf7; }
+    .effect-card h3 { margin: 0 0 12px; font-size: 15px; }
+    .effect-card ul { margin: 0; padding-left: 18px; color: #59667c; }
+    .effect-arrow { display: grid; place-items: center; color: #8794aa; font-size: 24px; }
+
+    .guardrails {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+    .guardrail {
+      display: flex;
+      gap: 10px;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,.8);
+      color: #536078;
+    }
+    .guardrail b {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 7px;
+      background: #e9eef9;
+      color: #3853a6;
+      font-size: 11px;
+    }
+
+    .foot {
+      margin-top: 60px;
+      padding: 24px 0 0;
+      border-top: 1px solid var(--line);
+      color: #7a8599;
+      font-size: 11px;
+    }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .side {
+        position: relative;
+        height: auto;
+        padding: 22px;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .side-mark, .side > p, .side-foot { display: none; }
+      .side h1 { margin-bottom: 12px; }
+      .side nav {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 3px;
+      }
+      .side nav a { flex: 0 0 auto; }
+      main { padding-top: 24px; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+
+    @media (max-width: 760px) {
+      main { padding-inline: 14px; }
+      .hero { padding: 28px 22px; border-radius: 22px; }
+      .hero h2 { font-size: 35px; }
+      .grid-3, .grid-2, .checkpoint-grid, .guardrails { grid-template-columns: 1fr; }
+      .section-head { grid-template-columns: 1fr; }
+      .section-no { display: none; }
+      .checkpoint { grid-template-columns: 1fr; padding: 20px; }
+      .checkpoint-id { width: 54px; height: 54px; border-radius: 16px; font-size: 16px; }
+      .effect-grid { grid-template-columns: 1fr; }
+      .effect-arrow { transform: rotate(90deg); }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .layout { display: block; width: auto; }
+      .side { display: none; }
+      main { padding: 0; }
+      .hero, .card, .checkpoint, .table-wrap { box-shadow: none; }
+      .checkpoint, .card, .callout { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="side">
+      <div class="side-mark">VKB</div>
+      <h1>Vibe 知识库<br>前端优化方案</h1>
+      <p>开发计划 · 协议边界 · 验收口径</p>
+      <nav>
+        <a href="#decision">结论</a>
+        <a href="#backend">后端配合判定</a>
+        <a href="#flow">当前数据流</a>
+        <a href="#problems">问题与目标</a>
+        <a href="#checkpoints">独立 Checkpoints</a>
+        <a href="#effects">优化后效果</a>
+        <a href="#acceptance">验收与红线</a>
+      </nav>
+      <div class="side-foot">
+        版本：2026-08-19<br>
+        状态：真实 SSE 已校准，等待首项确认
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero">
+        <p class="eyebrow">AsyncTest Vibe · Frontend Readiness</p>
+        <h2>先保证页面说真话，<br>再让知识体验更好用。</h2>
+        <p class="lead">
+          本方案围绕项目与来源浏览、真实 SSE 对话、正式引用、附件、typed clarification、
+          写入确认、失败恢复、DTA 与响应式体验展开。所有改动默认只发生在前端；
+          一旦发现缺少后端事实才能实现，将明确停止对应项并报告，不使用猜测或 fallback 掩盖。
+        </p>
+        <div class="hero-meta">
+          <span class="pill locked">不修改后端、接口或数据库</span>
+          <span class="pill good">正式接口与 Canonical Journal</span>
+          <span class="pill good">成功查询 SSE 已核对</span>
+          <span class="pill warn">动态界面仍由用户实测</span>
+        </div>
+      </header>
+
+      <section id="decision">
+        <div class="section-head">
+          <div>
+            <h2>先给结论</h2>
+            <p>成功查询链路已经证明后端能够提供过程语义、正式答案、引用、诊断标识和终态；C0 可以只改前端。</p>
+          </div>
+          <span class="section-no">01 / DECISION</span>
+        </div>
+
+        <div class="grid-3">
+          <article class="card">
+            <span class="tag no">无需后端配合</span>
+            <h3>前端自身问题</h3>
+            <p>单 reducer 收口、SSE 连接状态、错误视觉、来源折叠、加载状态、信息栏跳转、上传进度和响应式布局。</p>
+          </article>
+          <article class="card">
+            <span class="tag no">真实 SSE 已确认</span>
+            <h3>语义内容来自后端</h3>
+            <p>“查找现行知识”、过程旁白、stable revision、答案、CanonicalRef、DTA/Trace 和成功终态都已在正式事件中出现。</p>
+          </article>
+          <article class="card">
+            <span class="tag yes">一项需要后端确认</span>
+            <h3>成功与 incomplete 的关系</h3>
+            <p>外层 action 显示“成功 / 完成”，内部 canonical_tool_result 却是 incomplete、has_more=true；前端不能自行改写其业务含义。</p>
+          </article>
+        </div>
+
+        <div class="callout green" style="margin-top:14px">
+          <strong>真实 SSE 实证 · 2026-08-19</strong>
+          <p>
+            用户提供的正式 <code>/api/vibe/foundation/turn/stream</code> 响应包含
+            <code>turn_started → process items → answer → sources → event_saved → done</code>。
+            “查找现行知识”由后端以稳定 <code>item_id</code> 提供，并从 running revision 更新到完成 revision；
+            DTA、trace_id、7 条 CanonicalRef 和 completed terminal 均来自 Canonical Journal。
+          </p>
+        </div>
+
+        <div class="callout blue" style="margin-top:14px">
+          <strong>明确告知机制</strong>
+          <p>开发中一旦遇到后端配合项，将提供：缺少的字段或接口、影响的用户体验、最小后端需求、前端为何不能安全兜底。在你确认前，不扩展到后端。</p>
+        </div>
+      </section>
+
+      <section id="backend">
+        <div class="section-head">
+          <div>
+            <h2>哪些情况需要后端配合</h2>
+            <p>下面是开发时的硬判定表。绿色可以直接做；黄色先核对真实事件；红色意味着必须另开后端任务。</p>
+          </div>
+          <span class="section-no">02 / BACKEND</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>能力</th>
+                <th>当前前端能做什么</th>
+                <th>什么时候需要后端</th>
+                <th>判定</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>过程旁白与工具名称</strong></td>
+                <td>按后端的 item、revision、title、summary 和 status 原样投影；前端只负责布局、图标和展开方式。</td>
+                <td>当前成功链路不需要。“查找现行知识”和两次旁白 revision 均已由正式 SSE 提供，前端禁止自行生成同义文案。</td>
+                <td><span class="status no">已具备</span></td>
+              </tr>
+              <tr>
+                <td><strong>单一 Canonical reducer</strong></td>
+                <td>删除 legacy 二次解释与成功型 synthetic fallback，统一 replay 与实时投影。</td>
+                <td>不需要；使用现有 <code>turn_protocol.events</code>。</td>
+                <td><span class="status no">无需</span></td>
+              </tr>
+              <tr>
+                <td><strong>SSE 断线、取消、重连</strong></td>
+                <td>区分网络断开与正式 terminal，使用现有 running snapshot 和 protocol replay 恢复。</td>
+                <td>如果 running snapshot 缺少完整 <code>protocol_events</code> 或无法判断 terminal，才需要补后端事实。</td>
+                <td><span class="status maybe">条件式</span></td>
+              </tr>
+              <tr>
+                <td><strong>typed failure</strong></td>
+                <td>把规范 error item 渲染为失败卡，不再显示成普通答案。</td>
+                <td>如果只返回模糊字符串，且没有错误类型、阶段或可重试性，丰富诊断才需要后端增加 typed 字段。</td>
+                <td><span class="status maybe">条件式</span></td>
+              </tr>
+              <tr>
+                <td><strong>partial answer 边界</strong></td>
+                <td>依据正式状态显示“已完成部分”和未完成边界。</td>
+                <td>如果 Canonical Journal 没有 partial/interrupted 边界或完成范围，前端不能根据文本长度猜。</td>
+                <td><span class="status yes">缺字段则需要</span></td>
+              </tr>
+              <tr>
+                <td><strong>DTA 与 Trace 入口</strong></td>
+                <td>展示、复制并跳转已有 DTA/trace_id。</td>
+                <td>当前成功链路已提供 trace_id 和 audit_marker，并持久化在 Canonical Journal；只有其他终态缺失时才需后端补齐。</td>
+                <td><span class="status no">当前已具备</span></td>
+              </tr>
+              <tr>
+                <td><strong>正式引用</strong></td>
+                <td>使用 CanonicalRef 导航至文档、span 和对应位置。</td>
+                <td>当前 7 条引用已有 ref/canonical/source/document/generation 身份和 start/end offset；新事件若缺失仍必须报告，禁止文本匹配。</td>
+                <td><span class="status no">当前已具备</span></td>
+              </tr>
+              <tr>
+                <td><strong>工具结果完成度</strong></td>
+                <td>只能展示后端给出的用户可见 status 和 summary，不根据统计字段重新判定成功或 partial。</td>
+                <td>需要后端确认：外层 action 为 success/“完成”，内部结果为 incomplete、has_more=true。应明确“执行成功”与“证据覆盖未穷尽”是否为两个维度，并提供正式展示语义。</td>
+                <td><span class="status yes">需要确认</span></td>
+              </tr>
+              <tr>
+                <td><strong>clarification / preview / commit</strong></td>
+                <td>严格渲染 clarification.v2，回传 option_id、confirmation_id，展示正式回执。</td>
+                <td>如果后端没有提供 typed option、preview、confirmation 或 commit result，前端不能自建写入语义。</td>
+                <td><span class="status maybe">条件式</span></td>
+              </tr>
+              <tr>
+                <td><strong>附件进度与错误</strong></td>
+                <td>提供逐文件本地阶段、批次状态、失败清理说明；仍使用现有私有附件接口。</td>
+                <td>精确服务端处理进度或正式“使用范围”只有后端返回 typed 状态时才能展示。</td>
+                <td><span class="status maybe">条件式</span></td>
+              </tr>
+              <tr>
+                <td><strong>浏览、空状态与响应式</strong></td>
+                <td>贯通现有文档、搜索、提交、回执接口，优化页面布局和性能。</td>
+                <td>不需要；不改变知识内容和接口语义。</td>
+                <td><span class="status no">无需</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="flow">
+        <div class="section-head">
+          <div>
+            <h2>目标数据流</h2>
+            <p>传输层只负责收包和连接状态；所有业务结果只由 Canonical event reducer 投影。</p>
+          </div>
+          <span class="section-no">03 / FLOW</span>
+        </div>
+        <div class="flow" aria-label="目标数据流">
+          <div class="flow-node"><strong>正式 HTTP / SSE</strong><span>真实后端</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node"><strong>Transport</strong><span>连接、分帧、断线</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node owner"><strong>Canonical Reducer</strong><span>唯一事件 owner</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node"><strong>Read Model</strong><span>答案 / 来源 / 状态</span></div>
+        </div>
+        <div class="flow" aria-label="目标投影流">
+          <div class="flow-node"><strong>event_saved</strong><span>唯一持久化通知</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node"><strong>Session Events</strong><span>DB / replay</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node owner"><strong>同一 Reducer Replay</strong><span>刷新前后一致</span></div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node"><strong>统一 UI</strong><span>不重复、不猜测</span></div>
+        </div>
+        <div class="callout red" style="margin-top:14px">
+          <strong>必须删除的旁路</strong>
+          <p>页面级 answer/sources/error 二次 switch、旧 process reducer 业务解释、本地成功答案合成，以及从 meta 文案或答案正文反推状态。</p>
+        </div>
+        <div class="callout blue" style="margin-top:14px">
+          <strong>语义归属</strong>
+          <p>过程名称、旁白正文、工具状态与摘要、答案、clarification、写入结果、错误、partial 边界、sources、DTA/Trace 均由后端提供。前端只决定视觉层级、排版、通用复制/展开控件和响应式行为。</p>
+        </div>
+      </section>
+
+      <section id="problems">
+        <div class="section-head">
+          <div>
+            <h2>优化内容、目的与用户效果</h2>
+            <p>优先解决“页面是否忠实表达后端事实”，再解决信息密度、导航、响应式和性能。</p>
+          </div>
+          <span class="section-no">04 / OUTCOMES</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>优先级</th>
+                <th>优化内容</th>
+                <th>目的</th>
+                <th>优化后的效果</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="status p0">P0</span></td>
+                <td><strong>收口单一事件 owner</strong><br>实时、持久化、replay 都走同一 reducer。<br><span class="status done">前端已实现，待真实验收</span></td>
+                <td>消除重复解释、闪烁、顺序差异和状态串线。</td>
+                <td>稳定旁白只更新原 item；刷新前后答案、来源和状态一致。</td>
+              </tr>
+              <tr>
+                <td><span class="status p0">P0</span></td>
+                <td><strong>连接结束不等于业务完成</strong><br>单独建模 connected、reconnecting、terminal。<br><span class="status done">前端已实现，待真实验收</span></td>
+                <td>阻止网络 EOF 被包装成成功。</td>
+                <td>断线时明确显示恢复中；只有正式 terminal 才结束本轮。</td>
+              </tr>
+              <tr>
+                <td><span class="status p0">P0</span></td>
+                <td><strong>失败、取消、interrupted、partial 独立呈现</strong><br><span class="status done">前三项已实现</span> <span class="status maybe">partial 需后端正式字段</span></td>
+                <td>不让错误或残缺内容看起来像成功答案。</td>
+                <td>用户能判断结果是否完整、能否引用，以及下一步如何处理。</td>
+              </tr>
+              <tr>
+                <td><span class="status p1">P1</span></td>
+                <td><strong>CanonicalRef 正式引用</strong><br>摘要、展开、跳转、精确定位。</td>
+                <td>让来源真正可验证，而不是附带的一段文字。</td>
+                <td>多个来源仍清晰；一键进入对应现行文档和 span。</td>
+              </tr>
+              <tr>
+                <td><span class="status p1">P1</span></td>
+                <td><strong>DTA/Trace 就地诊断</strong></td>
+                <td>缩短从错误到定位证据的路径。</td>
+                <td>错误卡或会话详情可复制 DTA，并直达正确 Trace。</td>
+              </tr>
+              <tr>
+                <td><span class="status p1">P1</span></td>
+                <td><strong>typed clarification 与写入确认</strong></td>
+                <td>确保预览、选择、确认、提交严格对应后端语义。</td>
+                <td>刷新后 pending selection 不丢；确认只回传正式 option/confirmation id。</td>
+              </tr>
+              <tr>
+                <td><span class="status p1">P1</span></td>
+                <td><strong>附件批次状态与范围说明</strong></td>
+                <td>让用户知道哪些文件完成、失败或尚未绑定。</td>
+                <td>多文件上传过程可理解；失败不会让用户误以为附件已提交。</td>
+              </tr>
+              <tr>
+                <td><span class="status p1">P1</span></td>
+                <td><strong>项目、来源与信息栏贯通</strong></td>
+                <td>删除“看起来能点但只是开发中”的断点。</td>
+                <td>最近变更、文件、来源、提交和回执可以互相跳转。</td>
+              </tr>
+              <tr>
+                <td><span class="status p2">P2</span></td>
+                <td><strong>响应式与结构减重</strong></td>
+                <td>降低 5,820 行单页带来的回归和渲染风险。</td>
+                <td>窄窗口可用、长会话更稳；后续优化能在独立组件中完成。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="checkpoints">
+        <div class="section-head">
+          <div>
+            <h2>建议拆成 7 个独立 Checkpoints</h2>
+            <p>每项都能单独评审和验收。C0 是建议首先执行的优化，不涉及后端修改。</p>
+          </div>
+          <span class="section-no">05 / PLAN</span>
+        </div>
+
+        <article class="checkpoint recommended">
+          <div class="checkpoint-id">C0</div>
+          <div>
+            <h3>Canonical 单 owner 收口</h3>
+            <p class="summary">已完成前端实现，待真实失败、取消、重连与 replay 场景验收；第二套实时业务解释路径已删除。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>harness.ts、turnProtocol.ts、useProcessTurn.ts、knowledge/index.vue、协议合同测试</p></div>
+              <div><strong>风险 / 体量</strong><p>高；约 300–600 行触达，目标净删除 legacy 分支</p></div>
+              <div><strong>后端配合</strong><p><span class="status no">无需</span> 不改变请求与事件含义</p></div>
+            </div>
+            <ul>
+              <li>实时、event_saved、running replay 使用同一 reducer/read model。</li>
+              <li>stable item revision 只覆盖同一 item，不再追加重复旁白。</li>
+              <li>“查找现行知识”等过程内容只读取后端 title/summary/status，前端不补写业务文案。</li>
+              <li>删除成功型 synthetic answer；失败时保留真实未知状态。</li>
+              <li>验收重点：合法 <code>answer → sources → event_saved → done</code> 顺序不闪烁、不丢来源。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C1</div>
+          <div>
+            <h3>断流、取消、重连与 replay</h3>
+            <p class="summary">已完成前端实现，待真实断流与 running snapshot 验收；连接结束不会再自动生成成功答案。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>harness.ts、turnProtocol.ts、knowledge/index.vue</p></div>
+              <div><strong>风险 / 体量</strong><p>高；约 200–400 行</p></div>
+              <div><strong>后端配合</strong><p><span class="status maybe">条件式</span> 先核对 running snapshot 完整性</p></div>
+            </div>
+            <ul>
+              <li>区分正常 terminal、取消、interrupted、EOF 和可恢复断线。</li>
+              <li>切会话再返回、刷新、SSE 重连都从 Canonical replay 恢复。</li>
+              <li>无法证明成功时显示“结果未知/恢复失败”，不生成答案。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C2</div>
+          <div>
+            <h3>答案状态、正式引用与 DTA</h3>
+            <p class="summary">让用户一眼分清成功、失败、partial，并能验证来源和复制诊断标识。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>knowledge/index.vue、SourceChips.vue、AssistantActions.vue、新结果状态组件、Trace 路由</p></div>
+              <div><strong>风险 / 体量</strong><p>中；约 250–500 行</p></div>
+              <div><strong>后端配合</strong><p><span class="status maybe">必须补充 partial 正式语义</span> 当前 Canonical Protocol v2 没有 partial 字段或 terminal；前端不会根据已有答案文字或长度猜测。DTA/ref 已证实。</p></div>
+            </div>
+            <ul>
+              <li>错误不再使用普通答案卡；partial 显示明确边界。</li>
+              <li>来源默认摘要，按需展开，并使用稳定引用身份跳转。</li>
+              <li>DTA 支持复制和进入对应 Trace；绝不按时间或答案内容猜关联。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C3</div>
+          <div>
+            <h3>typed clarification 与写入闭环</h3>
+            <p class="summary">把 preview、选择、确认、提交和回执做成一个不丢状态的连续体验。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>turnProtocol.ts、knowledge/index.vue、ChatComposer.vue、新 typed interaction 组件</p></div>
+              <div><strong>风险 / 体量</strong><p>高；约 250–500 行</p></div>
+              <div><strong>后端配合</strong><p><span class="status maybe">条件式</span> 只消费后端正式 typed payload</p></div>
+            </div>
+            <ul>
+              <li>clarification.v2 按后端顺序渲染 option 和 input。</li>
+              <li>confirmation 只回传 option_id/confirmation_id，不回传前端 diff 正文参与提交。</li>
+              <li>刷新后 pending selection 可恢复；commit receipt 是最终写入反馈。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C4</div>
+          <div>
+            <h3>附件生命周期与范围体验</h3>
+            <p class="summary">让多文件上传、绑定、失败清理和最终使用范围都可理解。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>ChatComposer.vue、attachmentAdmission.ts、knowledge/index.vue、api.ts、ConversationInfoRail.vue</p></div>
+              <div><strong>风险 / 体量</strong><p>中高；约 250–450 行</p></div>
+              <div><strong>后端配合</strong><p><span class="status maybe">条件式</span> 精确处理范围必须来自 typed 状态</p></div>
+            </div>
+            <ul>
+              <li>展示逐文件“等待、上传、已绑定、清理中、失败”阶段。</li>
+              <li>整批失败仍执行现有私有资源清理，不把未绑定资源显示成成功。</li>
+              <li>删除“关键词承诺写入”的误导文案，写入只认正式预览与确认。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C5</div>
+          <div>
+            <h3>项目、来源浏览与信息栏贯通</h3>
+            <p class="summary">把对话、最近变更、当前文件、现行文档、搜索、提交和回执连成一条路。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>browser/index.vue、Overview/Search/Commit/Receipt、SourceReader.vue、ConversationInfoRail.vue、SourceChips.vue</p></div>
+              <div><strong>风险 / 体量</strong><p>中；约 350–700 行</p></div>
+              <div><strong>后端配合</strong><p><span class="status no">无需</span> 复用现有正式浏览接口</p></div>
+            </div>
+            <ul>
+              <li>信息栏条目不再弹“开发中”，而是打开对应资源。</li>
+              <li>空库、加载失败、无结果和权限错误分别展示并提供恢复动作。</li>
+              <li>长文档、多个标题、搜索定位和小窗口阅读保持可用。</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="checkpoint">
+          <div class="checkpoint-id">C6</div>
+          <div>
+            <h3>响应式、性能与结构减重</h3>
+            <p class="summary">在行为稳定后拆分 5,820 行主页面，删除无入口状态和重复样式。</p>
+            <div class="checkpoint-grid">
+              <div><strong>文件范围</strong><p>knowledge/index.vue、对话时间线/结果/布局组件、样式文件</p></div>
+              <div><strong>风险 / 体量</strong><p>高；6–10 文件，约 500–1,000 行触达，目标净删除</p></div>
+              <div><strong>后端配合</strong><p><span class="status no">无需</span> 纯展示与结构整理</p></div>
+            </div>
+            <ul>
+              <li>窄窗口折叠侧栏与信息栏，输入区始终留在可视范围。</li>
+              <li>来源和长答案按需渲染，减少 Markdown 重渲染。</li>
+              <li>拆分只围绕现有 read model，不新增第二套状态。</li>
+            </ul>
+          </div>
+        </article>
+      </section>
+
+      <section id="effects">
+        <div class="section-head">
+          <div>
+            <h2>优化前后，用户会感受到什么</h2>
+            <p>最终效果不以“换了多少样式”为口径，而以状态诚实、可恢复、可验证和可诊断为口径。</p>
+          </div>
+          <span class="section-no">06 / EFFECT</span>
+        </div>
+        <div class="effect-grid">
+          <article class="effect-card before">
+            <h3>优化前</h3>
+            <ul>
+              <li>断线可能看起来像结束。</li>
+              <li>失败文字可能混在普通答案中。</li>
+              <li>来源能阅读，但难以精确验证和跳转。</li>
+              <li>DTA 需要进入设置页自行寻找。</li>
+              <li>右侧信息栏多处按钮只是“开发中”。</li>
+              <li>多文件上传只有一个整体状态。</li>
+              <li>窄窗口和超长会话的布局风险较高。</li>
+            </ul>
+          </article>
+          <div class="effect-arrow">→</div>
+          <article class="effect-card after">
+            <h3>优化后</h3>
+            <ul>
+              <li>只有正式 terminal 才显示完成。</li>
+              <li>成功、失败、取消、partial、恢复中一眼可辨。</li>
+              <li>CanonicalRef 可展开、复制并精确打开原文。</li>
+              <li>DTA 就地复制，Trace 一步到达。</li>
+              <li>变更、附件、文档、提交、回执互相贯通。</li>
+              <li>每个附件的生命周期清晰可见。</li>
+              <li>长答案、多来源和窄窗口仍保持可读。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="acceptance">
+        <div class="section-head">
+          <div>
+            <h2>验收口径与不可退让红线</h2>
+            <p>本次不以 mock、静态数据或前端自洽为通过标准；所有动态验收由用户使用真实前后端完成。</p>
+          </div>
+          <span class="section-no">07 / ACCEPTANCE</span>
+        </div>
+        <div class="guardrails">
+          <div class="guardrail"><b>01</b><span>实时 SSE、DB 事件和 replay 产生同一 UI read model。</span></div>
+          <div class="guardrail"><b>02</b><span>stable item revision 不重复堆积，event_id/item_id 只有一个 owner。</span></div>
+          <div class="guardrail"><b>03</b><span>非 terminal、断线、typed failure、partial 不得显示成成功。</span></div>
+          <div class="guardrail"><b>04</b><span>sources 只使用 CanonicalRef，不从答案正文或文件名猜来源。</span></div>
+          <div class="guardrail"><b>05</b><span>写入严格经过 preview、clarification、confirmation、commit。</span></div>
+          <div class="guardrail"><b>06</b><span>DTA/Trace 只能使用后端正式标识，缺失时明确报告。</span></div>
+          <div class="guardrail"><b>07</b><span>取消、切会话、刷新、重连后不串会话、不丢答案、不重复事件。</span></div>
+          <div class="guardrail"><b>08</b><span>不新增后端改动，不停止或重启后端，不改变协议含义。</span></div>
+        </div>
+
+        <div class="callout amber" style="margin-top:14px">
+          <strong>本轮测量说明</strong>
+          <p>根据用户要求，本方案没有运行浏览器、Computer Use、构建或前端测试，也没有主动调用接口。已静态解析用户提供的一次正式成功查询 SSE：事件结构可靠，但复制文本存在字符编码损伤。当前证据只覆盖成功查询；失败、取消、interrupted、partial、clarification、写入确认和 running replay 仍须以后续真实样本或用户实测验收，不能由本样本外推。</p>
+        </div>
+
+        <div class="callout red" style="margin-top:14px">
+          <strong>已识别的后端确认项</strong>
+          <p>同一工具 action 的用户可见状态是 <code>success</code>、摘要是“完成”，但 <code>canonical_tool_result</code> 为 <code>status=incomplete</code>、<code>has_more=true</code>。前端开发不会擅自把它显示成 partial，也不会吞掉该差异；需要后端 owner 明确正式语义后再实现对应展示。</p>
+        </div>
+
+        <div class="callout green" style="margin-top:14px">
+          <strong>现有改动保护</strong>
+          <p>工作树已有 electron/main.js、vibe/api.ts、SourceReader.vue、knowledge/index.vue、projectStatsPolicy.ts 修改。后续开发必须保留这些用户改动，尤其是文档数口径和 Markdown 目录修正。</p>
+        </div>
+      </section>
+
+      <footer class="foot">
+        Vibe 知识库前端模块优化方案 · 2026-08-19<br>
+        当前状态：P0 前端实现已完成静态审计；下一步由用户使用正式后端验收成功、失败、取消、interrupted、断流和 replay。partial 需后端 owner 先提供正式 Canonical 边界，前端才可继续展示。
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

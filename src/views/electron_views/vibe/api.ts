@@ -22,16 +22,25 @@ export interface VibeProject {
 
 export interface VibeSession {
   id: string
-  vibe_project_id: string
-  user_id: number
   title: string
-  focus: string
-  test_run_id?: string
   llm_provider_id?: string
-  status: string
+  vibe_project_id?: string
+  user_id?: number
+  focus?: string
+  test_run_id?: string
+  status?: string
   created_at?: string
   updated_at?: string
   last_event_at?: string
+}
+
+export interface VibeSessionPage {
+  sessions: VibeSession[]
+  page: {
+    limit: number
+    has_more: boolean
+    next_cursor: string | null
+  }
 }
 
 export interface VibeAttachment {
@@ -110,7 +119,7 @@ export interface VibeLLMProviderConfig {
   name: string
   provider_type: string
   base_url: string
-  api_key: string
+  has_api_key?: boolean
   proxy_url: string
   timeout_config: Record<string, any>
   max_retries: number
@@ -148,13 +157,27 @@ export interface VibeLLMSceneConfig {
 }
 
 export interface VibeLLMRuntimeConfig {
-  user_id: number
-  source: string
-  session_id?: string
-  provider: Record<string, any> | null
-  models: Record<string, string>
-  scene_strengths?: Record<string, 'mini' | 'strong'>
-  scene_catalog?: VibeLLMSceneConfig[]
+  schema: 'llm_runtime_selection.v1'
+  session_id: string
+  selected_provider_id: string
+  selection_source: 'session' | 'user' | 'system_default' | 'none'
+  error?: string
+}
+
+export interface VibeLLMModelPickerProvider {
+  id: string
+  name: string
+  enabled: boolean
+  source: 'mine' | 'system_default'
+  is_system_default: boolean
+}
+
+export interface VibeLLMModelPicker {
+  schema: 'llm_model_picker.v1'
+  session_id: string
+  selected_provider_id: string
+  selection_source: 'session' | 'user' | 'system_default' | 'none'
+  providers: VibeLLMModelPickerProvider[]
 }
 
 export interface VibeCapabilityUser {
@@ -575,8 +598,13 @@ export function initVibeProject(projectId: number, payload: {
   return request('POST', `/vibe/projects/by-async-project/${projectId}/init`, payload)
 }
 
-export function listVibeSessions(vibeProjectId: string): Promise<VibeSession[]> {
-  return request('GET', `/vibe/projects/${vibeProjectId}/sessions`)
+export function listVibeSessions(
+  vibeProjectId: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<VibeSessionPage> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 100) })
+  if (options.cursor) query.set('cursor', options.cursor)
+  return request('GET', `/vibe/projects/${vibeProjectId}/sessions?${query.toString()}`)
 }
 
 export function createVibeSession(vibeProjectId: string, payload: {
@@ -626,12 +654,79 @@ export function listVibeEvents(sessionId: string): Promise<VibeEvent[]> {
   return request('GET', `/vibe/sessions/${sessionId}/events`)
 }
 
+export interface VibeSessionSourceLocator {
+  offset_unit: 'unicode_code_point'
+  start_offset: number
+  end_offset: number
+}
+
+export interface VibeSessionSourceDetail {
+  schema: 'source_content.v1'
+  source_id: string
+  display_name: string
+  source_kind: string
+  mime_type: string
+  content_hash: string
+  text: string
+  chars: number
+  range_sha256: string
+  locator?: VibeSessionSourceLocator
+}
+
+export interface VibeSessionSourceFragment extends Omit<VibeSessionSourceDetail, 'schema' | 'locator'> {
+  schema: 'source_fragment.v1'
+  locator: VibeSessionSourceLocator
+}
+
+export interface VibeSessionSourceDetailResponse {
+  ok: true
+  source: VibeSessionSourceDetail
+}
+
+export interface VibeSessionSourceFragmentResponse {
+  ok: true
+  source: VibeSessionSourceFragment
+}
+
+/** 会话引用正文按需读取；events 只承载 public_source_ref.v1 轻量定位符。 */
+export function getVibeSessionSourceFragment(
+  sessionId: string,
+  sourceId: string,
+  locator: { startOffset: number; endOffset: number },
+): Promise<VibeSessionSourceFragmentResponse> {
+  const query = new URLSearchParams({
+    start_offset: String(locator.startOffset),
+    end_offset: String(locator.endOffset),
+  })
+  return request(
+    'GET',
+    `/vibe/sessions/${encodeURIComponent(sessionId)}`
+      + `/sources/${encodeURIComponent(sourceId)}/fragment?${query.toString()}`,
+  )
+}
+
+/** 缺少引用区间时按需读取会话授权范围内的完整来源；不回退项目级旧接口。 */
+export function getVibeSessionSource(
+  sessionId: string,
+  sourceId: string,
+): Promise<VibeSessionSourceDetailResponse> {
+  return request(
+    'GET',
+    `/vibe/sessions/${encodeURIComponent(sessionId)}`
+      + `/sources/${encodeURIComponent(sourceId)}`,
+  )
+}
+
 export async function listVibeLLMProviders(): Promise<{
+  schema: 'llm_provider_settings.v1'
   providers: VibeLLMProviderConfig[]
-  default_model_config: Record<string, string>
-  model_config_keys: string[]
 }> {
   return request('GET', '/vibe/llm/providers')
+}
+
+export function getVibeLLMModelPicker(sessionId?: string): Promise<VibeLLMModelPicker> {
+  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  return request('GET', `/vibe/llm/model-picker${query}`)
 }
 
 export function createVibeLLMProvider(payload: VibeLLMProviderPayload): Promise<VibeLLMProviderConfig> {
@@ -994,18 +1089,30 @@ export interface FoundationRunningTurn {
   session_id: string
   project: string
   done: boolean
-  state: 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed' | 'interrupted'
-  stop?: { source?: string; reason?: string; scope?: string; requested_at?: number; detail?: string }
+  runtime_state?: 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed' | 'interrupted'
+  stop_metadata?: { source?: string; reason?: string; scope?: string; requested_at?: number; detail?: string }
   commit_state?: 'not_started' | 'in_transaction' | 'committed' | 'rolled_back'
   failed?: string
+  last_sequence?: number
+  replay_ready?: boolean
   started_at?: number
   updated_at?: number
-  terminal_at?: number
   deadline_at?: number
-  events: any[]
-  protocol_events?: any[]
   protocol_state?: 'queued' | 'running' | 'waiting_user' | 'cancelling' | 'cancelled' | 'interrupted' | 'succeeded' | 'failed'
-  protocol_terminal?: string | null
+}
+
+export interface FoundationTurnReplay {
+  projection: 'journal_delta.v1'
+  turn_id: string
+  state: 'queued' | 'running' | 'waiting_user' | 'cancelling' | 'cancelled' | 'interrupted' | 'succeeded' | 'failed'
+  terminal: string | null
+  journal: {
+    after_sequence: number
+    events: any[]
+    latest_sequence: number
+    delivered_through_sequence: number
+    has_more: boolean
+  }
 }
 
 export interface FoundationCancelResult {
@@ -1026,6 +1133,22 @@ export function listFoundationRunningTurns(params: { project?: string; session_i
   return request('GET', `/vibe/foundation/turn/running${qs ? `?${qs}` : ''}`)
 }
 
+/** 权威 Turn Journal；running lease 只提供身份，首次全量、后续按 sequence 增量恢复。 */
+export function replayFoundationTurn(params: {
+  turn_id: string
+  session_id: string
+  after_sequence?: number
+  last_event_id?: string
+}): Promise<FoundationTurnReplay> {
+  const query = new URLSearchParams()
+  query.set('turn_id', params.turn_id)
+  query.set('session_id', params.session_id)
+  query.set('projection', 'journal_delta')
+  query.set('after_sequence', String(Math.max(0, Math.floor(Number(params.after_sequence) || 0))))
+  if (params.last_event_id) query.set('last_event_id', params.last_event_id)
+  return request('GET', `/vibe/foundation/turn/replay?${query.toString()}`)
+}
+
 /** T26 停止本轮：置位后端取消令牌。流会自己发 cancelled+已停止回执+done 正常收尾，无需 abort。 */
 export function cancelFoundationTurn(turnId: string, sessionId = ''): Promise<FoundationCancelResult> {
   return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId, session_id: sessionId })
@@ -1033,7 +1156,7 @@ export function cancelFoundationTurn(turnId: string, sessionId = ''): Promise<Fo
 
 export function getFoundationKnowledgeStatsMany(
   projects: string[],
-): Promise<{ ok: boolean; items: Record<string, { commits: number; sources: number; spans: number; sections: number; modules: number }> }> {
+): Promise<{ ok: boolean; items: Record<string, { commits: number; sources: number; documents: number; spans: number; sections: number; modules: number }> }> {
   return request('POST', '/vibe/foundation/knowledge/stats', { projects })
 }
 
@@ -1148,6 +1271,8 @@ export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
   display_kind: string
   mime_type: string
   breadcrumb: string
+  matched_field?: 'content' | 'title' | 'filename'
+  match_range?: [] | [number, number]
   rank: number
 }
 
@@ -1177,10 +1302,42 @@ export interface KnowledgeStatus {
   }
 }
 
+export interface KnowledgeDiffLine {
+  kind: 'context' | 'add' | 'delete'
+  old_line: number | null
+  new_line: number | null
+  text: string
+}
+
+export interface KnowledgeDiffHunk {
+  header: string
+  old_start: number
+  old_lines: number
+  new_start: number
+  new_lines: number
+  lines: KnowledgeDiffLine[]
+}
+
+export interface KnowledgeDocumentChange {
+  id: string
+  document_id: string
+  change_type: 'added' | 'modified' | 'deleted'
+  old_path: string
+  new_path: string
+  old_generation_id: string | null
+  new_generation_id: string | null
+  old_content_hash: string | null
+  new_content_hash: string | null
+  additions: number
+  deletions: number
+  hunks: KnowledgeDiffHunk[]
+}
+
 export interface KnowledgeCommitDetail extends KnowledgeCommitSummary {
   sources: KnowledgeSourceSummary[]
   tombstones: Array<Record<string, any>>
   structure_directives: Array<Record<string, any> & { target_path: string[] }>
+  document_changes: KnowledgeDocumentChange[]
   confirmation?: Record<string, any> | null
 }
 

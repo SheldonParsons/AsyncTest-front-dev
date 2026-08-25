@@ -35,9 +35,9 @@ export function getMindTransactionPlaybackPolicy(changedNodeCount: number): Mind
     return { mode: 'step', leadSingleCount: changedNodeCount, groupSize: 1, delayMs: 80 };
   }
   if (changedNodeCount <= 60) return { mode: 'progressive', leadSingleCount: 6, groupSize: 6, delayMs: 16 };
-  if (changedNodeCount <= 120) return { mode: 'progressive', leadSingleCount: 6, groupSize: 16, delayMs: 0 };
-  if (changedNodeCount <= 1000) return { mode: 'progressive', leadSingleCount: 8, groupSize: 40, delayMs: 0 };
-  return { mode: 'progressive', leadSingleCount: 6, groupSize: 96, delayMs: 0 };
+  if (changedNodeCount <= 120) return { mode: 'progressive', leadSingleCount: 2, groupSize: 40, delayMs: 0 };
+  if (changedNodeCount <= 1000) return { mode: 'progressive', leadSingleCount: 1, groupSize: 200, delayMs: 0 };
+  return { mode: 'progressive', leadSingleCount: 1, groupSize: 512, delayMs: 0 };
 }
 
 function wait(delayMs: number) {

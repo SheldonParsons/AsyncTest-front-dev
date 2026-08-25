@@ -90,7 +90,13 @@
               </label>
               <label class="wide">
                 <span>Api Key</span>
-                <input v-model="draft.api_key" autocomplete="off" spellcheck="false" placeholder="请输入 DeepSeek Api Key" @input="clearStatus" />
+                <input
+                  v-model="draft.api_key"
+                  autocomplete="off"
+                  spellcheck="false"
+                  :placeholder="editingProvider?.has_api_key ? '已配置，留空则保持不变' : '请输入 DeepSeek Api Key'"
+                  @input="clearStatus"
+                />
               </label>
               <label>
                 <span>增强模型</span>
@@ -131,13 +137,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createVibeLLMProvider,
   deleteVibeLLMProvider,
-  getVibeLLMRuntimeConfig,
   listVibeLLMProviders,
   testVibeLLMProvider,
   updateVibeLLMProvider,
   type VibeLLMProviderConfig,
   type VibeLLMProviderPayload,
-  type VibeLLMRuntimeConfig,
 } from './api'
 
 const DEEPSEEK_LOGO = 'https://asynctest.oss-cn-shenzhen.aliyuncs.com/core/logo/other_band_logo/deepseek_logo.svg'
@@ -155,10 +159,9 @@ const deleting = ref(false)
 const testingId = ref('')
 const providers = ref<VibeLLMProviderConfig[]>([])
 const editingProvider = ref<VibeLLMProviderConfig | null>(null)
-const runtime = ref<VibeLLMRuntimeConfig | null>(null)
-const modelKeys = ref<string[]>([])
 const statusText = ref('')
 const statusKind = ref<'idle' | 'ok' | 'error'>('idle')
+let loadConfigRequest: Promise<void> | null = null
 
 const draft = reactive<VibeLLMProviderPayload>({
   name: 'DeepSeek',
@@ -186,10 +189,12 @@ const lightModel = computed({
 })
 
 watch(open, (value) => {
-  if (value) loadConfig()
+  if (value && !embedded.value) void loadConfig()
 })
 
-onMounted(loadConfig)
+onMounted(() => {
+  if (embedded.value) void loadConfig()
+})
 
 function resetDraft() {
   Object.assign(draft, {
@@ -210,7 +215,7 @@ function applyDraft(provider: VibeLLMProviderConfig) {
     name: provider.name || 'DeepSeek',
     provider_type: 'deepseek',
     base_url: provider.base_url || DEEPSEEK_BASE_URL,
-    api_key: provider.api_key || '',
+    api_key: '',
     proxy_url: provider.proxy_url || '',
     timeout_config: {
       connect: Number(provider.timeout_config?.connect ?? 30),
@@ -235,20 +240,26 @@ function defaultDeepSeekModelConfig() {
 }
 
 async function loadConfig() {
-  try {
-    const [providerPayload, runtimeConfig] = await Promise.all([listVibeLLMProviders(), getVibeLLMRuntimeConfig()])
-    providers.value = (providerPayload.providers || []).filter((provider) => String(provider.provider_type || '').toLowerCase() === 'deepseek')
-    runtime.value = runtimeConfig
-    modelKeys.value = ['mini', 'strong']
-    if (viewMode.value === 'edit' && editingProvider.value?.id) {
-      const latest = providers.value.find((provider) => provider.id === editingProvider.value?.id)
-      if (latest && canEditProvider(latest)) {
-        editingProvider.value = latest
-        applyDraft(latest)
+  if (loadConfigRequest) return loadConfigRequest
+  loadConfigRequest = (async () => {
+    try {
+      const providerPayload = await listVibeLLMProviders()
+      providers.value = (providerPayload.providers || []).filter((provider) => String(provider.provider_type || '').toLowerCase() === 'deepseek')
+      if (viewMode.value === 'edit' && editingProvider.value?.id) {
+        const latest = providers.value.find((provider) => provider.id === editingProvider.value?.id)
+        if (latest && canEditProvider(latest)) {
+          editingProvider.value = latest
+          applyDraft(latest)
+        }
       }
+    } catch (error: any) {
+      setStatus(`配置读取失败：${error?.message || String(error)}`, 'error')
     }
-  } catch (error: any) {
-    setStatus(`配置读取失败：${error?.message || String(error)}`, 'error')
+  })()
+  try {
+    await loadConfigRequest
+  } finally {
+    loadConfigRequest = null
   }
 }
 
@@ -293,18 +304,17 @@ function setStatus(text: string, kind: 'idle' | 'ok' | 'error') {
 function validateDraft() {
   if (!String(draft.name || '').trim()) return '请填写模型名称'
   if (!String(draft.base_url || '').trim()) return '请填写 Base Url'
-  if (!String(draft.api_key || '').trim()) return '请填写 Api Key'
+  if (!String(draft.api_key || '').trim() && !editingProvider.value?.has_api_key) return '请填写 Api Key'
   if (!lightModel.value.trim()) return '请填写轻量模型'
   if (!enhancedModel.value.trim()) return '请填写增强模型'
   return ''
 }
 
 function buildPayload(): VibeLLMProviderPayload {
-  return {
+  const payload: VibeLLMProviderPayload = {
     name: String(draft.name || '').trim(),
     provider_type: 'deepseek',
     base_url: String(draft.base_url || DEEPSEEK_BASE_URL).trim(),
-    api_key: String(draft.api_key || '').trim(),
     proxy_url: '',
     timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
     max_retries: 0,
@@ -314,6 +324,9 @@ function buildPayload(): VibeLLMProviderPayload {
     },
     enabled: true,
   }
+  const apiKey = String(draft.api_key || '').trim()
+  if (apiKey) payload.api_key = apiKey
+  return payload
 }
 
 async function persistDraft() {

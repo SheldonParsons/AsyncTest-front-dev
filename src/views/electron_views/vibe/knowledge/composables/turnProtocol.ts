@@ -26,6 +26,7 @@ export interface TurnProtocolEvent {
   turn_id: string
   sequence: number
   event_type: string
+  created_at?: string
   payload?: Record<string, any>
   item?: TurnProtocolItem
 }
@@ -51,7 +52,33 @@ export interface TurnProtocolReadModel {
   clarification: { question: string; raw?: any; pending: any[] } | null
   writeCommits: any[]
   turnPlan: Record<string, any>
-  failed: string
+  outcome: TurnProtocolOutcome | null
+}
+
+export type TurnProtocolOutcomeKind = 'failed' | 'cancelled' | 'interrupted'
+
+export interface TurnProtocolOutcome {
+  kind: TurnProtocolOutcomeKind
+  state: TurnProtocolStateName
+  terminal: string
+  title: string
+  detail: string
+  reason: string
+  partial: boolean
+}
+
+export interface SessionTurnPublicV1 {
+  schema: 'session_turn_public.v1'
+  latest_sequence: number
+  state: TurnProtocolStateName
+  terminal: string | null
+  duration_ms?: number
+  write_commit_count?: number
+  outcome?: {
+    kind: TurnProtocolOutcomeKind
+    code: 'turn_failed' | 'turn_cancelled' | 'turn_interrupted'
+    partial: false
+  }
 }
 
 export interface TurnProtocolState {
@@ -64,6 +91,73 @@ const TERMINAL_STATE: Record<string, TurnProtocolStateName> = {
   failed: 'failed',
   interrupted: 'interrupted',
   cancelled: 'cancelled',
+}
+const TURN_PROTOCOL_STATES = new Set<TurnProtocolStateName>([
+  'queued',
+  'running',
+  'waiting_user',
+  'cancelling',
+  'cancelled',
+  'interrupted',
+  'succeeded',
+  'failed',
+])
+const PUBLIC_OUTCOME_CODE: Record<
+  TurnProtocolOutcomeKind,
+  NonNullable<SessionTurnPublicV1['outcome']>['code']
+> = {
+  failed: 'turn_failed',
+  cancelled: 'turn_cancelled',
+  interrupted: 'turn_interrupted',
+}
+const PUBLIC_OUTCOME_TITLE: Record<TurnProtocolOutcomeKind, string> = {
+  failed: '本轮处理失败',
+  cancelled: '本轮已停止',
+  interrupted: '本轮处理中断',
+}
+const sessionTurnPublicCache = new WeakMap<object, { signature: string; model: TurnProtocolReadModel }>()
+
+function sessionProcessSteps(meta: any): ProcessStep[] {
+  const rows = Array.isArray(meta?.process) ? meta.process : []
+  const steps: ProcessStep[] = []
+  rows.forEach((item: any, index: number) => {
+    if (!item || typeof item !== 'object') return
+    const sequence = typeof item.sequence === 'number' ? item.sequence : undefined
+    if (item.kind === 'message') {
+      steps.push({
+        kind: 'message',
+        key: String(item.item_id || item.step_id || `m-${index}`),
+        text: String(item.text || ''),
+        itemId: item.item_id || undefined,
+        sequence,
+        phase: item.phase || undefined,
+        source: item.source || undefined,
+        authority: item.authority || undefined,
+      })
+    } else if (item.kind === 'action') {
+      steps.push({
+        kind: 'action',
+        key: String(item.item_id || item.step_id || `a-${index}`),
+        actionId: String(item.action_id || ''),
+        actionType: String(item.action_type || 'action'),
+        title: String(item.title || '执行动作'),
+        summary: String(item.summary || ''),
+        status: item.status || 'success',
+        durationMs: typeof item.duration_ms === 'number' ? item.duration_ms : undefined,
+        stats: item.stats && typeof item.stats === 'object' ? item.stats : undefined,
+        itemId: item.item_id || undefined,
+        sequence,
+        phase: item.phase || undefined,
+        source: item.source || undefined,
+        authority: item.authority || undefined,
+      })
+    }
+  })
+  return steps.sort((left: any, right: any) => {
+    const leftSequence = typeof left.sequence === 'number' ? left.sequence : Number.MAX_SAFE_INTEGER
+    const rightSequence = typeof right.sequence === 'number' ? right.sequence : Number.MAX_SAFE_INTEGER
+    return leftSequence - rightSequence
+  })
 }
 const PROVIDER_TOOL_CALL_ID = /^call_[A-Za-z0-9_-]{8,}$/
 const GENERIC_ACTION_SEMANTICS = new Set([
@@ -119,6 +213,7 @@ export function applyTurnProtocolEvents(state: TurnProtocolState, events: any[])
       turn_id: turnId,
       sequence,
       event_type: String(raw.event_type || ''),
+      created_at: String(raw.created_at || ''),
       payload: raw.payload && typeof raw.payload === 'object' ? raw.payload : {},
       item: raw.item && typeof raw.item === 'object'
         ? {
@@ -142,6 +237,99 @@ export function readTurnProtocolFromMeta(meta: any): TurnProtocolReadModel | nul
   return Array.isArray(events) && events.length ? replayTurnProtocol(events) : null
 }
 
+/**
+ * Session history 的 v1 终态摘要只负责公开身份；答案、过程和来源继续
+ * 各自使用外层 event/meta 的单一副本，不再复制一份完整 Journal。
+ */
+export function readSessionTurnPublic(event: any): TurnProtocolReadModel | null {
+  if (!event || typeof event !== 'object') return null
+  const turn = event.turn
+  if (!turn || typeof turn !== 'object' || turn.schema !== 'session_turn_public.v1') return null
+  const turnId = String(event.turn_id || '')
+  const state = String(turn.state || '') as TurnProtocolStateName
+  const terminal = String(turn.terminal || '')
+  const latestSequence = Number(turn.latest_sequence || 0)
+  if (!turnId || !TURN_PROTOCOL_STATES.has(state)) return null
+  if (!Number.isSafeInteger(latestSequence) || latestSequence < 1) return null
+  if (terminal && TERMINAL_STATE[terminal] !== state) return null
+  if (state === 'succeeded' && terminal !== 'completed') return null
+  if (['failed', 'cancelled', 'interrupted'].includes(state) && !terminal) return null
+
+  const signature = JSON.stringify([
+    turnId,
+    turn,
+    event.content,
+    event.meta,
+  ])
+  const cached = sessionTurnPublicCache.get(event)
+  if (cached?.signature === signature) return cached.model
+
+  const meta = event.meta && typeof event.meta === 'object' ? event.meta : {}
+  const processSummary = meta.process_summary && typeof meta.process_summary === 'object'
+    ? { ...meta.process_summary }
+    : {}
+  const durationMs = Number(turn.duration_ms || 0)
+  if (Number.isFinite(durationMs) && durationMs > 0) {
+    processSummary.duration_ms = Math.round(durationMs)
+  }
+  const clarificationValue = meta.clarification && typeof meta.clarification === 'object'
+    ? meta.clarification
+    : null
+  const clarificationQuestion = String(clarificationValue?.question || '')
+  const clarification = clarificationQuestion
+    ? {
+        question: clarificationQuestion,
+        raw: clarificationValue?.raw,
+        pending: Array.isArray(clarificationValue?.pending)
+          ? clarificationValue.pending
+          : (Array.isArray(meta.pending_interactions) ? meta.pending_interactions : []),
+      }
+    : null
+  const adverse = ['failed', 'cancelled', 'interrupted'].includes(state)
+    ? state as TurnProtocolOutcomeKind
+    : null
+  if (adverse) {
+    const outcome = turn.outcome
+    if (!outcome || outcome.kind !== adverse || outcome.code !== PUBLIC_OUTCOME_CODE[adverse]) {
+      return null
+    }
+  }
+  const content = adverse ? '' : String(event.content || '')
+  const writeCommitCount = Math.max(0, Math.floor(Number(turn.write_commit_count) || 0))
+  const model: TurnProtocolReadModel = {
+    turnId,
+    state,
+    terminal,
+    content,
+    answers: content.trim() ? [content] : [],
+    process: sessionProcessSteps(meta),
+    processSummary,
+    actions: [],
+    sources: Array.isArray(meta.sources) ? meta.sources : [],
+    verification: meta.verification && typeof meta.verification === 'object'
+      ? meta.verification
+      : null,
+    clarification,
+    writeCommits: writeCommitCount > 0
+      ? Array.from({ length: Math.min(writeCommitCount, 1000) }, () => ({ publicCommit: true }))
+      : [],
+    turnPlan: {},
+    outcome: adverse
+      ? {
+          kind: adverse,
+          state,
+          terminal,
+          title: PUBLIC_OUTCOME_TITLE[adverse],
+          detail: '',
+          reason: '',
+          partial: false,
+        }
+      : null,
+  }
+  sessionTurnPublicCache.set(event, { signature, model })
+  return model
+}
+
 export function protocolEventsFromMeta(meta: any): TurnProtocolEvent[] {
   const events = meta?.turn_protocol?.events
   return Array.isArray(events) ? events : []
@@ -154,6 +342,10 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
   const checkpoints: TurnProtocolEvent[] = []
   let protocolState: TurnProtocolStateName = 'queued'
   let terminal = ''
+  let terminalPayload: Record<string, any> = {}
+  let cancellationPayload: Record<string, any> = {}
+  let startedAtMs = 0
+  let settledAtMs = 0
 
   for (const event of events) {
     const item = event.item
@@ -162,13 +354,25 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
       items.set(item.item_id, item)
     }
     if (event.event_type === 'checkpoint') checkpoints.push(event)
-    if (event.event_type === 'started') protocolState = 'running'
-    else if (event.event_type === 'waiting') protocolState = 'waiting_user'
+    const eventAtMs = protocolTimestampMs(event.created_at)
+    if (event.event_type === 'started') {
+      protocolState = 'running'
+      if (eventAtMs > 0 && !startedAtMs) startedAtMs = eventAtMs
+    }
+    else if (event.event_type === 'waiting') {
+      protocolState = 'waiting_user'
+      if (eventAtMs > 0) settledAtMs = eventAtMs
+    }
     else if (event.event_type === 'resumed') protocolState = 'running'
-    else if (event.event_type === 'cancel_requested' || event.event_type === 'cancel_observed') protocolState = 'cancelling'
+    else if (event.event_type === 'cancel_requested' || event.event_type === 'cancel_observed') {
+      protocolState = 'cancelling'
+      cancellationPayload = event.payload && typeof event.payload === 'object' ? event.payload : {}
+    }
     else if (TERMINAL_STATE[event.event_type]) {
       protocolState = TERMINAL_STATE[event.event_type]
       terminal = event.event_type
+      terminalPayload = event.payload && typeof event.payload === 'object' ? event.payload : {}
+      if (eventAtMs > 0) settledAtMs = eventAtMs
     }
   }
 
@@ -183,9 +387,8 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
   let verification: any | null = null
   let clarification: TurnProtocolReadModel['clarification'] = null
   const writeCommits: any[] = []
-  const notes: string[] = []
-  const receipts: string[] = []
-  const errors: string[] = []
+  const receipts: Array<{ content: string; payload: Record<string, any> }> = []
+  const errors: Array<{ content: string; payload: Record<string, any> }> = []
 
   for (const item of orderedItems) {
     const itemId = String(item.item_id || '')
@@ -211,7 +414,6 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
         })
       }
       if (legacyType === 'intent') actions = (payload.actions || []).map(String)
-      if (legacyType === 'notes') notes.push(...(payload.items || []).map(String).filter(Boolean))
     } else if (itemType === 'tool_call') {
       // 纵深防御：原始 Canonical 事件仍留在 state，只从可见过程投影中排除无正式语义的孤立调用 ID。
       if (isInternalOrphanToolCall(content, payload)) continue
@@ -256,9 +458,16 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
       if (legacyType === 'write_commit' && payload.result && typeof payload.result === 'object') {
         writeCommits.push(payload.result)
       }
-      if (content && payload.outcome) receipts.push(content)
+      if (content) receipts.push({ content, payload })
     } else if (itemType === 'error' && content) {
-      errors.push(content)
+      errors.push({ content, payload })
+    }
+  }
+
+  if (terminal) {
+    for (const step of process) {
+      if (step.kind === 'action' && step.status === 'running') step.status = 'unknown'
+      if (step.kind === 'message' && step.streaming) step.streaming = false
     }
   }
 
@@ -277,13 +486,58 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
       }
     }
   }
+  // 公共协议刻意不暴露内部 duration_ms；用同一 Canonical 生命周期的
+  // started → terminal/waiting 时间恢复用户看到的“整轮已处理”耗时。
+  if (!(Number(processSummary.duration_ms) > 0) && startedAtMs > 0 && settledAtMs >= startedAtMs) {
+    const lifecycleDuration = Math.round(settledAtMs - startedAtMs)
+    if (lifecycleDuration > 0) processSummary.duration_ms = lifecycleDuration
+  }
 
-  const failed = errors.at(-1) || ''
-  const contentParts = failed
-    ? [failed.startsWith('本轮处理失败：') ? failed : `本轮处理失败：${failed}`]
-    : [...answers]
-  if (!contentParts.length && receipts.length) contentParts.push(receipts.at(-1) || '')
-  if (notes.length) contentParts.push(`> ${notes.join('\n> ')}`)
+  const lastError = errors.at(-1)
+  const contentParts = [...answers]
+  // 成功写入可能只有后端 receipt、没有独立 answer；只在正式成功终态下把回执作为正文。
+  // 失败、取消和中断回执由 outcome 独立展示，绝不能伪装成成功答案。
+  if (!contentParts.length && protocolState === 'succeeded' && receipts.length) {
+    contentParts.push(receipts.at(-1)?.content || '')
+  }
+
+  let outcome: TurnProtocolOutcome | null = null
+  if (['failed', 'cancelled', 'interrupted'].includes(protocolState)) {
+    const cancelledReceipt = [...receipts].reverse().find(item => item.payload.outcome === 'cancelled')
+    const detail = protocolState === 'cancelled'
+      ? String(
+          cancelledReceipt?.content
+          || terminalPayload.detail
+          || terminalPayload.message
+          || cancellationPayload.detail
+          || cancellationPayload.message
+          || '',
+        )
+      : String(lastError?.content || terminalPayload.detail || terminalPayload.message || '')
+    const reason = String(
+      terminalPayload.reason
+      || lastError?.payload?.reason
+      || cancelledReceipt?.payload?.reason
+      || cancellationPayload.reason
+      || '',
+    )
+    const title = protocolState === 'failed'
+      ? '本轮处理失败'
+      : protocolState === 'cancelled'
+        ? '本轮已停止'
+        : '本轮处理中断'
+    outcome = {
+      kind: protocolState as TurnProtocolOutcomeKind,
+      state: protocolState,
+      terminal,
+      title,
+      detail,
+      reason,
+      // Canonical Turn Protocol v2 当前没有正式 partial 字段或 terminal。
+      // 即使失败前已有 assistant_message，也不能由前端自行命名为 partial。
+      partial: false,
+    }
+  }
 
   return {
     turnId: events[0]?.turn_id || '',
@@ -299,6 +553,12 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
     clarification,
     writeCommits,
     turnPlan,
-    failed,
+    outcome,
   }
+}
+
+function protocolTimestampMs(value: unknown): number {
+  if (typeof value !== 'string' || !value.trim()) return 0
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : 0
 }

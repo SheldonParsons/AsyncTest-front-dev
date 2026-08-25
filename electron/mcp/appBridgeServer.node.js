@@ -26,6 +26,7 @@ import {
   recordMindMcpDiagnosticPhase,
 } from './mindMcpDiagnostics.node.js';
 import { assertMindMcpIdentityCompatible, normalizeMindMcpError } from './mindMcpProtocol.node.js';
+import { getMindRendererTimeoutPolicy } from './mindRendererTimeoutPolicy.node.js';
 import {
   isMindWindowWriteMethod,
   resolveMindExecutionWindowKey,
@@ -72,8 +73,6 @@ import {
 
 const FILE_BRIDGE_POLL_MS = 120;
 const FILE_BRIDGE_MAX_AGE_MS = 30000;
-const RENDERER_REQUEST_IDLE_TIMEOUT_MS = 30000;
-const RENDERER_REQUEST_HARD_TIMEOUT_MS = 300000;
 const RENDERER_READY_TIMEOUT_MS = 15000;
 const pendingRendererRequests = new Map();
 const readyRendererDocuments = new Map();
@@ -781,12 +780,14 @@ async function requestMindRenderer(context, method, params = {}) {
         startedAt: Date.now(),
         lastProgressAt: Date.now(),
         progress: null,
+        timeoutPolicy: getMindRendererTimeoutPolicy(method),
+        idleExceededAt: null,
       };
       pendingRendererRequests.set(requestId, pending);
       armMindRendererIdleTimeout(pending);
       pending.hardTimer = setTimeout(() => {
         rejectTimedOutMindRendererRequest(pending, 'hard');
-      }, RENDERER_REQUEST_HARD_TIMEOUT_MS);
+      }, pending.timeoutPolicy.hardTimeoutMs);
       win.webContents.send('mind:mcp-request', {
         requestId,
         method,
@@ -882,8 +883,8 @@ function buildMindRendererTimeoutError(pending, timeoutKind) {
     docId: pending.docId,
     transactionId: pending.transactionId,
     timeoutKind,
-    idleTimeoutMs: RENDERER_REQUEST_IDLE_TIMEOUT_MS,
-    hardTimeoutMs: RENDERER_REQUEST_HARD_TIMEOUT_MS,
+    idleTimeoutMs: pending.timeoutPolicy.idleTimeoutMs,
+    hardTimeoutMs: pending.timeoutPolicy.hardTimeoutMs,
     elapsedMs: Date.now() - pending.startedAt,
     idleForMs: Date.now() - pending.lastProgressAt,
     lastProgressAt: new Date(pending.lastProgressAt).toISOString(),
@@ -905,8 +906,21 @@ function armMindRendererIdleTimeout(pending) {
   if (!pending || pendingRendererRequests.get(pending.requestId) !== pending) return false;
   if (pending.idleTimer) clearTimeout(pending.idleTimer);
   pending.idleTimer = setTimeout(() => {
+    if (pending.timeoutPolicy.keepWaitingAfterIdle) {
+      pending.idleTimer = null;
+      pending.idleExceededAt = Date.now();
+      void appendDebugLog('renderer-request-idle-but-running', {
+        requestId: pending.requestId,
+        method: pending.method,
+        transactionId: pending.transactionId,
+        windowKey: pending.logicalWindowKey,
+        progress: pending.progress,
+        idleForMs: Date.now() - pending.lastProgressAt,
+      });
+      return;
+    }
     rejectTimedOutMindRendererRequest(pending, 'idle');
-  }, RENDERER_REQUEST_IDLE_TIMEOUT_MS);
+  }, pending.timeoutPolicy.idleTimeoutMs);
   return true;
 }
 
@@ -920,6 +934,7 @@ export function handleMindMcpRendererProgress(senderWindowKey, payload = {}) {
     if (transactionId && pending.transactionId !== transactionId) continue;
     if (docId && pending.docId !== docId) continue;
     pending.lastProgressAt = Date.now();
+    pending.idleExceededAt = null;
     pending.progress = {
       completedCount: payload.completedCount ?? null,
       totalCount: payload.totalCount ?? null,
@@ -1216,6 +1231,33 @@ export function initMindMcpAppBridgeServer({ amindMain, windowManager }) {
     return net.createServer((socket) => {
     let buffer = '';
 
+    const writeSocketResponse = (payload) => {
+      if (socket.destroyed || socket.writableEnded) return false;
+      try {
+        socket.write(`${JSON.stringify(payload)}\n`, (error) => {
+          if (!error) return;
+          void appendBridgeLog('socket-response-write-error', {
+            code: error.code,
+            message: error.message,
+          });
+        });
+        return true;
+      } catch (error) {
+        void appendBridgeLog('socket-response-write-error', {
+          code: error?.code,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    };
+
+    socket.on('error', (error) => {
+      void appendBridgeLog('socket-client-error', {
+        code: error?.code,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+
     socket.on('data', (chunk) => {
       buffer += chunk.toString('utf8');
       let newlineIndex = buffer.indexOf('\n');
@@ -1234,13 +1276,13 @@ export function initMindMcpAppBridgeServer({ amindMain, windowManager }) {
               request.method,
               request.params || {}
             );
-            socket.write(`${JSON.stringify({ id: request.id, ok: true, result })}\n`);
+            writeSocketResponse({ id: request.id, ok: true, result });
           } catch (error) {
-            socket.write(`${JSON.stringify({
+            writeSocketResponse({
               id: request?.id ?? null,
               ok: false,
               error: toErrorPayload(error),
-            })}\n`);
+            });
           }
         })();
       }

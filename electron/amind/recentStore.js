@@ -47,18 +47,8 @@ async function toRendererEntry(entry) {
             const bytes = await fs.readFile(entry.previewPath);
             previewUrl = `data:image/png;base64,${bytes.toString('base64')}`;
         } catch {
-            console.warn('[mind-preview-debug:main] failed to read preview file', {
-                filePath: entry.filePath,
-                previewPath: entry.previewPath,
-            });
             previewUrl = null;
         }
-    } else {
-        console.warn('[mind-preview-debug:main] renderer entry missing previewPath', {
-            filePath: entry.filePath,
-            updatedAt: entry.updatedAt ?? null,
-            title: entry.title ?? null,
-        });
     }
     return {
         ...entry,
@@ -66,10 +56,17 @@ async function toRendererEntry(entry) {
     };
 }
 
-export function createRecentStore({ userDataPath }) {
+export function createRecentStore({ userDataPath, fallbackUserDataPaths = [] }) {
     const storePath = path.join(userDataPath, 'recent-amind.json');
     const backupStorePath = path.join(userDataPath, 'recent-amind.backup.json');
     const previewDir = path.join(userDataPath, 'amind-previews');
+    const fallbackStorePaths = (Array.isArray(fallbackUserDataPaths) ? fallbackUserDataPaths : [])
+        .map((fallbackPath) => normalizeFilePath(fallbackPath))
+        .filter((fallbackPath) => fallbackPath && fallbackPath !== normalizeFilePath(userDataPath))
+        .flatMap((fallbackPath) => [
+            path.join(fallbackPath, 'recent-amind.json'),
+            path.join(fallbackPath, 'recent-amind.backup.json'),
+        ]);
 
     async function loadEntries() {
         const readEntries = async (targetPath) => {
@@ -84,6 +81,15 @@ export function createRecentStore({ userDataPath }) {
             try {
                 return await readEntries(backupStorePath);
             } catch {
+                for (const fallbackStorePath of fallbackStorePaths) {
+                    try {
+                        const migratedEntries = await readEntries(fallbackStorePath);
+                        await saveEntries(migratedEntries);
+                        return migratedEntries;
+                    } catch {
+                        // Try the next migration source.
+                    }
+                }
                 return [];
             }
         }

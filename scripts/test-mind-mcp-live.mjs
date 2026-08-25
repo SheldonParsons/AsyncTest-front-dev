@@ -318,7 +318,7 @@ async function main() {
     });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
     assertEqual(initialized?.serverInfo?.name, 'asynctest-mind', 'server name');
-    assertEqual(initialized?.serverInfo?.version, '0.7.0', 'server version');
+    assertEqual(initialized?.serverInfo?.version, '0.7.2', 'server version');
     assert(initialized?.instructions?.includes('mind_get_operation_status'), 'initialize instructions should explain status recovery');
 
     const listed = await request('tools/list');
@@ -340,8 +340,8 @@ async function main() {
 
   await runTest('Capability discovery tells the Agent how to wait and recover', async () => {
     const capabilities = await callTool('mind_get_mcp_capabilities');
-    assertEqual(capabilities.payload.version, '0.7.0', 'capability version');
-    assertEqual(capabilities.payload.capabilityRevision, 13, 'capability revision');
+    assertEqual(capabilities.payload.version, '0.7.2', 'capability version');
+    assertEqual(capabilities.payload.capabilityRevision, 14, 'capability revision');
     assertEqual(capabilities.payload.protocolRevision, 2, 'protocol revision');
     assertEqual(capabilities.payload.advertisedToolCount, 17, 'capability tool count');
     assert(

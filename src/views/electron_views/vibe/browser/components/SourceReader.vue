@@ -11,14 +11,13 @@
       </div>
       <div class="aside-head structure-head"><strong>{{ detailMode === 'source' ? '来源结构' : '文档结构' }}</strong><span>{{ outline.length }} 标题</span></div>
       <div class="outline-list">
-        <button v-for="item in outline" :key="item.key" type="button" @click="jumpToOffset(item.offset)">
+        <button v-for="item in outline" :key="item.key" type="button" @click="jumpToOutline(item)">
           <i :style="{ marginLeft: `${Math.max(0, item.level - 1) * 12}px` }" />
           <span>{{ item.label }}</span>
         </button>
         <template v-if="detail && !outline.length">
           <button class="whole-source" type="button" @click="jumpToOffset(0)"><i /><span>整段原文</span></button>
-          <p v-if="outlineUnavailable" class="outline-note error-text">结构索引暂不可用；完整正文仍可阅读和下载。</p>
-          <p v-else class="outline-note">原文没有使用 Markdown 标题，内容仍已完整保存并建立检索跨度。</p>
+          <p class="outline-note">原文没有可显示的 Markdown 标题，仍可完整阅读和下载。</p>
         </template>
       </div>
     </aside>
@@ -65,7 +64,7 @@ import {
   type KnowledgeSourceSpan,
 } from '../../api'
 
-const props = defineProps<{ projectId: string; requestedDocumentId?: string; requestedSourceId?: string; requestedPath?: string[]; requestedOffset?: number }>()
+const props = defineProps<{ projectId: string; requestedDocumentId?: string; requestedSourceId?: string; requestedPath?: string[]; requestedOffset?: number; requestedQuery?: string }>()
 type ReadableDetail = KnowledgeDocumentDetail | KnowledgeSourceDetail
 const documentItems = ref<KnowledgeDocumentSummary[]>([])
 const documentCursor = ref<number | null>(null)
@@ -82,9 +81,15 @@ let detailRequestEpoch = 0
 
 const isMarkdown = computed(() => /markdown|md$/i.test(detail.value?.mime_type || detail.value?.filename || ''))
 const renderedContent = computed(() => DOMPurify.sanitize(String(marked.parse(detail.value?.content || '')), { USE_PROFILES: { html: true } }))
-const outlineUnavailable = computed(() => detailMode.value === 'document'
-  && (detail.value as KnowledgeDocumentDetail | null)?.outline_status === 'unavailable')
-const outline = computed(() => {
+interface OutlineItem {
+  key: string
+  label: string
+  level: number
+  offset: number
+  headingIndex?: number
+}
+
+const indexedOutline = computed<OutlineItem[]>(() => {
   const seen = new Set<string>()
   return (detail.value?.spans || []).flatMap((span) => {
     const path = span.title_path || []
@@ -94,6 +99,30 @@ const outline = computed(() => {
     return [{ key, label: path[path.length - 1], level: path.length, offset: span.start_offset }]
   })
 })
+const markdownOutline = computed<OutlineItem[]>(() => {
+  if (detailMode.value !== 'document' || !isMarkdown.value || !detail.value?.content) return []
+  let offset = 0
+  let headingIndex = 0
+  const items: OutlineItem[] = []
+  for (const token of marked.lexer(detail.value.content)) {
+    const raw = typeof token.raw === 'string' ? token.raw : ''
+    const tokenOffset = offset
+    offset += raw.length
+    if (token.type !== 'heading') continue
+    items.push({
+      key: `markdown:${headingIndex}:${tokenOffset}`,
+      label: String(token.text || '').trim(),
+      level: Number(token.depth || 1),
+      offset: tokenOffset,
+      headingIndex,
+    })
+    headingIndex += 1
+  }
+  return items
+})
+const outline = computed<OutlineItem[]>(() => detailMode.value === 'document'
+  ? markdownOutline.value
+  : indexedOutline.value)
 const minimap = computed(() => sample(detail.value?.spans || [], 40))
 
 watch(() => props.projectId, () => { void reset() }, { immediate: true })
@@ -104,7 +133,10 @@ watch(() => props.requestedPath, async (path) => {
   const span = detail.value.spans.find(item => path.every((part, index) => item.title_path[index] === part))
   if (span) await nextTick(() => jumpToOffset(span.start_offset))
 }, { deep: true })
-watch(() => props.requestedOffset, async (offset) => { if (offset && detail.value) await nextTick(() => jumpToOffset(offset)) })
+watch(
+  () => [props.requestedOffset, props.requestedQuery] as const,
+  async () => { if (detail.value) await resetScroll() },
+)
 
 async function reset() {
   const epoch = ++requestEpoch
@@ -162,6 +194,7 @@ async function selectDocument(id: string) {
     if (epoch !== requestEpoch || detailEpoch !== detailRequestEpoch || projectId !== props.projectId) return
     detail.value = payload.document
     activeSpan.value = 0
+    detailLoading.value = false
     await resetScroll()
   } catch (reason) {
     if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
@@ -188,6 +221,7 @@ async function selectAuditSource(id: string) {
     if (epoch !== requestEpoch || detailEpoch !== detailRequestEpoch || projectId !== props.projectId) return
     detail.value = payload.source
     activeSpan.value = 0
+    detailLoading.value = false
     await resetScroll()
   } catch (reason) {
     if (epoch === requestEpoch && detailEpoch === detailRequestEpoch && projectId === props.projectId) {
@@ -202,7 +236,19 @@ async function selectAuditSource(id: string) {
 
 async function resetScroll() {
   await nextTick(() => {
-    if (props.requestedOffset) jumpToOffset(props.requestedOffset)
+    const requestedDetailIsOpen = detailMode.value === 'document'
+      ? Boolean(props.requestedDocumentId && props.requestedDocumentId === detail.value?.id)
+      : Boolean(props.requestedSourceId && props.requestedSourceId === detail.value?.id)
+    if (!requestedDetailIsOpen) {
+      scrollEl.value?.scrollTo({ top: 0 })
+      return
+    }
+    const offset = Math.max(0, Number(props.requestedOffset || 0))
+    if (props.requestedQuery) {
+      if (!jumpToSearchMatch(offset, props.requestedQuery)) jumpToSourceLine(offset)
+      return
+    }
+    if (offset) jumpToOffset(offset)
     else scrollEl.value?.scrollTo({ top: 0 })
   })
 }
@@ -217,6 +263,147 @@ function jumpToOffset(offset: number) {
   const contentLength = Math.max(1, detail.value?.content.length || 1)
   if (!el) return
   el.scrollTo({ top: Math.max(0, el.scrollHeight - el.clientHeight) * offset / contentLength, behavior: 'smooth' })
+}
+
+interface TextSegment {
+  node: Text
+  start: number
+  end: number
+}
+
+function jumpToSearchMatch(offset: number, query: string) {
+  const el = scrollEl.value
+  const source = detail.value?.content || ''
+  const needle = query.trim()
+  const root = el?.querySelector<HTMLElement>('.markdown-body, .plain-body')
+  if (!el || !root || !source || !needle) return false
+
+  clearSearchTarget(root)
+  const segments: TextSegment[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let visibleText = ''
+  let node = walker.nextNode()
+  while (node) {
+    const textNode = node as Text
+    const start = visibleText.length
+    visibleText += textNode.data
+    segments.push({ node: textNode, start, end: visibleText.length })
+    node = walker.nextNode()
+  }
+
+  const visibleMatches = matchOffsets(visibleText, needle)
+  if (!visibleMatches.length) return false
+  const sourceMatches = matchOffsets(source, needle)
+  const sourceIndex = closestMatchIndex(sourceMatches, offset)
+  const visibleOffset = sourceIndex >= 0 && sourceIndex < visibleMatches.length
+    ? visibleMatches[sourceIndex]
+    : nearestRelativeMatch(visibleMatches, visibleText.length, offset, source.length)
+  const start = locateTextSegment(segments, visibleOffset, false)
+  const end = locateTextSegment(segments, visibleOffset + needle.length, true)
+  if (!start || !end) return false
+
+  if (start.segment.node === end.segment.node) {
+    const marker = document.createElement('mark')
+    marker.className = 'source-search-target'
+    marker.dataset.searchTarget = 'true'
+    const range = document.createRange()
+    range.setStart(start.segment.node, start.offset)
+    range.setEnd(end.segment.node, end.offset)
+    range.surroundContents(marker)
+    scrollVisualTarget(marker)
+    return true
+  }
+
+  const range = document.createRange()
+  range.setStart(start.segment.node, start.offset)
+  range.setEnd(end.segment.node, end.offset)
+  const block = start.segment.node.parentElement?.closest<HTMLElement>('p, li, pre, h1, h2, h3, h4, h5, h6, td, th, blockquote, .plain-body')
+    || start.segment.node.parentElement
+  if (!block) return false
+  block.classList.add('source-search-block')
+  block.dataset.searchTarget = 'true'
+  scrollVisualTarget(range)
+  return true
+}
+
+function scrollVisualTarget(target: Element | Range) {
+  const el = scrollEl.value
+  if (!el) return
+  const targetRect = target.getBoundingClientRect()
+  const containerRect = el.getBoundingClientRect()
+  el.scrollTo({
+    top: Math.max(0, el.scrollTop + targetRect.top - containerRect.top - el.clientHeight * 0.34),
+    behavior: 'smooth',
+  })
+}
+
+function clearSearchTarget(root: HTMLElement) {
+  root.querySelectorAll<HTMLElement>('.source-search-target').forEach((marker) => {
+    const parent = marker.parentNode
+    marker.replaceWith(document.createTextNode(marker.textContent || ''))
+    parent?.normalize()
+  })
+  root.querySelectorAll<HTMLElement>('.source-search-block').forEach((block) => {
+    block.classList.remove('source-search-block')
+    delete block.dataset.searchTarget
+  })
+}
+
+function matchOffsets(value: string, query: string) {
+  const haystack = value.toLocaleLowerCase('zh-CN')
+  const needle = query.toLocaleLowerCase('zh-CN')
+  const offsets: number[] = []
+  let cursor = 0
+  while (cursor <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, cursor)
+    if (index < 0) break
+    offsets.push(index)
+    cursor = index + Math.max(1, needle.length)
+  }
+  return offsets
+}
+
+function closestMatchIndex(offsets: number[], requestedOffset: number) {
+  if (!offsets.length) return -1
+  return offsets.reduce((best, item, index) => (
+    Math.abs(item - requestedOffset) < Math.abs(offsets[best] - requestedOffset) ? index : best
+  ), 0)
+}
+
+function nearestRelativeMatch(offsets: number[], visibleLength: number, requestedOffset: number, sourceLength: number) {
+  const expected = Math.max(0, requestedOffset) / Math.max(1, sourceLength) * Math.max(1, visibleLength)
+  return offsets.reduce((best, item) => Math.abs(item - expected) < Math.abs(best - expected) ? item : best, offsets[0])
+}
+
+function locateTextSegment(segments: TextSegment[], position: number, endBoundary: boolean) {
+  const segment = segments.find(item => endBoundary
+    ? position > item.start && position <= item.end
+    : position >= item.start && position < item.end)
+  if (!segment) return null
+  return { segment, offset: Math.max(0, Math.min(segment.node.length, position - segment.start)) }
+}
+
+function jumpToSourceLine(offset: number) {
+  const el = scrollEl.value
+  const source = detail.value?.content || ''
+  if (!el || !source) return
+  const lineIndex = (source.slice(0, Math.max(0, offset)).match(/\n/g) || []).length
+  const lineCount = Math.max(1, (source.match(/\n/g) || []).length + 1)
+  el.scrollTo({
+    top: Math.max(0, el.scrollHeight - el.clientHeight) * lineIndex / Math.max(1, lineCount - 1),
+    behavior: 'smooth',
+  })
+}
+
+function jumpToOutline(item: OutlineItem) {
+  if (item.headingIndex === undefined) {
+    jumpToOffset(item.offset)
+    return
+  }
+  const heading = scrollEl.value?.querySelectorAll<HTMLElement>(
+    '.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6',
+  )[item.headingIndex]
+  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function syncActiveSpan() {
@@ -282,6 +469,8 @@ aside { display: grid; grid-template-rows: auto minmax(110px, .44fr) auto minmax
 .document-scroll { min-width: 0; overflow: auto; padding: 28px 68px 80px 70px; overscroll-behavior: contain; }
 .markdown-body, .plain-body { width: min(1040px, 100%); margin: 0; color: #232323; font-size: 14px; line-height: 1.78; letter-spacing: 0; overflow-wrap: anywhere; }
 .plain-body { white-space: pre-wrap; }
+.document-scroll :deep(.source-search-target) { border-radius: 3px; padding: 1px 2px; background: #fff1a8; color: inherit; box-shadow: 0 0 0 2px rgba(198, 155, 0, .16); scroll-margin-block: 96px; }
+.document-scroll :deep(.source-search-block) { border-radius: 3px; background: #fff9d9; box-shadow: 0 0 0 4px #fff9d9; scroll-margin-block: 96px; }
 .markdown-body :deep(h1) { margin: 0 0 20px; padding-bottom: 11px; border-bottom: 1px solid #ddd; font-size: 24px; line-height: 1.35; }
 .markdown-body :deep(h2) { margin: 30px 0 11px; padding-left: 10px; border-left: 2px solid #222; font-size: 19px; line-height: 1.4; }
 .markdown-body :deep(h3) { margin: 23px 0 9px; font-size: 16px; line-height: 1.45; }

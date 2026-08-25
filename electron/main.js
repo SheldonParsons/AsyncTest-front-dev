@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { installProcessOutputSafety } from './processOutputSafety.node.js';
 
 import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
@@ -41,7 +42,21 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
+installProcessOutputSafety();
 const rustEngine = require('../src-rust/index.cjs');
+const isDevelopmentRuntime = !app.isPackaged;
+const defaultUserDataPath = app.getPath('userData');
+const recentFallbackUserDataPaths = [];
+
+// 开发版必须拥有独立的本地身份。否则它会与正式版共享 userData 和单实例锁，
+// 导致后启动的应用立即退出，并让 Cookie、IndexedDB、MCP 状态等互相污染。
+if (isDevelopmentRuntime) {
+  recentFallbackUserDataPaths.push(defaultUserDataPath);
+  const developmentUserDataPath = path.join(app.getPath('appData'), 'async-test-dev');
+  fs.mkdirSync(developmentUserDataPath, { recursive: true });
+  app.setName('AsyncTest Dev');
+  app.setPath('userData', developmentUserDataPath);
+}
 
 if (process.argv.includes('--asynctest-mind-mcp')) {
   if (process.platform === 'darwin') {
@@ -151,11 +166,9 @@ app.on('second-instance', async (event, argv) => {
 
 // ===== 创建主窗口 =====
 async function createMainWindow() {
-  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
-
   windowManager = new WindowManager({
     preloadPath: path.join(__dirname, 'preload.js'),
-    isDev,
+    isDev: isDevelopmentRuntime,
     devBaseURL: 'http://localhost:3333',
     prodIndexHTML: path.join(__dirname, '../dist/index.html'),
   });
@@ -167,7 +180,7 @@ async function createMainWindow() {
     minHeight: 820,
     trafficLightPosition: { x: 12, y: 12 },
     openDevTools: true,
-    title: 'AsyncTest',
+    title: isDevelopmentRuntime ? 'AsyncTest Dev' : 'AsyncTest',
     frameless: true,
     nativeHeaderless: true,
     query: { windowKey: 'main' },
@@ -620,6 +633,7 @@ app.whenReady().then(async () => {
 
   amindMain = initAmindMain({
     userDataPath: app.getPath('userData'),
+    recentFallbackUserDataPaths,
     windowManager,
   });
   mindMcpBridge = initMindMcpAppBridgeServer({ amindMain, windowManager });
@@ -631,10 +645,8 @@ app.whenReady().then(async () => {
 
   await flushPendingOpenQueue();
 
-  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
-
   const argvFiles = extractAmindPathsFromArgv(process.argv);
-  const envFiles = isDev && argvFiles.length === 0 ? extractAmindPathsFromEnv() : [];
+  const envFiles = isDevelopmentRuntime && argvFiles.length === 0 ? extractAmindPathsFromEnv() : [];
 
   const files = argvFiles.length ? argvFiles : envFiles;
 

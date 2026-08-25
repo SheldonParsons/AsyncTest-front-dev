@@ -2,6 +2,11 @@ export interface SessionAttachmentLike {
   id?: unknown
   resource_id?: unknown
   source_ref_id?: unknown
+  citation_span_id?: unknown
+  citation_start_offset?: unknown
+  citation_end_offset?: unknown
+  source_label?: unknown
+  source_location?: unknown
   content_hash?: unknown
   attachment_source_ref?: unknown
   name?: unknown
@@ -11,6 +16,10 @@ export interface SessionAttachmentLike {
   chars?: unknown
   kind?: unknown
   status?: unknown
+  download_url?: unknown
+  content?: unknown
+  text?: unknown
+  body_omitted?: unknown
 }
 
 export interface SessionEventLike {
@@ -24,6 +33,8 @@ export interface SessionEventLike {
 export interface RecentSessionFile extends SessionAttachmentLike {
   identity: string
   filename: string
+  event_id: string
+  attachment_index: number
   last_event_order: number
   last_seen_at: string
 }
@@ -68,12 +79,13 @@ export function recentSessionFiles(
 ): RecentSessionFile[] {
   const owner = nonEmpty(sessionId)
   if (!owner) return []
-  const latest = new Map<string, RecentSessionFile & { attachment_order: number }>()
+  const latest = new Map<string, RecentSessionFile>()
   for (const event of events || []) {
     if (nonEmpty(event?.session_id) !== owner || !Array.isArray(event?.attachments)) continue
+    const eventId = nonEmpty(event?.id)
     const eventOrder = Number(event?.event_order || 0)
     const seenAt = nonEmpty(event?.created_at)
-    event.attachments.forEach((raw, attachmentOrder) => {
+    event.attachments.forEach((raw, attachmentIndex) => {
       if (!raw || typeof raw !== 'object') return
       const file = raw as SessionAttachmentLike
       const identity = attachmentIdentity(file)
@@ -86,7 +98,7 @@ export function recentSessionFiles(
           previous.last_event_order > eventOrder
           || (
             previous.last_event_order === eventOrder
-            && previous.attachment_order > attachmentOrder
+            && previous.attachment_index > attachmentIndex
           )
         )
       ) return
@@ -95,20 +107,20 @@ export function recentSessionFiles(
         ...file,
         identity,
         filename,
+        event_id: eventId,
+        attachment_index: attachmentIndex,
         last_event_order: eventOrder,
         last_seen_at: seenAt,
-        attachment_order: attachmentOrder,
       })
     })
   }
   return Array.from(latest.values())
     .sort((a, b) => (
       b.last_event_order - a.last_event_order
-      || b.attachment_order - a.attachment_order
+      || b.attachment_index - a.attachment_index
       || b.last_seen_at.localeCompare(a.last_seen_at)
     ))
     .slice(0, Math.max(0, Number(limit) || 0))
-    .map(({ attachment_order: _attachmentOrder, ...file }) => file)
 }
 
 export function advanceKnowledgeChangeCursor(

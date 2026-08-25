@@ -1,4 +1,5 @@
 export interface KnowledgeStats {
+  documents: number
   sections: number
   modules: number
 }
@@ -12,6 +13,7 @@ export interface KnowledgeWriteModel {
 }
 
 const EMPTY_KNOWLEDGE_STATS: Readonly<KnowledgeStats> = Object.freeze({
+  documents: 0,
   sections: 0,
   modules: 0,
 })
@@ -41,6 +43,7 @@ export function knowledgeStatsFromPayload(
   const key = knowledgeStatsProjectId(projectId)
   const stats = key ? payload.items?.[key] : undefined
   return {
+    documents: Number(stats?.documents || 0),
     sections: Number(stats?.sections || 0),
     modules: Number(stats?.modules || 0),
   }

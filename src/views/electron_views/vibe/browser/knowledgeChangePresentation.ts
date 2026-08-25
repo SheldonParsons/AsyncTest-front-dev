@@ -24,9 +24,15 @@ export function knowledgeChangeKindLabel(value: string): string {
 
 const SHANGHAI_TIME_ZONE = 'Asia/Shanghai'
 
+function parseBackendTimestamp(value: string): Date {
+  let normalized = String(value || '').trim().replace(' ', 'T')
+  if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)) normalized += 'Z'
+  return new Date(normalized)
+}
+
 export function formatKnowledgeChangeTime(value: string, full = false): string {
   if (!value) return ''
-  const date = new Date(value)
+  const date = parseBackendTimestamp(value)
   if (Number.isNaN(date.getTime())) return ''
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: SHANGHAI_TIME_ZONE,

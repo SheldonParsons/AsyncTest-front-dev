@@ -341,169 +341,6 @@ function resolveBaseVisualStyle(
   );
 }
 
-function resolveNodePath(doc: any, nodeId: string | null | undefined): string[] | null {
-  if (!doc || !nodeId) return null;
-  const activeMind = getActiveMind(doc);
-  const roots = Array.isArray(activeMind?.roots) ? activeMind.roots : [];
-  const nodes = activeMind?.nodes ?? {};
-  const visited = new Set<string>();
-
-  const visit = (currentId: string): string[] | null => {
-    if (!currentId || visited.has(currentId)) return null;
-    visited.add(currentId);
-    if (currentId === nodeId) return [currentId];
-    const childIds = Array.isArray(nodes[currentId]?.children) ? nodes[currentId].children : [];
-    for (const childId of childIds) {
-      if (typeof childId !== 'string' || !childId) continue;
-      const childPath = visit(childId);
-      if (childPath) return [currentId, ...childPath];
-    }
-    return null;
-  };
-
-  for (const root of roots) {
-    const rootId = root?.rootId;
-    if (typeof rootId !== 'string' || !rootId || !nodes[rootId]) continue;
-    const path = visit(rootId);
-    if (path) return path;
-  }
-
-  return null;
-}
-
-function getDefaultShapeOverridesForDepth(
-  depth: number,
-  renderStylePreset: MindDocumentRenderStylePreset,
-  parentShape: NonNullable<NodeStyle['shape']> | null,
-  doc?: any,
-  branchIndex?: number | null
-): NonNullable<NodeStyle['shape']> {
-  if (depth === 0) {
-    const visual = resolveBaseVisualStyle('root', renderStylePreset, doc, branchIndex);
-    return {
-      fill: visual.fill,
-      stroke: visual.stroke,
-      fillPreset: visual.fillPreset,
-      borderPreset: visual.borderPreset,
-      strokeWidthPx: visual.strokeWidthPx,
-    };
-  }
-  if (depth === 1) {
-    const visual = resolveBaseVisualStyle('secondary', renderStylePreset, doc, branchIndex);
-    return {
-      fill: visual.fill,
-      stroke: visual.stroke,
-      fillPreset: visual.fillPreset,
-      borderPreset: visual.borderPreset,
-      strokeWidthPx: visual.strokeWidthPx,
-    };
-  }
-  if (depth === 2) {
-    const visual = resolveBaseVisualStyle('default', renderStylePreset, doc, branchIndex);
-    return {
-      fill: visual.fill,
-      stroke: visual.stroke,
-      fillPreset: visual.fillPreset,
-      borderPreset: visual.borderPreset,
-      strokeWidthPx: visual.strokeWidthPx,
-    };
-  }
-  return {
-    fill: parentShape?.fill ?? CLEAN_DEFAULT_STYLE.fill,
-    stroke: parentShape?.stroke ?? CLEAN_DEFAULT_STYLE.stroke,
-    fillPreset: parentShape?.fillPreset ?? CLEAN_DEFAULT_STYLE.fillPreset,
-    borderPreset: parentShape?.borderPreset ?? CLEAN_DEFAULT_STYLE.borderPreset,
-    strokeWidthPx: parentShape?.strokeWidthPx,
-  };
-}
-
-function getDefaultTextOverridesForDepth(
-  depth: number,
-  renderStylePreset: MindDocumentRenderStylePreset,
-  parentText: NonNullable<NodeStyle['text']> | null,
-  doc?: any,
-  branchIndex?: number | null
-): NonNullable<NodeStyle['text']> {
-  if (depth === 0) {
-    const visual = resolveBaseVisualStyle('root', renderStylePreset, doc, branchIndex);
-    return {
-      fontFamily: DEFAULT_FONT_FAMILY,
-      fontSizePx: visual.fontSizePx,
-      fontWeight: visual.fontWeight,
-      fontStyle: visual.fontStyle,
-      color: visual.textColor,
-      textAlign: visual.textAlign,
-    };
-  }
-  if (depth === 1) {
-    const visual = resolveBaseVisualStyle('secondary', renderStylePreset, doc, branchIndex);
-    return {
-      fontFamily: parentText?.fontFamily ?? DEFAULT_FONT_FAMILY,
-      fontSizePx: visual.fontSizePx,
-      fontWeight: visual.fontWeight,
-      fontStyle: visual.fontStyle,
-      color: visual.textColor,
-      textAlign: visual.textAlign,
-    };
-  }
-  if (depth === 2) {
-    const visual = resolveBaseVisualStyle('default', renderStylePreset, doc, branchIndex);
-    return {
-      fontFamily: parentText?.fontFamily ?? DEFAULT_FONT_FAMILY,
-      fontSizePx: 16,
-      fontWeight: ROUGH_DEFAULT_STYLE.fontWeight,
-      fontStyle: ROUGH_DEFAULT_STYLE.fontStyle,
-      color: visual.textColor,
-      textAlign: ROUGH_DEFAULT_STYLE.textAlign,
-    };
-  }
-  return {
-    fontFamily: parentText?.fontFamily ?? DEFAULT_FONT_FAMILY,
-    fontSizePx: parentText?.fontSizePx ?? ROUGH_DEFAULT_STYLE.fontSizePx,
-    fontWeight: parentText?.fontWeight ?? ROUGH_DEFAULT_STYLE.fontWeight,
-    fontStyle: parentText?.fontStyle ?? ROUGH_DEFAULT_STYLE.fontStyle,
-    color: parentText?.color ?? ROUGH_DEFAULT_STYLE.textColor,
-    textAlign: parentText?.textAlign ?? ROUGH_DEFAULT_STYLE.textAlign,
-  };
-}
-
-function resolveEffectiveNodeStyleForInsert(doc: any, nodeId: string | null | undefined) {
-  const activeMind = getActiveMind(doc);
-  const nodes = activeMind?.nodes ?? {};
-  const renderStylePreset = resolveMindDocumentRenderStylePreset(doc);
-  const path = resolveNodePath(doc, nodeId);
-  if (!path?.length) return null;
-
-  let parentShape: NonNullable<NodeStyle['shape']> | null = null;
-  let parentText: NonNullable<NodeStyle['text']> | null = null;
-  let effectiveShape: NonNullable<NodeStyle['shape']> | null = null;
-  let effectiveText: NonNullable<NodeStyle['text']> | null = null;
-
-  path.forEach((currentId, depth) => {
-    const nodeStyle = nodes[currentId]?.style ?? null;
-    const branchIndex = depth > 0 ? getMindNodeBranchIndex(doc, currentId) : null;
-    const baseShape = getDefaultShapeOverridesForDepth(depth, renderStylePreset, parentShape, doc, branchIndex);
-    const baseText = getDefaultTextOverridesForDepth(depth, renderStylePreset, parentText, doc, branchIndex);
-    effectiveShape = {
-      ...baseShape,
-      ...(nodeStyle?.shape ?? {}),
-    };
-    effectiveText = {
-      ...baseText,
-      ...(nodeStyle?.text ?? {}),
-    };
-    parentShape = effectiveShape;
-    parentText = effectiveText;
-  });
-
-  return effectiveShape && effectiveText
-    ? {
-        shape: effectiveShape,
-        text: effectiveText,
-      }
-    : null;
-}
-
 export function getMindNodeDefaultVisualStyle(doc: any, nodeId: string | null | undefined): MindNodeDefaultVisualStyle {
   const role = getMindNodeRole(doc, nodeId);
   const renderStylePreset = resolveMindDocumentRenderStylePreset(doc);
@@ -595,6 +432,31 @@ export function createInitialNodeStyleForRoleWithDoc(role: MindNodeRole, doc: an
   };
 }
 
+function resolveRenderedNodeStyleForInsert(doc: any, nodeId: string | null | undefined) {
+  const activeMind = getActiveMind(doc);
+  if (!nodeId || !activeMind?.nodes?.[nodeId]) return null;
+
+  const visual = getMindNodeDefaultVisualStyle(doc, nodeId);
+  const text = buildDefaultNodeTextStyle(doc, nodeId);
+  return {
+    shape: {
+      fill: visual.fill,
+      stroke: visual.stroke,
+      fillPreset: visual.fillPreset,
+      borderPreset: visual.borderPreset,
+      strokeWidthPx: visual.strokeWidthPx,
+    } satisfies NonNullable<NodeStyle['shape']>,
+    text: {
+      fontFamily: text.fontFamily,
+      fontSizePx: text.fontSizePx,
+      fontWeight: text.fontWeight,
+      fontStyle: text.fontStyle,
+      color: text.color,
+      textAlign: text.textAlign,
+    } satisfies NonNullable<NodeStyle['text']>,
+  };
+}
+
 export function createInitialNodeStyleForInsert(options: {
   role: MindNodeRole;
   doc: any;
@@ -606,7 +468,7 @@ export function createInitialNodeStyleForInsert(options: {
   let visual: MindNodeDefaultVisualStyle;
   let shape: NonNullable<NodeStyle['shape']>;
   let text: NonNullable<NodeStyle['text']>;
-  const parentEffectiveStyle = options.parentId ? resolveEffectiveNodeStyleForInsert(options.doc, options.parentId) : null;
+  const parentEffectiveStyle = options.parentId ? resolveRenderedNodeStyleForInsert(options.doc, options.parentId) : null;
   const parentText = parentEffectiveStyle?.text ?? (options.parentId ? getNodeStyleOverrides(options.doc, options.parentId)?.text ?? null : null);
 
   if (!options.parentId) {

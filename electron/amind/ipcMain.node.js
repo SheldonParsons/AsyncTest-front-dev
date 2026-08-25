@@ -70,8 +70,8 @@ function getDocXmindDefaultPath(doc, requestedDefaultPath) {
   return `${sanitizeExportBaseName(rootTitle || manifestTitle)}.xmind`;
 }
 
-export function initAmindMain({ userDataPath, windowManager }) {
-  const recentStore = createRecentStore({ userDataPath });
+export function initAmindMain({ userDataPath, recentFallbackUserDataPaths = [], windowManager }) {
+  const recentStore = createRecentStore({ userDataPath, fallbackUserDataPaths: recentFallbackUserDataPaths });
   const assetCache = createAmindAssetCache();
 
   const docStore = createDocStore();

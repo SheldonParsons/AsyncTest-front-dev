@@ -1,6 +1,12 @@
 <template>
-  <aside class="conversation-info-rail" :class="{ collapsed }" aria-label="对话信息栏">
-    <div v-if="!collapsed" class="info-rail-content">
+  <aside
+    class="conversation-info-rail"
+    :class="{ collapsed, floating }"
+    :aria-hidden="collapsed ? 'true' : undefined"
+    :inert="collapsed"
+    aria-label="对话信息栏"
+  >
+    <div class="info-rail-content">
       <section class="info-section knowledge-section" aria-labelledby="recent-knowledge-title">
         <header>
           <h2 id="recent-knowledge-title">最近知识变更</h2>
@@ -15,7 +21,7 @@
             :key="item.id"
             class="info-row knowledge-row"
             type="button"
-            @click="showComingSoon"
+            @click="emit('open-change', item)"
           >
             <span class="info-row-main">
               <strong :title="knowledgeChangeTitle(item)">{{ knowledgeChangeTitle(item) }}</strong>
@@ -40,10 +46,10 @@
             :key="file.identity"
             class="info-row file-row"
             type="button"
-            @click="showComingSoon"
+            @click="emit('open-file', file)"
           >
             <span class="file-icon" aria-hidden="true">
-              <MarkdownFileIcon />
+              <MarkdownFileIcon :size="24" :font-size="9" :radius="8" />
             </span>
             <span class="info-row-main">
               <strong :title="file.filename">{{ file.filename }}</strong>
@@ -68,6 +74,7 @@ import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
 
 defineProps<{
   collapsed: boolean
+  floating: boolean
   changes: KnowledgeCommitSummary[]
   changesLoading: boolean
   changesError: string
@@ -75,6 +82,11 @@ defineProps<{
   filesLoading: boolean
   filesError: string
   sessionId: string
+}>()
+
+const emit = defineEmits<{
+  'open-change': [item: KnowledgeCommitSummary]
+  'open-file': [file: RecentSessionFile]
 }>()
 
 function showComingSoon(): void {
@@ -132,8 +144,21 @@ function fileMeta(file: RecentSessionFile): string {
     width 220ms ease,
     flex-basis 220ms ease,
     margin 220ms ease,
+    border-color 170ms ease,
+    border-width 170ms ease,
+    box-shadow 170ms ease,
     opacity 170ms ease,
     transform 220ms ease;
+}
+
+.conversation-info-rail.floating {
+  position: absolute;
+  top: 54px;
+  right: calc(var(--workspace-window-width) + 10px);
+  z-index: 23;
+  flex: none;
+  width: min(324px, calc(100% - var(--workspace-window-width) - 20px));
+  margin: 0;
 }
 
 .conversation-info-rail.collapsed {
@@ -142,13 +167,33 @@ function fileMeta(file: RecentSessionFile): string {
   margin-right: 0;
   margin-left: 0;
   border-width: 0;
+  border-color: transparent;
   box-shadow: none;
   opacity: 0;
   transform: translateX(14px);
   pointer-events: none;
 }
 
-.info-rail-content { height: auto; padding: 20px 16px 18px; box-sizing: border-box; }
+.conversation-info-rail.floating.collapsed {
+  flex-basis: 0;
+  width: 0;
+  margin: 0;
+}
+
+.info-rail-content {
+  width: 100%;
+  min-width: 298px;
+  height: auto;
+  padding: 20px 16px 18px;
+  box-sizing: border-box;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 170ms ease, transform 220ms ease;
+}
+.conversation-info-rail.collapsed .info-rail-content {
+  opacity: 0;
+  transform: translateX(14px);
+}
 .info-section { padding: 14px 0 18px; border-top: 1px solid rgba(15, 15, 15, .065); }
 .info-section:first-child { border-top: 0; padding-top: 0; }
 .info-section > header { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -162,8 +207,8 @@ function fileMeta(file: RecentSessionFile): string {
 .info-row:focus-visible { outline: 2px solid rgba(15, 15, 15, .2); outline-offset: 1px; }
 .knowledge-row { grid-template-columns: minmax(0, 1fr); }
 .file-row { grid-template-columns: 24px minmax(0, 1fr); }
-.file-icon { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, rgba(37,99,235,.95), rgba(124,58,237,.92) 52%, rgba(22,163,74,.9)); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 5px 12px rgba(37,99,235,.18); display: inline-flex; align-items: center; justify-content: center; }
-.file-icon :deep(.markdown-file-icon) { width: 18px; height: 18px; }
+.file-icon { width: 24px; height: 24px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.file-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
 .info-row-main { min-width: 0; display: block; }
 .info-row strong, .info-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .info-row strong { color: rgba(15, 15, 15, .78); font-size: 12px; font-weight: 600; }
@@ -176,5 +221,14 @@ function fileMeta(file: RecentSessionFile): string {
 @media (max-width: 1180px) {
   .conversation-info-rail { flex-basis: 300px; width: 300px; }
   .conversation-info-rail.collapsed { flex-basis: 0; width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-info-rail,
+  .info-rail-content,
+  .view-all,
+  .info-row {
+    transition: none;
+  }
 }
 </style>

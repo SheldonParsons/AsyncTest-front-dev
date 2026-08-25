@@ -1,6 +1,14 @@
 <template>
-  <main class="vibe-shell" :class="{ 'side-collapsed': sideCollapsed }" :data-trace-audit="canViewTraceAudit ? '1' : '0'">
-    <div class="window-drag" :class="{ 'reserve-info-toggle': currentView === 'conversation', 'workspace-open': workspaceWindowOpen }" />
+  <main
+    class="vibe-shell"
+    :class="{
+      'side-collapsed': sideCollapsed,
+      'workspace-resizing': workspaceWindowResizing,
+    }"
+    :style="workspaceWindowStyle"
+    :data-trace-audit="canViewTraceAudit ? '1' : '0'"
+  >
+    <div class="window-drag" :class="{ 'reserve-info-toggle': currentView === 'conversation', 'workspace-open': workspaceWindowLayoutActive }" />
     <!-- 展开态：动效开关留在窗口左上；收起态实例移动到主对话标题左侧。 -->
     <PanelStateToggle
       v-if="!sideCollapsed"
@@ -36,7 +44,7 @@
             </span>
             <span class="proj-main">
               <span class="proj-name">{{ label || placeholder }}</span>
-              <span class="proj-kb">{{ kbStats.sections }} 个章节 · {{ kbStats.modules }} 模块</span>
+              <span class="proj-kb">{{ kbStats.documents }} 份文档</span>
             </span>
             <svg class="proj-caret" :class="{ open }" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </template>
@@ -74,6 +82,15 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
           </div>
+          <button
+            v-if="sessionNextCursor"
+            class="session-load-more"
+            type="button"
+            :disabled="sessionsLoadingMore"
+            @click="loadMoreSessions"
+          >
+            {{ sessionsLoadingMore ? '加载中…' : '加载更早对话' }}
+          </button>
           <p v-if="!sessions.length" class="muted">开始第一轮录入后，这里会出现对话记录。</p>
         </div>
       </section>
@@ -103,7 +120,14 @@
     </aside>
 
     <section class="main-frame">
-      <section class="main" :class="{ 'workspace-open': workspaceWindowOpen }">
+      <section
+        ref="mainRef"
+        class="main"
+        :class="{
+          'workspace-open': workspaceWindowOpen,
+          'workspace-layout-active': workspaceWindowLayoutActive,
+        }"
+      >
         <header
           class="main-head"
           :class="{ compact: !headKicker }"
@@ -112,6 +136,7 @@
             <PanelStateToggle
               v-if="sideCollapsed"
               class="main-head-side-toggle"
+              :class="{ mac: isMacPlatform }"
               :collapsed="sideCollapsed"
               @panel-toggle="setSideCollapsed"
             />
@@ -127,12 +152,31 @@
               :title="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
               :aria-label="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
               :aria-expanded="!infoRailCollapsed"
+              :disabled="workspaceInfoToggleDisabled"
               @click="toggleInfoRail"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings2-icon lucide-settings-2" aria-hidden="true"><path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
             </button>
           </div>
         </header>
+
+        <button
+          v-if="currentView === 'conversation'"
+          class="workspace-window-toggle window-toggle-anchor"
+          :class="{ selected: workspaceWindowRequestedOpen }"
+          type="button"
+          :title="workspaceWindowRequestedOpen ? '收起窗口区域' : '打开窗口区域'"
+          :aria-label="workspaceWindowRequestedOpen ? '收起窗口区域' : '打开窗口区域'"
+          :aria-expanded="workspaceWindowOpen"
+          :aria-busy="workspaceWindowRequestedOpen && !workspaceWindowOpen ? 'true' : undefined"
+          aria-controls="conversation-workspace-window"
+          @click="setWorkspaceWindowOpen(!workspaceWindowRequestedOpen)"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="18" height="18" x="3" y="3" rx="2" />
+            <path d="M15 3v18" />
+          </svg>
+        </button>
 
         <div class="main-conversation-pane">
           <section v-if="currentView === 'conversation'" class="conversation">
@@ -167,7 +211,7 @@
           </button>
         </nav>
         <div ref="timelineEl" class="timeline" @scroll.passive="handleTimelineScroll" @click="handleTimelineClick">
-          <div v-if="!events.length" class="empty">
+          <div v-if="showConversationEmpty" class="empty">
             <!-- 鲸鱼游动 → 知识库 logo（alpha webm，播一次停在 logo；点击重播） -->
             <video
               class="empty-video"
@@ -217,17 +261,19 @@
                 :running="threadRunning(event)"
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
+                @layout-change="syncTimelineNavigationAfterLayout"
               />
+              <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
               <template v-if="threadFinalAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(threadFinalAnswer(event))" />
                 <div
                   v-if="threadSources(event).length"
                   class="answer-trust"
                 >
-                  <SourceChips :items="threadSources(event)" />
+                  <SourceChips :items="threadSources(event)" @open-source="openConversationSource" />
                 </div>
                 <AssistantActions
-                  v-if="threadFinalNode(event)"
+                  v-if="threadFinalNode(event) && eventCanUseAnswerActions(threadFinalNode(event))"
                   :time="formatTime(threadFinalNode(event).created_at)"
                   :content="threadFinalAnswer(event)"
                   :is-last="threadFinalNode(event).id === lastAssistantId"
@@ -241,7 +287,9 @@
                 :running="false"
                 :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
+                @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
+              <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
               <div v-if="event.role !== 'assistant'" class="event-top">
                 <span class="role">{{ eventRoleLabel(event) }}</span>
                 <time v-if="event.created_at">{{ formatTime(event.created_at) }}</time>
@@ -249,7 +297,10 @@
               <div
                 v-if="event.role !== 'assistant'"
                 class="user-message-wrap"
-                :class="{ expanded: isUserMessageExpanded(event.id) }"
+                :class="{
+                  expanded: isUserMessageExpanded(event.id),
+                  collapsible: shouldCollapseUserMessage(event),
+                }"
               >
                 <div
                   v-if="eventAttachments(event).length"
@@ -263,15 +314,15 @@
                     class="user-attachment-chip"
                     type="button"
                     :title="attachmentName(file)"
-                    @click.stop="downloadAttachment(file)"
+                    @click.stop="openMessageAttachmentViewer(file, event)"
                   >
                     <span class="user-attachment-icon" :class="{ markdown: isMarkdownAttachment(file) }" aria-hidden="true">
-                      <svg v-if="isMarkdownAttachment(file)" viewBox="0 0 32 32" fill="none">
-                        <path d="M7 9.5H25C26.1 9.5 27 10.4 27 11.5V20.5C27 21.6 26.1 22.5 25 22.5H7C5.9 22.5 5 21.6 5 20.5V11.5C5 10.4 5.9 9.5 7 9.5Z" fill="rgba(255,255,255,.18)" stroke="currentColor" stroke-width="1.6"/>
-                        <path d="M9 19V13L12 16.7L15 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M19 13V18.5M19 18.5L16.9 16.4M19 18.5L21.1 16.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M23.5 13V19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                      </svg>
+                      <MarkdownFileIcon
+                        v-if="isMarkdownAttachment(file)"
+                        :size="18"
+                        :font-size="7"
+                        :radius="6"
+                      />
                       <svg v-else viewBox="0 0 24 24" fill="none"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v5h5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 17h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                     </span>
                     <span class="user-attachment-main">
@@ -289,7 +340,11 @@
                   </button>
                 </div>
                 <div class="user-message-bubble">
-                  <p class="user-message-content">
+                  <p
+                    :id="userMessageContentId(event.id)"
+                    v-user-message-overflow="event.id"
+                    class="user-message-content"
+                  >
                     <template v-if="isConfirmationReplyEvent(event)">已选择：{{ event.content }}</template>
                     <template v-else>{{ event.content }}</template>
                   </p>
@@ -297,6 +352,8 @@
                     v-if="shouldCollapseUserMessage(event)"
                     class="user-message-more"
                     type="button"
+                    :aria-controls="userMessageContentId(event.id)"
+                    :aria-expanded="isUserMessageExpanded(event.id)"
                     @click="toggleUserMessageExpanded(event.id)"
                   >
                     {{ isUserMessageExpanded(event.id) ? '收起' : '显示更多' }}
@@ -335,9 +392,9 @@
               <template v-else-if="shouldRenderStandaloneAssistantAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(eventDisplayContent(event))" />
                 <div v-if="eventSources(event).length" class="answer-trust">
-                  <SourceChips :items="eventSources(event)" />
+                  <SourceChips :items="eventSources(event)" @open-source="openConversationSource" />
                 </div>
-                <AssistantActions :time="formatTime(event.created_at)" :content="eventDisplayContent(event)" :is-last="event.id === lastAssistantId" />
+                <AssistantActions v-if="eventCanUseAnswerActions(event)" :time="formatTime(event.created_at)" :content="eventDisplayContent(event)" :is-last="event.id === lastAssistantId" />
               </template>
               <div v-if="parentContinuationResponses(event).length" class="continuation-responses">
                 <article
@@ -349,12 +406,16 @@
                     v-if="eventProcessSteps(responseEvent).length"
                     :steps="eventProcessSteps(responseEvent)"
                     :duration-ms="eventProcessDuration(responseEvent)"
+                    @layout-change="syncTimelineNavigationAfterLayout"
                   />
-                  <div class="message-md" v-html="renderMarkdown(eventDisplayContent(responseEvent))" />
-                  <div v-if="eventSources(responseEvent).length" class="answer-trust">
-                    <SourceChips :items="eventSources(responseEvent)" />
-                  </div>
-                  <AssistantActions :time="formatTime(responseEvent.created_at)" :content="eventDisplayContent(responseEvent)" :is-last="responseEvent.id === lastAssistantId" />
+                  <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
+                  <template v-if="eventHasAnswerContent(responseEvent)">
+                    <div class="message-md" v-html="renderMarkdown(eventDisplayContent(responseEvent))" />
+                    <div v-if="eventSources(responseEvent).length" class="answer-trust">
+                      <SourceChips :items="eventSources(responseEvent)" @open-source="openConversationSource" />
+                    </div>
+                    <AssistantActions v-if="eventCanUseAnswerActions(responseEvent)" :time="formatTime(responseEvent.created_at)" :content="eventDisplayContent(responseEvent)" :is-last="responseEvent.id === lastAssistantId" />
+                  </template>
                 </article>
               </div>
               <div v-if="isStreamingUnderEvent(event) && streamingTurnVisible" class="continuation-responses">
@@ -364,14 +425,28 @@
                     :steps="streamingProcess.steps"
                     :running="procRunning"
                     :duration-ms="procDurationMs"
+                    @layout-change="syncTimelineNavigationAfterLayout"
                   />
+                  <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
                   <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
                   <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
-                    <SourceChips :items="streamingSources" />
+                    <SourceChips :items="streamingSources" @open-source="openConversationSource" />
                   </div>
                 </article>
               </div>
             </template>
+          </article>
+          <article
+            v-if="pendingUserSubmissionVisible"
+            class="event user-event pending-user-event"
+            aria-label="正在发送的提问"
+            aria-live="polite"
+          >
+            <div class="user-message-wrap">
+              <div class="user-message-bubble">
+                <p class="user-message-content">{{ pendingUserSubmissionText }}</p>
+              </div>
+            </div>
           </article>
           <article v-if="streamingAssistantStandaloneVisible" class="assistant-message streaming-message">
             <ProcessDisclosure
@@ -379,18 +454,23 @@
               :steps="streamingProcess.steps"
               :running="procRunning"
               :duration-ms="procDurationMs"
+              @layout-change="syncTimelineNavigationAfterLayout"
             />
+            <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
             <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
             <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
-              <SourceChips :items="streamingSources" />
+              <SourceChips :items="streamingSources" @open-source="openConversationSource" />
             </div>
           </article>
+          <Transition name="thinking-orb-status">
+            <ThinkingOrbStatus v-if="thinkingOrbVisible" />
+          </Transition>
         </div>
 
         <div class="composer-anchor">
           <transition name="fab-fade">
             <button
-              v-show="!isAtBottom"
+              v-show="events.length > 0 && !isAtBottom"
               class="scroll-bottom-fab"
               type="button"
               aria-label="滚动到底部"
@@ -409,7 +489,6 @@
             :stopping="cancelRequested"
             :uploading="preparingSend"
             :placeholder="composerPlaceholder"
-            :status-text="composerStatusText"
             :question="composerQuestion"
             :model-options="composerModelOptions"
             :model-value-id="selectedLlmProviderId"
@@ -419,6 +498,7 @@
             @send="onComposerSend"
             @answer="onComposerAnswer"
             @stop="stopFoundationTurn"
+            @notice="showComposerToast"
           />
         </footer>
           </section>
@@ -426,6 +506,7 @@
       <ConversationInfoRail
         v-if="currentView === 'conversation'"
         :collapsed="infoRailCollapsed"
+        :floating="workspaceWindowLayoutActive"
         :changes="recentKnowledgeChanges"
         :changes-loading="knowledgeChangesLoading"
         :changes-error="knowledgeChangesError"
@@ -433,14 +514,51 @@
         :files-loading="sessionFilesLoading"
         :files-error="sessionFilesError"
         :session-id="activeSessionId"
+        @open-change="openWorkspaceChange"
+        @open-file="openWorkspaceFile"
       />
-      <Transition name="workspace-window">
+      <Transition
+        name="workspace-window"
+        @after-enter="focusWorkspaceAfterEnter"
+        @after-leave="finishWorkspaceWindowLeave"
+        @leave-cancelled="keepWorkspaceWindowLayout"
+      >
         <aside
           v-if="currentView === 'conversation' && workspaceWindowOpen"
+          id="conversation-workspace-window"
           class="conversation-workspace-window"
           aria-label="窗口区域"
         >
-          <header class="workspace-window-head"></header>
+          <div
+            class="workspace-resize-handle"
+            role="separator"
+            tabindex="0"
+            aria-label="调整 Viewer 宽度"
+            aria-orientation="vertical"
+            :aria-valuemin="workspaceWindowWidthRange.min"
+            :aria-valuemax="workspaceWindowWidthRange.max"
+            :aria-valuenow="workspaceWindowWidthPx"
+            :aria-valuetext="`Viewer 宽度 ${workspaceWindowWidthPx} 像素`"
+            title="拖拽调整 Viewer 宽度；方向键微调"
+            @pointerdown="beginWorkspaceResize"
+            @pointermove="moveWorkspaceResize"
+            @pointerup="finishWorkspaceResize"
+            @pointercancel="finishWorkspaceResize"
+            @lostpointercapture="finishWorkspaceResize"
+            @keydown="handleWorkspaceResizeKeydown"
+          >
+            <span class="workspace-resize-grip" aria-hidden="true" />
+          </div>
+          <ConversationWorkspace
+            ref="workspaceRef"
+            :tabs="workspaceTabs"
+            :active-id="activeWorkspaceTabId"
+            @select="selectWorkspaceTab"
+            @close="closeWorkspaceTab"
+            @open-source="openWorkspaceSource"
+            @retry-file="retryWorkspaceFile"
+            @retry-change="retryWorkspaceChange"
+          />
         </aside>
       </Transition>
       </section>
@@ -450,7 +568,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import whaleIntroUrl from './assets/whale-intro.webm'
 import VibeWindowControls from './components/VibeWindowControls.vue'
@@ -458,8 +576,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
+import { HarnessRequestError } from '@/api/harness'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
+import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
 import {
   continuationParentEventId,
   eventThreadRootId as resolveEventThreadRootId,
@@ -468,16 +588,19 @@ import {
   shouldRenderThreadEvent,
   threadFinalAnswerText,
 } from './conversationThreadPolicy'
+import { shouldShowConversationEmptyState } from './conversationEmptyStatePolicy'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
 import PanelStateToggle from './components/icons/PanelStateToggle.vue'
+import MarkdownFileIcon from './components/icons/MarkdownFileIcon.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
 import ChatComposer from './components/ChatComposer.vue'
 import ConversationInfoRail from './components/ConversationInfoRail.vue'
+import ConversationWorkspace from './components/ConversationWorkspace.vue'
+import TurnOutcomeNotice from './components/TurnOutcomeNotice.vue'
 import {
   createProcessState,
-  consumeProcessEvent,
   resetProcessState,
   stepsFromMeta,
   durationFromMeta,
@@ -485,13 +608,25 @@ import {
 } from './composables/useProcessTurn'
 import {
   applyTurnProtocolPacket,
+  applyTurnProtocolEvents,
   createTurnProtocolState,
   hasTurnProtocolPacket,
+  protocolEventsFromMeta,
+  readSessionTurnPublic,
   readTurnProtocolFromMeta,
-  replayTurnProtocol,
   type TurnProtocolReadModel,
+  type TurnProtocolOutcome,
   type TurnProtocolState,
 } from './composables/turnProtocol'
+import {
+  attachLocalTurnPresentation,
+  localTurnPresentation,
+  preferredProcessDuration,
+  classifyTurnRecoveryReplay,
+  classifyTurnReplayGap,
+  refreshAssistantTurnPresentation,
+  shouldShowMissingTerminalNotice,
+} from './turnPresentationPolicy'
 import {
   autoTitleVibeSession,
   createVibeSession,
@@ -500,13 +635,16 @@ import {
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
   initVibeProject,
-  getVibeLLMRuntimeConfig,
+  getVibeLLMModelPicker,
   listVibeEvents,
   listVibeSessions,
-  listVibeLLMProviders,
   downloadVibeSessionEventAttachment,
   listFoundationRunningTurns,
+  replayFoundationTurn,
+  getKnowledgeCommit,
   getKnowledgeCommits,
+  getVibeSessionSource,
+  getVibeSessionSourceFragment,
   streamKnowledgeActivity,
   streamFoundationTurn,
   cancelFoundationTurn,
@@ -515,14 +653,14 @@ import {
   updateVibeSession,
   uploadVibeAttachmentResource,
   type FoundationRunningTurn,
+  type FoundationTurnReplay,
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
   type VibeAttachment,
   type VibeAttachmentResourceRef,
   type VibeCapabilityUser,
   type VibeEvent,
-  type VibeLLMProviderConfig,
-  type VibeLLMRuntimeConfig,
+  type VibeLLMModelPickerProvider,
   type VibeProject,
   type VibeSession,
 } from '../api'
@@ -536,14 +674,55 @@ import {
 } from './projectStatsPolicy'
 import {
   advanceKnowledgeChangeCursor,
+  attachmentIdentity,
   recentSessionFiles as deriveRecentSessionFiles,
+  type RecentSessionFile,
 } from './conversationInfoRailPolicy'
+import { knowledgeChangeTitle } from '../browser/knowledgeChangePresentation'
+import {
+  closeViewerTab,
+  deletedConversationIsStillActive,
+  snapshotWorkspaceViewerConversation,
+  upsertViewerTab,
+  workspaceChangeViewerTabId,
+  WorkspaceViewerConversationStore,
+  workspaceDraftCreationIsStillActive,
+  workspaceViewerConversationKey,
+  workspaceFileLocatorSignature,
+  workspaceFileViewerTabId,
+  workspaceInlineFileContent,
+  WorkspaceViewerRequestGate,
+  workspaceViewerTabNeedsReload,
+  type WorkspaceChangeViewerTab,
+  type WorkspaceFileViewerTab,
+  type WorkspaceViewerRequestToken,
+  type WorkspaceViewerTab,
+} from './workspaceViewerPolicy'
+import {
+  clampWorkspaceViewerWidth,
+  defaultWorkspaceViewerWidth,
+  draggedWorkspaceViewerWidth,
+  WORKSPACE_VIEWER_DEFAULT_MAX_PX,
+  WORKSPACE_VIEWER_KEYBOARD_STEP_PX,
+  WORKSPACE_VIEWER_MAX_PX,
+  WORKSPACE_VIEWER_MIN_PX,
+  workspaceViewerWidthRange,
+} from './workspaceResizePolicy'
+import {
+  normalizeConversationSourceCitation,
+  sourceCitationHasReadableRange,
+  sourceCitationViewerIdentity,
+  type ConversationSourceCitation,
+} from './sourceCitationPolicy'
+import { userMessageContentOverflows } from './userMessagePresentationPolicy'
 
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
 const selectedProjectId = ref<string | number | null>(null)
 const vibeProject = ref<VibeProject | null>(null)
 const sessions = ref<VibeSession[]>([])
+const sessionNextCursor = ref('')
+const sessionsLoadingMore = ref(false)
 const events = ref<VibeEvent[]>([])
 
 // 最后一条 assistant 回复的 id（其操作按钮常驻显示）
@@ -567,10 +746,10 @@ const canViewTraceAudit = computed(() => !!vibeCapabilities.value.trace_audit)
 const currentUser = ref<VibeCapabilityUser | null>(null)
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
 const currentUserAvatar = computed(() => String(currentUser.value?.avatar_url || ''))
-const llmProviders = ref<VibeLLMProviderConfig[]>([])
-const llmRuntime = ref<VibeLLMRuntimeConfig | null>(null)
+const llmProviders = ref<VibeLLMModelPickerProvider[]>([])
 const selectedLlmProviderId = ref('')
 const modelConfigLoading = ref(false)
+let modelConfigRequestEpoch = 0
 const composerModelOptions = computed(() => llmProviders.value
   .filter((item) => item.enabled !== false)
   .map((item) => ({
@@ -590,6 +769,51 @@ const knowledgeChangesLoading = ref(false)
 const knowledgeChangesError = ref('')
 const infoRailCollapsed = ref(false)
 const workspaceWindowOpen = ref(false)
+const workspaceWindowRequestedOpen = ref(false)
+const workspaceWindowLayoutActive = ref(false)
+const mainRef = ref<HTMLElement | null>(null)
+const WORKSPACE_WINDOW_WIDTH_STORAGE_KEY = 'vibe_conversation_workspace_width_px'
+const storedWorkspaceWindowWidth = Number(localStorage.getItem(WORKSPACE_WINDOW_WIDTH_STORAGE_KEY))
+const workspaceWindowPreferredWidthPx = ref(
+  Number.isFinite(storedWorkspaceWindowWidth) && storedWorkspaceWindowWidth > 0
+    ? Math.min(WORKSPACE_VIEWER_MAX_PX, Math.max(WORKSPACE_VIEWER_MIN_PX, Math.round(storedWorkspaceWindowWidth)))
+    : 0,
+)
+const workspaceMainWidthPx = ref(0)
+const workspaceWindowWidthRange = computed(() => workspaceViewerWidthRange(workspaceMainWidthPx.value))
+const workspaceWindowWidthPx = computed(() => {
+  if (!workspaceMainWidthPx.value) {
+    return workspaceWindowPreferredWidthPx.value || WORKSPACE_VIEWER_DEFAULT_MAX_PX
+  }
+  const requested = workspaceWindowPreferredWidthPx.value
+    || defaultWorkspaceViewerWidth(workspaceMainWidthPx.value)
+  return clampWorkspaceViewerWidth(requested, workspaceMainWidthPx.value)
+})
+const workspaceWindowStyle = computed<Record<string, string>>(() => ({
+  '--workspace-window-width': `${workspaceWindowWidthPx.value}px`,
+}))
+const workspaceWindowResizing = ref(false)
+type WorkspaceResizeSession = {
+  pointerId: number
+  startClientX: number
+  startWidth: number
+  moved: boolean
+}
+let workspaceResizeSession: WorkspaceResizeSession | null = null
+let workspaceMainResizeObserver: ResizeObserver | null = null
+let workspaceResizeFallbackRegistered = false
+const workspaceInfoToggleDisabled = computed(() => (
+  workspaceWindowRequestedOpen.value !== workspaceWindowOpen.value
+  || (workspaceWindowLayoutActive.value && !workspaceWindowOpen.value)
+))
+const workspaceTabs = ref<WorkspaceViewerTab[]>([])
+const activeWorkspaceTabId = ref<string | null>(null)
+const workspaceRef = ref<InstanceType<typeof ConversationWorkspace> | null>(null)
+const workspaceConversationStore = new WorkspaceViewerConversationStore()
+const workspaceRequestGate = new WorkspaceViewerRequestGate()
+let workspaceOpenTimer: ReturnType<typeof setTimeout> | null = null
+let workspaceFocusAfterEnter = false
+const INFO_RAIL_CLOSE_TRANSITION_MS = 230
 let projectContextEpoch = 0
 let knowledgeActivityEpoch = 0
 let knowledgeActivityAbort: AbortController | null = null
@@ -601,20 +825,19 @@ let knowledgeChangesRequestKey = ''
 let allKbStatsRequest: Promise<void> | null = null
 const currentKbStatsRequests = new Map<string, Promise<void>>()
 async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent?: boolean } = {}) {
+  const requestEpoch = ++modelConfigRequestEpoch
   if (!opts.silent) modelConfigLoading.value = true
   try {
-    const [providerPayload, runtime] = await Promise.all([
-      listVibeLLMProviders(),
-      getVibeLLMRuntimeConfig(sessionId || undefined),
-    ])
-    const providers = (providerPayload.providers || []).filter((item) => item.enabled !== false)
+    const picker = await getVibeLLMModelPicker(sessionId || undefined)
+    if (requestEpoch !== modelConfigRequestEpoch) return
+    const providers = (picker.providers || []).filter((item) => item.enabled !== false)
     llmProviders.value = providers
-    llmRuntime.value = runtime
-    const session = sessions.value.find(item => item.id === sessionId)
-    const candidate = session?.llm_provider_id || String(runtime.provider?.id || '')
+    // picker 已在服务端校验会话绑定是否仍可见；本地摘要可能保留已禁用/撤权的旧 id，
+    // 不能反向覆盖权威选择，否则会静默回退并把错误 Provider 写回会话。
+    const candidate = String(picker.selected_provider_id || '')
     selectedLlmProviderId.value = providers.some((item) => item.id === candidate) ? candidate : (providers[0]?.id || '')
   } finally {
-    if (!opts.silent) modelConfigLoading.value = false
+    if (requestEpoch === modelConfigRequestEpoch) modelConfigLoading.value = false
   }
 }
 
@@ -628,10 +851,14 @@ async function refreshComposerModels() {
 
 async function ensureComposerModelUsable() {
   try {
-    const providerPayload = await listVibeLLMProviders()
-    const providers = (providerPayload.providers || []).filter((item) => item.enabled !== false)
-    llmProviders.value = providers
-    const selected = selectedLlmProviderId.value
+    if (!llmProviders.value.length) await loadModelConfig(activeSessionId.value, { silent: true })
+    let providers = llmProviders.value.filter((item) => item.enabled !== false)
+    let selected = selectedLlmProviderId.value
+    if (!selected || !providers.some((item) => item.id === selected)) {
+      await loadModelConfig(activeSessionId.value, { silent: true })
+      providers = llmProviders.value.filter((item) => item.enabled !== false)
+      selected = selectedLlmProviderId.value
+    }
     if (selected && providers.some((item) => item.id === selected)) {
       if (activeSessionId.value) {
         const current = sessions.value.find((item) => item.id === activeSessionId.value)
@@ -664,7 +891,6 @@ async function handleComposerModelChange(providerId: string) {
   try {
     const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providerId })
     applySessionModel(activeSessionId.value, updated.llm_provider_id || providerId)
-    await loadModelConfig(activeSessionId.value)
   } catch (error: any) {
     ElMessage.error(`模型切换失败：${error?.message || String(error)}`)
     await loadModelConfig(activeSessionId.value)
@@ -831,12 +1057,716 @@ function setInfoRailCollapsed(collapsed: boolean) {
 }
 
 function toggleInfoRail() {
+  if (workspaceInfoToggleDisabled.value) return
   setInfoRailCollapsed(!infoRailCollapsed.value)
 }
 
+function updateWorkspaceMainWidth(): void {
+  workspaceMainWidthPx.value = Math.max(
+    0,
+    Math.round(mainRef.value?.getBoundingClientRect().width || 0),
+  )
+}
+
+function startWorkspaceMainWidthObserver(): void {
+  updateWorkspaceMainWidth()
+  if (typeof ResizeObserver !== 'undefined' && mainRef.value) {
+    workspaceMainResizeObserver = new ResizeObserver(updateWorkspaceMainWidth)
+    workspaceMainResizeObserver.observe(mainRef.value)
+    return
+  }
+  window.addEventListener('resize', updateWorkspaceMainWidth)
+  workspaceResizeFallbackRegistered = true
+}
+
+function stopWorkspaceMainWidthObserver(): void {
+  workspaceMainResizeObserver?.disconnect()
+  workspaceMainResizeObserver = null
+  if (!workspaceResizeFallbackRegistered) return
+  window.removeEventListener('resize', updateWorkspaceMainWidth)
+  workspaceResizeFallbackRegistered = false
+}
+
+function persistWorkspaceWindowWidth(): void {
+  localStorage.setItem(
+    WORKSPACE_WINDOW_WIDTH_STORAGE_KEY,
+    String(workspaceWindowWidthPx.value),
+  )
+}
+
+function beginWorkspaceResize(event: PointerEvent): void {
+  if (workspaceResizeSession || !event.isPrimary || event.button !== 0) return
+  const handle = event.currentTarget as HTMLElement
+  workspaceResizeSession = {
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startWidth: workspaceWindowWidthPx.value,
+    moved: false,
+  }
+  workspaceWindowResizing.value = true
+  handle.setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function moveWorkspaceResize(event: PointerEvent): void {
+  const session = workspaceResizeSession
+  if (!session || session.pointerId !== event.pointerId) return
+  if (event.clientX !== session.startClientX) session.moved = true
+  workspaceWindowPreferredWidthPx.value = draggedWorkspaceViewerWidth({
+    startWidth: session.startWidth,
+    startClientX: session.startClientX,
+    clientX: event.clientX,
+    containerWidth: workspaceMainWidthPx.value,
+  })
+  event.preventDefault()
+}
+
+function finishWorkspaceResize(event: PointerEvent): void {
+  const session = workspaceResizeSession
+  if (!session || session.pointerId !== event.pointerId) return
+  workspaceResizeSession = null
+  workspaceWindowResizing.value = false
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture?.(session.pointerId)) {
+    handle.releasePointerCapture(session.pointerId)
+  }
+  if (session.moved) persistWorkspaceWindowWidth()
+}
+
+function handleWorkspaceResizeKeydown(event: KeyboardEvent): void {
+  let requestedWidth: number | null = null
+  if (event.key === 'ArrowLeft') {
+    requestedWidth = workspaceWindowWidthPx.value + WORKSPACE_VIEWER_KEYBOARD_STEP_PX
+  } else if (event.key === 'ArrowRight') {
+    requestedWidth = workspaceWindowWidthPx.value - WORKSPACE_VIEWER_KEYBOARD_STEP_PX
+  } else if (event.key === 'Home') {
+    requestedWidth = workspaceWindowWidthRange.value.min
+  } else if (event.key === 'End') {
+    requestedWidth = workspaceWindowWidthRange.value.max
+  }
+  if (requestedWidth == null) return
+  event.preventDefault()
+  workspaceWindowPreferredWidthPx.value = clampWorkspaceViewerWidth(
+    requestedWidth,
+    workspaceMainWidthPx.value,
+  )
+  persistWorkspaceWindowWidth()
+}
+
+function clearWorkspaceOpenTimer(): void {
+  if (workspaceOpenTimer == null) return
+  clearTimeout(workspaceOpenTimer)
+  workspaceOpenTimer = null
+}
+
+function mountWorkspaceWindow(): void {
+  if (!workspaceWindowRequestedOpen.value) return
+  workspaceWindowLayoutActive.value = true
+  workspaceWindowOpen.value = true
+}
+
+function shouldMoveFocusToWorkspace(): boolean {
+  const activeElement = document.activeElement
+  return activeElement instanceof HTMLElement
+    && Boolean(activeElement.closest('.conversation-info-rail, .user-attachment-chip'))
+}
+
+function focusWorkspaceAfterEnter(): void {
+  if (!workspaceFocusAfterEnter) return
+  workspaceFocusAfterEnter = false
+  void nextTick(() => workspaceRef.value?.focusActiveViewer())
+}
+
+function infoRailCloseDelay(): number {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 0
+    : INFO_RAIL_CLOSE_TRANSITION_MS
+}
+
 function setWorkspaceWindowOpen(open: boolean) {
-  if (open) setInfoRailCollapsed(true)
-  workspaceWindowOpen.value = open
+  workspaceWindowRequestedOpen.value = open
+  if (open) {
+    if (shouldMoveFocusToWorkspace()) workspaceFocusAfterEnter = true
+    if (workspaceOpenTimer != null) return
+    if (workspaceWindowOpen.value) {
+      workspaceWindowLayoutActive.value = true
+      setInfoRailCollapsed(true)
+      focusWorkspaceAfterEnter()
+      return
+    }
+    if (!infoRailCollapsed.value) {
+      // 先让 Panel 完整收起，再挂载 Viewer，避免 flex → absolute 同帧切换造成布局跳变。
+      setInfoRailCollapsed(true)
+      const delay = infoRailCloseDelay()
+      if (delay === 0) {
+        mountWorkspaceWindow()
+        return
+      }
+      workspaceOpenTimer = setTimeout(() => {
+        workspaceOpenTimer = null
+        mountWorkspaceWindow()
+      }, delay)
+      return
+    }
+    mountWorkspaceWindow()
+    return
+  }
+
+  clearWorkspaceOpenTimer()
+  workspaceFocusAfterEnter = false
+  // Viewer 离场期间保留 floating 布局；动画结束后再解除，避免 Panel 瞬间挤回主对话。
+  setInfoRailCollapsed(true)
+  workspaceWindowOpen.value = false
+}
+
+function finishWorkspaceWindowLeave(): void {
+  if (workspaceWindowRequestedOpen.value) {
+    mountWorkspaceWindow()
+    return
+  }
+  workspaceWindowLayoutActive.value = false
+}
+
+function keepWorkspaceWindowLayout(): void {
+  workspaceWindowLayoutActive.value = true
+}
+
+function workspaceTabById(id: string): WorkspaceViewerTab | null {
+  return workspaceTabs.value.find(item => item.id === id) || null
+}
+
+function replaceWorkspaceTab(
+  id: string,
+  update: (tab: WorkspaceViewerTab) => WorkspaceViewerTab,
+): boolean {
+  const index = workspaceTabs.value.findIndex(item => item.id === id)
+  if (index < 0) return false
+  const next = [...workspaceTabs.value]
+  next[index] = update(next[index])
+  workspaceTabs.value = next
+  return true
+}
+
+function applyWorkspaceTabsState(state: { tabs: WorkspaceViewerTab[]; activeTabId: string | null }): void {
+  workspaceTabs.value = state.tabs
+  activeWorkspaceTabId.value = state.activeTabId
+}
+
+function selectWorkspaceTab(id: string): void {
+  if (workspaceTabs.value.some(item => item.id === id)) activeWorkspaceTabId.value = id
+}
+
+function closeWorkspaceTab(id: string): void {
+  workspaceRequestGate.invalidate(id)
+  applyWorkspaceTabsState(closeViewerTab(workspaceTabs.value, activeWorkspaceTabId.value, id))
+}
+
+function workspaceProjectContextId(value: unknown = selectedProjectId.value): string {
+  return String(value ?? '').trim()
+}
+
+function resumeWorkspaceConversationRequests(): void {
+  for (const tab of workspaceTabs.value) {
+    if (!workspaceViewerTabNeedsReload(tab)) continue
+    if (tab.kind === 'change') {
+      void loadWorkspaceChange(tab.id, tab.projectId, tab.commitSeq)
+      continue
+    }
+    void loadWorkspaceFile(tab.id)
+  }
+}
+
+function activateWorkspaceConversation(projectId: unknown, sessionId: unknown): void {
+  const nextKey = workspaceViewerConversationKey(projectId, sessionId)
+  const activation = workspaceConversationStore.activate(
+    nextKey,
+    snapshotWorkspaceViewerConversation(
+      workspaceTabs.value,
+      activeWorkspaceTabId.value,
+      workspaceWindowRequestedOpen.value,
+    ),
+  )
+  if (!activation.changed) return
+
+  clearWorkspaceOpenTimer()
+  workspaceFocusAfterEnter = false
+  workspaceRequestGate.invalidateAll()
+  const restored = activation.state
+  applyWorkspaceTabsState(restored)
+
+  // 初始空态不应顺带收起 Panel；只有 Viewer 确实需要切换状态时才驱动过渡。
+  if (
+    restored.requestedOpen
+    || workspaceWindowRequestedOpen.value
+    || workspaceWindowOpen.value
+    || workspaceWindowLayoutActive.value
+  ) {
+    setWorkspaceWindowOpen(restored.requestedOpen)
+  }
+  resumeWorkspaceConversationRequests()
+}
+
+function adoptWorkspaceDraftForSession(projectId: unknown, sessionId: string): void {
+  const draftKey = workspaceViewerConversationKey(projectId, '')
+  const sessionKey = workspaceViewerConversationKey(projectId, sessionId)
+  if (!sessionKey || workspaceConversationStore.currentKey !== draftKey) return
+  // 首轮发送只是把当前草稿会话赋予真实 id，不应触发 Viewer 闪烁或重载。
+  workspaceRequestGate.migrateConversation(draftKey, sessionKey)
+  workspaceConversationStore.adoptActiveDraft(draftKey, sessionKey)
+}
+
+function discardWorkspaceConversation(projectId: unknown, sessionId: string): void {
+  const key = workspaceViewerConversationKey(projectId, sessionId)
+  workspaceConversationStore.drop(key)
+}
+
+function beginWorkspaceRequest(tabId: string): WorkspaceViewerRequestToken {
+  return workspaceRequestGate.begin(tabId, workspaceConversationStore.currentKey)
+}
+
+function workspaceRequestIsCurrent(tabId: string, token: WorkspaceViewerRequestToken): boolean {
+  return workspaceRequestGate.isCurrent(tabId, token, workspaceConversationStore.currentKey)
+    && workspaceTabs.value.some(item => item.id === tabId)
+}
+
+function workspaceErrorMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error && reason.message ? reason.message : fallback
+}
+
+function openWorkspaceChange(item: KnowledgeCommitSummary): void {
+  const projectId = String(item.project_id || knowledgeStatsProjectId(selectedProjectId.value) || '').trim()
+  const commitSeq = Math.max(0, Number(item.seq) || 0)
+  if (!projectId || !commitSeq) {
+    window.$toast({ title: '该变更缺少可读取的提交标识' })
+    return
+  }
+  const id = workspaceChangeViewerTabId(projectId, commitSeq)
+  const existing = workspaceTabById(id)
+  if (existing) {
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true)
+    if (existing.kind === 'change' && !existing.loading && !existing.detail) {
+      void loadWorkspaceChange(id, projectId, commitSeq)
+    }
+    return
+  }
+  const tab: WorkspaceChangeViewerTab = {
+    id,
+    kind: 'change',
+    title: knowledgeChangeTitle(item),
+    loading: true,
+    error: '',
+    projectId,
+    commitSeq,
+    summary: item,
+    detail: null,
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true)
+  void loadWorkspaceChange(id, projectId, commitSeq)
+}
+
+async function loadWorkspaceChange(tabId: string, projectId: string, commitSeq: number): Promise<void> {
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'change'
+    ? { ...tab, loading: true, error: '' }
+    : tab)
+  try {
+    const payload = await getKnowledgeCommit(projectId, commitSeq)
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'change'
+      ? {
+          ...tab,
+          title: knowledgeChangeTitle(payload.commit),
+          loading: false,
+          error: '',
+          detail: payload.commit,
+        }
+      : tab)
+  } catch (reason) {
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'change'
+      ? {
+          ...tab,
+          loading: false,
+          error: workspaceErrorMessage(reason, '变更详情读取失败，请稍后重试。'),
+          detail: null,
+        }
+      : tab)
+  }
+}
+
+function retryWorkspaceChange(tabId: string): void {
+  const tab = workspaceTabById(tabId)
+  if (!tab || tab.kind !== 'change') return
+  void loadWorkspaceChange(tabId, tab.projectId, tab.commitSeq)
+}
+
+function openWorkspaceFile(file: RecentSessionFile, ownerSessionId = activeSessionId.value): void {
+  const sessionId = String(ownerSessionId || '').trim()
+  const id = workspaceFileViewerTabId(sessionId, file.identity)
+  const existing = workspaceTabById(id)
+  const inlineContent = workspaceInlineFileContent(file)
+  if (existing?.kind === 'file') {
+    const locatorChanged = workspaceFileLocatorSignature(existing.sessionId, existing.file)
+      !== workspaceFileLocatorSignature(sessionId, file)
+    const shouldReload = inlineContent === null && (locatorChanged || (!existing.loading && Boolean(existing.error)))
+    if (inlineContent !== null || locatorChanged) workspaceRequestGate.invalidate(id)
+    replaceWorkspaceTab(id, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          title: file.filename || tab.title,
+          sessionId,
+          file: {
+            ...tab.file,
+            ...file,
+            filename: file.filename || tab.file.filename,
+          },
+          content: inlineContent !== null ? inlineContent : (locatorChanged ? '' : tab.content),
+          loading: inlineContent !== null ? false : (locatorChanged ? true : tab.loading),
+          error: inlineContent !== null || locatorChanged ? '' : tab.error,
+        }
+      : tab)
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true)
+    if (shouldReload) void loadWorkspaceFile(id)
+    return
+  }
+
+  const tab: WorkspaceFileViewerTab = {
+    id,
+    kind: 'file',
+    title: file.filename,
+    loading: inlineContent === null,
+    error: '',
+    sessionId,
+    file: { ...file },
+    content: inlineContent ?? '',
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true)
+  if (inlineContent === null) void loadWorkspaceFile(id)
+}
+
+async function loadWorkspaceFile(tabId: string): Promise<void> {
+  const current = workspaceTabById(tabId)
+  if (!current || current.kind !== 'file') return
+  if (String(current.file.kind || '') === 'knowledge-citation') {
+    const sourceId = String(current.file.source_ref_id || '').trim()
+    const source = normalizeConversationSourceCitation({
+      source_id: sourceId,
+      display_name: current.file.filename,
+      mime_type: current.file.mime,
+      locator: {
+        start_offset: current.file.citation_start_offset,
+        end_offset: current.file.citation_end_offset,
+      },
+    }, 0)
+    if (current.sessionId && source.canOpen) {
+      await loadWorkspaceCitationSource(tabId, current.sessionId, source)
+    } else {
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: '该引用缺少可读取的来源标识。' }
+        : tab)
+    }
+    return
+  }
+  if (String(current.file.kind || '') === 'knowledge-source') {
+    const sourceId = String(current.file.source_ref_id || '').trim()
+    if (current.sessionId && sourceId) {
+      await loadWorkspaceSessionSource(tabId, current.sessionId, sourceId)
+    } else {
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: '该来源缺少所属会话，无法安全读取。' }
+        : tab)
+    }
+    return
+  }
+  const downloadUrl = String(current.file.download_url || '').trim()
+  const eventId = String(current.file.event_id || '').trim()
+  const attachmentIndex = Math.max(0, Number(current.file.attachment_index) || 0)
+  if (!downloadUrl && (!current.sessionId || !eventId)) {
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? { ...tab, loading: false, error: '文件正文暂不可读取。' }
+      : tab)
+    return
+  }
+
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+    ? { ...tab, loading: true, error: '' }
+    : tab)
+  try {
+    const result = await downloadVibeSessionEventAttachment(
+      current.sessionId,
+      eventId,
+      attachmentIndex,
+      downloadUrl,
+    )
+    const content = await result.blob.text()
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          title: result.filename || tab.title,
+          loading: false,
+          error: '',
+          content,
+          file: {
+            ...tab.file,
+            filename: result.filename || tab.file.filename,
+            mime: result.contentType || tab.file.mime,
+            body_omitted: false,
+          },
+        }
+      : tab)
+  } catch (reason) {
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          loading: false,
+          error: workspaceErrorMessage(reason, '文件读取失败，请稍后重试。'),
+        }
+      : tab)
+  }
+}
+
+function retryWorkspaceFile(tabId: string): void {
+  void loadWorkspaceFile(tabId)
+}
+
+function openMessageAttachmentViewer(file: Partial<VibeAttachment> | any, event: Partial<VibeEvent> | any): void {
+  const attachments = eventAttachments(event)
+  const locatedIndex = attachments.indexOf(file as VibeAttachment)
+  const attachmentIndex = locatedIndex >= 0 ? locatedIndex : 0
+  const eventId = String(event?.id || '').trim()
+  const identity = attachmentIdentity(file) || `event:${eventId || 'unknown'}:${attachmentIndex}`
+  const projected: RecentSessionFile = {
+    ...file,
+    identity,
+    filename: attachmentName(file),
+    event_id: eventId,
+    attachment_index: attachmentIndex,
+    last_event_order: Number(event?.event_order || 0),
+    last_seen_at: String(event?.created_at || ''),
+  }
+  openWorkspaceFile(projected, String(event?.session_id || activeSessionId.value || ''))
+}
+
+function openConversationSource(source: ConversationSourceCitation): void {
+  const sessionId = String(activeSessionId.value || '').trim()
+  const identity = sourceCitationViewerIdentity(source)
+  if (!sessionId || !identity) return
+  workspaceFocusAfterEnter = true
+  const id = workspaceFileViewerTabId(sessionId, identity)
+  const existing = workspaceTabById(id)
+  if (existing) {
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true)
+    if (existing.kind === 'file' && !existing.loading && existing.error) {
+      void loadWorkspaceCitationSource(id, sessionId, source)
+    }
+    return
+  }
+  const file: RecentSessionFile = {
+    identity,
+    filename: source.label,
+    source_ref_id: source.sourceId,
+    citation_span_id: source.spanId,
+    citation_start_offset: source.startOffset,
+    citation_end_offset: source.endOffset,
+    source_label: source.label,
+    source_location: source.location,
+    kind: 'knowledge-citation',
+    mime: source.mimeType || 'text/plain',
+    event_id: '',
+    attachment_index: 0,
+    last_event_order: 0,
+    last_seen_at: '',
+  }
+  const tab: WorkspaceFileViewerTab = {
+    id,
+    kind: 'file',
+    title: source.label,
+    loading: true,
+    error: '',
+    sessionId,
+    file,
+    content: '',
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true)
+  void loadWorkspaceCitationSource(id, sessionId, source)
+}
+
+async function loadWorkspaceCitationSource(
+  tabId: string,
+  sessionId: string,
+  source: ConversationSourceCitation,
+): Promise<void> {
+  if (
+    sourceCitationHasReadableRange(source)
+    && source.startOffset !== null
+    && source.endOffset !== null
+  ) {
+    await loadWorkspaceSourceFragment(
+      tabId,
+      sessionId,
+      source.sourceId,
+      source.startOffset,
+      source.endOffset,
+    )
+    return
+  }
+  await loadWorkspaceSessionSource(tabId, sessionId, source.sourceId)
+}
+
+async function loadWorkspaceSourceFragment(
+  tabId: string,
+  sessionId: string,
+  sourceId: string,
+  startOffset: number,
+  endOffset: number,
+): Promise<void> {
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+    ? { ...tab, loading: true, error: '' }
+    : tab)
+  try {
+    const payload = await getVibeSessionSourceFragment(sessionId, sourceId, {
+      startOffset,
+      endOffset,
+    })
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    const source = payload.source
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          title: source.display_name || tab.title,
+          loading: false,
+          error: '',
+          content: source.text || '',
+          file: {
+            ...tab.file,
+            filename: source.display_name || tab.file.filename,
+            mime: source.mime_type || tab.file.mime,
+            content_hash: source.content_hash,
+          },
+        }
+      : tab)
+  } catch (reason) {
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          loading: false,
+          error: workspaceErrorMessage(reason, '引用片段读取失败，请稍后重试。'),
+        }
+      : tab)
+  }
+}
+
+function openWorkspaceSource(source: string | ConversationSourceCitation): void {
+  const selectedTab = workspaceTabById(activeWorkspaceTabId.value || '')
+  const sourceSummary = typeof source === 'string' && selectedTab?.kind === 'change'
+    ? selectedTab.detail?.sources.find(item => String(item.id || '').trim() === source.trim())
+    : null
+  const reference = typeof source === 'string'
+    ? normalizeConversationSourceCitation({
+        ...sourceSummary,
+        source_id: source,
+      }, 0)
+    : source
+  const normalizedSourceId = reference.sourceId
+  const sessionId = selectedTab?.kind === 'change'
+    ? String(selectedTab.detail?.session_id || selectedTab.summary.session_id || '').trim()
+    : ''
+  if (!sessionId) {
+    ElMessage.warning('该变更缺少所属会话，无法安全读取来源。')
+    return
+  }
+  if (!normalizedSourceId) return
+  const identity = sourceCitationViewerIdentity(reference)
+  if (!identity) return
+  workspaceFocusAfterEnter = true
+  const id = workspaceFileViewerTabId(sessionId, identity)
+  const existing = workspaceTabById(id)
+  if (existing) {
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true)
+    if (existing.kind === 'file' && !existing.loading && existing.error) {
+      void loadWorkspaceSessionSource(id, sessionId, normalizedSourceId)
+    }
+    return
+  }
+  const file: RecentSessionFile = {
+    identity,
+    filename: reference.label || '知识来源',
+    source_ref_id: normalizedSourceId,
+    citation_span_id: reference.spanId,
+    source_label: reference.label,
+    source_location: reference.location,
+    kind: 'knowledge-source',
+    mime: reference.mimeType || 'text/plain',
+    event_id: '',
+    attachment_index: 0,
+    last_event_order: 0,
+    last_seen_at: '',
+  }
+  const tab: WorkspaceFileViewerTab = {
+    id,
+    kind: 'file',
+    title: file.filename,
+    loading: true,
+    error: '',
+    sessionId,
+    file,
+    content: '',
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true)
+  void loadWorkspaceSessionSource(id, sessionId, normalizedSourceId)
+}
+
+async function loadWorkspaceSessionSource(
+  tabId: string,
+  sessionId: string,
+  sourceId: string,
+): Promise<void> {
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+    ? { ...tab, loading: true, error: '' }
+    : tab)
+  try {
+    const payload = await getVibeSessionSource(sessionId, sourceId)
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    const source = payload.source
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          title: source.display_name || tab.title,
+          loading: false,
+          error: '',
+          content: source.text || '',
+          file: {
+            ...tab.file,
+            filename: source.display_name || tab.file.filename,
+            mime: source.mime_type || tab.file.mime,
+            content_hash: source.content_hash,
+          },
+        }
+      : tab)
+  } catch (reason) {
+    if (!workspaceRequestIsCurrent(tabId, token)) return
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? {
+          ...tab,
+          loading: false,
+          error: workspaceErrorMessage(reason, '知识来源读取失败，请稍后重试。'),
+        }
+      : tab)
+  }
 }
 
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
@@ -867,14 +1797,30 @@ const draft = computed<string>({
   get: () => sessionDrafts[activeDraftKey.value] || '',
   set: (value) => { setDraftByKey(activeDraftKey.value, value) },
 })
-const liveLogs = ref<{ id: string; type: string; message: string }[]>([])
 // foundation 新管线（知识库前端唯一管线，不再有灰度开关）
 const foundationBusy = ref(false)
 const runningSessionIds = ref<string[]>([])
 const runningTurns = ref<FoundationRunningTurn[]>([])
 const recoveredTurnId = ref('')
+interface TurnReplayRecoveryState {
+  protocolState: TurnProtocolState
+  seenEventIds: Set<string>
+  latestSequence: number
+  lastEventId: string
+  seenRunning: boolean
+  leaseMissingAt: number | null
+  initialized: boolean
+  broken: boolean
+  terminalModel: TurnProtocolReadModel | null
+  terminalBridgeStartedAt: number | null
+  terminalBridgeAttempts: number
+  terminalBridgeExhausted: boolean
+}
+const turnReplayRecoveryStates = new Map<string, TurnReplayRecoveryState>()
 // 临时过程区必须有明确会话所有者。窗口级 busy 只表示本窗口有请求，不能决定当前会话显示什么。
 const streamingOwnerSessionId = ref('')
+// 仅用于 event_saved 前的本地展示，不写入 events，也不参与 Canonical reducer。
+const pendingUserSubmissionText = ref('')
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
 let runningTurnPollInFlight = false
 const RUNNING_POLL_ACTIVE_MS = 1500
@@ -883,6 +1829,28 @@ const RUNNING_POLL_IDLE_MS = 3500
 const activeTurnId = ref('')
 const activeTurnSessionId = ref('')
 const cancelRequested = ref(false)
+type ComposerToastNotice = {
+  title: string
+  type?: 'success' | 'info' | 'error'
+  duration?: number
+}
+
+function showComposerToast(notice: ComposerToastNotice): void {
+  const title = String(notice?.title || '').trim()
+  if (!title || typeof window.$toast !== 'function') return
+  window.$toast({
+    title,
+    type: notice.type || 'info',
+    position: 'bottom-right',
+    duration: notice.duration ?? 3000,
+    actionText: '关闭',
+  })
+}
+
+watch(cancelRequested, (stopping, wasStopping) => {
+  if (!stopping || wasStopping) return
+  showComposerToast({ title: '正在停止本轮…', type: 'info', duration: 3000 })
+})
 
 async function stopFoundationTurn() {
   if (!activeTurnId.value || cancelRequested.value) return
@@ -898,9 +1866,7 @@ async function stopFoundationTurn() {
     // 不 abort 流：后端置位后会自己发 cancelled + 已停止回执 + done 正常收尾
   } catch { cancelRequested.value = false /* 失败允许再点 */ }
 }
-// 0704 体验修复:"已处理"计时与"正在思考"由【整轮请求生命周期】驱动,不再听后端 process_done。
-// 根因:后端 pe.done 在最终 answer 之前入队,done 之后还有 recall 兜底/安全网录入/收敛/持久化
-// (都可能是秒级 LLM 调用)——旧逻辑一收到 process_done 就冻结成"已处理 Xs",页面既不在思考又没结束。
+// “已处理”计时由 Canonical 业务生命周期驱动，不使用旧 process_done，也不以 SSE 关闭代替 terminal。
 const streamingElapsedMs = ref(0)
 let _elapsedTimer: ReturnType<typeof setInterval> | null = null
 function startElapsedTicker(startedAt: number) {
@@ -911,12 +1877,19 @@ function startElapsedTicker(startedAt: number) {
 function stopElapsedTicker() {
   if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null }
 }
-// 思考态=整轮在途(SSE 没关就没结束);计时=在途时前端秒表、结束后用最终值。
+// 思考态只看 Canonical 业务状态；SSE 是否仍连接不能把已 terminal 的本轮继续标成运行中。
 const visibleStreamingOwner = computed(() =>
   !!activeSessionId.value && streamingOwnerSessionId.value === activeSessionId.value,
 )
+const pendingUserSubmissionVisible = computed(() =>
+  visibleStreamingOwner.value && !!pendingUserSubmissionText.value,
+)
 const procRunning = computed(() => visibleStreamingOwner.value
-  && (foundationBusy.value || streamingProcess.status === 'running'))
+  && streamingProcess.status === 'running')
+// Orb 只代表“答案开始前的思考阶段”。正式 assistant item 一出现就退出，不能等整轮 terminal。
+const thinkingOrbVisible = computed(() => procRunning.value
+  && !(streamingCanonicalModel.value?.answers.length)
+  && !streamingAssistantEventId.value)
 const procDurationMs = computed(() =>
   procRunning.value ? streamingElapsedMs.value : streamingProcess.durationMs)
 const processExpanded = ref(false)
@@ -925,6 +1898,27 @@ const streamingProcess = createProcessState()
 const packageStatusOverrides = ref<Record<string, string>>({})
 const sessionTitleOverrides = ref<Record<string, string>>({})
 const expandedUserMessageIds = ref<string[]>([])
+const overflowingUserMessageIds = ref<string[]>([])
+const userMessageOverflowElements = new Map<HTMLElement, string>()
+let userMessageOverflowObserver: ResizeObserver | null = null
+let userMessageOverflowRaf = 0
+let userMessageOverflowWindowResizeRegistered = false
+const vUserMessageOverflow: Directive<HTMLElement, string | undefined> = {
+  mounted(element, binding) {
+    bindUserMessageOverflowElement(element, binding.value)
+  },
+  updated(element, binding) {
+    if (binding.value !== binding.oldValue) {
+      unbindUserMessageOverflowElement(element)
+      bindUserMessageOverflowElement(element, binding.value)
+      return
+    }
+    scheduleUserMessageOverflowMeasurements()
+  },
+  beforeUnmount(element) {
+    unbindUserMessageOverflowElement(element)
+  },
+}
 const expandedAttachmentEventIds = ref<string[]>([])
 const deletingSessionId = ref('')
 const streamingAssistantContent = ref('')
@@ -932,13 +1926,27 @@ const streamingAssistantContent = ref('')
 const streamingAssistantEventId = ref('')
 const streamingSources = ref<any[]>([])        // T1 溯源：本轮答案的来源段（流式渲染用）
 const streamingVerification = ref<any | null>(null) // T8 核验：{checked, issues, clean}
+const streamingCanonicalModel = ref<TurnProtocolReadModel | null>(null)
+type TurnTransportNotice = {
+  kind: 'connection' | 'protocol'
+  title: string
+  detail: string
+  reason?: string
+}
+type TurnOutcomeNoticeModel = {
+  kind: 'failed' | 'cancelled' | 'interrupted' | 'partial' | 'connection' | 'protocol'
+  title: string
+  detail?: string
+  reason?: string
+  partial?: boolean
+}
+const streamingTransportNotice = ref<TurnTransportNotice | null>(null)
 const streamingContinuationParentId = ref('')
 const hoveredConversationRailIndex = ref<number | null>(null)
 const activeConversationEventId = ref('')
 const timelineEl = ref<HTMLElement | null>(null)
 const processBodyEl = ref<HTMLElement | null>(null)
 const draftEl = ref<HTMLTextAreaElement | null>(null)
-const MAX_LIVE_LOGS = 80
 const MAX_CONVERSATION_RAIL_ITEMS = 40
 let conversationRailRaf = 0
 const baselineDraft = reactive<{ system_name: string; summary: string; system_goals: { name: string; description: string }[] }>({ system_name: '', summary: '', system_goals: [] })
@@ -953,12 +1961,22 @@ const projectOptions = computed(() => projects.value.map(project => {
   return {
     value: String(project.id),
     label: project.name || project.project_name || `项目 ${project.id}`,
-    // 下拉里逐项目显示第四代章节数 + 模块数（拿不到时退回原描述）
-    hint: st ? `${st.sections} 章 · ${st.modules} 模块` : (project.description || project.owner_name || project.creator_name || ''),
+    // 项目入口只展示权威现行文档数，不再泄漏已经退役的章节/模块投影。
+    hint: st ? `${st.documents} 份文档` : (project.description || project.owner_name || project.creator_name || ''),
   }
 }))
+const activeSessionHasUnresolvedTurn = computed(() =>
+  !!activeSessionId.value
+  && streamingOwnerSessionId.value === activeSessionId.value
+  && !!streamingTransportNotice.value
+  && !streamingCanonicalModel.value?.terminal,
+)
 const activeSessionSending = computed(() =>
-  !!activeSessionId.value && sendingSessionIds.value.includes(activeSessionId.value),
+  !!activeSessionId.value && (
+    sendingSessionIds.value.includes(activeSessionId.value)
+    || runningSessionIds.value.includes(activeSessionId.value)
+    || activeSessionHasUnresolvedTurn.value
+  ),
 )
 const conversationRailItems = computed(() => buildConversationRailItems())
 const activeConversationRailIndex = computed(() => {
@@ -967,11 +1985,12 @@ const activeConversationRailIndex = computed(() => {
   const index = items.findIndex(item => item.id === activeConversationEventId.value)
   return index >= 0 ? index : Math.max(0, items.length - 1)
 })
-const sending = computed(() => preparingSend.value || foundationBusy.value || sendingSessionIds.value.length > 0)
-const composerStatusText = computed(() => {
-  if (cancelRequested.value) return '正在停止…'
-  return ''  // 0704 用户定:输入框下不再显示"正在思考/收尾"——状态由过程区"已处理 Xs"+按钮■表达
-})
+const sending = computed(() =>
+  preparingSend.value
+  || foundationBusy.value
+  || sendingSessionIds.value.length > 0
+  || activeSessionSending.value,
+)
 const composerPlaceholder = computed(() => '随心输入')
 const KNOWLEDGE_WRITE_ACTIONS = new Set(['save', 'insert', 'edit', 'delete', 'delete_many', 'cascade_apply'])
 function turnMayChangeKnowledge(actions: string[], applyEdit?: any) {
@@ -1099,15 +2118,34 @@ function restoreClarificationFromEvents() {
     clarificationActive.value = null
   }
 }
+const streamingOutcomeNotice = computed<TurnOutcomeNoticeModel | null>(() => {
+  return outcomeNoticeProps(streamingCanonicalModel.value?.outcome)
+    || streamingTransportNotice.value
+})
 const streamingTurnVisible = computed(() =>
   visibleStreamingOwner.value
   && !streamingAssistantEventId.value
   && (
     !!streamingAssistantContent.value
+    || !!streamingOutcomeNotice.value
     || procRunning.value
     || streamingProcess.steps.length > 0
   ),
 )
+const currentSessionStreamingPending = computed(() =>
+  visibleStreamingOwner.value
+  && (
+    activeSessionSending.value
+    || streamingProcess.status === 'running'
+    || streamingTurnVisible.value
+  ),
+)
+const showConversationEmpty = computed(() => shouldShowConversationEmptyState({
+  eventCount: events.value.length,
+  activeSessionId: activeSessionId.value,
+  streamingOwnerSessionId: streamingOwnerSessionId.value,
+  streamingPending: currentSessionStreamingPending.value,
+}))
 const streamingAssistantStandaloneVisible = computed(() =>
   streamingTurnVisible.value
   && (!streamingContinuationParentId.value || !hasEvent(streamingContinuationParentId.value)),
@@ -1174,6 +2212,11 @@ function trackMaximizeState() {
 
 onBeforeUnmount(() => {
   offMaximizeState?.()
+  stopUserMessageOverflowObservation()
+  stopWorkspaceMainWidthObserver()
+  workspaceResizeSession = null
+  workspaceWindowResizing.value = false
+  clearWorkspaceOpenTimer()
   projectContextEpoch += 1
   sessionRequestEpoch += 1
   stopKnowledgeActivity()
@@ -1218,7 +2261,13 @@ function replayIntro(event: MouseEvent) {
   el.play().catch(() => {})
 }
 
-onMounted(() => { initializeInfoRail(); bootstrap(); loadVibeCapabilities(); trackMaximizeState() })
+onMounted(() => {
+  initializeInfoRail()
+  startWorkspaceMainWidthObserver()
+  bootstrap()
+  loadVibeCapabilities()
+  trackMaximizeState()
+})
 
 watch(
   () => [events.value.length, streamingAssistantContent.value],
@@ -1245,6 +2294,7 @@ async function selectProject(project: any, options: { refreshStats?: boolean } =
   const epoch = ++projectContextEpoch
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
+  if (!activeSessionId.value) activateWorkspaceConversation(project.id, '')
   void startKnowledgeActivity(project.id)
   if (options.refreshStats !== false) void loadCurrentKbStats(project.id)
   packageStatusOverrides.value = {}
@@ -1268,10 +2318,12 @@ async function handleProjectChange(value: string | number) {
   if (!project) return
   sessionRequestEpoch += 1
   activeSessionId.value = ''
+  sessions.value = []
+  sessionNextCursor.value = ''
+  sessionsLoadingMore.value = false
   events.value = []
   sessionFilesLoading.value = false
   sessionFilesError.value = ''
-  liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
   stopElapsedTicker()
@@ -1336,26 +2388,55 @@ async function refreshState(
 ) {
   const ownerId = vibeProject.value?.id || ''
   if (!ownerId) return
-  const loadedSessions = await listVibeSessions(ownerId)
+  const loadedPage = await listVibeSessions(ownerId)
   if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
-  sessions.value = loadedSessions
-  await loadModelConfig(activeSessionId.value).catch(() => {})
-  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
-  await refreshProjectRunningTurns()
+  sessions.value = loadedPage.sessions || []
+  sessionNextCursor.value = loadedPage.page?.next_cursor || ''
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
+    return
+  }
+  await Promise.all([
+    loadModelConfig(activeSessionId.value).catch(() => {}),
+    refreshProjectRunningTurns(),
+  ])
+}
+
+async function loadMoreSessions() {
+  const ownerId = vibeProject.value?.id || ''
+  const cursor = sessionNextCursor.value
+  const contextEpoch = projectContextEpoch
+  if (!ownerId || !cursor || sessionsLoadingMore.value) return
+  sessionsLoadingMore.value = true
+  try {
+    const loadedPage = await listVibeSessions(ownerId, { cursor })
+    if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
+    const seen = new Set(sessions.value.map(item => item.id))
+    sessions.value = [
+      ...sessions.value,
+      ...(loadedPage.sessions || []).filter(item => !seen.has(item.id)),
+    ]
+    sessionNextCursor.value = loadedPage.page?.next_cursor || ''
+  } catch (error: any) {
+    ElMessage.error(`加载更早对话失败：${error?.message || String(error)}`)
+  } finally {
+    if (contextEpoch === projectContextEpoch) sessionsLoadingMore.value = false
   }
 }
 
 async function openSession(sessionId: string) {
   // #2：答题进行中也允许切到别的会话【只读查看】（本轮 UI 由 turnSessionId 守住、不串会话）。
   const epoch = ++sessionRequestEpoch
+  resetTimelineNavigation()
+  const switchingConversation = activeSessionId.value !== sessionId
   activeSessionId.value = sessionId
+  if (switchingConversation) {
+    activateWorkspaceConversation(workspaceProjectContextId(), sessionId)
+  }
   events.value = []
   sessionFilesLoading.value = true
   sessionFilesError.value = ''
   currentView.value = 'conversation'
-  liveLogs.value = []
   processExpanded.value = false
   stopElapsedTicker()
   recoveredTurnId.value = ''
@@ -1371,7 +2452,7 @@ async function openSession(sessionId: string) {
   const cachedTurn = runningTurns.value.find(
     item => String(item.session_id || '') === sessionId,
   ) || null
-  if (cachedTurn) replayRunningTurn(cachedTurn)
+  if (cachedTurn) adoptRunningTurnLease(cachedTurn)
   try {
     // 历史事件与 running 快照并行取，谁先回来谁先渲染。
     const runningRefresh = refreshProjectRunningTurns().catch(() => {})
@@ -1421,6 +2502,8 @@ function setSessionRunning(sessionId: string, running: boolean) {
 }
 
 function applyCanonicalReadModel(model: TurnProtocolReadModel) {
+  streamingCanonicalModel.value = model
+  streamingTransportNotice.value = null
   streamingProcess.steps = model.process
   streamingProcess.status = ['queued', 'running', 'cancelling'].includes(model.state) ? 'running' : 'done'
   streamingProcess.durationMs = Number(model.processSummary?.duration_ms || streamingProcess.durationMs || 0)
@@ -1476,126 +2559,505 @@ async function refreshProjectRunningTurns() {
   }
 }
 
-function replayRunningTurn(turn: FoundationRunningTurn) {
+function turnReplayRecoveryState(turnId: string): TurnReplayRecoveryState {
+  const existing = turnReplayRecoveryStates.get(turnId)
+  if (existing) return existing
+  const created: TurnReplayRecoveryState = {
+    protocolState: createTurnProtocolState(),
+    seenEventIds: new Set<string>(),
+    latestSequence: 0,
+    lastEventId: '',
+    seenRunning: false,
+    leaseMissingAt: null,
+    initialized: false,
+    broken: false,
+    terminalModel: null,
+    terminalBridgeStartedAt: null,
+    terminalBridgeAttempts: 0,
+    terminalBridgeExhausted: false,
+  }
+  turnReplayRecoveryStates.set(turnId, created)
+  return created
+}
+
+function adoptRunningTurnLease(turn: FoundationRunningTurn) {
   const turnId = String(turn.turn_id || '')
   const sessionId = String(turn.session_id || '')
   if (!turnId || !sessionId || activeSessionId.value !== sessionId) return
+  const changingTurn = recoveredTurnId.value !== turnId
   streamingOwnerSessionId.value = sessionId
   activeTurnSessionId.value = sessionId
   const startedAt = Number(turn.started_at || 0) > 0 ? Number(turn.started_at) * 1000 : Date.now()
-  if (recoveredTurnId.value !== turnId) {
+  if (changingTurn) {
     recoveredTurnId.value = turnId
     startElapsedTicker(startedAt)
+    resetProcessState(streamingProcess)
+    streamingAssistantEventId.value = ''
+    streamingAssistantContent.value = ''
+    streamingSources.value = []
+    streamingVerification.value = null
+    streamingCanonicalModel.value = null
   }
   activeTurnId.value = turnId
-  cancelRequested.value = turn.state === 'cancel_requested'
-  resetProcessState(streamingProcess)
-  streamingProcess.status = 'running'
-  streamingAssistantEventId.value = ''
-  streamingAssistantContent.value = ''
-  streamingSources.value = []
-  streamingVerification.value = null
+  cancelRequested.value = turn.runtime_state === 'cancel_requested'
+    || turn.protocol_state === 'cancelling'
+  const recovery = turnReplayRecoveryState(turnId)
+  recovery.seenRunning = true
+  recovery.leaseMissingAt = null
+  if (!recovery.broken) {
+    streamingProcess.status = 'running'
+    streamingTransportNotice.value = null
+  }
+}
 
-  const protocolEvents = Array.isArray(turn.protocol_events) ? turn.protocol_events : []
-  if (protocolEvents.length) {
-    // 传输层只负责把已持久化事件放回列表；回答、反问、过程和终态全部由规范日志重放。
-    for (const event of turn.events || []) {
-      if (String(event?.type || '') !== 'event_saved') continue
-      const saved = event.event as VibeEvent
-      if (event.role === 'user') {
-        const parentId = String((saved as any)?.meta?.parent_event_id || '')
-        if (parentId) streamingContinuationParentId.value = parentId
-      } else if (event.role === 'assistant') {
-        streamingAssistantEventId.value = String(saved?.id || '')
-      }
-      upsertEvent(saved)
+interface TurnRecoveryRequestGuard {
+  epoch: number
+  projectId: string
+  sessionId: string
+  turnId: string
+}
+
+function turnRecoveryRequestIsCurrent(guard: TurnRecoveryRequestGuard): boolean {
+  if (sessionRequestEpoch !== guard.epoch) return false
+  if (String(vibeProject.value?.id || '') !== guard.projectId) return false
+  if (activeSessionId.value !== guard.sessionId) return false
+  if (streamingOwnerSessionId.value !== guard.sessionId) return false
+  return [
+    recoveredTurnId.value,
+    activeTurnId.value,
+    streamingCanonicalModel.value?.turnId,
+  ].some(value => String(value || '') === guard.turnId)
+}
+
+function refreshRecoveredAssistantPresentation(
+  sessionId: string,
+  model: TurnProtocolReadModel,
+  terminalPending: boolean,
+): boolean {
+  const input = {
+    assistantEventId: streamingAssistantEventId.value,
+    sessionId,
+    model,
+    observedDurationMs: Math.max(streamingElapsedMs.value, streamingProcess.durationMs),
+    terminalPending,
+  }
+  const refreshed = refreshAssistantTurnPresentation(events.value, input)
+    || (() => {
+      const event = events.value.find(item =>
+        String(item?.role || '') === 'assistant'
+        && String(item?.session_id || '') === sessionId
+        && eventTurnProtocol(item)?.turnId === model.turnId)
+      return event
+        ? attachLocalTurnPresentation(event as unknown as Record<string, any>, model, input.observedDurationMs, { terminalPending })
+        : null
+    })()
+  if (!refreshed) return false
+  streamingAssistantEventId.value = String(refreshed.id || streamingAssistantEventId.value)
+  upsertEvent(refreshed as VibeEvent)
+  return true
+}
+
+function releaseRecoveredTurnOwner(sessionId: string) {
+  const turnId = String(
+    recoveredTurnId.value || activeTurnId.value || streamingCanonicalModel.value?.turnId || '',
+  )
+  if (turnId) turnReplayRecoveryStates.delete(turnId)
+  setSessionRunning(sessionId, false)
+  stopElapsedTicker()
+  activeTurnId.value = ''
+  activeTurnSessionId.value = ''
+  recoveredTurnId.value = ''
+  streamingAssistantEventId.value = ''
+  streamingOwnerSessionId.value = ''
+  cancelRequested.value = false
+  clearStreamingAssistant()
+  resetProcessState(streamingProcess)
+}
+
+function markRecoveredTurnBroken(
+  sessionId: string,
+  model: TurnProtocolReadModel | null,
+  notice: TurnTransportNotice,
+  turnId = '',
+) {
+  const recovery = turnReplayRecoveryStates.get(String(turnId || ''))
+  if (recovery) recovery.broken = true
+  if (model) refreshRecoveredAssistantPresentation(sessionId, model, false)
+  setSessionRunning(sessionId, false)
+  stopElapsedTicker()
+  activeTurnId.value = ''
+  activeTurnSessionId.value = ''
+  recoveredTurnId.value = ''
+  streamingAssistantEventId.value = ''
+  cancelRequested.value = false
+  streamingProcess.status = 'done'
+  streamingTransportNotice.value = notice
+}
+
+const TURN_REPLAY_MAX_PAGES_PER_POLL = 8
+const TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS = 12
+const TERMINAL_HISTORY_BRIDGE_MAX_MS = 30_000
+
+function turnReplayFailureFacts(reason: unknown): {
+  status: number
+  code: string
+  retryable: boolean | null
+} {
+  if (!(reason instanceof HarnessRequestError)) return { status: 0, code: '', retryable: null }
+  return { status: reason.status, code: reason.code, retryable: reason.retryable }
+}
+
+function turnReplayLeaseMissingForMs(recovery: TurnReplayRecoveryState): number {
+  if (recovery.leaseMissingAt === null) return 0
+  return Math.max(0, Date.now() - recovery.leaseMissingAt)
+}
+
+function keepRecoveredTurnPending(sessionId: string) {
+  setSessionRunning(sessionId, true)
+  streamingProcess.status = 'running'
+  streamingTransportNotice.value = null
+}
+
+function keepRecoveredTerminalBridgePending(
+  sessionId: string,
+  turnId: string,
+  model: TurnProtocolReadModel,
+  assistantAttached: boolean,
+) {
+  // Canonical terminal 已足以展示答案，但只有正式 history assistant envelope 才能
+  // 接管持久化气泡。在它出现前保留同一 overlay/owner；不合成本地第二份答案。
+  streamingOwnerSessionId.value = sessionId
+  activeTurnId.value = turnId
+  activeTurnSessionId.value = sessionId
+  recoveredTurnId.value = turnId
+  // refreshRecoveredAssistantPresentation 可能已经把同 Turn 模型挂到一个合法
+  // assistant 气泡；history 暂时失败时保留该绑定，避免气泡与 standalone overlay 双显。
+  if (!assistantAttached) streamingAssistantEventId.value = ''
+  applyCanonicalReadModel(model)
+  streamingProcess.status = 'done'
+  streamingTransportNotice.value = null
+  setSessionRunning(sessionId, true)
+}
+
+function recoveredTerminalAssistantIsAttached(sessionId: string, turnId: string): boolean {
+  const assistantEventId = String(streamingAssistantEventId.value || '')
+  return !!assistantEventId && events.value.some(event =>
+    String(event?.id || '') === assistantEventId
+    && String(event?.role || '') === 'assistant'
+    && String(event?.session_id || '') === sessionId
+    && eventTurnProtocol(event)?.turnId === turnId)
+}
+
+function exhaustRecoveredTerminalBridge(
+  sessionId: string,
+  turnId: string,
+  model: TurnProtocolReadModel,
+  assistantAttached: boolean,
+) {
+  const recovery = turnReplayRecoveryState(turnId)
+  const newlyExhausted = !recovery.terminalBridgeExhausted
+  recovery.terminalBridgeExhausted = true
+  keepRecoveredTerminalBridgePending(sessionId, turnId, model, assistantAttached)
+  setSessionRunning(sessionId, false)
+  streamingProcess.status = 'done'
+  streamingTransportNotice.value = {
+    kind: 'connection',
+    title: '本轮结果已恢复，但保存状态尚未确认',
+    detail: '页面已保留权威 Canonical 答案；会话历史尚未提供同一 Turn 的正式回答记录，已停止自动重试。',
+  }
+  if (newlyExhausted) {
+    showComposerToast({
+      title: '本轮答案已保留，但保存状态尚未确认',
+      type: 'info',
+      duration: 5000,
+    })
+  }
+}
+
+async function bridgeRecoveredTerminalHistory(
+  sessionId: string,
+  turnId: string,
+  model: TurnProtocolReadModel,
+  recoveryGuard: TurnRecoveryRequestGuard,
+) {
+  // 每次 poll 最多做一次 history bridge；Canonical terminal 已缓存，不再重放 Journal。
+  const recovery = turnReplayRecoveryState(turnId)
+  const assistantAttachedBeforeRequest = recoveredTerminalAssistantIsAttached(sessionId, turnId)
+  if (recovery.terminalBridgeExhausted) {
+    // 自动 bridge 已耗尽后不再请求 history；但项目/会话的其他正常刷新仍可能
+    // 把同 Turn 正式 assistant 带入当前 events。此时让该气泡接管并释放 overlay，
+    // 避免永久保留“历史气泡 + Canonical overlay”的双显状态。
+    const currentHistoryHasTurnAssistant = events.value.some(event =>
+      String(event?.role || '') === 'assistant'
+      && String(event?.session_id || '') === sessionId
+      && eventTurnProtocol(event)?.turnId === turnId)
+    const currentHistoryOwnsTurn = currentHistoryHasTurnAssistant
+      && refreshRecoveredAssistantPresentation(sessionId, model, false)
+    if (currentHistoryOwnsTurn) {
+      releaseRecoveredTurnOwner(sessionId)
+      await scrollBottomIfFollowing()
+      return
     }
-    applyCanonicalReadModel(replayTurnProtocol(protocolEvents))
+    exhaustRecoveredTerminalBridge(
+      sessionId, turnId, model, assistantAttachedBeforeRequest,
+    )
+    return
+  }
+  const bridgeNow = Date.now()
+  if (recovery.terminalBridgeStartedAt === null) recovery.terminalBridgeStartedAt = bridgeNow
+  if (
+    recovery.terminalBridgeAttempts >= TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS
+    || bridgeNow - recovery.terminalBridgeStartedAt >= TERMINAL_HISTORY_BRIDGE_MAX_MS
+  ) {
+    exhaustRecoveredTerminalBridge(
+      sessionId, turnId, model, assistantAttachedBeforeRequest,
+    )
+    return
+  }
+  recovery.terminalBridgeAttempts += 1
+  const fresh = await listVibeEvents(sessionId).catch(() => null)
+  if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
+  if (fresh) {
+    const sortedFresh = sortEvents(fresh)
+    const sameIds = sortedFresh.length === events.value.length
+      && sortedFresh.every((event, index) => event.id === events.value[index]?.id)
+    if (sameIds) reconcileAuthoritativeEventProjections(sortedFresh)
+    else events.value = sortedFresh
+  }
+  restoreClarificationFromEvents()
+  applyCanonicalReadModel(model)
+  const assistantAttached = recoveredTerminalAssistantIsAttached(sessionId, turnId)
+  const historyHasTurnAssistant = !!fresh && events.value.some(event =>
+    String(event?.role || '') === 'assistant'
+    && String(event?.session_id || '') === sessionId
+    && eventTurnProtocol(event)?.turnId === turnId)
+  const historyOwnsTurn = historyHasTurnAssistant
+    && refreshRecoveredAssistantPresentation(sessionId, model, false)
+  if (!historyOwnsTurn) {
+    // history 请求失败、尚未出现 assistant，或 assistant 尚无同 Turn 权威身份时，
+    // Canonical terminal overlay 继续展示；下一次1.5s poll只重试一次 bridge。
+    const bridgeElapsedMs = Date.now() - Number(recovery.terminalBridgeStartedAt || 0)
+    if (
+      recovery.terminalBridgeAttempts >= TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS
+      || bridgeElapsedMs >= TERMINAL_HISTORY_BRIDGE_MAX_MS
+    ) {
+      exhaustRecoveredTerminalBridge(sessionId, turnId, model, assistantAttached)
+    } else {
+      keepRecoveredTerminalBridgePending(sessionId, turnId, model, assistantAttached)
+    }
+    await scrollBottomIfFollowing()
+    return
+  }
+  releaseRecoveredTurnOwner(sessionId)
+  await scrollBottomIfFollowing()
+}
+
+function breakRecoveredTurn(
+  sessionId: string,
+  turnId: string,
+  detail: string,
+  model: TurnProtocolReadModel | null = streamingCanonicalModel.value,
+) {
+  markRecoveredTurnBroken(sessionId, model, {
+    kind: 'protocol',
+    title: '暂时无法恢复本轮状态',
+    detail,
+  }, turnId)
+}
+
+async function recoverCanonicalTurnReplay(input: {
+  sessionId: string
+  turnId: string
+  liveLease: boolean
+  advertisedSequence?: number
+}) {
+  const { sessionId, turnId, liveLease } = input
+  const recovery = turnReplayRecoveryState(turnId)
+  if (recovery.broken) return
+  const recoveryGuard: TurnRecoveryRequestGuard = {
+    epoch: sessionRequestEpoch,
+    projectId: String(vibeProject.value?.id || ''),
+    sessionId,
+    turnId,
+  }
+  if (recovery.terminalModel) {
+    await bridgeRecoveredTerminalHistory(
+      sessionId, turnId, recovery.terminalModel, recoveryGuard,
+    )
+    return
+  }
+  const advertisedSequence = Number(input.advertisedSequence)
+  if (liveLease && recovery.initialized
+    && Number.isFinite(advertisedSequence)
+    && advertisedSequence <= recovery.latestSequence) {
+    const cachedModel = applyTurnProtocolEvents(recovery.protocolState, [])
+    if (cachedModel.turnId === turnId) {
+      applyCanonicalReadModel(cachedModel)
+      refreshRecoveredAssistantPresentation(sessionId, cachedModel, true)
+    }
+    keepRecoveredTurnPending(sessionId)
     return
   }
 
-  const answers: string[] = []
-  let answerStreamText = ''
-  let answerStreamDoneText = ''
-  for (const event of turn.events || []) {
-    const type = String(event?.type || '')
-    if (type.startsWith('process_')) {
-      consumeProcessEvent(streamingProcess, event)
-      continue
+  let replay: FoundationTurnReplay | null = null
+  let replayedModel: TurnProtocolReadModel | null = null
+  let hasMore = false
+  for (let page = 0; page < TURN_REPLAY_MAX_PAGES_PER_POLL; page += 1) {
+    const requestedSequence = recovery.latestSequence
+    try {
+      replay = await replayFoundationTurn({
+        turn_id: turnId,
+        session_id: sessionId,
+        after_sequence: requestedSequence,
+        last_event_id: requestedSequence > 0 ? recovery.lastEventId : '',
+      })
+    } catch (reason) {
+      if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
+      const failure = turnReplayFailureFacts(reason)
+      const disposition = classifyTurnReplayGap({
+        status: failure.status,
+        code: failure.code,
+        retryable: failure.retryable,
+        liveLease,
+        seenRunning: recovery.seenRunning,
+        leaseMissingForMs: turnReplayLeaseMissingForMs(recovery),
+      })
+      if (disposition === 'retry') {
+        keepRecoveredTurnPending(sessionId)
+      } else {
+        breakRecoveredTurn(
+          sessionId,
+          turnId,
+          failure.status === 403
+            ? '当前用户无权读取这一本轮的 Canonical Journal。'
+            : failure.status === 422
+              ? '权威 Canonical Journal 拒绝了当前 Turn 的身份或增量游标。'
+              : '运行 lease 已结束，但权威 Canonical Journal 在 final grace 内始终不可用。',
+        )
+      }
+      return
     }
-    switch (type) {
-      case 'event_saved': {
-        const saved = event.event as VibeEvent
-        if (event.role === 'user') {
-          const parentId = String((saved as any)?.meta?.parent_event_id || '')
-          if (parentId) streamingContinuationParentId.value = parentId
-        } else if (event.role === 'assistant') {
-          streamingAssistantEventId.value = String(saved?.id || '')
-          streamingAssistantContent.value = ''
-          streamingSources.value = []
-          streamingVerification.value = null
-        }
-        upsertEvent(saved)
-        break
-      }
-      case 'turn_started':
-        activeTurnId.value = String(event.turn_id || turnId)
-        break
-      case 'intent':
-        fndPushStep(legacyIntentStepLabel((event.actions || []).map(String)))
-        break
-      case 'stage':
-        fndPushStep(String(event.message || ''))
-        break
-      case 'answer_start':
-        answerStreamText = ''
-        answerStreamDoneText = ''
-        streamingAssistantContent.value = ''
-        break
-      case 'answer_delta':
-        answerStreamText += String(event.delta || '')
-        streamingAssistantContent.value = answerStreamText
-        break
-      case 'answer_done':
-        answerStreamDoneText = answerStreamText
-        if (answerStreamDoneText) streamingAssistantContent.value = answerStreamDoneText
-        break
-      case 'answer': {
-        const text = String(event.text || '')
-        if (text && answers[answers.length - 1] !== text) answers.push(text)
-        answerStreamDoneText = text || answerStreamDoneText
-        streamingAssistantContent.value = answers.join('\n\n')
-        break
-      }
-      case 'sources':
-        streamingSources.value = Array.isArray(event.items) ? event.items : []
-        break
-      case 'verification':
-        streamingVerification.value = {
-          checked: !!event.checked,
-          clean: event.clean != null ? !!event.clean : !(event.issues && event.issues.length),
-          issues: Array.isArray(event.issues) ? event.issues.map(String) : [],
-        }
-        break
-      case 'clarification': {
-        const q = String(event.question || '').trim()
-        if (q) clarificationActive.value = {
-          question: q,
-          raw: event.raw,
-          pending: Array.isArray(event.pending) ? event.pending : [],
-        }
-        break
-      }
-      case 'done':
-        streamingProcess.status = 'done'
-        break
-      case 'cancelled':
-        streamingProcess.status = 'done'
-        break
-      default:
-        break
+    if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
+    if (replay.projection !== 'journal_delta.v1' || String(replay.turn_id || '') !== turnId) {
+      breakRecoveredTurn(
+        sessionId,
+        turnId,
+        '权威 Journal delta 的投影版本或 Turn 身份不一致，页面已拒绝混合展示。',
+      )
+      return
     }
+    const journal = replay.journal && typeof replay.journal === 'object' ? replay.journal : null
+    const journalEvents = Array.isArray(journal?.events) ? journal.events : []
+    const eventIds = new Set<string>()
+    const deliveredThroughSequence = Number(journal?.delivered_through_sequence)
+    const latestSequence = Number(journal?.latest_sequence)
+    const expectedDeliveredSequence = journalEvents.length
+      ? requestedSequence + journalEvents.length
+      : requestedSequence
+    const eventIdentityInvalid = Number(journal?.after_sequence) !== requestedSequence
+      || !Number.isInteger(deliveredThroughSequence)
+      || deliveredThroughSequence !== expectedDeliveredSequence
+      || !Number.isInteger(latestSequence)
+      || latestSequence < deliveredThroughSequence
+      || journal?.has_more !== (deliveredThroughSequence < latestSequence)
+      || journalEvents.some((event, index) => {
+        const eventId = String(event?.event_id || '')
+        const invalid = !eventId
+          || eventIds.has(eventId)
+          || recovery.seenEventIds.has(eventId)
+          || String(event?.turn_id || '') !== turnId
+          || Number(event?.sequence) !== requestedSequence + index + 1
+        eventIds.add(eventId)
+        return invalid
+      })
+    if (eventIdentityInvalid) {
+      breakRecoveredTurn(
+        sessionId,
+        turnId,
+        '权威 Canonical Journal 的 Turn 身份或增量游标不一致，页面已拒绝混合展示。',
+      )
+      return
+    }
+    if (!journalEvents.length && !recovery.initialized) {
+      const disposition = classifyTurnReplayGap({
+        status: 200,
+        code: 'empty_journal',
+        liveLease,
+        seenRunning: recovery.seenRunning,
+        leaseMissingForMs: turnReplayLeaseMissingForMs(recovery),
+      })
+      if (disposition === 'retry') keepRecoveredTurnPending(sessionId)
+      else breakRecoveredTurn(
+        sessionId,
+        turnId,
+        '权威 Turn replay 在有界恢复窗口内没有提供 Canonical Journal。',
+      )
+      return
+    }
+    if (journalEvents.length) {
+      replayedModel = applyTurnProtocolEvents(recovery.protocolState, journalEvents)
+      for (const event of journalEvents) recovery.seenEventIds.add(String(event.event_id))
+      const newest = journalEvents.at(-1)
+      const nextSequence = Number(newest?.sequence || 0)
+      if (!(nextSequence > requestedSequence)) {
+        breakRecoveredTurn(
+          sessionId,
+          turnId,
+          '权威 Canonical Journal 返回了不前进的增量游标。',
+        )
+        return
+      }
+      recovery.latestSequence = nextSequence
+      recovery.lastEventId = String(newest?.event_id || '')
+      recovery.initialized = true
+    } else {
+      replayedModel = applyTurnProtocolEvents(recovery.protocolState, [])
+    }
+    hasMore = journal?.has_more === true
+    if (!hasMore) break
   }
+  if (!replay || !replayedModel) return
+  if (replayedModel.turnId !== turnId) {
+    breakRecoveredTurn(
+      sessionId,
+      turnId,
+      '权威 Turn replay 的聚合结果与当前 Turn 身份不一致，页面已拒绝混合展示。',
+    )
+    return
+  }
+  applyCanonicalReadModel(replayedModel)
+  if (hasMore) {
+    refreshRecoveredAssistantPresentation(sessionId, replayedModel, true)
+    keepRecoveredTurnPending(sessionId)
+    return
+  }
+  const disposition = classifyTurnRecoveryReplay({
+    expectedTurnId: turnId,
+    replayTurnId: replay.turn_id,
+    state: replay.state || replayedModel.state,
+    terminal: replay.terminal || replayedModel.terminal,
+  })
+  refreshRecoveredAssistantPresentation(sessionId, replayedModel, disposition === 'pending')
+  if (disposition === 'pending') {
+    activeTurnId.value = turnId
+    activeTurnSessionId.value = sessionId
+    recoveredTurnId.value = turnId
+    keepRecoveredTurnPending(sessionId)
+    return
+  }
+  if (disposition === 'missing_terminal') {
+    markRecoveredTurnBroken(sessionId, replayedModel, {
+      kind: 'protocol',
+      title: '本轮结果尚未确认',
+      detail: '权威 Turn replay 已结束，但仍没有正式 terminal；当前内容不会被标记为成功。',
+    }, turnId)
+    return
+  }
+
+  // terminal/waiting_user 已由权威 replay 证明；history 只负责刷新 timeline，
+  // 即使 Session 投影慢一拍，也用 replay 模型原地桥接同一气泡后再释放 owner。
+  recovery.terminalModel = replayedModel
+  await bridgeRecoveredTerminalHistory(sessionId, turnId, replayedModel, recoveryGuard)
 }
 
 async function recoverRunningTurnForSession(
@@ -1604,59 +3066,66 @@ async function recoverRunningTurnForSession(
 ) {
   if (!sessionId || !vibeProject.value?.id) return
   const turn = snapshot.find(item => String(item.session_id || '') === sessionId) || null
-  if (!turn) {
-    setSessionRunning(sessionId, false)
+  if (turn) {
+    setSessionRunning(sessionId, true)
+    // 当前窗口自己的 SSE 已实时驱动界面，禁止迟到 replay 覆盖同一轮实时 reducer。
     if (
-      activeSessionId.value === sessionId
+      foundationBusy.value
       && streamingOwnerSessionId.value === sessionId
-      && recoveredTurnId.value
-    ) {
-      stopElapsedTicker()
-      activeTurnId.value = ''
-      activeTurnSessionId.value = ''
-      recoveredTurnId.value = ''
-      streamingOwnerSessionId.value = ''
-      streamingAssistantEventId.value = ''
-      clearStreamingAssistant()
-      resetProcessState(streamingProcess)
-      events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
-      restoreClarificationFromEvents()
+      && sendingSessionIds.value.includes(sessionId)
+    ) return
+    adoptRunningTurnLease(turn)
+    if (turn.replay_ready === false) {
+      keepRecoveredTurnPending(sessionId)
+      return
     }
-    return
-  }
-  setSessionRunning(sessionId, true)
-  // 当前窗口自己的 SSE 已实时驱动界面，不用再拿同一份运行快照覆盖一次。
-  if (
-    foundationBusy.value
-    && streamingOwnerSessionId.value === sessionId
-    && sendingSessionIds.value.includes(sessionId)
-  ) return
-  replayRunningTurn(turn)
-  if (turn.done || turn.failed) {
-    setSessionRunning(sessionId, false)
-    stopElapsedTicker()
-    activeTurnId.value = ''
-    activeTurnSessionId.value = ''
-    recoveredTurnId.value = ''
-    streamingOwnerSessionId.value = ''
-    streamingAssistantEventId.value = ''
-    clearStreamingAssistant()
-    resetProcessState(streamingProcess)
-    events.value = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
-    restoreClarificationFromEvents()
+    await recoverCanonicalTurnReplay({
+      sessionId,
+      turnId: String(turn.turn_id || ''),
+      liveLease: true,
+      advertisedSequence: turn.last_sequence,
+    })
     await scrollBottomIfFollowing()
     return
   }
-  await scrollBottomIfFollowing()
+
+  const ownsRecoverableTurn = (
+    activeSessionId.value === sessionId
+    && streamingOwnerSessionId.value === sessionId
+    && (recoveredTurnId.value || activeTurnId.value || streamingTransportNotice.value)
+  )
+  if (!ownsRecoverableTurn) {
+    setSessionRunning(sessionId, false)
+    return
+  }
+  const turnId = String(
+    recoveredTurnId.value || activeTurnId.value || streamingCanonicalModel.value?.turnId || '',
+  )
+  if (!turnId) {
+    breakRecoveredTurn(
+      sessionId,
+      '',
+      '运行快照已结束，但页面没有可验证的 Turn 身份，无法读取权威 Canonical Journal。',
+    )
+    return
+  }
+  // live lease 先消失、权威 Journal 稍后 terminalize 是合法收口阶段。
+  // 继续使用同一个增量 reducer，绝不回退会话文本或重新下载完整 Journal。
+  const recovery = turnReplayRecoveryState(turnId)
+  if (recovery.leaseMissingAt === null) recovery.leaseMissingAt = Date.now()
+  keepRecoveredTurnPending(sessionId)
+  await recoverCanonicalTurnReplay({ sessionId, turnId, liveLease: false })
 }
 
 function newConversation() {
   sessionRequestEpoch += 1
+  resetTimelineNavigation()
+  const leavingSession = activeSessionId.value
   activeSessionId.value = ''
+  if (leavingSession) activateWorkspaceConversation(workspaceProjectContextId(), '')
   events.value = []
   sessionFilesLoading.value = false
   sessionFilesError.value = ''
-  liveLogs.value = []
   processExpanded.value = false
   clarificationActive.value = null
   stopElapsedTicker()
@@ -1670,28 +3139,46 @@ function newConversation() {
 
 async function deleteSession(sessionId: string) {
   if (!sessionId || deletingSessionId.value || sending.value) return
+  const targetSession = sessions.value.find(item => item.id === sessionId)
+  const targetTitle = targetSession ? sessionDisplayTitle(targetSession) : '这个会话'
   try {
-    await ElMessageBox.confirm('删除后这个会话不会再出现在列表中。', '删除会话？', {
-      confirmButtonText: '删除',
+    await ElMessageBox.confirm(h('div', { class: 'vibe-delete-dialog-copy' }, [
+      h('p', { class: 'vibe-delete-dialog-session', title: targetTitle }, targetTitle),
+      h('p', { class: 'vibe-delete-dialog-hint' }, '删除后将从会话列表中移除，且无法恢复。'),
+    ]), '删除这个会话？', {
+      confirmButtonText: '确认删除',
       cancelButtonText: '取消',
-      type: 'warning',
+      customClass: 'vibe-delete-dialog',
+      modalClass: 'vibe-delete-dialog-overlay',
+      confirmButtonClass: 'vibe-delete-confirm',
+      cancelButtonClass: 'vibe-delete-cancel',
+      showClose: false,
+      closeOnClickModal: false,
       distinguishCancelAndClose: true,
     })
   } catch {
     return
   }
   deletingSessionId.value = sessionId
-  const deletingActive = activeSessionId.value === sessionId
+  const deletionProjectId = workspaceProjectContextId()
   try {
     await deleteVibeSession(sessionId)
     clearSessionDraft(sessionId)
-    if (deletingActive) {
+    const currentDeletionProjectId = workspaceProjectContextId()
+    const deletingCurrentProject = currentDeletionProjectId === deletionProjectId
+    const deletingCurrentSession = deletedConversationIsStillActive(
+      deletionProjectId,
+      currentDeletionProjectId,
+      sessionId,
+      activeSessionId.value,
+    )
+    if (deletingCurrentSession) {
       sessionRequestEpoch += 1
       activeSessionId.value = ''
+      activateWorkspaceConversation(deletionProjectId, '')
       events.value = []
       sessionFilesLoading.value = false
       sessionFilesError.value = ''
-      liveLogs.value = []
       processExpanded.value = false
       stopElapsedTicker()
       recoveredTurnId.value = ''
@@ -1700,7 +3187,11 @@ async function deleteSession(sessionId: string) {
       resetProcessState(streamingProcess)
       currentView.value = 'conversation'
     }
-    await refreshState({ autoOpenLatest: deletingActive })
+    discardWorkspaceConversation(deletionProjectId, sessionId)
+    // 删除期间若已切到别的项目，旧请求只能清理旧项目缓存，不能刷新或改写新项目 UI。
+    if (!deletingCurrentProject) return
+    const refreshContextEpoch = projectContextEpoch
+    await refreshState({ autoOpenLatest: deletingCurrentSession }, refreshContextEpoch)
   } finally {
     deletingSessionId.value = ''
   }
@@ -1709,14 +3200,53 @@ async function deleteSession(sessionId: string) {
 async function ensureSession() {
   if (activeSessionId.value) return activeSessionId.value
   if (!vibeProject.value) throw new Error('Vibe 项目未初始化')
-  const session = await createVibeSession(vibeProject.value.id, {
+  const creationProjectId = workspaceProjectContextId()
+  const creationProjectEpoch = projectContextEpoch
+  const creationSessionEpoch = sessionRequestEpoch
+  const creationDraftKey = workspaceViewerConversationKey(creationProjectId, '')
+  const creationWorkspaceSnapshot = snapshotWorkspaceViewerConversation(
+    workspaceTabs.value,
+    activeWorkspaceTabId.value,
+    workspaceWindowRequestedOpen.value,
+  )
+  const ownerProjectId = vibeProject.value.id
+  const session = await createVibeSession(ownerProjectId, {
     title: '新的需求对话',
     llm_provider_id: selectedLlmProviderId.value || undefined,
   })
+  const creationContextStillActive = workspaceDraftCreationIsStillActive({
+    creationProjectEpoch,
+    currentProjectEpoch: projectContextEpoch,
+    creationSessionEpoch,
+    currentSessionEpoch: sessionRequestEpoch,
+    activeSessionId: activeSessionId.value,
+    activeConversationKey: workspaceConversationStore.currentKey,
+    creationDraftKey,
+  })
+  if (!creationContextStillActive) {
+    const sessionKey = workspaceViewerConversationKey(creationProjectId, session.id)
+    const savedDraft = workspaceConversationStore.currentKey === creationDraftKey
+      ? null
+      : workspaceConversationStore.read(creationDraftKey)
+    const saved = savedDraft || creationWorkspaceSnapshot
+    workspaceConversationStore.write(sessionKey, saved)
+    if (savedDraft) workspaceConversationStore.drop(creationDraftKey)
+    if (
+      workspaceProjectContextId() === creationProjectId
+      && !sessions.value.some(item => item.id === session.id)
+    ) sessions.value.unshift(session)
+    return session.id
+  }
+
+  adoptWorkspaceDraftForSession(creationProjectId, session.id)
   activeSessionId.value = session.id
   selectedLlmProviderId.value = session.llm_provider_id || selectedLlmProviderId.value
-  await refreshState()
-  if (!sessions.value.some(item => item.id === session.id)) {
+  await refreshState({}, creationProjectEpoch)
+  if (
+    creationProjectEpoch === projectContextEpoch
+    && activeSessionId.value === session.id
+    && !sessions.value.some(item => item.id === session.id)
+  ) {
     sessions.value.unshift(session)
   }
   return session.id
@@ -1820,6 +3350,12 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     return undefined
   })
   if (attachmentBound || turnOutcome?.userEventSaved) return
+  if (turnOutcome?.unresolved) {
+    // 连接结束但后端业务状态未知时，删除私有资源可能破坏仍在恢复的真实请求。
+    // 先保留服务端资源，等待 running snapshot / replay 给出正式结果。
+    ElMessage.warning('连接已结束，正在恢复本轮状态；附件暂不清理，请勿重复发送')
+    return
+  }
   restoreComposerAttachments(fileList)
   const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
   setDraftByKey(sessionDraftKey(uploadSessionId), base)
@@ -1942,26 +3478,8 @@ function lastClarificationAssistantId(): string {
   return ''
 }
 
-// ===== foundation 新管线灰度通道 =====
-// 复用现有 ProcessDisclosure/streaming 渲染骨架。消息由后端在 turn 流中持久化
-// 并以 event_saved 推回（B 配套）；本地合成事件仅作持久化失败时的兜底呈现。
-
-function fndPushStep(text: string) {
-  streamingProcess.steps.push({ kind: 'message', key: `fnd-${Date.now()}-${streamingProcess.steps.length}`, text })
-}
-
-
-function fndSyntheticEvent(role: 'user' | 'assistant', content: string, mode: string, meta: Record<string, any> = {}, attachments: VibeAttachment[] = []): VibeEvent {
-  return {
-    id: `fnd-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    role,
-    content,
-    attachments,
-    created_at: new Date().toISOString(),
-    mode,
-    meta: { foundation: true, ...meta },
-  } as unknown as VibeEvent
-}
+// ===== foundation 正式对话通道 =====
+// event_saved 是会话消息的唯一入口；过程、答案、来源和终态只由 Canonical Journal 投影。
 
 function attachmentName(file: Partial<VibeAttachment> | any) {
   return String(file?.name || file?.filename || '未命名文件')
@@ -1998,7 +3516,7 @@ function attachmentSizeLabel(size?: number) {
 
 function attachmentMeta(file: Partial<VibeAttachment> | any) {
   const parts = [attachmentSizeLabel(file?.size), file?.mime ? String(file.mime) : '']
-  return parts.filter(Boolean).join(' · ') || '点击下载'
+  return parts.filter(Boolean).join(' · ') || '点击查看'
 }
 
 function eventAttachments(event: Partial<VibeEvent> | any): VibeAttachment[] {
@@ -2031,47 +3549,6 @@ function toggleAttachmentsExpanded(eventId: string) {
   } else {
     expandedAttachmentEventIds.value = [...expandedAttachmentEventIds.value, id]
   }
-}
-
-async function downloadAttachment(file: Partial<VibeAttachment> | any) {
-  const name = attachmentName(file)
-  const url = String(file?.download_url || '').trim()
-  // 正文不再随 events 列表返回，改为按需请求。必须走 harnessBlobRequest
-  // （带鉴权头），window.open 不带 Authorization，会 401。
-  if (url) {
-    try {
-      const result = await downloadVibeSessionEventAttachment('', '', 0, url)
-      saveAttachmentBlob(result.blob, result.filename || name)
-      return
-    } catch {
-      // 落到下面的内联兜底（老数据仍可能带 content/text）。
-    }
-  }
-  const content = String(file?.content ?? file?.text ?? '')
-  if (!content) return
-  const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
-  saveAttachmentBlob(blob, name)
-}
-
-function saveAttachmentBlob(blob: Blob, filename: string) {
-  const objectUrl = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = objectUrl
-  link.download = filename || 'attachment'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
-}
-
-function fndSerializeSteps(): any[] {
-  return streamingProcess.steps
-    .filter(s => s.kind === 'message')
-    .map(s => ({ kind: 'message', text: (s as any).text }))
-}
-
-function legacyIntentStepLabel(actions: string[]) {
-  return actions.length ? `本轮处理：${actions.join('＋')}` : '本轮处理：待判断'
 }
 
 interface SendFoundationTurnOptions {
@@ -2117,31 +3594,72 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   streamingContinuationParentId.value = contParent  // 必须在 clearStreamingAssistant 之后（它会清空）
   resetProcessState(streamingProcess)
   streamingProcess.status = 'running'
-  // 续跑轮：用户的回答=对反问的"选择回复"，挂到反问之下、不再单列成气泡。
-  events.value.push(fndSyntheticEvent('user', content, 'entry',
-    contParent ? { confirmation_reply: true, parent_event_id: contParent } : {},
-    attachments))
+  pendingUserSubmissionText.value = contParent ? '' : content
   setDraftByKey(originDraftKey, '')
   resizeDraft()
   scrollBottom()
 
-  let assistantContent = ''
   let actions: string[] = []
-  let recallSources: any[] = []
-  let recallVerification: any | null = null
-  const answers: string[] = []
-  let answerStreamText = ''
-  let answerStreamDoneText = ''
-  let failed = ''
+  let transportFailure = ''
   let sessionId = ''
   let turnSessionId = ''
   let userEventSaved = false
   let assistantEventSaved = false
+  let turnStartedId = ''
+  // send 闭包内持有本轮正式气泡三重身份；全局 ref 会在切会话/恢复时重置，不能单独作为回写依据。
+  let assistantPresentationEventId = ''
+  let assistantPresentationSessionId = ''
+  let assistantPresentationTurnId = ''
   let turnCancelled = false
   const canonicalState: TurnProtocolState = createTurnProtocolState()
   let canonicalSeen = false
   let canonicalModel: TurnProtocolReadModel | null = null
+  const currentCanonicalModel = (): TurnProtocolReadModel | null => canonicalModel
   let knowledgeCommitObserved = false
+  let unresolved = false
+
+  const refreshSavedAssistantPresentation = (
+    model: TurnProtocolReadModel,
+    live: boolean,
+    terminalPending: boolean,
+  ) => {
+    if (!live || !turnSessionId) return
+    const targetSessionId = assistantPresentationSessionId || turnSessionId
+    const targetTurnId = assistantPresentationTurnId || turnStartedId
+    if (targetSessionId !== turnSessionId || activeSessionId.value !== targetSessionId) return
+    if (targetTurnId && model.turnId !== targetTurnId) return
+    if (turnStartedId && model.turnId !== turnStartedId) return
+    if (!assistantPresentationTurnId) assistantPresentationTurnId = model.turnId
+    const refreshed = refreshAssistantTurnPresentation(events.value, {
+      assistantEventId: assistantPresentationEventId || streamingAssistantEventId.value,
+      sessionId: targetSessionId,
+      model,
+      observedDurationMs: Math.max(streamingElapsedMs.value, Date.now() - startedAt),
+      terminalPending,
+    })
+    if (!refreshed) return
+    streamingAssistantEventId.value = String(refreshed.id || streamingAssistantEventId.value)
+    upsertEvent(refreshed as VibeEvent)
+  }
+
+  const acceptCanonicalModel = (model: TurnProtocolReadModel, live: boolean) => {
+    canonicalSeen = true
+    canonicalModel = model
+    actions = model.actions
+    turnCancelled = model.state === 'cancelled'
+    if (hasKnowledgeWriteCommit(model) && !knowledgeCommitObserved) {
+      knowledgeCommitObserved = true
+      if (live) void loadCurrentKbStats(project)
+    }
+    if (live) {
+      applyCanonicalReadModel(model)
+      refreshSavedAssistantPresentation(
+        model,
+        live,
+        !model.terminal && model.state !== 'waiting_user',
+      )
+    }
+  }
 
   const onEvent = (event: any) => {
     // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
@@ -2149,119 +3667,74 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     // 后端始终持久化，切回本轮会话会通过 event_saved / 重载补全。
     const live = !turnSessionId || activeSessionId.value === turnSessionId
     const type = String(event?.type || '')
-    if (hasTurnProtocolPacket(event)) {
-      canonicalSeen = true
-      canonicalModel = applyTurnProtocolPacket(canonicalState, event.turn_protocol)
-      actions = canonicalModel.actions
-      recallSources = canonicalModel.sources
-      recallVerification = canonicalModel.verification
-      failed = canonicalModel.failed
-      turnCancelled = canonicalModel.state === 'cancelled'
-      if (hasKnowledgeWriteCommit(canonicalModel) && !knowledgeCommitObserved) {
-        knowledgeCommitObserved = true
-        if (live) void loadCurrentKbStats(project)
-      }
-      if (live) applyCanonicalReadModel(canonicalModel)
-      // 外层 SSE 在阶段 5 只承担连接、turn id 和持久化通知；其余语义不得再解释第二次。
-      if (!['turn_started', 'event_saved'].includes(type)) {
-        if (live) scrollBottomIfFollowing()
-        return
-      }
+    const packetProvided = hasTurnProtocolPacket(event)
+    if (packetProvided) {
+      acceptCanonicalModel(applyTurnProtocolPacket(canonicalState, event.turn_protocol), live)
     }
-    if (type.startsWith('process_')) {
-      if (live) { consumeProcessEvent(streamingProcess, event); scrollBottomIfFollowing() }
-      return
-    }
+    // 外层 SSE 只承担 turn 身份和持久化通知；回答、过程、来源、反问与终态均由上面的 Canonical reducer 投影。
     switch (type) {
       case 'turn_started':
         // T26：后端本轮令牌 id——停止按钮凭它调 cancel 接口
-        activeTurnId.value = String(event.turn_id || '')
-        activeTurnSessionId.value = turnSessionId
-        break
-      case 'cancelled':
-        turnCancelled = true
-        if (live) fndPushStep('已停止本轮处理')
+        turnStartedId = String(event.turn_id || '')
+        // turn_started 与 running lease 都是可信 Turn 身份来源。若 SSE 随后断开且
+        // lease 恰好先消失，仍必须进入 final grace，而不是把首个暂态 404 当永久故障。
+        if (turnStartedId) turnReplayRecoveryState(turnStartedId).seenRunning = true
+        if (live) {
+          activeTurnId.value = turnStartedId
+          activeTurnSessionId.value = turnSessionId
+        }
         break
       case 'event_saved': {
         // 后端已把本轮消息写进会话历史。标志位无论是否在场都要置（兜底/重载判定要用）；
         // 只有【当前正看本轮会话】时才把服务器事件写进 events.value（避免串到别的会话）。
         const saved = event.event as VibeEvent
+        let displayEvent = saved
+        // event_saved 的 Session row 是轻量投影；完整实时语义来自此前持续归并的
+        // Canonical 增量包。若旧服务直接在 meta 带日志，仍合进同一个 reducer。
+        if (!packetProvided) {
+          const persistedProtocolEvents = protocolEventsFromMeta((saved as any)?.meta)
+          if (persistedProtocolEvents.length) {
+            acceptCanonicalModel(applyTurnProtocolEvents(canonicalState, persistedProtocolEvents), live)
+          }
+        }
         if (event.role === 'user') {
           if (!userEventSaved) {
             userEventSaved = true
             opts?.onUserEventSaved?.()
           }
-          if (live) events.value = events.value.filter(e => !String(e.id).startsWith('fnd-user-'))
         } else if (event.role === 'assistant') {
           assistantEventSaved = true
+          assistantPresentationEventId = String(saved?.id || '')
+          assistantPresentationSessionId = turnSessionId
+          assistantPresentationTurnId = String(canonicalModel?.turnId || turnStartedId || '')
+          const presentationIdentityMatches = !canonicalModel?.turnId
+            || !turnStartedId
+            || canonicalModel.turnId === turnStartedId
+          displayEvent = attachLocalTurnPresentation(
+            saved as unknown as Record<string, any>,
+            presentationIdentityMatches ? canonicalModel : null,
+            Math.max(streamingElapsedMs.value, Date.now() - startedAt),
+            {
+              terminalPending: !!canonicalModel
+                && !canonicalModel.terminal
+                && canonicalModel.state !== 'waiting_user',
+            },
+          ) as VibeEvent
           // 0704 防闪:持久化气泡即将插入列表,同帧清掉流式气泡——否则"流式份+持久份"双显一瞬,
           // finally 再清时肉眼看到答案闪一下/整块跳动。
           if (live) {
-            streamingAssistantEventId.value = String(saved?.id || '')
+            streamingAssistantEventId.value = assistantPresentationEventId
             streamingAssistantContent.value = ''
             streamingSources.value = []
             streamingVerification.value = null
+            streamingCanonicalModel.value = null
+            streamingTransportNotice.value = null
           }
         }
-        if (live) upsertEvent(saved)
+        if (live) upsertEvent(displayEvent)
+        if (event.role === 'user') clearPendingUserSubmission()
         break
       }
-      case 'stage':
-        if (live) fndPushStep(String(event.message || ''))
-        break
-      case 'intent':
-        actions = (event.actions || []).map(String)
-        if (live) fndPushStep(legacyIntentStepLabel(actions))
-        break
-      case 'answer_start':
-        answerStreamText = ''
-        answerStreamDoneText = ''
-        if (live) streamingAssistantContent.value = ''
-        break
-      case 'answer_delta':
-        answerStreamText += String(event.delta || '')
-        if (live) streamingAssistantContent.value = answerStreamText
-        break
-      case 'answer_done':
-        answerStreamDoneText = answerStreamText
-        if (live && answerStreamDoneText) streamingAssistantContent.value = answerStreamDoneText
-        break
-      case 'answer': {
-        const text = String(event.text || '')
-        if (text && answers[answers.length - 1] !== text) answers.push(text)
-        answerStreamDoneText = text || answerStreamDoneText
-        if (live) streamingAssistantContent.value = answers.join('\n\n')
-        break
-      }
-      case 'clarification': {
-        // 录入纪律反问（"这段要不要记进知识库"拿不准）→ 输入框切到询问模式（选项）。仅在场时才弹。
-        const q = String(event.question || '').trim()
-        // pending=挂起草稿：用户回答时回传后端 → 续跑同一思考（不另起新轮、不丢上下文）。
-        if (q && live) clarificationActive.value = {
-          question: q, raw: event.raw,
-          pending: Array.isArray((event as any).pending) ? (event as any).pending : [],
-        }
-        break
-      }
-      case 'sources': {
-        // T1 溯源：本轮答案的来源段；流式即时挂出，并留给兜底合成事件。
-        recallSources = Array.isArray(event.items) ? event.items : []
-        if (live) streamingSources.value = recallSources
-        break
-      }
-      case 'verification': {
-        // T8 后端核验：{checked, issues, clean}
-        recallVerification = (event && typeof event === 'object') ? {
-          checked: !!event.checked,
-          clean: event.clean != null ? !!event.clean : !(event.issues && event.issues.length),
-          issues: Array.isArray(event.issues) ? event.issues.map(String) : [],
-        } : null
-        if (live) streamingVerification.value = recallVerification
-        break
-      }
-      case 'error':
-        failed = String(event.detail || '执行失败')
-        break
       default:
         break
     }
@@ -2269,71 +3742,70 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   }
 
   try {
-    try {
-      sessionId = await ensureSession()
-      if (!contParent) void autoNameSessionFromFirstInput(sessionId, content)
-    } catch {
-      sessionId = '' // 会话不可用：本轮退回无持久化的旧行为，不阻塞对话
-    }
-    turnSessionId = sessionId || activeSessionId.value  // 锚定本轮归属的会话（#2 切换查看用）
+    sessionId = await ensureSession()
+    if (!contParent) void autoNameSessionFromFirstInput(sessionId, content)
+    turnSessionId = sessionId
     activeTurnSessionId.value = turnSessionId
     markSessionSending(turnSessionId, true)
     setSessionRunning(turnSessionId, true)
     if (activeSessionId.value === turnSessionId) streamingOwnerSessionId.value = turnSessionId
-    await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
+    const transportResult: { closeReason: 'done_signal' | 'eof' | 'error_event' } = await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
       onEvent,
-      onError(message: string) { failed = failed || message },
+      onError(message: string) { transportFailure = transportFailure || message },
     })
-    if (!failed) {
-      assistantContent = canonicalSeen && canonicalModel
-        ? canonicalModel.content
-        : (answers.join('\n\n') || answerStreamDoneText)
+    if (transportResult.closeReason === 'error_event' && !transportFailure) {
+      transportFailure = 'SSE 返回了传输错误事件'
     }
   } catch (error) {
-    failed = failed || (error instanceof Error ? error.message : String(error))
+    transportFailure = transportFailure || (error instanceof Error ? error.message : String(error))
   } finally {
+    const settledCanonicalModel = currentCanonicalModel()
+    const canonicalSettled = !!settledCanonicalModel?.terminal || settledCanonicalModel?.state === 'waiting_user'
+    const canonicalFailed = settledCanonicalModel?.state === 'failed'
+    unresolved = !canonicalSettled
     markSessionSending(turnSessionId, false)
-    setSessionRunning(turnSessionId, false)
+    setSessionRunning(turnSessionId, unresolved)
     const ownsVisibleStream = !!turnSessionId
       && streamingOwnerSessionId.value === turnSessionId
     if (ownsVisibleStream) {
       stopElapsedTicker()
       streamingProcess.status = 'done'
       streamingProcess.durationMs = Date.now() - startedAt
+      if (unresolved) {
+        streamingTransportNotice.value = canonicalSeen
+          ? {
+              kind: 'connection',
+              title: '连接已结束，正在恢复状态',
+              detail: transportFailure || '尚未收到后端正式 terminal；页面会等待运行快照或会话 replay 恢复。',
+            }
+          : {
+              kind: 'protocol',
+              title: '未收到 Canonical Journal',
+              detail: transportFailure || '本轮连接已结束，但没有可验证的规范事件；页面不会生成本地答案。',
+            }
+        void refreshProjectRunningTurns()
+      } else if (!assistantEventSaved) {
+        streamingTransportNotice.value = {
+          kind: 'connection',
+          title: '本轮结果尚未确认保存',
+          detail: transportFailure || '已收到后端正式状态，但尚未收到 assistant event_saved；当前结果不会伪装成已持久化记录。',
+        }
+      }
     }
-    if (activeTurnSessionId.value === turnSessionId) {
+    if (canonicalSettled && activeTurnSessionId.value === turnSessionId) {
       activeTurnId.value = ''
       activeTurnSessionId.value = ''
       cancelRequested.value = false
     }
-    if (failed) {
-      assistantContent = `本轮处理失败：${failed}`
-      // 用户可能在请求期间切到了别的会话；失败内容必须回到本轮所属草稿，不能覆盖当前会话。
+    if (transportFailure && !userEventSaved) {
+      clearPendingUserSubmission()
+      // 请求没有形成正式 user event 时才恢复草稿；已经持久化的请求不能自动回填，避免误触重复提交。
       setDraftByKey(turnSessionId ? sessionDraftKey(turnSessionId) : originDraftKey, content)
       resizeDraft()
+      if (!turnSessionId) ElMessage.error(`本轮未发送：${transportFailure}`)
     }
-    if (!assistantEventSaved && (assistantContent || failed) && !turnCancelled
-      && (!turnSessionId || activeSessionId.value === turnSessionId)) {
-      // 兜底：后端没存上（无会话/持久化失败）才用本地合成事件呈现本轮回答；
-      // 若用户已切去别的会话查看，则不把本轮兜底气泡写进所看会话（避免串会话）。
-      events.value.push(fndSyntheticEvent('assistant', assistantContent, actions.includes('save') ? 'entry' : 'chat', {
-        process: fndSerializeSteps(),
-        process_summary: { duration_ms: Date.now() - startedAt },
-        ...(canonicalSeen ? {
-          turn_protocol: {
-            schema_version: 2,
-            events: [...canonicalState.events.values()].sort((a, b) => a.sequence - b.sequence),
-            state: canonicalModel?.state,
-            terminal: canonicalModel?.terminal || null,
-          },
-        } : {}),
-        ...(recallSources.length ? { sources: recallSources } : {}),
-        ...(recallVerification ? { verification: recallVerification } : {}),
-        // 续跑兜底：嵌套挂到反问之下，保持"同一条思考"的视觉（与后端持久化路径一致）。
-        ...(contParent ? { continuation_context: { parent_event_id: contParent } } : {}),
-      }))
-    }
-    if (ownsVisibleStream) {
+    if (canonicalSettled && !userEventSaved) clearPendingUserSubmission()
+    if (ownsVisibleStream && assistantEventSaved && canonicalSettled) {
       streamingOwnerSessionId.value = ''
       clearStreamingAssistant()
       resetProcessState(streamingProcess)
@@ -2341,8 +3813,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
     // 后面的服务器刷新是后台事，不该让按钮继续转。
     foundationBusy.value = false
-    streamingAssistantEventId.value = ''
-    if (!failed && !turnCancelled
+    if (ownsVisibleStream) streamingAssistantEventId.value = ''
+    if (!canonicalFailed && !turnCancelled && canonicalSettled
       && (knowledgeCommitObserved || turnMayChangeKnowledge(actions, applyEdit))) {
       void loadCurrentKbStats(project)
     }
@@ -2356,11 +3828,20 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
         const sameIds = fresh.length === events.value.length
           && fresh.every((e, i) => e.id === events.value[i]?.id)
         if (!sameIds) events.value = fresh
+        else reconcileAuthoritativeEventProjections(fresh)
       } catch { /* 刷新失败不影响本轮结果展示 */ }
     }
     await scrollBottomIfFollowing()
   }
-  return { userEventSaved, failed: !!failed, turnCancelled }
+  const finalCanonicalModel = currentCanonicalModel()
+  return {
+    userEventSaved,
+    failed: !!transportFailure
+      || finalCanonicalModel?.state === 'failed'
+      || (!finalCanonicalModel?.terminal && finalCanonicalModel?.state !== 'waiting_user'),
+    turnCancelled,
+    unresolved,
+  }
 }
 
 function handleDraftKeydown(event: KeyboardEvent) {
@@ -2386,6 +3867,46 @@ function upsertEvent(event?: VibeEvent) {
   events.value = sortEvents(events.value)
 }
 
+function eventProtocolProjectionSignature(event: any): string {
+  if (event?.turn?.schema === 'session_turn_public.v1') {
+    return `compact:${JSON.stringify([
+      event.turn_id,
+      event.turn,
+      event.content,
+      event.attachments,
+      event.meta,
+    ])}`
+  }
+  const protocol = event?.meta?.turn_protocol
+  const rows = protocol?.events
+  if (!Array.isArray(rows) || !rows.length) return ''
+  const last = rows[rows.length - 1]
+  return [
+    rows.length,
+    String(last?.event_id || ''),
+    String(last?.event_type || ''),
+    String(protocol?.state || ''),
+    String(protocol?.terminal || ''),
+  ].join(':')
+}
+
+/**
+ * event_saved 先插入同 ID 的轻量行；历史查询稍后返回完整权威投影。
+ * 只升级发生语义变化的对象，其余对象沿用原引用，避免整段回答重新渲染闪烁。
+ */
+function reconcileAuthoritativeEventProjections(fresh: VibeEvent[]) {
+  let changed = false
+  const next = events.value.map((current, index) => {
+    const incoming = fresh[index]
+    if (!incoming || incoming.id !== current.id) return current
+    const incomingSignature = eventProtocolProjectionSignature(incoming)
+    if (!incomingSignature || incomingSignature === eventProtocolProjectionSignature(current)) return current
+    changed = true
+    return incoming
+  })
+  if (changed) events.value = next
+}
+
 function sortEvents(rows: VibeEvent[]) {
   return [...rows].sort(compareEvents)
 }
@@ -2394,19 +3915,13 @@ function clearStreamingAssistant() {
   streamingAssistantContent.value = ''
   streamingSources.value = []
   streamingVerification.value = null
+  streamingCanonicalModel.value = null
+  streamingTransportNotice.value = null
   streamingContinuationParentId.value = ''
 }
 
-function addLog(type: string, message: string) {
-  const normalizedType = String(type || '过程')
-  const normalizedMessage = String(message || '')
-  const last = liveLogs.value[liveLogs.value.length - 1]
-  if (last?.type === normalizedType && last.message === normalizedMessage) return
-  liveLogs.value.push({ id: `${Date.now()}-${Math.random()}`, type: normalizedType, message: normalizedMessage })
-  if (liveLogs.value.length > MAX_LIVE_LOGS) {
-    liveLogs.value = liveLogs.value.slice(-MAX_LIVE_LOGS)
-  }
-  scrollProcessBottom()
+function clearPendingUserSubmission() {
+  pendingUserSubmissionText.value = ''
 }
 
 function buildConversationRailItems() {
@@ -2529,6 +4044,10 @@ function comparableMessageText(value: any): string {
 const turnProtocolMetaCache = new WeakMap<object, { signature: string; model: TurnProtocolReadModel }>()
 
 function eventTurnProtocol(event: any): TurnProtocolReadModel | null {
+  const local = localTurnPresentation(event)
+  if (local) return local.model
+  const compact = readSessionTurnPublic(event)
+  if (compact) return compact
   const meta = event?.meta
   const rows = meta?.turn_protocol?.events
   if (!meta || typeof meta !== 'object' || !Array.isArray(rows) || !rows.length) return null
@@ -2541,9 +4060,70 @@ function eventTurnProtocol(event: any): TurnProtocolReadModel | null {
   return model
 }
 
+function outcomeNoticeProps(outcome?: TurnProtocolOutcome | null): TurnOutcomeNoticeModel | null {
+  if (!outcome) return null
+  return {
+    kind: outcome.kind,
+    title: outcome.title,
+    detail: outcome.detail,
+    reason: outcome.reason,
+    partial: outcome.partial,
+  }
+}
+
+function eventOutcomeNotice(event: any): TurnOutcomeNoticeModel | null {
+  const local = localTurnPresentation(event)
+  const model = eventTurnProtocol(event)
+  const canonical = outcomeNoticeProps(model?.outcome)
+  if (canonical) return canonical
+  if (shouldShowMissingTerminalNotice(model, local, eventTurnIsStillActive(event, model))) {
+    return {
+      kind: 'protocol',
+      title: '本轮结果尚未确认',
+      detail: '会话记录中没有正式 terminal；本条已有内容不能视为完整成功答案。',
+    }
+  }
+  if (event?.role === 'assistant' && (event?.meta?.failed === true || event?.meta?.message_kind === 'error')) {
+    return {
+      kind: 'failed',
+      title: '本轮处理失败',
+      detail: String(event?.content || ''),
+      reason: String(event?.meta?.failure_reason || ''),
+    }
+  }
+  return null
+}
+
+function eventTurnIsStillActive(event: any, model: TurnProtocolReadModel | null): boolean {
+  const sessionId = String(event?.session_id || '')
+  const turnId = String(model?.turnId || '')
+  if (!sessionId || !turnId || sessionId !== activeSessionId.value) return false
+  if (streamingOwnerSessionId.value !== sessionId || activeTurnSessionId.value !== sessionId) return false
+  const sameTurn = [
+    activeTurnId.value,
+    recoveredTurnId.value,
+    streamingCanonicalModel.value?.turnId,
+  ].some(value => String(value || '') === turnId)
+  if (!sameTurn) return false
+  return foundationBusy.value
+    || sendingSessionIds.value.includes(sessionId)
+    || runningSessionIds.value.includes(sessionId)
+    || streamingProcess.status === 'running'
+}
+
+function threadOutcomeNotice(root: any): TurnOutcomeNoticeModel | null {
+  const nodes = clarifyThreadNodes(root)
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const outcome = eventOutcomeNotice(nodes[index])
+    if (outcome) return outcome
+  }
+  return null
+}
+
 function eventIndependentAnswerText(event: any): string {
   const canonical = eventTurnProtocol(event)
   if (canonical) return canonical.content
+  if (event?.meta?.failed === true || event?.meta?.message_kind === 'error') return ''
   const content = String(event?.content || '')
   const answerCard = answerCards(event).find((card: any) => card?.type === 'answer' && card?.answer_text)
   const answerText = String(event?.meta?.answer?.answer_text || answerCard?.answer_text || '')
@@ -2579,6 +4159,12 @@ function eventDisplayContent(event: any) {
 
 function eventHasAnswerContent(event: any): boolean {
   return !!eventIndependentAnswerText(event).trim()
+}
+
+function eventCanUseAnswerActions(event: any): boolean {
+  const canonical = eventTurnProtocol(event)
+  if (canonical) return canonical.state === 'succeeded'
+  return event?.meta?.failed !== true && event?.meta?.message_kind !== 'error'
 }
 
 function answerCards(event: any) {
@@ -2639,8 +4225,11 @@ function eventVerification(event: any): any | null {
 
 function eventProcessDuration(event: any): number {
   const canonical = eventTurnProtocol(event)
-  if (canonical) return Number(canonical.processSummary?.duration_ms || 0)
-  return durationFromMeta(event?.meta)
+  return preferredProcessDuration(
+    canonical?.processSummary?.duration_ms,
+    durationFromMeta(event?.meta),
+    localTurnPresentation(event)?.observedDurationMs,
+  )
 }
 
 function eventAnswerSupplement(event: any) {
@@ -2696,6 +4285,17 @@ async function scrollBottom() {
 const isAtBottom = ref(true)
 const timelineFollow = ref(true)
 
+function resetTimelineNavigation() {
+  isAtBottom.value = true
+  timelineFollow.value = true
+  activeConversationEventId.value = ''
+  hoveredConversationRailIndex.value = null
+  if (conversationRailRaf) {
+    cancelAnimationFrame(conversationRailRaf)
+    conversationRailRaf = 0
+  }
+}
+
 async function scrollBottomIfFollowing() {
   if (!timelineFollow.value) return
   await nextTick()
@@ -2721,6 +4321,11 @@ function handleTimelineScroll() {
     conversationRailRaf = 0
     updateActiveConversationRail()
   })
+}
+
+async function syncTimelineNavigationAfterLayout() {
+  await nextTick()
+  handleTimelineScroll()
 }
 
 function updateActiveConversationRail() {
@@ -2847,9 +4452,76 @@ function userMessageText(event: VibeEvent) {
 }
 
 function shouldCollapseUserMessage(event: VibeEvent) {
-  const text = userMessageText(event)
-  const lineCount = text.split(/\r?\n/).length
-  return text.length > 120 || lineCount > 4
+  return !!event.id && overflowingUserMessageIds.value.includes(event.id)
+}
+
+function userMessageContentId(eventId?: string) {
+  return eventId ? `user-message-content-${eventId}` : undefined
+}
+
+function setUserMessageOverflow(eventId: string, overflows: boolean): void {
+  const currentlyOverflows = overflowingUserMessageIds.value.includes(eventId)
+  if (currentlyOverflows === overflows) return
+  overflowingUserMessageIds.value = overflows
+    ? [...overflowingUserMessageIds.value, eventId]
+    : overflowingUserMessageIds.value.filter(id => id !== eventId)
+}
+
+function measureUserMessageOverflow(element: HTMLElement, eventId: string): void {
+  if (userMessageOverflowElements.get(element) !== eventId) return
+  const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight)
+  setUserMessageOverflow(eventId, userMessageContentOverflows({
+    scrollHeight: element.scrollHeight,
+    lineHeight,
+    viewportHeight: window.innerHeight,
+  }))
+}
+
+function scheduleUserMessageOverflowMeasurements(): void {
+  if (userMessageOverflowRaf) return
+  userMessageOverflowRaf = requestAnimationFrame(() => {
+    userMessageOverflowRaf = 0
+    userMessageOverflowElements.forEach((eventId, element) => {
+      measureUserMessageOverflow(element, eventId)
+    })
+  })
+}
+
+function ensureUserMessageOverflowObservation(): void {
+  if (!userMessageOverflowObserver && typeof ResizeObserver !== 'undefined') {
+    userMessageOverflowObserver = new ResizeObserver(() => {
+      scheduleUserMessageOverflowMeasurements()
+    })
+  }
+  if (userMessageOverflowWindowResizeRegistered) return
+  window.addEventListener('resize', scheduleUserMessageOverflowMeasurements)
+  userMessageOverflowWindowResizeRegistered = true
+}
+
+function bindUserMessageOverflowElement(element: HTMLElement, eventId?: string): void {
+  if (!eventId) return
+  userMessageOverflowElements.set(element, eventId)
+  ensureUserMessageOverflowObservation()
+  userMessageOverflowObserver?.observe(element)
+  measureUserMessageOverflow(element, eventId)
+}
+
+function unbindUserMessageOverflowElement(element: HTMLElement): void {
+  const eventId = userMessageOverflowElements.get(element)
+  userMessageOverflowObserver?.unobserve(element)
+  userMessageOverflowElements.delete(element)
+  if (eventId) setUserMessageOverflow(eventId, false)
+}
+
+function stopUserMessageOverflowObservation(): void {
+  userMessageOverflowObserver?.disconnect()
+  userMessageOverflowObserver = null
+  userMessageOverflowElements.clear()
+  if (userMessageOverflowRaf) cancelAnimationFrame(userMessageOverflowRaf)
+  userMessageOverflowRaf = 0
+  if (!userMessageOverflowWindowResizeRegistered) return
+  window.removeEventListener('resize', scheduleUserMessageOverflowMeasurements)
+  userMessageOverflowWindowResizeRegistered = false
 }
 
 function isUserMessageExpanded(eventId?: string) {
@@ -2863,6 +4535,7 @@ function toggleUserMessageExpanded(eventId?: string) {
   } else {
     expandedUserMessageIds.value = [...expandedUserMessageIds.value, eventId]
   }
+  void syncTimelineNavigationAfterLayout()
 }
 
 async function writeClipboardText(text: string) {
@@ -3026,8 +4699,8 @@ function shouldRenderEvent(event: any) {
   return shouldRenderThreadEvent(events.value, event)
 }
 
-function parentContinuationResponses(event: any) {
-  return resolveParentContinuationResponses(events.value, event)
+function parentContinuationResponses(event: any): VibeEvent[] {
+  return resolveParentContinuationResponses(events.value, event) as VibeEvent[]
 }
 
 // 取挂在这条反问下的"选择回复"内容（confirmation_reply 的 user 事件），插进思考里作"你的选择"那一环。
@@ -3145,7 +4818,9 @@ function threadSources(root: any): any[] {
   const sources: any[] = []
   for (const node of threadAnswerNodes(root)) {
     for (const source of eventSources(node)) {
-      const key = String(source?.span_id || source?.source_id || JSON.stringify(source))
+      const normalized = normalizeConversationSourceCitation(source, sources.length)
+      const key = sourceCitationViewerIdentity(normalized)
+        || String(normalized.spanId || normalized.sourceId || JSON.stringify(source))
       if (!key || seen.has(key)) continue
       seen.add(key)
       sources.push(source)
@@ -3185,6 +4860,7 @@ function isStreamingUnderEvent(event: any) {
 
 <style scoped lang="scss">
 .vibe-shell {
+  --workspace-window-width: 760px;
   --vibe-glass-bg:
     linear-gradient(180deg, rgba(248, 248, 247, 0.9), rgba(242, 242, 240, 0.82)),
     rgba(245, 245, 244, 0.76);
@@ -3276,12 +4952,12 @@ function isStreamingUnderEvent(event: any) {
 
 /* Electron 原生拖拽命中不完全遵循普通 z-index；给右侧两枚 header 按钮留出非拖拽区域。 */
 .window-drag.reserve-info-toggle {
-  right: 56px;
+  right: 84px;
 }
 
 /* 分屏后 Settings2 位于主对话 header 右缘；拖拽层在它之前收口，避免吞掉按钮上半区。 */
 .window-drag.reserve-info-toggle.workspace-open {
-  right: calc(min(62vw, 1040px) + 56px);
+  right: calc(var(--workspace-window-width) + 56px);
 }
 
 /* Windows 三键放在 mac 红绿灯对应的左上位置；macOS 不渲染本组件。 */
@@ -3303,11 +4979,19 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .main-head-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-right: 30px;
+  transform: translateY(3px);
   pointer-events: auto;
   -webkit-app-region: no-drag;
+  transition: margin-right 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.main.workspace-open .main-head-actions {
+  margin-right: 0;
 }
 
 .info-rail-toggle {
@@ -3330,10 +5014,15 @@ function isStreamingUnderEvent(event: any) {
   transition: background 150ms ease, color 150ms ease;
 }
 
-.info-rail-toggle:hover,
-.info-rail-toggle[aria-expanded='true'] {
+.info-rail-toggle:hover:not(:disabled),
+.info-rail-toggle[aria-expanded='true']:not(:disabled) {
   background: rgba(15, 15, 15, .065);
   color: rgba(15, 15, 15, .82);
+}
+
+.info-rail-toggle:disabled {
+  cursor: default;
+  opacity: .46;
 }
 
 .info-rail-toggle:focus-visible {
@@ -3350,9 +5039,14 @@ function isStreamingUnderEvent(event: any) {
   flex: 0 0 auto;
   width: 26px;
   height: 26px;
+  border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   cursor: pointer;
   pointer-events: auto;
   -webkit-app-region: no-drag;
@@ -3370,15 +5064,19 @@ function isStreamingUnderEvent(event: any) {
 
 .window-toggle-anchor {
   position: absolute;
-  top: 11px;
+  top: 3px;
   right: 20px;
   z-index: 25;
 }
 
-.workspace-window-toggle:focus,
-.workspace-window-toggle:focus-visible {
+.workspace-window-toggle:focus {
   outline: none;
   box-shadow: none;
+}
+
+.workspace-window-toggle:focus-visible {
+  outline: 2px solid rgba(15, 15, 15, 0.28);
+  outline-offset: 2px;
 }
 
 .side,
@@ -3458,6 +5156,23 @@ function isStreamingUnderEvent(event: any) {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-3, rgba(15, 15, 15, 0.58));
+}
+
+.round-btn {
+  width: 25px;
+  min-width: 25px;
+  height: 25px;
+  box-sizing: border-box;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.round-btn svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .icon-btn:hover,
@@ -3721,6 +5436,31 @@ function isStreamingUnderEvent(event: any) {
   flex-direction: column;
   gap: 1px;
   padding-right: 1px;
+}
+
+.session-load-more {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 5px 0 2px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+
+  &:hover:not(:disabled) {
+    background: var(--fill-1);
+    color: var(--ink-2);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.56;
+  }
 }
 
 .session-title { font-weight: 500; }
@@ -4020,25 +5760,13 @@ function isStreamingUnderEvent(event: any) {
   box-shadow: none;
 }
 
-.main.workspace-open {
+.main.workspace-layout-active {
   overflow: visible;
 }
 
 /* 主 header 脱离信息栏的 flex 收缩；仅在独立窗口打开时收口到主对话区域。 */
 .main.workspace-open .main-head {
-  right: min(62%, 1040px);
-}
-
-/* 独立窗口展开后，信息卡改为主对话上方的浮层，不参与两侧 flex 宽度计算。 */
-.main.workspace-open :deep(.conversation-info-rail) {
-  position: absolute;
-  top: 54px;
-  right: calc(min(62%, 1040px) + 10px);
-  z-index: 23;
-  flex: none;
-  width: min(324px, calc(100% - min(62%, 1040px) - 20px));
-  margin: 0;
-  transition: none;
+  right: var(--workspace-window-width);
 }
 
 .main-conversation-pane {
@@ -4054,7 +5782,7 @@ function isStreamingUnderEvent(event: any) {
 
 .conversation-workspace-window {
   position: relative;
-  flex: 0 0 min(62%, 1040px);
+  flex: 0 0 var(--workspace-window-width);
   min-width: 0;
   height: 100%;
   display: flex;
@@ -4075,27 +5803,79 @@ function isStreamingUnderEvent(event: any) {
   pointer-events: none;
 }
 
-.workspace-window-enter-active {
-  transition: flex-basis 320ms cubic-bezier(.22, 1, .36, 1);
-}
-
-.workspace-window-enter-from {
-  flex-basis: 0;
-}
-
-.workspace-window-head {
-  position: relative;
-  z-index: 21;
-  flex: 0 0 48px;
-  height: 48px;
+.workspace-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -7px;
+  z-index: 30;
+  width: 14px;
+  border: 0;
+  outline: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 20px;
-  border-bottom: 1px solid rgba(15, 15, 15, 0.06);
-  background: var(--vibe-conversation-bg);
-  box-sizing: border-box;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
   -webkit-app-region: no-drag;
+}
+
+.workspace-resize-grip {
+  width: 3px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(15, 15, 15, 0.34);
+  opacity: 0.28;
+  transition: opacity 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.workspace-resize-handle:hover .workspace-resize-grip,
+.workspace-resize-handle:focus-visible .workspace-resize-grip,
+.workspace-resizing .workspace-resize-grip {
+  background: rgba(15, 15, 15, 0.58);
+  opacity: 0.82;
+}
+
+.workspace-resize-handle:focus-visible .workspace-resize-grip {
+  box-shadow: 0 0 0 3px rgba(15, 15, 15, 0.12);
+}
+
+.vibe-shell.workspace-resizing,
+.vibe-shell.workspace-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.vibe-shell.workspace-resizing .main-head,
+.vibe-shell.workspace-resizing .conversation-workspace-window {
+  transition: none !important;
+}
+
+.workspace-window-enter-active,
+.workspace-window-leave-active {
+  overflow: hidden;
+  transition:
+    flex-basis 320ms cubic-bezier(.22, 1, .36, 1),
+    opacity 220ms ease;
+}
+
+.workspace-window-leave-active {
+  pointer-events: none;
+}
+
+.workspace-window-enter-from,
+.workspace-window-leave-to {
+  flex-basis: 0;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-window-enter-active,
+  .workspace-window-leave-active,
+  .main-head,
+  .main-head-actions {
+    transition: none !important;
+  }
 }
 
 /* header 浮在滚动内容之上：无 border，靠近 header 的内容经背后毛玻璃渐隐——
@@ -4115,6 +5895,7 @@ function isStreamingUnderEvent(event: any) {
   justify-content: space-between;
   pointer-events: none; /* 只是标题层，别挡住下面的滚动/悬停 */
   background: var(--vibe-conversation-bg); /* header 本体实底不透明 */
+  transition: right 320ms cubic-bezier(.22, 1, .36, 1);
 
   /* 紧贴 header 下沿的柔边：surface 色渐隐（无 backdrop 模糊）——
      文字滚过时渐渐没入背景，像轻微化开，但始终清晰可读。 */
@@ -4142,19 +5923,35 @@ function isStreamingUnderEvent(event: any) {
   }
 
   &.compact {
-    height: 48px;
+    height: 25px;
   }
 }
 
 .main-head-leading {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
   gap: 2px;
 }
 
 .main-head-copy {
+  position: relative;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+
+.main-head-copy h1 {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 只让超出边界前的少量字形渐隐；不叠加玻璃层，也不模糊整块内容。 */
+.main-head.compact .main-head-copy h1 {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
 }
 
 .main-head-side-toggle {
@@ -4165,6 +5962,11 @@ function isStreamingUnderEvent(event: any) {
   background: transparent;
   pointer-events: auto;
   -webkit-app-region: no-drag;
+}
+
+.main-head-side-toggle.mac {
+  // 主标题已有 20px 左内边距；再补 52px，与展开态的 72px macOS 安全起点对齐。
+  margin-left: 52px;
 }
 
 .main-head-side-toggle:hover {
@@ -4348,8 +6150,12 @@ function isStreamingUnderEvent(event: any) {
   min-height: 0;
   overflow: auto;
   /* header 改为悬浮层后，顶部留出【header 高 + 下沿模糊带】：滚到顶时首条消息完整露出，
-     只有滚动经过时才进模糊带 */
-  padding: 60px max(28px, calc((100% - 760px) / 2)) 24px;
+     只有滚动经过时才进模糊带。窄布局左侧额外保留定位轨安全区，避免正文贴轨。 */
+  padding:
+    37px
+    max(28px, calc((100% - 760px) / 2))
+    24px
+    max(52px, calc((100% - 760px) / 2));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -4493,6 +6299,11 @@ function isStreamingUnderEvent(event: any) {
   min-width: 0;
 }
 
+/* 临时提问尚无复制/时间操作栏；预留正式 user event 的同等空间，避免 event_saved 接管时下方内容跳动。 */
+.pending-user-event .user-message-wrap {
+  padding-bottom: 23px;
+}
+
 .user-attachment-list {
   display: flex;
   justify-content: flex-end;
@@ -4520,7 +6331,7 @@ function isStreamingUnderEvent(event: any) {
   min-width: 0;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   border: 1px solid rgba(15, 15, 15, 0.1);
@@ -4554,12 +6365,9 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .user-attachment-icon.markdown {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(37,99,235,.95), rgba(124,58,237,.92) 52%, rgba(22,163,74,.9));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 5px 12px rgba(37,99,235,.18);
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
 }
 
 .user-attachment-icon svg {
@@ -4567,9 +6375,11 @@ function isStreamingUnderEvent(event: any) {
   height: 15px;
 }
 
-.user-attachment-icon.markdown svg {
-  width: 18px;
-  height: 18px;
+.user-attachment-icon.markdown :deep(.markdown-file-icon) {
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
 }
 
 .user-attachment-main {
@@ -4641,9 +6451,7 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .user-message-bubble .user-message-content {
-  max-height: 92px;
   margin: 0;
-  overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.68;
@@ -4652,8 +6460,15 @@ function isStreamingUnderEvent(event: any) {
   color: #000;
 }
 
+.user-message-wrap.collapsible:not(.expanded) .user-message-content {
+  max-height: 18lh;
+  max-height: min(18lh, 52dvh);
+  overflow: hidden;
+}
+
 .user-message-wrap.expanded .user-message-content {
   max-height: none;
+  overflow: visible;
 }
 
 .user-message-more {
@@ -5229,7 +7044,7 @@ function isStreamingUnderEvent(event: any) {
 .composer {
   /* 只做居中容器：边框/背景/阴影由 ChatComposer 自身的 shell 提供，避免双层框。 */
   width: min(760px, calc(100% - 56px));
-  margin: 0 auto 18px;
+  margin: 0 auto 10px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
@@ -5297,14 +7112,6 @@ function isStreamingUnderEvent(event: any) {
       cursor: not-allowed;
     }
   }
-}
-
-.composer-status {
-  grid-row: 3;
-  margin-top: -3px;
-  color: rgba(15, 15, 15, 0.42);
-  font-size: 11.5px;
-  line-height: 1.4;
 }
 
 .composer-actions {
@@ -5816,5 +7623,136 @@ textarea {
     background: rgba(255, 255, 255, 0.92);
     color: rgba(15, 15, 15, 0.88);
   }
+}
+
+/* 会话删除确认框：沿用 Vibe 的中性卡片层级，仅在最终危险动作上使用克制红色。 */
+:global(.vibe-delete-dialog-overlay) {
+  background: rgba(20, 20, 22, 0.28);
+  -webkit-backdrop-filter: blur(5px) saturate(110%);
+  backdrop-filter: blur(5px) saturate(110%);
+}
+
+:global(.vibe-delete-dialog.el-message-box) {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(246, 246, 245, 0.68));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 28px 72px rgba(15, 15, 15, 0.2);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+  backdrop-filter: blur(28px) saturate(155%);
+}
+
+:global(.vibe-delete-dialog .el-message-box__header) {
+  padding: 0;
+}
+
+:global(.vibe-delete-dialog .el-message-box__title) {
+  color: rgba(15, 15, 15, 0.94);
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+:global(.vibe-delete-dialog .el-message-box__content) {
+  padding: 16px 0 22px;
+}
+
+:global(.vibe-delete-dialog .el-message-box__container) {
+  display: block;
+}
+
+:global(.vibe-delete-dialog .el-message-box__status) {
+  display: none;
+}
+
+:global(.vibe-delete-dialog .el-message-box__message) {
+  width: 100%;
+  margin: 0;
+}
+
+:global(.vibe-delete-dialog-copy) {
+  display: grid;
+  gap: 9px;
+}
+
+:global(.vibe-delete-dialog-session) {
+  min-width: 0;
+  margin: 0;
+  padding: 11px 13px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 4px rgba(15, 15, 15, 0.045);
+  color: rgba(15, 15, 15, 0.82);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.vibe-delete-dialog-hint) {
+  margin: 0;
+  color: rgba(15, 15, 15, 0.5);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+:global(.vibe-delete-dialog .el-message-box__btns) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0;
+}
+
+:global(.vibe-delete-dialog .el-message-box__btns .el-button) {
+  min-width: 86px;
+  height: 38px;
+  margin: 0;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms ease;
+}
+
+:global(.vibe-delete-dialog .vibe-delete-cancel.el-button) {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  color: rgba(15, 15, 15, 0.66);
+}
+
+:global(.vibe-delete-dialog .vibe-delete-cancel.el-button:hover),
+:global(.vibe-delete-dialog .vibe-delete-cancel.el-button:focus-visible) {
+  border-color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.66);
+  color: rgba(15, 15, 15, 0.86);
+}
+
+:global(.vibe-delete-dialog .vibe-delete-confirm.el-button) {
+  border-color: rgba(153, 27, 20, 0.5);
+  background: linear-gradient(180deg, rgba(190, 52, 43, 0.96), rgba(168, 35, 27, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 5px 14px rgba(180, 35, 24, 0.18);
+  color: #fff;
+}
+
+:global(.vibe-delete-dialog .vibe-delete-confirm.el-button:hover),
+:global(.vibe-delete-dialog .vibe-delete-confirm.el-button:focus-visible) {
+  border-color: rgba(132, 24, 18, 0.62);
+  background: linear-gradient(180deg, rgba(174, 42, 34, 0.98), rgba(145, 29, 22, 0.98));
+  color: #fff;
+}
+
+:global(.vibe-delete-dialog .el-message-box__btns .el-button:active) {
+  transform: translateY(1px);
 }
 </style>

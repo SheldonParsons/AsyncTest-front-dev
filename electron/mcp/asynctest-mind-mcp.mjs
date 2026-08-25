@@ -7,6 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import {
+  installProcessOutputSafety,
+  isClosedProcessOutputError,
+} from '../processOutputSafety.node.js';
+import {
   ASYNCTEST_MIND_MCP_CAPABILITY_REVISION,
   ASYNCTEST_MIND_MCP_PROTOCOL_REVISION,
   ASYNCTEST_MIND_MCP_RESPONSE_PROFILE,
@@ -85,6 +89,7 @@ export function getAsyncTestMindMcpCapabilities() {
       'MCP 写入使用单步撤销、revision 冲突保护、局部增量播放和用户停止锁。',
       '大批量写入会优先渲染首个新节点，再按帧渐进追加，让用户尽快看到反馈并感知节点增长。',
       'mind_get_operation_status 会返回进度、健康状态、Agent 下一步动作和是否允许重试。',
+      '大型导入和批量事务在短暂无进度时保持运行状态，Agent 应查询状态并等待，只有硬超时才视为结果未知。',
       '长请求一旦发送，不会跨 socket、TCP 或文件桥自动重放。',
       'MCP 调用会自动建立连接；只有执行中的写操作锁定目标窗口，写操作结束后自动解除锁定。',
       '连接断开或连续 120 秒无调用时会自动结束会话；mind_end_agent_session 仍是推荐的主动结束方式。',
@@ -1083,6 +1088,8 @@ const FILE_BRIDGE_TIMEOUT_MS = 330000;
 const FILE_BRIDGE_POLL_MS = 80;
 const SOCKET_CONNECT_TIMEOUT_MS = 5000;
 const SOCKET_RESPONSE_TIMEOUT_MS = 330000;
+let stdioOutputClosed = false;
+let cleanupClosedStdioTransport = () => {};
 
 async function appendDebugLog(message, detail) {
   try {
@@ -1103,7 +1110,29 @@ function getFileBridgeDir() {
 }
 
 function writeMessage(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  if (stdioOutputClosed || process.stdout.destroyed || process.stdout.writableEnded) return false;
+  try {
+    process.stdout.write(`${JSON.stringify(message)}\n`, (error) => {
+      if (!error) return;
+      if (isClosedProcessOutputError(error)) {
+        stdioOutputClosed = true;
+        void cleanupClosedStdioTransport('transport-broken-pipe');
+        return;
+      }
+      void appendDebugLog('stdout-write-error', {
+        code: error.code,
+        message: error.message,
+      });
+    });
+    return true;
+  } catch (error) {
+    if (isClosedProcessOutputError(error)) {
+      stdioOutputClosed = true;
+      void cleanupClosedStdioTransport('transport-broken-pipe');
+      return false;
+    }
+    throw error;
+  }
 }
 
 function writeResult(id, result) {
@@ -1459,6 +1488,7 @@ export function startMindMcpStdioServer() {
   });
   let inputBuffer = '';
   let transportCleanupStarted = false;
+  let transportExitScheduled = false;
   const clientHeartbeatTimer = setInterval(() => {
     void callBridge('mind.registerMcpClient', {
       mcpClientId,
@@ -1471,12 +1501,41 @@ export function startMindMcpStdioServer() {
     if (transportCleanupStarted) return;
     transportCleanupStarted = true;
     clearInterval(clientHeartbeatTimer);
-    await callAppBridge('mind.unregisterMcpClient', {
+    await callBridge('mind.unregisterMcpClient', {
       mcpClientId,
       mcpToolName: 'transport-cleanup',
       reason,
     }).catch(() => {});
   };
+  const closeStdioTransport = (reason) => {
+    if (transportExitScheduled) return;
+    transportExitScheduled = true;
+    stdioOutputClosed = true;
+    const forceExitTimer = setTimeout(() => process.exit(0), 1500);
+    void cleanupAgentSession(reason).finally(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
+  };
+  cleanupClosedStdioTransport = closeStdioTransport;
+  installProcessOutputSafety({
+    onBrokenPipe: ({ error, streamName }) => {
+      void appendDebugLog('process-output-closed', {
+        streamName,
+        code: error.code,
+        message: error.message,
+      });
+      if (streamName !== 'stdout') return;
+      closeStdioTransport('transport-broken-pipe');
+    },
+    onUnexpectedError: ({ error, streamName }) => {
+      void appendDebugLog('process-output-error', {
+        streamName,
+        code: error.code,
+        message: error.message,
+      });
+    },
+  });
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => {
     inputBuffer += chunk;
@@ -1495,10 +1554,17 @@ export function startMindMcpStdioServer() {
     }
   });
   process.stdin.on('end', () => {
-    void cleanupAgentSession('transport-closed');
+    closeStdioTransport('transport-closed');
+  });
+  process.stdin.on('close', () => {
+    closeStdioTransport('transport-closed');
   });
   process.on('uncaughtException', (error) => {
     void appendDebugLog('uncaughtException', { message: error.message, stack: error.stack });
+    if (isClosedProcessOutputError(error)) {
+      closeStdioTransport('transport-broken-pipe');
+      return;
+    }
     writeError(null, -32603, error.message);
   });
   process.on('unhandledRejection', (reason) => {

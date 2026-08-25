@@ -176,7 +176,13 @@
               </label>
               <label class="wide">
                 <span>Api Key</span>
-                <input v-model="adminDraft.api_key" autocomplete="off" spellcheck="false" placeholder="请输入 Api Key" @input="clearAdminStatus" />
+                <input
+                  v-model="adminDraft.api_key"
+                  autocomplete="off"
+                  spellcheck="false"
+                  :placeholder="adminEditingProvider?.has_api_key ? '已配置，留空则保持不变' : '请输入 Api Key'"
+                  @input="clearAdminStatus"
+                />
               </label>
               <label>
                 <span>增强模型</span>
@@ -888,7 +894,7 @@ function applyAdminDraft(provider: VibeLLMProviderConfig) {
     name: provider.name || (isDeepSeekProvider(provider.provider_type) ? 'DeepSeek' : ''),
     provider_type: isDeepSeekProvider(provider.provider_type) ? 'deepseek' : 'openai-compatible',
     base_url: provider.base_url || (isDeepSeekProvider(provider.provider_type) ? DEEPSEEK_BASE_URL : ''),
-    api_key: provider.api_key || '',
+    api_key: '',
     proxy_url: provider.proxy_url || '',
     timeout_config: {
       connect: Number(provider.timeout_config?.connect ?? 30),
@@ -929,18 +935,17 @@ function cancelAdminEdit() {
 function validateAdminDraft() {
   if (!String(adminDraft.name || '').trim()) return '请填写模型名称'
   if (!String(adminDraft.base_url || '').trim()) return '请填写 Base Url'
-  if (!String(adminDraft.api_key || '').trim()) return '请填写 Api Key'
+  if (!String(adminDraft.api_key || '').trim() && !adminEditingProvider.value?.has_api_key) return '请填写 Api Key'
   if (!adminLightModel.value.trim()) return '请填写轻量模型'
   if (!adminStrongModel.value.trim()) return '请填写增强模型'
   return ''
 }
 
 function buildAdminPayload(): VibeLLMProviderPayload {
-  return {
+  const payload: VibeLLMProviderPayload = {
     name: String(adminDraft.name || '').trim(),
     provider_type: String(adminDraft.provider_type || 'deepseek'),
     base_url: String(adminDraft.base_url || '').trim(),
-    api_key: String(adminDraft.api_key || '').trim(),
     proxy_url: String(adminDraft.proxy_url || '').trim(),
     timeout_config: adminDraft.timeout_config,
     max_retries: Number(adminDraft.max_retries || 0),
@@ -951,6 +956,9 @@ function buildAdminPayload(): VibeLLMProviderPayload {
     enabled: true,
     available_to_all: adminDraft.available_to_all === true,
   }
+  const apiKey = String(adminDraft.api_key || '').trim()
+  if (apiKey) payload.api_key = apiKey
+  return payload
 }
 
 async function persistAdminProvider() {

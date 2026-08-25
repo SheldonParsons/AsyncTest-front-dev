@@ -43,6 +43,40 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export interface HarnessRequestErrorFacts {
+  status: number
+  code: string
+  retryable: boolean | null
+}
+
+/**
+ * 保留安全、类型化的 HTTP 失败身份；业务调用仍可按普通 Error 使用 message，
+ * 需要恢复策略的调用则不必解析本地化文案。
+ */
+export class HarnessRequestError extends Error implements HarnessRequestErrorFacts {
+  readonly status: number
+  readonly code: string
+  readonly retryable: boolean | null
+
+  constructor(message: string, facts: Partial<HarnessRequestErrorFacts> = {}) {
+    super(message)
+    this.name = 'HarnessRequestError'
+    this.status = Number.isFinite(facts.status) ? Number(facts.status) : 0
+    this.code = String(facts.code || '')
+    this.retryable = typeof facts.retryable === 'boolean' ? facts.retryable : null
+  }
+}
+
+function requestErrorFacts(error: unknown): HarnessRequestErrorFacts {
+  if (!axios.isAxiosError(error)) return { status: 0, code: '', retryable: null }
+  const data = error.response?.data
+  return {
+    status: Number(error.response?.status || 0),
+    code: typeof data?.code === 'string' ? data.code : '',
+    retryable: typeof data?.retryable === 'boolean' ? data.retryable : null,
+  }
+}
+
 async function responsePayload(error: unknown): Promise<unknown> {
   if (!axios.isAxiosError(error)) return undefined
   const data = error.response?.data
@@ -90,7 +124,7 @@ export async function harnessRequest<T = any>(method: string, path: string, body
     return response.data as T
   } catch (error) {
     await handleHarnessAuthenticationFailure(error)
-    throw new Error(errorMessage(error))
+    throw new HarnessRequestError(errorMessage(error), requestErrorFacts(error))
   }
 }
 
@@ -184,6 +218,12 @@ export async function harnessBlobRequest(path: string): Promise<HarnessBlobDownl
   }
 }
 
+export type HarnessSseCloseReason = 'done_signal' | 'eof' | 'error_event'
+
+export interface HarnessSseResult {
+  closeReason: HarnessSseCloseReason
+}
+
 export async function streamHarnessSse(
   path: string,
   body: Record<string, unknown>,
@@ -193,6 +233,7 @@ export async function streamHarnessSse(
     onEvent?: (event: any) => void
     onDone?: () => void
     onError?: (message: string) => void
+    onClose?: (result: HarnessSseResult) => void
   } = {},
   signal?: AbortSignal,
 ) {
@@ -233,6 +274,7 @@ export async function streamHarnessSse(
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   let done = false
+  let closeReason: HarnessSseCloseReason = 'eof'
 
   const handleLine = (line: string) => {
     const trimmed = line.trim()
@@ -240,20 +282,25 @@ export async function streamHarnessSse(
     const data = trimmed.slice(5).trim()
     if (data === '[DONE]') {
       done = true
+      closeReason = 'done_signal'
       handlers.onDone?.()
       return
     }
+    let parsed: any
     try {
-      const parsed = JSON.parse(data)
-      handlers.onEvent?.(parsed)
-      if (parsed.error) {
-        done = true
-        handlers.onError?.(String(parsed.error))
-      } else if (parsed.delta) {
-        handlers.onChunk?.(String(parsed.delta))
-      }
+      parsed = JSON.parse(data)
     } catch {
       handlers.onChunk?.(data)
+      return
+    }
+    // 只把 JSON 解析失败当作文本块；业务 handler 自身的异常必须向上抛出，不能被吞成 chunk。
+    handlers.onEvent?.(parsed)
+    if (parsed.error) {
+      done = true
+      closeReason = 'error_event'
+      handlers.onError?.(String(parsed.error))
+    } else if (parsed.delta) {
+      handlers.onChunk?.(String(parsed.delta))
     }
   }
 
@@ -275,7 +322,7 @@ export async function streamHarnessSse(
     buffer.split('\n').forEach(handleLine)
   }
 
-  if (!done) {
-    handlers.onDone?.()
-  }
+  const result = { closeReason }
+  handlers.onClose?.(result)
+  return result
 }
