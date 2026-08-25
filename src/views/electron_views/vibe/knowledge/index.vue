@@ -264,6 +264,11 @@
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
+              <ResolvedChangeReceipt
+                v-for="receipt in threadKnowledgeChangeReceipts(event)"
+                :key="receipt.receiptId"
+                :receipt="receipt"
+              />
               <template v-if="threadFinalAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(threadFinalAnswer(event))" />
                 <div
@@ -290,6 +295,11 @@
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
+              <ResolvedChangeReceipt
+                v-for="receipt in threadKnowledgeChangeReceipts(event)"
+                :key="receipt.receiptId"
+                :receipt="receipt"
+              />
               <div v-if="event.role !== 'assistant'" class="event-top">
                 <span class="role">{{ eventRoleLabel(event) }}</span>
                 <time v-if="event.created_at">{{ formatTime(event.created_at) }}</time>
@@ -599,6 +609,8 @@ import ChatComposer from './components/ChatComposer.vue'
 import ConversationInfoRail from './components/ConversationInfoRail.vue'
 import ConversationWorkspace from './components/ConversationWorkspace.vue'
 import TurnOutcomeNotice from './components/TurnOutcomeNotice.vue'
+import ResolvedChangeReceipt from './components/ResolvedChangeReceipt.vue'
+import { collectKnowledgeChangeReceipts } from './resolvedChangeReceiptPolicy'
 import {
   createProcessState,
   resetProcessState,
@@ -4701,6 +4713,10 @@ function shouldRenderEvent(event: any) {
 
 function parentContinuationResponses(event: any): VibeEvent[] {
   return resolveParentContinuationResponses(events.value, event) as VibeEvent[]
+}
+
+function threadKnowledgeChangeReceipts(root: any) {
+  return collectKnowledgeChangeReceipts([root, ...parentContinuationResponses(root)])
 }
 
 // 取挂在这条反问下的"选择回复"内容（confirmation_reply 的 user 事件），插进思考里作"你的选择"那一环。

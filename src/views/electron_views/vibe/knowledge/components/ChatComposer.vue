@@ -131,7 +131,7 @@
             >
               <span class="choice-number">{{ i + 1 }}</span>
               <span class="choice-copy">
-                <span class="choice-label" v-html="item.label"></span>
+                <span class="choice-label">{{ item.label }}</span>
                 <small v-if="item.description" class="choice-description">{{ item.description }}</small>
               </span>
               <span class="question-nav" aria-hidden="true">
