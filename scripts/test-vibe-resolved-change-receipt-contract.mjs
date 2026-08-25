@@ -107,8 +107,13 @@ const componentSource = read(componentPath)
 const component = parse(componentSource, { filename: componentPath })
 assert.deepEqual(component.errors, [])
 assert.match(componentSource, /receipt\.summary/)
-assert.match(componentSource, /Commit \{\{ receipt\.commitSeq \}\}/)
+assert.match(componentSource, /role="status"/)
+assert.match(componentSource, /aria-live="polite"/)
+assert.match(componentSource, /版本 \{\{ receipt\.commitSeq \}\}/)
 assert.doesNotMatch(componentSource, /<button\b/)
+assert.doesNotMatch(componentSource, /<section\b/)
+assert.doesNotMatch(componentSource, /\bbackground\s*:/)
+assert.doesNotMatch(componentSource, /\bpadding\s*:/)
 assert.doesNotMatch(componentSource, /old_body|new_body|confirmationId/)
 
 const viewSource = read(viewPath)
@@ -119,6 +124,12 @@ assert.equal(
   (viewSource.match(/v-for="receipt in threadKnowledgeChangeReceipts\(event\)"/g) || []).length,
   2,
 )
+const threadedAnswerIndex = viewSource.indexOf('threadFinalAnswer(event)')
+const threadedReceiptIndex = viewSource.indexOf('v-for="receipt in threadKnowledgeChangeReceipts(event)"')
+assert.ok(threadedAnswerIndex >= 0 && threadedReceiptIndex > threadedAnswerIndex)
+const standaloneContinuationIndex = viewSource.indexOf('class="continuation-responses"')
+const standaloneReceiptIndex = viewSource.lastIndexOf('v-for="receipt in threadKnowledgeChangeReceipts(event)"')
+assert.ok(standaloneContinuationIndex >= 0 && standaloneReceiptIndex > standaloneContinuationIndex)
 assert.doesNotMatch(viewSource, /eventKnowledgeChangeReceiptRows/)
 assert.match(viewSource, /collectKnowledgeChangeReceipts\(\[root, \.\.\.parentContinuationResponses\(root\)\]\)/)
 

@@ -254,7 +254,7 @@
             ]"
           >
             <!-- 反问续跑：整条【反问→你的选择→继续思考→(可再问→再选)→答案】合并成"一条思考"，不隐藏 -->
-            <template v-if="isClarifyThreadRoot(event)">
+            <template v-if="isInteractionThreadRoot(event)">
               <ProcessDisclosure
                 v-if="mergedThreadSteps(event).length || threadRunning(event)"
                 :steps="mergedThreadSteps(event)"
@@ -264,11 +264,6 @@
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
-              <ResolvedChangeReceipt
-                v-for="receipt in threadKnowledgeChangeReceipts(event)"
-                :key="receipt.receiptId"
-                :receipt="receipt"
-              />
               <template v-if="threadFinalAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(threadFinalAnswer(event))" />
                 <div
@@ -284,6 +279,11 @@
                   :is-last="threadFinalNode(event).id === lastAssistantId"
                 />
               </template>
+              <ResolvedChangeReceipt
+                v-for="receipt in threadKnowledgeChangeReceipts(event)"
+                :key="receipt.receiptId"
+                :receipt="receipt"
+              />
             </template>
             <template v-else>
               <ProcessDisclosure
@@ -295,11 +295,6 @@
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
-              <ResolvedChangeReceipt
-                v-for="receipt in threadKnowledgeChangeReceipts(event)"
-                :key="receipt.receiptId"
-                :receipt="receipt"
-              />
               <div v-if="event.role !== 'assistant'" class="event-top">
                 <span class="role">{{ eventRoleLabel(event) }}</span>
                 <time v-if="event.created_at">{{ formatTime(event.created_at) }}</time>
@@ -444,6 +439,11 @@
                   </div>
                 </article>
               </div>
+              <ResolvedChangeReceipt
+                v-for="receipt in threadKnowledgeChangeReceipts(event)"
+                :key="receipt.receiptId"
+                :receipt="receipt"
+              />
             </template>
           </article>
           <article
@@ -593,7 +593,9 @@ import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
 import {
   continuationParentEventId,
   eventThreadRootId as resolveEventThreadRootId,
+  isResolvedInteractionThreadRoot,
   parentContinuationResponses as resolveParentContinuationResponses,
+  resolvedInteractionRootAnswerText,
   shouldRenderStandaloneAssistantBody,
   shouldRenderThreadEvent,
   threadFinalAnswerText,
@@ -3962,7 +3964,7 @@ function answerForUserEvent(userEvent: any, visibleEvents: any[]) {
     .filter((event: any) => event?.role === 'assistant' && !isPackageActionEvent(event))
   for (let i = candidates.length - 1; i >= 0; i -= 1) {
     const event = candidates[i]
-    if (isClarifyThreadRoot(event)) {
+    if (isInteractionThreadRoot(event)) {
       const finalAnswer = threadFinalAnswer(event)
       if (finalAnswer) return finalAnswer
     }
@@ -4124,7 +4126,7 @@ function eventTurnIsStillActive(event: any, model: TurnProtocolReadModel | null)
 }
 
 function threadOutcomeNotice(root: any): TurnOutcomeNoticeModel | null {
-  const nodes = clarifyThreadNodes(root)
+  const nodes = interactionThreadNodes(root)
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const outcome = eventOutcomeNotice(nodes[index])
     if (outcome) return outcome
@@ -4150,6 +4152,14 @@ function eventIndependentAnswerText(event: any): string {
   return [answerText, content]
     .find((candidate) => comparableMessageText(candidate)
       && comparableMessageText(candidate) !== clarification) || ''
+}
+
+// 已确认的预览会在历史中保留原始展示正文，但它不是最终答案。
+// 复合请求若确实先完成了只读回答，会有正式 answer 投影；只保留该投影，
+// 不从普通 content 猜测，避免把“请确认是否提交”重新显示在完成结果里。
+function eventFormalIndependentAnswerText(event: any): string {
+  const canonical = eventTurnProtocol(event)
+  return resolvedInteractionRootAnswerText(event, canonical?.answers || [])
 }
 
 function eventDisplayContent(event: any) {
@@ -4738,19 +4748,24 @@ function isPendingClarification(event: any): boolean {
     && !isStreamingUnderEvent(event)
 }
 
-// ===== 反问续跑：把【反问→你的选择→继续思考→(可能再问→再选)→答案】合并成一条思考 =====
-// 线程根 = 第一条反问(自己不是续跑子)，且已被回答(下面挂了续跑 或 正在流式续跑)。
-function isClarifyThreadRoot(event: any): boolean {
+// ===== 待处理交互续跑：把【预览/反问→你的选择→继续处理→答案】合并成一条思考 =====
+// 活跃交互仍以 clarification 标识；确认完成后 clarification 会被正确清理，
+// 此时改用 confirmation_reply + continuation_context 的持久父子身份归根。
+function isInteractionThreadRoot(event: any): boolean {
+  const hasContinuation = parentContinuationResponses(event).length > 0 || isStreamingUnderEvent(event)
   return event?.role === 'assistant'
-    && isBlockingClarificationEvent(event)
     && !continuationParentEventId(events.value, event)
-    && (parentContinuationResponses(event).length > 0 || isStreamingUnderEvent(event))
+    && hasContinuation
+    && (
+      isBlockingClarificationEvent(event)
+      || isResolvedInteractionThreadRoot(events.value, event)
+    )
 }
 
 // 顺着续跑链把所有节点(assistant)按思考顺序取出来。
 // parentContinuationResponses(root) 已按【最终根】聚合 + 时间排序，含【任意层级】的续跑子（A→B→C 全在内）——
 // 所以直接拼接即可，别再"只跟 kids[0] 逐级下钻"（那样多级续跑会漏掉第 3 层，导致末轮答案不显示）。
-function clarifyThreadNodes(root: any): any[] {
+function interactionThreadNodes(root: any): any[] {
   return [root, ...parentContinuationResponses(root)]
 }
 
@@ -4770,7 +4785,7 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
 
 function mergedThreadSteps(root: any): any[] {
   const out: any[] = []
-  for (const n of clarifyThreadNodes(root)) {
+  for (const n of interactionThreadNodes(root)) {
     for (const s of eventProcessSteps(n)) out.push(s)
     if (eventClarificationQuestion(n)) {
       // 第四代小文档确认把整体 diff 作为思考的一环；大文档只保留摘要。
@@ -4796,17 +4811,25 @@ function threadRunning(root: any): boolean {
 // 0703 第三态:线程收尾在反问/勾选上、后端已收工、等用户决定 → 头部显示"等你选择"
 function threadAwaiting(root: any): boolean {
   if (threadRunning(root) || !clarificationActive.value) return false
-  return clarifyThreadNodes(root).some((n: any) => n.id === lastAssistantId.value && isBlockingClarificationEvent(n))
+  return interactionThreadNodes(root).some((n: any) => n.id === lastAssistantId.value && isBlockingClarificationEvent(n))
 }
 
 function threadDurationMs(root: any): number {
-  const base = clarifyThreadNodes(root).reduce((sum: number, n: any) => sum + (eventProcessDuration(n) || 0), 0)
+  const base = interactionThreadNodes(root).reduce((sum: number, n: any) => sum + (eventProcessDuration(n) || 0), 0)
   // 续跑轮在途:历史各段耗时 + 本轮前端秒表,让"已处理"一直数着(0704)。
   return threadRunning(root) ? base + streamingElapsedMs.value : base
 }
 
+function threadNodeDisplayContent(root: any, node: any): string {
+  if (String(node?.id || '') === String(root?.id || '')
+    && isResolvedInteractionThreadRoot(events.value, root)) {
+    return eventFormalIndependentAnswerText(node)
+  }
+  return eventHasAnswerContent(node) ? eventDisplayContent(node).trim() : ''
+}
+
 function threadAnswerNodes(root: any): any[] {
-  return clarifyThreadNodes(root).filter((node: any) => eventHasAnswerContent(node))
+  return interactionThreadNodes(root).filter((node: any) => !!threadNodeDisplayContent(root, node))
 }
 
 // 一个复合目标可以在写入确认前已完成只读回答；最后节点不能覆盖前面已经完成的答案。
@@ -4819,7 +4842,7 @@ function threadFinalAnswer(root: any): string {
   const answer = threadFinalAnswerText(
     events.value,
     root,
-    (node: any) => eventHasAnswerContent(node) ? eventDisplayContent(node).trim() : '',
+    (node: any) => threadNodeDisplayContent(root, node),
   )
   if (answer) return answer
   return isStreamingUnderEvent(root) ? (streamingAssistantContent.value || '') : ''

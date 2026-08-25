@@ -128,6 +128,7 @@
     "test:vibe-attachment-p0": "node scripts/test-vibe-attachment-p0-contract.mjs",
     "test:vibe-attachment-p1": "node scripts/test-vibe-attachment-p1-contract.mjs",
     "test:vibe-process-disclosure": "node scripts/test-vibe-process-disclosure-contract.mjs",
+    "test:vibe-interaction-thread": "node scripts/test-vibe-interaction-thread-contract.mjs",
     "test:vibe-source-viewer": "node scripts/test-vibe-source-viewer-contract.mjs",
     "test:vibe-workspace-viewer": "node scripts/test-vibe-workspace-viewer-contract.mjs",
     "test:mind-mcp-live": "node scripts/test-mind-mcp-live.mjs",

@@ -113,6 +113,53 @@ export function parentContinuationResponses(
     .sort(compareEvents)
 }
 
+/**
+ * A completed pending interaction remains one visible conversation turn even
+ * after the backend removes its closed clarification card.  The durable
+ * identity is the explicit confirmation reply plus its continuation child;
+ * adjacency and message text are deliberately not used.
+ */
+export function isResolvedInteractionThreadRoot(
+  events: ConversationThreadEvent[],
+  root: ConversationThreadEvent,
+): boolean {
+  const rootId = eventId(root)
+  if (!rootId || root?.role !== 'assistant') return false
+  if (continuationParentEventId(events, root)) return false
+  const hasReply = events.some(item => item?.role === 'user'
+    && item?.meta?.confirmation_reply === true
+    && String(item?.meta?.parent_event_id || '').trim() === rootId
+    && sameSession(item, root))
+  return hasReply && parentContinuationResponses(events, root).length > 0
+}
+
+/**
+ * Return only a formally projected read answer from a resolved interaction
+ * root. Compact session history stores its display content outside the Journal;
+ * for a write preview that content is the obsolete preview question, so it must
+ * never be promoted to an answer. Legacy/full Journal answers remain usable.
+ */
+export function resolvedInteractionRootAnswerText(
+  event: ConversationThreadEvent & { turn?: Record<string, any> },
+  protocolAnswers: unknown[] = [],
+): string {
+  if (event?.meta?.failed === true || event?.meta?.message_kind === 'error') return ''
+  const cards = Array.isArray(event?.meta?.answer?.cards) ? event.meta.answer.cards : []
+  const answerCard = cards.find((card: any) => card?.type === 'answer' && card?.answer_text)
+  const projected = String(event?.meta?.answer?.answer_text || answerCard?.answer_text || '').trim()
+  if (projected) return projected
+  if (event?.turn?.schema === 'session_turn_public.v1') return ''
+  const seen = new Set<string>()
+  return protocolAnswers
+    .map(value => String(value || '').trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
+    .join('\n\n')
+}
+
 export function threadFinalAnswerText(
   events: ConversationThreadEvent[],
   root: ConversationThreadEvent,
