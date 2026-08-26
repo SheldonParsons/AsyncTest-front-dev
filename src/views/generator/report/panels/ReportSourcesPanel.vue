@@ -1,5 +1,5 @@
 <template>
-  <section class="report-sources-panel">
+  <section id="report-anchor-sources" data-report-anchor="sources" class="report-sources-panel">
     <header class="report-sources-panel-head">
       <div>
         <h3>数据源</h3>
@@ -7,7 +7,13 @@
     </header>
 
     <div class="report-sources-list">
-      <article v-for="input in inputs" :key="input.key" class="report-source-card">
+      <article
+        v-for="input in inputs"
+        :id="input.key === 'excel' ? 'report-anchor-excel' : undefined"
+        :data-report-anchor="input.key === 'excel' ? 'excel' : undefined"
+        :key="input.key"
+        class="report-source-card"
+      >
         <div class="report-source-card-main">
           <div class="report-source-title-row">
             <h4>{{ input.title }}</h4>

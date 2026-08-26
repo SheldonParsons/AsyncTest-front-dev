@@ -39,7 +39,15 @@ const stepLabelMap: Record<ReportStepKey, string> = {
 
 <style scoped lang="scss">
 .report-log-panel {
+  position: sticky;
+  top: clamp(18px, 2vw, 28px);
+  z-index: 2;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   padding: 22px;
+  background: #ffffff;
+  isolation: isolate;
 }
 
 .report-log-panel-head {
@@ -73,8 +81,11 @@ const stepLabelMap: Record<ReportStepKey, string> = {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
   max-height: 520px;
   overflow: auto;
+  overscroll-behavior: contain;
   padding-right: 4px;
 }
 

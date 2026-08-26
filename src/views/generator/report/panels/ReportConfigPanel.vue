@@ -1,5 +1,5 @@
 <template>
-  <section class="report-config-panel">
+  <section id="report-anchor-basic" data-report-anchor="basic" class="report-config-panel">
     <header class="report-config-panel-head">
       <div>
         <h3>报告基础信息</h3>
@@ -99,7 +99,7 @@
       {{ linkageStatus.message }}
     </div>
 
-    <div class="environment-head">
+    <div id="report-anchor-environment" data-report-anchor="environment" class="environment-head">
       <div>
         <h4>生成环境</h4>
         <p>默认保留测试环境和生产环境；新增其他环境后，后续会额外生成对应环境的测试报告。</p>
