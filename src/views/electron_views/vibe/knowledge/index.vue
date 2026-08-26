@@ -1,8 +1,10 @@
 <template>
   <main
+    ref="shellRef"
     class="vibe-shell"
     :class="{
       'side-collapsed': sideCollapsed,
+      'side-resizing': sideResizing,
       'workspace-resizing': workspaceWindowResizing,
     }"
     :style="workspaceWindowStyle"
@@ -118,6 +120,29 @@
       </section>
 
     </aside>
+
+    <div
+      ref="sideResizeHandleRef"
+      class="side-resize-handle"
+      role="separator"
+      :tabindex="sideCollapsed ? -1 : 0"
+      :aria-hidden="sideCollapsed ? 'true' : undefined"
+      aria-label="调整侧栏宽度"
+      aria-orientation="vertical"
+      :aria-valuemin="sideWidthRange.min"
+      :aria-valuemax="sideWidthRange.max"
+      :aria-valuenow="sideWidthPx"
+      :aria-valuetext="`侧栏宽度 ${sideWidthPx} 像素`"
+      title="拖拽调整侧栏宽度；方向键微调"
+      @pointerdown="beginSideResize"
+      @pointermove="moveSideResize"
+      @pointerup="finishSideResize"
+      @pointercancel="finishSideResize"
+      @lostpointercapture="finishSideResize"
+      @keydown="handleSideResizeKeydown"
+    >
+      <span class="side-resize-grip" aria-hidden="true" />
+    </div>
 
     <section class="main-frame">
       <section
@@ -723,6 +748,13 @@ import {
   workspaceViewerWidthRange,
 } from './workspaceResizePolicy'
 import {
+  clampVibeSideWidth,
+  draggedVibeSideWidth,
+  VIBE_SIDE_WIDTH_DEFAULT_PX,
+  VIBE_SIDE_WIDTH_KEYBOARD_STEP_PX,
+  vibeSideWidthRange,
+} from './sideResizePolicy'
+import {
   normalizeConversationSourceCitation,
   sourceCitationHasReadableRange,
   sourceCitationViewerIdentity,
@@ -785,7 +817,28 @@ const infoRailCollapsed = ref(false)
 const workspaceWindowOpen = ref(false)
 const workspaceWindowRequestedOpen = ref(false)
 const workspaceWindowLayoutActive = ref(false)
+const shellRef = ref<HTMLElement | null>(null)
 const mainRef = ref<HTMLElement | null>(null)
+const SIDE_WIDTH_STORAGE_KEY = 'vibe_kb_side_width_px'
+const initialShellWidthPx = typeof window !== 'undefined' ? Math.max(0, Math.round(window.innerWidth)) : 0
+const storedSideWidth = Number(localStorage.getItem(SIDE_WIDTH_STORAGE_KEY))
+const requestedSideWidth = Number.isFinite(storedSideWidth) && storedSideWidth > 0
+  ? Math.round(storedSideWidth)
+  : VIBE_SIDE_WIDTH_DEFAULT_PX
+const shellWidthPx = ref(initialShellWidthPx)
+const sideWidthPx = ref(clampVibeSideWidth(requestedSideWidth, initialShellWidthPx))
+const sideWidthRange = computed(() => vibeSideWidthRange(shellWidthPx.value))
+const sideResizeHandleRef = ref<HTMLElement | null>(null)
+const sideResizing = ref(false)
+type SideResizeSession = {
+  pointerId: number
+  startClientX: number
+  startWidth: number
+  moved: boolean
+}
+let sideResizeSession: SideResizeSession | null = null
+let shellResizeObserver: ResizeObserver | null = null
+let shellResizeFallbackRegistered = false
 const WORKSPACE_WINDOW_WIDTH_STORAGE_KEY = 'vibe_conversation_workspace_width_px'
 const storedWorkspaceWindowWidth = Number(localStorage.getItem(WORKSPACE_WINDOW_WIDTH_STORAGE_KEY))
 const workspaceWindowPreferredWidthPx = ref(
@@ -805,6 +858,7 @@ const workspaceWindowWidthPx = computed(() => {
 })
 const workspaceWindowStyle = computed<Record<string, string>>(() => ({
   '--workspace-window-width': `${workspaceWindowWidthPx.value}px`,
+  '--vibe-side-width': `${sideWidthPx.value}px`,
 }))
 const workspaceWindowResizing = ref(false)
 type WorkspaceResizeSession = {
@@ -1073,6 +1127,101 @@ function setInfoRailCollapsed(collapsed: boolean) {
 function toggleInfoRail() {
   if (workspaceInfoToggleDisabled.value) return
   setInfoRailCollapsed(!infoRailCollapsed.value)
+}
+
+function updateShellWidth(): void {
+  const measuredWidth = shellRef.value?.getBoundingClientRect().width || 0
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+  const nextWidth = Math.max(0, Math.round(measuredWidth || viewportWidth))
+  shellWidthPx.value = nextWidth
+
+  const nextSideWidth = clampVibeSideWidth(sideWidthPx.value, nextWidth)
+  if (nextSideWidth !== sideWidthPx.value) sideWidthPx.value = nextSideWidth
+}
+
+function startShellResizeObserver(): void {
+  updateShellWidth()
+  if (typeof ResizeObserver !== 'undefined' && shellRef.value) {
+    shellResizeObserver = new ResizeObserver(updateShellWidth)
+    shellResizeObserver.observe(shellRef.value)
+    return
+  }
+  window.addEventListener('resize', updateShellWidth)
+  shellResizeFallbackRegistered = true
+}
+
+function stopShellResizeObserver(): void {
+  shellResizeObserver?.disconnect()
+  shellResizeObserver = null
+  if (!shellResizeFallbackRegistered) return
+  window.removeEventListener('resize', updateShellWidth)
+  shellResizeFallbackRegistered = false
+}
+
+function persistSideWidth(): void {
+  localStorage.setItem(SIDE_WIDTH_STORAGE_KEY, String(sideWidthPx.value))
+}
+
+function beginSideResize(event: PointerEvent): void {
+  if (sideCollapsed.value || sideResizeSession || !event.isPrimary || event.button !== 0) return
+  const handle = event.currentTarget as HTMLElement
+  sideResizeSession = {
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startWidth: sideWidthPx.value,
+    moved: false,
+  }
+  sideResizing.value = true
+  handle.setPointerCapture(event.pointerId)
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function moveSideResize(event: PointerEvent): void {
+  const session = sideResizeSession
+  if (!session || session.pointerId !== event.pointerId) return
+  if (event.clientX !== session.startClientX) session.moved = true
+  sideWidthPx.value = draggedVibeSideWidth({
+    startWidth: session.startWidth,
+    startClientX: session.startClientX,
+    clientX: event.clientX,
+    containerWidth: shellWidthPx.value,
+  })
+  event.preventDefault()
+}
+
+function finishSideResize(event: PointerEvent): void {
+  const session = sideResizeSession
+  if (!session || session.pointerId !== event.pointerId) return
+  sideResizeSession = null
+  sideResizing.value = false
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture?.(session.pointerId)) {
+    handle.releasePointerCapture(session.pointerId)
+  }
+  if (session.moved) persistSideWidth()
+}
+
+function handleSideResizeKeydown(event: KeyboardEvent): void {
+  let requestedWidth: number | null = null
+  if (event.key === 'ArrowLeft') {
+    requestedWidth = sideWidthPx.value - VIBE_SIDE_WIDTH_KEYBOARD_STEP_PX
+  } else if (event.key === 'ArrowRight') {
+    requestedWidth = sideWidthPx.value + VIBE_SIDE_WIDTH_KEYBOARD_STEP_PX
+  } else if (event.key === 'Home') {
+    requestedWidth = sideWidthRange.value.min
+  } else if (event.key === 'End') {
+    requestedWidth = sideWidthRange.value.max
+  }
+  if (requestedWidth == null) return
+  event.preventDefault()
+  sideWidthPx.value = clampVibeSideWidth(requestedWidth, shellWidthPx.value)
+  persistSideWidth()
+}
+
+function cancelSideResize(): void {
+  sideResizeSession = null
+  sideResizing.value = false
 }
 
 function updateWorkspaceMainWidth(): void {
@@ -2184,6 +2333,7 @@ const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSED_KEY) === '1')
 const isMacPlatform = window.electronAPI?.platform === 'darwin'
 
 function setSideCollapsed(collapsed: boolean) {
+  if (collapsed) cancelSideResize()
   sideCollapsed.value = collapsed
   localStorage.setItem(SIDE_COLLAPSED_KEY, collapsed ? '1' : '0')
 }
@@ -2227,6 +2377,8 @@ function trackMaximizeState() {
 onBeforeUnmount(() => {
   offMaximizeState?.()
   stopUserMessageOverflowObservation()
+  stopShellResizeObserver()
+  cancelSideResize()
   stopWorkspaceMainWidthObserver()
   workspaceResizeSession = null
   workspaceWindowResizing.value = false
@@ -2277,6 +2429,7 @@ function replayIntro(event: MouseEvent) {
 
 onMounted(() => {
   initializeInfoRail()
+  startShellResizeObserver()
   startWorkspaceMainWidthObserver()
   bootstrap()
   loadVibeCapabilities()
@@ -4899,6 +5052,7 @@ function isStreamingUnderEvent(event: any) {
 
 <style scoped lang="scss">
 .vibe-shell {
+  --vibe-side-width: 282px;
   --workspace-window-width: 760px;
   --vibe-glass-bg:
     linear-gradient(180deg, rgba(248, 248, 247, 0.9), rgba(242, 242, 240, 0.82)),
@@ -4917,7 +5071,7 @@ function isStreamingUnderEvent(event: any) {
   height: 100vh;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 282px minmax(0, 1fr);
+  grid-template-columns: var(--vibe-side-width) minmax(0, 1fr);
   /* 关键：显式定义行轨道填满视口。否则隐式行按内容撑高，消息超过窗口高度时
      整个 shell 被撑过 100vh，overflow:hidden 裁掉底部，输入框被挤到可视区下方
      （窗口越小越明显；最大化时内容不超高，所以"看起来正确"）。
@@ -4932,6 +5086,10 @@ function isStreamingUnderEvent(event: any) {
 
 .vibe-shell.side-collapsed {
   grid-template-columns: 0px minmax(0, 1fr);
+}
+
+.vibe-shell.side-resizing {
+  transition: none;
 }
 
 /* 玻璃色底层：收起动画中 grid 轨道缩放会瞬间露出透明窗口（黑闪），
@@ -5160,9 +5318,9 @@ function isStreamingUnderEvent(event: any) {
   transition: opacity 160ms ease;
 }
 
-/* 收起动画期间内容保持固有宽度（282 - 左右 padding 24 = 258），只被裁切、不被挤压回流 */
+/* 收起动画期间内容保持侧栏内宽，只被裁切、不被挤压回流；宽度随侧栏轨道联动。 */
 .side > * {
-  width: 258px;
+  width: max(0px, calc(var(--vibe-side-width) - 24px));
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -5176,6 +5334,73 @@ function isStreamingUnderEvent(event: any) {
 
 .side-collapsed .side::after {
   opacity: 0;
+}
+
+/*
+ * The separator is intentionally transparent: the existing sidebar/main
+ * boundary remains visually unchanged while the larger hit area makes the
+ * affordance easy to grab.  Only hover/focus/drag feedback is added.
+ */
+.side-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--vibe-side-width);
+  z-index: 30;
+  width: 14px;
+  transform: translateX(-7px);
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  transition: left 240ms ease, opacity 160ms ease;
+}
+
+.side-resize-grip {
+  width: 2px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(15, 15, 15, 0.3);
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.side-resize-handle:hover .side-resize-grip,
+.side-resize-handle:focus-visible .side-resize-grip,
+.side-resizing .side-resize-grip {
+  background: rgba(15, 15, 15, 0.52);
+  opacity: 0.72;
+}
+
+.side-resize-handle:focus-visible .side-resize-grip {
+  box-shadow: 0 0 0 3px rgba(15, 15, 15, 0.1);
+}
+
+.vibe-shell.side-collapsed .side-resize-handle {
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vibe-shell.side-resizing .side-resize-handle {
+  transition: none;
+}
+
+.vibe-shell.side-resizing,
+.vibe-shell.side-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.vibe-shell.side-resizing .main-head,
+.vibe-shell.side-resizing .conversation-workspace-window {
+  transition: none !important;
 }
 
 .icon-btn,
@@ -5912,7 +6137,9 @@ function isStreamingUnderEvent(event: any) {
   .workspace-window-enter-active,
   .workspace-window-leave-active,
   .main-head,
-  .main-head-actions {
+  .main-head-actions,
+  .side-resize-handle,
+  .side-resize-grip {
     transition: none !important;
   }
 }
