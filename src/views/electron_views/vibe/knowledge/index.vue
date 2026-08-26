@@ -100,7 +100,7 @@
       <section class="side-user-card" aria-label="用户与知识库入口">
         <button class="side-user-profile" type="button" @click="openVibeSettings">
           <span class="side-user-avatar avatar-container">
-            <el-avatar :size="24" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+            <el-avatar :key="currentUserAvatarRenderKey" :size="24" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
           </span>
           <span class="side-user-main">
             <strong>{{ currentUserName }}</strong>
@@ -718,6 +718,12 @@ import {
 } from './conversationInfoRailPolicy'
 import { knowledgeChangeTitle } from '../browser/knowledgeChangePresentation'
 import {
+  cacheBustedAvatarUrl,
+  currentUserAvatarRevision,
+  defaultAvatarUrlForUser,
+  useCurrentUserProfile,
+} from '@/composables/useCurrentUserProfile'
+import {
   closeViewerTab,
   deletedConversationIsStillActive,
   snapshotWorkspaceViewerConversation,
@@ -789,8 +795,23 @@ const loading = ref(false)
 const vibeCapabilities = ref<Record<string, boolean>>({})
 const canViewTraceAudit = computed(() => !!vibeCapabilities.value.trace_audit)
 const currentUser = ref<VibeCapabilityUser | null>(null)
+const {
+  profile: syncedProfile,
+  avatarUrl: syncedAvatarUrl,
+  avatarRenderKey: syncedAvatarRenderKey,
+  ensureProfileSync,
+} = useCurrentUserProfile()
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
-const currentUserAvatar = computed(() => String(currentUser.value?.avatar_url || ''))
+const currentUserAvatar = computed(() => {
+  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarUrl.value
+  const url = String(currentUser.value?.avatar_url || '') || defaultAvatarUrlForUser(currentUser.value?.id)
+  void currentUserAvatarRevision.value
+  return cacheBustedAvatarUrl(url)
+})
+const currentUserAvatarRenderKey = computed(() => {
+  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarRenderKey.value
+  return `${currentUser.value?.id ?? 'anonymous'}:${currentUserAvatar.value}:${currentUserAvatarRevision.value}`
+})
 const llmProviders = ref<VibeLLMModelPickerProvider[]>([])
 const selectedLlmProviderId = ref('')
 const modelConfigLoading = ref(false)
@@ -2427,6 +2448,7 @@ function replayIntro(event: MouseEvent) {
 }
 
 onMounted(() => {
+  ensureProfileSync()
   initializeInfoRail()
   startShellResizeObserver()
   startWorkspaceMainWidthObserver()

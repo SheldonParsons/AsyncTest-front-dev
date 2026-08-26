@@ -4,7 +4,7 @@
             <div class="mind-header-user-section">
                 <div class="mind-header-action-item">
                     <div class="mind-header-avatar-container" @click="handleAvatarClick">
-                        <el-avatar :size="36" :src="userImage" class="mind-header-user-avatar" />
+                        <el-avatar :key="userAvatarRenderKey" :size="36" :src="userImage" class="mind-header-user-avatar" />
                     </div>
                 </div>
                 <div v-if="isLoggedIn" class="mind-header-action-item">
@@ -151,6 +151,7 @@ import { useStore } from '@/store'
 import { ApiCheckPermission, ClearServerCookie } from '@/api/layout/cookies'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
+import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 
 const route = useRoute();
 const store: any = useStore()
@@ -238,7 +239,14 @@ const mindMainRef = computed(() => {
     return activeDocumentId.value ? mindMainRefs.get(activeDocumentId.value) ?? null : null;
 });
 const isLoggedIn = ref(checkLoginStatus());
-const userImage = ref("https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png");
+const {
+    avatarUrl: userImage,
+    avatarRenderKey: userAvatarRenderKey,
+    fetchProfile,
+    applyProfile,
+    clearProfile,
+    ensureProfileSync,
+} = useCurrentUserProfile();
 const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null);
 const loginDialogRef = ref<any>(null);
 const remoteBindingDialogVisible = ref(false);
@@ -434,6 +442,7 @@ async function handleWorkspaceBeforeClose(key: string) {
 }
 
 onMounted(async () => {
+    ensureProfileSync();
     windowKey.value = route.query.windowKey
     if (window.electronAPI?.on) {
         removeAuthLogoutListener = window.electronAPI.on('auth:logout', (_event: any, payload: { sourceWindow?: string } = {}) => {
@@ -646,10 +655,16 @@ async function ensureShareLoginReady() {
     return true;
 }
 
-async function getUserImage() {
-    const res = await store.dispatch("getUser");
-    if (res && res.id) {
-        userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.userId + (0 % 100)}.png`;
+async function getUserImage(force = false) {
+    const loaded = await fetchProfile(force);
+    if (loaded) return;
+    const cachedUser = await store.dispatch("getUser");
+    if (cachedUser?.userId) {
+        applyProfile({
+            id: cachedUser.userId,
+            username: cachedUser.username,
+            nick_name: cachedUser.nickName,
+        });
     }
 }
 
@@ -663,12 +678,15 @@ function handleAvatarClick() {
 
 function applyLoggedOutState() {
     isLoggedIn.value = false;
+    clearProfile();
 }
 
 function updateLoginStatus() {
     isLoggedIn.value = checkLoginStatus();
     if (isLoggedIn.value) {
-        void getUserImage();
+        void getUserImage(true);
+    } else {
+        clearProfile();
     }
 }
 
@@ -723,7 +741,7 @@ async function onShareClick() {
 function handleLoginSuccess() {
     loginDialogRef.value?.close();
     isLoggedIn.value = true;
-    void getUserImage();
+    void getUserImage(true);
     if (window.electronAPI?.wm?.broadcast) {
         void window.electronAPI.wm.broadcast('auth:login', { sourceWindow: windowKey.value || 'mind' });
     }

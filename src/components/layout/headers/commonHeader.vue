@@ -155,7 +155,7 @@
                 <template #trigger>
                   <div class="avatar-container" @mouseenter="tooltipStates.profile = true"
                     @mouseleave="tooltipStates.profile = false" @click="handleAvatarClick">
-                    <el-avatar :size="36" :src="userImage" class="user-avatar" />
+                    <el-avatar :key="userAvatarRenderKey" :size="36" :src="userImage" class="user-avatar" />
                   </div>
                 </template>
                 <span>个人信息</span>
@@ -214,6 +214,7 @@ import GlobalStatus from "@/global";
 import UserProfileDialog from "@/components/layout/dialogs/UserProfileDialog.vue"
 import DialogAnimation from '@/components/common/general/dialog.vue'
 import LoginComponent from '@/views/electron_views/login.vue'
+import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 
 const store: any = useStore()
 const router: any = useRouter()
@@ -225,9 +226,14 @@ const isReady = ref(false)
 const { locale: localeLang } = useI18n()
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const currentWindowKey = computed(() => (route.query.windowKey as string) || 'main')
-const userImage = ref(
-  "https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/99.png"
-)
+const {
+  avatarUrl: userImage,
+  avatarRenderKey: userAvatarRenderKey,
+  fetchProfile,
+  applyProfile,
+  clearProfile,
+  ensureProfileSync,
+} = useCurrentUserProfile()
 
 function minimize() {
   window.electronAPI?.wm?.control('main', 'minimize');
@@ -274,6 +280,7 @@ let removeAuthLoginListener: (() => void) | null = null
 const emit = defineEmits(["up"])
 
 onMounted(async () => {
+  ensureProfileSync()
   getLanguage()
   getHeader(router.currentRoute.value)
   getUserImage()
@@ -365,13 +372,21 @@ function getHeader(r: any) {
   store.dispatch("saveGlobalHeader", isLogin.value)
 }
 
-function getUserImage() {
-  if (!checkLoginStatus()) return
-  store.dispatch("getUser").then((res: any) => {
-    if (res && res.id) {
-      userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.id}.png`
-    }
-  })
+async function getUserImage(force = false) {
+  if (!checkLoginStatus()) {
+    clearProfile()
+    return
+  }
+  const loaded = await fetchProfile(force)
+  if (loaded) return
+  const cachedUser = await store.dispatch("getUser")
+  if (cachedUser?.userId) {
+    applyProfile({
+      id: cachedUser.userId,
+      username: cachedUser.username,
+      nick_name: cachedUser.nickName,
+    })
+  }
 }
 
 function getLanguage() {
@@ -396,6 +411,7 @@ function langHandleSelect(e: any) {
 
 function applyLoggedOutState() {
   isLoggedIn.value = false
+  clearProfile()
   if (import.meta.env.VITE_IS_ELECTRON === 'true') {
     router.push({ name: "dashboard" })
   } else {
@@ -445,7 +461,7 @@ function handleLoginSuccess() {
   loginDialogRef.value?.close()
   // 更新登录状态
   isLoggedIn.value = true
-  getUserImage()
+  getUserImage(true)
   if (isElectron && window.electronAPI?.wm?.broadcast) {
     void window.electronAPI.wm.broadcast('auth:login', { sourceWindow: currentWindowKey.value })
   }
@@ -462,7 +478,9 @@ function openDocsInBrowser() {
 function updateLoginStatus() {
   isLoggedIn.value = checkLoginStatus()
   if (isLoggedIn.value) {
-    getUserImage()
+    getUserImage(true)
+  } else {
+    clearProfile()
   }
 }
 

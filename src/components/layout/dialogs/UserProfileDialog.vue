@@ -11,7 +11,7 @@
       <div class="profile-sheet__hero">
         <div class="profile-sheet__identity">
           <div class="profile-sheet__avatar-wrap">
-            <el-avatar :size="60" :src="userAvatar" class="profile-sheet__avatar" />
+            <el-avatar :key="userAvatarRenderKey" :size="60" :src="userAvatar" class="profile-sheet__avatar" />
           </div>
 
           <div class="profile-sheet__headline">
@@ -121,6 +121,10 @@ import { computed, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import AstDialog from '@/components/common/general/dialog.vue'
 import { http } from '@/utils/http'
+import {
+  cacheBustedAvatarUrl,
+  currentUserAvatarRevision,
+} from '@/composables/useCurrentUserProfile'
 
 type UserProfile = {
   id: number | null;
@@ -208,8 +212,13 @@ const dirty = computed(() =>
 
 const userAvatar = computed(() => {
   const userId = profile.id ?? 99
-  return `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${userId}.png`
+  const baseUrl = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${userId}.png`
+  // Re-evaluate when login/profile sync bumps the shared avatar revision.
+  void currentUserAvatarRevision.value
+  return cacheBustedAvatarUrl(baseUrl)
 })
+
+const userAvatarRenderKey = computed(() => `${profile.id ?? 'anonymous'}:${currentUserAvatarRevision.value}`)
 
 function normalizeProfile(payload?: Partial<UserProfile>): UserProfile {
   return {

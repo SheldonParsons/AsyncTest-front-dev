@@ -75,7 +75,7 @@
       <section v-if="activeKey === 'profile'" class="profile-panel">
         <div class="profile-hero">
           <span class="profile-avatar avatar-container">
-            <el-avatar :size="58" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+            <el-avatar :key="currentUserAvatarRenderKey" :size="58" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
           </span>
           <h1>{{ currentUserName }}</h1>
           <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
@@ -599,6 +599,12 @@ import VibeGlobalControlSettings from './VibeGlobalControlSettings.vue'
 import VibeKnowledgeApiModelSettings from './VibeKnowledgeApiModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
+import {
+  cacheBustedAvatarUrl,
+  currentUserAvatarRevision,
+  defaultAvatarUrlForUser,
+  useCurrentUserProfile,
+} from '@/composables/useCurrentUserProfile'
 import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
@@ -611,6 +617,12 @@ let offMaximizeState: (() => void) | null = null
 const capabilities = ref<Record<string, boolean>>({})
 const featureConfigs = ref<Record<string, VibeFeatureConfig>>({})
 const currentUser = ref<VibeCapabilityUser | null>(null)
+const {
+  profile: syncedProfile,
+  avatarUrl: syncedAvatarUrl,
+  avatarRenderKey: syncedAvatarRenderKey,
+  ensureProfileSync,
+} = useCurrentUserProfile()
 const usageSummary = ref<VibeUsageSummary>({
   total_tokens: 0,
   peak_tokens: 0,
@@ -710,7 +722,16 @@ const canViewAdminSettings = computed(() => canViewTraceAudit.value || canViewSy
 const traceAuditEnabled = computed(() => featureConfigs.value.trace_audit?.enabled !== false)
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
 const currentUsername = computed(() => String(currentUser.value?.username || 'user'))
-const currentUserAvatar = computed(() => String(currentUser.value?.avatar_url || ''))
+const currentUserAvatar = computed(() => {
+  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarUrl.value
+  const url = String(currentUser.value?.avatar_url || '') || defaultAvatarUrlForUser(currentUser.value?.id)
+  void currentUserAvatarRevision.value
+  return cacheBustedAvatarUrl(url)
+})
+const currentUserAvatarRenderKey = computed(() => {
+  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarRenderKey.value
+  return `${currentUser.value?.id ?? 'anonymous'}:${currentUserAvatar.value}:${currentUserAvatarRevision.value}`
+})
 const userInitials = computed(() => {
   const text = currentUserName.value.trim() || 'U'
   const letters = Array.from(text).slice(0, 2).join('')
@@ -2091,6 +2112,7 @@ watch(activeKey, (key) => {
 })
 
 onMounted(async () => {
+  ensureProfileSync()
   trackMaximizeState()
   syncRouteTab()
   await Promise.all([
