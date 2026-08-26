@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import type { AxiosRequestConfig } from 'axios'
 import { http } from '@/utils/http'
 
 export const CURRENT_USER_PROFILE_EVENT = 'user:profile-updated'
@@ -286,7 +287,7 @@ export async function fetchCurrentUserProfile(force = false): Promise<CurrentUse
   const request = (async () => {
     try {
       const response = await http.httpGet<CurrentUserProfileResponse>('/user/me/', force
-        ? { _profile_refresh: `${avatarRefreshRevision.value}-${++profileRefreshNonce}` }
+        ? ({ _profile_refresh: `${avatarRefreshRevision.value}-${++profileRefreshNonce}` } as unknown as AxiosRequestConfig)
         : {})
       const data = responseProfile(response, '获取用户信息失败')
       if (requestEpoch !== profileEpoch || requestRevision !== profileRevision) return profile.value
