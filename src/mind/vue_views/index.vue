@@ -5,7 +5,6 @@
                 <div class="mind-header-action-item">
                     <div class="mind-header-avatar-container" @click="handleAvatarClick">
                         <el-avatar :size="36" :src="userImage" class="mind-header-user-avatar" />
-                        <div class="mind-header-online-indicator"></div>
                     </div>
                 </div>
                 <div v-if="isLoggedIn" class="mind-header-action-item">
@@ -972,18 +971,6 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
     .mind-header-avatar-container:hover .mind-header-user-avatar {
         transform: scale(1.08) rotate(5deg);
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-    }
-
-    .mind-header-online-indicator {
-        position: absolute;
-        bottom: 1px;
-        right: 1px;
-        width: 10px;
-        height: 10px;
-        background: #10b981;
-        border: 2px solid #fff;
-        border-radius: 50%;
-        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04);
     }
 
     .mind-header-user-action-btn {

@@ -101,7 +101,6 @@
         <button class="side-user-profile" type="button" @click="openVibeSettings">
           <span class="side-user-avatar avatar-container">
             <el-avatar :size="24" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
-            <span class="online-indicator" aria-hidden="true" />
           </span>
           <span class="side-user-main">
             <strong>{{ currentUserName }}</strong>
@@ -5625,23 +5624,6 @@ function isStreamingUnderEvent(event: any) {
 
 .side-user-avatar .user-avatar {
   border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.side-user-avatar .online-indicator {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 6px;
-  height: 6px;
-  background: #10b981;
-  border: 1.5px solid #fff;
-  border-radius: 50%;
-  animation: user-pulse 2s ease-in-out infinite;
-}
-
-@keyframes user-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-  50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
 }
 
 .side-user-main {

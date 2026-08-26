@@ -156,7 +156,6 @@
                   <div class="avatar-container" @mouseenter="tooltipStates.profile = true"
                     @mouseleave="tooltipStates.profile = false" @click="handleAvatarClick">
                     <el-avatar :size="36" :src="userImage" class="user-avatar" />
-                    <div class="online-indicator"></div>
                   </div>
                 </template>
                 <span>个人信息</span>
@@ -187,7 +186,7 @@
 
   <!-- 登录弹窗 -->
   <DialogAnimation ref="loginDialogRef" title="登录" bgtype="white" :showCancel="false" :showComfirm="false">
-    <LoginComponent @loginSuccess="handleLoginSuccess" />
+    <LoginComponent :redirect-on-success="false" @loginSuccess="handleLoginSuccess" />
   </DialogAnimation>
 </template>
 
@@ -367,6 +366,7 @@ function getHeader(r: any) {
 }
 
 function getUserImage() {
+  if (!checkLoginStatus()) return
   store.dispatch("getUser").then((res: any) => {
     if (res && res.id) {
       userImage.value = `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${res.id}.png`
@@ -947,33 +947,9 @@ defineExpose({
     will-change: transform;
   }
 
-  .online-indicator {
-    position: absolute;
-    bottom: 1px;
-    right: 1px;
-    width: 10px;
-    height: 10px;
-    background: #10b981;
-    border: 2px solid #fff;
-    border-radius: 50%;
-    animation: pulse 2s ease-in-out infinite;
-  }
-
   &:hover .user-avatar {
     transform: scale(1.1) rotate(5deg);
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-  }
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
   }
 }
 

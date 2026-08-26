@@ -91,7 +91,7 @@ const router = useRouter()
 const loginDialogRef = ref<any>(null)
 const electronAPI = (window as any).electronAPI
 const loginRedirectOnSuccess = ref(true)
-const postLoginAction = ref<'vibe' | null>(null)
+const postLoginAction = ref<'generator' | 'vibe' | null>(null)
 
 const emit = defineEmits(['doubleCheckLoginStatus'])
 
@@ -135,8 +135,15 @@ const handleEnterMind = () => {
   router.push({ name: "mindDashboard" })
 }
 
-const handleEnterGenerator = () => {
-  router.push({ name: "generator" })
+const handleEnterGenerator = async () => {
+  if (await checkLoginStatus()) {
+    router.push({ name: "generator" })
+    return
+  }
+
+  postLoginAction.value = 'generator'
+  loginRedirectOnSuccess.value = false
+  loginDialogRef.value?.open()
 }
 
 const handleEnterVibe = async () => {
@@ -194,8 +201,14 @@ const handleLoginSuccess = async () => {
   }
   if (postLoginAction.value === 'vibe') {
     postLoginAction.value = null
-    loginRedirectOnSuccess.value = true
     await openVibeWorkbench()
+    loginRedirectOnSuccess.value = true
+    return
+  }
+  if (postLoginAction.value === 'generator') {
+    postLoginAction.value = null
+    await router.push({ name: 'generator' })
+    loginRedirectOnSuccess.value = true
     return
   }
   postLoginAction.value = null

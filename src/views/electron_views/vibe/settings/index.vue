@@ -76,7 +76,6 @@
         <div class="profile-hero">
           <span class="profile-avatar avatar-container">
             <el-avatar :size="58" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
-            <span class="online-indicator" aria-hidden="true" />
           </span>
           <h1>{{ currentUserName }}</h1>
           <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
@@ -2310,26 +2309,9 @@ onBeforeUnmount(() => {
   will-change: transform;
 }
 
-.profile-avatar .online-indicator {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 11px;
-  height: 11px;
-  background: #10b981;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  animation: user-pulse 2s ease-in-out infinite;
-}
-
 .profile-avatar:hover .user-avatar {
   transform: scale(1.1) rotate(5deg);
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-@keyframes user-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-  50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
 }
 
 .profile-hero h1 {

@@ -99,6 +99,10 @@ const visibleToolCards = computed(() =>
 );
 
 async function refreshCurrentUser() {
+  if (asyncTest.cookies.getCookie(GlobalStatus.cookieTag) === false) {
+    currentUsername.value = "";
+    return;
+  }
   const response = await http.httpGet<CurrentUserResponse>("/user/me/", {}).catch(() => null);
   currentUsername.value =
     response?.result === 1 ? String(response.data?.username ?? "").trim() : "";
