@@ -48,7 +48,7 @@ export function vibeSideWidthRange(containerWidth: unknown): VibeSideWidthRange 
 export function clampVibeSideWidth(width: unknown, containerWidth: unknown): number {
   const range = vibeSideWidthRange(containerWidth)
   const value = finitePixels(width)
-  const requested = value > 0 ? value : VIBE_SIDE_WIDTH_DEFAULT_PX
+  const requested = value > 0 ? value : range.min
   return Math.min(range.max, Math.max(range.min, requested))
 }
 
