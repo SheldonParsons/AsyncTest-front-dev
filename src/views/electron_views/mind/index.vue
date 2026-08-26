@@ -475,9 +475,9 @@ function formatUpdatedAt(value?: string | null) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
-    padding: 24px;
-    border-radius: 24px;
+    gap: 16px;
+    padding: 14px 18px;
+    border-radius: 18px;
     background:
         radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 30%),
         linear-gradient(180deg, #ffffff, #f8fafc);
@@ -488,13 +488,14 @@ function formatUpdatedAt(value?: string | null) {
 .mind-hero-main {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    min-width: 0;
 }
 
 .mind-hero-logo-shell {
-    width: 64px;
-    height: 64px;
-    border-radius: 18px;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -508,19 +509,20 @@ function formatUpdatedAt(value?: string | null) {
 }
 
 .mind-hero-logo {
-    width: 38px;
-    height: 30px;
+    width: 30px;
+    height: 24px;
     display: block;
     object-fit: contain;
 }
 
 .mind-hero-copy {
+    min-width: 0;
     max-width: 720px;
 }
 
 .mind-hero-eyebrow {
-    margin: 0 0 6px 0;
-    font-size: 12px;
+    margin: 0 0 2px 0;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -529,33 +531,33 @@ function formatUpdatedAt(value?: string | null) {
 
 .mind-hero-title {
     margin: 0;
-    font-size: 28px;
+    font-size: 22px;
     line-height: 1.1;
     font-weight: 800;
     color: #111827;
 }
 
 .mind-hero-description {
-    margin: 10px 0 0 0;
-    font-size: 14px;
-    line-height: 1.7;
+    margin: 4px 0 0 0;
+    font-size: 12px;
+    line-height: 1.45;
     color: #6b7280;
 }
 
 .mind-hero-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
 .mind-hero-button {
     border: 1px solid #d1d5db;
-    border-radius: 12px;
-    padding: 11px 16px;
+    border-radius: 10px;
+    padding: 8px 12px;
     background: #ffffff;
     color: #1f2937;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;

@@ -2,12 +2,19 @@
   <section ref="workspaceRootRef" class="report-workspace">
     <header class="workspace-header">
       <div class="workspace-header-main">
-        <button class="back-button" type="button" @click="$emit('back')">← 返回 Generator 首页</button>
-        <div>
+        <button
+          class="back-button"
+          type="button"
+          aria-label="返回 Generator 首页"
+          title="返回 Generator 首页"
+          @click="$emit('back')"
+        >
+          <BackIcon class="back-button-icon" aria-hidden="true" />
+        </button>
+        <div class="workspace-title-copy">
           <h2>生成测试报告</h2>
         </div>
       </div>
-
     </header>
 
     <nav class="report-scroll-actions" aria-label="报告页面滚动操作">
@@ -154,6 +161,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import DialogAnimation from "@/components/common/general/dialog.vue";
 import LoginComponent from "@/views/electron_views/login.vue";
+import BackIcon from "@/assets/svg/common/new_icon/back.vue";
 import ReportConfigPanel from "./panels/ReportConfigPanel.vue";
 import ReportLogPanel from "./panels/ReportLogPanel.vue";
 import ReportRecentExportsPanel from "./panels/ReportRecentExportsPanel.vue";
@@ -444,33 +452,42 @@ onBeforeUnmount(() => {
 .workspace-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 10px 12px;
+  border-radius: 14px;
 }
 
 .workspace-header-main {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   border: 1px solid rgba(15, 23, 42, 0.1);
-  width: fit-content;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 9px;
   background: #ffffff;
   color: #111827;
-  font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
     background-color 0.18s ease,
     box-shadow 0.18s ease;
+}
+
+.back-button-icon {
+  width: 17px;
+  height: 17px;
 }
 
 .back-button:hover {
@@ -481,9 +498,10 @@ onBeforeUnmount(() => {
 }
 
 .workspace-header h2 {
-  margin: 0 0 4px;
+  margin: 0;
   color: #0f172a;
-  font-size: 20px;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .workspace-header p {
@@ -588,7 +606,7 @@ onBeforeUnmount(() => {
 
 .workspace-side-stack {
   position: sticky;
-  top: 10px;
+  top: 5px;
   z-index: 4;
   display: flex;
   flex-direction: column;
