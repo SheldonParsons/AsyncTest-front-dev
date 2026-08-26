@@ -4,7 +4,10 @@
       <div>
         <h3>过程日志</h3>
       </div>
-      <span class="report-log-panel-count">{{ logs.length }} 条</span>
+      <div class="report-log-panel-actions">
+        <span class="report-log-panel-count">{{ logs.length }} 条</span>
+        <button class="report-log-generate-button" type="button" @click="emit('generate-docx')">生成 DOCX</button>
+      </div>
     </header>
 
     <div class="log-list">
@@ -29,6 +32,10 @@ defineProps<{
   logs: ReportLogEntry[];
 }>();
 
+const emit = defineEmits<{
+  "generate-docx": [];
+}>();
+
 const stepLabelMap: Record<ReportStepKey, string> = {
   draft: "草稿",
   sources: "数据源",
@@ -50,9 +57,18 @@ const stepLabelMap: Record<ReportStepKey, string> = {
 .report-log-panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.report-log-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 
 .report-log-panel-kicker,
@@ -69,9 +85,43 @@ const stepLabelMap: Record<ReportStepKey, string> = {
 }
 
 .report-log-panel-head h3 {
-  margin: 10px 0 0;
+  margin: 0;
   color: #0f172a;
   font-size: 22px;
+}
+
+.report-log-generate-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #111827;
+  border-radius: 10px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.report-log-generate-button:hover {
+  transform: translateY(-1px);
+  border-color: #000000;
+  background: #000000;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.18);
+}
+
+.report-log-generate-button:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.32);
+  outline-offset: 3px;
+}
+
+.report-log-generate-button:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .log-list {

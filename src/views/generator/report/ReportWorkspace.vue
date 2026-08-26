@@ -8,11 +8,6 @@
         </div>
       </div>
 
-      <div class="workspace-header-actions">
-        <button class="header-action header-action-primary" type="button" @click="startGenerationPreview">
-          生成 DOCX
-        </button>
-      </div>
     </header>
 
     <nav class="report-scroll-actions" aria-label="报告页面滚动操作">
@@ -108,7 +103,7 @@
 
       <aside class="workspace-side">
         <div class="workspace-side-stack">
-          <ReportLogPanel :logs="state.logs" />
+          <ReportLogPanel :logs="state.logs" @generate-docx="startGenerationPreview" />
           <div ref="recentExportsRef" class="recent-export-shell" :class="{ 'is-flashing': recentExportsFlashing }">
             <ReportRecentExportsPanel
               :records="state.recentExports"
@@ -498,14 +493,6 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.workspace-header-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 .report-scroll-actions {
   position: fixed;
   right: clamp(14px, 2vw, 30px);
@@ -571,47 +558,6 @@ onBeforeUnmount(() => {
   height: 22px;
 }
 
-.header-action {
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #111827;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.header-action:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: rgba(15, 23, 42, 0.18);
-  background: #f8fafc;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
-}
-
-.header-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.header-action-primary {
-  border-color: #111827;
-  background: #111827;
-  color: #ffffff;
-}
-
-.header-action-primary:hover:not(:disabled) {
-  background: #000000;
-  border-color: #000000;
-  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.2);
-}
-
 .workspace-body {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.75fr);
@@ -642,7 +588,7 @@ onBeforeUnmount(() => {
 
 .workspace-side-stack {
   position: sticky;
-  top: clamp(18px, 2vw, 28px);
+  top: 10px;
   z-index: 4;
   display: flex;
   flex-direction: column;
