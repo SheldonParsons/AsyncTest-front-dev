@@ -39,9 +39,6 @@ const stepLabelMap: Record<ReportStepKey, string> = {
 
 <style scoped lang="scss">
 .report-log-panel {
-  position: sticky;
-  top: clamp(18px, 2vw, 28px);
-  z-index: 2;
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;

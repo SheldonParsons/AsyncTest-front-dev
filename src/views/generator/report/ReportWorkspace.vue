@@ -9,30 +9,61 @@
       </div>
 
       <div class="workspace-header-actions">
-        <button
-          class="header-action"
-          type="button"
-          aria-label="回到生成测试报告页面顶部"
-          title="回到生成测试报告页面顶部"
-          @click="scrollToTop"
-        >
-          ↑ 回到顶部
-        </button>
-        <button
-          class="header-action"
-          type="button"
-          :disabled="!canReturnToPreviousPosition"
-          aria-label="返回上一层内容定位"
-          title="返回上一层内容定位"
-          @click="returnToPreviousPosition"
-        >
-          ↶ 返回上一层定位
-        </button>
         <button class="header-action header-action-primary" type="button" @click="startGenerationPreview">
           生成 DOCX
         </button>
       </div>
     </header>
+
+    <nav class="report-scroll-actions" aria-label="报告页面滚动操作">
+      <button
+        class="report-scroll-action"
+        type="button"
+        aria-label="回到生成测试报告页面顶部"
+        title="回到生成测试报告页面顶部"
+        @click="scrollToTop"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m18 15-6-6-6 6" />
+        </svg>
+      </button>
+      <button
+        class="report-scroll-action"
+        type="button"
+        :disabled="!canReturnToPreviousPosition"
+        aria-label="返回上一层内容定位"
+        title="返回上一层内容定位"
+        @click="returnToPreviousPosition"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M5 3h14" />
+          <path d="m18 13-6-6-6 6" />
+          <path d="M12 7v14" />
+        </svg>
+      </button>
+    </nav>
 
     <section class="workspace-body">
       <div class="workspace-main">
@@ -76,13 +107,15 @@
       </div>
 
       <aside class="workspace-side">
-        <ReportLogPanel :logs="state.logs" />
-        <div ref="recentExportsRef" class="recent-export-shell" :class="{ 'is-flashing': recentExportsFlashing }">
-          <ReportRecentExportsPanel
-            :records="state.recentExports"
-            :saving-id="state.savingRecentExportId"
-            @save="saveRecentExport"
-          />
+        <div class="workspace-side-stack">
+          <ReportLogPanel :logs="state.logs" />
+          <div ref="recentExportsRef" class="recent-export-shell" :class="{ 'is-flashing': recentExportsFlashing }">
+            <ReportRecentExportsPanel
+              :records="state.recentExports"
+              :saving-id="state.savingRecentExportId"
+              @save="saveRecentExport"
+            />
+          </div>
         </div>
       </aside>
     </section>
@@ -406,7 +439,7 @@ onBeforeUnmount(() => {
 
 .workspace-header,
 .workspace-main > *,
-.workspace-side > * {
+.workspace-side-stack > * {
   border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: #ffffff;
@@ -467,9 +500,75 @@ onBeforeUnmount(() => {
 
 .workspace-header-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.report-scroll-actions {
+  position: fixed;
+  right: clamp(14px, 2vw, 30px);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.report-scroll-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #334155;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.12),
+    0 2px 6px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.report-scroll-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(16, 185, 129, 0.42);
+  background: #ecfdf5;
+  color: #047857;
+  box-shadow:
+    0 14px 28px rgba(15, 23, 42, 0.14),
+    0 3px 8px rgba(16, 185, 129, 0.12);
+}
+
+.report-scroll-action:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.report-scroll-action:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.32);
+  outline-offset: 3px;
+}
+
+.report-scroll-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+}
+
+.report-scroll-action svg {
+  width: 22px;
+  height: 22px;
 }
 
 .header-action {
@@ -524,8 +623,11 @@ onBeforeUnmount(() => {
 .workspace-side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-width: 0;
+}
+
+.workspace-main {
+  gap: 12px;
 }
 
 .workspace-side {
@@ -533,8 +635,22 @@ onBeforeUnmount(() => {
 }
 
 .workspace-main > *,
-.workspace-side > * {
+.workspace-side > *,
+.workspace-side-stack > * {
   min-width: 0;
+}
+
+.workspace-side-stack {
+  position: sticky;
+  top: clamp(18px, 2vw, 28px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: flex-start;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .recent-export-shell {
@@ -578,6 +694,17 @@ onBeforeUnmount(() => {
 
   .workspace-body {
     display: grid;
+  }
+
+  .report-scroll-actions {
+    right: 14px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .report-scroll-action {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
   }
 }
 </style>
