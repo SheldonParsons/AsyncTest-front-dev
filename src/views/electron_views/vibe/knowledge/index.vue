@@ -6104,6 +6104,12 @@ function isStreamingUnderEvent(event: any) {
   box-shadow: 0 0 0 3px rgba(15, 15, 15, 0.12);
 }
 
+/* Keep both separators interactive while hiding their visible grips. */
+.side-resize-grip,
+.workspace-resize-grip {
+  display: none;
+}
+
 .vibe-shell.workspace-resizing,
 .vibe-shell.workspace-resizing * {
   cursor: col-resize !important;
