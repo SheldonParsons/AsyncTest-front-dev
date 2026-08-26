@@ -119,18 +119,9 @@ assert.doesNotMatch(componentSource, /old_body|new_body|confirmationId/)
 const viewSource = read(viewPath)
 const view = parse(viewSource, { filename: viewPath })
 assert.deepEqual(view.errors, [])
-assert.match(viewSource, /v-for="receipt in threadKnowledgeChangeReceipts\(event\)"/)
-assert.equal(
-  (viewSource.match(/v-for="receipt in threadKnowledgeChangeReceipts\(event\)"/g) || []).length,
-  2,
-)
-const threadedAnswerIndex = viewSource.indexOf('threadFinalAnswer(event)')
-const threadedReceiptIndex = viewSource.indexOf('v-for="receipt in threadKnowledgeChangeReceipts(event)"')
-assert.ok(threadedAnswerIndex >= 0 && threadedReceiptIndex > threadedAnswerIndex)
-const standaloneContinuationIndex = viewSource.indexOf('class="continuation-responses"')
-const standaloneReceiptIndex = viewSource.lastIndexOf('v-for="receipt in threadKnowledgeChangeReceipts(event)"')
-assert.ok(standaloneContinuationIndex >= 0 && standaloneReceiptIndex > standaloneContinuationIndex)
+assert.doesNotMatch(viewSource, /ResolvedChangeReceipt/)
+assert.doesNotMatch(viewSource, /threadKnowledgeChangeReceipts/)
+assert.doesNotMatch(viewSource, /collectKnowledgeChangeReceipts/)
 assert.doesNotMatch(viewSource, /eventKnowledgeChangeReceiptRows/)
-assert.match(viewSource, /collectKnowledgeChangeReceipts\(\[root, \.\.\.parentContinuationResponses\(root\)\]\)/)
 
 console.log('vibe resolved change receipt contract: PASS')

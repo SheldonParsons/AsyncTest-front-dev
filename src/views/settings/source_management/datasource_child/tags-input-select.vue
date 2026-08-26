@@ -131,10 +131,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import {
-    cacheBustedAvatarUrl,
-    currentUserAvatarRevision,
-} from '@/composables/useCurrentUserProfile'
-import {
     TagsInputRoot,
     TagsInputItem,
     TagsInputItemDelete,
@@ -259,8 +255,7 @@ function getLabelById(id: string | number) {
 }
 
 const getAvatarUrl = (id: string | number) => {
-    void currentUserAvatarRevision.value
-    return cacheBustedAvatarUrl(`https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${id}.png`)
+    return `https://asynctest.oss-cn-shenzhen.aliyuncs.com/users/${id}.png`
 }
 
 const handleImageError = (e: Event) => {

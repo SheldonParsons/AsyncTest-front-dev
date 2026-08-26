@@ -74,9 +74,15 @@
 
       <section v-if="activeKey === 'profile'" class="profile-panel">
         <div class="profile-hero">
-          <span class="profile-avatar avatar-container">
-            <el-avatar :key="currentUserAvatarRenderKey" :size="58" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
-          </span>
+          <button
+            class="profile-avatar avatar-container"
+            type="button"
+            aria-label="打开个人设置"
+            title="打开个人设置"
+            @click="openUserProfile"
+          >
+            <el-avatar :key="currentUserAvatarRenderKey" :size="68" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
+          </button>
           <h1>{{ currentUserName }}</h1>
           <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
         </div>
@@ -587,6 +593,7 @@
 
     </section>
   </main>
+  <UserProfileDialog ref="userProfileDialogRef" />
 </template>
 
 <script setup lang="ts">
@@ -594,21 +601,26 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useRoute, useRouter } from 'vue-router'
+import { readLocalAuthToken } from '@/utils/authNavigation'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeGlobalControlSettings from './VibeGlobalControlSettings.vue'
 import VibeKnowledgeApiModelSettings from './VibeKnowledgeApiModelSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
-import {
-  cacheBustedAvatarUrl,
-  currentUserAvatarRevision,
-  defaultAvatarUrlForUser,
-  useCurrentUserProfile,
-} from '@/composables/useCurrentUserProfile'
+import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
+import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
+const userProfileDialogRef = ref<InstanceType<typeof UserProfileDialog> | null>(null)
+const {
+  profile: sharedProfile,
+  avatarUrl: sharedAvatarUrl,
+  avatarRenderKey: sharedAvatarRenderKey,
+  fetchProfile,
+  ensureProfileSync,
+} = useCurrentUserProfile()
 const activeKey = ref<'profile' | 'model' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-rerank-api' | 'admin-embedding-api' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
@@ -617,12 +629,6 @@ let offMaximizeState: (() => void) | null = null
 const capabilities = ref<Record<string, boolean>>({})
 const featureConfigs = ref<Record<string, VibeFeatureConfig>>({})
 const currentUser = ref<VibeCapabilityUser | null>(null)
-const {
-  profile: syncedProfile,
-  avatarUrl: syncedAvatarUrl,
-  avatarRenderKey: syncedAvatarRenderKey,
-  ensureProfileSync,
-} = useCurrentUserProfile()
 const usageSummary = ref<VibeUsageSummary>({
   total_tokens: 0,
   peak_tokens: 0,
@@ -720,18 +726,10 @@ const canViewTraceAudit = computed(() => !!capabilities.value.trace_audit)
 const canViewSystemKnowledgeAdmin = computed(() => !!capabilities.value.system_knowledge_admin)
 const canViewAdminSettings = computed(() => canViewTraceAudit.value || canViewSystemKnowledgeAdmin.value)
 const traceAuditEnabled = computed(() => featureConfigs.value.trace_audit?.enabled !== false)
-const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
-const currentUsername = computed(() => String(currentUser.value?.username || 'user'))
-const currentUserAvatar = computed(() => {
-  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarUrl.value
-  const url = String(currentUser.value?.avatar_url || '') || defaultAvatarUrlForUser(currentUser.value?.id)
-  void currentUserAvatarRevision.value
-  return cacheBustedAvatarUrl(url)
-})
-const currentUserAvatarRenderKey = computed(() => {
-  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarRenderKey.value
-  return `${currentUser.value?.id ?? 'anonymous'}:${currentUserAvatar.value}:${currentUserAvatarRevision.value}`
-})
+const currentUserName = computed(() => String(sharedProfile.value?.nick_name || sharedProfile.value?.username || currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
+const currentUsername = computed(() => String(sharedProfile.value?.username || currentUser.value?.username || 'user'))
+const currentUserAvatar = computed(() => sharedAvatarUrl.value)
+const currentUserAvatarRenderKey = computed(() => sharedAvatarRenderKey.value)
 const userInitials = computed(() => {
   const text = currentUserName.value.trim() || 'U'
   const letters = Array.from(text).slice(0, 2).join('')
@@ -2084,6 +2082,10 @@ function backToApp() {
   router.push({ name: 'vibeKnowledge', query: route.query })
 }
 
+function openUserProfile() {
+  userProfileDialogRef.value?.open()
+}
+
 function winControl(action: 'minimize' | 'maximizeToggle' | 'close') {
   window.electronAPI?.wm?.control(winKey.value, action)
 }
@@ -2115,9 +2117,11 @@ onMounted(async () => {
   ensureProfileSync()
   trackMaximizeState()
   syncRouteTab()
+  const profileRequest = readLocalAuthToken() ? fetchProfile() : Promise.resolve(null)
   await Promise.all([
     loadCapabilities(),
     loadUsageSummary(),
+    profileRequest,
   ])
   if (!canViewTraceAudit.value && activeKey.value === 'trace') activeKey.value = 'profile'
   if (!canViewSystemKnowledgeAdmin.value && activeKey.value === 'admin-system-knowledge') activeKey.value = 'profile'
@@ -2320,14 +2324,24 @@ onBeforeUnmount(() => {
 
 .profile-avatar.avatar-container {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+}
+
+.profile-avatar.avatar-container:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 4px;
 }
 
 .profile-avatar .user-avatar {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  border: 2px solid rgba(0, 0, 0, 0.08);
+  border: 0;
   will-change: transform;
 }
 

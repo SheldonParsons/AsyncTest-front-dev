@@ -54,7 +54,7 @@
       </section>
       <section class="convs">
         <div class="convs-head">
-          <span class="convs-title">需求对话</span>
+          <span class="convs-title">对话</span>
           <button class="round-btn" type="button" title="新建对话" @click="newConversation">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
@@ -114,7 +114,7 @@
           :disabled="!vibeProject || loading"
           @click="openKbBrowser"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-library-icon lucide-library" aria-hidden="true"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-library-big-icon lucide-library-big" aria-hidden="true"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg>
         </button>
       </section>
 
@@ -303,11 +303,6 @@
                   :is-last="threadFinalNode(event).id === lastAssistantId"
                 />
               </template>
-              <ResolvedChangeReceipt
-                v-for="receipt in threadKnowledgeChangeReceipts(event)"
-                :key="receipt.receiptId"
-                :receipt="receipt"
-              />
             </template>
             <template v-else>
               <ProcessDisclosure
@@ -463,11 +458,6 @@
                   </div>
                 </article>
               </div>
-              <ResolvedChangeReceipt
-                v-for="receipt in threadKnowledgeChangeReceipts(event)"
-                :key="receipt.receiptId"
-                :receipt="receipt"
-              />
             </template>
           </article>
           <article
@@ -476,9 +466,29 @@
             aria-label="正在发送的提问"
             aria-live="polite"
           >
-            <div class="user-message-wrap">
+            <div
+              class="user-message-wrap"
+              :class="{
+                expanded: isUserMessageExpanded(PENDING_USER_MESSAGE_ID),
+                collapsible: shouldCollapsePendingUserMessage,
+              }"
+            >
               <div class="user-message-bubble">
-                <p class="user-message-content">{{ pendingUserSubmissionText }}</p>
+                <p
+                  :id="userMessageContentId(PENDING_USER_MESSAGE_ID)"
+                  v-user-message-overflow="PENDING_USER_MESSAGE_ID"
+                  class="user-message-content"
+                >{{ pendingUserSubmissionText }}</p>
+                <button
+                  v-if="shouldCollapsePendingUserMessage"
+                  class="user-message-more"
+                  type="button"
+                  :aria-controls="userMessageContentId(PENDING_USER_MESSAGE_ID)"
+                  :aria-expanded="isUserMessageExpanded(PENDING_USER_MESSAGE_ID)"
+                  @click="toggleUserMessageExpanded(PENDING_USER_MESSAGE_ID)"
+                >
+                  {{ isUserMessageExpanded(PENDING_USER_MESSAGE_ID) ? '收起' : '显示更多' }}
+                </button>
               </div>
             </div>
           </article>
@@ -537,20 +547,29 @@
         </footer>
           </section>
         </div>
-      <ConversationInfoRail
+      <div
         v-if="currentView === 'conversation'"
-        :collapsed="infoRailCollapsed"
-        :floating="workspaceWindowLayoutActive"
-        :changes="recentKnowledgeChanges"
-        :changes-loading="knowledgeChangesLoading"
-        :changes-error="knowledgeChangesError"
-        :files="recentSessionFiles"
-        :files-loading="sessionFilesLoading"
-        :files-error="sessionFilesError"
-        :session-id="activeSessionId"
-        @open-change="openWorkspaceChange"
-        @open-file="openWorkspaceFile"
-      />
+        class="conversation-info-rail-slot"
+        :class="{
+          collapsed: infoRailCollapsed,
+          'viewer-open': workspaceWindowOpen,
+          'viewer-transitioning': workspaceWindowLayoutActive,
+        }"
+      >
+        <ConversationInfoRail
+          :collapsed="infoRailCollapsed"
+          :viewer-open="workspaceWindowOpen"
+          :changes="recentKnowledgeChanges"
+          :changes-loading="knowledgeChangesLoading"
+          :changes-error="knowledgeChangesError"
+          :files="recentSessionFiles"
+          :files-loading="sessionFilesLoading"
+          :files-error="sessionFilesError"
+          :session-id="activeSessionId"
+          @open-change="openInfoRailChange"
+          @open-file="openInfoRailFile"
+        />
+      </div>
       <Transition
         name="workspace-window"
         @after-enter="focusWorkspaceAfterEnter"
@@ -604,6 +623,7 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { readLocalAuthToken } from '@/utils/authNavigation'
 import whaleIntroUrl from './assets/whale-intro.webm'
 import VibeWindowControls from './components/VibeWindowControls.vue'
 import { marked } from 'marked'
@@ -635,8 +655,6 @@ import ChatComposer from './components/ChatComposer.vue'
 import ConversationInfoRail from './components/ConversationInfoRail.vue'
 import ConversationWorkspace from './components/ConversationWorkspace.vue'
 import TurnOutcomeNotice from './components/TurnOutcomeNotice.vue'
-import ResolvedChangeReceipt from './components/ResolvedChangeReceipt.vue'
-import { collectKnowledgeChangeReceipts } from './resolvedChangeReceiptPolicy'
 import {
   createProcessState,
   resetProcessState,
@@ -696,12 +714,12 @@ import {
   type KnowledgeCommitSummary,
   type VibeAttachment,
   type VibeAttachmentResourceRef,
-  type VibeCapabilityUser,
   type VibeEvent,
   type VibeLLMModelPickerProvider,
   type VibeProject,
   type VibeSession,
 } from '../api'
+import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 import {
   collectKnowledgeStatsProjectIds,
   hasKnowledgeWriteCommit,
@@ -717,12 +735,6 @@ import {
   type RecentSessionFile,
 } from './conversationInfoRailPolicy'
 import { knowledgeChangeTitle } from '../browser/knowledgeChangePresentation'
-import {
-  cacheBustedAvatarUrl,
-  currentUserAvatarRevision,
-  defaultAvatarUrlForUser,
-  useCurrentUserProfile,
-} from '@/composables/useCurrentUserProfile'
 import {
   closeViewerTab,
   deletedConversationIsStillActive,
@@ -765,7 +777,10 @@ import {
   sourceCitationViewerIdentity,
   type ConversationSourceCitation,
 } from './sourceCitationPolicy'
-import { userMessageContentOverflows } from './userMessagePresentationPolicy'
+import {
+  userMessageContentOverflows,
+  userMessageLikelyOverflows,
+} from './userMessagePresentationPolicy'
 
 const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
@@ -794,24 +809,14 @@ const currentView = ref<'conversation' | 'baseline'>('conversation')
 const loading = ref(false)
 const vibeCapabilities = ref<Record<string, boolean>>({})
 const canViewTraceAudit = computed(() => !!vibeCapabilities.value.trace_audit)
-const currentUser = ref<VibeCapabilityUser | null>(null)
 const {
-  profile: syncedProfile,
-  avatarUrl: syncedAvatarUrl,
-  avatarRenderKey: syncedAvatarRenderKey,
+  profile: currentUser,
+  avatarUrl: currentUserAvatar,
+  avatarRenderKey: currentUserAvatarRenderKey,
+  fetchProfile,
   ensureProfileSync,
 } = useCurrentUserProfile()
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
-const currentUserAvatar = computed(() => {
-  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarUrl.value
-  const url = String(currentUser.value?.avatar_url || '') || defaultAvatarUrlForUser(currentUser.value?.id)
-  void currentUserAvatarRevision.value
-  return cacheBustedAvatarUrl(url)
-})
-const currentUserAvatarRenderKey = computed(() => {
-  if (syncedProfile.value?.id !== null && syncedProfile.value?.id !== undefined) return syncedAvatarRenderKey.value
-  return `${currentUser.value?.id ?? 'anonymous'}:${currentUserAvatar.value}:${currentUserAvatarRevision.value}`
-})
 const llmProviders = ref<VibeLLMModelPickerProvider[]>([])
 const selectedLlmProviderId = ref('')
 const modelConfigLoading = ref(false)
@@ -837,6 +842,9 @@ const infoRailCollapsed = ref(false)
 const workspaceWindowOpen = ref(false)
 const workspaceWindowRequestedOpen = ref(false)
 const workspaceWindowLayoutActive = ref(false)
+type WorkspaceWindowOpenOptions = {
+  autoCollapseInfoRail?: boolean
+}
 const shellRef = ref<HTMLElement | null>(null)
 const mainRef = ref<HTMLElement | null>(null)
 const SIDE_WIDTH_STORAGE_KEY = 'vibe_kb_side_width_px'
@@ -1366,18 +1374,22 @@ function infoRailCloseDelay(): number {
     : INFO_RAIL_CLOSE_TRANSITION_MS
 }
 
-function setWorkspaceWindowOpen(open: boolean) {
+function setWorkspaceWindowOpen(open: boolean, options: WorkspaceWindowOpenOptions = {}) {
+  const shouldAutoCollapseInfoRail = Boolean(options.autoCollapseInfoRail
+    && !infoRailCollapsed.value
+    && !workspaceWindowRequestedOpen.value
+    && !workspaceWindowOpen.value
+    && !workspaceWindowLayoutActive.value)
   workspaceWindowRequestedOpen.value = open
   if (open) {
     if (shouldMoveFocusToWorkspace()) workspaceFocusAfterEnter = true
     if (workspaceOpenTimer != null) return
     if (workspaceWindowOpen.value) {
       workspaceWindowLayoutActive.value = true
-      setInfoRailCollapsed(true)
       focusWorkspaceAfterEnter()
       return
     }
-    if (!infoRailCollapsed.value) {
+    if (shouldAutoCollapseInfoRail) {
       // 先让 Panel 完整收起，再挂载 Viewer，避免 flex → absolute 同帧切换造成布局跳变。
       setInfoRailCollapsed(true)
       const delay = infoRailCloseDelay()
@@ -1397,8 +1409,7 @@ function setWorkspaceWindowOpen(open: boolean) {
 
   clearWorkspaceOpenTimer()
   workspaceFocusAfterEnter = false
-  // Viewer 离场期间保留 floating 布局；动画结束后再解除，避免 Panel 瞬间挤回主对话。
-  setInfoRailCollapsed(true)
+  // 实际开合状态立即驱动 Viewer、Panel 与 slot 的同一段过渡；layoutActive 只保留过渡时长。
   workspaceWindowOpen.value = false
 }
 
@@ -1441,7 +1452,12 @@ function selectWorkspaceTab(id: string): void {
 
 function closeWorkspaceTab(id: string): void {
   workspaceRequestGate.invalidate(id)
-  applyWorkspaceTabsState(closeViewerTab(workspaceTabs.value, activeWorkspaceTabId.value, id))
+  const nextState = closeViewerTab(workspaceTabs.value, activeWorkspaceTabId.value, id)
+  applyWorkspaceTabsState(nextState)
+
+  // 手动关闭最后一个页签时，空的 Viewer 没有继续展示的意义；沿用窗口级
+  // 开合流程收起它，同时清掉 requestedOpen，避免后续会话快照恢复空窗口。
+  if (!nextState.tabs.length) setWorkspaceWindowOpen(false)
 }
 
 function workspaceProjectContextId(value: unknown = selectedProjectId.value): string {
@@ -1516,7 +1532,27 @@ function workspaceErrorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error && reason.message ? reason.message : fallback
 }
 
-function openWorkspaceChange(item: KnowledgeCommitSummary): void {
+function infoRailViewerOpenOptions(): WorkspaceWindowOpenOptions {
+  return {
+    autoCollapseInfoRail: !workspaceWindowRequestedOpen.value
+      && !workspaceWindowOpen.value
+      && !workspaceWindowLayoutActive.value
+      && !infoRailCollapsed.value,
+  }
+}
+
+function openInfoRailChange(item: KnowledgeCommitSummary): void {
+  openWorkspaceChange(item, infoRailViewerOpenOptions())
+}
+
+function openInfoRailFile(file: RecentSessionFile): void {
+  openWorkspaceFile(file, activeSessionId.value, infoRailViewerOpenOptions())
+}
+
+function openWorkspaceChange(
+  item: KnowledgeCommitSummary,
+  options: WorkspaceWindowOpenOptions = {},
+): void {
   const projectId = String(item.project_id || knowledgeStatsProjectId(selectedProjectId.value) || '').trim()
   const commitSeq = Math.max(0, Number(item.seq) || 0)
   if (!projectId || !commitSeq) {
@@ -1527,7 +1563,7 @@ function openWorkspaceChange(item: KnowledgeCommitSummary): void {
   const existing = workspaceTabById(id)
   if (existing) {
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true)
+    setWorkspaceWindowOpen(true, options)
     if (existing.kind === 'change' && !existing.loading && !existing.detail) {
       void loadWorkspaceChange(id, projectId, commitSeq)
     }
@@ -1545,7 +1581,7 @@ function openWorkspaceChange(item: KnowledgeCommitSummary): void {
     detail: null,
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true)
+  setWorkspaceWindowOpen(true, options)
   void loadWorkspaceChange(id, projectId, commitSeq)
 }
 
@@ -1585,7 +1621,11 @@ function retryWorkspaceChange(tabId: string): void {
   void loadWorkspaceChange(tabId, tab.projectId, tab.commitSeq)
 }
 
-function openWorkspaceFile(file: RecentSessionFile, ownerSessionId = activeSessionId.value): void {
+function openWorkspaceFile(
+  file: RecentSessionFile,
+  ownerSessionId = activeSessionId.value,
+  options: WorkspaceWindowOpenOptions = {},
+): void {
   const sessionId = String(ownerSessionId || '').trim()
   const id = workspaceFileViewerTabId(sessionId, file.identity)
   const existing = workspaceTabById(id)
@@ -1611,7 +1651,7 @@ function openWorkspaceFile(file: RecentSessionFile, ownerSessionId = activeSessi
         }
       : tab)
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true)
+    setWorkspaceWindowOpen(true, options)
     if (shouldReload) void loadWorkspaceFile(id)
     return
   }
@@ -1627,7 +1667,7 @@ function openWorkspaceFile(file: RecentSessionFile, ownerSessionId = activeSessi
     content: inlineContent ?? '',
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true)
+  setWorkspaceWindowOpen(true, options)
   if (inlineContent === null) void loadWorkspaceFile(id)
 }
 
@@ -2082,6 +2122,8 @@ const packageStatusOverrides = ref<Record<string, string>>({})
 const sessionTitleOverrides = ref<Record<string, string>>({})
 const expandedUserMessageIds = ref<string[]>([])
 const overflowingUserMessageIds = ref<string[]>([])
+const measuredUserMessageIds = ref<string[]>([])
+const PENDING_USER_MESSAGE_ID = 'pending-user-submission'
 const userMessageOverflowElements = new Map<HTMLElement, string>()
 let userMessageOverflowObserver: ResizeObserver | null = null
 let userMessageOverflowRaf = 0
@@ -2424,10 +2466,8 @@ async function loadVibeCapabilities() {
   try {
     const res = await getVibeCapabilities()
     vibeCapabilities.value = res?.capabilities || {}
-    currentUser.value = res?.user || null
   } catch {
     vibeCapabilities.value = {}
-    currentUser.value = null
   }
 }
 
@@ -2453,6 +2493,7 @@ onMounted(() => {
   startShellResizeObserver()
   startWorkspaceMainWidthObserver()
   bootstrap()
+  if (readLocalAuthToken()) void fetchProfile()
   loadVibeCapabilities()
   trackMaximizeState()
 })
@@ -4648,7 +4689,19 @@ function userMessageText(event: VibeEvent) {
 }
 
 function shouldCollapseUserMessage(event: VibeEvent) {
-  return !!event.id && overflowingUserMessageIds.value.includes(event.id)
+  return shouldCollapseUserMessageText(event.id, userMessageText(event))
+}
+
+const shouldCollapsePendingUserMessage = computed(() =>
+  shouldCollapseUserMessageText(PENDING_USER_MESSAGE_ID, pendingUserSubmissionText.value),
+)
+
+function shouldCollapseUserMessageText(eventId: string | undefined, content: unknown): boolean {
+  if (!eventId) return false
+  if (measuredUserMessageIds.value.includes(eventId)) {
+    return overflowingUserMessageIds.value.includes(eventId)
+  }
+  return userMessageLikelyOverflows(content)
 }
 
 function userMessageContentId(eventId?: string) {
@@ -4656,11 +4709,19 @@ function userMessageContentId(eventId?: string) {
 }
 
 function setUserMessageOverflow(eventId: string, overflows: boolean): void {
+  if (!measuredUserMessageIds.value.includes(eventId)) {
+    measuredUserMessageIds.value = [...measuredUserMessageIds.value, eventId]
+  }
   const currentlyOverflows = overflowingUserMessageIds.value.includes(eventId)
   if (currentlyOverflows === overflows) return
   overflowingUserMessageIds.value = overflows
     ? [...overflowingUserMessageIds.value, eventId]
     : overflowingUserMessageIds.value.filter(id => id !== eventId)
+}
+
+function clearUserMessageOverflowMeasurement(eventId: string): void {
+  measuredUserMessageIds.value = measuredUserMessageIds.value.filter(id => id !== eventId)
+  overflowingUserMessageIds.value = overflowingUserMessageIds.value.filter(id => id !== eventId)
 }
 
 function measureUserMessageOverflow(element: HTMLElement, eventId: string): void {
@@ -4706,7 +4767,7 @@ function unbindUserMessageOverflowElement(element: HTMLElement): void {
   const eventId = userMessageOverflowElements.get(element)
   userMessageOverflowObserver?.unobserve(element)
   userMessageOverflowElements.delete(element)
-  if (eventId) setUserMessageOverflow(eventId, false)
+  if (eventId) clearUserMessageOverflowMeasurement(eventId)
 }
 
 function stopUserMessageOverflowObservation(): void {
@@ -4897,10 +4958,6 @@ function shouldRenderEvent(event: any) {
 
 function parentContinuationResponses(event: any): VibeEvent[] {
   return resolveParentContinuationResponses(events.value, event) as VibeEvent[]
-}
-
-function threadKnowledgeChangeReceipts(root: any) {
-  return collectKnowledgeChangeReceipts([root, ...parentContinuationResponses(root)])
 }
 
 // 取挂在这条反问下的"选择回复"内容（confirmation_reply 的 user 事件），插进思考里作"你的选择"那一环。
@@ -5201,7 +5258,7 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-right: 30px;
+  margin-right: 34px;
   transform: translateY(3px);
   pointer-events: auto;
   -webkit-app-region: no-drag;
@@ -5255,10 +5312,10 @@ function isStreamingUnderEvent(event: any) {
 
 .workspace-window-toggle {
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--ink-3);
   display: inline-flex;
@@ -5282,7 +5339,7 @@ function isStreamingUnderEvent(event: any) {
 
 .window-toggle-anchor {
   position: absolute;
-  top: 3px;
+  top: 1px;
   right: 20px;
   z-index: 25;
 }
@@ -5645,7 +5702,7 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .side-user-avatar .user-avatar {
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 0;
 }
 
 .side-user-main {
@@ -6015,6 +6072,13 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .main {
+  --conversation-info-rail-width: 324px;
+  --conversation-info-rail-gutter: 10px;
+  --conversation-info-rail-outer-width: calc(
+    var(--conversation-info-rail-width)
+    + var(--conversation-info-rail-gutter)
+    + var(--conversation-info-rail-gutter)
+  );
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -6022,14 +6086,10 @@ function isStreamingUnderEvent(event: any) {
   height: 100%;
   background: var(--vibe-conversation-bg);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: row;
   box-shadow: none;
-}
-
-.main.workspace-layout-active {
-  overflow: visible;
 }
 
 /* 主 header 脱离信息栏的 flex 收缩；仅在独立窗口打开时收口到主对话区域。 */
@@ -6046,6 +6106,37 @@ function isStreamingUnderEvent(event: any) {
   display: flex;
   flex-direction: column;
   background-color: var(--vibe-conversation-bg);
+}
+
+/*
+ * slot 只负责为始终 absolute 的 Panel 保留布局宽度。Viewer 离场时它同步扩展，
+ * Panel 自身只改变 right；动画结束后不会再发生 absolute → flex 的定位交接。
+ */
+.conversation-info-rail-slot {
+  flex: 0 0 var(--conversation-info-rail-outer-width);
+  width: var(--conversation-info-rail-outer-width);
+  min-width: 0;
+  height: 100%;
+  overflow: visible;
+  transition:
+    flex-basis 220ms ease,
+    width 220ms ease;
+}
+
+.conversation-info-rail-slot.viewer-transitioning {
+  transition:
+    flex-basis 320ms cubic-bezier(.22, 1, .36, 1),
+    width 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.conversation-info-rail-slot.viewer-open {
+  flex-basis: 0;
+  width: 0;
+}
+
+.conversation-info-rail-slot.collapsed {
+  flex-basis: 0;
+  width: 0;
 }
 
 .conversation-workspace-window {
@@ -6148,9 +6239,16 @@ function isStreamingUnderEvent(event: any) {
   .workspace-window-leave-active,
   .main-head,
   .main-head-actions,
+  .conversation-info-rail-slot,
   .side-resize-handle,
   .side-resize-grip {
     transition: none !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .main {
+    --conversation-info-rail-width: 300px;
   }
 }
 

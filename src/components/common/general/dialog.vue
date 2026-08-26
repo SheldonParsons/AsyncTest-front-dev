@@ -11,12 +11,12 @@
                         <motion.div class="input-modal-container" :initial="dialogInitialState"
                             :animate="dialogOpenState" :exit="dialogInitialState" style="top: -50%;"
                             :style="{ transformPerspective: 200, top: topMove, zIndex: props.zIndex }">
-                            <div class="modal" :style="{ backgroundColor: bgtype === 'black' ? '#0b1011' : 'white', zIndex: props.zIndex }">
-                                <Dialog.Title class="dialog-title"
+                            <div :class="['modal', props.modalClass]" :style="{ backgroundColor: bgtype === 'black' ? '#0b1011' : 'white', zIndex: props.zIndex }">
+                                <Dialog.Title class="dialog-title" :aria-label="props.accessibleTitle || undefined"
                                     :style="{ color: bgtype === 'black' ? 'white' : 'black' }">
                                     {{ title }}
                                 </Dialog.Title>
-                                <Dialog.Description>
+                                <Dialog.Description class="dialog-description">
                                     <slot />
                                 </Dialog.Description>
                                 <div class="controls">
@@ -56,6 +56,8 @@ const emit = defineEmits(['cancel', 'comfirm'])
 let resolver: any
 const props = defineProps({
     title: { type: String, default: "提示" },
+    accessibleTitle: { type: String, default: "" },
+    modalClass: { type: String, default: "" },
     cancel_title: { type: String, default: "取消" },
     confirm_title: { type: String, default: "确定" },
     close_after_action: { type: Boolean, default: true },
@@ -180,6 +182,33 @@ const dialogInitialState: any = {
         padding: 20px;
         min-width: 300px;
         pointer-events: auto;
+
+        &.avatar-crop-modal {
+            overflow: hidden;
+            padding: 0;
+            border: 1px solid #c8c8c8;
+            border-radius: 24px;
+            background: #ffffff;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.16);
+
+            .dialog-title {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                clip-path: inset(50%);
+                white-space: nowrap;
+            }
+
+            .dialog-description {
+                margin: 0;
+            }
+
+            .controls {
+                display: none;
+            }
+        }
 
         .dialog-title {
             font-weight: 500;

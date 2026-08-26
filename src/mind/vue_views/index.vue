@@ -3,9 +3,10 @@
         <MindHeader>
             <div class="mind-header-user-section">
                 <div class="mind-header-action-item">
-                    <div class="mind-header-avatar-container" @click="handleAvatarClick">
+                    <button class="mind-header-avatar-container" type="button" aria-label="打开个人设置"
+                        title="打开个人设置" @click="handleAvatarClick">
                         <el-avatar :key="userAvatarRenderKey" :size="36" :src="userImage" class="mind-header-user-avatar" />
-                    </div>
+                    </button>
                 </div>
                 <div v-if="isLoggedIn" class="mind-header-action-item">
                     <button class="mind-header-user-action-btn mind-header-logout-btn" type="button"
@@ -977,7 +978,19 @@ function onRenameBoard(payload: { boardId: string; title: string }) {
 
     .mind-header-avatar-container {
         position: relative;
+        display: inline-flex;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: inherit;
+        line-height: 0;
         cursor: pointer;
+    }
+
+    .mind-header-avatar-container:focus-visible {
+        outline: 2px solid #111111;
+        outline-offset: 3px;
     }
 
     .mind-header-user-avatar {

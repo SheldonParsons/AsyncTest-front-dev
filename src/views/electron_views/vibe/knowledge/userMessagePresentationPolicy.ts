@@ -1,6 +1,20 @@
 export const USER_MESSAGE_COLLAPSED_LINES = 18
 export const USER_MESSAGE_COLLAPSED_VIEWPORT_RATIO = 0.52
 export const USER_MESSAGE_OVERFLOW_TOLERANCE_PX = 1
+export const USER_MESSAGE_PRECOLLAPSE_CHARS = 720
+
+/**
+ * DOM 完成排版前的首帧保护。
+ *
+ * 真正的折叠判定仍由 scrollHeight 决定；这里仅让明显超长的本地提问在首次挂载时
+ * 先以折叠态出现，避免等待 event_saved 或下一次布局测量期间整段正文闪现。
+ */
+export function userMessageLikelyOverflows(text: unknown): boolean {
+  const content = String(text || '')
+  if (!content) return false
+  return content.length >= USER_MESSAGE_PRECOLLAPSE_CHARS
+    || content.split(/\r?\n/).length > USER_MESSAGE_COLLAPSED_LINES
+}
 
 /** 与 CSS 的 min(18lh, 52dvh) 保持同一边界。 */
 export function userMessageCollapsedMaxHeight(input: {

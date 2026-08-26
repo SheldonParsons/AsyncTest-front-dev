@@ -24,6 +24,9 @@ assert.equal(policy.userMessageCollapsedMaxHeight({ lineHeight: 23.52, viewportH
 assert.equal(policy.userMessageContentOverflows({ scrollHeight: 424, lineHeight: 23.52, viewportHeight: 830 }), false)
 assert.equal(policy.userMessageContentOverflows({ scrollHeight: 425, lineHeight: 23.52, viewportHeight: 830 }), true)
 assert.equal(policy.userMessageContentOverflows({ scrollHeight: 0, lineHeight: Number.NaN, viewportHeight: 0 }), false)
+assert.equal(policy.userMessageLikelyOverflows('短问题'), false)
+assert.equal(policy.userMessageLikelyOverflows('一行\n'.repeat(19)), true)
+assert.equal(policy.userMessageLikelyOverflows('长'.repeat(720)), true)
 
 assert.match(viewSource, /collapsible:\s*shouldCollapseUserMessage\(event\)/)
 assert.match(viewSource, /v-user-message-overflow="event\.id"/)
@@ -36,6 +39,9 @@ assert.match(viewSource, /\.user-message-wrap\.collapsible:not\(\.expanded\) \.u
 assert.match(viewSource, /\.user-message-wrap\.expanded \.user-message-content\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/)
 assert.doesNotMatch(viewSource, /\.user-message-bubble \.user-message-content\s*\{[^}]*max-height:\s*92px;/)
 assert.match(viewSource, /function toggleUserMessageExpanded[\s\S]*void syncTimelineNavigationAfterLayout\(\)/)
-assert.doesNotMatch(viewSource, /pending-user-event[\s\S]{0,240}user-message-content[^}]*overflow:\s*hidden/)
+assert.match(viewSource, /pending-user-event[\s\S]*collapsible:\s*shouldCollapsePendingUserMessage[\s\S]*v-user-message-overflow="PENDING_USER_MESSAGE_ID"/)
+assert.match(viewSource, /pending-user-event[\s\S]*v-if="shouldCollapsePendingUserMessage"[\s\S]*toggleUserMessageExpanded\(PENDING_USER_MESSAGE_ID\)/)
+assert.match(viewSource, /const shouldCollapsePendingUserMessage = computed\(\(\) =>[\s\S]*pendingUserSubmissionText\.value/)
+assert.match(viewSource, /measuredUserMessageIds/)
 
 console.log('vibe user message height contract: PASS')

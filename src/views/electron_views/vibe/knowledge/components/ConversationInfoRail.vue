@@ -1,7 +1,7 @@
 <template>
   <aside
     class="conversation-info-rail"
-    :class="{ collapsed, floating }"
+    :class="{ collapsed, 'viewer-open': viewerOpen }"
     :aria-hidden="collapsed ? 'true' : undefined"
     :inert="collapsed"
     aria-label="对话信息栏"
@@ -31,7 +31,7 @@
         </div>
       </section>
 
-      <section class="info-section" aria-labelledby="recent-files-title">
+      <section class="info-section file-section" aria-labelledby="recent-files-title">
         <header>
           <h2 id="recent-files-title">当前会话文件</h2>
           <button class="view-all" type="button" title="功能即将开放" @click="showComingSoon">查看全部</button>
@@ -74,7 +74,7 @@ import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
 
 defineProps<{
   collapsed: boolean
-  floating: boolean
+  viewerOpen: boolean
   changes: KnowledgeCommitSummary[]
   changesLoading: boolean
   changesError: string
@@ -121,14 +121,23 @@ function fileMeta(file: RecentSessionFile): string {
 
 <style scoped lang="scss">
 .conversation-info-rail {
-  flex: 0 0 324px;
-  align-self: flex-start;
-  width: 324px;
+  position: absolute;
+  top: 54px;
+  right: var(--conversation-info-rail-gutter, 10px);
+  z-index: 23;
+  width: min(
+    var(--conversation-info-rail-width, 324px),
+    calc(
+      100%
+      - var(--conversation-info-rail-gutter, 10px)
+      - var(--conversation-info-rail-gutter, 10px)
+    )
+  );
   height: auto;
-  max-height: clamp(280px, 50%, 520px);
+  max-height: clamp(320px, 58%, 580px);
   min-width: 0;
   min-height: 0;
-  margin: 54px 10px 0;
+  margin: 0;
   border: 1px solid rgba(15, 15, 15, .11);
   border-radius: 22px;
   background: rgba(255, 255, 255, .96);
@@ -136,36 +145,34 @@ function fileMeta(file: RecentSessionFile): string {
     0 16px 40px rgba(15, 15, 15, .09),
     0 2px 8px rgba(15, 15, 15, .045);
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   box-sizing: border-box;
   opacity: 1;
   transform: translateX(0);
   transition:
     width 220ms ease,
-    flex-basis 220ms ease,
-    margin 220ms ease,
     border-color 170ms ease,
     border-width 170ms ease,
     box-shadow 170ms ease,
     opacity 170ms ease,
-    transform 220ms ease;
+    transform 220ms ease,
+    right 320ms cubic-bezier(.22, 1, .36, 1);
 }
 
-.conversation-info-rail.floating {
-  position: absolute;
-  top: 54px;
-  right: calc(var(--workspace-window-width) + 10px);
-  z-index: 23;
-  flex: none;
-  width: min(324px, calc(100% - var(--workspace-window-width) - 20px));
-  margin: 0;
+.conversation-info-rail.viewer-open {
+  right: calc(var(--workspace-window-width) + var(--conversation-info-rail-gutter, 10px));
+  width: min(
+    var(--conversation-info-rail-width, 324px),
+    calc(
+      100% - var(--workspace-window-width)
+      - var(--conversation-info-rail-gutter, 10px)
+      - var(--conversation-info-rail-gutter, 10px)
+    )
+  );
 }
 
 .conversation-info-rail.collapsed {
-  flex-basis: 0;
   width: 0;
-  margin-right: 0;
-  margin-left: 0;
   border-width: 0;
   border-color: transparent;
   box-shadow: none;
@@ -174,18 +181,13 @@ function fileMeta(file: RecentSessionFile): string {
   pointer-events: none;
 }
 
-.conversation-info-rail.floating.collapsed {
-  flex-basis: 0;
-  width: 0;
-  margin: 0;
-}
-
 .info-rail-content {
   width: 100%;
   min-width: 298px;
   height: auto;
   padding: 20px 16px 18px;
   box-sizing: border-box;
+  overflow: hidden;
   opacity: 1;
   transform: translateX(0);
   transition: opacity 170ms ease, transform 220ms ease;
@@ -201,11 +203,22 @@ function fileMeta(file: RecentSessionFile): string {
 .view-all { margin: -4px -6px -4px 0; padding: 4px 6px; border: 0; border-radius: 7px; background: transparent; color: rgba(15, 15, 15, .35); font: inherit; font-size: 11px; cursor: pointer; user-select: none; transition: background-color 140ms ease, color 140ms ease; }
 .view-all:hover { background: rgba(15, 15, 15, .055); color: rgba(15, 15, 15, .58); }
 .view-all:focus-visible { outline: 2px solid rgba(15, 15, 15, .2); outline-offset: 1px; }
-.info-list { display: grid; gap: 2px; margin-top: 5px; }
+.info-list {
+  display: grid;
+  gap: 2px;
+  min-height: 0;
+  margin-top: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.knowledge-section .info-list { max-height: 196px; }
+.file-section .info-list { max-height: 176px; }
 .info-row { width: 100%; min-width: 0; display: grid; align-items: center; gap: 9px; padding: 8px 7px; border: 0; border-radius: 9px; background: transparent; color: rgba(15, 15, 15, .76); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
 .info-row:hover { background: rgba(15, 15, 15, .045); }
 .info-row:focus-visible { outline: 2px solid rgba(15, 15, 15, .2); outline-offset: 1px; }
-.knowledge-row { grid-template-columns: minmax(0, 1fr); }
+.knowledge-row { grid-template-columns: minmax(0, 1fr); padding: 6px 7px; }
 .file-row { grid-template-columns: 24px minmax(0, 1fr); }
 .file-icon { width: 24px; height: 24px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .file-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
@@ -217,11 +230,6 @@ function fileMeta(file: RecentSessionFile): string {
 .knowledge-row small { font-size: 11px; }
 .info-state { margin: 10px 7px 0; color: rgba(15, 15, 15, .38); font-size: 11px; line-height: 1.55; }
 .info-state.error { color: #a34c4c; }
-
-@media (max-width: 1180px) {
-  .conversation-info-rail { flex-basis: 300px; width: 300px; }
-  .conversation-info-rail.collapsed { flex-basis: 0; width: 0; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .conversation-info-rail,

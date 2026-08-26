@@ -1,14 +1,11 @@
 <template>
   <main class="kb-browser" :class="{ loading: loading || statusLoading }">
     <div class="window-drag" />
-    <header class="topbar">
+    <header class="topbar" :class="{ mac: isMacPlatform }">
       <div class="title-block">
         <button class="icon-button" type="button" aria-label="返回对话" @click="goChat">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="m15 18-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
-        <span class="book-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-        </span>
         <div><h1>原文浏览</h1><p>{{ selectedProjectName }} · {{ activeTabLabel }}</p></div>
       </div>
 
@@ -71,6 +68,7 @@ const tabs: Array<{ key: TabKey; label: string; hint: string }> = [
 
 const route = useRoute()
 const router = useRouter()
+const isMacPlatform = window.electronAPI?.platform === 'darwin'
 const projects = ref<any[]>([])
 const selectedAsyncProjectId = ref('')
 const status = ref<KnowledgeStatus | null>(null)
@@ -252,8 +250,9 @@ function goChat() { router.push({ name: 'vibeKnowledge', query: { ...route.query
 .kb-browser { --header-h: 60px; --tabs-h: 48px; display: grid; grid-template-rows: var(--header-h) var(--tabs-h) minmax(0,1fr); width: 100vw; height: 100vh; overflow: hidden; background: #fff; color: #202124; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 .window-drag { position: fixed; z-index: 20; top: 0; left: 0; right: 0; height: 7px; -webkit-app-region: drag; }
 .topbar { display: grid; grid-template-columns: minmax(260px,1fr) auto minmax(300px,1fr); align-items: center; gap: 20px; padding: 8px 15px 6px; border-bottom: 1px solid #dedede; }
+.topbar.mac .title-block { margin-inline-start: 64px; }
 .title-block { display: flex; align-items: center; min-width: 0; gap: 9px; } h1, p { margin: 0; } h1 { font-size: 14px; font-weight: 650; } .title-block p { margin-top: 2px; overflow: hidden; color: #667085; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.icon-button, .book-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #222; } .icon-button { cursor: pointer; } .icon-button:hover { background: #f1f1f1; }
+.icon-button { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #222; cursor: pointer; } .icon-button:hover { background: #f1f1f1; }
 .metrics { display: flex; align-items: center; height: 34px; } .metrics button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 68px; height: 34px; padding: 0 10px; border: 0; background: transparent; cursor: pointer; } .metrics button + button::before { position: absolute; top: 8px; bottom: 8px; left: 0; width: 1px; background: #dedede; content: ''; } .metrics button:hover { background: #f5f5f5; } .metrics b { font-size: 12px; line-height: 1; } .metrics span { color: #667085; font-size: 11px; line-height: 1; }
 .metrics-error { margin: 0; color: #a33; font-size: 11px; }
 .actions { display: flex; justify-content: flex-end; align-items: center; min-width: 0; gap: 8px; } .actions > i { width: 1px; height: 24px; background: #ddd; }
@@ -268,7 +267,7 @@ function goChat() { router.push({ name: 'vibeKnowledge', query: { ...route.query
 .tab-enter-active, .tab-leave-active { transition: opacity .14s ease, transform .14s ease; } .tab-enter-from { opacity: 0; transform: translateY(4px); } .tab-leave-to { opacity: 0; transform: translateY(-3px); }
 .loading .refresh svg { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 900px) { .topbar { grid-template-columns: minmax(210px,1fr) auto; } .metrics { display: none; } }
-@media (max-width: 620px) { .kb-browser { --header-h: 58px; --tabs-h: 46px; } .topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding-inline: 8px; } .title-block { min-width: 0; } .title-block .book-icon, .title-block p, .refresh span, .actions > i { display: none; } .project-select { width: min(176px, 45vw); } .tabs small { display: none; } }
+@media (max-width: 620px) { .kb-browser { --header-h: 58px; --tabs-h: 46px; } .topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding-inline: 8px; } .title-block { min-width: 0; } .title-block p, .refresh span, .actions > i { display: none; } .project-select { width: min(176px, 45vw); } .tabs small { display: none; } }
 @media (max-width: 420px) { .title-block h1 { display: none; } .project-select { width: min(190px, 54vw); } }
 @media (prefers-reduced-motion: reduce) { .tabs .indicator, .tab-enter-active, .tab-leave-active { transition: none; } .loading .refresh svg { animation: none; } }
 </style>

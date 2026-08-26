@@ -153,10 +153,11 @@
             <div class="action-item">
               <AstTooltip :isOpen="tooltipStates.profile" side="bottom">
                 <template #trigger>
-                  <div class="avatar-container" @mouseenter="tooltipStates.profile = true"
-                    @mouseleave="tooltipStates.profile = false" @click="handleAvatarClick">
+                  <button class="avatar-container" type="button" aria-label="打开个人设置" title="打开个人设置"
+                    @mouseenter="tooltipStates.profile = true" @mouseleave="tooltipStates.profile = false"
+                    @click="handleAvatarClick">
                     <el-avatar :key="userAvatarRenderKey" :size="36" :src="userImage" class="user-avatar" />
-                  </div>
+                  </button>
                 </template>
                 <span>个人信息</span>
               </AstTooltip>
@@ -957,11 +958,23 @@ defineExpose({
 
 .avatar-container {
   position: relative;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  line-height: 0;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid #111111;
+    outline-offset: 3px;
+  }
 
   .user-avatar {
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    border: 2px solid rgba(0, 0, 0, 0.08);
+    border: 0;
     will-change: transform;
   }
 
