@@ -1,0 +1,38 @@
+<!--
+  Standalone Codex-style right panel toggle (expanded/static state).
+  The dynamic Vue counterpart lives at src/assets/svg/common/CodexPanelToggle.vue.
+  Shared geometry: frame 8.5/10.5/23/19/r4, divider 23.5/11.2..28.8,
+  stroke 2.2. Set the root color or currentColor when embedding.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  color="#191c1f"
+  data-state="expanded"
+  role="img"
+  aria-label="Collapse panel"
+  aria-labelledby="panel-state-toggle-right-title"
+>
+  <title id="panel-state-toggle-right-title">Collapse panel</title>
+  <rect
+    x="8.5"
+    y="10.5"
+    width="23"
+    height="19"
+    rx="4"
+    fill="#ffffff"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M23.5 11.2V28.8"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+  />
+</svg>

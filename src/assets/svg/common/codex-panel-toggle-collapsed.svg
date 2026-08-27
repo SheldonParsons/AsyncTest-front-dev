@@ -1,0 +1,38 @@
+<!--
+  Codex-style panel toggle, collapsed/static state.
+  Geometry source: codexPanelToggleGeometry.ts
+  The divider path is the expanded path's translateX(4px) scaleY(.42)
+  resolved around its y=20 center, so this export has no runtime CSS.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  color="#88898a"
+  data-state="collapsed"
+  role="img"
+  aria-label="Expand panel"
+  aria-labelledby="codex-panel-toggle-collapsed-title"
+>
+  <title id="codex-panel-toggle-collapsed-title">Expand panel</title>
+  <rect
+    x="8.5"
+    y="10.5"
+    width="23"
+    height="19"
+    rx="4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M27.5 16.304V23.696"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+  />
+</svg>

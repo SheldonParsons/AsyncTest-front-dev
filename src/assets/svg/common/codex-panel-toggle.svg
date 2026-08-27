@@ -1,0 +1,38 @@
+<!--
+  Codex-style panel toggle, expanded/static state.
+  Geometry source: codexPanelToggleGeometry.ts
+  frame: x=8.5 y=10.5 width=23 height=19 rx=4; stroke=2.2
+  divider: x=23.5 y=11.2..28.8
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  color="#191c1f"
+  data-state="expanded"
+  role="img"
+  aria-label="Collapse panel"
+  aria-labelledby="codex-panel-toggle-title"
+>
+  <title id="codex-panel-toggle-title">Collapse panel</title>
+  <rect
+    x="8.5"
+    y="10.5"
+    width="23"
+    height="19"
+    rx="4"
+    fill="#ffffff"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M23.5 11.2V28.8"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+  />
+</svg>

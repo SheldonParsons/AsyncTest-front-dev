@@ -1,0 +1,37 @@
+<!--
+  Standalone Codex-style right panel toggle (collapsed/static state).
+  Geometry matches panel-state-toggle-right.svg; the divider is the same
+  23.5/11.2..28.8 path resolved as translateX(4px) scaleY(.42).
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="40"
+  height="40"
+  viewBox="0 0 40 40"
+  fill="none"
+  color="#88898a"
+  data-state="collapsed"
+  role="img"
+  aria-label="Expand panel"
+  aria-labelledby="panel-state-toggle-right-collapsed-title"
+>
+  <title id="panel-state-toggle-right-collapsed-title">Expand panel</title>
+  <rect
+    x="8.5"
+    y="10.5"
+    width="23"
+    height="19"
+    rx="4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M27.5 16.304V23.696"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+  />
+</svg>
