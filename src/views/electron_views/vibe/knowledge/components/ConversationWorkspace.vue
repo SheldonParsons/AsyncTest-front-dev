@@ -28,7 +28,10 @@
             @click="emit('select', tab.id)"
             @keydown="handleTabKeydown($event, index)"
           >
-            <svg v-if="tab.kind === 'change'" class="workspace-tab-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <svg v-if="tab.kind === 'change-list' || tab.kind === 'file-list'" class="workspace-tab-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            </svg>
+            <svg v-else-if="tab.kind === 'change'" class="workspace-tab-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.9" />
               <path d="M8 10h8M8 14h5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
             </svg>
@@ -66,8 +69,34 @@
       :aria-labelledby="tabDomId(activeTab.id)"
       tabindex="0"
     >
+      <KnowledgeChangesViewer
+        v-if="activeTab.kind === 'change-list'"
+        :project-id="activeTab.projectId"
+        :items="activeTab.items"
+        :loading="activeTab.loading"
+        :loading-more="activeTab.loadingMore"
+        :error="activeTab.error"
+        :has-more="activeTab.hasMore"
+        @open-change="emit('open-change-list-item', $event)"
+        @load-more="emit('load-more-change-list', activeTab.id)"
+        @retry="emit('retry-change-list', activeTab.id)"
+      />
+
+      <SessionFilesViewer
+        v-else-if="activeTab.kind === 'file-list'"
+        :session-id="activeTab.sessionId"
+        :items="activeTab.items"
+        :loading="activeTab.loading"
+        :loading-more="activeTab.loadingMore"
+        :error="activeTab.error"
+        :has-more="activeTab.hasMore"
+        @open-file="emit('open-file-list-item', $event, activeTab.sessionId)"
+        @load-more="emit('load-more-file-list', activeTab.id)"
+        @retry="emit('retry-file-list', activeTab.id)"
+      />
+
       <CommitDiffDetail
-        v-if="activeTab.kind === 'change'"
+        v-else-if="activeTab.kind === 'change'"
         :detail="activeTab.detail"
         :loading="activeTab.loading"
         :error="activeTab.error"
@@ -112,7 +141,14 @@ import type { ComponentPublicInstance } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import CommitDiffDetail from '../../browser/components/CommitDiffDetail.vue'
-import type { WorkspaceFileViewerTab, WorkspaceViewerTab } from '../workspaceViewerPolicy'
+import KnowledgeChangesViewer from './KnowledgeChangesViewer.vue'
+import SessionFilesViewer from './SessionFilesViewer.vue'
+import type {
+  WorkspaceFileViewerTab,
+  WorkspaceViewerTab,
+} from '../workspaceViewerPolicy'
+import type { KnowledgeCommitSummary } from '../../api'
+import type { RecentSessionFile } from '../conversationInfoRailPolicy'
 
 const props = defineProps<{
   tabs: WorkspaceViewerTab[]
@@ -125,6 +161,12 @@ const emit = defineEmits<{
   'open-source': [id: string]
   'retry-file': [id: string]
   'retry-change': [id: string]
+  'open-change-list-item': [item: KnowledgeCommitSummary]
+  'load-more-change-list': [id: string]
+  'retry-change-list': [id: string]
+  'open-file-list-item': [file: RecentSessionFile, sessionId: string]
+  'load-more-file-list': [id: string]
+  'retry-file-list': [id: string]
 }>()
 
 const tabListEl = ref<HTMLElement | null>(null)

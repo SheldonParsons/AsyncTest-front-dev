@@ -573,6 +573,8 @@
           :session-id="activeSessionId"
           @open-change="openInfoRailChange"
           @open-file="openInfoRailFile"
+          @open-change-list="openInfoRailChangeList"
+          @open-file-list="openInfoRailFileList"
         />
       </div>
       <Transition
@@ -616,6 +618,12 @@
             @open-source="openWorkspaceSource"
             @retry-file="retryWorkspaceFile"
             @retry-change="retryWorkspaceChange"
+            @open-change-list-item="openWorkspaceChangeFromList"
+            @load-more-change-list="loadMoreWorkspaceChangeList"
+            @retry-change-list="retryWorkspaceChangeList"
+            @open-file-list-item="openWorkspaceFileFromList"
+            @load-more-file-list="loadMoreWorkspaceFileList"
+            @retry-file-list="retryWorkspaceFileList"
           />
         </aside>
       </Transition>
@@ -748,6 +756,15 @@ import {
   snapshotWorkspaceViewerConversation,
   upsertViewerTab,
   workspaceChangeViewerTabId,
+  workspaceChangeListCanLoadMore,
+  workspaceChangeListViewerTabId,
+  workspaceFileListViewerTabId,
+  workspaceFileListCanLoadMore,
+  WORKSPACE_CHANGE_LIST_INITIAL_PAGE_SIZE,
+  WORKSPACE_CHANGE_LIST_PAGE_SIZE,
+  WORKSPACE_FILE_LIST_INITIAL_PAGE_SIZE,
+  WORKSPACE_FILE_LIST_PAGE_SIZE,
+  mergeKnowledgeChangeSummaries,
   WorkspaceViewerConversationStore,
   workspaceDraftCreationIsStillActive,
   workspaceViewerConversationKey,
@@ -757,6 +774,8 @@ import {
   WorkspaceViewerRequestGate,
   workspaceViewerTabNeedsReload,
   type WorkspaceChangeViewerTab,
+  type WorkspaceChangeListViewerTab,
+  type WorkspaceFileListViewerTab,
   type WorkspaceFileViewerTab,
   type WorkspaceViewerRequestToken,
   type WorkspaceViewerTab,
@@ -809,6 +828,13 @@ const lastAssistantId = computed(() => {
 const activeSessionId = ref('')
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
 const recentSessionFiles = computed(() => deriveRecentSessionFiles(events.value, activeSessionId.value))
+// 会话事件接口目前返回完整历史，没有独立文件分页端点；列表页签从同一份
+// 权威事件快照派生全量文件，再按 20 + 10 的稳定身份游标分页展示。
+const allSessionFiles = computed(() => deriveRecentSessionFiles(
+  events.value,
+  activeSessionId.value,
+  Number.MAX_SAFE_INTEGER,
+))
 const sessionFilesLoading = ref(false)
 const sessionFilesError = ref('')
 let sessionRequestEpoch = 0
@@ -914,6 +940,11 @@ const activeWorkspaceTabId = ref<string | null>(null)
 const workspaceRef = ref<InstanceType<typeof ConversationWorkspace> | null>(null)
 const workspaceConversationStore = new WorkspaceViewerConversationStore()
 const workspaceRequestGate = new WorkspaceViewerRequestGate()
+// 文件列表页签使用会话级快照，避免切换会话后把当前 events 当成旧会话数据。
+const workspaceSessionFileSnapshots = new Map<string, RecentSessionFile[]>()
+const workspaceFileListRequests = new Map<string, Promise<void>>()
+const workspaceChangeListRequests = new Map<string, Promise<void>>()
+const sessionEventsRequests = new Map<string, Promise<VibeEvent[]>>()
 let workspaceOpenTimer: ReturnType<typeof setTimeout> | null = null
 let workspaceFocusAfterEnter = false
 const INFO_RAIL_CLOSE_TRANSITION_MS = 230
@@ -1459,6 +1490,8 @@ function selectWorkspaceTab(id: string): void {
 
 function closeWorkspaceTab(id: string): void {
   workspaceRequestGate.invalidate(id)
+  workspaceChangeListRequests.delete(id)
+  workspaceFileListRequests.delete(id)
   const nextState = closeViewerTab(workspaceTabs.value, activeWorkspaceTabId.value, id)
   applyWorkspaceTabsState(nextState)
 
@@ -1476,6 +1509,26 @@ function resumeWorkspaceConversationRequests(): void {
     if (!workspaceViewerTabNeedsReload(tab)) continue
     if (tab.kind === 'change') {
       void loadWorkspaceChange(tab.id, tab.projectId, tab.commitSeq)
+      continue
+    }
+    if (tab.kind === 'change-list') {
+      const resumeMore = tab.loadingMore
+      if (resumeMore) {
+        replaceWorkspaceTab(tab.id, current => current.kind === 'change-list'
+          ? { ...current, loading: false, loadingMore: false }
+          : current)
+      }
+      void loadWorkspaceChangeList(tab.id, tab.projectId, !resumeMore)
+      continue
+    }
+    if (tab.kind === 'file-list') {
+      const resumeMore = tab.loadingMore
+      if (resumeMore) {
+        replaceWorkspaceTab(tab.id, current => current.kind === 'file-list'
+          ? { ...current, loading: false, loadingMore: false }
+          : current)
+      }
+      void loadWorkspaceFileList(tab.id, tab.sessionId, !resumeMore)
       continue
     }
     void loadWorkspaceFile(tab.id)
@@ -1497,6 +1550,8 @@ function activateWorkspaceConversation(projectId: unknown, sessionId: unknown): 
   clearWorkspaceOpenTimer()
   workspaceFocusAfterEnter = false
   workspaceRequestGate.invalidateAll()
+  workspaceChangeListRequests.clear()
+  workspaceFileListRequests.clear()
   const restored = activation.state
   applyWorkspaceTabsState(restored)
 
@@ -1518,6 +1573,33 @@ function adoptWorkspaceDraftForSession(projectId: unknown, sessionId: string): v
   if (!sessionKey || workspaceConversationStore.currentKey !== draftKey) return
   // 首轮发送只是把当前草稿会话赋予真实 id，不应触发 Viewer 闪烁或重载。
   workspaceRequestGate.migrateConversation(draftKey, sessionKey)
+  // If the user opened the empty file-list state before sending the first
+  // message, carry that tab onto the newly created session instead of leaving
+  // an orphan `file-list:` tab in the draft conversation.
+  const draftFileList = workspaceTabs.value.find(item => item.kind === 'file-list' && !item.sessionId)
+  if (draftFileList?.kind === 'file-list') {
+    const sessionTabId = workspaceFileListViewerTabId(sessionId)
+    const existingSessionTab = workspaceTabs.value.find(item => item.id === sessionTabId)
+    const migrated = existingSessionTab?.kind === 'file-list'
+      ? existingSessionTab
+      : {
+          ...draftFileList,
+          id: sessionTabId,
+          sessionId,
+          loading: true,
+          loadingMore: false,
+          error: '',
+          nextCursor: 0,
+          hasMore: true,
+        }
+    const draftIndex = workspaceTabs.value.findIndex(item => item.id === draftFileList.id)
+    const nextTabs = workspaceTabs.value
+      .filter(item => item.id !== draftFileList.id && item.id !== sessionTabId)
+    nextTabs.splice(Math.max(0, Math.min(draftIndex, nextTabs.length)), 0, migrated)
+    workspaceTabs.value = nextTabs
+    if (activeWorkspaceTabId.value === draftFileList.id) activeWorkspaceTabId.value = sessionTabId
+    workspaceRequestGate.invalidate(draftFileList.id)
+  }
   workspaceConversationStore.adoptActiveDraft(draftKey, sessionKey)
 }
 
@@ -1555,6 +1637,424 @@ function openInfoRailChange(item: KnowledgeCommitSummary): void {
 function openInfoRailFile(file: RecentSessionFile): void {
   openWorkspaceFile(file, activeSessionId.value, infoRailViewerOpenOptions())
 }
+
+/** 打开当前项目的独立知识变更列表页签；同一项目始终复用同一个页签。 */
+function openInfoRailChangeList(): void {
+  const projectId = workspaceProjectContextId(knowledgeStatsProjectId(selectedProjectId.value))
+  if (!projectId) {
+    window.$toast({ title: '当前项目身份无效，无法读取知识变更' })
+    return
+  }
+  const id = workspaceChangeListViewerTabId(projectId)
+  const existing = workspaceTabById(id)
+  if (existing?.kind === 'change-list') {
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    if (existing.loading) void loadWorkspaceChangeList(id, projectId, true)
+    else if (existing.error) void loadWorkspaceChangeList(id, projectId, existing.items.length === 0)
+    return
+  }
+  const tab: WorkspaceChangeListViewerTab = {
+    id,
+    kind: 'change-list',
+    title: '知识变更列表',
+    loading: true,
+    loadingMore: false,
+    error: '',
+    projectId,
+    items: [],
+    nextCursor: null,
+    hasMore: true,
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+  void loadWorkspaceChangeList(id, projectId, true)
+}
+
+/** 打开当前会话的独立文件列表页签；页签身份包含会话，避免跨会话串列表。 */
+function openInfoRailFileList(): void {
+  const sessionId = String(activeSessionId.value || '').trim()
+  if (!sessionId) {
+    const id = workspaceFileListViewerTabId('')
+    const existing = workspaceTabById(id)
+    if (existing?.kind === 'file-list') {
+      activeWorkspaceTabId.value = id
+    } else {
+      applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, {
+        id,
+        kind: 'file-list',
+        title: '当前会话文件',
+        loading: false,
+        loadingMore: false,
+        error: '',
+        sessionId: '',
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+      }))
+    }
+    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    return
+  }
+  const id = workspaceFileListViewerTabId(sessionId)
+  const existing = workspaceTabById(id)
+  if (existing?.kind === 'file-list') {
+    activeWorkspaceTabId.value = id
+    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    if (existing.loading) void loadWorkspaceFileList(id, sessionId, true)
+    else if (existing.error) void loadWorkspaceFileList(id, sessionId, existing.items.length === 0)
+    return
+  }
+  const tab: WorkspaceFileListViewerTab = {
+    id,
+    kind: 'file-list',
+    title: '当前会话文件',
+    loading: true,
+    loadingMore: false,
+    error: '',
+    sessionId,
+    items: [],
+    nextCursor: 0,
+    hasMore: true,
+  }
+  applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
+  setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+  void loadWorkspaceFileList(id, sessionId, true)
+}
+
+function normalizeKnowledgeListCursor(value: unknown): number | null {
+  const cursor = Number(value)
+  return Number.isSafeInteger(cursor) && cursor > 0 ? cursor : null
+}
+
+function openWorkspaceChangeFromList(item: KnowledgeCommitSummary): void {
+  const listTab = workspaceTabById(activeWorkspaceTabId.value || '')
+  const itemProjectId = String(item?.project_id || '').trim()
+  if (
+    listTab?.kind === 'change-list'
+    && itemProjectId
+    && itemProjectId !== listTab.projectId
+  ) return
+  if (listTab?.kind === 'change-list' && !itemProjectId) {
+    item = { ...item, project_id: listTab.projectId }
+  }
+  openWorkspaceChange(item)
+}
+
+function loadMoreWorkspaceChangeList(tabId: string): void {
+  const tab = workspaceTabById(tabId)
+  if (!tab || tab.kind !== 'change-list') return
+  void loadWorkspaceChangeList(tabId, tab.projectId, false)
+}
+
+function retryWorkspaceChangeList(tabId: string): void {
+  const tab = workspaceTabById(tabId)
+  if (!tab || tab.kind !== 'change-list') return
+  // Keep already loaded pages when a continuation request failed; only an
+  // initial-page failure needs a full reset.
+  void loadWorkspaceChangeList(tabId, tab.projectId, tab.items.length === 0)
+}
+
+/**
+ * Knowledge commits use the backend's sequence cursor (`before`). The first
+ * request is 20 rows; later requests are 10 rows. Cursor overlap is filtered
+ * by sequence and a non advancing cursor closes the list to prevent loops.
+ */
+async function loadWorkspaceChangeList(
+  tabId: string,
+  projectId: string,
+  resetList = false,
+): Promise<void> {
+  const current = workspaceTabById(tabId)
+  if (!current || current.kind !== 'change-list' || current.projectId !== projectId) return
+  if (!resetList && !workspaceChangeListCanLoadMore(current)) return
+  const existingRequest = workspaceChangeListRequests.get(tabId)
+  if (existingRequest) return existingRequest
+
+  const limit = resetList
+    ? WORKSPACE_CHANGE_LIST_INITIAL_PAGE_SIZE
+    : WORKSPACE_CHANGE_LIST_PAGE_SIZE
+  const previousCursor = current.nextCursor
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'change-list'
+    ? {
+        ...tab,
+        loading: resetList,
+        loadingMore: !resetList,
+        error: '',
+      }
+    : tab)
+
+  let request: Promise<void> = Promise.resolve()
+  request = (async () => {
+    try {
+      const page = await getKnowledgeCommits(projectId, {
+        limit,
+        before: resetList ? undefined : (previousCursor || undefined),
+      })
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      if (!page || !Array.isArray(page.items)) throw new Error('知识变更列表响应无效')
+      const latest = workspaceTabById(tabId)
+      if (!latest || latest.kind !== 'change-list') return
+      const incoming = Array.isArray(page?.items) ? page.items : []
+      const merged = resetList
+        ? mergeKnowledgeChangeSummaries([], incoming)
+        : mergeKnowledgeChangeSummaries(latest.items, incoming)
+      const explicitCursor = page?.next_cursor !== undefined
+      let nextCursor = normalizeKnowledgeListCursor(page?.next_cursor)
+      // Older deployments may omit next_cursor. A full page can still be
+      // advanced safely with its last sequence; a short page is terminal.
+      if (!explicitCursor && incoming.length >= limit) {
+        nextCursor = normalizeKnowledgeListCursor(incoming[incoming.length - 1]?.seq)
+      }
+      const cursorDidAdvance = resetList
+        || (nextCursor !== null && (previousCursor === null || nextCursor < previousCursor))
+      const hasMore = incoming.length > 0 && nextCursor !== null && cursorDidAdvance
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'change-list'
+        ? {
+            ...tab,
+            items: merged,
+            loading: false,
+            loadingMore: false,
+            error: '',
+            nextCursor: hasMore ? nextCursor : null,
+            hasMore,
+          }
+        : tab)
+    } catch (reason) {
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'change-list'
+        ? {
+            ...tab,
+            loading: false,
+            loadingMore: false,
+            error: workspaceErrorMessage(reason, '知识变更列表读取失败，请稍后重试。'),
+          }
+        : tab)
+    }
+  })()
+  workspaceChangeListRequests.set(tabId, request)
+  const clearChangeListRequest = () => {
+    if (workspaceChangeListRequests.get(tabId) === request) workspaceChangeListRequests.delete(tabId)
+  }
+  void request.then(clearChangeListRequest, clearChangeListRequest)
+  await request
+}
+
+function workspaceFileListCacheKey(sessionId: string, projectId = workspaceProjectContextId()): string {
+  return `${String(projectId || '').trim()}::${String(sessionId || '').trim()}`
+}
+
+/** Share an in-flight authoritative event request between the conversation
+ * loader and the file-list tab so opening "查看全部" cannot duplicate it. */
+function requestSessionEvents(sessionId: string): Promise<VibeEvent[]> {
+  const normalizedSessionId = String(sessionId || '').trim()
+  if (!normalizedSessionId) return Promise.resolve([])
+  const existing = sessionEventsRequests.get(normalizedSessionId)
+  if (existing) return existing
+  const request = listVibeEvents(normalizedSessionId)
+  sessionEventsRequests.set(normalizedSessionId, request)
+  const clear = () => {
+    if (sessionEventsRequests.get(normalizedSessionId) === request) {
+      sessionEventsRequests.delete(normalizedSessionId)
+    }
+  }
+  void request.then(clear, clear)
+  return request
+}
+
+function openWorkspaceFileFromList(file: RecentSessionFile, sessionId: string): void {
+  openWorkspaceFile(file, sessionId)
+}
+
+function loadMoreWorkspaceFileList(tabId: string): void {
+  const tab = workspaceTabById(tabId)
+  if (!tab || tab.kind !== 'file-list') return
+  void loadWorkspaceFileList(tabId, tab.sessionId, false)
+}
+
+function retryWorkspaceFileList(tabId: string): void {
+  const tab = workspaceTabById(tabId)
+  if (!tab || tab.kind !== 'file-list') return
+  void loadWorkspaceFileList(tabId, tab.sessionId, tab.items.length === 0)
+}
+
+/**
+ * Session events currently have no server-side file cursor. We cache the
+ * authoritative full event projection per session, expose the first 20 files,
+ * then append 10 unseen identities. Identity de-duplication keeps repeated
+ * events and renamed attachments from producing duplicate rows.
+ */
+async function loadWorkspaceFileList(
+  tabId: string,
+  sessionId: string,
+  resetList = false,
+): Promise<void> {
+  const current = workspaceTabById(tabId)
+  if (!current || current.kind !== 'file-list' || current.sessionId !== sessionId) return
+  if (!resetList && !workspaceFileListCanLoadMore(current)) return
+  const existingRequest = workspaceFileListRequests.get(tabId)
+  if (existingRequest) return existingRequest
+  const token = beginWorkspaceRequest(tabId)
+  replaceWorkspaceTab(tabId, tab => tab.kind === 'file-list'
+    ? {
+        ...tab,
+        loading: resetList,
+        loadingMore: !resetList,
+        error: '',
+      }
+    : tab)
+
+  let request: Promise<void> = Promise.resolve()
+  request = (async () => {
+    try {
+      const projectId = workspaceProjectContextId()
+      const cacheKey = workspaceFileListCacheKey(sessionId, projectId)
+      const activeSnapshotAvailable = activeSessionId.value === sessionId
+        && workspaceProjectContextId() === projectId
+        && !sessionFilesLoading.value
+        && !sessionFilesError.value
+      let allFiles = workspaceSessionFileSnapshots.get(cacheKey) || []
+      if (activeSnapshotAvailable) {
+        // Reuse the events projection already loaded by openSession. This is
+        // both fresher and avoids a duplicate GET when the user opens the list.
+        allFiles = allSessionFiles.value
+        workspaceSessionFileSnapshots.set(cacheKey, allFiles)
+      } else if (resetList || !workspaceSessionFileSnapshots.has(cacheKey)) {
+        const loadedEvents = await requestSessionEvents(sessionId)
+        if (!Array.isArray(loadedEvents)) throw new Error('会话文件列表响应无效')
+        const normalizedEvents = loadedEvents
+        allFiles = deriveRecentSessionFiles(normalizedEvents, sessionId, Number.MAX_SAFE_INTEGER)
+        workspaceSessionFileSnapshots.set(cacheKey, allFiles)
+        // Keep the main panel's event projection in sync when this is still
+        // the active session; stale sessions never overwrite current events.
+        if (activeSnapshotAvailable || (activeSessionId.value === sessionId && workspaceProjectContextId() === projectId)) {
+          events.value = sortEvents(normalizedEvents)
+          sessionFilesLoading.value = false
+          sessionFilesError.value = ''
+        }
+      }
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      const latest = workspaceTabById(tabId)
+      if (!latest || latest.kind !== 'file-list') return
+      const pageSize = resetList ? WORKSPACE_FILE_LIST_INITIAL_PAGE_SIZE : WORKSPACE_FILE_LIST_PAGE_SIZE
+      // Use identities as the continuation boundary instead of trusting a
+      // raw offset: a newly uploaded file can appear at the front of the
+      // snapshot while the user is reading, and offset-only paging would then
+      // repeat one row and skip another.
+      const loadedIdentities = new Set(latest.items.map(item => String(item.identity || '').trim()))
+      const page = resetList
+        ? allFiles.slice(0, pageSize)
+        : allFiles.filter(item => !loadedIdentities.has(String(item.identity || '').trim())).slice(0, pageSize)
+      const merged = resetList
+        ? page
+        : mergeSessionFileListItems(latest.items, page)
+      const mergedIdentities = new Set(merged.map(item => String(item.identity || '').trim()))
+      const hasMore = allFiles.some(item => !mergedIdentities.has(String(item.identity || '').trim()))
+      const nextOffset = merged.length
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file-list'
+        ? {
+            ...tab,
+            items: merged,
+            loading: false,
+            loadingMore: false,
+            error: '',
+            nextCursor: hasMore ? nextOffset : null,
+            hasMore,
+          }
+        : tab)
+    } catch (reason) {
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file-list'
+        ? {
+            ...tab,
+            loading: false,
+            loadingMore: false,
+            error: workspaceErrorMessage(reason, '会话文件列表读取失败，请稍后重试。'),
+          }
+        : tab)
+    }
+  })()
+  workspaceFileListRequests.set(tabId, request)
+  const clearFileListRequest = () => {
+    if (workspaceFileListRequests.get(tabId) === request) workspaceFileListRequests.delete(tabId)
+  }
+  void request.then(clearFileListRequest, clearFileListRequest)
+  await request
+}
+
+function mergeSessionFileListItems(
+  existing: readonly RecentSessionFile[],
+  incoming: readonly RecentSessionFile[],
+): RecentSessionFile[] {
+  const result: RecentSessionFile[] = []
+  const seen = new Set<string>()
+  for (const item of [...existing, ...incoming]) {
+    const identity = String(item?.identity || '').trim()
+    if (!identity || seen.has(identity)) continue
+    seen.add(identity)
+    result.push(item)
+  }
+  return result
+}
+
+/** Keep an already-open file list current when the active conversation gains
+ * a new event/attachment, while preserving the number of rows the user has
+ * already paged through. */
+function syncActiveWorkspaceFileList(): void {
+  const sessionId = String(activeSessionId.value || '').trim()
+  const projectId = workspaceProjectContextId()
+  // Keep the restored tab snapshot intact while a new session's authoritative
+  // events are still loading (or failed); an empty transient `events=[]`
+  // must never erase the previous page state.
+  if (!sessionId || !projectId || sessionFilesLoading.value || sessionFilesError.value) return
+  const snapshot = allSessionFiles.value
+  const cacheKey = workspaceFileListCacheKey(sessionId, projectId)
+  workspaceSessionFileSnapshots.set(cacheKey, snapshot)
+  const tab = workspaceTabById(workspaceFileListViewerTabId(sessionId))
+  if (!tab || tab.kind !== 'file-list' || tab.loading || tab.loadingMore) return
+  const snapshotByIdentity = new Map(snapshot.map(item => [String(item.identity || '').trim(), item]))
+  const known = new Set(tab.items.map(item => String(item.identity || '').trim()))
+  // Preserve every row the user has already loaded, update its latest file
+  // metadata, and put newly discovered identities ahead of the old page.
+  const additions = snapshot.filter(item => !known.has(String(item.identity || '').trim()))
+  const retained = tab.items
+    .map(item => snapshotByIdentity.get(String(item.identity || '').trim()) || item)
+    .filter(item => snapshotByIdentity.has(String(item.identity || '').trim()))
+  const items = [...additions, ...retained]
+  const loaded = new Set(items.map(item => String(item.identity || '').trim()))
+  const hasMore = snapshot.some(item => !loaded.has(String(item.identity || '').trim()))
+  replaceWorkspaceTab(tab.id, current => current.kind === 'file-list'
+    ? {
+        ...current,
+        items,
+        nextCursor: hasMore ? items.length : null,
+        hasMore,
+        error: '',
+      }
+    : current)
+}
+
+watch(
+  () => [activeSessionId.value, events.value, sessionFilesLoading.value, sessionFilesError.value] as const,
+  () => { syncActiveWorkspaceFileList() },
+)
+
+// The rail is refreshed by the knowledge activity stream. Merge its newest
+// summaries into an already-open list without resetting the user's scroll or
+// discarding older pages; the existing backend cursor remains the boundary.
+watch(recentKnowledgeChanges, (changes) => {
+  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
+  if (!projectId || !changes.length) return
+  const tab = workspaceTabById(workspaceChangeListViewerTabId(projectId))
+  if (!tab || tab.kind !== 'change-list' || tab.loading || tab.loadingMore) return
+  const merged = mergeKnowledgeChangeSummaries(changes, tab.items)
+  if (merged.length === tab.items.length
+    && merged.every((item, index) => item === tab.items[index])) return
+  replaceWorkspaceTab(tab.id, current => current.kind === 'change-list'
+    ? { ...current, items: merged }
+    : current)
+})
 
 function openWorkspaceChange(
   item: KnowledgeCommitSummary,
@@ -2455,6 +2955,11 @@ onBeforeUnmount(() => {
   projectContextEpoch += 1
   sessionRequestEpoch += 1
   stopKnowledgeActivity()
+  workspaceRequestGate.invalidateAll()
+  workspaceChangeListRequests.clear()
+  workspaceFileListRequests.clear()
+  sessionEventsRequests.clear()
+  workspaceSessionFileSnapshots.clear()
   stopElapsedTicker()
   stopRunningTurnPolling()
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
@@ -2692,9 +3197,13 @@ async function openSession(sessionId: string) {
   try {
     // 历史事件与 running 快照并行取，谁先回来谁先渲染。
     const runningRefresh = refreshProjectRunningTurns().catch(() => {})
-    const loadedEvents = await listVibeEvents(sessionId)
+    const loadedEvents = await requestSessionEvents(sessionId)
     if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
     events.value = sortEvents(loadedEvents)
+    workspaceSessionFileSnapshots.set(
+      workspaceFileListCacheKey(sessionId),
+      deriveRecentSessionFiles(events.value, sessionId, Number.MAX_SAFE_INTEGER),
+    )
     restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
     await runningRefresh
     if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
@@ -2706,6 +3215,7 @@ async function openSession(sessionId: string) {
   } finally {
     if (epoch === sessionRequestEpoch && activeSessionId.value === sessionId) {
       sessionFilesLoading.value = false
+      syncActiveWorkspaceFileList()
       // 进会话即把光标放到输入框。放在 finally 是刻意的：
       // restoreClarificationFromEvents 已经跑完，composerQuestion 已定，
       // 所以带未答反问的会话不会被抢焦点（focusInput 内部自己判断）。
@@ -3476,6 +3986,10 @@ async function ensureSession() {
 
   adoptWorkspaceDraftForSession(creationProjectId, session.id)
   activeSessionId.value = session.id
+  const migratedFileList = workspaceTabById(workspaceFileListViewerTabId(session.id))
+  if (migratedFileList?.kind === 'file-list' && migratedFileList.loading) {
+    void loadWorkspaceFileList(migratedFileList.id, session.id, true)
+  }
   selectedLlmProviderId.value = session.llm_provider_id || selectedLlmProviderId.value
   await refreshState({}, creationProjectEpoch)
   if (

@@ -3,7 +3,7 @@ import type { RecentSessionFile } from './conversationInfoRailPolicy'
 
 interface WorkspaceViewerTabBase {
   id: string
-  kind: 'file' | 'change'
+  kind: 'file' | 'change' | 'file-list' | 'change-list'
   title: string
   loading: boolean
   error: string
@@ -24,7 +24,39 @@ export interface WorkspaceChangeViewerTab extends WorkspaceViewerTabBase {
   detail: KnowledgeCommitDetail | null
 }
 
-export type WorkspaceViewerTab = WorkspaceFileViewerTab | WorkspaceChangeViewerTab
+/**
+ * Paging state is part of the conversation snapshot so a list survives
+ * switching Viewer tabs or sessions while its component is unmounted.
+ */
+export interface WorkspaceChangeListViewerTab extends WorkspaceViewerTabBase {
+  kind: 'change-list'
+  projectId: string
+  items: KnowledgeCommitSummary[]
+  loading: boolean
+  loadingMore: boolean
+  nextCursor: number | null
+  hasMore: boolean
+}
+
+/** Readable domain alias for consumers that do not use the shorter tab kind. */
+export type WorkspaceKnowledgeChangesViewerTab = WorkspaceChangeListViewerTab
+
+/** Session file list state; presentation and fetching remain in the parent. */
+export interface WorkspaceFileListViewerTab extends WorkspaceViewerTabBase {
+  kind: 'file-list'
+  sessionId: string
+  items: RecentSessionFile[]
+  loading: boolean
+  loadingMore: boolean
+  nextCursor: string | number | null
+  hasMore: boolean
+}
+
+export type WorkspaceViewerTab =
+  | WorkspaceFileViewerTab
+  | WorkspaceChangeViewerTab
+  | WorkspaceChangeListViewerTab
+  | WorkspaceFileListViewerTab
 
 export interface WorkspaceViewerTabsState {
   tabs: WorkspaceViewerTab[]
@@ -172,9 +204,12 @@ export class WorkspaceViewerRequestGate {
 }
 
 export function workspaceViewerTabNeedsReload(tab: WorkspaceViewerTab): boolean {
-  return tab.kind === 'change'
-    ? !tab.detail && !tab.error
-    : tab.loading
+  if (tab.kind === 'change') return !tab.detail && !tab.error
+  if (tab.kind === 'file') return tab.loading
+  // List tabs carry their own first-page and continuation loading state. A
+  // list that was persisted while either request was pending must be resumed
+  // after a conversation activation; completed/errored lists wait for retry.
+  return tab.loading || tab.loadingMore
 }
 
 export function deletedConversationIsStillActive(
@@ -207,6 +242,96 @@ export function workspaceFileViewerTabId(sessionId: string, fileIdentity: string
 
 export function workspaceChangeViewerTabId(projectId: string, commitSeq: number): string {
   return `change:${identityPart(projectId)}:${Math.max(0, Number(commitSeq) || 0)}`
+}
+
+/** Stable one-per-project identity for the independent knowledge change list. */
+export function workspaceChangeListViewerTabId(projectId: string): string {
+  return `change-list:${identityPart(projectId)}`
+}
+
+/** Stable one-per-session identity for the independent session file list. */
+export function workspaceFileListViewerTabId(sessionId: string): string {
+  return `file-list:${identityPart(sessionId)}`
+}
+
+/** Semantic alias for callers that prefer the full domain name. */
+export const workspaceKnowledgeChangesViewerTabId = workspaceChangeListViewerTabId
+
+/** Paging contract used by the independent knowledge change list. */
+export const WORKSPACE_CHANGE_LIST_INITIAL_PAGE_SIZE = 20
+export const WORKSPACE_CHANGE_LIST_PAGE_SIZE = 10
+export const WORKSPACE_FILE_LIST_INITIAL_PAGE_SIZE = 20
+export const WORKSPACE_FILE_LIST_PAGE_SIZE = 10
+
+/**
+ * Return a stable key for a commit summary. Commit sequence is the canonical
+ * pagination identity (the API's `before` cursor is sequence based), so it is
+ * preferred even when an overlapping response happens to carry a different
+ * presentation id. The id is a fallback for legacy rows without a sequence.
+ */
+export function knowledgeChangeSummaryIdentity(item: Partial<KnowledgeCommitSummary> | null | undefined): string {
+  const seq = Number(item?.seq)
+  if (Number.isSafeInteger(seq) && seq > 0) return `seq:${seq}`
+  const id = String(item?.id ?? '').trim()
+  return id ? `id:${id}` : ''
+}
+
+/**
+ * Merge a page into an existing server-ordered commit list without duplicate
+ * rows. The first occurrence wins, preserving order at a cursor boundary and
+ * preventing overlap from producing repeated entries.
+ */
+export function mergeKnowledgeChangeSummaries(
+  existing: readonly KnowledgeCommitSummary[],
+  incoming: readonly KnowledgeCommitSummary[],
+): KnowledgeCommitSummary[] {
+  const result: KnowledgeCommitSummary[] = []
+  const seen = new Set<string>()
+  for (const item of [...existing, ...incoming]) {
+    if (!item || typeof item !== 'object') continue
+    const seq = Number(item.seq)
+    const seqKey = Number.isSafeInteger(seq) && seq > 0 ? `seq:${seq}` : ''
+    const id = String(item.id ?? '').trim()
+    const idKey = id ? `id:${id}` : ''
+    const keys = [seqKey, idKey].filter(Boolean)
+    // Treat either canonical sequence or backend id as a duplicate. This
+    // covers deployments where an overlapping page serializes a commit id
+    // differently while still guaranteeing one row per commit. For malformed
+    // legacy rows, a stable JSON fallback removes exact duplicates without
+    // collapsing unrelated rows that have no identity at all.
+    const dedupKeys = keys.length ? keys : [`raw:${JSON.stringify(item)}`]
+    if (dedupKeys.some(candidate => seen.has(candidate))) continue
+    dedupKeys.forEach(candidate => seen.add(candidate))
+    result.push(item)
+  }
+  return result
+}
+
+/** Semantic alias used by list state owners. */
+export const mergeWorkspaceKnowledgeChanges = mergeKnowledgeChangeSummaries
+
+/** Whether a change-list tab can issue another page request. */
+export function workspaceChangeListCanLoadMore(
+  tab: Pick<WorkspaceChangeListViewerTab, 'loading' | 'loadingMore' | 'hasMore' | 'nextCursor'>,
+): boolean {
+  const cursor = Number(tab.nextCursor)
+  return !tab.loading
+    && !tab.loadingMore
+    && tab.hasMore
+    && Number.isSafeInteger(cursor)
+    && cursor > 0
+}
+
+/** Whether a file-list tab is ready for its next local snapshot page. */
+export function workspaceFileListCanLoadMore(
+  tab: Pick<WorkspaceFileListViewerTab, 'loading' | 'loadingMore' | 'hasMore' | 'nextCursor'>,
+): boolean {
+  const cursor = Number(tab.nextCursor)
+  return !tab.loading
+    && !tab.loadingMore
+    && tab.hasMore
+    && Number.isSafeInteger(cursor)
+    && cursor >= 0
 }
 
 /** 空字符串是合法正文；只有完全没有字符串正文时才需要走远端读取。 */

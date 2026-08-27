@@ -10,7 +10,12 @@
       <section class="info-section knowledge-section" aria-labelledby="recent-knowledge-title">
         <header>
           <h2 id="recent-knowledge-title">最近知识变更</h2>
-          <button class="view-all" type="button" title="功能即将开放" @click="showComingSoon">查看全部</button>
+          <button
+            class="view-all"
+            type="button"
+            title="查看全部知识变更"
+            @click="emit('open-change-list')"
+          >查看全部</button>
         </header>
         <p v-if="changesLoading" class="info-state">正在读取最近变更…</p>
         <p v-else-if="changesError" class="info-state error" role="status">{{ changesError }}</p>
@@ -34,7 +39,12 @@
       <section class="info-section file-section" aria-labelledby="recent-files-title">
         <header>
           <h2 id="recent-files-title">当前会话文件</h2>
-          <button class="view-all" type="button" title="功能即将开放" @click="showComingSoon">查看全部</button>
+          <button
+            class="view-all"
+            type="button"
+            title="查看全部会话文件"
+            @click="emit('open-file-list')"
+          >查看全部</button>
         </header>
         <p v-if="filesLoading" class="info-state">正在读取会话文件…</p>
         <p v-else-if="filesError" class="info-state error" role="status">{{ filesError }}</p>
@@ -87,11 +97,9 @@ defineProps<{
 const emit = defineEmits<{
   'open-change': [item: KnowledgeCommitSummary]
   'open-file': [file: RecentSessionFile]
+  'open-change-list': []
+  'open-file-list': []
 }>()
-
-function showComingSoon(): void {
-  window.$toast({ title: '开发中，敬请期待' })
-}
 
 function sizeLabel(value: unknown): string {
   const size = Number(value || 0)
