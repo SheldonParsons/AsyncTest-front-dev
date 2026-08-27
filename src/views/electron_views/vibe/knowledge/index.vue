@@ -179,7 +179,7 @@
               :disabled="workspaceInfoToggleDisabled"
               @click="toggleInfoRail"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings2-icon lucide-settings-2" aria-hidden="true"><path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+              <CodexListFilter />
             </button>
           </div>
         </header>
@@ -194,12 +194,17 @@
           :aria-expanded="workspaceWindowOpen"
           :aria-busy="workspaceWindowRequestedOpen && !workspaceWindowOpen ? 'true' : undefined"
           aria-controls="conversation-workspace-window"
+          :style="{ '--workspace-window-icon-color': workspaceWindowOpen ? '#191c1f' : '#88898a' }"
           @click="setWorkspaceWindowOpen(!workspaceWindowRequestedOpen)"
         >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect width="18" height="18" x="3" y="3" rx="2" />
-            <path d="M15 3v18" />
-          </svg>
+          <!-- Keep the glyph responsive during the delayed mount; once settled, requested and actual states match. -->
+          <CodexPanelToggle
+            icon-only
+            :expanded="workspaceWindowOpen || workspaceWindowRequestedOpen"
+            :size="24"
+            color="currentColor"
+            aria-hidden="true"
+          />
         </button>
 
         <div class="main-conversation-pane">
@@ -648,6 +653,8 @@ import { shouldShowConversationEmptyState } from './conversationEmptyStatePolicy
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
 import PanelStateToggle from './components/icons/PanelStateToggle.vue'
+import CodexListFilter from '@/assets/svg/common/CodexListFilter.vue'
+import CodexPanelToggle from '@/assets/svg/common/CodexPanelToggle.vue'
 import MarkdownFileIcon from './components/icons/MarkdownFileIcon.vue'
 import AssistantActions from './components/AssistantActions.vue'
 import SourceChips from './components/SourceChips.vue'
@@ -5317,7 +5324,7 @@ function isStreamingUnderEvent(event: any) {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: var(--ink-3);
+  color: var(--workspace-window-icon-color, var(--ink-3));
   display: inline-flex;
   align-items: center;
   justify-content: center;

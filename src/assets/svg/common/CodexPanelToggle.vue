@@ -1,14 +1,16 @@
 <template>
-  <button
+  <component
+    :is="props.iconOnly ? 'span' : 'button'"
     class="codex-panel-toggle"
-    :class="{ 'is-collapsed': !resolvedExpanded }"
-    type="button"
-    :disabled="props.disabled"
-    :aria-label="resolvedAriaLabel"
-    :aria-expanded="resolvedExpanded"
-    :aria-pressed="resolvedExpanded"
-    :aria-controls="props.ariaControls"
-    :title="props.title || resolvedAriaLabel"
+    :class="{ 'is-collapsed': !resolvedExpanded, 'is-icon-only': props.iconOnly }"
+    :type="props.iconOnly ? undefined : 'button'"
+    :disabled="props.iconOnly ? undefined : props.disabled"
+    :aria-label="props.iconOnly ? undefined : resolvedAriaLabel"
+    :aria-expanded="props.iconOnly ? undefined : resolvedExpanded"
+    :aria-pressed="props.iconOnly ? undefined : resolvedExpanded"
+    :aria-controls="props.iconOnly ? undefined : props.ariaControls"
+    :aria-hidden="props.iconOnly ? 'true' : undefined"
+    :title="props.iconOnly ? undefined : (props.title || resolvedAriaLabel)"
     :data-state="resolvedExpanded ? 'expanded' : 'collapsed'"
     :style="toggleStyle"
     @click="handleToggle"
@@ -23,7 +25,7 @@
       focusable="false"
       aria-hidden="true"
     >
-      <title>{{ resolvedAriaLabel }}</title>
+      <title v-if="!props.iconOnly">{{ resolvedAriaLabel }}</title>
       <rect
         class="codex-panel-toggle__frame"
         :x="GEOMETRY.frame.x"
@@ -44,7 +46,7 @@
         stroke-linecap="round"
       />
     </svg>
-  </button>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -67,6 +69,8 @@ interface CodexPanelToggleProps {
   collapsed?: boolean
   /** SVG/button size. Numbers are interpreted as CSS pixels. */
   size?: number | string
+  /** Render only the animated graphic so a parent can retain its own button contract. */
+  iconOnly?: boolean
   /** Optional icon color; defaults to the Codex dark neutral. */
   color?: string
   ariaLabel?: string
@@ -135,7 +139,7 @@ watch(
 )
 
 function handleToggle(): void {
-  if (props.disabled) return
+  if (props.disabled || props.iconOnly) return
 
   const nextExpanded = !resolvedExpanded.value
   if (!hasExplicitState.value) internalExpanded.value = nextExpanded
@@ -173,19 +177,27 @@ function handleToggle(): void {
   appearance: none;
   transition: background-color 150ms ease, color 180ms ease;
 
-  &:hover:not(:disabled) {
+  &:hover:not(:disabled):not(.is-icon-only) {
     background: rgba(15, 15, 15, 0.07);
   }
 
-  &:focus-visible {
+  &:focus-visible:not(.is-icon-only) {
     outline: 2px solid currentColor;
     outline-offset: 2px;
   }
 
-  &:disabled {
+  &:disabled:not(.is-icon-only) {
     cursor: not-allowed;
     opacity: 0.52;
   }
+}
+
+.codex-panel-toggle.is-icon-only {
+  display: block;
+  flex: 0 0 auto;
+  border-radius: 0;
+  cursor: inherit;
+  pointer-events: none;
 }
 
 .codex-panel-toggle__svg {
