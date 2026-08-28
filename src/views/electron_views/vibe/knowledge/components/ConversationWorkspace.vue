@@ -284,7 +284,8 @@ watch(() => props.activeId, (id) => {
 
 <style scoped lang="scss">
 .conversation-workspace {
-  width: 100%;
+  // 开合由外层裁剪；内容按目标宽度排版，拖拽仍实时更新该变量。
+  width: var(--workspace-window-width, 100%);
   height: 100%;
   min-width: 0;
   min-height: 0;

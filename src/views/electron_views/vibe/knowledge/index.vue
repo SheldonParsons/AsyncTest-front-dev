@@ -6714,7 +6714,8 @@ function isStreamingUnderEvent(event: any) {
 
 .workspace-window-enter-active,
 .workspace-window-leave-active {
-  overflow: hidden;
+  // 仅裁剪，避免 focus / scrollIntoView 在动画期间横向滚动外壳。
+  overflow: clip;
   transition:
     flex-basis 320ms cubic-bezier(.22, 1, .36, 1),
     opacity 220ms ease;
