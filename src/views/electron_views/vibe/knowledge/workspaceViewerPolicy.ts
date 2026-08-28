@@ -1,5 +1,6 @@
 import type { KnowledgeCommitDetail, KnowledgeCommitSummary } from '../api'
 import type { RecentSessionFile } from './conversationInfoRailPolicy'
+import type { WorkspacePanelViewerState } from './workspacePanelPolicy'
 
 interface WorkspaceViewerTabBase {
   id: string
@@ -63,9 +64,7 @@ export interface WorkspaceViewerTabsState {
   activeTabId: string | null
 }
 
-export interface WorkspaceViewerConversationState extends WorkspaceViewerTabsState {
-  requestedOpen: boolean
-}
+export interface WorkspaceViewerConversationState extends WorkspaceViewerTabsState, WorkspacePanelViewerState {}
 
 export interface WorkspaceViewerConversationActivation {
   changed: boolean
@@ -99,6 +98,7 @@ export function snapshotWorkspaceViewerConversation(
   tabs: readonly WorkspaceViewerTab[],
   activeTabId: string | null,
   requestedOpen: boolean,
+  autoCollapsedPanelRevision: number | null = null,
 ): WorkspaceViewerConversationState {
   const snapshot = [...tabs]
   const normalizedActiveId = activeTabId && snapshot.some(item => item.id === activeTabId)
@@ -108,6 +108,12 @@ export function snapshotWorkspaceViewerConversation(
     tabs: snapshot,
     activeTabId: normalizedActiveId,
     requestedOpen: Boolean(requestedOpen),
+    autoCollapsedPanelRevision: requestedOpen
+      && autoCollapsedPanelRevision !== null
+      && Number.isSafeInteger(autoCollapsedPanelRevision)
+      && autoCollapsedPanelRevision >= 0
+      ? autoCollapsedPanelRevision
+      : null,
   }
 }
 
@@ -134,6 +140,7 @@ export class WorkspaceViewerConversationStore {
           currentState.tabs,
           currentState.activeTabId,
           currentState.requestedOpen,
+          currentState.autoCollapsedPanelRevision,
         ),
       }
     }
@@ -156,7 +163,12 @@ export class WorkspaceViewerConversationStore {
   read(key: string): WorkspaceViewerConversationState | null {
     const state = this.states.get(key)
     return state
-      ? snapshotWorkspaceViewerConversation(state.tabs, state.activeTabId, state.requestedOpen)
+      ? snapshotWorkspaceViewerConversation(
+          state.tabs,
+          state.activeTabId,
+          state.requestedOpen,
+          state.autoCollapsedPanelRevision,
+        )
       : null
   }
 
@@ -164,7 +176,12 @@ export class WorkspaceViewerConversationStore {
     if (!key) return
     this.states.set(
       key,
-      snapshotWorkspaceViewerConversation(state.tabs, state.activeTabId, state.requestedOpen),
+      snapshotWorkspaceViewerConversation(
+        state.tabs,
+        state.activeTabId,
+        state.requestedOpen,
+        state.autoCollapsedPanelRevision,
+      ),
     )
   }
 

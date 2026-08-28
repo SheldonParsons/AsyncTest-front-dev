@@ -176,7 +176,6 @@
               :title="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
               :aria-label="infoRailCollapsed ? '展开信息栏' : '收起信息栏'"
               :aria-expanded="!infoRailCollapsed"
-              :disabled="workspaceInfoToggleDisabled"
               @click="toggleInfoRail"
             >
               <CodexListFilter />
@@ -197,7 +196,7 @@
           :style="{ '--workspace-window-icon-color': workspaceWindowOpen ? '#191c1f' : '#88898a' }"
           @click="setWorkspaceWindowOpen(!workspaceWindowRequestedOpen)"
         >
-          <!-- Keep the glyph responsive during the delayed mount; once settled, requested and actual states match. -->
+          <!-- Panel 与 Viewer 同步更新，图标直接跟随本轮目标状态。 -->
           <CodexPanelToggle
             icon-only
             :expanded="workspaceWindowOpen || workspaceWindowRequestedOpen"
@@ -781,6 +780,13 @@ import {
   type WorkspaceViewerTab,
 } from './workspaceViewerPolicy'
 import {
+  requestWorkspaceViewerOpen,
+  setWorkspacePanelPreference,
+  workspacePanelCollapsed,
+  type WorkspacePanelPreference,
+  type WorkspacePanelViewerState,
+} from './workspacePanelPolicy'
+import {
   clampWorkspaceViewerWidth,
   defaultWorkspaceViewerWidth,
   draggedWorkspaceViewerWidth,
@@ -871,13 +877,18 @@ const projectStatsMap = reactive<Record<string, KnowledgeStats>>({})
 const recentKnowledgeChanges = ref<KnowledgeCommitSummary[]>([])
 const knowledgeChangesLoading = ref(false)
 const knowledgeChangesError = ref('')
-const infoRailCollapsed = ref(false)
+const infoRailPreference = ref<WorkspacePanelPreference>({ collapsed: false, revision: 0 })
+const workspacePanelViewerState = ref<WorkspacePanelViewerState>({
+  requestedOpen: false,
+  autoCollapsedPanelRevision: null,
+})
+const infoRailCollapsed = computed(() => workspacePanelCollapsed(
+  infoRailPreference.value,
+  workspacePanelViewerState.value,
+))
 const workspaceWindowOpen = ref(false)
-const workspaceWindowRequestedOpen = ref(false)
+const workspaceWindowRequestedOpen = computed(() => workspacePanelViewerState.value.requestedOpen)
 const workspaceWindowLayoutActive = ref(false)
-type WorkspaceWindowOpenOptions = {
-  autoCollapseInfoRail?: boolean
-}
 const shellRef = ref<HTMLElement | null>(null)
 const mainRef = ref<HTMLElement | null>(null)
 const SIDE_WIDTH_STORAGE_KEY = 'vibe_kb_side_width_px'
@@ -931,10 +942,6 @@ type WorkspaceResizeSession = {
 let workspaceResizeSession: WorkspaceResizeSession | null = null
 let workspaceMainResizeObserver: ResizeObserver | null = null
 let workspaceResizeFallbackRegistered = false
-const workspaceInfoToggleDisabled = computed(() => (
-  workspaceWindowRequestedOpen.value !== workspaceWindowOpen.value
-  || (workspaceWindowLayoutActive.value && !workspaceWindowOpen.value)
-))
 const workspaceTabs = ref<WorkspaceViewerTab[]>([])
 const activeWorkspaceTabId = ref<string | null>(null)
 const workspaceRef = ref<InstanceType<typeof ConversationWorkspace> | null>(null)
@@ -945,9 +952,7 @@ const workspaceSessionFileSnapshots = new Map<string, RecentSessionFile[]>()
 const workspaceFileListRequests = new Map<string, Promise<void>>()
 const workspaceChangeListRequests = new Map<string, Promise<void>>()
 const sessionEventsRequests = new Map<string, Promise<VibeEvent[]>>()
-let workspaceOpenTimer: ReturnType<typeof setTimeout> | null = null
 let workspaceFocusAfterEnter = false
-const INFO_RAIL_CLOSE_TRANSITION_MS = 230
 let projectContextEpoch = 0
 let knowledgeActivityEpoch = 0
 let knowledgeActivityAbort: AbortController | null = null
@@ -1180,18 +1185,25 @@ function startKnowledgeActivity(projectValue: unknown): void {
 
 function initializeInfoRail() {
   const stored = localStorage.getItem('vibe_conversation_info_rail_collapsed')
-  infoRailCollapsed.value = stored == null
-    ? window.matchMedia('(max-width: 1180px)').matches
-    : stored === '1'
+  infoRailPreference.value = {
+    collapsed: stored == null
+      ? window.matchMedia('(max-width: 1180px)').matches
+      : stored === '1',
+    revision: 0,
+  }
 }
 
 function setInfoRailCollapsed(collapsed: boolean) {
-  infoRailCollapsed.value = collapsed
+  // 只有显式操作写入全局偏好；修订号同时使其他会话里的旧恢复标记失效。
+  infoRailPreference.value = setWorkspacePanelPreference(infoRailPreference.value, collapsed)
+  workspacePanelViewerState.value = {
+    ...workspacePanelViewerState.value,
+    autoCollapsedPanelRevision: null,
+  }
   localStorage.setItem('vibe_conversation_info_rail_collapsed', collapsed ? '1' : '0')
 }
 
 function toggleInfoRail() {
-  if (workspaceInfoToggleDisabled.value) return
   setInfoRailCollapsed(!infoRailCollapsed.value)
 }
 
@@ -1382,12 +1394,6 @@ function handleWorkspaceResizeKeydown(event: KeyboardEvent): void {
   persistWorkspaceWindowWidth()
 }
 
-function clearWorkspaceOpenTimer(): void {
-  if (workspaceOpenTimer == null) return
-  clearTimeout(workspaceOpenTimer)
-  workspaceOpenTimer = null
-}
-
 function mountWorkspaceWindow(): void {
   if (!workspaceWindowRequestedOpen.value) return
   workspaceWindowLayoutActive.value = true
@@ -1401,66 +1407,50 @@ function shouldMoveFocusToWorkspace(): boolean {
 }
 
 function focusWorkspaceAfterEnter(): void {
-  if (!workspaceFocusAfterEnter) return
+  if (!workspaceFocusAfterEnter || !workspaceWindowRequestedOpen.value) return
   workspaceFocusAfterEnter = false
-  void nextTick(() => workspaceRef.value?.focusActiveViewer())
+  const conversationKey = workspaceConversationStore.currentKey
+  void nextTick(() => {
+    if (workspaceWindowRequestedOpen.value && workspaceConversationStore.currentKey === conversationKey) {
+      workspaceRef.value?.focusActiveViewer()
+    }
+  })
 }
 
-function infoRailCloseDelay(): number {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 0
-    : INFO_RAIL_CLOSE_TRANSITION_MS
-}
-
-function setWorkspaceWindowOpen(open: boolean, options: WorkspaceWindowOpenOptions = {}) {
-  const shouldAutoCollapseInfoRail = Boolean(options.autoCollapseInfoRail
-    && !infoRailCollapsed.value
-    && !workspaceWindowRequestedOpen.value
-    && !workspaceWindowOpen.value
-    && !workspaceWindowLayoutActive.value)
-  workspaceWindowRequestedOpen.value = open
-  if (open) {
-    if (shouldMoveFocusToWorkspace()) workspaceFocusAfterEnter = true
-    if (workspaceOpenTimer != null) return
-    if (workspaceWindowOpen.value) {
-      workspaceWindowLayoutActive.value = true
-      focusWorkspaceAfterEnter()
-      return
-    }
-    if (shouldAutoCollapseInfoRail) {
-      // 先让 Panel 完整收起，再挂载 Viewer，避免 flex → absolute 同帧切换造成布局跳变。
-      setInfoRailCollapsed(true)
-      const delay = infoRailCloseDelay()
-      if (delay === 0) {
-        mountWorkspaceWindow()
-        return
-      }
-      workspaceOpenTimer = setTimeout(() => {
-        workspaceOpenTimer = null
-        mountWorkspaceWindow()
-      }, delay)
-      return
-    }
+function applyWorkspaceWindowState(state: WorkspacePanelViewerState): void {
+  const wasOpen = workspaceWindowOpen.value
+  workspacePanelViewerState.value = state
+  if (state.requestedOpen) {
     mountWorkspaceWindow()
     return
   }
 
-  clearWorkspaceOpenTimer()
   workspaceFocusAfterEnter = false
-  // 实际开合状态立即驱动 Viewer、Panel 与 slot 的同一段过渡；layoutActive 只保留过渡时长。
   workspaceWindowOpen.value = false
+  // 同一 tick 内打开又关闭时，Viewer 尚未挂载，不会收到 after-leave。
+  if (wasOpen && !workspaceRef.value) workspaceWindowLayoutActive.value = false
+}
+
+function setWorkspaceWindowOpen(open: boolean) {
+  const wasOpen = workspaceWindowOpen.value
+  if (open && shouldMoveFocusToWorkspace()) workspaceFocusAfterEnter = true
+  // 统一按逻辑开合边沿转换。Panel 收起与 Viewer 挂载在同一轮 Vue 更新中开始，
+  // 已打开时新增/激活页签只保持当前状态，不重新收起用户展开的 Panel。
+  applyWorkspaceWindowState(requestWorkspaceViewerOpen(
+    workspacePanelViewerState.value,
+    infoRailPreference.value,
+    open,
+  ))
+  if (open && wasOpen) focusWorkspaceAfterEnter()
 }
 
 function finishWorkspaceWindowLeave(): void {
-  if (workspaceWindowRequestedOpen.value) {
-    mountWorkspaceWindow()
-    return
-  }
+  if (workspaceWindowRequestedOpen.value) return
   workspaceWindowLayoutActive.value = false
 }
 
 function keepWorkspaceWindowLayout(): void {
-  workspaceWindowLayoutActive.value = true
+  if (workspaceWindowRequestedOpen.value) workspaceWindowLayoutActive.value = true
 }
 
 function workspaceTabById(id: string): WorkspaceViewerTab | null {
@@ -1543,11 +1533,11 @@ function activateWorkspaceConversation(projectId: unknown, sessionId: unknown): 
       workspaceTabs.value,
       activeWorkspaceTabId.value,
       workspaceWindowRequestedOpen.value,
+      workspacePanelViewerState.value.autoCollapsedPanelRevision,
     ),
   )
   if (!activation.changed) return
 
-  clearWorkspaceOpenTimer()
   workspaceFocusAfterEnter = false
   workspaceRequestGate.invalidateAll()
   workspaceChangeListRequests.clear()
@@ -1555,15 +1545,11 @@ function activateWorkspaceConversation(projectId: unknown, sessionId: unknown): 
   const restored = activation.state
   applyWorkspaceTabsState(restored)
 
-  // 初始空态不应顺带收起 Panel；只有 Viewer 确实需要切换状态时才驱动过渡。
-  if (
-    restored.requestedOpen
-    || workspaceWindowRequestedOpen.value
-    || workspaceWindowOpen.value
-    || workspaceWindowLayoutActive.value
-  ) {
-    setWorkspaceWindowOpen(restored.requestedOpen)
-  }
+  // 会话恢复不是新一轮打开：连同本轮自动收起标记还原，不重跑开窗规则。
+  applyWorkspaceWindowState({
+    requestedOpen: restored.requestedOpen,
+    autoCollapsedPanelRevision: restored.autoCollapsedPanelRevision,
+  })
   resumeWorkspaceConversationRequests()
 }
 
@@ -1621,21 +1607,12 @@ function workspaceErrorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error && reason.message ? reason.message : fallback
 }
 
-function infoRailViewerOpenOptions(): WorkspaceWindowOpenOptions {
-  return {
-    autoCollapseInfoRail: !workspaceWindowRequestedOpen.value
-      && !workspaceWindowOpen.value
-      && !workspaceWindowLayoutActive.value
-      && !infoRailCollapsed.value,
-  }
-}
-
 function openInfoRailChange(item: KnowledgeCommitSummary): void {
-  openWorkspaceChange(item, infoRailViewerOpenOptions())
+  openWorkspaceChange(item)
 }
 
 function openInfoRailFile(file: RecentSessionFile): void {
-  openWorkspaceFile(file, activeSessionId.value, infoRailViewerOpenOptions())
+  openWorkspaceFile(file, activeSessionId.value)
 }
 
 /** 打开当前项目的独立知识变更列表页签；同一项目始终复用同一个页签。 */
@@ -1649,7 +1626,7 @@ function openInfoRailChangeList(): void {
   const existing = workspaceTabById(id)
   if (existing?.kind === 'change-list') {
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    setWorkspaceWindowOpen(true)
     if (existing.loading) void loadWorkspaceChangeList(id, projectId, true)
     else if (existing.error) void loadWorkspaceChangeList(id, projectId, existing.items.length === 0)
     return
@@ -1667,7 +1644,7 @@ function openInfoRailChangeList(): void {
     hasMore: true,
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+  setWorkspaceWindowOpen(true)
   void loadWorkspaceChangeList(id, projectId, true)
 }
 
@@ -1693,14 +1670,14 @@ function openInfoRailFileList(): void {
         hasMore: false,
       }))
     }
-    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    setWorkspaceWindowOpen(true)
     return
   }
   const id = workspaceFileListViewerTabId(sessionId)
   const existing = workspaceTabById(id)
   if (existing?.kind === 'file-list') {
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+    setWorkspaceWindowOpen(true)
     if (existing.loading) void loadWorkspaceFileList(id, sessionId, true)
     else if (existing.error) void loadWorkspaceFileList(id, sessionId, existing.items.length === 0)
     return
@@ -1718,7 +1695,7 @@ function openInfoRailFileList(): void {
     hasMore: true,
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true, infoRailViewerOpenOptions())
+  setWorkspaceWindowOpen(true)
   void loadWorkspaceFileList(id, sessionId, true)
 }
 
@@ -2058,7 +2035,6 @@ watch(recentKnowledgeChanges, (changes) => {
 
 function openWorkspaceChange(
   item: KnowledgeCommitSummary,
-  options: WorkspaceWindowOpenOptions = {},
 ): void {
   const projectId = String(item.project_id || knowledgeStatsProjectId(selectedProjectId.value) || '').trim()
   const commitSeq = Math.max(0, Number(item.seq) || 0)
@@ -2070,7 +2046,7 @@ function openWorkspaceChange(
   const existing = workspaceTabById(id)
   if (existing) {
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true, options)
+    setWorkspaceWindowOpen(true)
     if (existing.kind === 'change' && !existing.loading && !existing.detail) {
       void loadWorkspaceChange(id, projectId, commitSeq)
     }
@@ -2088,7 +2064,7 @@ function openWorkspaceChange(
     detail: null,
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true, options)
+  setWorkspaceWindowOpen(true)
   void loadWorkspaceChange(id, projectId, commitSeq)
 }
 
@@ -2131,7 +2107,6 @@ function retryWorkspaceChange(tabId: string): void {
 function openWorkspaceFile(
   file: RecentSessionFile,
   ownerSessionId = activeSessionId.value,
-  options: WorkspaceWindowOpenOptions = {},
 ): void {
   const sessionId = String(ownerSessionId || '').trim()
   const id = workspaceFileViewerTabId(sessionId, file.identity)
@@ -2158,7 +2133,7 @@ function openWorkspaceFile(
         }
       : tab)
     activeWorkspaceTabId.value = id
-    setWorkspaceWindowOpen(true, options)
+    setWorkspaceWindowOpen(true)
     if (shouldReload) void loadWorkspaceFile(id)
     return
   }
@@ -2174,7 +2149,7 @@ function openWorkspaceFile(
     content: inlineContent ?? '',
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
-  setWorkspaceWindowOpen(true, options)
+  setWorkspaceWindowOpen(true)
   if (inlineContent === null) void loadWorkspaceFile(id)
 }
 
@@ -2951,7 +2926,6 @@ onBeforeUnmount(() => {
   stopWorkspaceMainWidthObserver()
   workspaceResizeSession = null
   workspaceWindowResizing.value = false
-  clearWorkspaceOpenTimer()
   projectContextEpoch += 1
   sessionRequestEpoch += 1
   stopKnowledgeActivity()
@@ -3954,6 +3928,7 @@ async function ensureSession() {
     workspaceTabs.value,
     activeWorkspaceTabId.value,
     workspaceWindowRequestedOpen.value,
+    workspacePanelViewerState.value.autoCollapsedPanelRevision,
   )
   const ownerProjectId = vibeProject.value.id
   const session = await createVibeSession(ownerProjectId, {
