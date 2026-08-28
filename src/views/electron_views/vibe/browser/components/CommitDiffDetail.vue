@@ -236,7 +236,7 @@ time { color: #667085; font-size: 12px; white-space: nowrap; }
 .file-header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-header strong { font-size: 12px; }
 .file-header small { margin-top: 3px; color: #667085; font-size: 10px; }
-.diff-scroll { max-height: 620px; overflow: auto; border-top: 1px solid #d7dce1; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.diff-scroll { display: grid; grid-template-columns: minmax(max-content, 1fr); max-height: 620px; overflow: auto; border-top: 1px solid #d7dce1; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .diff-scroll:focus-visible { outline: 2px solid #475569; outline-offset: -2px; }
 .hunk-header { min-width: max-content; padding: 7px 13px; background: #edf4fb; color: #42617d; font-size: 12px; white-space: pre; }
 .diff-line { display: grid; grid-template-columns: 52px 52px 24px minmax(max-content, 1fr); min-width: max-content; min-height: 22px; color: #30343a; font-size: 12px; line-height: 22px; }

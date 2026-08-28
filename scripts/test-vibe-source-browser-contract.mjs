@@ -65,6 +65,13 @@ assert.match(commitDiff, /deleted: '删除'/)
 assert.match(commitDiff, /viewerIdPrefix/)
 assert.match(commitDiff, /:aria-controls="diffDomId\(change\.id\)"/)
 
+// 所有 hunk 共用最宽内容列；横向滚动时短行、空行和 hunk 头背景不能止于视口。
+assert.match(commitDiff, /\.diff-scroll\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(max-content,\s*1fr\);[^}]*overflow:\s*auto;/)
+assert.match(commitDiff, /<code>\{\{ line\.text \|\| ' ' \}\}<\/code>/)
+assert.match(commitDiff, /\.diff-line\.is-add\s*\{\s*background:\s*#eaf7ed;/)
+assert.match(commitDiff, /\.diff-line\.is-delete\s*\{\s*background:\s*#fcebec;/)
+assert.match(commitDiff, /\.line-number\s*\{[^}]*position:\s*sticky;[^}]*left:\s*0;/)
+
 // 一次刷新会推进所有面板的 revision，页签具备完整键盘语义。
 assert.match(browser, /browserRevision\.value \+= 1/)
 assert.ok((browser.match(/:revision="browserRevision"/g) || []).length >= 3)
