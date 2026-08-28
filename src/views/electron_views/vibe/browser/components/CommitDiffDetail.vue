@@ -27,21 +27,21 @@
           type="button"
           :aria-expanded="isExpanded(change.id)"
           :aria-controls="diffDomId(change.id)"
+          :title="`${displayPath(change)} · ${changeTypeLabel(change.change_type)} · ${generationLabel(change)}`"
           @click="toggleChange(change.id)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" :class="{ expanded: isExpanded(change.id) }">
             <path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <span class="change-badge" :class="`is-${change.change_type}`">{{ changeTypeBadgeLabel(change.change_type) }}</span>
-          <div>
-            <strong>{{ displayPath(change) }}</strong>
-            <small>{{ changeTypeLabel(change.change_type) }} · {{ generationLabel(change) }}</small>
-          </div>
+          <strong>{{ displayPath(change) }}</strong>
           <span class="stats"><b>+{{ change.additions }}</b><i>-{{ change.deletions }}</i></span>
         </button>
         <div v-if="isExpanded(change.id)" :id="diffDomId(change.id)" class="diff-scroll" tabindex="0">
           <template v-for="(hunk, hunkIndex) in change.hunks" :key="`${change.id}-${hunkIndex}`">
-            <div class="hunk-header">{{ hunk.header }}</div>
+            <div class="hunk-header">
+              <span class="hunk-header-label" :title="hunk.header">{{ hunk.header }}</span>
+            </div>
             <div
               v-for="(line, lineIndex) in hunk.lines"
               :key="`${change.id}-${hunkIndex}-${lineIndex}`"
@@ -219,34 +219,31 @@ time { color: #667085; font-size: 12px; white-space: nowrap; }
 .summary-bar span { margin-top: 3px; color: #667085; font-size: 11px; }
 .summary-bar .add strong { color: #23733c; }
 .summary-bar .delete strong { color: #a13f3f; }
-.change-badge { display: inline-grid; width: max-content; min-width: 38px; height: 22px; place-items: center; border-radius: 4px; padding: 0 7px; background: #e8edf2; color: #506579; font-size: 11px; font-weight: 700; }
-.change-badge.is-added { background: #e3f3e7; color: #286b3b; }
-.change-badge.is-deleted { background: #f9e4e4; color: #973d3d; }
+.change-badge { color: #737373; font-size: 10px; font-weight: 500; white-space: nowrap; }
+.change-badge.is-added { color: #1a7f37; }
+.change-badge.is-deleted { color: #cf222e; }
 .stats { display: flex; gap: 7px; font-size: 11px; }
-.stats b { color: #2d7a43; }
-.stats i { color: #a14242; font-style: normal; }
-.diff-file { margin-top: 12px; border: 1px solid #d7dce1; border-radius: 7px; overflow: hidden; scroll-margin-top: 12px; }
-.file-header { display: grid; grid-template-columns: 18px max-content minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 7px 11px; border: 0; background: #f4f6f8; color: #29313b; text-align: left; cursor: pointer; }
-.file-header:hover { background: #eceff2; }
+.stats b { color: #1a7f37; font-weight: 500; }
+.stats i { color: #cf222e; font-style: normal; }
+.diff-file { margin-top: 12px; border: 1px solid #e5e5e5; border-radius: 7px; overflow: hidden; scroll-margin-top: 12px; }
+.file-header { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 5px 10px; border: 0; background: #fff; color: #404040; text-align: left; cursor: pointer; }
+.file-header:hover { background: #fafafa; }
 .file-header:focus-visible { outline: 2px solid #475569; outline-offset: -2px; }
 .file-header > svg { transition: transform .16s ease; }
 .file-header > svg.expanded { transform: rotate(90deg); }
-.file-header > div { min-width: 0; }
-.file-header strong,
-.file-header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-header strong { font-size: 12px; }
-.file-header small { margin-top: 3px; color: #667085; font-size: 10px; }
-.diff-scroll { display: grid; grid-template-columns: minmax(max-content, 1fr); max-height: 620px; overflow: auto; border-top: 1px solid #d7dce1; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+.file-header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; line-height: 20px; }
+.diff-scroll { display: grid; grid-template-columns: minmax(max-content, 1fr); container-type: inline-size; max-height: 620px; overflow: auto; border-top: 1px solid #ededed; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .diff-scroll:focus-visible { outline: 2px solid #475569; outline-offset: -2px; }
-.hunk-header { min-width: max-content; padding: 7px 13px; background: #edf4fb; color: #42617d; font-size: 12px; white-space: pre; }
+.hunk-header { min-width: max-content; padding: 3px 12px; background: #f5f5f5; color: #6b6b6b; font-size: 11px; line-height: 20px; white-space: pre; }
+.hunk-header-label { display: inline-block; position: sticky; left: 12px; max-width: calc(100cqi - 24px); overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
 .diff-line { display: grid; grid-template-columns: 52px 52px 24px minmax(max-content, 1fr); min-width: max-content; min-height: 22px; color: #30343a; font-size: 12px; line-height: 22px; }
-.diff-line.is-add { background: #eaf7ed; }
-.diff-line.is-delete { background: #fcebec; }
-.line-number { position: sticky; left: 0; border-right: 1px solid rgba(0, 0, 0, .06); padding: 0 8px; background: inherit; color: #7b8490; text-align: right; user-select: none; }
+.diff-line.is-add { background: #edf8ef; }
+.diff-line.is-delete { background: #fff1f1; }
+.line-number { position: sticky; left: 0; border-right: 1px solid rgba(0, 0, 0, .035); padding: 0 8px; background: inherit; color: #6b6b6b; text-align: right; user-select: none; }
 .line-number + .line-number { left: 52px; }
 .prefix { padding-left: 8px; color: #667085; user-select: none; }
-.diff-line.is-add .prefix { color: #20723a; }
-.diff-line.is-delete .prefix { color: #9d3535; }
+.diff-line.is-add .prefix { color: #1a7f37; }
+.diff-line.is-delete .prefix { color: #cf222e; }
 .diff-line code { padding-right: 18px; color: inherit; font: inherit; white-space: pre; }
 .no-lines { margin: 0; padding: 18px; color: #667085; font-family: Inter, "PingFang SC", sans-serif; font-size: 12px; text-align: center; }
 .no-content-change { display: grid; place-content: center; min-height: 150px; margin-top: 16px; border: 1px dashed #cfd4da; border-radius: 7px; color: #667085; text-align: center; }

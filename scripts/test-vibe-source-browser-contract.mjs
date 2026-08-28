@@ -68,9 +68,22 @@ assert.match(commitDiff, /:aria-controls="diffDomId\(change\.id\)"/)
 // 所有 hunk 共用最宽内容列；横向滚动时短行、空行和 hunk 头背景不能止于视口。
 assert.match(commitDiff, /\.diff-scroll\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(max-content,\s*1fr\);[^}]*overflow:\s*auto;/)
 assert.match(commitDiff, /<code>\{\{ line\.text \|\| ' ' \}\}<\/code>/)
-assert.match(commitDiff, /\.diff-line\.is-add\s*\{\s*background:\s*#eaf7ed;/)
-assert.match(commitDiff, /\.diff-line\.is-delete\s*\{\s*background:\s*#fcebec;/)
+assert.match(commitDiff, /\.diff-line\.is-add\s*\{\s*background:\s*#edf8ef;/)
+assert.match(commitDiff, /\.diff-line\.is-delete\s*\{\s*background:\s*#fff1f1;/)
 assert.match(commitDiff, /\.line-number\s*\{[^}]*position:\s*sticky;[^}]*left:\s*0;/)
+
+// 固定的是分块标题文字，不是全宽背景；长标题以滚动视口为上限，不能被右边界推走。
+assert.match(commitDiff, /<span class="hunk-header-label" :title="hunk.header">\{\{ hunk.header \}\}<\/span>/)
+assert.match(commitDiff, /\.diff-scroll\s*\{[^}]*container-type:\s*inline-size;/)
+const hunkLabelStyle = commitDiff.match(/\.hunk-header-label\s*\{([^}]*)\}/)?.[1] || ''
+assert.match(hunkLabelStyle, /display:\s*inline-block;[^}]*position:\s*sticky;[^}]*left:\s*12px;/)
+assert.match(hunkLabelStyle, /max-width:\s*calc\(100cqi - 24px\);[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/)
+assert.doesNotMatch(hunkLabelStyle, /\btop\s*:/, '不要把水平固定误改成纵向吸顶')
+assert.match(commitDiff, /\.hunk-header\s*\{[^}]*padding:\s*3px 12px;[^}]*background:\s*#f5f5f5;/)
+assert.match(commitDiff, /\.file-header\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*5px 10px;[^}]*background:\s*#fff;/)
+const fileHeaderTemplate = commitDiff.match(/<button\s+class="file-header"[\s\S]*?<\/button>/)?.[0] || ''
+assert.match(fileHeaderTemplate, /:title="[^"\n]*generationLabel\(change\)/, '单行 header 仍保留版本提示')
+assert.doesNotMatch(fileHeaderTemplate, /<small>/, '文件 header 不应再有第二行')
 
 // 一次刷新会推进所有面板的 revision，页签具备完整键盘语义。
 assert.match(browser, /browserRevision\.value \+= 1/)
