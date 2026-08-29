@@ -23,7 +23,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { $insertDataTransferForPlainText } from '@lexical/clipboard'
 import { CodeNode } from '@lexical/code'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
-import { $isListNode, registerList, ListItemNode, ListNode } from '@lexical/list'
+import {
+  $createListItemNode,
+  $isListItemNode,
+  $isListNode,
+  registerList,
+  ListItemNode,
+  ListNode,
+} from '@lexical/list'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
@@ -47,6 +54,7 @@ import {
   type LexicalNode,
   type LexicalEditor,
   type PasteCommandType,
+  type RangeSelection,
 } from 'lexical'
 import { CHAT_MARKDOWN_TRANSFORMERS } from './chatMarkdownTransformers'
 
@@ -268,15 +276,47 @@ function isInsideCodeBlock(): boolean {
   return inside
 }
 
-function isInsideList(): boolean {
+function getListContext(): { item: ListItemNode; list: ListNode; selection: RangeSelection } | null {
   const selection = $getSelection()
-  if (!$isRangeSelection(selection)) return false
+  if (!$isRangeSelection(selection)) return null
   let node: LexicalNode | null = selection.anchor.getNode()
+  let item: ListItemNode | null = null
   while (node) {
-    if ($isListNode(node)) return true
+    if (!item && $isListItemNode(node)) item = node
+    if ($isListNode(node)) return item ? { item, list: node, selection } : null
     node = node.getParent()
   }
-  return false
+  return null
+}
+
+function isInsideList(): boolean {
+  return getListContext() !== null
+}
+
+function isCaretAtListItemEnd(item: ListItemNode, selection: RangeSelection): boolean {
+  if (!selection.isCollapsed()) return false
+  const anchor = selection.anchor.getNode()
+  const lastDescendant = item.getLastDescendant()
+  if (lastDescendant) {
+    return lastDescendant.is(anchor) && selection.anchor.offset === lastDescendant.getTextContentSize()
+  }
+  return selection.anchor.key === item.getKey() && selection.anchor.offset === item.getChildrenSize()
+}
+
+function insertListContinuation(): boolean {
+  const context = getListContext()
+  if (!context) return false
+  const { item, selection } = context
+  if (item.isEmpty() || !isCaretAtListItemEnd(item, selection)) {
+    return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+  }
+  const nextItem = $createListItemNode()
+    .setIndent(item.getIndent())
+    .setTextFormat(item.getTextFormat())
+    .setTextStyle(item.getTextStyle())
+  item.insertAfter(nextItem)
+  nextItem.selectStart()
+  return true
 }
 
 function serializeActiveEditorState(): string {
@@ -330,7 +370,9 @@ function onKeyDown(event: KeyboardEvent): boolean {
   const headingAtEnd = isHeadingAtEnd()
   if (!insideList && !headingAtEnd) return false
   event.preventDefault()
-  return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+  return insideList
+    ? insertListContinuation()
+    : editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
 }
 
 function onEnter(event: KeyboardEvent | null): boolean {
@@ -350,7 +392,10 @@ function onEnter(event: KeyboardEvent | null): boolean {
   if (event.ctrlKey || event.metaKey) {
     if (isInsideCodeBlock()) return false
     event.preventDefault()
-    if (isInsideList() || isHeadingAtEnd()) {
+    if (isInsideList()) {
+      return insertListContinuation()
+    }
+    if (isHeadingAtEnd()) {
       return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
     }
     return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false

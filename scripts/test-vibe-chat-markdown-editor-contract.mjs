@@ -19,7 +19,7 @@ import {
   UNDO_COMMAND,
 } from 'lexical'
 import { registerRichText, HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { $isListNode, registerList, ListItemNode, ListNode } from '@lexical/list'
+import { $createListItemNode, $isListItemNode, $isListNode, registerList, ListItemNode, ListNode } from '@lexical/list'
 import { CodeNode } from '@lexical/code'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
 import {
@@ -89,6 +89,8 @@ assert.match(editorSource, /KEY_DOWN_COMMAND/)
 assert.match(editorSource, /onKeyDown\(event: KeyboardEvent\)/)
 assert.match(editorSource, /onComposingEnter\(event: KeyboardEvent \| null\)/)
 assert.match(editorSource, /isInsideList\(\)[\s\S]*INSERT_PARAGRAPH_COMMAND/)
+assert.match(editorSource, /\$createListItemNode\(\)/)
+assert.match(editorSource, /item\.insertAfter\(nextItem\)/)
 assert.match(editorSource, /emit\('submit', (?:value|serializeActiveEditorState\(\))\)/)
 assert.match(editorSource, /event\.isComposing[\s\S]*return (?:true|false)/)
 assert.match(editorSource, /@compositionstart/)
@@ -233,17 +235,22 @@ for (const modifier of ['metaKey', 'ctrlKey']) {
     event.preventDefault()
     let node = $getSelection()?.anchor.getNode() || null
     let insideList = false
+    let listItem = null
     while (node) {
+      if (!listItem && $isListItemNode(node)) listItem = node
       if ($isListNode(node)) {
         insideList = true
         break
       }
       node = node.getParent()
     }
-    return editor.dispatchCommand(
-      insideList ? INSERT_PARAGRAPH_COMMAND : INSERT_LINE_BREAK_COMMAND,
-      insideList ? undefined : false,
-    )
+    if (insideList && listItem) {
+      const nextItem = $createListItemNode()
+      listItem.insertAfter(nextItem)
+      nextItem.selectStart()
+      return true
+    }
+    return editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false)
   }, COMMAND_PRIORITY_HIGH)
   let prevented = false
   const event = {
