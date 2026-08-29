@@ -520,6 +520,8 @@
                     <span>审计标识</span>
                     <code>{{ traceAuditMarker(selectedTrace) }}</code>
                     <button type="button" @click="copyTraceAuditMarker(selectedTrace)">{{ copiedAuditMarker === traceAuditMarker(selectedTrace) ? '已复制' : '复制' }}</button>
+                    <strong v-if="tracePrivateView">私有取证</strong>
+                    <button type="button" @click="selectTrace(selectedTrace.trace_id, !tracePrivateView)">{{ tracePrivateView ? '返回安全视图' : '查看私有取证' }}</button>
                   </div>
                 </div>
                 <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status) }}</span>
@@ -643,6 +645,7 @@ const selectedTrace = ref<VibeDialogueTraceDetail | null>(null)
 const traceNextCursor = ref('')
 const traceRunsLoading = ref(false)
 const traceDetailLoading = ref(false)
+const tracePrivateView = ref(false)
 const selectedTraceIds = ref<Set<string>>(new Set())
 const traceExporting = ref(false)
 const copiedAuditMarker = ref('')
@@ -1401,6 +1404,7 @@ async function loadTraceRuns(reset = false) {
     if (reset) {
       selectedTraceId.value = ''
       selectedTrace.value = null
+      tracePrivateView.value = false
       selectedTraceIds.value = new Set()
     }
     traceRuns.value = reset ? items : [...traceRuns.value, ...items]
@@ -1411,12 +1415,14 @@ async function loadTraceRuns(reset = false) {
   }
 }
 
-async function selectTrace(traceId: string) {
+async function selectTrace(traceId: string, privateView = false) {
   if (!traceId) return
   selectedTraceId.value = traceId
   traceDetailLoading.value = true
   try {
-    selectedTrace.value = await getVibeDialogueTraceDetail(traceId)
+    const detail = await getVibeDialogueTraceDetail(traceId, privateView ? 'private' : 'public')
+    selectedTrace.value = detail
+    tracePrivateView.value = detail.detail_view === 'private'
   } finally {
     traceDetailLoading.value = false
   }
@@ -1699,7 +1705,7 @@ async function exportSelectedTraces() {
   try {
     const details: VibeDialogueTraceDetail[] = []
     for (const id of ids) {
-      if (selectedTrace.value?.trace_id === id) details.push(selectedTrace.value)
+      if (selectedTrace.value?.trace_id === id && !tracePrivateView.value) details.push(selectedTrace.value)
       else details.push(await getVibeDialogueTraceDetail(id))
     }
     const markdown = buildTraceExportMarkdown(details)

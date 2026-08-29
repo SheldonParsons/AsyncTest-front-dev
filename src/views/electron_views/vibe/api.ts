@@ -477,6 +477,7 @@ export interface VibeDialogueTraceEvent {
 }
 
 export interface VibeDialogueTraceDetail extends VibeDialogueTraceRun {
+  detail_view?: 'public' | 'private'
   request_id?: string
   attachment_summary?: Record<string, any>
   side_effects?: Record<string, any>
@@ -507,8 +508,9 @@ export function listVibeDialogueTraceRuns(params: {
   return request('GET', `/vibe/foundation/dialogue-trace/runs${qs ? `?${qs}` : ''}`)
 }
 
-export function getVibeDialogueTraceDetail(traceId: string): Promise<VibeDialogueTraceDetail> {
-  return request('GET', `/vibe/foundation/dialogue-trace/runs/${traceId}`)
+export function getVibeDialogueTraceDetail(traceId: string, view: 'public' | 'private' = 'public'): Promise<VibeDialogueTraceDetail> {
+  const query = view === 'private' ? '?view=private' : ''
+  return request('GET', `/vibe/foundation/dialogue-trace/runs/${traceId}${query}`)
 }
 
 export function downloadVibeDialogueTraceAttachment(
