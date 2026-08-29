@@ -6085,7 +6085,7 @@ function isStreamingUnderEvent(event: any) {
 
 .proj-name {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 450;
   color: var(--ink-1);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6284,7 +6284,7 @@ function isStreamingUnderEvent(event: any) {
   }
 }
 
-.session-title { font-weight: 500; }
+.session-title { font-weight: 450; }
 
 .section-head {
   display: flex;
@@ -6790,7 +6790,7 @@ function isStreamingUnderEvent(event: any) {
   h1 {
     margin: 0;
     font-size: 16px;
-    font-weight: 650;
+    font-weight: 600;
   }
 
   &.compact {
