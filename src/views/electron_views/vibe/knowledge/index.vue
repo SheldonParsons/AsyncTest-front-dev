@@ -6789,8 +6789,8 @@ function isStreamingUnderEvent(event: any) {
 
   h1 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 550;
+    font-size: 14px;
+    font-weight: 500;
   }
 
   &.compact {
@@ -7341,6 +7341,19 @@ function isStreamingUnderEvent(event: any) {
   color: #fff !important;
 }
 
+/* 回答区统一使用浅灰选区；覆盖回答正文、思考和过程旁白的所有文本节点。 */
+:global(.vibe-shell .assistant-message::selection),
+:global(.vibe-shell .assistant-message *::selection) {
+  background-color: rgba(148, 148, 148, 0.38) !important;
+  color: #171717 !important;
+}
+
+:global(.vibe-shell .assistant-message::-moz-selection),
+:global(.vibe-shell .assistant-message *::-moz-selection) {
+  background-color: rgba(148, 148, 148, 0.38) !important;
+  color: #171717 !important;
+}
+
 .user-message-wrap.collapsible:not(.expanded) .user-message-content {
   max-height: 18lh;
   max-height: min(18lh, 52dvh);
@@ -7526,7 +7539,7 @@ function isStreamingUnderEvent(event: any) {
   display: block;
   max-width: 100%;
   color: rgba(15, 15, 15, 0.62);
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 450;
   line-height: 1.75;
 
@@ -7579,7 +7592,7 @@ function isStreamingUnderEvent(event: any) {
 .message-md {
   margin-top: 0;
   color: rgba(15, 15, 15, 0.96);
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 450;
   line-height: 1.75;
   min-width: 0;

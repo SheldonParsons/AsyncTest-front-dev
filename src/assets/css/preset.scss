@@ -1,3 +1,13 @@
+::selection {
+  background-color: rgba(148, 148, 148, 0.38) !important;
+  color: #171717;
+}
+
+::-moz-selection {
+  background-color: rgba(148, 148, 148, 0.38) !important;
+  color: #171717;
+}
+
 .el-message {
   --el-message-bg-color: white;
   border-radius: 10px;

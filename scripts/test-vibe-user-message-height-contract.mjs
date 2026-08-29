@@ -6,8 +6,10 @@ import { compileStyle, parse } from '@vue/compiler-sfc'
 
 const root = path.resolve(import.meta.dirname, '..')
 const viewPath = path.join(root, 'src/views/electron_views/vibe/knowledge/index.vue')
+const presetPath = path.join(root, 'src/assets/css/preset.scss')
 const policyPath = path.join(root, 'src/views/electron_views/vibe/knowledge/userMessagePresentationPolicy.ts')
 const viewSource = fs.readFileSync(viewPath, 'utf8')
+const presetSource = fs.readFileSync(presetPath, 'utf8')
 const policySource = fs.readFileSync(policyPath, 'utf8')
 
 const parsedView = parse(viewSource, { filename: viewPath })
@@ -24,6 +26,8 @@ const compiledStyle = compileStyle({
 assert.deepEqual(compiledStyle.errors, [])
 assert.match(compiledStyle.code, /\.vibe-shell \.user-message-bubble \.user-message-content::selection\s*\{/)
 assert.match(compiledStyle.code, /\.vibe-shell \.user-message-bubble \.user-message-content::-moz-selection\s*\{/)
+assert.match(compiledStyle.code, /\.vibe-shell \.assistant-message::selection\s*,?\s*\.vibe-shell \.assistant-message \*::selection\s*\{/)
+assert.match(compiledStyle.code, /\.vibe-shell \.assistant-message::-moz-selection\s*,?\s*\.vibe-shell \.assistant-message \*::-moz-selection\s*\{/)
 assert.doesNotMatch(compiledStyle.code, /::selection[^{}]*,\s*[^{}]*::-moz-selection/)
 
 const compiledPolicy = ts.transpileModule(policySource, {
@@ -64,6 +68,10 @@ assert.match(viewSource, /\.confirmation-choice-event\s*\{[\s\S]*\.user-message-
 assert.match(viewSource, /\.user-message-more\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.66\);/)
 assert.match(viewSource, /:global\(\.vibe-shell \.user-message-bubble \.user-message-content::selection\)\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.72\)\s*!important;[\s\S]*?color:\s*#fff\s*!important;[\s\S]*?\}/)
 assert.match(viewSource, /:global\(\.vibe-shell \.user-message-bubble \.user-message-content::-moz-selection\)\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.72\)\s*!important;[\s\S]*?color:\s*#fff\s*!important;[\s\S]*?\}/)
+assert.match(viewSource, /:global\(\.vibe-shell \.assistant-message::selection\),\s*\n:global\(\.vibe-shell \.assistant-message \*::selection\)\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.38\)\s*!important;[\s\S]*?color:\s*#171717\s*!important;[\s\S]*?\}/)
+assert.match(viewSource, /:global\(\.vibe-shell \.assistant-message::-moz-selection\),\s*\n:global\(\.vibe-shell \.assistant-message \*::-moz-selection\)\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.38\)\s*!important;[\s\S]*?color:\s*#171717\s*!important;[\s\S]*?\}/)
+assert.match(presetSource, /^::selection\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.38\)\s*!important;[\s\S]*?\}/)
+assert.match(presetSource, /::-moz-selection\s*\{[\s\S]*?background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.38\)\s*!important;[\s\S]*?\}/)
 assert.doesNotMatch(viewSource, /::selection\)\s*,\s*:global\([^)]*::-moz-selection\)/)
 assert.doesNotMatch(viewSource, /::-webkit-selection/)
 

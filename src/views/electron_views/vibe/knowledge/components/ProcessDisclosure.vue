@@ -169,7 +169,7 @@ function fmt(ms?: number): string {
   color: transparent;
   animation: proc-shimmer 1.8s linear infinite;
   animation-delay: var(--vibe-shimmer-delay, 0ms);
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 450;
 }
 
@@ -191,7 +191,7 @@ function fmt(ms?: number): string {
 .proc-narration {
   margin: 2px 0;
   color: #171717;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 450;
   line-height: 1.55;
   white-space: pre-wrap;
