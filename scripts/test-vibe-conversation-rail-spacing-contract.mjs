@@ -12,7 +12,7 @@ assert.match(viewSource, /\.conversation-rail\s*\{[^}]*left:\s*14px;/)
 assert.match(viewSource, /\.conversation-rail-row\.hover \.conversation-rail-line\s*\{[^}]*width:\s*28px;/)
 assert.match(
   viewSource,
-  /\.timeline\s*\{[^}]*padding:\s*37px\s+max\(28px, calc\(\(100% - 760px\) \/ 2\)\)\s+24px\s+max\(52px, calc\(\(100% - 760px\) \/ 2\)\);/,
+  /\.timeline\s*\{[^}]*padding:\s*84px\s+max\(28px, calc\(\(100% - 760px\) \/ 2\)\)\s+24px\s+max\(52px, calc\(\(100% - 760px\) \/ 2\)\);/,
 )
 
 console.log('vibe conversation rail spacing contract: PASS')

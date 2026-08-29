@@ -7020,10 +7020,9 @@ function isStreamingUnderEvent(event: any) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* header 改为悬浮层后，顶部留出【header 高 + 下沿模糊带】：滚到顶时首条消息完整露出，
-     只有滚动经过时才进模糊带。窄布局左侧额外保留定位轨安全区，避免正文贴轨。 */
+  /* header 高度 68px + 下沿渐隐 14px，再留少量呼吸空间，首条消息不会贴住标题层。 */
   padding:
-    37px
+    84px
     max(28px, calc((100% - 760px) / 2))
     24px
     max(52px, calc((100% - 760px) / 2));
