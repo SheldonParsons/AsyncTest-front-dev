@@ -4023,7 +4023,7 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     restoreComposerAttachments(fileList)
     return
   }
-  if (!base && !fileList.length) return
+  if (!base) return
   if (!fileList.length) {
     await sendFoundationTurn(base)
     return
@@ -4061,9 +4061,8 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   }
 
   const attachments = uploaded.map(item => item.resource)
-  const combined = base || `我上传了${attachments.length > 1 ? `${attachments.length} 个` : '一个'}文件：${attachments.map((item) => attachmentName(item)).join('、')}`
   let attachmentBound = false
-  const turnOutcome = await sendFoundationTurn(combined, {
+  const turnOutcome = await sendFoundationTurn(base, {
     attachments,
     modelValidated: true,
     onUserEventSaved: () => {

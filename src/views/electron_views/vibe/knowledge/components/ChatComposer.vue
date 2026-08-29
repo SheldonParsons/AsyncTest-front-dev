@@ -339,7 +339,7 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
   for (let i = a.length - e; i < a.length; i++) out.push({ t: 'ctx', text: a[i] })
   return out
 }
-const sendDisabled = computed(() => editorValue.value.trim().length === 0 && selectedFiles.value.length === 0)
+const sendDisabled = computed(() => editorValue.value.trim().length === 0)
 
 watch(() => props.question, () => {
   activeIndex.value = 0
@@ -380,7 +380,7 @@ function onSend(textOverride?: string) {
   if (props.uploading || props.stopping) return
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   const text = textOverride ?? inputEl.value?.getMarkdown?.() ?? editorValue.value
-  if (!text.trim() && selectedFiles.value.length === 0) return
+  if (!text.trim()) return
   const outgoingFiles = [...selectedFiles.value]
   if (textOverride === undefined && text === props.modelValue) {
     // Keep the original modelValue contract for button sends. Enter can submit
