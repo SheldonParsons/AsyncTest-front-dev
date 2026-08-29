@@ -470,30 +470,30 @@
               <button class="trace-filter-apply" type="button" :disabled="traceRunsLoading" @click="loadTraceRuns(true)">过滤</button>
               <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceAuditMarkerFilter && !traceContentFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
               <datalist id="trace-project-options">
-                <option v-for="item in traceFilterOptions.projects" :key="item.project_id" :value="traceProjectOptionValue(item)">{{ traceProjectOptionLabel(item) }}</option>
+                <option v-for="item in traceFilterOptions.projects" :key="item.project_name" :value="traceProjectOptionValue(item)">{{ traceProjectOptionLabel(item) }}</option>
               </datalist>
               <datalist id="trace-user-options">
-                <option v-for="item in traceFilterOptions.users" :key="`${item.user_id || ''}-${item.account || ''}-${item.username || ''}`" :value="traceUserOptionValue(item)">{{ item.label }}</option>
+                <option v-for="item in traceFilterOptions.users" :key="item.label" :value="traceUserOptionValue(item)">{{ item.label }}</option>
               </datalist>
             </div>
             <div v-if="traceRunsLoading && !traceRuns.length" class="trace-list-state">加载中...</div>
             <div v-else-if="!traceRuns.length" class="trace-list-state">暂无对话链路记录</div>
             <div
               v-for="run in traceRuns"
-              :key="run.trace_id"
+              :key="traceRunReference(run)"
               class="trace-run-row"
-              :class="{ active: selectedTraceId === run.trace_id, checked: isTraceSelected(run.trace_id) }"
+              :class="{ active: selectedTraceId === traceRunReference(run), checked: isTraceSelected(traceRunReference(run)) }"
             >
               <button
                 class="trace-select-box"
-                :class="{ checked: isTraceSelected(run.trace_id) }"
+                :class="{ checked: isTraceSelected(traceRunReference(run)) }"
                 type="button"
-                :aria-pressed="isTraceSelected(run.trace_id) ? 'true' : 'false'"
-                @click.stop="toggleTraceSelection(run.trace_id)"
+                :aria-pressed="isTraceSelected(traceRunReference(run)) ? 'true' : 'false'"
+                @click.stop="toggleTraceSelection(traceRunReference(run))"
               >
-                <svg v-if="isTraceSelected(run.trace_id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <svg v-if="isTraceSelected(traceRunReference(run))" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
               </button>
-              <button class="trace-row-main" type="button" @click="selectTrace(run.trace_id)">
+              <button class="trace-row-main" type="button" @click="selectTrace(traceRunReference(run))">
                 <span class="trace-row-heading">
                   <span class="trace-row-title">{{ run.input_text || '未命名对话' }}</span>
                   <span class="trace-audit-marker">{{ traceAuditMarker(run) }}</span>
@@ -521,7 +521,7 @@
                     <code>{{ traceAuditMarker(selectedTrace) }}</code>
                     <button type="button" @click="copyTraceAuditMarker(selectedTrace)">{{ copiedAuditMarker === traceAuditMarker(selectedTrace) ? '已复制' : '复制' }}</button>
                     <strong v-if="tracePrivateView">私有取证</strong>
-                    <button type="button" @click="selectTrace(selectedTrace.trace_id, !tracePrivateView)">{{ tracePrivateView ? '返回安全视图' : '查看私有取证' }}</button>
+                    <button type="button" @click="selectTrace(selectedTraceId, !tracePrivateView)">{{ tracePrivateView ? '返回安全视图' : '查看私有取证' }}</button>
                   </div>
                 </div>
                 <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status) }}</span>
@@ -537,7 +537,7 @@
                     class="trace-attachment-chip"
                     type="button"
                     :title="attachmentName(file)"
-                    :disabled="traceAttachmentDownloading === `${selectedTrace.trace_id}:${fileIndex}`"
+                    :disabled="!tracePrivateView || traceAttachmentDownloading === `${selectedTraceId}:${fileIndex}`"
                     @click="downloadAttachment(file, fileIndex)"
                   >
                     <span class="trace-attachment-icon" aria-hidden="true">
@@ -562,8 +562,8 @@
                 <div class="trace-kv"><span>发起用户</span><code>{{ traceActorLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>所属项目</span><code>{{ traceProjectLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>对话会话</span><code>{{ traceSessionLabel(selectedTrace) }}</code></div>
-                <div class="trace-kv"><span>Trace ID</span><code>{{ selectedTrace.trace_id }}</code></div>
-                <div class="trace-kv"><span>Turn ID</span><code>{{ selectedTrace.turn_id || '-' }}</code></div>
+                <div v-if="tracePrivateView" class="trace-kv"><span>Trace ID</span><code>{{ selectedTrace.trace_id }}</code></div>
+                <div v-if="tracePrivateView" class="trace-kv"><span>Turn ID</span><code>{{ selectedTrace.turn_id || '-' }}</code></div>
                 <div class="trace-kv"><span>动作</span><code>{{ routeActionLabel(selectedTrace.route_action || '') }}</code></div>
                 <div class="trace-kv"><span>副作用</span><code>{{ compactJson(selectedTrace.side_effects) }}</code></div>
               </div>
@@ -721,8 +721,8 @@ const adminDraft = reactive<VibeLLMProviderPayload>({
 })
 
 const traceFilterOptions = ref<{
-  projects: Array<{ project_id: string; project_name: string; count: number }>
-  users: Array<{ user_id?: number; account?: string; username?: string; user_display_name?: string; label: string; count: number }>
+  projects: Array<{ project_name: string; count: number }>
+  users: Array<{ label: string; count: number }>
 }>({ projects: [], users: [] })
 
 const canViewTraceAudit = computed(() => !!capabilities.value.trace_audit)
@@ -740,7 +740,7 @@ const userInitials = computed(() => {
 })
 const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-rerank-api': 'ReRank API 模型配置', 'admin-embedding-api': 'Embedding API 模型配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
-  const ids = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
+  const ids = traceRuns.value.map(traceRunReference).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
 })
 const sceneStrengthOptions = [
@@ -1409,7 +1409,7 @@ async function loadTraceRuns(reset = false) {
     }
     traceRuns.value = reset ? items : [...traceRuns.value, ...items]
     traceNextCursor.value = res?.next_cursor || ''
-    if (!selectedTraceId.value && traceRuns.value.length) await selectTrace(traceRuns.value[0].trace_id)
+    if (!selectedTraceId.value && traceRuns.value.length) await selectTrace(traceRunReference(traceRuns.value[0]))
   } finally {
     traceRunsLoading.value = false
   }
@@ -1436,20 +1436,19 @@ function clearTraceFilters() {
   loadTraceRuns(true)
 }
 
-function traceUserOptionValue(item: { user_id?: number; account?: string; username?: string; user_display_name?: string }) {
-  return String(item.account || item.username || item.user_display_name || item.user_id || '')
+function traceUserOptionValue(item: { label?: string }) {
+  return String(item.label || '')
 }
 
-function traceProjectOptionValue(item: { project_id?: string; project_name?: string }) {
-  return String(item.project_name || item.project_id || '')
+function traceProjectOptionValue(item: { project_name?: string }) {
+  return String(item.project_name || '')
 }
 
-function traceProjectOptionLabel(item: { project_id?: string; project_name?: string; count?: number }) {
+function traceProjectOptionLabel(item: { project_name?: string; count?: number }) {
   const name = String(item.project_name || '').trim()
-  const id = String(item.project_id || '').trim()
   const count = Number(item.count || 0)
   const suffix = count > 0 ? ` · ${count}` : ''
-  return `${name || id}${suffix}`
+  return `${name}${suffix}`
 }
 
 function isTraceSelected(traceId: string) {
@@ -1465,7 +1464,7 @@ function toggleTraceSelection(traceId: string) {
 }
 
 function toggleVisibleTraceSelection() {
-  const visible = traceRuns.value.map((item) => item.trace_id).filter(Boolean)
+  const visible = traceRuns.value.map(traceRunReference).filter(Boolean)
   const next = new Set(selectedTraceIds.value)
   if (visible.length && visible.every((id) => next.has(id))) visible.forEach((id) => next.delete(id))
   else visible.forEach((id) => next.add(id))
@@ -1475,7 +1474,7 @@ function toggleVisibleTraceSelection() {
 function selectedTraceRunsInTimeOrder() {
   const selected = selectedTraceIds.value
   return traceRuns.value
-    .filter((item) => selected.has(item.trace_id))
+    .filter((item) => selected.has(traceRunReference(item)))
     .slice()
     .sort((a, b) => {
       const at = new Date(a.started_at || '').getTime()
@@ -1515,8 +1514,6 @@ function buildTraceExportMarkdown(details: VibeDialogueTraceDetail[]) {
     lines.push('| 字段 | 内容 |')
     lines.push('| --- | --- |')
     lines.push(`| 审计标识 | ${mdValue(traceAuditMarker(trace))} |`)
-    lines.push(`| Trace ID | ${mdValue(trace.trace_id)} |`)
-    lines.push(`| Turn ID | ${mdValue(trace.turn_id)} |`)
     lines.push(`| 发起用户 | ${mdValue(traceActorLabel(trace))} |`)
     lines.push(`| 所属项目 | ${mdValue(traceProjectLabel(trace))} |`)
     lines.push(`| 对话会话 | ${mdValue(traceSessionLabel(trace))} |`)
@@ -1675,7 +1672,7 @@ function saveAttachmentBlob(blob: Blob, name: string) {
 }
 
 async function downloadAttachment(file: Partial<VibeAttachment> | any, index: number) {
-  const traceId = String(selectedTrace.value?.trace_id || '').trim()
+  const traceId = String(selectedTraceId.value || '').trim()
   const downloadUrl = String(file?.download_url || '').trim()
   const downloadKey = `${traceId}:${index}`
   traceAttachmentDownloadError.value = ''
@@ -1699,14 +1696,14 @@ async function downloadAttachment(file: Partial<VibeAttachment> | any, index: nu
 }
 
 async function exportSelectedTraces() {
-  const ids = selectedTraceRunsInTimeOrder().map((item) => item.trace_id)
+  const ids = selectedTraceRunsInTimeOrder().map(traceRunReference)
   if (!ids.length || traceExporting.value) return
   traceExporting.value = true
   try {
     const details: VibeDialogueTraceDetail[] = []
     for (const id of ids) {
-      if (selectedTrace.value?.trace_id === id && !tracePrivateView.value) details.push(selectedTrace.value)
-      else details.push(await getVibeDialogueTraceDetail(id))
+      if (selectedTrace.value && selectedTraceId.value === id && !tracePrivateView.value) details.push(selectedTrace.value)
+      else details.push(await getVibeDialogueTraceDetail(id, 'public'))
     }
     const markdown = buildTraceExportMarkdown(details)
     downloadMarkdown(`dialogue-trace-${exportStamp()}-${details.length}.md`, markdown)
@@ -2013,6 +2010,10 @@ function traceAuditMarker(trace?: Partial<VibeDialogueTraceRun> | null) {
   if (explicit) return explicit
   const raw = String(trace?.trace_id || '').replace(/[^a-z0-9]/gi, '')
   return raw ? `DTA-${raw.slice(0, 8).toUpperCase()}` : 'DTA-UNKNOWN'
+}
+
+function traceRunReference(trace?: Partial<VibeDialogueTraceRun> | null) {
+  return String(trace?.audit_marker || trace?.trace_id || '').trim()
 }
 
 async function copyText(value: string) {

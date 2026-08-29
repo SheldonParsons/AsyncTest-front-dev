@@ -442,8 +442,8 @@ export function importVibeAdminConfig(config: Record<string, any>): Promise<{
 
 
 export interface VibeDialogueTraceRun {
-  trace_id: string
-  audit_marker?: string
+  trace_id?: string
+  audit_marker: string
   turn_id?: string
   session_id?: string
   session_title?: string
@@ -463,8 +463,8 @@ export interface VibeDialogueTraceRun {
 }
 
 export interface VibeDialogueTraceEvent {
-  id: number
-  trace_id: string
+  id?: number
+  trace_id?: string
   seq: number
   stage: string
   event_type: string
@@ -496,8 +496,8 @@ export function listVibeDialogueTraceRuns(params: {
   items: VibeDialogueTraceRun[]
   next_cursor: string
   filters?: {
-    projects?: Array<{ project_id: string; project_name: string; count: number }>
-    users?: Array<{ user_id?: number; account?: string; username?: string; user_display_name?: string; label: string; count: number }>
+    projects?: Array<{ project_name: string; count: number }>
+    users?: Array<{ label: string; count: number }>
   }
 }> {
   const query = new URLSearchParams()
@@ -509,8 +509,8 @@ export function listVibeDialogueTraceRuns(params: {
 }
 
 export function getVibeDialogueTraceDetail(traceId: string, view: 'public' | 'private' = 'public'): Promise<VibeDialogueTraceDetail> {
-  const query = view === 'private' ? '?view=private' : ''
-  return request('GET', `/vibe/foundation/dialogue-trace/runs/${traceId}${query}`)
+  const query = `?view=${view}`
+  return request('GET', `/vibe/foundation/dialogue-trace/runs/${encodeURIComponent(traceId)}${query}`)
 }
 
 export function downloadVibeDialogueTraceAttachment(
