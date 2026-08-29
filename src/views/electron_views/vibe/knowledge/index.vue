@@ -7331,6 +7331,12 @@ function isStreamingUnderEvent(event: any) {
   color: #fff;
 }
 
+.user-message-bubble .user-message-content::selection,
+.user-message-bubble .user-message-content::-moz-selection {
+  background: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+
 .user-message-wrap.collapsible:not(.expanded) .user-message-content {
   max-height: 18lh;
   max-height: min(18lh, 52dvh);
