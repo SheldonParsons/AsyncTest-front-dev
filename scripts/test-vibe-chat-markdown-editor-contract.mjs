@@ -10,14 +10,16 @@ import {
   $createTextNode,
   createEditor,
   INSERT_PARAGRAPH_COMMAND,
+  COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   INSERT_LINE_BREAK_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_DOWN_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
 } from 'lexical'
 import { registerRichText, HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { registerList, ListItemNode, ListNode } from '@lexical/list'
+import { $isListNode, registerList, ListItemNode, ListNode } from '@lexical/list'
 import { CodeNode } from '@lexical/code'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
 import {
@@ -82,8 +84,13 @@ assert.match(editorSource, /CONTROLLED_TEXT_INSERTION_COMMAND/)
 assert.match(editorSource, /getMarkdown\(\)/)
 assert.match(editorSource, /COMMAND_PRIORITY_LOW/)
 assert.match(editorSource, /event\.shiftKey[\s\S]*INSERT_LINE_BREAK_COMMAND/)
+assert.match(editorSource, /event\.ctrlKey \|\| event\.metaKey/)
+assert.match(editorSource, /KEY_DOWN_COMMAND/)
+assert.match(editorSource, /onKeyDown\(event: KeyboardEvent\)/)
+assert.match(editorSource, /onComposingEnter\(event: KeyboardEvent \| null\)/)
+assert.match(editorSource, /isInsideList\(\)[\s\S]*INSERT_PARAGRAPH_COMMAND/)
 assert.match(editorSource, /emit\('submit', (?:value|serializeActiveEditorState\(\))\)/)
-assert.match(editorSource, /if \(!event \|\| event\.isComposing[\s\S]*return false/)
+assert.match(editorSource, /event\.isComposing[\s\S]*return (?:true|false)/)
 assert.match(editorSource, /@compositionstart/)
 assert.match(editorSource, /@compositionend/)
 assert.match(editorSource, /composing\.value/)
@@ -99,6 +106,8 @@ assert.match(composerSource, /restoreAttachments\(files: File\[\]\)/)
 assert.match(composerSource, /:sending="sending"/)
 assert.match(composerSource, /:stopping="stopping"/)
 assert.match(composerSource, /:uploading="uploading"/)
+assert.match(editorSource, /:deep\(ul\)/)
+assert.match(editorSource, /padding-left: 22px/)
 assert.doesNotMatch(editorSource, /lexicalEditorManager/)
 assert.doesNotMatch(editorSource, /setEditorState\(/)
 
@@ -207,6 +216,86 @@ for (const marker of ['- ', '* ', '+ ']) {
   assert.equal(readRoot(editor).type, 'list')
   assert.equal(readMarkdown(editor), '1. ')
   unregister()
+}
+
+// Command/Ctrl+Enter starts the next list item instead of inserting a soft
+// line break. Lexical's list command updates the ordered marker to 2.
+for (const modifier of ['metaKey', 'ctrlKey']) {
+  const editor = makeEditor()
+  const unregisterMarkdown = registerMarkdownShortcuts(editor, transformers)
+  editor.update(() => {
+    $convertFromMarkdownString('1. 第一步', transformers, $getRoot(), true)
+    $getRoot().selectEnd()
+  })
+  await waitForEditor()
+  editor.registerCommand(KEY_DOWN_COMMAND, (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || !event[modifier] || event.isComposing) return false
+    event.preventDefault()
+    let node = $getSelection()?.anchor.getNode() || null
+    let insideList = false
+    while (node) {
+      if ($isListNode(node)) {
+        insideList = true
+        break
+      }
+      node = node.getParent()
+    }
+    return editor.dispatchCommand(
+      insideList ? INSERT_PARAGRAPH_COMMAND : INSERT_LINE_BREAK_COMMAND,
+      insideList ? undefined : false,
+    )
+  }, COMMAND_PRIORITY_HIGH)
+  let prevented = false
+  const event = {
+    key: 'Enter',
+    metaKey: modifier === 'metaKey',
+    ctrlKey: modifier === 'ctrlKey',
+    shiftKey: false,
+    isComposing: false,
+    preventDefault() { prevented = true },
+  }
+  assert.equal(editor.dispatchCommand(KEY_DOWN_COMMAND, event), true)
+  assert.equal(prevented, true)
+  await waitForEditor()
+  assert.equal(readMarkdown(editor), '1. 第一步\n2. ')
+  const list = readBlocks(editor).filter((block) => block.type === 'list')[0]
+  assert.equal(list.text, '第一步\n\n')
+  let values = []
+  editor.getEditorState().read(() => {
+    const listNode = $getRoot().getFirstChild()
+    values = listNode?.getChildren().map((item) => item.getValue?.()) || []
+  })
+  assert.deepEqual(values, [1, 2])
+  assert.equal(values.length, 2)
+  unregisterMarkdown()
+}
+
+// A composing Enter is consumed by the keyboard guard without changing the
+// Lexical tree, even if the browser has not set Lexical's composing flag yet.
+{
+  const editor = makeEditor()
+  editor.update(() => {
+    const paragraph = $createParagraphNode().append($createTextNode('候选词'))
+    $getRoot().append(paragraph)
+    paragraph.selectEnd()
+  })
+  await waitForEditor()
+  editor.registerCommand(KEY_DOWN_COMMAND, (event) => {
+    if (event.key !== 'Enter') return false
+    if (event.isComposing) return true
+    return false
+  }, COMMAND_PRIORITY_HIGH)
+  const before = readBlocks(editor)
+  editor.dispatchCommand(KEY_DOWN_COMMAND, {
+    key: 'Enter',
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    isComposing: true,
+    preventDefault() {},
+  })
+  await waitForEditor()
+  assert.deepEqual(readBlocks(editor), before)
 }
 {
   const editor = makeEditor()
@@ -390,6 +479,26 @@ for (const marker of ['- ', '* ', '+ ']) {
   assert.equal(readRoot(editor).text, 'draft\n')
   editor.dispatchCommand(KEY_ENTER_COMMAND, { shiftKey: false, isComposing: true, preventDefault: prevent })
   assert.equal(submissions.length, 1)
+}
+
+// The direct KEY_ENTER path is guarded too, so a browser composition event
+// cannot fall through to rich-text's paragraph insertion listener.
+{
+  const editor = makeEditor()
+  editor.update(() => {
+    const paragraph = $createParagraphNode().append($createTextNode('输入中'))
+    $getRoot().append(paragraph)
+    paragraph.selectEnd()
+  })
+  await waitForEditor()
+  editor.registerCommand(KEY_ENTER_COMMAND, (event) => {
+    if (event?.isComposing) return true
+    return false
+  }, COMMAND_PRIORITY_HIGH)
+  const before = readBlocks(editor)
+  editor.dispatchCommand(KEY_ENTER_COMMAND, { shiftKey: false, isComposing: true, preventDefault() {} })
+  await waitForEditor()
+  assert.deepEqual(readBlocks(editor), before)
 }
 
 // The non-empty-editor paste fallback remains plain text and never injects

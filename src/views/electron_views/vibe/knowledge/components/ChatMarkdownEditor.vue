@@ -23,7 +23,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { $insertDataTransferForPlainText } from '@lexical/clipboard'
 import { CodeNode } from '@lexical/code'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
-import { registerList, ListItemNode, ListNode } from '@lexical/list'
+import { $isListNode, registerList, ListItemNode, ListNode } from '@lexical/list'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
@@ -41,8 +41,10 @@ import {
   createEditor,
   INSERT_LINE_BREAK_COMMAND,
   INSERT_PARAGRAPH_COMMAND,
+  KEY_DOWN_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
+  type LexicalNode,
   type LexicalEditor,
   type PasteCommandType,
 } from 'lexical'
@@ -266,6 +268,17 @@ function isInsideCodeBlock(): boolean {
   return inside
 }
 
+function isInsideList(): boolean {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection)) return false
+  let node: LexicalNode | null = selection.anchor.getNode()
+  while (node) {
+    if ($isListNode(node)) return true
+    node = node.getParent()
+  }
+  return false
+}
+
 function serializeActiveEditorState(): string {
   return $convertToMarkdownString(CHAT_MARKDOWN_TRANSFORMERS, $getRoot(), true)
 }
@@ -289,15 +302,40 @@ function isHeadingAtEnd(): boolean {
 }
 
 function onBusyEnter(event: KeyboardEvent | null): boolean {
+  if (!event) return false
+  if (event.isComposing || composing.value || editor?.isComposing()) return true
   if (!props.sending && !props.stopping && !props.uploading) return false
-  if (!event || event.isComposing || composing.value || editor?.isComposing() || event.shiftKey) return false
+  if (event.shiftKey) return false
   event.preventDefault()
   emit('submit', serializeActiveEditorState())
   return true
 }
 
+function onComposingEnter(event: KeyboardEvent | null): boolean {
+  // Keep composition-end's null payload available to Lexical, but prevent a
+  // non-null composing Enter from falling through to Markdown or rich-text
+  // paragraph insertion when browser composition state lags one event.
+  if (!event) return false
+  if (event.isComposing || composing.value || editor?.isComposing()) return true
+  return false
+}
+
+function onKeyDown(event: KeyboardEvent): boolean {
+  if (event.key !== 'Enter') return false
+  if (event.isComposing || composing.value || editor?.isComposing()) return true
+  if (event.shiftKey || (!event.ctrlKey && !event.metaKey)) return false
+  if (props.sending || props.stopping || props.uploading) return false
+  if (isInsideCodeBlock()) return false
+  const insideList = isInsideList()
+  const headingAtEnd = isHeadingAtEnd()
+  if (!insideList && !headingAtEnd) return false
+  event.preventDefault()
+  return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+}
+
 function onEnter(event: KeyboardEvent | null): boolean {
-  if (!event || event.isComposing || composing.value || editor?.isComposing()) return false
+  if (!event) return false
+  if (event.isComposing || composing.value || editor?.isComposing()) return true
 
   // The Markdown plugin is registered before this same-priority handler. It
   // consumes a code-fence Enter first; code blocks therefore retain Lexical's
@@ -305,6 +343,14 @@ function onEnter(event: KeyboardEvent | null): boolean {
   if (event.shiftKey) {
     event.preventDefault()
     if (isHeadingAtEnd()) {
+      return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+    }
+    return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
+  }
+  if (event.ctrlKey || event.metaKey) {
+    if (isInsideCodeBlock()) return false
+    event.preventDefault()
+    if (isInsideList() || isHeadingAtEnd()) {
       return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
     }
     return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
@@ -387,6 +433,8 @@ function setupEditor() {
   // keeps imported Markdown from being treated as a typed shortcut.
   queueMicrotask(() => {
     if (!mounted || editor !== instance) return
+    editorCleanups.push(instance.registerCommand(KEY_DOWN_COMMAND, onKeyDown, COMMAND_PRIORITY_HIGH))
+    editorCleanups.push(instance.registerCommand(KEY_ENTER_COMMAND, onComposingEnter, COMMAND_PRIORITY_HIGH))
     editorCleanups.push(instance.registerCommand(KEY_ENTER_COMMAND, onBusyEnter, COMMAND_PRIORITY_HIGH))
     markdownCleanup = registerMarkdownShortcuts(instance, CHAT_MARKDOWN_TRANSFORMERS)
     editorCleanups.push(() => {
