@@ -7331,8 +7331,11 @@ function isStreamingUnderEvent(event: any) {
 }
 
 .user-message-bubble .user-message-markdown {
+  white-space: normal;
+
   :deep(p) {
     margin: 0;
+    white-space: pre-wrap;
   }
 
   :deep(p + p) {
@@ -7360,6 +7363,7 @@ function isStreamingUnderEvent(event: any) {
 
   :deep(li) {
     margin: 2px 0;
+    white-space: pre-wrap;
   }
 
   :deep(strong) {
