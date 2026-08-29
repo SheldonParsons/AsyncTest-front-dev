@@ -155,14 +155,15 @@
         </div>
 
         <div class="input-row">
-          <textarea
+          <ChatMarkdownEditor
             ref="inputEl"
-            class="composer-input"
-            rows="1"
+            :model-value="modelValue"
             :placeholder="placeholder"
-            :value="modelValue"
-            @input="onInput"
-            @keydown="onInputKeydown"
+            :sending="sending"
+            :stopping="stopping"
+            :uploading="uploading"
+            @update:model-value="onEditorInput"
+            @submit="onEditorSubmit"
           />
         </div>
 
@@ -227,7 +228,7 @@
             :aria-label="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
             :title="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
             :disabled="uploading || stopping || (!sending && sendDisabled)"
-            @click="onSend"
+            @click="onSend()"
           >
             <svg class="send-arrow-flow" viewBox="0 0 40 40" fill="none" aria-hidden="true">
               <g class="send-arrow-shape">
@@ -255,6 +256,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { admitAttachmentSelection } from '../composables/attachmentAdmission'
+import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
 import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
@@ -290,10 +292,11 @@ const emit = defineEmits<{
 }>()
 
 const rootEl = ref<HTMLElement | null>(null)
-const inputEl = ref<HTMLTextAreaElement | null>(null)
+const inputEl = ref<InstanceType<typeof ChatMarkdownEditor> | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
 const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
+const editorValue = ref(props.modelValue)
 const menuOpen = ref(false)
 const modelMenuOpen = ref(false)
 const modelPickerClosedWidth = ref(180)
@@ -336,7 +339,7 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
   for (let i = a.length - e; i < a.length; i++) out.push({ t: 'ctx', text: a[i] })
   return out
 }
-const sendDisabled = computed(() => props.modelValue.trim().length === 0 && selectedFiles.value.length === 0)
+const sendDisabled = computed(() => editorValue.value.trim().length === 0 && selectedFiles.value.length === 0)
 
 watch(() => props.question, () => {
   activeIndex.value = 0
@@ -347,27 +350,18 @@ watch(() => props.question, () => {
   if (isQuestion.value) focusActive()  // 反问一出现就聚焦首项，上下键立即可用
 })
 
-function autoGrow() {
-  const el = inputEl.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 170)}px`
-}
 function measureModelPicker() {
   const label = modelPickerLabelEl.value
   if (!label) return
   const contentWidth = Math.ceil(label.scrollWidth) + 56
   modelPickerClosedWidth.value = Math.min(180, Math.max(76, contentWidth))
 }
-function onInput(e: Event) {
-  emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
-  nextTick(autoGrow)
+function onEditorInput(value: string) {
+  editorValue.value = value
+  emit('update:modelValue', value)
 }
-function onInputKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault()
-    onSend()
-  }
+function onEditorSubmit(value: string) {
+  onSend(value)
 }
 function toggleModelMenu() {
   if (props.modelDisabled || props.sending) return
@@ -382,14 +376,20 @@ function selectModel(value: string) {
   emit('model-change', value)
 }
 
-function onSend() {
+function onSend(textOverride?: string) {
   if (props.uploading || props.stopping) return
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
-  if (sendDisabled.value) return
+  const text = textOverride ?? inputEl.value?.getMarkdown?.() ?? editorValue.value
+  if (!text.trim() && selectedFiles.value.length === 0) return
   const outgoingFiles = [...selectedFiles.value]
-  emit('send', { text: props.modelValue, files: outgoingFiles })
+  if (textOverride === undefined && text === props.modelValue) {
+    // Keep the original modelValue contract for button sends. Enter can submit
+    // a fresh Lexical snapshot before Vue has re-rendered its parent.
+    emit('send', { text: props.modelValue, files: outgoingFiles })
+  } else {
+    emit('send', { text, files: outgoingFiles })
+  }
   clearAttachments()
-  nextTick(autoGrow)
 }
 
 function pickMarkdown() {
@@ -511,7 +511,6 @@ onMounted(() => {
   modelPickerMediaQuery = window.matchMedia('(max-width: 420px)')
   syncModelPickerViewport()
   modelPickerMediaQuery.addEventListener('change', syncModelPickerViewport)
-  autoGrow()
   nextTick(measureModelPicker)
   document.fonts?.ready.then(measureModelPicker)
 })
@@ -520,7 +519,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocKeydown, true)
   modelPickerMediaQuery?.removeEventListener('change', syncModelPickerViewport)
 })
-watch(() => props.modelValue, () => nextTick(autoGrow))
+watch(() => props.modelValue, (value) => {
+  editorValue.value = value
+})
 watch(currentModelLabel, () => nextTick(measureModelPicker))
 
 function focusInput() {
@@ -528,12 +529,7 @@ function focusInput() {
   // 发送/停止过程中也不抢，避免打断正在进行的一轮。
   if (isQuestion.value || props.sending || props.stopping) return
   nextTick(() => {
-    const el = inputEl.value
-    if (!el) return
-    el.focus()
-    // 光标落到已有草稿末尾，而不是选中全部或跳到开头。
-    const end = el.value.length
-    el.setSelectionRange(end, end)
+    inputEl.value?.focusEditor?.()
   })
 }
 

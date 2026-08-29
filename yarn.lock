@@ -615,6 +615,15 @@
     "@lexical/utils" "0.41.0"
     lexical "0.41.0"
 
+"@lexical/code@0.41.0":
+  version "0.41.0"
+  resolved "https://registry.yarnpkg.com/@lexical/code/-/code-0.41.0.tgz#c86a38417d0e3276fe3baf06448bbd26d57fa13b"
+  integrity sha512-0hoNi1KC9/N3SBOGcOcFqnT0OpwmcRRAhfxTKMGqfCtCvAMzULVwZ8RWc9/NV9bKYESgBTW5D9xkDANP2mspHg==
+  dependencies:
+    "@lexical/utils" "0.41.0"
+    lexical "0.41.0"
+    prismjs "^1.30.0"
+
 "@lexical/dragon@0.41.0":
   version "0.41.0"
   resolved "https://registry.npmjs.org/@lexical/dragon/-/dragon-0.41.0.tgz"
@@ -650,6 +659,15 @@
     "@lexical/utils" "0.41.0"
     lexical "0.41.0"
 
+"@lexical/link@0.41.0":
+  version "0.41.0"
+  resolved "https://registry.yarnpkg.com/@lexical/link/-/link-0.41.0.tgz#d84c0786ff93c7b516db63ec1cf18c701da34a0c"
+  integrity sha512-Rjtx5cGWAkKcnacncbVsZ1TqRnUB2Wm4eEVKpaAEG41+kHgqghzM2P+UGT15yROroxJu8KvAC9ISiYFiU4XE1w==
+  dependencies:
+    "@lexical/extension" "0.41.0"
+    "@lexical/utils" "0.41.0"
+    lexical "0.41.0"
+
 "@lexical/list@0.41.0", "@lexical/list@^0.41.0":
   version "0.41.0"
   resolved "https://registry.npmjs.org/@lexical/list/-/list-0.41.0.tgz"
@@ -660,7 +678,20 @@
     "@lexical/utils" "0.41.0"
     lexical "0.41.0"
 
-"@lexical/rich-text@^0.41.0":
+"@lexical/markdown@0.41.0":
+  version "0.41.0"
+  resolved "https://registry.yarnpkg.com/@lexical/markdown/-/markdown-0.41.0.tgz#f0c8aa8a15b55281809bb708a25fa3501f8acc62"
+  integrity sha512-bzI73JMXpjGFhqUWNV6KqfjWcgAWzwFT+J3RHtbCF5rysC8HLldBYojOgAAtPfXqfxyv2mDzsY7SoJ75s9uHZA==
+  dependencies:
+    "@lexical/code" "0.41.0"
+    "@lexical/link" "0.41.0"
+    "@lexical/list" "0.41.0"
+    "@lexical/rich-text" "0.41.0"
+    "@lexical/text" "0.41.0"
+    "@lexical/utils" "0.41.0"
+    lexical "0.41.0"
+
+"@lexical/rich-text@0.41.0", "@lexical/rich-text@^0.41.0":
   version "0.41.0"
   resolved "https://registry.npmjs.org/@lexical/rich-text/-/rich-text-0.41.0.tgz"
   integrity sha512-yUcr7ZaaVTZNi8bow4CK1M8jy2qyyls1Vr+5dVjwBclVShOL/F/nFyzBOSb6RtXXRbd3Ahuk9fEleppX/RNIdw==
@@ -675,6 +706,13 @@
   version "0.41.0"
   resolved "https://registry.npmjs.org/@lexical/selection/-/selection-0.41.0.tgz"
   integrity sha512-1s7/kNyRzcv5uaTwsUL28NpiisqTf5xZ1zNukLsCN1xY+TWbv9RE9OxIv+748wMm4pxNczQe/UbIBODkbeknLw==
+  dependencies:
+    lexical "0.41.0"
+
+"@lexical/text@0.41.0":
+  version "0.41.0"
+  resolved "https://registry.yarnpkg.com/@lexical/text/-/text-0.41.0.tgz#85c87e22f832da4306e4139fac982a72b745e183"
+  integrity sha512-gGA+Anc7ck110EXo4KVKtq6Ui3M7Vz3OpGJ4QE6zJHWW8nV5h273koUGSutAMeoZgRVb6t01Izh3ORoFt/j1CA==
   dependencies:
     lexical "0.41.0"
 
@@ -5498,6 +5536,11 @@ prelude-ls@^1.2.1:
   version "1.2.1"
   resolved "https://registry.npmjs.org/prelude-ls/-/prelude-ls-1.2.1.tgz"
   integrity sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==
+
+prismjs@^1.30.0:
+  version "1.30.0"
+  resolved "https://registry.yarnpkg.com/prismjs/-/prismjs-1.30.0.tgz#d9709969d9d4e16403f6f348c63553b19f0975a9"
+  integrity sha512-DEvV2ZF2r2/63V+tK8hQvrR2ZGn10srHbXviTlcv7Kpzw8jWiNTqbVgjO3IY8RxrrOUF8VPMQQFysYYYv0YZxw==
 
 proc-log@^5.0.0:
   version "5.0.0"
