@@ -7331,8 +7331,12 @@ function isStreamingUnderEvent(event: any) {
   color: #fff;
 }
 
-.user-message-bubble .user-message-content::selection,
-.user-message-bubble .user-message-content::-moz-selection {
+:global(.vibe-shell .user-message-bubble .user-message-content::selection) {
+  background-color: rgba(148, 148, 148, 0.72) !important;
+  color: #fff !important;
+}
+
+:global(.vibe-shell .user-message-bubble .user-message-content::-moz-selection) {
   background-color: rgba(148, 148, 148, 0.72) !important;
   color: #fff !important;
 }
