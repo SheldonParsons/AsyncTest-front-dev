@@ -98,6 +98,58 @@ assert.equal(failedModel.outcome.title, '本轮处理失败')
 assert.equal(failedModel.outcome.detail, '')
 assert.equal(failedModel.outcome.partial, false)
 
+for (const [code, terminalReason] of [
+  ['answer_contract_failed', ''],
+  ['resolution_answer_contract_failed', ''],
+  ['provider_raw', ''],
+  ['answer_contract_failed', 'durable_output_recovered'],
+  ['resolution_answer_contract_failed', 'durable_output_recovered'],
+  ['react_orchestrator_failed', 'durable_output_recovered'],
+]) {
+  const deliveryFailed = ['answer_contract_failed', 'resolution_answer_contract_failed'].includes(code)
+  const history = protocol.readSessionTurnPublic({
+    ...failed,
+    turn: {
+      ...failed.turn,
+      write_commit_count: 1,
+      outcome: { kind: 'failed', code: deliveryFailed ? code : 'turn_failed', partial: false },
+    },
+  })
+  const live = protocol.replayTurnProtocol([
+    { event_id: 'start', turn_id: 'turn-failed', sequence: 1, event_type: 'started', payload: {} },
+    {
+      event_id: 'write', turn_id: 'turn-failed', sequence: 2, event_type: 'item_added', payload: {},
+      item: {
+        item_id: 'committed', item_type: 'receipt', content: '变更已提交',
+        payload: { legacy_type: 'write_commit', result: { committed: true } },
+      },
+    },
+    {
+      event_id: 'error', turn_id: 'turn-failed', sequence: 3, event_type: 'item_added', payload: {},
+      item: {
+        item_id: 'rejected-answer', item_type: 'error',
+        content: 'private provider exception: api_key=private-secret', payload: { code, reason: code },
+      },
+    },
+    { event_id: 'end', turn_id: 'turn-failed', sequence: 4, event_type: 'failed', payload: { reason: terminalReason } },
+  ])
+  assert.ok(history)
+  assert.deepEqual(live.outcome, history.outcome, 'live and history must show the same safe failure cause')
+  assert.equal(live.outcome.title, deliveryFailed ? '答复未能交付' : '本轮处理失败')
+  assert.equal(live.outcome.detail, deliveryFailed
+    ? '答复未能交付；已执行操作的结果请以本轮操作记录为准。' : '')
+  assert.equal(live.outcome.reason, '')
+  assert.equal(live.state, 'failed')
+  assert.equal(history.state, 'failed')
+  assert.equal(live.writeCommits.length, 1)
+  assert.equal(history.writeCommits.length, 1)
+  assert.equal(live.content, '')
+  assert.equal(history.content, '')
+  assert.ok(!JSON.stringify(live.outcome).includes('private provider exception'))
+  assert.ok(!JSON.stringify(live.outcome).includes('api_key'))
+  assert.ok(!JSON.stringify(live.outcome).includes('private-secret'))
+}
+
 assert.equal(protocol.readSessionTurnPublic({
   ...failed,
   turn: { ...failed.turn, outcome: { ...failed.turn.outcome, code: 'provider_raw' } },

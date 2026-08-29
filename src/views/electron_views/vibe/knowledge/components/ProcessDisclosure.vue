@@ -15,7 +15,7 @@
       <svg
         v-if="!running && steps.length"
         class="proc-chevron"
-        :class="{ open }"
+        :class="{ open: bodyVisible }"
         viewBox="0 0 16 16"
         width="14"
         height="14"
@@ -87,15 +87,16 @@ const props = withDefaults(defineProps<{
   awaiting: false,
 })
 
-const open = ref(false)
+// 等待用户选择时默认展开；用户点击后由 open 记录手动收起/展开。
+const open = ref<boolean | undefined>()
 const shimmerStyle = { '--vibe-shimmer-delay': continuousAnimationDelay() }
 
-const bodyVisible = computed(() => props.running || open.value)
+const bodyVisible = computed(() => props.running || (open.value ?? props.awaiting))
 const durationLabel = computed(() => formatDuration(props.durationMs || 0))
 
 function toggle() {
   if (props.running) return
-  open.value = !open.value
+  open.value = !bodyVisible.value
   emit('layout-change')
 }
 

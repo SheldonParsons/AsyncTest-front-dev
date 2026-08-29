@@ -77,6 +77,7 @@ export interface SessionTurnPublicV1 {
   outcome?: {
     kind: TurnProtocolOutcomeKind
     code: 'turn_failed' | 'turn_cancelled' | 'turn_interrupted'
+      | 'answer_contract_failed' | 'resolution_answer_contract_failed'
     partial: false
   }
 }
@@ -115,6 +116,10 @@ const PUBLIC_OUTCOME_TITLE: Record<TurnProtocolOutcomeKind, string> = {
   cancelled: '本轮已停止',
   interrupted: '本轮处理中断',
 }
+const ANSWER_DELIVERY_FAILURE_CODES = new Set([
+  'answer_contract_failed', 'resolution_answer_contract_failed',
+])
+const ANSWER_DELIVERY_FAILURE_DETAIL = '答复未能交付；已执行操作的结果请以本轮操作记录为准。'
 const sessionTurnPublicCache = new WeakMap<object, { signature: string; model: TurnProtocolReadModel }>()
 
 function sessionProcessSteps(meta: any): ProcessStep[] {
@@ -288,9 +293,12 @@ export function readSessionTurnPublic(event: any): TurnProtocolReadModel | null 
   const adverse = ['failed', 'cancelled', 'interrupted'].includes(state)
     ? state as TurnProtocolOutcomeKind
     : null
+  const answerDeliveryFailed = adverse === 'failed'
+    && ANSWER_DELIVERY_FAILURE_CODES.has(String(turn.outcome?.code || ''))
   if (adverse) {
     const outcome = turn.outcome
-    if (!outcome || outcome.kind !== adverse || outcome.code !== PUBLIC_OUTCOME_CODE[adverse]) {
+    if (!outcome || outcome.kind !== adverse
+      || (outcome.code !== PUBLIC_OUTCOME_CODE[adverse] && !answerDeliveryFailed)) {
       return null
     }
   }
@@ -319,8 +327,8 @@ export function readSessionTurnPublic(event: any): TurnProtocolReadModel | null 
           kind: adverse,
           state,
           terminal,
-          title: PUBLIC_OUTCOME_TITLE[adverse],
-          detail: '',
+          title: answerDeliveryFailed ? '答复未能交付' : PUBLIC_OUTCOME_TITLE[adverse],
+          detail: answerDeliveryFailed ? ANSWER_DELIVERY_FAILURE_DETAIL : '',
           reason: '',
           partial: false,
         }
@@ -515,14 +523,17 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
         )
       : String(lastError?.content || terminalPayload.detail || terminalPayload.message || '')
     const reason = String(
-      terminalPayload.reason
+      (protocolState === 'failed' && (lastError?.payload?.reason || lastError?.payload?.code))
+      || terminalPayload.reason
       || lastError?.payload?.reason
       || cancelledReceipt?.payload?.reason
       || cancellationPayload.reason
       || '',
     )
+    const answerDeliveryFailed = protocolState === 'failed'
+      && ANSWER_DELIVERY_FAILURE_CODES.has(reason)
     const title = protocolState === 'failed'
-      ? '本轮处理失败'
+      ? (answerDeliveryFailed ? '答复未能交付' : '本轮处理失败')
       : protocolState === 'cancelled'
         ? '本轮已停止'
         : '本轮处理中断'
@@ -531,8 +542,10 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
       state: protocolState,
       terminal,
       title,
-      detail,
-      reason,
+      detail: protocolState === 'failed'
+        ? (answerDeliveryFailed ? ANSWER_DELIVERY_FAILURE_DETAIL : '')
+        : detail,
+      reason: protocolState === 'failed' ? '' : reason,
       // Canonical Turn Protocol v2 当前没有正式 partial 字段或 terminal。
       // 即使失败前已有 assistant_message，也不能由前端自行命名为 partial。
       partial: false,

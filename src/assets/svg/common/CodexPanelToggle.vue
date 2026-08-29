@@ -38,13 +38,17 @@
         stroke-linecap="round"
         stroke-linejoin="round"
       />
-      <path
+      <g
         class="codex-panel-toggle__divider"
-        :d="DIVIDER_PATH"
-        stroke="currentColor"
-        :stroke-width="GEOMETRY.strokeWidth"
-        stroke-linecap="round"
-      />
+        :style="dividerStyle"
+      >
+        <path
+          :d="DIVIDER_PATH"
+          stroke="currentColor"
+          :stroke-width="GEOMETRY.strokeWidth"
+          stroke-linecap="round"
+        />
+      </g>
     </svg>
   </component>
 </template>
@@ -79,7 +83,13 @@ interface CodexPanelToggleProps {
   disabled?: boolean
 }
 
-const props = defineProps<CodexPanelToggleProps>()
+// Keep optional Boolean aliases distinguishable when a caller provides only one
+// of them; Vue otherwise casts an omitted Boolean prop to `false`.
+const props = withDefaults(defineProps<CodexPanelToggleProps>(), {
+  expanded: undefined,
+  isOpen: undefined,
+  collapsed: undefined,
+})
 
 const emit = defineEmits<{
   (event: 'update:expanded', value: boolean): void
@@ -129,6 +139,12 @@ const toggleStyle = computed<Record<string, string>>(() => ({
   '--codex-panel-toggle-frame-fill-expanded': CODEX_PANEL_TOGGLE_EXPANDED_FILL,
   '--codex-panel-toggle-frame-fill-collapsed': CODEX_PANEL_TOGGLE_COLLAPSED_FILL,
   ...(props.color ? { '--codex-panel-toggle-color': props.color } : {}),
+}))
+
+const dividerStyle = computed<Record<string, string>>(() => ({
+  transform: resolvedExpanded.value
+    ? 'translateX(0) scaleY(1)'
+    : `translateX(${GEOMETRY.divider.collapsedOffsetX}px) scaleY(${GEOMETRY.divider.collapsedScaleY})`,
 }))
 
 watch(
@@ -215,6 +231,7 @@ function handleToggle(): void {
 .codex-panel-toggle__divider {
   transform-box: fill-box;
   transform-origin: center;
+  transform: translateX(0) scaleY(1);
   transition: transform var(--codex-panel-toggle-duration) var(--codex-panel-toggle-easing);
   will-change: transform;
 }
