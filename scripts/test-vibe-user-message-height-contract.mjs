@@ -48,7 +48,7 @@ assert.match(viewSource, /\.user-message-bubble \.user-message-content\s*\{[\s\S
 assert.match(viewSource, /\.confirmation-choice-event\s*\{[\s\S]*\.user-message-bubble\s*\{[\s\S]*background:\s*#000;/)
 assert.match(viewSource, /\.confirmation-choice-event\s*\{[\s\S]*\.user-message-content\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.94\);/)
 assert.match(viewSource, /\.user-message-more\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.66\);/)
-assert.match(viewSource, /\.user-message-bubble \.user-message-content::selection,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.28\);[\s\S]*color:\s*#fff;/)
+assert.match(viewSource, /\.user-message-bubble \.user-message-content::selection,[\s\S]*background-color:\s*rgba\(148,\s*148,\s*148,\s*0\.72\)\s*!important;[\s\S]*color:\s*#fff\s*!important;/)
 assert.match(viewSource, /\.user-message-bubble \.user-message-content::-moz-selection/)
 
 console.log('vibe user message height contract: PASS')

@@ -7333,8 +7333,8 @@ function isStreamingUnderEvent(event: any) {
 
 .user-message-bubble .user-message-content::selection,
 .user-message-bubble .user-message-content::-moz-selection {
-  background: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background-color: rgba(148, 148, 148, 0.72) !important;
+  color: #fff !important;
 }
 
 .user-message-wrap.collapsible:not(.expanded) .user-message-content {
