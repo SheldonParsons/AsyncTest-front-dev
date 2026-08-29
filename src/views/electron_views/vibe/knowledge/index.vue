@@ -6790,7 +6790,7 @@ function isStreamingUnderEvent(event: any) {
   h1 {
     margin: 0;
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 550;
   }
 
   &.compact {
@@ -7526,7 +7526,7 @@ function isStreamingUnderEvent(event: any) {
   display: block;
   max-width: 100%;
   color: rgba(15, 15, 15, 0.62);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 450;
   line-height: 1.75;
 
@@ -7579,7 +7579,7 @@ function isStreamingUnderEvent(event: any) {
 .message-md {
   margin-top: 0;
   color: rgba(15, 15, 15, 0.96);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 450;
   line-height: 1.75;
   min-width: 0;
