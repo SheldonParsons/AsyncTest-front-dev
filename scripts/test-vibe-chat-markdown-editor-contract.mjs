@@ -9,6 +9,7 @@ import {
   $createParagraphNode,
   $createTextNode,
   createEditor,
+  INSERT_PARAGRAPH_COMMAND,
   COMMAND_PRIORITY_LOW,
   INSERT_LINE_BREAK_COMMAND,
   KEY_ENTER_COMMAND,
@@ -49,6 +50,16 @@ for (const name of ['HEADING', 'UNORDERED_LIST', 'ORDERED_LIST', 'QUOTE', 'CODE'
   assert.match(transformerSource, new RegExp(`\\b${name}\\b`), `${name} must stay enabled`)
 }
 assert.match(editorSource, /registerMarkdownShortcuts\(instance, CHAT_MARKDOWN_TRANSFORMERS\)/)
+// Pasting into a fresh composer imports the same restricted Markdown dialect
+// as a draft; subsequent pastes stay plain text so an insertion cannot
+// unexpectedly reformat surrounding content.
+assert.match(editorSource, /isEmptyEditorRoot/)
+assert.match(editorSource, /\$convertFromMarkdownString\((?:text|normalizeLineEndings\(text\)), CHAT_MARKDOWN_TRANSFORMERS/)
+assert.match(editorSource, /\$insertDataTransferForPlainText\(dataTransfer, selection\)/)
+// Shift+Enter at the end of a heading must leave that block and start a
+// paragraph; ordinary blocks retain the soft line-break behavior.
+assert.match(editorSource, /isHeadingAtEnd/)
+assert.match(editorSource, /INSERT_PARAGRAPH_COMMAND/)
 assert.match(editorSource, /markdownCleanup\?\.\(\)/)
 assert.match(editorSource, /onBeforeUnmount\(disposeEditor\)/)
 assert.match(editorSource, /instance\?\.setRootElement\(null\)/)
@@ -132,6 +143,18 @@ function readRoot(editor) {
   return snapshot
 }
 
+function readBlocks(editor) {
+  let blocks = []
+  editor.getEditorState().read(() => {
+    blocks = $getRoot().getChildren().map((node) => ({
+      type: node.getType(),
+      tag: typeof node.getTag === 'function' ? node.getTag() : undefined,
+      text: node.getTextContent(),
+    }))
+  })
+  return blocks
+}
+
 async function typeIncrementally(editor, value) {
   for (const character of value) {
     editor.update(() => {
@@ -213,6 +236,109 @@ for (const marker of ['- ', '* ', '+ ']) {
   assert.equal(readMarkdown(editor), markdown)
 }
 
+// A Markdown clipboard payload pasted into an empty composer is imported as
+// Lexical blocks (rather than remaining one literal paragraph).  This mirrors
+// the component's empty-root paste branch without requiring a DOM clipboard
+// implementation in the contract test.
+{
+  const editor = makeEditor()
+  const markdown = [
+    '#### 粘贴标题',
+    '',
+    '正文',
+    '',
+    '- 项目一',
+    '- 项目二',
+    '',
+    '1. 第一步',
+    '2. 第二步',
+    '',
+    '> 引用',
+    '',
+    '```js',
+    'const x = 1',
+    '```',
+  ].join('\n')
+  editor.update(() => {
+    const root = $getRoot()
+    root.clear()
+    $convertFromMarkdownString(markdown, transformers, root, true)
+    root.selectEnd()
+  })
+  await waitForEditor()
+  const blocks = readBlocks(editor)
+  const nonEmpty = blocks.filter((block) => block.text.length > 0)
+  assert.deepEqual(nonEmpty.map(({ type, tag }) => ({ type, tag })), [
+    { type: 'heading', tag: 'h4' },
+    { type: 'paragraph', tag: undefined },
+    { type: 'list', tag: 'ul' },
+    { type: 'list', tag: 'ol' },
+    { type: 'quote', tag: undefined },
+    { type: 'code', tag: undefined },
+  ])
+  assert.equal(nonEmpty[0].text, '粘贴标题')
+  assert.equal(readMarkdown(editor), markdown)
+
+  // A marker in the middle of a pasted sentence is still plain paragraph
+  // text; import must not broaden the enabled shortcut dialect.
+  editor.update(() => {
+    const root = $getRoot()
+    root.clear()
+    $convertFromMarkdownString('sentence #### stays text', transformers, root, true)
+  })
+  await waitForEditor()
+  assert.deepEqual(readRoot(editor), {
+    type: 'paragraph',
+    tag: undefined,
+    text: 'sentence #### stays text',
+  })
+}
+
+// The heading-aware Shift+Enter path delegates to Lexical's paragraph
+// insertion command.  Verify that it produces a normal paragraph instead of
+// a line break child which would inherit the h4 style.
+{
+  const editor = makeEditor()
+  editor.update(() => {
+    $convertFromMarkdownString('#### 标题', transformers, $getRoot(), true)
+    $getRoot().selectEnd()
+  })
+  await waitForEditor()
+  assert.equal(editor.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined), true)
+  await waitForEditor()
+  assert.deepEqual(readBlocks(editor).slice(0, 2), [
+    { type: 'heading', tag: 'h4', text: '标题' },
+    { type: 'paragraph', tag: undefined, text: '' },
+  ])
+  editor.update(() => {
+    const selection = $getSelection()
+    if ($isRangeSelection(selection)) selection.insertText('正常文本')
+  })
+  await waitForEditor()
+  assert.deepEqual(readBlocks(editor).slice(0, 2), [
+    { type: 'heading', tag: 'h4', text: '标题' },
+    { type: 'paragraph', tag: undefined, text: '正常文本' },
+  ])
+  assert.equal(readMarkdown(editor), '#### 标题\n正常文本')
+}
+
+// Soft line breaks remain available for ordinary paragraphs, and do not split
+// the block or accidentally promote the following line to a heading.
+{
+  const editor = makeEditor()
+  editor.update(() => {
+    const paragraph = $createParagraphNode().append($createTextNode('普通文本'))
+    $getRoot().append(paragraph)
+    paragraph.selectEnd()
+  })
+  await waitForEditor()
+  assert.equal(editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false), true)
+  await waitForEditor()
+  assert.deepEqual(readBlocks(editor), [
+    { type: 'paragraph', tag: undefined, text: '普通文本\n' },
+  ])
+}
+
 // Lexical history is independent per editor and supports undo/redo.
 {
   const editor = makeEditor({ history: true })
@@ -266,18 +392,21 @@ for (const marker of ['- ', '* ', '+ ']) {
   assert.equal(submissions.length, 1)
 }
 
-// Plain multiline insertion never parses or injects pasted HTML.
+// The non-empty-editor paste fallback remains plain text and never injects
+// pasted HTML; Markdown parsing is reserved for the fresh-composer branch.
 {
   const editor = makeEditor()
   editor.update(() => {
-    $getRoot().selectEnd()
+    const paragraph = $createParagraphNode().append($createTextNode('prefix '))
+    $getRoot().append(paragraph)
+    paragraph.selectEnd()
     const selection = $getSelection()
     if ($isRangeSelection(selection)) selection.insertRawText('line one\n#### stays text\n<svg onload="bad()">')
   })
   await waitForEditor()
   assert.equal(readRoot(editor).type, 'paragraph')
-  assert.match(readRoot(editor).text, /<svg onload="bad\(\)">/)
-  assert.equal(readMarkdown(editor), 'line one\n#### stays text\n<svg onload="bad()">')
+  assert.match(readRoot(editor).text, /prefix line one\n#### stays text\n<svg onload="bad\(\)">/)
+  assert.equal(readMarkdown(editor), 'prefix line one\n#### stays text\n<svg onload="bad()">')
 }
 
 console.log('vibe chat markdown editor contract: PASS')

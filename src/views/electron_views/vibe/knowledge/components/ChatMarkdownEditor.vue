@@ -33,12 +33,14 @@ import { HeadingNode, QuoteNode, registerRichText } from '@lexical/rich-text'
 import {
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   COMMAND_PRIORITY_LOW,
   COMMAND_PRIORITY_HIGH,
   CONTROLLED_TEXT_INSERTION_COMMAND,
   createEditor,
   INSERT_LINE_BREAK_COMMAND,
+  INSERT_PARAGRAPH_COMMAND,
   KEY_ENTER_COMMAND,
   PASTE_COMMAND,
   type LexicalEditor,
@@ -180,6 +182,26 @@ function dataTransferFromPasteEvent(event: PasteCommandType): DataTransfer | nul
   return null
 }
 
+function isEmptyEditorRoot(): boolean {
+  const root = $getRoot()
+  const children = root.getChildren()
+  return children.length === 0 || children.every((child) => child.getTextContentSize() === 0)
+}
+
+function insertPastedText(text: string, selection: ReturnType<typeof $getSelection>): boolean {
+  if (!$isRangeSelection(selection)) return false
+  if (isEmptyEditorRoot()) {
+    // A Markdown paste into a fresh composer is an intentional import. The
+    // conversion creates Lexical blocks (rather than injecting clipboard HTML)
+    // and leaves the caret at the end of the imported draft.
+    $convertFromMarkdownString(normalizeLineEndings(text), CHAT_MARKDOWN_TRANSFORMERS, $getRoot(), true)
+    $getRoot().selectEnd()
+    return true
+  }
+  selection.insertRawText(text)
+  return true
+}
+
 function insertPlainPaste(event: PasteCommandType): boolean {
   const selection = $getSelection()
   if (!$isRangeSelection(selection)) return false
@@ -188,6 +210,7 @@ function insertPlainPaste(event: PasteCommandType): boolean {
   if (dataTransfer) {
     const plainText = dataTransfer.getData('text/plain') || dataTransfer.getData('text/uri-list')
     if (plainText) {
+      if (isEmptyEditorRoot()) return insertPastedText(plainText, selection)
       $insertDataTransferForPlainText(dataTransfer, selection)
       return true
     }
@@ -198,15 +221,14 @@ function insertPlainPaste(event: PasteCommandType): boolean {
     if (html) {
       const text = plainTextFromHtml(html)
       if (text !== null) {
-        selection.insertRawText(text)
+        insertPastedText(text, selection)
       }
       return true
     }
   }
 
   if ('data' in event && typeof event.data === 'string' && event.data) {
-    selection.insertRawText(event.data)
-    return true
+    return insertPastedText(event.data, selection)
   }
   return false
 }
@@ -248,6 +270,24 @@ function serializeActiveEditorState(): string {
   return $convertToMarkdownString(CHAT_MARKDOWN_TRANSFORMERS, $getRoot(), true)
 }
 
+function isHeadingAtEnd(): boolean {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false
+  const anchor = selection.anchor.getNode()
+  const parent = anchor.getParent()
+  const block = anchor.getType() === 'heading'
+    ? anchor
+    : $isElementNode(parent) && parent.getType() === 'heading'
+      ? parent
+      : null
+  if (!$isElementNode(block) || block.getType() !== 'heading') return false
+  const lastDescendant = block.getLastDescendant()
+  if (lastDescendant) {
+    return lastDescendant.is(anchor) && selection.anchor.offset === lastDescendant.getTextContentSize()
+  }
+  return selection.anchor.key === block.getKey() && selection.anchor.offset === block.getChildrenSize()
+}
+
 function onBusyEnter(event: KeyboardEvent | null): boolean {
   if (!props.sending && !props.stopping && !props.uploading) return false
   if (!event || event.isComposing || composing.value || editor?.isComposing() || event.shiftKey) return false
@@ -264,6 +304,9 @@ function onEnter(event: KeyboardEvent | null): boolean {
   // native shortcut while ordinary Enter remains the chat send action.
   if (event.shiftKey) {
     event.preventDefault()
+    if (isHeadingAtEnd()) {
+      return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+    }
     return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
   }
   if (isInsideCodeBlock() && !props.sending && !props.stopping && !props.uploading) return false
