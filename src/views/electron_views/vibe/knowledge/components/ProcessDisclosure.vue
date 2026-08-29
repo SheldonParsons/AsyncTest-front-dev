@@ -169,7 +169,8 @@ function fmt(ms?: number): string {
   color: transparent;
   animation: proc-shimmer 1.8s linear infinite;
   animation-delay: var(--vibe-shimmer-delay, 0ms);
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 450;
 }
 
 @keyframes proc-shimmer {
@@ -190,14 +191,15 @@ function fmt(ms?: number): string {
 .proc-narration {
   margin: 2px 0;
   color: #171717;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 450;
   line-height: 1.55;
   white-space: pre-wrap;
 }
 
 .proc-narration.runtime-progress {
   color: #171717;
-  font-weight: 500;
+  font-weight: 450;
 }
 
 /* 反问续跑：思考中"我问的话 + 你的回答"那一环（小卡片） */
@@ -232,7 +234,8 @@ function fmt(ms?: number): string {
 }
 .proc-choice-a b {
   color: rgba(15, 15, 15, 0.82);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 550;
 }
 
 /* 改原文 diff：思考里看红删绿增 */

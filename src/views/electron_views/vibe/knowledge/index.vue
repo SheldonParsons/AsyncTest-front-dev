@@ -7526,14 +7526,15 @@ function isStreamingUnderEvent(event: any) {
   display: block;
   max-width: 100%;
   color: rgba(15, 15, 15, 0.62);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 450;
   line-height: 1.75;
 
   strong {
     display: inline;
     color: rgba(15, 15, 15, 0.72);
     font-size: inherit;
-    font-weight: 600;
+    font-weight: 550;
   }
 
   span {
@@ -7578,8 +7579,8 @@ function isStreamingUnderEvent(event: any) {
 .message-md {
   margin-top: 0;
   color: rgba(15, 15, 15, 0.96);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 450;
   line-height: 1.75;
   min-width: 0;
   max-width: 100%;
@@ -7605,7 +7606,7 @@ function isStreamingUnderEvent(event: any) {
 
   :deep(strong) {
     color: #000;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   :deep(code) {
