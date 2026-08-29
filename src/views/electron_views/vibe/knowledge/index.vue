@@ -7316,7 +7316,8 @@ function isStreamingUnderEvent(event: any) {
   max-width: 100%;
   margin-left: auto;
   border-radius: 12px;
-  background: rgb(244, 244, 244);
+  background: #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   padding: 5px 10px;
   box-sizing: border-box;
 }
@@ -7328,7 +7329,7 @@ function isStreamingUnderEvent(event: any) {
   line-height: 1.68;
   font-size: 14px;
   font-weight: 500;
-  color: #000;
+  color: #fff;
 }
 
 .user-message-wrap.collapsible:not(.expanded) .user-message-content {
@@ -7347,12 +7348,12 @@ function isStreamingUnderEvent(event: any) {
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(15, 15, 15, 0.44);
+  color: rgba(255, 255, 255, 0.66);
   font-size: 12px;
   cursor: pointer;
 
   &:hover {
-    color: rgba(15, 15, 15, 0.72);
+    color: rgba(255, 255, 255, 0.94);
   }
 }
 
@@ -7468,8 +7469,10 @@ function isStreamingUnderEvent(event: any) {
   box-shadow: none;
 
   .user-message-bubble {
-    background: rgba(15, 15, 15, 0.045);
-    box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.055);
+    background: #000;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+      0 4px 12px rgba(0, 0, 0, 0.12);
   }
 
   .role {
@@ -7485,7 +7488,7 @@ function isStreamingUnderEvent(event: any) {
   }
 
   .user-message-content {
-    color: rgba(15, 15, 15, 0.74);
+    color: rgba(255, 255, 255, 0.94);
   }
 }
 

@@ -43,5 +43,10 @@ assert.match(viewSource, /pending-user-event[\s\S]*collapsible:\s*shouldCollapse
 assert.match(viewSource, /pending-user-event[\s\S]*v-if="shouldCollapsePendingUserMessage"[\s\S]*toggleUserMessageExpanded\(PENDING_USER_MESSAGE_ID\)/)
 assert.match(viewSource, /const shouldCollapsePendingUserMessage = computed\(\(\) =>[\s\S]*pendingUserSubmissionText\.value/)
 assert.match(viewSource, /measuredUserMessageIds/)
+assert.match(viewSource, /\.user-message-bubble\s*\{[\s\S]*background:\s*#000;/)
+assert.match(viewSource, /\.user-message-bubble \.user-message-content\s*\{[\s\S]*color:\s*#fff;/)
+assert.match(viewSource, /\.confirmation-choice-event\s*\{[\s\S]*\.user-message-bubble\s*\{[\s\S]*background:\s*#000;/)
+assert.match(viewSource, /\.confirmation-choice-event\s*\{[\s\S]*\.user-message-content\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.94\);/)
+assert.match(viewSource, /\.user-message-more\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.66\);/)
 
 console.log('vibe user message height contract: PASS')
