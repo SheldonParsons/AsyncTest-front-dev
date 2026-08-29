@@ -12,7 +12,7 @@
   >
     <div class="window-drag" :class="{ 'reserve-info-toggle': currentView === 'conversation', 'workspace-open': workspaceWindowLayoutActive }" />
     <!-- 展开态：动效开关留在窗口左上；收起态实例移动到主对话标题左侧。 -->
-    <PanelStateToggle
+    <CodexPanelToggleMirroredStatic
       v-if="!sideCollapsed"
       class="side-toggle"
       :class="{ mac: isMacPlatform }"
@@ -157,7 +157,7 @@
           :class="{ compact: !headKicker }"
         >
           <div class="main-head-leading">
-            <PanelStateToggle
+            <CodexPanelToggleMirroredStatic
               v-if="sideCollapsed"
               class="main-head-side-toggle"
               :class="{ mac: isMacPlatform }"
@@ -199,7 +199,7 @@
           <!-- Panel 与 Viewer 同步更新，图标直接跟随本轮目标状态。 -->
           <CodexPanelToggle
             icon-only
-            :expanded="workspaceWindowOpen || workspaceWindowRequestedOpen"
+            :is-open="workspaceWindowOpen || workspaceWindowRequestedOpen"
             :size="24"
             color="currentColor"
             aria-hidden="true"
@@ -368,14 +368,12 @@
                   </button>
                 </div>
                 <div class="user-message-bubble">
-                  <p
+                  <div
                     :id="userMessageContentId(event.id)"
                     v-user-message-overflow="event.id"
-                    class="user-message-content"
-                  >
-                    <template v-if="isConfirmationReplyEvent(event)">已选择：{{ event.content }}</template>
-                    <template v-else>{{ event.content }}</template>
-                  </p>
+                    class="user-message-content user-message-markdown"
+                    v-html="renderMarkdown(userMessageText(event))"
+                  />
                   <button
                     v-if="shouldCollapseUserMessage(event)"
                     class="user-message-more"
@@ -478,11 +476,12 @@
               }"
             >
               <div class="user-message-bubble">
-                <p
+                <div
                   :id="userMessageContentId(PENDING_USER_MESSAGE_ID)"
                   v-user-message-overflow="PENDING_USER_MESSAGE_ID"
-                  class="user-message-content"
-                >{{ pendingUserSubmissionText }}</p>
+                  class="user-message-content user-message-markdown"
+                  v-html="renderMarkdown(pendingUserSubmissionText)"
+                />
                 <button
                   v-if="shouldCollapsePendingUserMessage"
                   class="user-message-more"
@@ -659,7 +658,7 @@ import {
 import { shouldShowConversationEmptyState } from './conversationEmptyStatePolicy'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
-import PanelStateToggle from './components/icons/PanelStateToggle.vue'
+import CodexPanelToggleMirroredStatic from '@/assets/svg/common/CodexPanelToggleMirroredStatic.vue'
 import CodexListFilter from '@/assets/svg/common/CodexListFilter.vue'
 import CodexPanelToggle from '@/assets/svg/common/CodexPanelToggle.vue'
 import MarkdownFileIcon from './components/icons/MarkdownFileIcon.vue'
@@ -2728,7 +2727,7 @@ const composerQuestion = computed(() => {
         ...options.map((item: any) => ({
           type: 'choice' as const,
           label: String(item.label),
-          description: String(item.description || item.effect),
+          description: String(item.description || (raw.decision_type === 'confirmation' ? item.effect || '' : '')),
           value: `__CLARIFICATION_OPTION__:${String(item.id)}`,
         })),
         ...(input.enabled ? [{
@@ -7331,12 +7330,159 @@ function isStreamingUnderEvent(event: any) {
   color: #fff;
 }
 
-:global(.vibe-shell .user-message-bubble .user-message-content::selection) {
+.user-message-bubble .user-message-markdown {
+  :deep(p) {
+    margin: 0;
+  }
+
+  :deep(p + p) {
+    margin-top: 7px;
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    margin: 0 0 6px;
+    color: #fff;
+    font-size: 1.08em;
+    line-height: 1.35;
+    font-weight: 600;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 4px 0 6px 18px;
+    padding: 0;
+  }
+
+  :deep(li) {
+    margin: 2px 0;
+  }
+
+  :deep(strong) {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  :deep(em) {
+    color: rgba(255, 255, 255, 0.88);
+  }
+
+  :deep(blockquote) {
+    margin: 6px 0;
+    padding: 2px 0 2px 9px;
+    border-left: 2px solid rgba(255, 255, 255, 0.32);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  :deep(a) {
+    color: #c7ddff;
+    text-decoration: underline;
+    word-break: break-all;
+  }
+
+  :deep(code) {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+  }
+
+  :deep(pre) {
+    max-width: 100%;
+    margin: 6px 0;
+    padding: 8px 10px;
+    overflow: auto;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  :deep(pre code) {
+    padding: 0;
+    background: transparent;
+    color: #fff;
+    white-space: pre;
+  }
+
+  :deep(.copyable-code) {
+    max-width: 100%;
+    margin: 6px 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  :deep(.copyable-code-head) {
+    height: 28px;
+    padding: 0 8px 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: rgba(255, 255, 255, 0.68);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+  }
+
+  :deep(.copyable-code-copy) {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.68);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+
+  :deep(.copyable-code-copy:hover),
+  :deep(.copyable-code-copy.copied) {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+  }
+
+  :deep(.copyable-code pre) {
+    margin: 0;
+    padding: 0 10px 10px;
+    background: transparent;
+  }
+
+  :deep(hr) {
+    margin: 8px 0;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+  }
+
+  :deep(table) {
+    display: block;
+    max-width: 100%;
+    margin: 6px 0;
+    overflow: auto;
+    border-collapse: collapse;
+  }
+
+  :deep(th),
+  :deep(td) {
+    padding: 4px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    white-space: nowrap;
+  }
+}
+
+:global(.vibe-shell .user-message-bubble .user-message-content::selection),
+:global(.vibe-shell .user-message-bubble .user-message-content *::selection) {
   background-color: rgba(148, 148, 148, 0.72) !important;
   color: #fff !important;
 }
 
-:global(.vibe-shell .user-message-bubble .user-message-content::-moz-selection) {
+:global(.vibe-shell .user-message-bubble .user-message-content::-moz-selection),
+:global(.vibe-shell .user-message-bubble .user-message-content *::-moz-selection) {
   background-color: rgba(148, 148, 148, 0.72) !important;
   color: #fff !important;
 }
