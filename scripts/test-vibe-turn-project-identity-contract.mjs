@@ -24,7 +24,12 @@ assert.match(
 
 const createSession = source.match(/createVibeSession\(([^,]+),/)
 assert(createSession, 'session creation must remain explicit')
-assert.equal(createSession[1].trim(), 'vibeProject.value.id', 'session ownership must keep the VibeProject UUID')
+assert.equal(createSession[1].trim(), 'ownerProjectId', 'session creation must use its frozen owner identity')
+assert.match(
+  source,
+  /const ownerProjectId = vibeProject\.value\.id[\s\S]*createVibeSession\(ownerProjectId,/,
+  'session ownership must keep the VibeProject UUID',
+)
 assert(!sendTurn.includes('String(vibeProject.value.id)'), 'VibeProject UUID must never authorize a knowledge turn')
 
 console.log('vibe turn project identity contract: PASS')

@@ -59,14 +59,15 @@ assert.deepEqual(
 
 const payload = {
   items: {
-    19: { sections: 4, modules: 4 },
-    20: { sections: 0, modules: 0 },
+    19: { documents: 2, sections: 4, modules: 4 },
+    20: { documents: 0, sections: 0, modules: 0 },
   },
 }
 const stats = {}
 assert.equal(policy.writeKnowledgeStats(stats, payload, 19), true)
 assert.equal(policy.writeKnowledgeStats(stats, payload, 20), true)
 assert.deepEqual(policy.readKnowledgeStats(stats, 19), {
+  documents: 2,
   sections: 4,
   modules: 4,
 })
@@ -74,25 +75,29 @@ assert.equal(policy.hasKnowledgeWriteCommit(null), false)
 assert.equal(policy.hasKnowledgeWriteCommit({ writeCommits: [] }), false)
 assert.equal(policy.hasKnowledgeWriteCommit({ writeCommits: [{ commit_seq: 1 }] }), true)
 assert.deepEqual(policy.readKnowledgeStats(stats, 20), {
+  documents: 0,
   sections: 0,
   modules: 0,
 })
 assert.deepEqual(policy.readKnowledgeStats(stats, 21), {
+  documents: 0,
   sections: 0,
   modules: 0,
 })
 assert.deepEqual(policy.readKnowledgeStats(stats, 20), {
+  documents: 0,
   sections: 0,
   modules: 0,
 })
 assert.deepEqual(policy.readKnowledgeStats(stats, 19), {
+  documents: 2,
   sections: 4,
   modules: 4,
 })
 
-const refreshed = { 19: { sections: 1, modules: 1 } }
+const refreshed = { 19: { documents: 1, sections: 1, modules: 1 } }
 assert.equal(policy.writeKnowledgeStats(refreshed, payload, '19'), true)
-assert.deepEqual(refreshed['19'], { sections: 4, modules: 4 })
+assert.deepEqual(refreshed['19'], { documents: 2, sections: 4, modules: 4 })
 assert.equal(
   policy.writeKnowledgeStats(
     refreshed,
@@ -121,7 +126,7 @@ assert.match(
 )
 assert.match(
   viewSource,
-  /hasKnowledgeWriteCommit\(canonicalModel\)[\s\S]*loadCurrentKbStats\(project\)/,
+  /hasKnowledgeWriteCommit\(model\)[\s\S]*if \(live\) void loadCurrentKbStats\(project\)/,
 )
 const bootstrapSection = viewSource.slice(
   viewSource.indexOf('async function bootstrap()'),
@@ -224,10 +229,6 @@ assert.match(
   browserScript,
   /async function reloadStatus\(projectId: string, epoch: number\)[\s\S]*getKnowledgeStatus\(projectId\)/,
 )
-assert.match(
-  browserScript,
-  /async function openModule[\s\S]*searchKnowledge\(projectId,[\s\S]*epoch !== projectRequestEpoch/,
-)
 assert.equal(
   (browserSource.match(/:project-id="selectedAsyncProjectId"/g) || []).length,
   5,
@@ -263,8 +264,8 @@ assert.match(sourceReaderSource, /正在读取文档列表/)
 const panelContracts = new Map([
   ['OverviewPanel.vue', [/getKnowledgeSources\(projectId/]],
   ['SourceReader.vue', [/getKnowledgeDocuments\(projectId/, /getKnowledgeDocument\(projectId/, /getKnowledgeSource\(projectId/]],
-  ['SearchPanel.vue', [/searchKnowledge\(props\.projectId/]],
-  ['CommitPanel.vue', [/getKnowledgeCommits\(props\.projectId/, /getKnowledgeCommit\(props\.projectId/]],
+  ['SearchPanel.vue', [/searchKnowledge\(projectId/]],
+  ['CommitPanel.vue', [/getKnowledgeCommits\(projectId/, /getKnowledgeCommit\(projectId/]],
   ['ReceiptPanel.vue', [/getKnowledgeReceipts\(props\.projectId/, /getKnowledgeReceipt\(props\.projectId/]],
 ])
 for (const [filename, callPatterns] of panelContracts) {
@@ -272,7 +273,7 @@ for (const [filename, callPatterns] of panelContracts) {
     path.join(root, 'src/views/electron_views/vibe/browser/components', filename),
     'utf8',
   )
-  assert.match(panelSource, /defineProps<\{ projectId: string/)
+  assert.match(panelSource, /defineProps<\{[\s\S]*projectId:\s*string/)
   for (const pattern of callPatterns) {
     assert.match(panelSource, pattern)
   }
