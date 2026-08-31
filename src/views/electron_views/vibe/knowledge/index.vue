@@ -32,25 +32,24 @@
     <aside class="side">
       <section class="proj-card">
         <span class="proj-label">当前项目</span>
-        <AppSelect
-          class="project-select"
-          :model-value="selectedProjectId"
-          :options="projectOptions"
-          placeholder="选择项目"
-          :disabled="loading"
-          @change="handleProjectChange"
+        <button
+          class="project-switch-trigger"
+          type="button"
+          :disabled="loading || !projects.length || projectSwitchPhase === 'working'"
+          aria-haspopup="dialog"
+          :aria-expanded="projectSwitchDialogOpen"
+          :aria-busy="projectSwitchPhase === 'working' ? 'true' : undefined"
+          aria-controls="project-switch-dialog"
+          @click="openProjectSwitchDialog"
         >
-          <template #trigger="{ open, label, placeholder }">
-            <span class="proj-ic" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
-            </span>
-            <span class="proj-main">
-              <span class="proj-name">{{ label || placeholder }}</span>
-              <span class="proj-kb">{{ kbStats.documents }} 份文档</span>
-            </span>
-            <svg class="proj-caret" :class="{ open }" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </template>
-        </AppSelect>
+          <span class="proj-ic" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+          </span>
+          <span class="proj-main">
+            <span class="proj-name">{{ selectedProjectLabel || '选择项目' }}</span>
+            <span class="proj-kb">{{ kbStats.documents }} 份文档</span>
+          </span>
+        </button>
       </section>
       <section class="convs">
         <div class="convs-head">
@@ -119,6 +118,19 @@
       </section>
 
     </aside>
+
+    <ProjectSwitchDialog
+      v-model="projectSwitchDialogOpen"
+      :projects="projectOptions"
+      :current-project-id="selectedProjectId"
+      :target-project-id="projectSwitchTargetId"
+      :target-project="projectSwitchTargetProject"
+      :phase="projectSwitchPhase"
+      :error="projectSwitchError"
+      @select="handleProjectChange"
+      @retry="retryProjectSwitch"
+      @close="closeProjectSwitchDialog"
+    />
 
     <div
       ref="sideResizeHandleRef"
@@ -642,9 +654,22 @@ import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import { HarnessRequestError } from '@/api/harness'
-import AppSelect from '@/components/common/select/AppSelect.vue'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
+import ProjectSwitchDialog from './components/ProjectSwitchDialog.vue'
+import {
+  beginProjectSwitch,
+  completeProjectSwitch,
+  failProjectSwitch,
+  isProjectSwitchCurrent,
+  markProjectSwitchContentLoaded,
+  markProjectSwitchSessionsLoaded,
+  createProjectSwitchDialogState,
+  projectSwitchRequest,
+  closeProjectSwitchDialog as closeProjectSwitchDialogState,
+  type ProjectSwitchDialogState,
+  type ProjectSwitchRequest,
+} from './projectSwitchDialogPolicy'
 import {
   continuationParentEventId,
   eventThreadRootId as resolveEventThreadRootId,
@@ -817,6 +842,13 @@ const projects = ref<any[]>([])
 const selectedProject = ref<any | null>(null)
 const selectedProjectId = ref<string | number | null>(null)
 const vibeProject = ref<VibeProject | null>(null)
+const projectSwitchDialogOpen = ref(false)
+const projectSwitchState = ref<ProjectSwitchDialogState>(createProjectSwitchDialogState())
+const projectSwitchRequestToken = ref<ProjectSwitchRequest | null>(null)
+const projectSwitchTargetId = ref('')
+const projectSwitchPhase = computed(() => projectSwitchState.value.phase)
+const projectSwitchError = computed(() => projectSwitchState.value.error)
+const projectSwitchTargetProject = computed(() => projectSwitchState.value.targetProject as any)
 const sessions = ref<VibeSession[]>([])
 const sessionNextCursor = ref('')
 const sessionsLoadingMore = ref(false)
@@ -987,21 +1019,27 @@ async function refreshComposerModels() {
   await loadModelConfig(activeSessionId.value, { silent: true })
 }
 
-async function ensureComposerModelUsable() {
+async function ensureComposerModelUsable(contextGuard?: () => boolean) {
   try {
+    if (contextGuard && !contextGuard()) return false
     if (!llmProviders.value.length) await loadModelConfig(activeSessionId.value, { silent: true })
+    if (contextGuard && !contextGuard()) return false
     let providers = llmProviders.value.filter((item) => item.enabled !== false)
     let selected = selectedLlmProviderId.value
     if (!selected || !providers.some((item) => item.id === selected)) {
       await loadModelConfig(activeSessionId.value, { silent: true })
+      if (contextGuard && !contextGuard()) return false
       providers = llmProviders.value.filter((item) => item.enabled !== false)
       selected = selectedLlmProviderId.value
     }
+    if (contextGuard && !contextGuard()) return false
     if (selected && providers.some((item) => item.id === selected)) {
       if (activeSessionId.value) {
         const current = sessions.value.find((item) => item.id === activeSessionId.value)
         if (current?.llm_provider_id !== selected) {
+          if (contextGuard && !contextGuard()) return false
           const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: selected })
+          if (contextGuard && !contextGuard()) return false
           applySessionModel(activeSessionId.value, updated.llm_provider_id || selected)
         }
       }
@@ -1010,7 +1048,9 @@ async function ensureComposerModelUsable() {
     if (!selected && providers[0]?.id) {
       selectedLlmProviderId.value = providers[0].id
       if (activeSessionId.value) {
+        if (contextGuard && !contextGuard()) return false
         const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providers[0].id })
+        if (contextGuard && !contextGuard()) return false
         applySessionModel(activeSessionId.value, updated.llm_provider_id || providers[0].id)
       }
       return true
@@ -1024,12 +1064,18 @@ async function ensureComposerModelUsable() {
 }
 
 async function handleComposerModelChange(providerId: string) {
+  const contextEpoch = projectContextEpoch
+  const contextProjectId = String(selectedProjectId.value ?? '')
   selectedLlmProviderId.value = providerId
   if (!activeSessionId.value) return
   try {
     const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providerId })
+    if (contextEpoch !== projectContextEpoch
+      || contextProjectId !== String(selectedProjectId.value ?? '')) return
     applySessionModel(activeSessionId.value, updated.llm_provider_id || providerId)
   } catch (error: any) {
+    if (contextEpoch !== projectContextEpoch
+      || contextProjectId !== String(selectedProjectId.value ?? '')) return
     ElMessage.error(`模型切换失败：${error?.message || String(error)}`)
     await loadModelConfig(activeSessionId.value)
   }
@@ -2671,6 +2717,14 @@ const projectOptions = computed(() => projects.value.map(project => {
     hint: st ? `${st.documents} 份文档` : (project.description || project.owner_name || project.creator_name || ''),
   }
 }))
+const selectedProjectLabel = computed(() => {
+  const id = String(selectedProjectId.value ?? '')
+  const option = projectOptions.value.find(item => String(item.value) === id)
+  return option?.label || selectedProject.value?.name || selectedProject.value?.project_name || ''
+})
+const projectSwitchTarget = computed(() => projects.value.find(item =>
+  String(item.id) === String(projectSwitchTargetId.value),
+) || null)
 const activeSessionHasUnresolvedTurn = computed(() =>
   !!activeSessionId.value
   && streamingOwnerSessionId.value === activeSessionId.value
@@ -2692,7 +2746,8 @@ const activeConversationRailIndex = computed(() => {
   return index >= 0 ? index : Math.max(0, items.length - 1)
 })
 const sending = computed(() =>
-  preparingSend.value
+  projectSwitchPhase.value === 'working'
+  || preparingSend.value
   || foundationBusy.value
   || sendingSessionIds.value.length > 0
   || activeSessionSending.value,
@@ -2918,6 +2973,8 @@ function trackMaximizeState() {
 }
 
 onBeforeUnmount(() => {
+  projectSwitchRequestToken.value = null
+  projectSwitchDialogOpen.value = false
   offMaximizeState?.()
   stopUserMessageOverflowObservation()
   stopShellResizeObserver()
@@ -2935,6 +2992,7 @@ onBeforeUnmount(() => {
   workspaceSessionFileSnapshots.clear()
   stopElapsedTicker()
   stopRunningTurnPolling()
+  runningTurnPollInFlight = false
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
 })
 
@@ -3004,6 +3062,412 @@ async function bootstrap() {
   }
 }
 
+type LoadedProjectSwitchContext = {
+  project: any
+  vibeProject: VibeProject
+  sessions: VibeSession[]
+  nextCursor: string
+  firstSessionId: string
+  firstEvents: VibeEvent[] | null
+}
+
+function projectSwitchRequestIsActive(request = projectSwitchRequestToken.value): boolean {
+  return !!request && isProjectSwitchCurrent(projectSwitchState.value, request)
+}
+
+function openProjectSwitchDialog() {
+  if (loading.value || !projects.value.length || projectSwitchState.value.phase === 'working') return
+  projectSwitchTargetId.value = ''
+  projectSwitchState.value = {
+    ...projectSwitchState.value,
+    open: true,
+    phase: 'idle',
+    targetProjectId: '',
+    targetProject: null,
+    error: '',
+  }
+  projectSwitchDialogOpen.value = true
+}
+
+function closeProjectSwitchDialog() {
+  if (projectSwitchState.value.phase === 'working') return
+  projectSwitchDialogOpen.value = false
+  projectSwitchState.value = {
+    ...closeProjectSwitchDialogState(projectSwitchState.value),
+    targetProjectId: '',
+    targetProject: null,
+    error: '',
+  }
+  projectSwitchRequestToken.value = null
+}
+
+async function loadProjectSwitchContext(
+  project: any,
+  request: ProjectSwitchRequest,
+): Promise<LoadedProjectSwitchContext | null> {
+  const numericProjectId = Number(project?.id)
+  if (!Number.isSafeInteger(numericProjectId) || numericProjectId <= 0) {
+    throw new Error('当前项目身份无效，请重新选择项目。')
+  }
+
+  let resolvedProject: VibeProject
+  try {
+    resolvedProject = await getVibeProjectByAsyncProject(numericProjectId)
+  } catch (reason) {
+    if (!projectSwitchRequestIsActive(request)) return null
+    // Keep the established resolver fallback for projects created before the
+    // Vibe record existed; an init failure still surfaces in the dialog.
+    resolvedProject = await initVibeProject(numericProjectId, {
+      name: project.name || project.project_name || `项目 ${project.id}`,
+    })
+  }
+  if (!projectSwitchRequestIsActive(request)) return null
+  if (!resolvedProject?.id) throw new Error('项目初始化响应无效，请重试。')
+
+  const loadedPage = await listVibeSessions(resolvedProject.id)
+  if (!projectSwitchRequestIsActive(request)) return null
+  if (!loadedPage || !Array.isArray(loadedPage.sessions)) {
+    throw new Error('会话列表响应无效，请重试。')
+  }
+  const loadedSessions = loadedPage.sessions
+  projectSwitchState.value = markProjectSwitchSessionsLoaded(
+    projectSwitchState.value,
+    request,
+    { sessions: loadedSessions, count: loadedSessions.length, empty: loadedSessions.length === 0 },
+  )
+  if (!projectSwitchRequestIsActive(request)) return null
+
+  const firstSessionId = String(loadedSessions[0]?.id || '').trim()
+  if (loadedSessions.length && !firstSessionId) {
+    throw new Error('首个会话身份无效，请重试。')
+  }
+  let firstEvents: VibeEvent[] | null = null
+  if (firstSessionId) {
+    const loaded = await requestSessionEvents(firstSessionId)
+    if (!projectSwitchRequestIsActive(request)) return null
+    if (!Array.isArray(loaded)) throw new Error('首个会话内容响应无效，请重试。')
+    firstEvents = loaded
+    projectSwitchState.value = markProjectSwitchContentLoaded(
+      projectSwitchState.value,
+      request,
+      firstSessionId,
+    )
+  }
+  return {
+    project,
+    vibeProject: resolvedProject,
+    sessions: loadedSessions,
+    nextCursor: loadedPage.page?.next_cursor || '',
+    firstSessionId,
+    firstEvents,
+  }
+}
+
+function resetProjectConversationState() {
+  sessionRequestEpoch += 1
+  activeSessionId.value = ''
+  sessions.value = []
+  sessionNextCursor.value = ''
+  sessionsLoadingMore.value = false
+  events.value = []
+  sessionFilesLoading.value = false
+  sessionFilesError.value = ''
+  processExpanded.value = false
+  clarificationActive.value = null
+  stopElapsedTicker()
+  stopRunningTurnPolling()
+  runningTurnPollInFlight = false
+  recoveredTurnId.value = ''
+  streamingOwnerSessionId.value = ''
+  activeTurnId.value = ''
+  activeTurnSessionId.value = ''
+  cancelRequested.value = false
+  clearPendingUserSubmission()
+  clearStreamingAssistant()
+  resetProcessState(streamingProcess)
+  foundationBusy.value = false
+  sendingSessionIds.value = []
+  runningSessionIds.value = []
+  runningTurns.value = []
+  currentView.value = 'conversation'
+}
+
+interface ProjectContextSnapshot {
+  project: any | null
+  projectId: string | number | null
+  vibeProject: VibeProject | null
+  sessions: VibeSession[]
+  sessionNextCursor: string
+  sessionsLoadingMore: boolean
+  activeSessionId: string
+  events: VibeEvent[]
+  sessionFilesLoading: boolean
+  sessionFilesError: string
+  currentView: 'conversation' | 'baseline'
+  processExpanded: boolean
+  clarificationActive: { question: string; raw?: any; pending?: any[] } | null
+  baseline: { system_name: string; summary: string; system_goals: { name: string; description: string }[] }
+  packageStatusOverrides: Record<string, string>
+  sessionTitleOverrides: Record<string, string>
+  selectedLlmProviderId: string
+  llmProviders: VibeLLMModelPickerProvider[]
+  sendingSessionIds: string[]
+  runningSessionIds: string[]
+  runningTurns: FoundationRunningTurn[]
+  foundationBusy: boolean
+  activeTurnId: string
+  activeTurnSessionId: string
+  recoveredTurnId: string
+  streamingOwnerSessionId: string
+  cancelRequested: boolean
+  pendingUserSubmissionText: string
+  streamingAssistantEventId: string
+  streamingAssistantContent: string
+  streamingSources: any[]
+  streamingVerification: any | null
+  streamingCanonicalModel: TurnProtocolReadModel | null
+  streamingTransportNotice: TurnTransportNotice | null
+  streamingContinuationParentId: string
+  streamingElapsedMs: number
+  process: {
+    status: 'idle' | 'running' | 'done'
+    steps: ProcessStep[]
+    startedAt: string
+    durationMs: number
+    summary: string
+    stats: Record<string, any>
+  }
+  localStorageProjectId: string | null
+}
+
+function captureProjectContextSnapshot(): ProjectContextSnapshot {
+  return {
+    project: selectedProject.value,
+    projectId: selectedProjectId.value,
+    vibeProject: vibeProject.value,
+    sessions: [...sessions.value],
+    sessionNextCursor: sessionNextCursor.value,
+    sessionsLoadingMore: sessionsLoadingMore.value,
+    activeSessionId: activeSessionId.value,
+    events: [...events.value],
+    sessionFilesLoading: sessionFilesLoading.value,
+    sessionFilesError: sessionFilesError.value,
+    currentView: currentView.value,
+    processExpanded: processExpanded.value,
+    clarificationActive: clarificationActive.value
+      ? {
+          ...clarificationActive.value,
+          pending: Array.isArray(clarificationActive.value.pending)
+            ? [...clarificationActive.value.pending]
+            : clarificationActive.value.pending,
+        }
+      : null,
+    baseline: {
+      system_name: baselineDraft.system_name,
+      summary: baselineDraft.summary,
+      system_goals: baselineDraft.system_goals.map(goal => ({ ...goal })),
+    },
+    packageStatusOverrides: { ...packageStatusOverrides.value },
+    sessionTitleOverrides: { ...sessionTitleOverrides.value },
+    selectedLlmProviderId: selectedLlmProviderId.value,
+    llmProviders: [...llmProviders.value],
+    sendingSessionIds: [...sendingSessionIds.value],
+    runningSessionIds: [...runningSessionIds.value],
+    runningTurns: [...runningTurns.value],
+    foundationBusy: foundationBusy.value,
+    activeTurnId: activeTurnId.value,
+    activeTurnSessionId: activeTurnSessionId.value,
+    recoveredTurnId: recoveredTurnId.value,
+    streamingOwnerSessionId: streamingOwnerSessionId.value,
+    cancelRequested: cancelRequested.value,
+    pendingUserSubmissionText: pendingUserSubmissionText.value,
+    streamingAssistantEventId: streamingAssistantEventId.value,
+    streamingAssistantContent: streamingAssistantContent.value,
+    streamingSources: [...streamingSources.value],
+    streamingVerification: streamingVerification.value,
+    streamingCanonicalModel: streamingCanonicalModel.value,
+    streamingTransportNotice: streamingTransportNotice.value,
+    streamingContinuationParentId: streamingContinuationParentId.value,
+    streamingElapsedMs: streamingElapsedMs.value,
+    process: {
+      status: streamingProcess.status,
+      steps: [...streamingProcess.steps],
+      startedAt: streamingProcess.startedAt,
+      durationMs: streamingProcess.durationMs,
+      summary: streamingProcess.summary,
+      stats: { ...streamingProcess.stats },
+    },
+    localStorageProjectId: localStorage.getItem('vibe_project_source_project_id'),
+  }
+}
+
+function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
+  // Keep epochs monotonic: restoring data must not make a stale callback look
+  // current again.
+  ++projectContextEpoch
+  sessionRequestEpoch += 1
+  stopKnowledgeActivity()
+  stopRunningTurnPolling()
+  runningTurnPollInFlight = false
+  stopElapsedTicker()
+
+  selectedProject.value = snapshot.project
+  selectedProjectId.value = snapshot.projectId
+  vibeProject.value = snapshot.vibeProject
+  sessions.value = [...snapshot.sessions]
+  sessionNextCursor.value = snapshot.sessionNextCursor
+  sessionsLoadingMore.value = snapshot.sessionsLoadingMore
+  activeSessionId.value = snapshot.activeSessionId
+  events.value = [...snapshot.events]
+  sessionFilesLoading.value = snapshot.sessionFilesLoading
+  sessionFilesError.value = snapshot.sessionFilesError
+  currentView.value = snapshot.currentView
+  processExpanded.value = snapshot.processExpanded
+  clarificationActive.value = snapshot.clarificationActive
+    ? {
+        ...snapshot.clarificationActive,
+        pending: Array.isArray(snapshot.clarificationActive.pending)
+          ? [...snapshot.clarificationActive.pending]
+          : snapshot.clarificationActive.pending,
+      }
+    : null
+  baselineDraft.system_name = snapshot.baseline.system_name
+  baselineDraft.summary = snapshot.baseline.summary
+  baselineDraft.system_goals = snapshot.baseline.system_goals.map(goal => ({ ...goal }))
+  packageStatusOverrides.value = { ...snapshot.packageStatusOverrides }
+  sessionTitleOverrides.value = { ...snapshot.sessionTitleOverrides }
+  selectedLlmProviderId.value = snapshot.selectedLlmProviderId
+  llmProviders.value = [...snapshot.llmProviders]
+  sendingSessionIds.value = [...snapshot.sendingSessionIds]
+  runningSessionIds.value = [...snapshot.runningSessionIds]
+  runningTurns.value = [...snapshot.runningTurns]
+  foundationBusy.value = snapshot.foundationBusy
+  activeTurnId.value = snapshot.activeTurnId
+  activeTurnSessionId.value = snapshot.activeTurnSessionId
+  recoveredTurnId.value = snapshot.recoveredTurnId
+  streamingOwnerSessionId.value = snapshot.streamingOwnerSessionId
+  cancelRequested.value = snapshot.cancelRequested
+  pendingUserSubmissionText.value = snapshot.pendingUserSubmissionText
+  streamingAssistantEventId.value = snapshot.streamingAssistantEventId
+  streamingAssistantContent.value = snapshot.streamingAssistantContent
+  streamingSources.value = [...snapshot.streamingSources]
+  streamingVerification.value = snapshot.streamingVerification
+  streamingCanonicalModel.value = snapshot.streamingCanonicalModel
+  streamingTransportNotice.value = snapshot.streamingTransportNotice
+  streamingContinuationParentId.value = snapshot.streamingContinuationParentId
+  streamingElapsedMs.value = snapshot.streamingElapsedMs
+  streamingProcess.status = snapshot.process.status
+  streamingProcess.steps = [...snapshot.process.steps]
+  streamingProcess.startedAt = snapshot.process.startedAt
+  streamingProcess.durationMs = snapshot.process.durationMs
+  streamingProcess.summary = snapshot.process.summary
+  streamingProcess.stats = { ...snapshot.process.stats }
+  if (snapshot.streamingOwnerSessionId && snapshot.foundationBusy) {
+    startElapsedTicker(Math.max(0, Date.now() - snapshot.streamingElapsedMs))
+  }
+
+  const projectId = workspaceProjectContextId(snapshot.projectId)
+  activateWorkspaceConversation(projectId, snapshot.activeSessionId)
+  if (snapshot.localStorageProjectId == null) {
+    localStorage.removeItem('vibe_project_source_project_id')
+  } else {
+    localStorage.setItem('vibe_project_source_project_id', snapshot.localStorageProjectId)
+  }
+  if (projectId) {
+    void startKnowledgeActivity(projectId)
+    void refreshProjectRunningTurns().catch(() => {})
+  }
+}
+
+async function commitLoadedProjectSwitch(
+  context: LoadedProjectSwitchContext,
+  request: ProjectSwitchRequest,
+): Promise<boolean> {
+  if (!projectSwitchRequestIsActive(request)) return false
+
+  // The staged resolver/list/events work above has not touched the visible
+  // project. Commit the complete context in one guarded boundary.
+  ++projectContextEpoch
+  selectedProject.value = context.project
+  selectedProjectId.value = String(context.project.id)
+  vibeProject.value = context.vibeProject
+  // Activating the target draft snapshots the current Viewer/Panel state and
+  // restores the target project's own tabs without clearing any draft map.
+  activateWorkspaceConversation(context.project.id, '')
+  resetProjectConversationState()
+  packageStatusOverrides.value = {}
+  sessionTitleOverrides.value = {}
+  syncBaselineDraft()
+  sessions.value = context.sessions
+  sessionNextCursor.value = context.nextCursor
+  localStorage.setItem('vibe_project_source_project_id', String(context.project.id))
+  void startKnowledgeActivity(context.project.id)
+  void loadCurrentKbStats(context.project.id)
+
+  if (context.firstSessionId) {
+    const opened = await openSession(context.firstSessionId, context.firstEvents || [])
+    if (!projectSwitchRequestIsActive(request)) return false
+    if (opened === false) {
+      throw new Error('首个会话尚未完成加载，请重试。')
+    }
+    await nextTick()
+  } else {
+    // An authoritative empty list is a complete, renderable conversation
+    // state. Provider/running snapshots remain background refreshes.
+    void loadModelConfig('').catch(() => {})
+    void refreshProjectRunningTurns().catch(() => {})
+    await nextTick()
+  }
+  return projectSwitchRequestIsActive(request)
+}
+
+async function switchProjectWithDialog(project: any) {
+  if (!project) return
+  if (String(project.id) === String(selectedProjectId.value ?? '')) {
+    closeProjectSwitchDialog()
+    return
+  }
+  const nextState = beginProjectSwitch(projectSwitchState.value, project)
+  projectSwitchState.value = nextState
+  projectSwitchTargetId.value = String(project.id)
+  projectSwitchDialogOpen.value = true
+  const request = projectSwitchRequest(nextState)
+  projectSwitchRequestToken.value = request
+  const previousContext = captureProjectContextSnapshot()
+  let commitStarted = false
+  try {
+    const context = await loadProjectSwitchContext(project, request)
+    if (!context || !projectSwitchRequestIsActive(request)) return
+    commitStarted = true
+    const committed = await commitLoadedProjectSwitch(context, request)
+    if (!committed || !projectSwitchRequestIsActive(request)) return
+    const completed = completeProjectSwitch(projectSwitchState.value, request)
+    projectSwitchState.value = completed
+    if (!completed.open) {
+      projectSwitchDialogOpen.value = false
+      projectSwitchRequestToken.value = null
+    }
+  } catch (reason) {
+    if (!projectSwitchRequestIsActive(request)) return
+    if (commitStarted) restoreProjectContextSnapshot(previousContext)
+    projectSwitchState.value = failProjectSwitch(projectSwitchState.value, request, reason)
+    projectSwitchDialogOpen.value = true
+  }
+}
+
+function handleProjectDialogSelect(value: string | number) {
+  if (projectSwitchState.value.phase === 'working') return
+  const project = projects.value.find(item => String(item.id) === String(value))
+  if (project) void switchProjectWithDialog(project)
+}
+
+function retryProjectSwitch() {
+  if (projectSwitchState.value.phase === 'working') return
+  const project = projectSwitchTarget.value
+    || (projectSwitchState.value.targetProject as any)
+  if (project) void switchProjectWithDialog(project)
+}
+
 async function selectProject(project: any, options: { refreshStats?: boolean } = {}) {
   const epoch = ++projectContextEpoch
   selectedProject.value = project
@@ -3028,25 +3492,7 @@ async function selectProject(project: any, options: { refreshStats?: boolean } =
 }
 
 async function handleProjectChange(value: string | number) {
-  const project = projects.value.find(item => String(item.id) === String(value))
-  if (!project) return
-  sessionRequestEpoch += 1
-  activeSessionId.value = ''
-  sessions.value = []
-  sessionNextCursor.value = ''
-  sessionsLoadingMore.value = false
-  events.value = []
-  sessionFilesLoading.value = false
-  sessionFilesError.value = ''
-  processExpanded.value = false
-  clarificationActive.value = null
-  stopElapsedTicker()
-  recoveredTurnId.value = ''
-  streamingOwnerSessionId.value = ''
-  clearStreamingAssistant()
-  resetProcessState(streamingProcess)
-  currentView.value = 'conversation'
-  await selectProject(project)
+  handleProjectDialogSelect(value)
 }
 
 function syncBaselineDraft() {
@@ -3079,13 +3525,27 @@ function applySessionTitle(sessionId: string, title: string) {
 const sessionTitleRequests = new Set<string>()
 
 async function autoNameSessionFromFirstInput(sessionId: string, content: string) {
+  const requestProjectEpoch = projectContextEpoch
+  const requestProjectId = String(selectedProjectId.value ?? '')
   const session = sessions.value.find(item => item.id === sessionId)
   if (!session || !isDefaultSessionTitle(session.title) || sessionTitleRequests.has(sessionId)) return
   sessionTitleRequests.add(sessionId)
   // 标题请求与主对话并行；后端负责 LLM 总结与确定性失败兜底，前端不再落库首句截断。
   autoTitleVibeSession(sessionId, content)
-    .then((updated) => { if (updated?.title) applySessionTitle(sessionId, updated.title) })
-    .catch(() => { sessionTitleRequests.delete(sessionId) })
+    .then((updated) => {
+      if (requestProjectEpoch !== projectContextEpoch
+        || requestProjectId !== String(selectedProjectId.value ?? '')) {
+        sessionTitleRequests.delete(sessionId)
+        return
+      }
+      if (updated?.title) applySessionTitle(sessionId, updated.title)
+    })
+    .catch(() => {
+      if (requestProjectEpoch === projectContextEpoch
+        && requestProjectId === String(selectedProjectId.value ?? '')) {
+        sessionTitleRequests.delete(sessionId)
+      }
+    })
 }
 
 function addBaselineGoal() {
@@ -3138,9 +3598,10 @@ async function loadMoreSessions() {
   }
 }
 
-async function openSession(sessionId: string) {
+async function openSession(sessionId: string, preloadedEvents: VibeEvent[] | null = null) {
   // #2：答题进行中也允许切到别的会话【只读查看】（本轮 UI 由 turnSessionId 守住、不串会话）。
   const epoch = ++sessionRequestEpoch
+  const contextEpoch = projectContextEpoch
   resetTimelineNavigation()
   const switchingConversation = activeSessionId.value !== sessionId
   activeSessionId.value = sessionId
@@ -3170,8 +3631,8 @@ async function openSession(sessionId: string) {
   try {
     // 历史事件与 running 快照并行取，谁先回来谁先渲染。
     const runningRefresh = refreshProjectRunningTurns().catch(() => {})
-    const loadedEvents = await requestSessionEvents(sessionId)
-    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    const loadedEvents = preloadedEvents || await requestSessionEvents(sessionId)
+    if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
     events.value = sortEvents(loadedEvents)
     workspaceSessionFileSnapshots.set(
       workspaceFileListCacheKey(sessionId),
@@ -3179,14 +3640,14 @@ async function openSession(sessionId: string) {
     )
     restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
     await runningRefresh
-    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
     await scrollBottom()
   } catch (reason) {
-    if (epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+    if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
     sessionFilesError.value = reason instanceof Error ? reason.message : String(reason)
     throw reason
   } finally {
-    if (epoch === sessionRequestEpoch && activeSessionId.value === sessionId) {
+    if (epoch === sessionRequestEpoch && contextEpoch === projectContextEpoch && activeSessionId.value === sessionId) {
       sessionFilesLoading.value = false
       syncActiveWorkspaceFileList()
       // 进会话即把光标放到输入框。放在 finally 是刻意的：
@@ -3195,6 +3656,7 @@ async function openSession(sessionId: string) {
       composerRef.value?.focusInput()
     }
   }
+  return true
 }
 
 function stopRunningTurnPolling() {
@@ -3250,6 +3712,7 @@ async function refreshProjectRunningTurns() {
   }
   if (runningTurnPollInFlight) return
   runningTurnPollInFlight = true
+  const contextEpoch = projectContextEpoch
   // 后端按 row["project"] 精确比对，而发起提问时存进去的是
   // knowledgeStatsProjectId(selectedProjectId) —— AsyncTest 数字 ID。
   // 这里若用 vibeProject.id（UUID）查，永远匹配不上、items 恒为空，
@@ -3259,7 +3722,7 @@ async function refreshProjectRunningTurns() {
   const guardId = String(vibeProject.value.id)
   try {
     const res = await listFoundationRunningTurns({ project: projectId })
-    if (String(vibeProject.value?.id || '') !== guardId) return
+    if (contextEpoch !== projectContextEpoch || String(vibeProject.value?.id || '') !== guardId) return
     const items = Array.isArray(res.items) ? res.items : []
     const previousIds = new Set(runningSessionIds.value)
     runningTurns.value = items
@@ -3274,7 +3737,7 @@ async function refreshProjectRunningTurns() {
     // 短暂网络失败时保留上一帧，避免所有运行图标闪烁消失。
   } finally {
     runningTurnPollInFlight = false
-    scheduleRunningTurnPolling()
+    if (contextEpoch === projectContextEpoch) scheduleRunningTurnPolling()
   }
 }
 
@@ -4029,6 +4492,11 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     return
   }
 
+  const uploadProjectEpoch = projectContextEpoch
+  const uploadProjectId = String(selectedProjectId.value ?? '')
+  const uploadContextIsCurrent = () => uploadProjectEpoch === projectContextEpoch
+    && uploadProjectId === String(selectedProjectId.value ?? '')
+
   const uploaded: PendingComposerAttachment[] = []
   let uploadSessionId = ''
   preparingSend.value = true
@@ -4036,11 +4504,12 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     if (!vibeProject.value) throw new Error('请先选择项目')
     const project = knowledgeStatsProjectId(selectedProjectId.value)
     if (!project) throw new Error('当前项目身份无效，请重新选择项目')
-    if (!(await ensureComposerModelUsable())) {
+    if (!(await ensureComposerModelUsable(uploadContextIsCurrent))) {
       restoreComposerAttachments(fileList)
       return
     }
     uploadSessionId = await ensureSession()
+    if (!uploadContextIsCurrent()) throw new Error('项目已切换，请重新发送附件')
     for (const file of fileList) {
       const resource = await uploadVibeAttachmentResource(
         uploadSessionId,
@@ -4049,7 +4518,9 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
       )
       uploaded.push({ file, resource })
     }
-    if (activeSessionId.value !== uploadSessionId) throw new Error('上传期间会话已切换，请重新发送附件')
+    if (!uploadContextIsCurrent() || activeSessionId.value !== uploadSessionId) {
+      throw new Error('上传期间项目或会话已切换，请重新发送附件')
+    }
   } catch (reason) {
     restoreComposerAttachments(fileList)
     const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
@@ -4288,6 +4759,11 @@ interface SendFoundationTurnOptions {
 async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTurnOptions) {
   const content = (overrideText ?? draft.value).trim()
   if (!content || sending.value) return
+  const sendProjectEpoch = projectContextEpoch
+  const sendProjectId = String(selectedProjectId.value ?? '')
+  const sendProjectIsCurrent = () =>
+    sendProjectEpoch === projectContextEpoch
+    && sendProjectId === String(selectedProjectId.value ?? '')
   const originDraftKey = activeDraftKey.value
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
   const attachments = opts?.attachments || []
@@ -4304,7 +4780,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     ElMessage.warning('当前项目身份无效，请重新选择项目')
     return
   }
-  if (!opts?.modelValidated && !(await ensureComposerModelUsable())) return
+  if (!opts?.modelValidated && !(await ensureComposerModelUsable(sendProjectIsCurrent))) return
+  // A model check can outlive a project switch. Never create/send a turn with
+  // the provider or session that belongs to a newer project context.
+  if (!sendProjectIsCurrent()) return
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
   const startedAt = Date.now()
   streamingOwnerSessionId.value = activeSessionId.value
@@ -4388,7 +4867,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
     // （answers / 标志位 / 来源等都要收，否则切回来本轮回答会丢——这是上一版回答消失的根因）。
     // 后端始终持久化，切回本轮会话会通过 event_saved / 重载补全。
-    const live = !turnSessionId || activeSessionId.value === turnSessionId
+    const live = sendProjectIsCurrent()
+      && (!turnSessionId || activeSessionId.value === turnSessionId)
     const type = String(event?.type || '')
     const packetProvided = hasTurnProtocolPacket(event)
     if (packetProvided) {
@@ -4466,6 +4946,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
 
   try {
     sessionId = await ensureSession()
+    if (!sendProjectIsCurrent()) return
     if (!contParent) void autoNameSessionFromFirstInput(sessionId, content)
     turnSessionId = sessionId
     activeTurnSessionId.value = turnSessionId
@@ -4482,13 +4963,17 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   } catch (error) {
     transportFailure = transportFailure || (error instanceof Error ? error.message : String(error))
   } finally {
+    const contextStillCurrent = sendProjectIsCurrent()
     const settledCanonicalModel = currentCanonicalModel()
     const canonicalSettled = !!settledCanonicalModel?.terminal || settledCanonicalModel?.state === 'waiting_user'
     const canonicalFailed = settledCanonicalModel?.state === 'failed'
     unresolved = !canonicalSettled
-    markSessionSending(turnSessionId, false)
-    setSessionRunning(turnSessionId, unresolved)
+    if (contextStillCurrent) {
+      markSessionSending(turnSessionId, false)
+      setSessionRunning(turnSessionId, unresolved)
+    }
     const ownsVisibleStream = !!turnSessionId
+      && contextStillCurrent
       && streamingOwnerSessionId.value === turnSessionId
     if (ownsVisibleStream) {
       stopElapsedTicker()
@@ -4515,19 +5000,19 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
         }
       }
     }
-    if (canonicalSettled && activeTurnSessionId.value === turnSessionId) {
+    if (contextStillCurrent && canonicalSettled && activeTurnSessionId.value === turnSessionId) {
       activeTurnId.value = ''
       activeTurnSessionId.value = ''
       cancelRequested.value = false
     }
-    if (transportFailure && !userEventSaved) {
+    if (contextStillCurrent && transportFailure && !userEventSaved) {
       clearPendingUserSubmission()
       // 请求没有形成正式 user event 时才恢复草稿；已经持久化的请求不能自动回填，避免误触重复提交。
       setDraftByKey(turnSessionId ? sessionDraftKey(turnSessionId) : originDraftKey, content)
       resizeDraft()
       if (!turnSessionId) ElMessage.error(`本轮未发送：${transportFailure}`)
     }
-    if (canonicalSettled && !userEventSaved) clearPendingUserSubmission()
+    if (contextStillCurrent && canonicalSettled && !userEventSaved) clearPendingUserSubmission()
     if (ownsVisibleStream && assistantEventSaved && canonicalSettled) {
       streamingOwnerSessionId.value = ''
       clearStreamingAssistant()
@@ -4535,14 +5020,14 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     }
     // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
     // 后面的服务器刷新是后台事，不该让按钮继续转。
-    foundationBusy.value = false
+    if (contextStillCurrent) foundationBusy.value = false
     if (ownsVisibleStream) streamingAssistantEventId.value = ''
-    if (!canonicalFailed && !turnCancelled && canonicalSettled
+    if (contextStillCurrent && !canonicalFailed && !turnCancelled && canonicalSettled
       && (knowledgeCommitObserved || turnMayChangeKnowledge(actions, applyEdit))) {
       void loadCurrentKbStats(project)
     }
     // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
-    if (sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
+    if (contextStillCurrent && sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
       try {
         await refreshState()
         // 0704 防闪:event_saved 已把本轮两条真实事件插进列表,全量替换会让整个回答区
@@ -4554,7 +5039,7 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
         else reconcileAuthoritativeEventProjections(fresh)
       } catch { /* 刷新失败不影响本轮结果展示 */ }
     }
-    await scrollBottomIfFollowing()
+    if (contextStillCurrent) await scrollBottomIfFollowing()
   }
   const finalCanonicalModel = currentCanonicalModel()
   return {
@@ -5133,6 +5618,8 @@ async function resizeDraft() {
 
 async function saveBaseline() {
   if (!vibeProject.value) return
+  const contextEpoch = projectContextEpoch
+  const contextVibeProjectId = vibeProject.value.id
   const existing = vibeProject.value.baseline || {}
   const existingGoals: any[] = Array.isArray(existing.system_goals) ? existing.system_goals : []
   const srcByName = new Map<string, any>()
@@ -5146,13 +5633,15 @@ async function saveBaseline() {
       description: (g.description || '').trim(),
       source_package_id: srcByName.get(g.name.trim()) || null,
     }))
-  vibeProject.value = await updateVibeProject(vibeProject.value.id, {
+  const updatedProject = await updateVibeProject(contextVibeProjectId, {
     baseline: {
       system_name: baselineDraft.system_name,
       summary: baselineDraft.summary,
       system_goals: goals,
     },
   })
+  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== contextVibeProjectId) return
+  vibeProject.value = updatedProject
 }
 
 // 历史事件渲染（eventDisplayContent）仍可能携带 meta.package，保留只读的状态展示助手。
@@ -6039,24 +6528,47 @@ function isStreamingUnderEvent(event: any) {
   }
 }
 
-.project-select {
+/* 项目入口保持原有左栏位置与信息层级；它只负责打开选择弹窗。 */
+.project-switch-trigger {
   width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  padding: 8px 10px;
   display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 180ms ease, color 150ms ease;
+}
 
-  /* 触发器=项目卡：[知识库 icon] [项目名 / 段·模块] [caret]，高度自适应内容。
-     左栏唯一的一张卡：平铺白、发丝线，不再叠渐变（多层半透明白是"浑浊感"来源）。 */
-  :deep(.app-select-trigger) {
-    width: 100%;
-    min-width: 0;
-    height: auto;
-    min-height: 50px;
-    padding: 8px 10px;
-    gap: 10px;
-    border-radius: 12px;
-    border-color: var(--hairline);
-    background: rgba(255, 255, 255, 0.78);
-    color: var(--ink-2);
-  }
+.project-switch-trigger:hover:not(:disabled) {
+  border-color: rgba(15, 15, 15, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 5px 14px rgba(15, 15, 15, 0.06);
+  color: var(--ink-1);
+}
+
+.project-switch-trigger:focus-visible {
+  outline: 2px solid rgba(15, 15, 15, 0.34);
+  outline-offset: 2px;
+  box-shadow: 0 4px 12px rgba(15, 15, 15, 0.06);
+}
+
+.project-switch-trigger[aria-expanded='true'] {
+  border-color: rgba(15, 15, 15, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 5px 16px rgba(15, 15, 15, 0.07);
+}
+
+.project-switch-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 /* 项目卡内部：知识库 icon 用黑色（非蓝），名称+读数两行 */
@@ -6097,13 +6609,6 @@ function isStreamingUnderEvent(event: any) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.proj-caret {
-  flex: 0 0 auto;
-  color: var(--ink-3);
-  transition: transform 150ms ease;
-}
-.proj-caret.open { transform: rotate(180deg); }
 
 /* —— 重排后的左栏：项目卡 / 对话区 / 知识库概览 —— */
 .proj-card {

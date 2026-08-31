@@ -1,18 +1,25 @@
 <template>
-  <div class="thinking-orb-status" :style="shimmerStyle" role="status" aria-live="polite" aria-atomic="true">
+  <div
+    class="thinking-orb-status"
+    :style="shimmerStyle"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    :aria-label="props.ariaLabel || undefined"
+  >
     <canvas
       ref="canvasRef"
       class="thinking-orb-canvas"
       :style="canvasStyle"
       aria-hidden="true"
     />
-    <span class="thinking-orb-label">Thinking</span>
+    <span class="thinking-orb-label">{{ props.label }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { MODE_DRAWS, resolvePreset } from 'thinking-orbs/engine'
+import { MODE_DRAWS, resolvePreset, type OrbState } from 'thinking-orbs/engine'
 import { continuousAnimationDelay } from '../motionContinuity'
 
 // Animation geometry: thinking-orbs, MIT © Jakub Antalik.
@@ -20,6 +27,16 @@ import { continuousAnimationDelay } from '../motionContinuity'
 // CSS 显示为原 46px 的一半，避免把 64px 点阵硬压缩后显得过密。
 const ORB_SIZE = 20 as const
 const ORB_DISPLAY_SIZE = 23
+const props = withDefaults(defineProps<{
+  /** Keep the compact status wrapper reusable for other long-running states. */
+  state?: OrbState
+  label?: string
+  ariaLabel?: string
+}>(), {
+  state: 'composing',
+  label: 'Thinking',
+  ariaLabel: '',
+})
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const shimmerStyle = { '--vibe-shimmer-delay': continuousAnimationDelay() }
 const canvasStyle = computed(() => ({
@@ -33,7 +50,15 @@ let visible = true
 let intersectionObserver: IntersectionObserver | null = null
 let reducedMotionQuery: MediaQueryList | null = null
 
-const { mode, speed, opts } = resolvePreset('composing', ORB_SIZE)
+// `working` is used by project switching; keep an explicit preset reference so
+// that this path remains obvious, while other states stay supported too.
+const workingPreset = resolvePreset('working', ORB_SIZE)
+// The default remains `composing` so the existing conversation status keeps
+// its established motion.
+const resolvedPreset = props.state === 'working'
+  ? workingPreset
+  : resolvePreset(props.state, ORB_SIZE)
+const { mode, speed, opts } = resolvedPreset
 const drawFrame = MODE_DRAWS[mode]
 
 function paint(timeSeconds: number) {
