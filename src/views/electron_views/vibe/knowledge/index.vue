@@ -5986,7 +5986,10 @@ function interactionThreadNodes(root: any): any[] {
 // 合并所有节点的过程步；每个"反问节点"后插一个"你的选择"气泡；流式续跑时把 live 过程步接到末尾。
 // 改原文：行级局部 diff（共同前缀/后缀外的中段 = 删/增），供"思考里看 diff"。
 function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; text: string }[] {
-  const a = String(oldT || '').split('\n'); const b = String(newT || '').split('\n')
+  const oldText = String(oldT || '')
+  const newText = String(newT || '')
+  if (!oldText) return newText ? newText.split('\n').map(text => ({ t: 'add', text })) : []
+  const a = oldText.split('\n'); const b = newText.split('\n')
   let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++
   let e = 0; while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++
   const out: { t: 'ctx' | 'del' | 'add'; text: string }[] = []

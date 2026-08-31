@@ -329,7 +329,10 @@ function lastPath(path?: string): string {
 }
 
 function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; text: string }[] {
-  const a = String(oldT || '').split('\n'); const b = String(newT || '').split('\n')
+  const oldText = String(oldT || '')
+  const newText = String(newT || '')
+  if (!oldText) return newText ? newText.split('\n').map(text => ({ t: 'add', text })) : []
+  const a = oldText.split('\n'); const b = newText.split('\n')
   let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++
   let e = 0; while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++
   const out: { t: 'ctx' | 'del' | 'add'; text: string }[] = []
