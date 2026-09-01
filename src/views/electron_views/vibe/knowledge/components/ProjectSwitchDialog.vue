@@ -14,12 +14,16 @@
           ref="dialogRef"
           id="project-switch-dialog"
           class="project-switch-dialog"
-          :class="{ 'is-working': busy, 'is-error': !!displayError && !busy }"
+          :class="{
+            'is-working': busy,
+            'is-refreshing': listRefreshing,
+            'is-error': (!!displayError || !!displayProjectListError) && !interactionLocked,
+          }"
           role="dialog"
           aria-modal="true"
           :aria-labelledby="titleId"
           :aria-describedby="descriptionId"
-          :aria-busy="busy ? 'true' : undefined"
+          :aria-busy="interactionLocked ? 'true' : undefined"
           tabindex="-1"
           @keydown="handleKeydown"
         >
@@ -64,12 +68,34 @@
             </span>
           </div>
 
-          <div v-if="displayError && !busy" class="project-switch-dialog-error" role="alert" aria-live="assertive">
+          <div v-else-if="listRefreshing" class="project-switch-dialog-working" role="status" aria-live="polite">
+            <ThinkingOrbStatus
+              class="project-switch-dialog-orb"
+              state="working"
+              label="Working"
+              aria-label="项目列表加载中"
+            />
+            <span class="project-switch-dialog-working-copy">
+              <strong>项目列表加载中…</strong>
+              <small>正在获取最新可用项目</small>
+            </span>
+          </div>
+
+          <div v-if="displayError && !interactionLocked" class="project-switch-dialog-error" role="alert" aria-live="assertive">
             <span class="project-switch-dialog-error-mark" aria-hidden="true">!</span>
             <span class="project-switch-dialog-error-copy">{{ displayError }}</span>
           </div>
 
-          <div v-if="!normalizedProjects.length" class="project-switch-dialog-empty" role="status">
+          <div v-else-if="displayProjectListError && !interactionLocked" class="project-switch-dialog-error" role="alert" aria-live="assertive">
+            <span class="project-switch-dialog-error-mark" aria-hidden="true">!</span>
+            <span class="project-switch-dialog-error-copy">{{ displayProjectListError }}</span>
+          </div>
+
+          <div v-if="listRefreshing && !normalizedProjects.length" class="project-switch-dialog-skeleton" aria-hidden="true">
+            <span v-for="index in 3" :key="index" class="project-switch-dialog-skeleton-row" />
+          </div>
+
+          <div v-else-if="!normalizedProjects.length" class="project-switch-dialog-empty" role="status">
             <strong>暂无可用项目</strong>
             <span>请确认当前账号已加入项目后重试。</span>
           </div>
@@ -79,8 +105,8 @@
             class="project-switch-dialog-list"
             role="listbox"
             aria-label="项目列表"
-            :aria-disabled="busy ? 'true' : undefined"
-            :aria-busy="busy ? 'true' : undefined"
+            :aria-disabled="interactionLocked ? 'true' : undefined"
+            :aria-busy="interactionLocked ? 'true' : undefined"
           >
             <li v-for="project in normalizedProjects" :key="project.key" class="project-switch-dialog-item" role="presentation">
               <button
@@ -94,7 +120,7 @@
                 role="option"
                 :aria-selected="project.key === activeOptionId"
                 :aria-label="project.hint ? `${project.label}，${project.hint}` : project.label"
-                :disabled="busy || project.disabled"
+                :disabled="interactionLocked || project.disabled"
                 @click="chooseProject(project.raw)"
               >
                 <span class="project-switch-dialog-option-icon" aria-hidden="true">
@@ -119,15 +145,25 @@
 
           <footer class="project-switch-dialog-foot">
             <span v-if="busy" class="project-switch-dialog-lock" aria-live="polite">加载完成前无法关闭</span>
+            <span v-else-if="listRefreshing" class="project-switch-dialog-lock" aria-live="polite">项目列表刷新中，Esc 可关闭</span>
             <span v-else class="project-switch-dialog-hint">使用 ↑ ↓ 选择，Enter 确认，Esc 关闭</span>
             <button
-              v-if="displayError && !busy"
+              v-if="displayError && !interactionLocked"
               class="project-switch-dialog-retry"
               type="button"
-              :disabled="busy"
+              :disabled="interactionLocked"
               @click="retry"
             >
               重试
+            </button>
+            <button
+              v-else-if="displayProjectListError && !interactionLocked"
+              class="project-switch-dialog-retry"
+              type="button"
+              :disabled="interactionLocked"
+              @click="refreshProjects"
+            >
+              重试刷新
             </button>
           </footer>
         </section>
@@ -176,6 +212,8 @@ const props = withDefaults(defineProps<{
   phase?: ProjectSwitchPhase
   loading?: boolean
   error?: string
+  projectsLoading?: boolean
+  projectListError?: string
   /** Current committed project. */
   currentProjectId?: ProjectIdentityLike
   selectedProjectId?: ProjectIdentityLike
@@ -188,6 +226,8 @@ const props = withDefaults(defineProps<{
   phase: 'idle',
   loading: false,
   error: '',
+  projectsLoading: false,
+  projectListError: '',
   currentProjectId: '',
   selectedProjectId: '',
   targetProjectId: '',
@@ -201,6 +241,7 @@ const emit = defineEmits<{
   /** Alias for hosts that prefer an explicit event name (full row payload). */
   (event: 'select-project', project: ProjectSwitchDialogProject): void
   (event: 'retry', project?: ProjectSwitchDialogProject | null): void
+  (event: 'refresh'): void
   (event: 'close'): void
 }>()
 
@@ -214,6 +255,8 @@ let restoreElement: HTMLElement | null = null
 
 const visible = computed(() => props.modelValue ?? props.open ?? false)
 const busy = computed(() => props.loading || props.phase === 'working')
+const listRefreshing = computed(() => props.projectsLoading)
+const interactionLocked = computed(() => busy.value || listRefreshing.value)
 const currentId = computed(() => projectIdentity(props.currentProjectId || props.selectedProjectId))
 const targetId = computed(() => projectIdentity(
   props.targetProjectId || props.targetProject?.id || props.targetProject?.project_id || '',
@@ -224,6 +267,7 @@ const targetLabel = computed(() => {
   return normalizedProjects.value.find(item => item.key === targetId.value)?.label || ''
 })
 const displayError = computed(() => String(props.error || '').trim())
+const displayProjectListError = computed(() => String(props.projectListError || '').trim())
 
 const normalizedProjects = computed<NormalizedProject[]>(() => (props.projects || [])
   .map((raw) => {
@@ -291,18 +335,23 @@ function requestClose() {
 }
 
 function chooseProject(project: ProjectSwitchDialogProject) {
-  if (busy.value || project.disabled) return
+  if (interactionLocked.value || project.disabled) return
   const rawId = project.id ?? project.project_id ?? project.value
   emit('select', typeof rawId === 'number' ? rawId : String(rawId ?? '').trim())
   emit('select-project', project)
 }
 
 function retry() {
-  if (busy.value) return
+  if (interactionLocked.value) return
   const project = props.targetProject
     || normalizedProjects.value.find(item => item.key === targetId.value)?.raw
     || null
   emit('retry', project)
+}
+
+function refreshProjects() {
+  if (interactionLocked.value) return
+  emit('refresh')
 }
 
 function moveOptionFocus(delta: number) {
@@ -324,17 +373,17 @@ function handleKeydown(event: KeyboardEvent) {
   }
   if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
     event.preventDefault()
-    if (!busy.value) moveOptionFocus(1)
+    if (!interactionLocked.value) moveOptionFocus(1)
     return
   }
   if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
     event.preventDefault()
-    if (!busy.value) moveOptionFocus(-1)
+    if (!interactionLocked.value) moveOptionFocus(-1)
     return
   }
   if (event.key === 'Home' || event.key === 'End') {
     event.preventDefault()
-    if (!busy.value) {
+    if (!interactionLocked.value) {
       const options = enabledOptionElements()
       ;(event.key === 'Home' ? options[0] : options[options.length - 1])?.focus()
     }
@@ -343,7 +392,9 @@ function handleKeydown(event: KeyboardEvent) {
   if (event.key !== 'Tab') return
   const focusables = [
     ...enabledOptionElements(),
-    ...(displayError.value && !busy.value ? [dialogRef.value?.querySelector<HTMLButtonElement>('.project-switch-dialog-retry')] : []),
+    ...((displayError.value || displayProjectListError.value) && !interactionLocked.value
+      ? [dialogRef.value?.querySelector<HTMLButtonElement>('.project-switch-dialog-retry')]
+      : []),
     ...(!busy.value ? [dialogRef.value?.querySelector<HTMLButtonElement>('.project-switch-dialog-close')] : []),
   ].filter((element): element is HTMLButtonElement => !!element && !element.disabled)
   if (!focusables.length) {
@@ -370,7 +421,7 @@ watch(visible, async (next, previous) => {
   }
 })
 
-watch(busy, async (next, previous) => {
+watch(interactionLocked, async (next, previous) => {
   if (next && !previous) {
     // The clicked option is disabled as soon as the request starts. Move focus
     // to the dialog itself so keyboard users do not land on a locked control.
@@ -673,6 +724,19 @@ onBeforeUnmount(() => {
   animation: project-switch-dialog-spin 700ms linear infinite;
 }
 
+.project-switch-dialog-skeleton {
+  margin: 18px 24px 8px;
+  display: grid;
+  gap: 5px;
+}
+
+.project-switch-dialog-skeleton-row {
+  height: 58px;
+  border: 1px solid rgba(15, 15, 15, 0.055);
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(15, 15, 15, 0.025), rgba(15, 15, 15, 0.055), rgba(15, 15, 15, 0.025));
+}
+
 .project-switch-dialog-empty {
   margin: 22px 24px 8px;
   padding: 28px 14px;
@@ -770,6 +834,7 @@ onBeforeUnmount(() => {
   .project-switch-dialog-description { margin-left: 18px; margin-right: 18px; }
   .project-switch-dialog-working,
   .project-switch-dialog-error,
+  .project-switch-dialog-skeleton,
   .project-switch-dialog-empty { margin-left: 18px; margin-right: 18px; }
   .project-switch-dialog-list { margin-left: 8px; margin-right: 8px; padding-left: 6px; padding-right: 6px; }
   .project-switch-dialog-foot { padding-left: 18px; padding-right: 18px; }

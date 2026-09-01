@@ -35,7 +35,7 @@
         <button
           class="project-switch-trigger"
           type="button"
-          :disabled="loading || !projects.length || projectSwitchPhase === 'working'"
+          :disabled="loading || projectListRefreshing || projectSwitchPhase === 'working'"
           aria-haspopup="dialog"
           :aria-expanded="projectSwitchDialogOpen"
           :aria-busy="projectSwitchPhase === 'working' ? 'true' : undefined"
@@ -127,8 +127,11 @@
       :target-project="projectSwitchTargetProject"
       :phase="projectSwitchPhase"
       :error="projectSwitchError"
+      :projects-loading="projectListRefreshing"
+      :project-list-error="projectListRefreshError"
       @select="handleProjectChange"
       @retry="retryProjectSwitch"
+      @refresh="refreshProjectList"
       @close="closeProjectSwitchDialog"
     />
 
@@ -849,6 +852,9 @@ const projectSwitchTargetId = ref('')
 const projectSwitchPhase = computed(() => projectSwitchState.value.phase)
 const projectSwitchError = computed(() => projectSwitchState.value.error)
 const projectSwitchTargetProject = computed(() => projectSwitchState.value.targetProject as any)
+const projectListRefreshing = ref(false)
+const projectListRefreshError = ref('')
+let projectListRefreshEpoch = 0
 const sessions = ref<VibeSession[]>([])
 const sessionNextCursor = ref('')
 const sessionsLoadingMore = ref(false)
@@ -2973,6 +2979,8 @@ function trackMaximizeState() {
 }
 
 onBeforeUnmount(() => {
+  projectListRefreshEpoch += 1
+  projectListRefreshing.value = false
   projectSwitchRequestToken.value = null
   projectSwitchDialogOpen.value = false
   offMaximizeState?.()
@@ -3075,9 +3083,58 @@ function projectSwitchRequestIsActive(request = projectSwitchRequestToken.value)
   return !!request && isProjectSwitchCurrent(projectSwitchState.value, request)
 }
 
+function joinedProjectRows(payload: any): any[] | null {
+  if (Array.isArray(payload)) return payload
+  return Array.isArray(payload?.results) ? payload.results : null
+}
+
+function projectListRefreshFailure(reason: unknown): string {
+  const value = reason as any
+  const detail = String(value?.message || value?.msg || value?.detail || '').trim()
+  return detail
+    ? `项目列表刷新失败，可重试：${detail}`
+    : '项目列表刷新失败，可重试。'
+}
+
+function refreshProjectOptionStats(rows: any[], requestEpoch: number): void {
+  const contextEpoch = projectContextEpoch
+  const projectIds = collectKnowledgeStatsProjectIds(rows)
+  if (!projectIds.length) return
+  void getFoundationKnowledgeStatsMany(projectIds)
+    .then((payload) => {
+      if (requestEpoch !== projectListRefreshEpoch || contextEpoch !== projectContextEpoch) return
+      projectIds.forEach(projectId => writeKnowledgeStats(projectStatsMap, payload, projectId))
+    })
+    .catch(() => { /* 计数刷新失败不影响项目列表 */ })
+}
+
+async function refreshProjectList() {
+  if (projectListRefreshing.value || projectSwitchState.value.phase === 'working') return
+  const requestEpoch = ++projectListRefreshEpoch
+  projectListRefreshing.value = true
+  projectListRefreshError.value = ''
+  try {
+    const response: any = await ApiGetJoinProjects({})
+    if (requestEpoch !== projectListRefreshEpoch || !projectSwitchDialogOpen.value) return
+    if (response?.result === 0) throw new Error(String(response?.msg || response?.detail || '请求失败'))
+    const nextProjects = joinedProjectRows(response)
+    if (!nextProjects) throw new Error(String(response?.msg || response?.detail || '响应格式无效'))
+    projects.value = nextProjects
+    const current = nextProjects.find(item => String(item.id) === String(selectedProjectId.value ?? ''))
+    if (current) selectedProject.value = current
+    refreshProjectOptionStats(nextProjects, requestEpoch)
+  } catch (reason) {
+    if (requestEpoch !== projectListRefreshEpoch || !projectSwitchDialogOpen.value) return
+    projectListRefreshError.value = projectListRefreshFailure(reason)
+  } finally {
+    if (requestEpoch === projectListRefreshEpoch) projectListRefreshing.value = false
+  }
+}
+
 function openProjectSwitchDialog() {
-  if (loading.value || !projects.value.length || projectSwitchState.value.phase === 'working') return
+  if (loading.value || projectListRefreshing.value || projectSwitchState.value.phase === 'working') return
   projectSwitchTargetId.value = ''
+  projectListRefreshError.value = ''
   projectSwitchState.value = {
     ...projectSwitchState.value,
     open: true,
@@ -3087,10 +3144,14 @@ function openProjectSwitchDialog() {
     error: '',
   }
   projectSwitchDialogOpen.value = true
+  void refreshProjectList()
 }
 
 function closeProjectSwitchDialog() {
   if (projectSwitchState.value.phase === 'working') return
+  projectListRefreshEpoch += 1
+  projectListRefreshing.value = false
+  projectListRefreshError.value = ''
   projectSwitchDialogOpen.value = false
   projectSwitchState.value = {
     ...closeProjectSwitchDialogState(projectSwitchState.value),
@@ -3456,7 +3517,7 @@ async function switchProjectWithDialog(project: any) {
 }
 
 function handleProjectDialogSelect(value: string | number) {
-  if (projectSwitchState.value.phase === 'working') return
+  if (projectListRefreshing.value || projectSwitchState.value.phase === 'working') return
   const project = projects.value.find(item => String(item.id) === String(value))
   if (project) void switchProjectWithDialog(project)
 }
