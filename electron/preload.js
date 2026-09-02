@@ -1,10 +1,123 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+// These are deliberately explicit channels.  Agent-private frames must not
+// travel through the legacy generic `send/invoke` bridge.
+const vibeAttachmentWorkspace = {
+    pathForFile: (file) => webUtils?.getPathForFile?.(file) || String(file?.path || ''),
+    // The native picker is the trust boundary for local attachments. It
+    // returns opaque, one-use admission tokens; it never exposes a source
+    // path to the renderer.
+    pick: () => ipcRenderer.invoke('vibeAgent:attachmentPick'),
+    create: (payload) => ipcRenderer.invoke('vibeAgent:attachmentCreate', payload),
+    manifest: (payload) => ipcRenderer.invoke('vibeAgent:attachmentManifest', payload),
+    list: (payload) => ipcRenderer.invoke('vibeAgent:attachmentList', payload),
+    read: (payload) => ipcRenderer.invoke('vibeAgent:attachmentRead', payload),
+    readLines: (payload) => ipcRenderer.invoke('vibeAgent:attachmentReadLines', payload),
+    outline: (payload) => ipcRenderer.invoke('vibeAgent:attachmentOutline', payload),
+    search: (payload) => ipcRenderer.invoke('vibeAgent:attachmentSearch', payload),
+    write: (payload) => ipcRenderer.invoke('vibeAgent:attachmentWrite', payload),
+    edit: (payload) => ipcRenderer.invoke('vibeAgent:attachmentEdit', payload),
+    remove: (payload) => ipcRenderer.invoke('vibeAgent:attachmentRemove', payload),
+};
+
+const vibeLocalFiles = {
+    pick: ({ accountId, account_id: accountIdSnake } = {}) => ipcRenderer.invoke('vibeAgent:localFilePick', {
+        ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+    }),
+    preview: ({ refId, ref_id: refIdSnake, accountId, account_id: accountIdSnake }) => ipcRenderer.invoke('vibeAgent:localFilePreview', {
+        ref_id: refId ?? refIdSnake,
+        ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+    }),
+};
+
+const vibeTrace = {
+    create: (payload) => ipcRenderer.invoke('vibeAgent:traceCreate', payload),
+    append: (payload) => ipcRenderer.invoke('vibeAgent:traceAppend', payload),
+    finish: (payload) => ipcRenderer.invoke('vibeAgent:traceFinish', payload),
+    list: (payload) => ipcRenderer.invoke('vibeAgent:traceList', payload),
+    detail: (payload) => ipcRenderer.invoke('vibeAgent:traceDetail', payload),
+    payload: (payload) => ipcRenderer.invoke('vibeAgent:tracePayload', payload),
+    export: (payload) => ipcRenderer.invoke('vibeAgent:traceExport', payload),
+    remove: (payload) => ipcRenderer.invoke('vibeAgent:traceRemove', payload),
+    upload: (payload) => ipcRenderer.invoke('vibeAgent:traceUpload', payload),
+    resume: (payload) => ipcRenderer.invoke('vibeAgent:traceResume', payload),
+    waitUpload: (payload) => ipcRenderer.invoke('vibeAgent:traceUploadWait', payload),
+    uploadStatus: (payload) => ipcRenderer.invoke('vibeAgent:traceUploadStatus', payload),
+    onUploadStatus: (callback) => {
+        if (typeof callback !== 'function') throw new TypeError('vibeAgent.trace.onUploadStatus callback 必须是函数');
+        void ipcRenderer.invoke('vibeAgent:traceSubscribe').catch(() => {});
+        const handler = (_event, payload) => callback(payload);
+        ipcRenderer.on('vibeAgent:trace-upload-status', handler);
+        return () => ipcRenderer.removeListener('vibeAgent:trace-upload-status', handler);
+    },
+};
 
 contextBridge.exposeInMainWorld('electronAPI', {
     toggleTrafficLights: (visible) => ipcRenderer.send('set-traffic-lights', visible),
     openExternal: (url) => ipcRenderer.send('open-url', url),
     send: (channel, data) => ipcRenderer.send(channel, data),
     invoke: (channel, data) => ipcRenderer.invoke(channel, data),
+
+    vibeAgent: {
+        readiness: {
+            check: () => ipcRenderer.invoke('vibeAgent:readinessCheck'),
+            export: () => ipcRenderer.invoke('vibeAgent:readinessExport'),
+        },
+        // Local mode starts Pi directly in Electron Main.  The renderer only
+        // supplies a validated start descriptor; provider credentials are
+        // injected by Main and never exposed through this API.
+        startLocal: ({ run, start, start_payload: startPayload, provider_id: providerId, providerId: camelProviderId, local_context: localContext, localContext: camelLocalContext, local_file_refs: localFileRefs, localFileRefs: camelLocalFileRefs }) =>
+            ipcRenderer.invoke('vibeAgent:startLocal', {
+                run,
+                start,
+                start_payload: startPayload,
+                ...(providerId ?? camelProviderId ? { provider_id: providerId ?? camelProviderId } : {}),
+                ...(localContext ?? camelLocalContext ? { local_context: localContext ?? camelLocalContext } : {}),
+                ...(localFileRefs ?? camelLocalFileRefs ? { local_file_refs: localFileRefs ?? camelLocalFileRefs } : {}),
+            }),
+        recoverableLocal: (payload = {}) => ipcRenderer.invoke('vibeAgent:recoverableLocal', payload),
+        recoverLocal: ({ runId, run_id: runIdSnake, accountId, account_id: accountIdSnake, projectId, project_id: projectIdSnake, sessionId, session_id: sessionIdSnake, response, local_context: localContext, localContext: camelLocalContext }) =>
+            ipcRenderer.invoke('vibeAgent:recoverLocal', {
+                run_id: runId ?? runIdSnake,
+                account_id: accountId ?? accountIdSnake,
+                ...(projectId ?? projectIdSnake ? { project_id: projectId ?? projectIdSnake } : {}),
+                ...(sessionId ?? sessionIdSnake ? { session_id: sessionId ?? sessionIdSnake } : {}),
+                response,
+                ...(localContext ?? camelLocalContext ? { local_context: localContext ?? camelLocalContext } : {}),
+            }),
+        attach: ({ runId, accountId }) => ipcRenderer.invoke('vibeAgent:attach', { runId, accountId }),
+        respond: ({ runId, accountId, pendingId, response }) =>
+            ipcRenderer.invoke('vibeAgent:respond', { runId, accountId, pendingId, response }),
+        cancel: ({ runId, accountId, turnId, sessionId }) =>
+            ipcRenderer.invoke('vibeAgent:cancel', { runId, accountId, turnId, sessionId }),
+        status: ({ runId, accountId }) => ipcRenderer.invoke('vibeAgent:status', { runId, accountId }),
+        list: (payload = {}) => ipcRenderer.invoke('vibeAgent:list', payload),
+        localFiles: vibeLocalFiles,
+        // Public name used by the local-file model; keep `localFiles` as the
+        // compatibility spelling used by the current renderer.
+        files: vibeLocalFiles,
+        attachmentWorkspace: vibeAttachmentWorkspace,
+        // `attachments` is a short alias retained for early renderer callers.
+        attachments: vibeAttachmentWorkspace,
+        trace: vibeTrace,
+        sessions: {
+            create: (payload) => ipcRenderer.invoke('vibeAgent:sessionCreate', payload),
+            manifest: (payload) => ipcRenderer.invoke('vibeAgent:sessionManifest', payload),
+            list: (payload) => ipcRenderer.invoke('vibeAgent:sessionList', payload),
+            events: (payload) => ipcRenderer.invoke('vibeAgent:sessionEvents', payload),
+            history: (payload) => ipcRenderer.invoke('vibeAgent:sessionHistory', payload),
+            append: (payload) => ipcRenderer.invoke('vibeAgent:sessionAppend', payload),
+            update: (payload) => ipcRenderer.invoke('vibeAgent:sessionUpdate', payload),
+            updateTitle: (payload) => ipcRenderer.invoke('vibeAgent:sessionTitle', payload),
+            remove: (payload) => ipcRenderer.invoke('vibeAgent:sessionRemove', payload),
+        },
+        onEvent: (callback) => {
+            if (typeof callback !== 'function') throw new TypeError('vibeAgent.onEvent callback 必须是函数');
+            const handler = (_event, payload) => callback(payload);
+            ipcRenderer.on('vibeAgent:event', handler);
+            return () => ipcRenderer.removeListener('vibeAgent:event', handler);
+        },
+    },
 
     on: (channel, callback) => {
         const subscription = (event, ...args) => callback(event, ...args);

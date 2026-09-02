@@ -123,8 +123,8 @@ assert.match(chipsSource, /\.src-ttl\s*\{[^}]*flex:\s*1 1 0;[^}]*overflow:\s*hid
 assert.doesNotMatch(chipsSource, /src-open-icon/)
 assert.doesNotMatch(chipsSource, /v-html|marked|DOMPurify|\.text\b|\.content\b/)
 
-assert.equal((indexSource.match(/<SourceChips\b/g) || []).length, 5)
-assert.equal((indexSource.match(/@open-source="openConversationSource"/g) || []).length, 5)
+assert.equal((indexSource.match(/<SourceChips\b/g) || []).length, 8)
+assert.equal((indexSource.match(/@open-source="openConversationSource"/g) || []).length, 8)
 assert.match(indexSource, /function openConversationSource\(source:/)
 assert.match(indexSource, /function openConversationSource\(source:[\s\S]*workspaceFocusAfterEnter = true/)
 assert.match(indexSource, /sourceCitationHasReadableRange\(source\)[\s\S]*loadWorkspaceSourceFragment\([\s\S]*loadWorkspaceSessionSource\(/)

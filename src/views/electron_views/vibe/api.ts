@@ -24,6 +24,7 @@ export interface VibeSession {
   id: string
   title: string
   llm_provider_id?: string
+  provider_id?: string
   vibe_project_id?: string
   user_id?: number
   focus?: string
@@ -460,6 +461,8 @@ export interface VibeDialogueTraceRun {
   started_at?: string
   ended_at?: string | null
   elapsed_ms?: number | null
+  trace_source?: 'server' | 'electron' | string
+  trace_local?: boolean
 }
 
 export interface VibeDialogueTraceEvent {
@@ -547,6 +550,13 @@ export async function uploadVibeAttachmentResource(
   file: File,
   idempotencyKey: string,
 ): Promise<VibeAttachmentResourceRef> {
+  // Electron's native local picker returns a metadata object carrying an
+  // admission token, not a browser Blob. Keep this guard at the uploader
+  // boundary so a future caller cannot accidentally send a local attachment
+  // through the legacy server resource endpoint.
+  if (String((file as any)?.admission_token || (file as any)?.admissionToken || '').trim()) {
+    throw new Error('本地附件不得上传到服务器')
+  }
   if (!sessionId.trim()) throw new Error('上传附件前必须先创建会话')
   if (!/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)) throw new Error('附件上传幂等键无效')
   const canonicalMime = canonicalAttachmentUploadMime(file.name, file.type)
@@ -1084,6 +1094,87 @@ export function streamFoundationTurn(
   handlers: Parameters<typeof streamHarnessSse>[2] = {},
 ) {
   return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)
+}
+
+export interface FoundationAgentRun {
+  schema: 'electron_agent_run.v1'
+  execution_host: 'electron' | 'server'
+  run_id: string
+  turn_id: string
+  request_id: string
+  session_id: string
+  project: string
+  project_id?: string
+  host_ticket?: string
+  host_ticket_expires_at?: string | number
+  protocol_version: number
+  journal_delta?: Record<string, any>
+  state?: string
+  execution_mode?: 'server' | 'local'
+  provider_mode?: 'proxy' | 'direct'
+  trace_id?: string
+  goal_id?: string
+  start_payload?: Record<string, any>
+}
+
+export interface RemoteAgentTraceSummary {
+  upload_id: string
+  trace_id: string
+  audit_marker?: string
+  user_id?: number
+  session_id: string
+  session_title?: string
+  goal_id: string
+  turn_id?: string
+  project_id?: string
+  project_name?: string
+  input_text?: string
+  status: string
+  storage_backend?: string
+  total_chunks: number
+  total_bytes: number
+  bundle_sha256: string
+  created_at: string
+  updated_at: string
+  completed_at?: string | null
+}
+
+export function listRemoteAgentTraces(params: { limit?: number; cursor?: string } = {}): Promise<{ items: RemoteAgentTraceSummary[]; next_cursor: string }> {
+  const query = new URLSearchParams()
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.cursor) query.set('cursor', params.cursor)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return request('GET', `/vibe/foundation/agent-traces${suffix}`)
+}
+
+export function getRemoteAgentTrace(traceId: string, view: 'detail' | 'raw' = 'detail'): Promise<Record<string, any> | Blob> {
+  if (view === 'raw') return harnessBlobRequest(`/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}?view=raw`).then(({ blob }) => blob)
+  return request('GET', `/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}`)
+}
+
+export function getRemoteAgentTracePayload(traceId: string, payloadId: string): Promise<Blob> {
+  return harnessBlobRequest(
+    `/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}/payload/${encodeURIComponent(payloadId)}`,
+  ).then(({ blob }) => blob)
+}
+
+export function respondFoundationTurnInteraction(payload: {
+  project: string
+  session_id: string
+  turn_id: string
+  interaction_id?: string
+  confirmation_id?: string
+  action?: 'apply' | 'cancel' | 'stop_all'
+  clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
+}): Promise<{
+  ok: boolean
+  accepted: boolean
+  turn_id: string
+  interaction_id?: string
+  confirmation_id?: string
+  response_digest?: string
+}> {
+  return request('POST', '/vibe/foundation/turn/input', payload)
 }
 
 export interface FoundationRunningTurn {

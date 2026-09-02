@@ -29,6 +29,41 @@ function sameSession(a: ConversationThreadEvent, b: ConversationThreadEvent): bo
   return !aSession || !bSession || aSession === bSession
 }
 
+function localRunId(event: ConversationThreadEvent): string {
+  return event?.meta?.local_agent === true ? String(event?.meta?.run_id || '').trim() : ''
+}
+
+function localInteractionRootId(
+  events: ConversationThreadEvent[],
+  event: ConversationThreadEvent,
+): string {
+  const runId = localRunId(event)
+  if (!runId) return ''
+  const ordered = [...events].sort(compareEvents)
+  const id = eventId(event)
+  const index = ordered.findIndex(item => item === event || (!!id && eventId(item) === id))
+  if (index <= 0) return ''
+  const root = ordered.slice(0, index).find(item => (
+    item?.role === 'assistant'
+    && localRunId(item) === runId
+    && sameSession(item, event)
+    && !!String(item?.meta?.clarification?.question || '').trim()
+  ))
+  return eventId(root)
+}
+
+export function interactionReplyParentEventId(
+  events: ConversationThreadEvent[],
+  event: ConversationThreadEvent,
+): string {
+  const explicit = event?.role === 'user' && event?.meta?.confirmation_reply === true
+    ? String(event?.meta?.parent_event_id || '').trim()
+    : ''
+  if (explicit) return explicit
+  if (event?.role !== 'user' || !event?.meta?.interaction_response) return ''
+  return localInteractionRootId(events, event)
+}
+
 /**
  * 显式 continuation_context 永远优先。仅为存量异常失败回执提供窄兼容：
  * assistant 在事件序列中紧邻 confirmation_reply user，且该 user 指向同会话内
@@ -41,6 +76,9 @@ export function continuationParentEventId(
   const explicit = explicitContinuationParentId(event)
   if (explicit) return explicit
   if (event?.role !== 'assistant') return ''
+
+  const localRoot = localInteractionRootId(events, event)
+  if (localRoot) return localRoot
 
   const ordered = [...events].sort(compareEvents)
   const id = eventId(event)
@@ -92,12 +130,25 @@ export function shouldRenderThreadEvent(
   events: ConversationThreadEvent[],
   event: ConversationThreadEvent,
 ): boolean {
+  // Tool messages and assistant tool-call envelopes are Provider history, not
+  // chat bubbles. The visible final/interaction assistant for the same local
+  // run projects their narration into ProcessDisclosure.
+  if (event?.role === 'tool') return false
+  if (event?.role === 'assistant'
+    && event?.meta?.local_agent === true
+    && Array.isArray(event?.meta?.tool_calls)
+    && event.meta.tool_calls.length > 0) return false
+  // Context checkpoints and language repairs are internal control evidence;
+  // even if an older/local journal contains them, they must never become a
+  // standalone assistant bubble or participate in thread projection.
+  if (event?.role === 'assistant'
+    && new Set(['context_checkpoint', 'language_repair']).has(String(event?.meta?.purpose || ''))) return false
   if (event?.meta?.hidden_interaction_reply) return false
   const continuationParent = continuationParentEventId(events, event)
   if (event?.role === 'assistant' && continuationParent
     && events.some(item => eventId(item) === continuationParent)) return false
-  const replyParent = String(event?.meta?.parent_event_id || '').trim()
-  return event?.role !== 'user' || event?.meta?.confirmation_reply !== true
+  const replyParent = interactionReplyParentEventId(events, event)
+  return event?.role !== 'user' || (!event?.meta?.confirmation_reply && !event?.meta?.interaction_response)
     || !replyParent || !events.some(item => eventId(item) === replyParent)
 }
 
@@ -109,6 +160,9 @@ export function parentContinuationResponses(
   if (!rootId || root?.role !== 'assistant') return []
   return events
     .filter(item => isContinuationAssistantEvent(events, item)
+      && !(item?.meta?.local_agent === true
+        && Array.isArray(item?.meta?.tool_calls)
+        && item.meta.tool_calls.length > 0)
       && eventThreadRootId(events, item) === rootId)
     .sort(compareEvents)
 }
@@ -127,8 +181,7 @@ export function isResolvedInteractionThreadRoot(
   if (!rootId || root?.role !== 'assistant') return false
   if (continuationParentEventId(events, root)) return false
   const hasReply = events.some(item => item?.role === 'user'
-    && item?.meta?.confirmation_reply === true
-    && String(item?.meta?.parent_event_id || '').trim() === rootId
+    && interactionReplyParentEventId(events, item) === rootId
     && sameSession(item, root))
   return hasReply && parentContinuationResponses(events, root).length > 0
 }
@@ -188,5 +241,7 @@ export function shouldRenderStandaloneAssistantBody(
   event: ConversationThreadEvent,
   hasAnswerContent: boolean,
 ): boolean {
+  if (event?.role === 'assistant'
+    && new Set(['context_checkpoint', 'language_repair']).has(String(event?.meta?.purpose || ''))) return false
   return event?.role === 'assistant' && hasAnswerContent
 }

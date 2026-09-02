@@ -558,7 +558,7 @@ test('template entry wiring and existing animation parameters remain intact', ()
     ['open-file-list-item', 'openWorkspaceFileFromList'],
   ]) assert.ok(template.includes(`@${event}="${handler}"`), `${event} must use ${handler}`)
   assert.match(template, /@click\.stop="openMessageAttachmentViewer\(file, event\)"/)
-  assert.equal((template.match(/@open-source="openConversationSource"/g) || []).length, 5)
+  assert.equal((template.match(/@open-source="openConversationSource"/g) || []).length, 8)
   assert.match(template, /@after-enter="focusWorkspaceAfterEnter"/)
   assert.match(template, /@after-leave="finishWorkspaceWindowLeave"/)
   assert.match(template, /@leave-cancelled="keepWorkspaceWindowLayout"/)

@@ -10,6 +10,7 @@ const processPolicyPath = path.join(root, 'src/views/electron_views/vibe/knowled
 const turnPresentationPolicyPath = path.join(root, 'src/views/electron_views/vibe/knowledge/turnPresentationPolicy.ts')
 const motionContinuityPath = path.join(root, 'src/views/electron_views/vibe/knowledge/motionContinuity.ts')
 const turnProtocolPath = path.join(root, 'src/views/electron_views/vibe/knowledge/composables/turnProtocol.ts')
+const timelineFollowPath = path.join(root, 'src/views/electron_views/vibe/knowledge/timelineFollowPolicy.ts')
 const viewPath = path.join(root, 'src/views/electron_views/vibe/knowledge/index.vue')
 const disclosurePath = path.join(root, 'src/views/electron_views/vibe/knowledge/components/ProcessDisclosure.vue')
 const orbPath = path.join(root, 'src/views/electron_views/vibe/knowledge/components/ThinkingOrbStatus.vue')
@@ -33,6 +34,7 @@ const processPolicy = await importTs(processPolicyPath)
 const turnPresentationPolicy = await importTs(turnPresentationPolicyPath)
 const motionContinuity = await importTs(motionContinuityPath)
 const turnProtocol = await importTs(turnProtocolPath)
+const timelineFollow = await importTs(timelineFollowPath)
 const viewSource = read(viewPath)
 const disclosureSource = read(disclosurePath)
 const orbSource = read(orbPath)
@@ -57,6 +59,12 @@ assert.equal(emptyPolicy.shouldShowConversationEmptyState({
   streamingOwnerSessionId: '',
   streamingPending: false,
 }), false)
+
+assert.equal(timelineFollow.nextTimelineFollow({ following: true, nearBottom: false, userScrollIntent: false }), true)
+assert.equal(timelineFollow.nextTimelineFollow({ following: true, nearBottom: false, userScrollIntent: true }), false)
+assert.equal(timelineFollow.nextTimelineFollow({ following: false, nearBottom: true, userScrollIntent: false }), true)
+assert.equal(timelineFollow.timelineLayoutAction(true), 'scroll-bottom')
+assert.equal(timelineFollow.timelineLayoutAction(false), 'measure-only')
 
 // default-deny：任意未知 stats/details 都不能进入用户可见统计。
 assert.deepEqual(processPolicy.visibleProcessActionStats({
@@ -291,6 +299,11 @@ assert.match(disclosureSource, /step\.status === 'error' && step\.summary[\s\S]*
 assert.match(disclosureSource, /step\.status === 'cancelled' && step\.summary[\s\S]*\{\{ step\.summary \}\}/)
 assert.match(disclosureSource, /:style="shimmerStyle"/)
 assert.match(disclosureSource, /animation-delay:\s*var\(--vibe-shimmer-delay/)
+assert.match(disclosureSource, /watch\([\s\S]*bodyVisible[\s\S]*\(\) => props\.steps[\s\S]*emit\('layout-change'\)/)
+assert.match(disclosureSource, /<slot\s*\/>/)
+assert.doesNotMatch(disclosureSource, /hasModelCommentary/)
+assert.match(disclosureSource, /props\.running[\s\S]*open\.value \?\? props\.awaiting/)
+assert.match(disclosureSource, /wasRunning && !running && !props\.awaiting[\s\S]*open\.value = false/)
 assert.match(disclosureSource, /0%\s*\{\s*background-position:\s*220% 0;/)
 assert.match(disclosureSource, /100%\s*\{\s*background-position:\s*-220% 0;/)
 
@@ -322,5 +335,29 @@ assert.doesNotMatch(viewSource, /foundationBusy\.value = false\s*\n\s*streamingA
 assert.doesNotMatch(viewSource, /setTimeout\([^)]*本轮结果尚未确认/)
 assert.match(viewSource, /reconcileAuthoritativeEventProjections\(fresh\)/)
 assert.match(viewSource, /localTurnPresentation\(event\)\?\.observedDurationMs/)
+assert.match(viewSource, /showElectronAgentDelta[\s\S]*scrollBottomIfFollowing\(\)/)
+assert.match(viewSource, /const action = timelineLayoutAction\(timelineFollow\.value\)/)
+assert.match(viewSource, /if \(!waiting\) \{[\s\S]*electronAgentRuns\.delete\(runId\)/)
+assert.match(viewSource, /await materializeLocalWaitingRun\(context, terminal\.payload\)/)
+assert.equal((viewSource.match(/<template v-if="procRunning && streamingAssistantContent">/g) || []).length, 2)
+assert.match(viewSource, /threadRunning\(event\) && streamingAssistantContent/)
+assert.match(viewSource, /v-if="!procRunning && streamingAssistantContent"/)
+assert.match(viewSource, /function threadOutsideAnswer\(root: any\)/)
+assert.match(viewSource, /function clearStreamingAssistant\(\)[\s\S]*streamingAssistantEventId\.value = ''/)
+assert.match(viewSource, /function projectElectronAgentProgress\(context: ElectronAgentRunContext\)[\s\S]*streamingProcess\.status = 'running'/)
+assert.match(viewSource, /context\.ephemeralText = \(context\.ephemeralText \+ text\)\.slice\(-2_000_000\)[\s\S]*projectElectronAgentProgress\(context\)/)
+assert.match(viewSource, /\['queued', 'connecting', 'running', 'cancelling'\]\.includes\(state \|\| context\.state\)[\s\S]*projectElectronAgentProgress\(context\)/)
+assert.match(viewSource, /showElectronAgentDelta[\s\S]*streamingProcess\.steps =/)
+assert.doesNotMatch(
+  viewSource.slice(viewSource.indexOf('function showElectronAgentDelta'), viewSource.indexOf('function settleElectronAgentRun')),
+  /streamingAssistantContent\.value\s*=/,
+)
+const localDoneStart = viewSource.indexOf("if (payload.text && payload.status === 'completed')")
+const localDoneEnd = viewSource.indexOf("if (payload.status === 'waiting_user')", localDoneStart)
+const localDoneSource = viewSource.slice(localDoneStart, localDoneEnd)
+assert.ok(localDoneStart > 0 && localDoneEnd > localDoneStart)
+assert.match(localDoneSource, /streamingProcess\.status = 'done'/)
+assert.match(localDoneSource, /streamingAssistantEventId\.value = assistant\.id/)
+assert.ok(localDoneSource.indexOf("streamingProcess.status = 'done'") < localDoneSource.indexOf('upsertEvent(assistant)'))
 
 console.log('vibe process disclosure contract: PASS')

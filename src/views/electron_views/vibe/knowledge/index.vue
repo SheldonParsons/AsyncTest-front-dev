@@ -69,15 +69,21 @@
               <span class="session-body">
                 <span class="session-title">{{ sessionDisplayTitle(item) }}</span>
               </span>
-              <span v-if="isSessionWaiting(item.id)" class="session-running" aria-label="对话运行中">
-                <RingSpinner />
+              <span
+                v-if="sessionRuntimeState(item.id)"
+                :class="['session-running', { 'waiting-user': sessionRuntimeState(item.id) === 'waiting_user' }]"
+                :aria-label="sessionRuntimeLabel(item.id)"
+                :title="sessionRuntimeLabel(item.id)"
+              >
+                <span v-if="sessionRuntimeState(item.id) === 'waiting_user'" aria-hidden="true">需要用户输入</span>
+                <RingSpinner v-else />
               </span>
             </button>
             <button
               class="session-delete"
               type="button"
               title="删除"
-              :disabled="sending || deletingSessionId === item.id"
+              :disabled="sending || !!sessionRuntimeState(item.id) || deletingSessionId === item.id"
               @click="deleteSession(item.id)"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -253,7 +259,15 @@
             </div>
           </button>
         </nav>
-        <div ref="timelineEl" class="timeline" @scroll.passive="handleTimelineScroll" @click="handleTimelineClick">
+        <div
+          ref="timelineEl"
+          class="timeline"
+          @scroll.passive="handleTimelineScroll"
+          @wheel.passive="noteTimelineUserScrollIntent"
+          @touchstart.passive="noteTimelineUserScrollIntent"
+          @pointerdown="noteTimelineUserScrollIntent"
+          @click="handleTimelineClick"
+        >
           <div v-if="showConversationEmpty" class="empty">
             <!-- 鲸鱼游动 → 知识库 logo（alpha webm，播一次停在 logo；点击重播） -->
             <video
@@ -305,10 +319,17 @@
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
                 @layout-change="syncTimelineNavigationAfterLayout"
-              />
+              >
+                <template v-if="threadRunning(event) && streamingAssistantContent">
+                  <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
+                  <div v-if="streamingSources.length" class="answer-trust">
+                    <SourceChips :items="streamingSources" @open-source="openConversationSource" />
+                  </div>
+                </template>
+              </ProcessDisclosure>
               <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
-              <template v-if="threadFinalAnswer(event)">
-                <div class="message-md" v-html="renderMarkdown(threadFinalAnswer(event))" />
+              <template v-if="threadOutsideAnswer(event)">
+                <div class="message-md" v-html="renderMarkdown(threadOutsideAnswer(event))" />
                 <div
                   v-if="threadSources(event).length"
                   class="answer-trust"
@@ -318,7 +339,7 @@
                 <AssistantActions
                   v-if="threadFinalNode(event) && eventCanUseAnswerActions(threadFinalNode(event))"
                   :time="formatTime(threadFinalNode(event).created_at)"
-                  :content="threadFinalAnswer(event)"
+                  :content="threadOutsideAnswer(event)"
                   :is-last="threadFinalNode(event).id === lastAssistantId"
                 />
               </template>
@@ -467,10 +488,17 @@
                     :running="procRunning"
                     :duration-ms="procDurationMs"
                     @layout-change="syncTimelineNavigationAfterLayout"
-                  />
+                  >
+                    <template v-if="procRunning && streamingAssistantContent">
+                      <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
+                      <div v-if="streamingSources.length" class="answer-trust">
+                        <SourceChips :items="streamingSources" @open-source="openConversationSource" />
+                      </div>
+                    </template>
+                  </ProcessDisclosure>
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-                  <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-                  <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
+                  <div v-if="!procRunning && streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
+                  <div v-if="!procRunning && streamingAssistantContent && streamingSources.length" class="answer-trust">
                     <SourceChips :items="streamingSources" @open-source="openConversationSource" />
                   </div>
                 </article>
@@ -517,10 +545,17 @@
               :running="procRunning"
               :duration-ms="procDurationMs"
               @layout-change="syncTimelineNavigationAfterLayout"
-            />
+            >
+              <template v-if="procRunning && streamingAssistantContent">
+                <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
+                <div v-if="streamingSources.length" class="answer-trust">
+                  <SourceChips :items="streamingSources" @open-source="openConversationSource" />
+                </div>
+              </template>
+            </ProcessDisclosure>
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-            <div v-if="streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-            <div v-if="streamingAssistantContent && streamingSources.length" class="answer-trust">
+            <div v-if="!procRunning && streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
+            <div v-if="!procRunning && streamingAssistantContent && streamingSources.length" class="answer-trust">
               <SourceChips :items="streamingSources" @open-source="openConversationSource" />
             </div>
           </article>
@@ -552,6 +587,8 @@
             :uploading="preparingSend"
             :placeholder="composerPlaceholder"
             :question="composerQuestion"
+            :local-mode="useLocalPiAgent()"
+            :local-account-id="String(currentUser?.id || '')"
             :model-options="composerModelOptions"
             :model-value-id="selectedLlmProviderId"
             :model-disabled="modelConfigLoading"
@@ -676,6 +713,7 @@ import {
 import {
   continuationParentEventId,
   eventThreadRootId as resolveEventThreadRootId,
+  interactionReplyParentEventId,
   isResolvedInteractionThreadRoot,
   parentContinuationResponses as resolveParentContinuationResponses,
   resolvedInteractionRootAnswerText,
@@ -683,6 +721,7 @@ import {
   shouldRenderThreadEvent,
   threadFinalAnswerText,
 } from './conversationThreadPolicy'
+import { nextTimelineFollow, timelineLayoutAction } from './timelineFollowPolicy'
 import { shouldShowConversationEmptyState } from './conversationEmptyStatePolicy'
 import ScrollDownIcon from './components/icons/ScrollDownIcon.vue'
 import RingSpinner from './components/icons/RingSpinner.vue'
@@ -710,6 +749,7 @@ import {
   hasTurnProtocolPacket,
   protocolEventsFromMeta,
   readSessionTurnPublic,
+  readTurnProtocol,
   readTurnProtocolFromMeta,
   type TurnProtocolReadModel,
   type TurnProtocolOutcome,
@@ -744,12 +784,14 @@ import {
   getVibeSessionSourceFragment,
   streamKnowledgeActivity,
   streamFoundationTurn,
+  respondFoundationTurnInteraction,
   cancelFoundationTurn,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
   uploadVibeAttachmentResource,
   type FoundationRunningTurn,
+  type FoundationAgentRun,
   type FoundationTurnReplay,
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
@@ -761,6 +803,7 @@ import {
   type VibeSession,
 } from '../api'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
+type VibeAgentEvent = Record<string, any>
 import {
   collectKnowledgeStatsProjectIds,
   hasKnowledgeWriteCommit,
@@ -893,6 +936,11 @@ const {
   ensureProfileSync,
 } = useCurrentUserProfile()
 const currentUserName = computed(() => String(currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
+function localAccountId(): string {
+  const value = String(currentUser.value?.id || '').trim()
+  if (!value) throw new Error('当前账号身份无效，请重新登录')
+  return value
+}
 const llmProviders = ref<VibeLLMModelPickerProvider[]>([])
 const selectedLlmProviderId = ref('')
 const modelConfigLoading = ref(false)
@@ -1004,14 +1052,32 @@ async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent
   const requestEpoch = ++modelConfigRequestEpoch
   if (!opts.silent) modelConfigLoading.value = true
   try {
-    const picker = await getVibeLLMModelPicker(sessionId || undefined)
+    const localSession = String(sessionId || '').startsWith('session_')
+    // 服务端选择器只认识 VibeSession；本地 Session 的绑定由 Electron
+    // Session Store 持有，传给服务端只会得到一个必然的 404。
+    const picker = await getVibeLLMModelPicker(localSession ? undefined : (sessionId || undefined))
     if (requestEpoch !== modelConfigRequestEpoch) return
     const providers = (picker.providers || []).filter((item) => item.enabled !== false)
     llmProviders.value = providers
-    // picker 已在服务端校验会话绑定是否仍可见；本地摘要可能保留已禁用/撤权的旧 id，
-    // 不能反向覆盖权威选择，否则会静默回退并把错误 Provider 写回会话。
+    let localProviderId = localSession
+      ? String(sessions.value.find(item => item.id === sessionId)?.llm_provider_id || '')
+      : ''
+    if (localSession && !localProviderId) {
+      const manifestRequest = electronAgentBridge()?.sessions?.manifest?.({
+        sessionId,
+        accountId: localAccountId(),
+      })
+      const manifest: any = manifestRequest ? await manifestRequest.catch(() => null) : null
+      if (requestEpoch !== modelConfigRequestEpoch) return
+      localProviderId = String(manifest?.provider_id || '')
+    }
+    // 本地绑定只有在账号当前仍可见时才生效；撤权或禁用后使用服务端
+    // 权威默认值，后续发送准入会把新选择写回本地 Session。
     const candidate = String(picker.selected_provider_id || '')
-    selectedLlmProviderId.value = providers.some((item) => item.id === candidate) ? candidate : (providers[0]?.id || '')
+    const preferred = localProviderId && providers.some(item => item.id === localProviderId)
+      ? localProviderId
+      : candidate
+    selectedLlmProviderId.value = providers.some((item) => item.id === preferred) ? preferred : (providers[0]?.id || '')
   } finally {
     if (requestEpoch === modelConfigRequestEpoch) modelConfigLoading.value = false
   }
@@ -1019,6 +1085,15 @@ async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent
 
 function applySessionModel(sessionId: string, providerId: string) {
   sessions.value = sessions.value.map(item => item.id === sessionId ? { ...item, llm_provider_id: providerId } : item)
+}
+
+async function persistSessionModel(sessionId: string, providerId: string) {
+  if (sessionId.startsWith('session_')) {
+    const api = electronAgentBridge()?.sessions
+    if (!api?.update) throw new Error('本地会话存储不可用')
+    return await api.update({ sessionId, accountId: localAccountId(), providerId })
+  }
+  return await updateVibeSession(sessionId, { llm_provider_id: providerId })
 }
 
 async function refreshComposerModels() {
@@ -1044,9 +1119,9 @@ async function ensureComposerModelUsable(contextGuard?: () => boolean) {
         const current = sessions.value.find((item) => item.id === activeSessionId.value)
         if (current?.llm_provider_id !== selected) {
           if (contextGuard && !contextGuard()) return false
-          const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: selected })
+          const updated = await persistSessionModel(activeSessionId.value, selected)
           if (contextGuard && !contextGuard()) return false
-          applySessionModel(activeSessionId.value, updated.llm_provider_id || selected)
+          applySessionModel(activeSessionId.value, updated.llm_provider_id || updated.provider_id || selected)
         }
       }
       return true
@@ -1055,9 +1130,9 @@ async function ensureComposerModelUsable(contextGuard?: () => boolean) {
       selectedLlmProviderId.value = providers[0].id
       if (activeSessionId.value) {
         if (contextGuard && !contextGuard()) return false
-        const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providers[0].id })
+        const updated = await persistSessionModel(activeSessionId.value, providers[0].id)
         if (contextGuard && !contextGuard()) return false
-        applySessionModel(activeSessionId.value, updated.llm_provider_id || providers[0].id)
+        applySessionModel(activeSessionId.value, updated.llm_provider_id || updated.provider_id || providers[0].id)
       }
       return true
     }
@@ -1075,10 +1150,10 @@ async function handleComposerModelChange(providerId: string) {
   selectedLlmProviderId.value = providerId
   if (!activeSessionId.value) return
   try {
-    const updated = await updateVibeSession(activeSessionId.value, { llm_provider_id: providerId })
+    const updated = await persistSessionModel(activeSessionId.value, providerId)
     if (contextEpoch !== projectContextEpoch
       || contextProjectId !== String(selectedProjectId.value ?? '')) return
-    applySessionModel(activeSessionId.value, updated.llm_provider_id || providerId)
+    applySessionModel(activeSessionId.value, updated.llm_provider_id || updated.provider_id || providerId)
   } catch (error: any) {
     if (contextEpoch !== projectContextEpoch
       || contextProjectId !== String(selectedProjectId.value ?? '')) return
@@ -1875,16 +1950,74 @@ function workspaceFileListCacheKey(sessionId: string, projectId = workspaceProje
 
 /** Share an in-flight authoritative event request between the conversation
  * loader and the file-list tab so opening "查看全部" cannot duplicate it. */
-function requestSessionEvents(sessionId: string): Promise<VibeEvent[]> {
+function requestSessionEvents(sessionId: string, options: { includePrivate?: boolean } = {}): Promise<VibeEvent[]> {
   const normalizedSessionId = String(sessionId || '').trim()
   if (!normalizedSessionId) return Promise.resolve([])
-  const existing = sessionEventsRequests.get(normalizedSessionId)
+  const cacheKey = `${normalizedSessionId}:${options.includePrivate ? 'private' : 'public'}`
+  const existing = sessionEventsRequests.get(cacheKey)
   if (existing) return existing
-  const request = listVibeEvents(normalizedSessionId)
-  sessionEventsRequests.set(normalizedSessionId, request)
+  const request = (async () => {
+    const [serverResult, localResult] = await Promise.allSettled([
+      normalizedSessionId.startsWith('session_')
+        ? Promise.resolve([])
+        : listVibeEvents(normalizedSessionId),
+      electronAgentBridge()?.sessions?.events
+        ? electronAgentBridge()!.sessions!.events({ sessionId: normalizedSessionId, accountId: localAccountId(), limit: 100000 })
+        : Promise.resolve([]),
+    ])
+    const serverEvents = serverResult.status === 'fulfilled' && Array.isArray(serverResult.value)
+      ? serverResult.value : []
+    const localRows: any[] = localResult.status === 'fulfilled' && Array.isArray(localResult.value)
+      ? localResult.value : []
+    if (normalizedSessionId.startsWith('session_') && localResult.status === 'rejected') {
+      throw localResult.reason instanceof Error ? localResult.reason : new Error(String(localResult.reason))
+    }
+    const localEvents: VibeEvent[] = localRows
+      .filter((row: any) => options.includePrivate
+        || !new Set(['context_checkpoint', 'language_repair']).has(String(row?.meta?.purpose || '')))
+      .map((row: any) => {
+        // Live local runs use a stable run/role identity. Reuse it when reading
+        // the persisted journal so switching sessions or reloading the window
+        // does not add a second copy of the same user/assistant message.
+        const persistedRunId = String(row.meta?.run_id || '').trim()
+        const persistedRole = String(row.role || 'assistant')
+        const persistedKey = String(row.meta?.local_event_key || '').trim()
+        const roleKey = `${persistedRunId}:${persistedRole}`
+        const stableSuffix = persistedKey === roleKey || persistedKey === 'assistant:final'
+          ? persistedRole
+          : (persistedKey || persistedRole)
+        const stableId = persistedRunId
+          ? `local:${persistedRunId}:${stableSuffix}`
+          : `local:${normalizedSessionId}:${row.sequence}`
+        return ({
+          id: persistedRunId ? stableId : String(row.event_id || stableId),
+          session_id: normalizedSessionId,
+          vibe_project_id: String(row.project_id || ''),
+          user_id: Number(currentUser.value?.id || 0),
+          role: String(row.role || 'assistant'),
+          input_type: 'text',
+          content: String(row.content || ''),
+          attachments: Array.isArray(row.attachments) ? row.attachments : [],
+          event_order: Number(row.sequence || 0),
+          mode: 'local_pi',
+          meta: row.meta && typeof row.meta === 'object' ? row.meta : {},
+          created_at: row.created_at,
+        })
+      })
+    const merged = [...serverEvents]
+    const seen = new Set(merged.map((event: any) => String(event.id || '')))
+    localEvents.forEach((event) => {
+      if (!seen.has(event.id)) merged.push(event)
+    })
+    if (serverResult.status === 'rejected' && localEvents.length === 0 && !normalizedSessionId.startsWith('session_')) {
+      throw serverResult.reason instanceof Error ? serverResult.reason : new Error(String(serverResult.reason))
+    }
+    return sortEvents(merged)
+  })()
+  sessionEventsRequests.set(cacheKey, request)
   const clear = () => {
-    if (sessionEventsRequests.get(normalizedSessionId) === request) {
-      sessionEventsRequests.delete(normalizedSessionId)
+    if (sessionEventsRequests.get(cacheKey) === request) {
+      sessionEventsRequests.delete(cacheKey)
     }
   }
   void request.then(clear, clear)
@@ -2238,6 +2371,98 @@ async function loadWorkspaceFile(tabId: string): Promise<void> {
     }
     return
   }
+  if (String(current.file.kind || '') === 'local-file') {
+    const refId = String(current.file.ref_id || current.file.resource_id || '').trim()
+    const localFiles = electronAgentBridge()?.localFiles
+    if (!refId || !localFiles?.preview) {
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: '本机文件引用已失效，无法预览。' }
+        : tab)
+      return
+    }
+    const token = beginWorkspaceRequest(tabId)
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? { ...tab, loading: true, error: '' }
+      : tab)
+    try {
+      const result = await localFiles.preview({ refId, accountId: localAccountId() })
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      const suffix = result?.truncated ? '\n\n[文件较大，此处只显示前 512KiB；Agent 可用本机文件工具继续读取。]' : ''
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? {
+            ...tab,
+            title: String(result?.name || tab.title),
+            loading: false,
+            error: '',
+            content: `${String(result?.text || '')}${suffix}`,
+            file: {
+              ...tab.file,
+              filename: String(result?.name || tab.file.filename),
+              mime: String(result?.mime || tab.file.mime),
+              body_omitted: Boolean(result?.truncated),
+            },
+          }
+        : tab)
+    } catch (reason) {
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: workspaceErrorMessage(reason, '本机文件读取失败。') }
+        : tab)
+    }
+    return
+  }
+  if (String(current.file.kind || '') === 'local-attachment') {
+    const workspaceId = String(current.file.workspace_id || '').trim()
+    const attachmentId = String(current.file.attachment_id || '').trim()
+    const workspace = electronAgentBridge()?.attachmentWorkspace || electronAgentBridge()?.attachments
+    if (!workspaceId || !attachmentId || !workspace?.read) {
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: '本地附件工作区已释放，无法读取此文件。' }
+        : tab)
+      return
+    }
+    const token = beginWorkspaceRequest(tabId)
+    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+      ? { ...tab, loading: true, error: '' }
+      : tab)
+    try {
+      // Viewer is a bounded preview; Pi itself remains the only path that can
+      // page through the complete large file. Never fall back to the server
+      // attachment download route for a local-attachment identity.
+      const result = await workspace.read({
+        workspaceId,
+        attachmentId,
+        expectedAccountId: String(current.file.account_id || localAccountId()).trim(),
+        expectedRunId: String(current.file.run_id || '').trim(),
+        expectedSessionId: String(current.file.session_id || current.sessionId || '').trim(),
+        offset: 0,
+        length: 512 * 1024,
+      })
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      const suffix = result?.eof ? '' : '\n\n[文件较大，此处仅显示本地预览前 512KiB；仍可继续分页读取。]'
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? {
+            ...tab,
+            title: String(result?.name || tab.title),
+            loading: false,
+            error: '',
+            content: `${String(result?.text || '')}${suffix}`,
+            file: {
+              ...tab.file,
+              filename: String(result?.name || tab.file.filename),
+              mime: String(result?.mime || tab.file.mime),
+              body_omitted: !Boolean(result?.eof),
+            },
+          }
+        : tab)
+    } catch (reason) {
+      if (!workspaceRequestIsCurrent(tabId, token)) return
+      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
+        ? { ...tab, loading: false, error: workspaceErrorMessage(reason, '本地附件已释放或读取失败。') }
+        : tab)
+    }
+    return
+  }
   const downloadUrl = String(current.file.download_url || '').trim()
   const eventId = String(current.file.event_id || '').trim()
   const attachmentIndex = Math.max(0, Number(current.file.attachment_index) || 0)
@@ -2527,9 +2752,18 @@ async function loadWorkspaceSessionSource(
 
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
 const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
-// 对话行运行态：本地刚发送时立即显示；随后由项目级 running 快照统一校准所有会话。
-function isSessionWaiting(id: string): boolean {
-  return sendingSessionIds.value.includes(id) || runningSessionIds.value.includes(id)
+type LocalSessionRunState = 'queued' | 'running' | 'waiting_user'
+const localSessionRunStates = ref<Record<string, LocalSessionRunState>>({})
+function sessionRuntimeState(id: string): LocalSessionRunState | '' {
+  const local = localSessionRunStates.value[id]
+  if (local) return local
+  return sendingSessionIds.value.includes(id) || runningSessionIds.value.includes(id) ? 'running' : ''
+}
+function sessionRuntimeLabel(id: string): string {
+  const state = sessionRuntimeState(id)
+  if (state === 'queued') return '任务排队中'
+  if (state === 'waiting_user') return '需要用户输入'
+  return state === 'running' ? '对话运行中' : ''
 }
 const preparingSend = ref(false)
 const sendingSessionIds = ref<string[]>([])
@@ -2585,6 +2819,596 @@ const RUNNING_POLL_IDLE_MS = 3500
 const activeTurnId = ref('')
 const activeTurnSessionId = ref('')
 const cancelRequested = ref(false)
+interface ElectronAgentRunContext {
+  run: FoundationAgentRun
+  protocolState: TurnProtocolState
+  state: string
+  ephemeralText: string
+  startedAt: number
+  acceptCanonical?: (model: TurnProtocolReadModel) => void
+  local?: boolean
+  localUserEventId?: string
+  localAssistantEventId?: string
+  localDescriptor?: any
+  localCold?: boolean
+  localInteractionEventId?: string
+}
+const electronAgentRuns = new Map<string, ElectronAgentRunContext>()
+const electronAgentWaiters = new Map<string, {
+  resolve: (event: VibeAgentEvent) => void
+  reject: (reason: Error) => void
+}>()
+let offVibeAgentEvent: (() => void) | null = null
+
+function electronAgentBridge() {
+  return window.electronAPI?.vibeAgent
+}
+
+function electronRunForTurn(turnId: string, sessionId = ''): ElectronAgentRunContext | null {
+  const normalizedTurnId = String(turnId || '')
+  const normalizedSessionId = String(sessionId || '')
+  for (const context of electronAgentRuns.values()) {
+    if (normalizedTurnId && context.run.turn_id !== normalizedTurnId) continue
+    if (normalizedSessionId && context.run.session_id !== normalizedSessionId) continue
+    return context
+  }
+  return null
+}
+
+function canonicalDeltaEvents(delta: any): any[] {
+  if (Array.isArray(delta?.events)) return delta.events
+  if (Array.isArray(delta?.journal?.events)) return delta.journal.events
+  return []
+}
+
+function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunContext {
+  const existing = electronAgentRuns.get(run.run_id)
+  if (existing) {
+    existing.run = { ...existing.run, ...run }
+    return existing
+  }
+  const context: ElectronAgentRunContext = {
+    run,
+    protocolState: createTurnProtocolState(),
+    state: String(run.state || 'queued'),
+    ephemeralText: '',
+    startedAt: Date.now(),
+    local: String((run as any).execution_mode || (run as any).executionMode || '') === 'local',
+  }
+  electronAgentRuns.set(run.run_id, context)
+  return context
+}
+
+function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: any) {
+  const rows = canonicalDeltaEvents(delta)
+  if (!rows.length) return
+  context.ephemeralText = ''
+  const previousState = context.state
+  const model = applyTurnProtocolEvents(context.protocolState, rows)
+  context.state = model.state
+  const live = activeSessionId.value === context.run.session_id
+  context.acceptCanonical?.(model)
+  if (!live) return
+  streamingOwnerSessionId.value = context.run.session_id
+  activeTurnId.value = context.run.turn_id
+  activeTurnSessionId.value = context.run.session_id
+  setSessionRunning(context.run.session_id, !model.terminal)
+  if (previousState === 'waiting_user' && model.state === 'running') startElapsedTicker(Date.now())
+  applyCanonicalReadModel(model)
+  scrollBottomIfFollowing()
+}
+
+function projectElectronAgentProgress(context: ElectronAgentRunContext) {
+  if (activeSessionId.value !== context.run.session_id) return
+  streamingOwnerSessionId.value = context.run.session_id
+  activeTurnId.value = context.run.turn_id
+  activeTurnSessionId.value = context.run.session_id
+  processExpanded.value = true
+  streamingProcess.status = 'running'
+  const canonicalSteps = readTurnProtocol(context.protocolState).process
+  const partial: ProcessStep[] = context.ephemeralText ? [{
+    kind: 'message',
+    key: `electron-agent-delta:${context.run.run_id}`,
+    text: context.ephemeralText,
+    phase: 'commentary',
+    source: 'model',
+    authority: 'ephemeral',
+    streaming: true,
+  }] : []
+  streamingProcess.steps = [
+    ...canonicalSteps,
+    ...partial,
+  ]
+}
+
+function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) {
+  if (!text) return
+  // Keep the partial while another session is open, then re-project it when
+  // the user returns. It remains ephemeral and never enters session history.
+  context.ephemeralText = (context.ephemeralText + text).slice(-2_000_000)
+  projectElectronAgentProgress(context)
+  void scrollBottomIfFollowing()
+}
+
+function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAgentEvent) {
+  const waiting = String(event.state || context.state) === 'waiting_user'
+  if (!waiting) context.ephemeralText = ''
+  context.state = String(event.state || context.state)
+  const waiter = electronAgentWaiters.get(context.run.run_id)
+  if (event.type === 'error') {
+    waiter?.reject(new Error(event.code || 'Electron Agent 运行失败'))
+  } else {
+    waiter?.resolve(event)
+  }
+  electronAgentWaiters.delete(context.run.run_id)
+  if (activeSessionId.value === context.run.session_id) {
+    if (waiting && context.local) {
+      stopElapsedTicker()
+      streamingProcess.status = 'done'
+      streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
+    } else {
+      streamingProcess.steps = readTurnProtocol(context.protocolState).process
+    }
+  }
+  if (event.type === 'terminal') {
+    if (context.local) setLocalSessionRuntimeState(context.run.session_id, 'terminal')
+    setSessionRunning(context.run.session_id, false)
+    if (activeSessionId.value === context.run.session_id) cancelRequested.value = false
+    void finalizeElectronAgentPresentation(context)
+    electronAgentRuns.delete(context.run.run_id)
+  }
+}
+
+async function finalizeElectronAgentPresentation(context: ElectronAgentRunContext) {
+  if (!context.local) await refreshElectronAgentRunHistory(context.run.session_id)
+  if (
+    activeSessionId.value !== context.run.session_id
+    || streamingOwnerSessionId.value !== context.run.session_id
+  ) return
+  stopElapsedTicker()
+  foundationBusy.value = false
+  if (activeTurnId.value === context.run.turn_id) activeTurnId.value = ''
+  if (activeTurnSessionId.value === context.run.session_id) activeTurnSessionId.value = ''
+  streamingOwnerSessionId.value = ''
+  clearStreamingAssistant()
+  resetProcessState(streamingProcess)
+}
+
+function electronAgentStateIsTerminal(state: unknown): boolean {
+  return ['cancelled', 'completed', 'succeeded', 'failed', 'interrupted'].includes(String(state || ''))
+}
+
+function consumeElectronAgentStatus(context: ElectronAgentRunContext, status: any) {
+  if (!status || typeof status !== 'object') return
+  if (Number.isFinite(Number(status.startedAt)) && Number(status.startedAt) > 0) {
+    context.startedAt = Number(status.startedAt)
+  }
+  if (typeof status.assistantPartialText === 'string') {
+    context.ephemeralText = status.assistantPartialText.slice(-2_000_000)
+  }
+  if (status.journalDelta) applyElectronAgentCanonical(context, status.journalDelta)
+  else if (status.journal_delta) applyElectronAgentCanonical(context, status.journal_delta)
+  const state = String(status.state || status.runtime_state || '')
+  if (state) context.state = state
+  if (['queued', 'connecting', 'running', 'cancelling'].includes(state || context.state)) {
+    projectElectronAgentProgress(context)
+    if (activeSessionId.value === context.run.session_id && !_elapsedTimer) {
+      startElapsedTicker(context.startedAt)
+    }
+  }
+  if (electronAgentStateIsTerminal(state)) {
+    handleVibeAgentEvent({
+      schema: 'vibe_agent_event.v1',
+      runId: context.run.run_id,
+      turnId: context.run.turn_id,
+      sessionId: context.run.session_id,
+      type: 'terminal',
+      state,
+    })
+  } else if (state === 'waiting_user') {
+    handleVibeAgentEvent({
+      schema: 'vibe_agent_event.v1',
+      runId: context.run.run_id,
+      turnId: context.run.turn_id,
+      sessionId: context.run.session_id,
+      type: 'interaction',
+      state,
+    })
+  }
+}
+
+function localEventId(context: ElectronAgentRunContext, role: string): string {
+  return `local:${context.run.run_id}:${role}`
+}
+
+function localDisplayEvent(
+  context: ElectronAgentRunContext,
+  role: string,
+  content: string,
+  meta: Record<string, any> = {},
+  attachments: any[] = [],
+): VibeEvent {
+  const existing = events.value.find((item: any) => item.id === localEventId(context, role))
+  const nextOrder = existing?.event_order || Math.max(0, ...events.value.map((item: any) => Number(item.event_order || 0))) + 1
+  return {
+    id: localEventId(context, role),
+    session_id: context.run.session_id,
+    vibe_project_id: String(context.run.project_id || context.run.project || ''),
+    user_id: Number(currentUser.value?.id || 0),
+    role,
+    input_type: 'text',
+    content,
+    attachments: Array.isArray(attachments) ? attachments : [],
+    event_order: nextOrder,
+    mode: 'local_pi',
+    meta: { local_agent: true, run_id: context.run.run_id, trace_id: (context.run as any).trace_id || '', ...meta },
+    created_at: new Date().toISOString(),
+  }
+}
+
+function localInteractionEventId(runId: string, pendingId: string): string {
+  const run = String(runId || '').trim()
+  const pending = String(pendingId || '').trim()
+  return run && pending ? `local:${run}:interaction:${pending}` : ''
+}
+
+function localInteractionPendingId(payload: any): string {
+  const source = payload?.payload && typeof payload.payload === 'object' && !payload.kind
+    ? payload.payload
+    : payload
+  return String(source?.confirmation_id || source?.interaction_id || '').trim()
+}
+
+async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payload?: any): Promise<string> {
+  if (!context.local) return ''
+  const sessionId = String(context.run.session_id || '')
+  const pendingId = localInteractionPendingId(payload)
+  const predictedId = localInteractionEventId(context.run.run_id, pendingId)
+  if (predictedId) context.localInteractionEventId = predictedId
+  const epoch = sessionRequestEpoch
+  const fresh = await requestSessionEvents(sessionId).catch(() => null)
+  if (!fresh || epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return predictedId
+  events.value = sortEvents(fresh)
+  restoreClarificationFromEvents()
+  const persisted = events.value.find((event: any) => (
+    event?.role === 'assistant'
+    && event?.meta?.local_agent === true
+    && String(event?.meta?.run_id || '') === context.run.run_id
+    && (!pendingId || String(
+      event?.meta?.clarification?.raw?.confirmation_id
+      || event?.meta?.clarification?.raw?.interaction_id
+      || '',
+    ) === pendingId)
+  ))
+  if (persisted?.id) context.localInteractionEventId = String(persisted.id)
+  if (persisted && eventProcessSteps(persisted).length && context.state === 'waiting_user') {
+    // The Main-owned journal now renders the same process. Release only the
+    // duplicate ephemeral overlay; the logical Run context remains parked.
+    context.ephemeralText = ''
+    streamingProcess.steps = []
+    streamingProcess.status = 'done'
+  }
+  await scrollBottomIfFollowing()
+  return String(context.localInteractionEventId || predictedId)
+}
+
+function showLocalInteraction(context: ElectronAgentRunContext, payload: any) {
+  context.state = 'waiting_user'
+  if (activeSessionId.value !== context.run.session_id) return
+  const source = payload?.payload && typeof payload.payload === 'object' && !payload.kind
+    ? payload.payload
+    : payload
+  const kind = String(source?.kind || '')
+  const question = String(source?.question_to_user || source?.description || (kind === 'knowledge_confirmation' ? '请确认是否执行这项知识变更。' : '请补充这项操作所需的信息。'))
+  const preview = source?.preview && typeof source.preview === 'object' ? source.preview : {}
+  const sourceOptions = Array.isArray(source?.options) ? source.options : []
+  const pendingId = String(source?.confirmation_id || source?.interaction_id || '')
+  context.localInteractionEventId = localInteractionEventId(context.run.run_id, pendingId)
+  const raw: any = kind === 'knowledge_confirmation'
+    ? {
+        schema: 'clarification.v2',
+        kind: 'confirm',
+        decision_type: 'confirmation',
+        run_id: context.run.run_id,
+        turn_id: context.run.turn_id,
+        goal_turn_id: context.run.turn_id,
+        confirmation_id: pendingId,
+        title: question,
+        question,
+        description: String(source?.description || ''),
+        options: sourceOptions.length ? sourceOptions : [
+          { id: 'apply', label: '确认执行', action: 'apply' },
+          { id: 'cancel', label: '先不处理', is_cancel: true, action: 'cancel' },
+        ],
+        ...(source?.input && typeof source.input === 'object' ? { input: source.input } : {}),
+        ...(source?.old_body !== undefined || preview?.old_body !== undefined
+          ? { old_body: String(source?.old_body ?? preview.old_body ?? '') } : {}),
+        ...(source?.new_body !== undefined || preview?.new_body !== undefined
+          ? { new_body: String(source?.new_body ?? preview.new_body ?? '') } : {}),
+        ...(source?.preview_truncated !== undefined || preview?.preview_truncated !== undefined
+          ? { preview_truncated: Boolean(source?.preview_truncated ?? preview.preview_truncated) } : {}),
+        ...(source?.preview_excerpt !== undefined || preview?.preview_excerpt !== undefined
+          ? { preview_excerpt: String(source?.preview_excerpt ?? preview.preview_excerpt ?? '') } : {}),
+        preview,
+      }
+    : {
+        schema: 'clarification.v2',
+        kind: 'ask',
+        run_id: context.run.run_id,
+        turn_id: context.run.turn_id,
+        goal_turn_id: context.run.turn_id,
+        interaction_id: pendingId,
+        title: question,
+        question,
+        description: String(source?.description || ''),
+        options: sourceOptions,
+        ...(source?.input && typeof source.input === 'object' ? { input: source.input } : {}),
+      }
+  clarificationActive.value = { question, raw, pending: [] }
+  setSessionRunning(context.run.session_id, true)
+}
+
+function localAgentErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '')
+  const messages: Record<string, string> = {
+    vibe_agent_host_busy: '本机当前已有 5 个任务在运行，请等待其中一个结束后再试。',
+    vibe_agent_session_busy: '这个会话已有一个任务正在运行或等你选择，请先完成或取消它。',
+    vibe_agent_runtime_snapshot_auth_missing: '当前登录状态无法领取模型配置，请重新登录。',
+    vibe_agent_runtime_snapshot_invalid: '服务端返回的模型运行配置无效，请检查配置。',
+    vibe_agent_runtime_snapshot_provider_key_missing: '当前模型没有可用凭据，请检查 Provider 配置。',
+    authentication_required: '登录状态已失效，请重新登录。',
+    account_not_found: '当前登录账号不存在，请重新登录。',
+    account_disabled: '当前账号已停用，不能启动对话。',
+    conversation_maintenance: '对话服务正在维护，暂时不能启动新任务。',
+    project_not_found: '当前项目不存在或已被删除。',
+    project_membership_required: '你已不再是当前项目成员。',
+    account_identity_mismatch: '登录账号在启动过程中发生变化，请重新登录。',
+    vibe_agent_account_unbound: '本机运行身份尚未确认，请先发起一次本机对话。',
+    vibe_agent_account_binding_conflict: '本机运行身份已变化，请重启客户端后重新登录。',
+    vibe_agent_account_drift: '登录账号在本机运行过程中发生变化，请重启客户端后重新登录。',
+    pi_agent_not_entitled: '当前账号暂未开放本机运行。',
+    electron_agent_not_entitled: '当前账号暂未开放本机运行。',
+    provider_unavailable: '当前模型服务暂时不可用。',
+    provider_disabled: '当前模型已停用，请重新选择。',
+    provider_identity_invalid: '当前 Provider 配置身份无效。',
+    provider_key_missing: '当前 Provider 缺少有效凭据。',
+    provider_base_url_invalid: '当前 Provider 服务地址无效。',
+    provider_proxy_url_invalid: '当前 Provider 代理地址无效。',
+    provider_strong_model_invalid: '当前 Provider 没有可用的增强模型。',
+    provider_protocol_unsupported: '当前 Provider 不支持客户端对话协议。',
+    provider_config_drift: '模型配置在本轮处理中发生变化，请重新发起。',
+    model_call_budget_exhausted: '本轮模型调用次数已达到安全上限。',
+    context_budget_exhausted: '本轮上下文已达到安全上限。',
+    total_token_budget_exhausted: '本轮模型用量已达到安全上限。',
+    wall_clock_exhausted: '本轮计算时间已达到安全上限。',
+    step_timeout: '模型服务等待超时，本轮未产生结果。',
+    provider_outcome_unknown: '模型请求结果无法确认，请查看 Trace 后再决定是否重试。',
+    tool_outcome_unknown: '工具执行结果无法确认，请查看 Trace 后再决定是否重试。',
+    runner_interrupted: '本机任务已中断，请查看 Trace。',
+    vibe_agent_attachment_authored_body_too_large: '本地整理后的 Markdown 超过当前 4,000,000 字符上限，请缩小范围后再录入。',
+    vibe_agent_attachment_source_changed: '本地附件在读取期间发生变化，请重新选择后再试。',
+    vibe_agent_attachment_binding_required: '本地附件缺少当前 Run 绑定，请重新选择附件。',
+    vibe_agent_knowledge_payload_too_large: '知识库录入正文超过当前传输上限，请缩小范围后再录入。',
+    invalid_markdown_chunks: 'Markdown 分块校验失败，请重新整理附件后再试。',
+    pi_dependency_version_mismatch: '本机运行组件版本不兼容，请更新客户端。',
+    node_version_unsupported: '本地运行环境版本不兼容，请更新客户端。',
+  }
+  if (messages[raw]) return messages[raw]
+  // Main/服务端的内部实现名、协议名和错误码只进入 Trace。只有不含
+  // 内部术语的中文 public message 才允许直接展示。
+  if (/[一-鿿]/.test(raw) && !/(?:\bpi\b|electron|agent|runner)/i.test(raw)) return raw
+  return '本轮处理失败，请稍后重试；如问题持续，请查看 Trace。'
+}
+
+function handleVibeAgentEvent(event: VibeAgentEvent) {
+  if (event?.schema !== 'vibe_agent_event.v1' || !event.runId) return
+  const context = electronAgentRuns.get(event.runId)
+  if (!context || event.turnId !== context.run.turn_id || event.sessionId !== context.run.session_id) return
+  const previousState = context.state
+  if (context.local && event.type === 'state') {
+    const nextState = String(event.state || context.state)
+    setLocalSessionRuntimeState(context.run.session_id, nextState)
+    if (['queued', 'connecting', 'running'].includes(nextState)) {
+      streamingOwnerSessionId.value = context.run.session_id
+      activeTurnId.value = context.run.turn_id
+      activeTurnSessionId.value = context.run.session_id
+      processExpanded.value = true
+      if (previousState === 'waiting_user') {
+        context.ephemeralText = ''
+        streamingProcess.steps = []
+        context.startedAt = Date.now()
+        startElapsedTicker(context.startedAt)
+      }
+      streamingProcess.status = 'running'
+      void scrollBottomIfFollowing()
+    } else if (nextState === 'waiting_user') {
+      stopElapsedTicker()
+      streamingProcess.status = 'done'
+      streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
+    }
+  }
+  if (event.journalDelta) applyElectronAgentCanonical(context, event.journalDelta)
+  if (event.type === 'assistant_delta') showElectronAgentDelta(context, String(event.text || ''))
+  if (event.type === 'session_title' && context.local) {
+    const title = String(event.title || '').trim()
+    if (title) applySessionTitle(context.run.session_id, title)
+  }
+  if (event.type === 'interaction_request') {
+    // Main emits a waiting state before the detailed request while it writes
+    // the durable checkpoint. Render/register the real card first; only then
+    // may the sender promise settle. Otherwise the context can be removed by
+    // sendLocalPiTurn before this request arrives, dropping the card entirely.
+    showLocalInteraction(context, event.payload)
+    if (context.local) {
+      setLocalSessionRuntimeState(context.run.session_id, 'waiting_user')
+      settleElectronAgentRun(context, { ...event, state: 'waiting_user' })
+      void materializeLocalWaitingRun(context, event.payload)
+    }
+  }
+  if (event.type === 'done') {
+    const payload: any = event.payload || {}
+    context.state = String(payload.status || context.state)
+    if (payload.text && payload.status === 'completed') {
+      const assistant = localDisplayEvent(context, 'assistant', String(payload.text), { stop_reason: 'stop' })
+      context.localAssistantEventId = assistant.id
+      if (activeSessionId.value === context.run.session_id) {
+        // `done(completed)` is the atomic UI handoff: every preceding delta
+        // stays inside the process rail; only the complete answer moves out.
+        stopElapsedTicker()
+        streamingProcess.status = 'done'
+        streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
+        context.ephemeralText = ''
+        streamingAssistantEventId.value = assistant.id
+        upsertEvent(assistant)
+      }
+    }
+    if (payload.status === 'waiting_user') {
+      // `done` is only a lifecycle marker in the local protocol and normally
+      // carries no question/preview. The preceding interaction_request owns
+      // the actual card; rendering this bare status as a new card would
+      // replace its identity and lose the user's pending choices.
+      const hasInteractionIdentity = Boolean(
+        String(payload.interaction_id || payload.confirmation_id || '').trim(),
+      )
+      const hasInteractionDetail = Boolean(
+        String(payload.question_to_user || payload.description || '').trim()
+        || Array.isArray(payload.options)
+        || (payload.preview && typeof payload.preview === 'object'),
+      )
+      if (hasInteractionIdentity && hasInteractionDetail) {
+        const currentId = String(
+          clarificationActive.value?.raw?.interaction_id
+          || clarificationActive.value?.raw?.confirmation_id
+          || '',
+        ).trim()
+        if (!currentId || currentId !== String(payload.interaction_id || payload.confirmation_id || '').trim()) {
+          showLocalInteraction(context, payload)
+        }
+      }
+    }
+  }
+  if (event.type === 'state' || event.type === 'interaction') {
+    context.state = String(event.state || context.state)
+    setSessionRunning(context.run.session_id, true)
+    // `state=running` is emitted as soon as the child reaches `ready`; it is
+    // only a progress notification, not completion of the logical Run. Settle
+    // the sender promise at a real waiting checkpoint (or explicit interaction)
+    // so the renderer cannot tear down its owner while Pi is still running.
+    if (event.type === 'interaction') {
+      settleElectronAgentRun(context, event)
+    }
+  }
+  if (event.type === 'error' || event.type === 'terminal') settleElectronAgentRun(context, event)
+}
+
+function ensureVibeAgentEventListener() {
+  if (offVibeAgentEvent || !electronAgentBridge()?.onEvent) return
+  offVibeAgentEvent = electronAgentBridge()!.onEvent(handleVibeAgentEvent)
+}
+
+async function refreshElectronAgentRunHistory(sessionId: string) {
+  if (!sessionId || activeSessionId.value !== sessionId) return
+  const epoch = sessionRequestEpoch
+  const fresh = await listVibeEvents(sessionId).catch(() => null)
+  if (!fresh || epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
+  events.value = sortEvents(fresh)
+  restoreClarificationFromEvents()
+}
+
+async function recoverElectronAgentRunUnsafe(sessionId: string) {
+  const bridge = electronAgentBridge()
+  if (!bridge || !sessionId) return
+  ensureVibeAgentEventListener()
+  let context = electronRunForTurn('', sessionId)
+  if (context?.local && !context.localCold && bridge.status) {
+    const liveStatus = await bridge.status({ runId: context.run.run_id, accountId: localAccountId() }).catch(() => null)
+    if (!liveStatus && bridge.recoverableLocal) {
+      const recoverable = bridge.recoverableLocal({ accountId: localAccountId() })
+      const descriptors: any = recoverable ? await recoverable.catch(() => []) : []
+      const descriptor = (Array.isArray(descriptors) ? descriptors : []).find((item: any) =>
+        String(item?.run_id || item?.run?.run_id || '') === context!.run.run_id)
+      if (descriptor) {
+        context.localDescriptor = descriptor
+        context.localCold = true
+      }
+    }
+  }
+  if (!context) {
+    const listed: any = await bridge.list({ accountId: localAccountId() }).catch(() => null)
+    const runs = Array.isArray(listed)
+      ? listed
+      : Array.isArray(listed?.runs)
+        ? listed.runs
+        : Array.isArray(listed?.items)
+          ? listed.items
+          : []
+    let run = runs.find((item: any) =>
+      item?.execution_host === 'electron'
+      && String(item?.session_id || item?.sessionId || '') === sessionId
+      && !electronAgentStateIsTerminal(item?.state || item?.runtime_state))
+    let descriptor: any = null
+    if (!run && bridge.recoverableLocal) {
+      const descriptors: any = await bridge.recoverableLocal({ accountId: localAccountId() }).catch(() => [])
+      descriptor = (Array.isArray(descriptors) ? descriptors : []).find((item: any) =>
+        String(item?.run?.session_id || item?.run?.sessionId || item?.session_id || '') === sessionId
+        && ['waiting_user', 'resume_ready'].includes(String(item?.phase || item?.state || '')))
+      if (descriptor?.run) {
+        run = {
+          ...descriptor.run,
+          execution_host: 'electron',
+          execution_mode: 'local',
+          state: 'waiting_user',
+          run_id: String(descriptor.run.run_id || descriptor.run.runId || descriptor.run_id || ''),
+          turn_id: String(descriptor.run.turn_id || descriptor.run.turnId || ''),
+          session_id: String(descriptor.run.session_id || descriptor.run.sessionId || sessionId),
+          project_id: String(descriptor.run.project_id || descriptor.run.projectId || descriptor.run.project || ''),
+        }
+      }
+    }
+    if (!run?.run_id && !run?.runId) return
+    context = registerElectronAgentRun({
+      ...run,
+      run_id: String(run.run_id || run.runId),
+      turn_id: String(run.turn_id || run.turnId),
+      session_id: String(run.session_id || run.sessionId),
+    } as FoundationAgentRun)
+    if (descriptor) {
+      context.localDescriptor = descriptor
+      context.localCold = true
+    }
+  }
+  streamingOwnerSessionId.value = sessionId
+  activeTurnId.value = context.run.turn_id
+  activeTurnSessionId.value = sessionId
+  setSessionRunning(sessionId, true)
+  setLocalSessionRuntimeState(sessionId, String((context as any).state || 'running'))
+  if (context.localCold) {
+    setLocalSessionRuntimeState(sessionId, 'waiting_user')
+    const pending = context.localDescriptor?.pending
+    if (pending) showLocalInteraction(context, pending)
+    return
+  }
+  await bridge.attach({ runId: context.run.run_id, accountId: localAccountId() }).catch(() => null)
+  const status: any = await bridge.status({ runId: context.run.run_id, accountId: localAccountId() }).catch(() => null)
+  consumeElectronAgentStatus(context, status)
+}
+
+// Opening a session and answering a just-restored card can race during a
+// renderer reload. Serialize recovery per session so two callers cannot both
+// attach/restart the same logical Pi Run.
+const electronRecoveryInFlight = new Map<string, Promise<void>>()
+function recoverElectronAgentRun(sessionId: string): Promise<void> {
+  const key = String(sessionId || '').trim()
+  if (!key) return Promise.resolve()
+  const existing = electronRecoveryInFlight.get(key)
+  if (existing) return existing
+  const task = recoverElectronAgentRunUnsafe(key).finally(() => {
+    if (electronRecoveryInFlight.get(key) === task) electronRecoveryInFlight.delete(key)
+  })
+  electronRecoveryInFlight.set(key, task)
+  return task
+}
+
 type ComposerToastNotice = {
   title: string
   type?: 'success' | 'info' | 'error'
@@ -2609,12 +3433,51 @@ watch(cancelRequested, (stopping, wasStopping) => {
 })
 
 async function stopFoundationTurn() {
-  if (!activeTurnId.value || cancelRequested.value) return
+  const visibleRun = electronRunForTurn('', activeSessionId.value)
+  const targetTurnId = visibleRun?.run.turn_id
+    || (activeTurnSessionId.value === activeSessionId.value ? activeTurnId.value : '')
+  if (!targetTurnId || cancelRequested.value) return
   cancelRequested.value = true
   try {
+    const electronRun = electronRunForTurn(
+      targetTurnId,
+      activeSessionId.value,
+    )
+    if (electronRun) {
+      const bridge = electronAgentBridge()
+      try {
+        if (!bridge) throw new Error('Electron Agent 桥不可用')
+        const result: any = await bridge.cancel({
+          runId: electronRun.run.run_id,
+          accountId: localAccountId(),
+          turnId: electronRun.run.turn_id,
+          sessionId: electronRun.run.session_id,
+        })
+        if (!result?.accepted) throw new Error(
+          result?.unknown ? 'Electron Agent 取消结果尚未确认' : 'Electron Agent 未接受取消请求',
+        )
+      } catch {
+        // Local Pi has no server-side Turn owner. Sending its identity to the
+        // legacy cancel endpoint cannot stop the child and would reintroduce a
+        // runtime server dependency; let the user retry once Main is reachable.
+        if (electronRun.local) {
+          cancelRequested.value = false
+          ElMessage.error('本地 Agent 暂时无法连接，请稍后重试停止。')
+          return
+        }
+        const result = await cancelFoundationTurn(
+          electronRun.run.turn_id,
+          electronRun.run.session_id,
+        )
+        if (!result.accepted && result.current_state !== 'cancel_requested') {
+          cancelRequested.value = false
+        }
+      }
+      return
+    }
     const result = await cancelFoundationTurn(
-      activeTurnId.value,
-      activeTurnSessionId.value || activeSessionId.value,
+      targetTurnId,
+      activeSessionId.value,
     )
     if (!result.accepted && result.current_state !== 'cancel_requested') {
       cancelRequested.value = false
@@ -2703,6 +3566,7 @@ const streamingContinuationParentId = ref('')
 const hoveredConversationRailIndex = ref<number | null>(null)
 const activeConversationEventId = ref('')
 const timelineEl = ref<HTMLElement | null>(null)
+let timelineUserScrollIntentUntil = 0
 const processBodyEl = ref<HTMLElement | null>(null)
 const draftEl = ref<HTMLTextAreaElement | null>(null)
 const MAX_CONVERSATION_RAIL_ITEMS = 40
@@ -2711,6 +3575,23 @@ const baselineDraft = reactive<{ system_name: string; summary: string; system_go
 const composerDraft = computed({
   get: () => draft.value,
   set: (value: string) => { draft.value = value },
+})
+const localDraftPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+watch([composerDraft, activeSessionId], ([value, sessionId]) => {
+  const key = String(sessionId || '')
+  if (!key.startsWith('session_')) return
+  const current = localDraftPersistTimers.get(key)
+  if (current) clearTimeout(current)
+  const accountId = localAccountId()
+  const timer = setTimeout(() => {
+    localDraftPersistTimers.delete(key)
+    void electronAgentBridge()?.sessions?.update?.({
+      sessionId: key,
+      accountId,
+      draft: value,
+    }).catch(() => undefined)
+  }, 300)
+  localDraftPersistTimers.set(key, timer)
 })
 
 const projectOptions = computed(() => projects.value.map(project => {
@@ -2739,8 +3620,7 @@ const activeSessionHasUnresolvedTurn = computed(() =>
 )
 const activeSessionSending = computed(() =>
   !!activeSessionId.value && (
-    sendingSessionIds.value.includes(activeSessionId.value)
-    || runningSessionIds.value.includes(activeSessionId.value)
+    !!sessionRuntimeState(activeSessionId.value)
     || activeSessionHasUnresolvedTurn.value
   ),
 )
@@ -2754,8 +3634,8 @@ const activeConversationRailIndex = computed(() => {
 const sending = computed(() =>
   projectSwitchPhase.value === 'working'
   || preparingSend.value
-  || foundationBusy.value
-  || sendingSessionIds.value.length > 0
+  || (!useLocalPiAgent() && foundationBusy.value)
+  || (!useLocalPiAgent() && sendingSessionIds.value.length > 0)
   || activeSessionSending.value,
 )
 const composerPlaceholder = computed(() => '随心输入')
@@ -2979,11 +3859,15 @@ function trackMaximizeState() {
 }
 
 onBeforeUnmount(() => {
+  for (const timer of localDraftPersistTimers.values()) clearTimeout(timer)
+  localDraftPersistTimers.clear()
   projectListRefreshEpoch += 1
   projectListRefreshing.value = false
   projectSwitchRequestToken.value = null
   projectSwitchDialogOpen.value = false
   offMaximizeState?.()
+  offVibeAgentEvent?.()
+  offVibeAgentEvent = null
   stopUserMessageOverflowObservation()
   stopShellResizeObserver()
   cancelSideResize()
@@ -3043,10 +3927,26 @@ onMounted(() => {
   initializeInfoRail()
   startShellResizeObserver()
   startWorkspaceMainWidthObserver()
-  bootstrap()
-  if (readLocalAuthToken()) void fetchProfile()
+  const authToken = readLocalAuthToken()
+  void (async () => {
+    if (authToken) await fetchProfile().catch(() => undefined)
+    if (localPiAgentEnabled() && !String(currentUser.value?.id || '').trim()) {
+      ElMessage.error('当前账号身份无法确认，请重新登录。')
+      return
+    }
+    await bootstrap()
+    if (authToken && currentUser.value?.id) {
+      const resumeTraces = electronAgentBridge()?.trace?.resume?.({
+        accountId: localAccountId(),
+        baseUrl: localKnowledgeBaseUrl(),
+        headers: { Authorization: `token=${authToken}` },
+      })
+      if (resumeTraces) void resumeTraces.catch(() => undefined)
+    }
+  })()
   loadVibeCapabilities()
   trackMaximizeState()
+  ensureVibeAgentEventListener()
 })
 
 watch(
@@ -3185,12 +4085,25 @@ async function loadProjectSwitchContext(
   if (!projectSwitchRequestIsActive(request)) return null
   if (!resolvedProject?.id) throw new Error('项目初始化响应无效，请重试。')
 
-  const loadedPage = await listVibeSessions(resolvedProject.id)
+  let loadedPage: any = { sessions: [], page: { next_cursor: '' } }
+  try {
+    loadedPage = await listVibeSessions(resolvedProject.id)
+  } catch (error) {
+    // Electron local sessions are authoritative on the client. If the legacy
+    // server session list is temporarily unreachable, keep navigation usable
+    // from the local journal instead of hiding every local conversation.
+    if (!electronAgentBridge()?.sessions?.list) throw error
+  }
   if (!projectSwitchRequestIsActive(request)) return null
   if (!loadedPage || !Array.isArray(loadedPage.sessions)) {
     throw new Error('会话列表响应无效，请重试。')
   }
-  const loadedSessions = loadedPage.sessions
+  const remoteSessions = loadedPage.sessions
+  const loadedSessions = [
+    ...remoteSessions,
+    ...(await localSessionsForProject(String(project.id))).filter(local =>
+      !remoteSessions.some((remote: any) => remote.id === local.id)),
+  ]
   projectSwitchState.value = markProjectSwitchSessionsLoaded(
     projectSwitchState.value,
     request,
@@ -3249,6 +4162,7 @@ function resetProjectConversationState() {
   foundationBusy.value = false
   sendingSessionIds.value = []
   runningSessionIds.value = []
+  localSessionRunStates.value = {}
   runningTurns.value = []
   currentView.value = 'conversation'
 }
@@ -3583,9 +4497,31 @@ function applySessionTitle(sessionId: string, title: string) {
   sessions.value = sessions.value.map(item => item.id === sessionId ? { ...item, title } : item)
 }
 
+async function localSessionsForProject(projectId: string): Promise<VibeSession[]> {
+  const api = electronAgentBridge()?.sessions
+  if (!api?.list) return []
+  const rows: any[] = await api.list({ accountId: localAccountId(), projectId, limit: 1000 })
+  rows.forEach((row) => {
+    if (row?.session_id && typeof row?.draft === 'string') setDraftByKey(sessionDraftKey(String(row.session_id)), row.draft)
+  })
+  return rows.filter(row => row && row.session_id).map(row => ({
+    id: String(row.session_id),
+    title: String(row.title || '新的需求对话'),
+    vibe_project_id: String(row.project_id || projectId),
+    llm_provider_id: String(row.provider_id || '') || selectedLlmProviderId.value || undefined,
+    status: String(row.status || 'active'),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }))
+}
+
 const sessionTitleRequests = new Set<string>()
 
 async function autoNameSessionFromFirstInput(sessionId: string, content: string) {
+  // Electron-owned sessions are local-only. Do not send their first prompt to
+  // the legacy server title endpoint (which could leak local attachment
+  // context through a server session and cannot persist a `session_` id).
+  if (String(sessionId || '').startsWith('session_')) return
   const requestProjectEpoch = projectContextEpoch
   const requestProjectId = String(selectedProjectId.value ?? '')
   const session = sessions.value.find(item => item.id === sessionId)
@@ -3623,9 +4559,19 @@ async function refreshState(
 ) {
   const ownerId = vibeProject.value?.id || ''
   if (!ownerId) return
-  const loadedPage = await listVibeSessions(ownerId)
+  let loadedPage: any = { sessions: [], page: { next_cursor: '' } }
+  try {
+    loadedPage = await listVibeSessions(ownerId)
+  } catch (error) {
+    if (!electronAgentBridge()?.sessions?.list) throw error
+  }
   if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
-  sessions.value = loadedPage.sessions || []
+  const remoteSessions = loadedPage.sessions || []
+  sessions.value = [
+    ...remoteSessions,
+    ...(await localSessionsForProject(String(workspaceProjectContextId()))).filter(local =>
+      !remoteSessions.some((remote: any) => remote.id === local.id)),
+  ]
   sessionNextCursor.value = loadedPage.page?.next_cursor || ''
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
@@ -3691,7 +4637,10 @@ async function openSession(sessionId: string, preloadedEvents: VibeEvent[] | nul
   if (cachedTurn) adoptRunningTurnLease(cachedTurn)
   try {
     // 历史事件与 running 快照并行取，谁先回来谁先渲染。
-    const runningRefresh = refreshProjectRunningTurns().catch(() => {})
+    const runningRefresh = sessionId.startsWith('session_')
+      ? refreshLocalAgentStatuses().catch(() => {})
+      : refreshProjectRunningTurns().catch(() => {})
+    const electronRecovery = recoverElectronAgentRun(sessionId).catch(() => {})
     const loadedEvents = preloadedEvents || await requestSessionEvents(sessionId)
     if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
     events.value = sortEvents(loadedEvents)
@@ -3700,7 +4649,7 @@ async function openSession(sessionId: string, preloadedEvents: VibeEvent[] | nul
       deriveRecentSessionFiles(events.value, sessionId, Number.MAX_SAFE_INTEGER),
     )
     restoreClarificationFromEvents()  // #4：进会话时若有未答反问 → 还原选项框
-    await runningRefresh
+    await Promise.all([runningRefresh, electronRecovery])
     if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
     await scrollBottom()
   } catch (reason) {
@@ -3737,10 +4686,47 @@ function scheduleRunningTurnPolling(delay?: number) {
 
 function setSessionRunning(sessionId: string, running: boolean) {
   if (!sessionId) return
+  if (sessionId.startsWith('session_')) {
+    setLocalSessionRuntimeState(sessionId, running ? 'running' : 'terminal')
+    return
+  }
   const next = new Set(runningSessionIds.value)
   if (running) next.add(sessionId)
   else next.delete(sessionId)
   runningSessionIds.value = Array.from(next)
+}
+
+function setLocalSessionRuntimeState(sessionId: string, state: string) {
+  const id = String(sessionId || '').trim()
+  if (!id) return
+  const next = { ...localSessionRunStates.value }
+  if (['queued', 'connecting'].includes(state)) next[id] = 'queued'
+  else if (state === 'waiting_user') next[id] = 'waiting_user'
+  else if (['running', 'cancelling'].includes(state)) next[id] = 'running'
+  else delete next[id]
+  localSessionRunStates.value = next
+}
+
+async function refreshLocalAgentStatuses() {
+  const bridge = electronAgentBridge()
+  if (!bridge?.list) return
+  const result: any = await bridge.list({ accountId: localAccountId() })
+  const rows = Array.isArray(result)
+    ? result
+    : Array.isArray(result?.items) ? result.items : Array.isArray(result?.runs) ? result.runs : []
+  const projectId = String(knowledgeStatsProjectId(selectedProjectId.value) || '')
+  const next: Record<string, LocalSessionRunState> = {}
+  for (const item of rows) {
+    if (String(item?.execution_mode || item?.executionMode || '') !== 'local') continue
+    if (projectId && String(item?.project_id || item?.projectId || '') !== projectId) continue
+    const sessionId = String(item?.session_id || item?.sessionId || '')
+    const lifecycle = String(item?.lifecycle || item?.state || '')
+    if (!sessionId || lifecycle === 'terminal' || electronAgentStateIsTerminal(item?.state)) continue
+    if (lifecycle === 'waiting_user' || String(item?.state || '') === 'waiting_user') next[sessionId] = 'waiting_user'
+    else if (lifecycle === 'queued' || ['queued', 'connecting'].includes(String(item?.state || ''))) next[sessionId] = 'queued'
+    else next[sessionId] = 'running'
+  }
+  localSessionRunStates.value = next
 }
 
 function applyCanonicalReadModel(model: TurnProtocolReadModel) {
@@ -3774,6 +4760,17 @@ async function refreshProjectRunningTurns() {
   if (runningTurnPollInFlight) return
   runningTurnPollInFlight = true
   const contextEpoch = projectContextEpoch
+  if (localPiAgentEnabled() || sessions.value.some(item => String(item.id || '').startsWith('session_'))) {
+    try {
+      await refreshLocalAgentStatuses()
+      runningSessionIds.value = []
+      runningTurns.value = []
+    } finally {
+      runningTurnPollInFlight = false
+      if (contextEpoch === projectContextEpoch) scheduleRunningTurnPolling()
+    }
+    return
+  }
   // 后端按 row["project"] 精确比对，而发起提问时存进去的是
   // knowledgeStatsProjectId(selectedProjectId) —— AsyncTest 数字 ID。
   // 这里若用 vibeProject.id（UUID）查，永远匹配不上、items 恒为空，
@@ -4308,15 +5305,25 @@ async function recoverRunningTurnForSession(
   snapshot: FoundationRunningTurn[] = runningTurns.value,
 ) {
   if (!sessionId || !vibeProject.value?.id) return
+  // 本地 Session 的运行身份和 Journal 都由 Electron Main 持有；服务端
+  // running/Canonical replay 只认识服务端 Turn，二者绝不能互相兜底。
+  if (sessionId.startsWith('session_')) return
+  // The foreground sender is the owner until its Electron Run promise settles.
+  // A polling snapshot can legitimately lag while the backend is still
+  // admitting the turn; recovery must not reset its timer or replace its
+  // in-memory owner during that window.
+  if (
+    foundationBusy.value
+    && streamingOwnerSessionId.value === sessionId
+    && sendingSessionIds.value.includes(sessionId)
+  ) {
+    setSessionRunning(sessionId, true)
+    return
+  }
   const turn = snapshot.find(item => String(item.session_id || '') === sessionId) || null
   if (turn) {
     setSessionRunning(sessionId, true)
     // 当前窗口自己的 SSE 已实时驱动界面，禁止迟到 replay 覆盖同一轮实时 reducer。
-    if (
-      foundationBusy.value
-      && streamingOwnerSessionId.value === sessionId
-      && sendingSessionIds.value.includes(sessionId)
-    ) return
     adoptRunningTurnLease(turn)
     if (turn.replay_ready === false) {
       keepRecoveredTurnPending(sessionId)
@@ -4381,7 +5388,7 @@ function newConversation() {
 }
 
 async function deleteSession(sessionId: string) {
-  if (!sessionId || deletingSessionId.value || sending.value) return
+  if (!sessionId || deletingSessionId.value || sending.value || sessionRuntimeState(sessionId)) return
   const targetSession = sessions.value.find(item => item.id === sessionId)
   const targetTitle = targetSession ? sessionDisplayTitle(targetSession) : '这个会话'
   try {
@@ -4405,7 +5412,13 @@ async function deleteSession(sessionId: string) {
   deletingSessionId.value = sessionId
   const deletionProjectId = workspaceProjectContextId()
   try {
-    await deleteVibeSession(sessionId)
+    if (sessionId.startsWith('session_')) {
+      const localRemove = electronAgentBridge()?.sessions?.remove
+      if (!localRemove) throw new Error('本地会话存储不可用')
+      await localRemove({ sessionId, accountId: localAccountId() })
+    } else {
+      await deleteVibeSession(sessionId)
+    }
     clearSessionDraft(sessionId)
     const currentDeletionProjectId = workspaceProjectContextId()
     const deletingCurrentProject = currentDeletionProjectId === deletionProjectId
@@ -4500,6 +5513,47 @@ async function ensureSession() {
   return session.id
 }
 
+/** Local Pi sessions do not need a server VibeSession. Keep a small compatible
+ * projection in the renderer so existing session navigation can display it. */
+async function ensureLocalSession(): Promise<string> {
+  // Local sessions have an Electron-owned journal and must never reuse a
+  // server-backed session id.  The mode toggle can be changed while an old
+  // server session is open; silently appending local events to that session
+  // would make history/recovery split across two owners.
+  const currentId = String(activeSessionId.value || '')
+  const current = sessions.value.find(item => String(item.id) === currentId)
+  if (currentId.startsWith('session_') && current
+    && String(current.vibe_project_id || workspaceProjectContextId()) === String(workspaceProjectContextId())) {
+    return currentId
+  }
+  const sessionsApi = electronAgentBridge()?.sessions
+  if (!sessionsApi?.create) throw new Error('本地会话存储不可用')
+  const projectId = workspaceProjectContextId()
+  const created: any = await sessionsApi.create({
+    sessionId: localId('session'),
+    accountId: localAccountId(),
+    projectId,
+    title: '新的需求对话',
+    providerId: selectedLlmProviderId.value || '',
+    draft: draft.value,
+  })
+  const sessionId = String(created?.session_id || '')
+  if (!sessionId) throw new Error('本地会话身份无效')
+  const projected: VibeSession = {
+    id: sessionId,
+    title: String(created.title || '新的需求对话'),
+    vibe_project_id: projectId,
+    llm_provider_id: selectedLlmProviderId.value || undefined,
+    status: 'active',
+    created_at: created.created_at,
+    updated_at: created.updated_at,
+  }
+  sessions.value.unshift(projected)
+  activeSessionId.value = sessionId
+  activateWorkspaceConversation(projectId, sessionId)
+  return sessionId
+}
+
 async function send() {
   await sendFoundationTurn()
 }
@@ -4547,7 +5601,30 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     restoreComposerAttachments(fileList)
     return
   }
-  if (!base) return
+  // An attachment-only message is a valid local Pi goal.  The local Agent
+  // receives a small synthetic user instruction and decides whether to read,
+  // summarize, ingest, or ask what the user wants; the renderer must not
+  // silently discard the selected file before Pi can make that decision.
+  if (!base && !fileList.length) return
+  if (useLocalPiAgent()) {
+    try {
+      const outcome = await sendFoundationTurn(base, { localFiles: fileList })
+      if (outcome?.failed) restoreComposerAttachments(fileList)
+    } catch (reason) {
+      const message = localAgentErrorMessage(reason)
+      ElMessage.error(message)
+      restoreComposerAttachments(fileList)
+    }
+    return
+  }
+  // A native local picker returns metadata plus an opaque local file ref rather
+  // than a browser Blob. If the user toggles back to server mode before
+  // pressing send, never feed that synthetic object to FormData/upload code.
+  if (fileList.some((file: any) => String(file?.local_file_ref?.ref_id || '').trim())) {
+    ElMessage.warning('这些文件已按本机模式选择，请切回本机运行后发送。')
+    restoreComposerAttachments(fileList)
+    return
+  }
   if (!fileList.length) {
     await sendFoundationTurn(base)
     return
@@ -4622,6 +5699,148 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
 
 // 询问模式（clarification）选项被选/提交：把答案【续跑同一思考】发出去（空=跳过，仅收起反问）。
 // 关键：先取 pending（挂起草稿），再清反问；带 seedMessages 回传后端 → 接着上一轮思路想，不另起新轮。
+async function respondToLiveGoal(raw: any, payload: {
+  interaction_id?: string
+  confirmation_id?: string
+  action?: 'apply' | 'cancel' | 'stop_all'
+  clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
+}) {
+  const turnId = String(
+    raw?.goal_turn_id
+    || raw?.runtime_turn_id
+    || raw?.turn_id
+    || activeTurnId.value
+    || streamingCanonicalModel.value?.turnId
+    || '',
+  )
+  const sessionId = String(activeSessionId.value || activeTurnSessionId.value || '')
+  let electronRun = electronRunForTurn(turnId, sessionId)
+  // Renderer 重载/切回会话时，先向 Main 重新挂接本地 Run，再决定是否需要
+  // 走后端 cold continuation；不能因为本地 Map 暂时为空就提示用户重复操作。
+  if (!electronRun && electronAgentBridge() && turnId && sessionId) {
+    await recoverElectronAgentRun(sessionId)
+    electronRun = electronRunForTurn(turnId, sessionId)
+  }
+  if (electronRun?.local && !electronRun.localCold && electronAgentBridge()?.status) {
+    const liveStatus = await electronAgentBridge()!.status({ runId: electronRun.run.run_id, accountId: localAccountId() }).catch(() => null)
+    if (!liveStatus) {
+      const recoverable = electronAgentBridge()?.recoverableLocal?.({ accountId: localAccountId() })
+      const descriptors: any = recoverable ? await recoverable.catch(() => []) : []
+      const descriptor = (Array.isArray(descriptors) ? descriptors : []).find((item: any) =>
+        String(item?.run_id || item?.run?.run_id || '') === electronRun!.run.run_id)
+      if (descriptor) {
+        electronRun.localDescriptor = descriptor
+        electronRun.localCold = true
+      }
+    }
+  }
+  if (electronRun?.local) {
+    const materializedParent = await materializeLocalWaitingRun(electronRun, raw)
+    const parentId = materializedParent
+      || lastClarificationAssistantId()
+      || electronRun.localInteractionEventId
+      || localInteractionEventId(electronRun.run.run_id, String(payload.confirmation_id || payload.interaction_id || ''))
+    if (parentId) streamingContinuationParentId.value = parentId
+  }
+  if (electronRun?.local && electronRun.localCold) {
+    const bridge = electronAgentBridge()
+    const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
+    if (!bridge?.recoverLocal || !pendingId) {
+      ElMessage.error('当前本地 Agent 冷恢复信息不完整，请重新打开会话')
+      return true
+    }
+    const submittedCard = clarificationActive.value
+    try {
+      const descriptorContext = electronRun.localDescriptor?.local_context || {}
+      const authToken = readLocalAuthToken()
+      if (!authToken) throw new Error('本机运行需要有效的登录状态')
+      // Remove the submitted card before starting the continuation. If Pi
+      // immediately asks a new question, its event handler will install that
+      // newer card and the guarded cleanup below will leave it visible.
+      clarificationActive.value = null
+      await bridge.recoverLocal({
+        runId: electronRun.run.run_id,
+        accountId: localAccountId(),
+        projectId: String(electronRun.run.project_id || electronRun.run.project || ''),
+        sessionId,
+        response: payload,
+        local_context: {
+          ...descriptorContext,
+          account_id: localAccountId(),
+          auth_token: authToken,
+          knowledge_base_url: localKnowledgeBaseUrl(),
+          trace_upload_base_url: localKnowledgeBaseUrl(),
+        },
+      })
+      electronRun.localCold = false
+      const currentPendingId = String((clarificationActive.value as any)?.raw?.confirmation_id
+        || (clarificationActive.value as any)?.raw?.interaction_id || '')
+      if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
+      setSessionRunning(sessionId, true)
+    } catch (error) {
+      const currentPendingId = String((clarificationActive.value as any)?.raw?.confirmation_id
+        || (clarificationActive.value as any)?.raw?.interaction_id || '')
+      if (!currentPendingId) clarificationActive.value = submittedCard
+      ElMessage.error(`本地 Agent 冷恢复失败：${localAgentErrorMessage(error)}`)
+    }
+    return true
+  }
+  if (electronRun) {
+    const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
+    const bridge = electronAgentBridge()
+    if (!bridge || !pendingId) {
+      ElMessage.error('当前 Electron Agent 交互状态不完整，请等待会话恢复')
+      return true
+    }
+    try {
+      const result: any = await bridge.respond({
+        runId: electronRun.run.run_id,
+        accountId: localAccountId(),
+        pendingId,
+        response: payload,
+      })
+      if (result?.accepted) {
+        const currentPendingId = String(clarificationActive.value?.raw?.confirmation_id
+          || clarificationActive.value?.raw?.interaction_id || '')
+        if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
+      } else if (result?.unknown) {
+        clarificationActive.value = null
+        ElMessage.warning('交互响应正在由后端核对，请勿重复提交')
+        void recoverElectronAgentRun(sessionId)
+      } else {
+        ElMessage.error('交互响应未被后端接受，请保留当前选择并稍后重试')
+      }
+    } catch (error) {
+      ElMessage.error(`交互响应失败：${localAgentErrorMessage(error)}`)
+    }
+    // Electron 已拥有本轮后，任何交互失败都不能用服务端另起同一轮。
+    return true
+  }
+  const project = knowledgeStatsProjectId(selectedProjectId.value)
+  if (!turnId || !sessionId || !project) return false
+  try {
+    const result = await respondFoundationTurnInteraction({
+      project: String(project),
+      session_id: sessionId,
+      turn_id: turnId,
+      ...payload,
+    })
+    if (!result?.accepted) return false
+    clarificationActive.value = null
+    return true
+  } catch (error) {
+    if (
+      error instanceof HarnessRequestError
+      && error.code === 'live_goal_acceptance_unknown'
+    ) {
+      ElMessage.warning('确认响应正在核对，请等待当前会话恢复，不要重复提交')
+      clarificationActive.value = null
+      return true
+    }
+    return false
+  }
+}
+
 async function onComposerAnswer(value: string) {
   const c = clarificationActive.value
   const raw: any = c?.raw
@@ -4633,7 +5852,28 @@ async function onComposerAnswer(value: string) {
       const optionId = value.slice(optionPrefix.length)
       const selected = (Array.isArray(raw.options) ? raw.options : [])
         .find((item: any) => String(item?.id || '') === optionId)
-      if (!selected || sending.value) return
+      if (!selected) return
+      const selectedAction = selected.is_cancel
+        ? 'cancel'
+        : String(selected.action || '')
+      const liveHandled = raw.confirmation_id
+        ? await respondToLiveGoal(raw, {
+            confirmation_id: String(raw.confirmation_id),
+            action: selectedAction === 'stop_all'
+              ? 'stop_all'
+              : selectedAction === 'cancel'
+                ? 'cancel'
+                : 'apply',
+          })
+        : await respondToLiveGoal(raw, {
+            interaction_id: String(raw.interaction_id || ''),
+            clarification_response: { type: 'option', option_id: optionId },
+          })
+      if (liveHandled) return
+      if (sending.value) {
+        ElMessage.warning('交互运行态正在恢复，请稍后再试')
+        return
+      }
       clarificationActive.value = null
       await sendFoundationTurn(String(selected.label || ''), {
         continuationParentId: parentId,
@@ -4642,7 +5882,15 @@ async function onComposerAnswer(value: string) {
       return
     }
     const inputText = String(value || '').trim()
-    if (!inputText || sending.value) return
+    if (!inputText) return
+    if (await respondToLiveGoal(raw, {
+      interaction_id: String(raw.interaction_id || ''),
+      clarification_response: { type: 'input', text: inputText },
+    })) return
+    if (sending.value) {
+      ElMessage.warning('交互运行态正在恢复，请稍后再试')
+      return
+    }
     clarificationActive.value = null
     await sendFoundationTurn(inputText, {
       continuationParentId: parentId,
@@ -4673,13 +5921,22 @@ async function onComposerAnswer(value: string) {
   // 第四代确认只回传不可伪造的服务端 confirmation_id，预览正文不参与提交。
   if (kind === 'knowledge_change') {
     const parentId = lastClarificationAssistantId()  // 在清空前取：让"确认+已更新"挂到反问之下，合成一条思考
-    clarificationActive.value = null
     if (value === '__CANCEL_EDIT__' || value === '__SKIP__') {
+      if (await respondToLiveGoal(raw, {
+        confirmation_id: String(raw.confirmation_id || ''),
+        action: 'cancel',
+      })) return
+      clarificationActive.value = null
       await sendFoundationTurn('取消这次操作', { clarificationCancel: true, continuationParentId: parentId })
       return
     }
     if (value === '__APPLY_EDIT__') {
+      if (await respondToLiveGoal(raw, {
+        confirmation_id: String(raw.confirmation_id || ''),
+        action: 'apply',
+      })) return
       if (sending.value) return
+      clarificationActive.value = null
       await sendFoundationTurn('就这么改', {
         applyEdit: { kind: 'knowledge_change', confirmation_id: raw.confirmation_id },
         continuationParentId: parentId,
@@ -4687,7 +5944,10 @@ async function onComposerAnswer(value: string) {
       return
     }
     const vv = (value || '').trim()
-    if (vv && !sending.value) await sendFoundationTurn(vv)  // 重新说 = 一条新的请求
+    if (vv && !sending.value) {
+      clarificationActive.value = null
+      await sendFoundationTurn(vv)  // 重新说 = 一条新的请求
+    }
     return
   }
 
@@ -4815,17 +6075,277 @@ interface SendFoundationTurnOptions {
   applyEdit?: any
   clarificationCancel?: boolean
   clarificationResponse?: { type: 'option' | 'input'; option_id?: string; text?: string }
+  localFiles?: File[]
+}
+
+/**
+ * Host selection is local product state, never a public request field.
+ * Electron now defaults to its client-owned Pi runtime; the explicit `server`
+ * override remains only as a development rollback switch.
+ */
+function localPiAgentConfigured(): boolean {
+  const configured = String((import.meta as any).env?.VITE_VIBE_AGENT_MODE || '').trim().toLowerCase()
+  let stored = ''
+  try { stored = String(window.localStorage.getItem('vibe-agent-execution') || '').trim().toLowerCase() } catch { /* fall back to build config */ }
+  // An explicit user switch wins over the build default so migration testing
+  // can return to the legacy server path without rebuilding the app.
+  if (stored === 'server') return false
+  if (stored === 'electron-local' || stored === 'local') return true
+  if (configured === 'server') return false
+  if (configured === 'electron-local' || configured === 'local') return true
+  return String((import.meta as any).env?.VITE_IS_ELECTRON || '').trim().toLowerCase() === 'true'
+}
+
+function localPiAgentEnabled(): boolean {
+  return localPiAgentConfigured() && !!window.electronAPI?.vibeAgent?.startLocal
+}
+
+function useLocalPiAgent(): boolean {
+  // Host selection is a turn-level product setting.  Do not infer it from a
+  // session id: older server sessions can use the same `session_` prefix, and
+  // an explicit server rollback must apply consistently to both old and new
+  // sessions instead of silently creating/using an empty local journal.
+  return localPiAgentConfigured()
+}
+
+function localKnowledgeBaseUrl(): string {
+  const env = String((import.meta as any).env?.VITE_VIBE_KNOWLEDGE_BASE_URL
+    || (import.meta as any).env?.VITE_API_URL || '').trim()
+  if (env) return env.replace(/\/$/, '')
+  if ((import.meta as any).env?.DEV) return 'http://127.0.0.1:6001'
+  return window.location.origin
+}
+
+function localId(prefix: string): string {
+  const random = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now()}${Math.random().toString(16).slice(2)}`
+  return `${prefix}_${random}`
+}
+
+function localTraceId(): string {
+  const random = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Date.now()}${Math.random().toString(16).slice(2)}`
+  return random.slice(0, 32).padEnd(32, '0')
+}
+
+async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions = {}): Promise<any> {
+  const bridge = electronAgentBridge()
+  if (!bridge?.startLocal) throw new Error('当前客户端不支持本机运行，请更新客户端')
+  if (!vibeProject.value) throw new Error('请先选择项目')
+  const project = knowledgeStatsProjectId(selectedProjectId.value)
+  if (!project) throw new Error('当前项目身份无效，请重新选择项目')
+  clarificationActive.value = null
+  processExpanded.value = true
+  clearStreamingAssistant()
+  resetProcessState(streamingProcess)
+  const sessionId = useLocalPiAgent() ? await ensureLocalSession() : await ensureSession()
+  const admitted: any = await bridge.list?.({ accountId: localAccountId() })
+  const liveRuns = (Array.isArray(admitted) ? admitted : Array.isArray(admitted?.items) ? admitted.items : [])
+    .filter((item: any) => !electronAgentStateIsTerminal(item?.state) && item?.lifecycle !== 'terminal')
+  if (liveRuns.some((item: any) => String(item?.session_id || item?.sessionId || '') === sessionId)) {
+    throw new Error('vibe_agent_session_busy')
+  }
+  if (liveRuns.filter((item: any) => ['queued', 'running'].includes(String(item?.lifecycle || item?.state || ''))).length >= 5) {
+    throw new Error('vibe_agent_host_busy')
+  }
+  // Main keeps the authoritative local transcript even when the renderer was
+  // detached during the previous run. Load it before constructing Pi history
+  // so assistant tool calls and their results remain paired on the next turn.
+  const persistedHistory = sessionId.startsWith('session_')
+    ? await requestSessionEvents(sessionId, { includePrivate: true })
+    : []
+  if (persistedHistory.length && activeSessionId.value === sessionId) {
+    events.value = sortEvents(persistedHistory)
+  }
+  const authToken = readLocalAuthToken()
+  if (!authToken) throw new Error('本机运行需要有效的登录状态')
+  // A previous app/network interruption may have left completed local Trace
+  // bundles with an unfinished upload.json. Resume those in the background
+  // once the current authenticated Main context is available.
+  void bridge.trace?.resume?.({
+    accountId: localAccountId(),
+    baseUrl: localKnowledgeBaseUrl(),
+    headers: { Authorization: `token=${authToken}` },
+  }).catch(() => undefined)
+  const runId = localId('lpr')
+  const turnId = localId('lt')
+  const requestId = localId('lreq')
+  const traceId = localTraceId()
+  const localFiles = [...(opts.localFiles || [])]
+  const localFileRefs = localFiles.map((file: any) => file?.local_file_ref).filter((item: any) => item?.ref_id)
+  if (localFileRefs.length !== localFiles.length) {
+    throw new Error('本机文件尚未通过系统文件选择器注册，请重新选择')
+  }
+  const localFileEventRefs = localFileRefs.map((item: any) => ({
+    schema: 'local_file_ref.v1',
+    id: String(item.ref_id || ''),
+    resource_id: String(item.ref_id || ''),
+    ref_id: String(item.ref_id || ''),
+    name: String(item.name || ''),
+    filename: String(item.name || ''),
+    mime: String(item.mime || 'application/octet-stream'),
+    size: Number(item.size || 0),
+    kind: 'local-file',
+    run_id: runId,
+    session_id: sessionId,
+    account_id: localAccountId(),
+  }))
+  const history = Array.isArray(opts.seedMessages) && opts.seedMessages.length
+    ? opts.seedMessages
+    : await bridge.sessions?.history?.({ sessionId, accountId: localAccountId() })
+  if (!Array.isArray(history)) throw new Error('本地会话上下文无法读取')
+  // A file-only submission still needs one user message for the Provider
+  // protocol.  This sentence is only a transport seed; Pi remains free to
+  // ask what the user wants instead of assuming “ingest”.  Keep the visible
+  // user event empty so the UI/history reflects the actual user input.
+  const agentPrompt = content || '本轮只选择了本机文件，请先判断需要如何处理；如果目的不明确，请向我提问。'
+  // Renderer supplies only turn-local data. Electron Main performs exactly
+  // one authenticated runtime-snapshot exchange and injects the system
+  // prompt, tools, frozen strong model/options and Provider credential.
+  const startPayload = {
+    execution_mode: 'local',
+    user_text: content,
+    ...(Array.isArray(opts.seedMessages) && opts.seedMessages.length
+      ? { seed_messages: history }
+      : { history_messages: history }),
+    prompt: agentPrompt,
+  }
+  const run: any = {
+    schema: 'electron_agent_run.v1',
+    execution_host: 'electron',
+    execution_mode: 'local',
+    account_id: localAccountId(),
+    run_id: runId,
+    turn_id: turnId,
+    request_id: requestId,
+    session_id: sessionId,
+    project_id: String(project),
+    trace_id: traceId,
+    goal_id: turnId,
+    host_id: 'electron-main',
+    protocol_version: 2,
+  }
+  registerElectronAgentRun(run)
+  const context = electronAgentRuns.get(runId)!
+  context.localUserEventId = localEventId(context, 'user')
+  if (activeSessionId.value === sessionId) {
+    upsertEvent(localDisplayEvent(context, 'user', content, {}, localFileEventRefs))
+  }
+  const completed = new Promise<VibeAgentEvent>((resolve, reject) => {
+    electronAgentWaiters.set(runId, { resolve, reject })
+  })
+  ensureVibeAgentEventListener()
+  if (activeSessionId.value === sessionId) {
+    streamingOwnerSessionId.value = sessionId
+    activeTurnId.value = turnId
+    activeTurnSessionId.value = sessionId
+    foundationBusy.value = true
+    startElapsedTicker(Date.now())
+    streamingProcess.status = 'running'
+    setSessionRunning(sessionId, true)
+    setDraftByKey(activeDraftKey.value, '')
+    composerRef.value?.clearInput?.()
+  }
+  let localStartAccepted = false
+  let settledEvent: VibeAgentEvent | null = null
+  try {
+    await bridge.startLocal({
+      run,
+      start_payload: startPayload,
+      provider_id: String(selectedLlmProviderId.value || ''),
+      local_file_refs: localFileRefs,
+      local_context: {
+        account_id: localAccountId(),
+        auth_token: authToken,
+        knowledge_base_url: localKnowledgeBaseUrl(),
+        trace_upload_base_url: localKnowledgeBaseUrl(),
+        request_text: content,
+      },
+    })
+    localStartAccepted = true
+    const terminal = await completed
+    settledEvent = terminal
+    if (String(terminal.state || '') === 'waiting_user') {
+      await materializeLocalWaitingRun(context, terminal.payload)
+    }
+    return {
+      userEventSaved: true,
+      failed: terminal.type === 'error',
+      unresolved: false,
+      attachmentSelectionReusable: true,
+    }
+  } catch (error) {
+    // This was only an optimistic renderer projection. Main writes the real
+    // user event after local capacity and backend admission succeed, so a
+    // rejected start must remove the unsent bubble as well as restore draft.
+    if (!localStartAccepted && activeSessionId.value === sessionId) {
+      events.value = events.value.filter(item => item.id !== context.localUserEventId)
+    }
+    const failure: any = error instanceof Error ? error : new Error(String(error))
+    failure.attachmentSelectionReusable = true
+    throw failure
+  } finally {
+    const waiting = context.state === 'waiting_user' || String(settledEvent?.state || '') === 'waiting_user'
+    electronAgentWaiters.delete(runId)
+    if (!waiting) {
+      electronAgentRuns.delete(runId)
+      context.ephemeralText = ''
+    }
+    if (!localStartAccepted || electronAgentStateIsTerminal(context.state)) {
+      setLocalSessionRuntimeState(sessionId, 'terminal')
+    }
+    if (activeSessionId.value === sessionId && streamingOwnerSessionId.value === sessionId) {
+      stopElapsedTicker()
+      foundationBusy.value = false
+      if (waiting) {
+        setLocalSessionRuntimeState(sessionId, 'waiting_user')
+        streamingProcess.status = 'done'
+        streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
+      } else {
+        setSessionRunning(sessionId, false)
+        streamingOwnerSessionId.value = ''
+        activeTurnId.value = ''
+        activeTurnSessionId.value = ''
+        resetProcessState(streamingProcess)
+      }
+    }
+  }
 }
 
 async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTurnOptions) {
   const content = (overrideText ?? draft.value).trim()
-  if (!content || sending.value) return
+  const hasAttachments = Boolean(
+    (Array.isArray(opts?.localFiles) && opts.localFiles.length)
+      || (Array.isArray(opts?.attachments) && opts.attachments.length),
+  )
+  if ((!content && !hasAttachments) || sending.value) return
+  if (useLocalPiAgent()) {
+    try {
+      return await sendLocalPiTurn(content, opts || {})
+    } catch (error) {
+      const message = localAgentErrorMessage(error)
+      ElMessage.error(message)
+      setDraftByKey(activeDraftKey.value, content)
+      resizeDraft()
+      return {
+        failed: true,
+        unresolved: false,
+        attachmentSelectionReusable: (error as any)?.attachmentSelectionReusable !== false,
+      }
+    }
+  }
   const sendProjectEpoch = projectContextEpoch
   const sendProjectId = String(selectedProjectId.value ?? '')
   const sendProjectIsCurrent = () =>
     sendProjectEpoch === projectContextEpoch
     && sendProjectId === String(selectedProjectId.value ?? '')
   const originDraftKey = activeDraftKey.value
+  const restoreDraftAfterAdmissionFailure = () => {
+    setDraftByKey(originDraftKey, content)
+    resizeDraft()
+  }
   const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
   const attachments = opts?.attachments || []
   const applyEdit = opts?.applyEdit  // 改原文·确认：回传 diff 提案，后端确定性落库
@@ -4833,18 +6353,26 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   // 续跑·视觉一体化：本轮(回答+续跑答案)挂到上一轮反问那条 assistant 之下，渲染成同一条思考。
   const contParent = opts?.continuationParentId && hasEvent(opts.continuationParentId) ? opts.continuationParentId : ''
   if (!vibeProject.value) {
+    restoreDraftAfterAdmissionFailure()
     ElMessage.warning('请先选择项目')
     return
   }
   const project = knowledgeStatsProjectId(selectedProjectId.value)
   if (!project) {
+    restoreDraftAfterAdmissionFailure()
     ElMessage.warning('当前项目身份无效，请重新选择项目')
     return
   }
-  if (!opts?.modelValidated && !(await ensureComposerModelUsable(sendProjectIsCurrent))) return
+  if (!opts?.modelValidated && !(await ensureComposerModelUsable(sendProjectIsCurrent))) {
+    restoreDraftAfterAdmissionFailure()
+    return
+  }
   // A model check can outlive a project switch. Never create/send a turn with
   // the provider or session that belongs to a newer project context.
-  if (!sendProjectIsCurrent()) return
+  if (!sendProjectIsCurrent()) {
+    restoreDraftAfterAdmissionFailure()
+    return
+  }
   clarificationActive.value = null  // 发新一轮即收起上一轮的反问
   const startedAt = Date.now()
   streamingOwnerSessionId.value = activeSessionId.value
@@ -4859,6 +6387,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   streamingProcess.status = 'running'
   pendingUserSubmissionText.value = contParent ? '' : content
   setDraftByKey(originDraftKey, '')
+  // Keep the editor's internal Lexical state in sync with the draft map.  This
+  // also covers programmatic sends (confirmation/continuation) and attachment
+  // sends, whose composer is cleared only after upload admission succeeds.
+  composerRef.value?.clearInput?.()
   resizeDraft()
   scrollBottom()
 
@@ -5014,7 +6546,28 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
     markSessionSending(turnSessionId, true)
     setSessionRunning(turnSessionId, true)
     if (activeSessionId.value === turnSessionId) streamingOwnerSessionId.value = turnSessionId
-    const transportResult: { closeReason: 'done_signal' | 'eof' | 'error_event' } = await streamFoundationTurn({ project, text: content, session_id: sessionId, llm_provider_id: selectedLlmProviderId.value || undefined, seed_messages: seedMessages, continuation_parent_id: contParent || undefined, attachments: attachments.length ? attachments : undefined, apply_edit: applyEdit || undefined, clarification_cancel: clarificationCancel || undefined, clarification_response: opts?.clarificationResponse || undefined }, {
+    const turnPayload = {
+      project,
+      text: content,
+      session_id: sessionId,
+      llm_provider_id: selectedLlmProviderId.value || undefined,
+      seed_messages: seedMessages,
+      continuation_parent_id: contParent || undefined,
+      attachments: attachments.length ? attachments : undefined,
+      apply_edit: applyEdit || undefined,
+      clarification_cancel: clarificationCancel || undefined,
+      clarification_response: opts?.clarificationResponse || undefined,
+    }
+    // Keep the validated numeric project and the user text explicit at the
+    // legacy SSE boundary while avoiding duplicate object-spread keys.
+    const streamServerTurn = (payload: any, handlers: any) => {
+      const { project, text, ...rest } = payload
+      return streamFoundationTurn({ project, text: text, ...rest }, handlers)
+    }
+    // Server is an explicit rollback path only.  Electron/local runs have
+    // already returned through sendLocalPiTurn → startLocal above; they must
+    // never pass through the server-side run-admission selector.
+    const transportResult: { closeReason: 'done_signal' | 'eof' | 'error_event' } = await streamServerTurn(turnPayload, {
       onEvent,
       onError(message: string) { transportFailure = transportFailure || message },
     })
@@ -5181,6 +6734,7 @@ function sortEvents(rows: VibeEvent[]) {
 }
 
 function clearStreamingAssistant() {
+  streamingAssistantEventId.value = ''
   streamingAssistantContent.value = ''
   streamingSources.value = []
   streamingVerification.value = null
@@ -5469,10 +7023,85 @@ function isBlockingClarificationEvent(event: any): boolean {
   return !!eventClarificationQuestion(event)
 }
 
+const LOCAL_TOOL_ACTION_TITLES: Record<string, string> = {
+  search_knowledge: '检索知识库',
+  search_vibe_platform_docs: '检索平台资料',
+  read_knowledge: '读取知识文档',
+  get_knowledge_overview: '盘点知识库',
+  add_knowledge: '准备新增知识预览',
+  edit_knowledge: '准备修改知识预览',
+  delete_knowledge: '准备删除知识预览',
+  move_knowledge_section: '准备移动知识章节预览',
+  ask_clarification: '准备补充信息',
+}
+
+function localRunProcessRows(event: any): any[] {
+  const runId = String(event?.meta?.run_id || '')
+  if (!runId || event?.meta?.local_agent !== true) return []
+  const limit = Number(event?.event_order || event?.sequence || Number.MAX_SAFE_INTEGER)
+  return events.value
+    .filter((item: any) => item?.meta?.local_agent === true
+      && String(item?.meta?.run_id || '') === runId
+      && Number(item?.event_order || item?.sequence || 0) <= limit)
+    .sort(compareEvents)
+}
+
+function localRunProcessSteps(event: any): ProcessStep[] {
+  if (event?.role !== 'assistant' || event?.meta?.local_agent !== true) return []
+  const rows = localRunProcessRows(event)
+  const toolResults = new Map(rows
+    .filter((item: any) => item?.role === 'tool' && item?.meta?.tool_call_id)
+    .map((item: any) => [String(item.meta.tool_call_id), item]))
+  const seenMessages = new Set<string>()
+  const actionBySignature = new Map<string, ProcessStep>()
+  const steps: ProcessStep[] = []
+  for (const row of rows) {
+    const calls = Array.isArray(row?.meta?.tool_calls) ? row.meta.tool_calls : []
+    if (row?.role !== 'assistant' || !calls.length) continue
+    const text = String(row?.content || '').trim()
+    if (text && !seenMessages.has(text)) {
+      seenMessages.add(text)
+      steps.push({
+        kind: 'message',
+        key: `local-process-message:${row.id}`,
+        text,
+        phase: 'commentary',
+        source: 'model',
+        authority: 'persisted',
+      })
+    }
+    for (const call of calls) {
+      const name = String(call?.name || '')
+      const signature = `${name}:${JSON.stringify(call?.arguments || {})}`
+      if (actionBySignature.has(signature)) continue
+      const result: any = toolResults.get(String(call?.id || ''))
+      const status: 'success' | 'error' | 'unknown' = result
+        ? (result?.meta?.is_error ? 'error' : 'success')
+        : 'unknown'
+      const step: ProcessStep = {
+        kind: 'action',
+        key: `local-process-action:${row.id}:${call?.id || name}`,
+        actionId: String(call?.id || ''),
+        actionType: name || 'tool_call',
+        title: LOCAL_TOOL_ACTION_TITLES[name] || '执行任务步骤',
+        summary: status === 'error' ? '该步骤执行失败。' : '',
+        status,
+        phase: 'tool',
+        source: 'runtime',
+        authority: 'persisted',
+      }
+      actionBySignature.set(signature, step)
+      steps.push(step)
+    }
+  }
+  return steps
+}
+
 function eventProcessSteps(event: any): ProcessStep[] {
   const canonical = eventTurnProtocol(event)
   if (canonical) return canonical.process
-  return stepsFromMeta(event?.meta)
+  const persisted = stepsFromMeta(event?.meta)
+  return persisted.length ? persisted : localRunProcessSteps(event)
 }
 
 // T1 溯源：历史消息从 meta.sources 复原；兼容 answer cards 里附带的 sources。
@@ -5502,11 +7131,17 @@ function eventVerification(event: any): any | null {
 
 function eventProcessDuration(event: any): number {
   const canonical = eventTurnProtocol(event)
-  return preferredProcessDuration(
+  const projected = preferredProcessDuration(
     canonical?.processSummary?.duration_ms,
     durationFromMeta(event?.meta),
     localTurnPresentation(event)?.observedDurationMs,
   )
+  if (projected > 0) return projected
+  const rows = localRunProcessRows(event)
+  if (rows.length < 2) return 0
+  const started = new Date(rows[0]?.created_at || '').getTime()
+  const ended = new Date(rows[rows.length - 1]?.created_at || '').getTime()
+  return Number.isFinite(started) && Number.isFinite(ended) ? Math.max(0, ended - started) : 0
 }
 
 function eventAnswerSupplement(event: any) {
@@ -5592,7 +7227,11 @@ function handleTimelineScroll() {
   if (!el) return
   const nearBottom = isTimelineNearBottom(el)
   isAtBottom.value = nearBottom
-  timelineFollow.value = nearBottom
+  timelineFollow.value = nextTimelineFollow({
+    following: timelineFollow.value,
+    nearBottom,
+    userScrollIntent: Date.now() <= timelineUserScrollIntentUntil,
+  })
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
   conversationRailRaf = requestAnimationFrame(() => {
     conversationRailRaf = 0
@@ -5600,9 +7239,22 @@ function handleTimelineScroll() {
   })
 }
 
+function noteTimelineUserScrollIntent() {
+  timelineUserScrollIntentUntil = Date.now() + 1000
+}
+
 async function syncTimelineNavigationAfterLayout() {
+  const action = timelineLayoutAction(timelineFollow.value)
   await nextTick()
-  handleTimelineScroll()
+  const el = timelineEl.value
+  if (!el) return
+  if (action === 'scroll-bottom') {
+    el.scrollTop = el.scrollHeight
+    isAtBottom.value = true
+  } else {
+    isAtBottom.value = isTimelineNearBottom(el)
+  }
+  updateActiveConversationRail()
 }
 
 function updateActiveConversationRail() {
@@ -6009,7 +7661,7 @@ function clarificationReplyContent(event: any): string {
   const id = String(event?.id || '')
   if (!id) return ''
   const reply = (events.value as any[]).find(e =>
-    e?.role === 'user' && e?.meta?.confirmation_reply && String(e?.meta?.parent_event_id || '') === id)
+    e?.role === 'user' && interactionReplyParentEventId(events.value, e) === id)
   return reply ? String(reply.content || '').trim() : ''
 }
 
@@ -6116,14 +7768,22 @@ function threadFinalNode(root: any): any {
   return nodes[nodes.length - 1] || null
 }
 
-function threadFinalAnswer(root: any): string {
-  const answer = threadFinalAnswerText(
+function threadPersistedAnswer(root: any): string {
+  return threadFinalAnswerText(
     events.value,
     root,
     (node: any) => threadNodeDisplayContent(root, node),
   )
+}
+
+function threadFinalAnswer(root: any): string {
+  const answer = threadPersistedAnswer(root)
   if (answer) return answer
   return isStreamingUnderEvent(root) ? (streamingAssistantContent.value || '') : ''
+}
+
+function threadOutsideAnswer(root: any): string {
+  return threadPersistedAnswer(root) || (threadRunning(root) ? '' : threadFinalAnswer(root))
 }
 
 function shouldRenderStandaloneAssistantAnswer(event: any): boolean {
@@ -6953,6 +8613,20 @@ function isStreamingUnderEvent(event: any) {
   align-items: center;
   justify-content: center;
   color: var(--ink-3);
+
+  &.waiting-user {
+    flex-basis: auto;
+    width: auto;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 6px;
+    background: #e8f1ff;
+    color: #4c7ee8;
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 20px;
+    white-space: nowrap;
+  }
 }
 
 .session-row:hover .session-delete,

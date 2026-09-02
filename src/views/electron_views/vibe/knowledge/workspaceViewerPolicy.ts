@@ -362,6 +362,9 @@ export function workspaceInlineFileContent(file: RecentSessionFile): string | nu
 export function workspaceFileLocatorSignature(sessionId: string, file: RecentSessionFile): string {
   return JSON.stringify([
     String(sessionId || '').trim(),
+    String(file.kind || '').trim(),
+    String(file.workspace_id || '').trim(),
+    String(file.attachment_id || '').trim(),
     String(file.download_url || '').trim(),
     String(file.event_id || '').trim(),
     Number.isInteger(file.attachment_index) ? file.attachment_index : null,

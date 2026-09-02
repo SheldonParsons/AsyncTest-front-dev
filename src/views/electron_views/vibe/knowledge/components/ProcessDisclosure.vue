@@ -60,12 +60,13 @@
           <p v-else-if="['unknown', 'aborted', 'superseded'].includes(step.status) && step.summary" class="proc-action-cancelled">{{ step.summary }}</p>
         </div>
       </template>
+      <slot />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { formatDuration, type ProcessActionStep, type ProcessStep } from '../composables/useProcessTurn'
 import { compactProcessActionMeta } from '../processDisclosurePolicy'
 import { continuousAnimationDelay } from '../motionContinuity'
@@ -87,17 +88,31 @@ const props = withDefaults(defineProps<{
   awaiting: false,
 })
 
-// 等待用户选择时默认展开；用户点击后由 open 记录手动收起/展开。
+// 运行与等待用户时展开；完成后默认收起，仍可由用户手动查看。
 const open = ref<boolean | undefined>()
 const shimmerStyle = { '--vibe-shimmer-delay': continuousAnimationDelay() }
 
-const bodyVisible = computed(() => props.running || (open.value ?? props.awaiting))
+const bodyVisible = computed(() => (
+  props.running || (open.value ?? props.awaiting)
+))
 const durationLabel = computed(() => formatDuration(props.durationMs || 0))
+
+watch(() => props.running, (running, wasRunning) => {
+  if (wasRunning && !running && !props.awaiting) open.value = false
+})
+
+watch(
+  [bodyVisible, () => props.steps],
+  async () => {
+    await nextTick()
+    emit('layout-change')
+  },
+  { deep: true, flush: 'post' },
+)
 
 function toggle() {
   if (props.running) return
   open.value = !bodyVisible.value
-  emit('layout-change')
 }
 
 function actionHeadLabel(step: ProcessActionStep): string {

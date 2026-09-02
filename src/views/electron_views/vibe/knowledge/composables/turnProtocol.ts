@@ -29,6 +29,7 @@ export interface TurnProtocolEvent {
   created_at?: string
   payload?: Record<string, any>
   item?: TurnProtocolItem
+  parent_id?: string | null
 }
 
 export interface TurnProtocolPacket {
@@ -352,6 +353,7 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
   let terminal = ''
   let terminalPayload: Record<string, any> = {}
   let cancellationPayload: Record<string, any> = {}
+  let pendingClarificationId = ''
   let startedAtMs = 0
   let settledAtMs = 0
 
@@ -369,15 +371,20 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
     }
     else if (event.event_type === 'waiting') {
       protocolState = 'waiting_user'
+      pendingClarificationId = String(event.parent_id || '')
       if (eventAtMs > 0) settledAtMs = eventAtMs
     }
-    else if (event.event_type === 'resumed') protocolState = 'running'
+    else if (event.event_type === 'resumed') {
+      protocolState = 'running'
+      pendingClarificationId = ''
+    }
     else if (event.event_type === 'cancel_requested' || event.event_type === 'cancel_observed') {
       protocolState = 'cancelling'
       cancellationPayload = event.payload && typeof event.payload === 'object' ? event.payload : {}
     }
     else if (TERMINAL_STATE[event.event_type]) {
       protocolState = TERMINAL_STATE[event.event_type]
+      pendingClarificationId = ''
       terminal = event.event_type
       terminalPayload = event.payload && typeof event.payload === 'object' ? event.payload : {}
       if (eventAtMs > 0) settledAtMs = eventAtMs
@@ -457,10 +464,12 @@ export function readTurnProtocol(state: TurnProtocolState): TurnProtocolReadMode
     } else if (itemType === 'clarification') {
       const completedReadAnswer = String(payload.raw?.completed_read_answer || '').trim()
       if (completedReadAnswer && !answers.includes(completedReadAnswer)) answers.push(completedReadAnswer)
-      clarification = {
-        question: content,
-        raw: payload.raw,
-        pending: Array.isArray(payload.pending) ? payload.pending : [],
+      if (itemId === pendingClarificationId) {
+        clarification = {
+          question: content,
+          raw: payload.raw,
+          pending: Array.isArray(payload.pending) ? payload.pending : [],
+        }
       }
     } else if (itemType === 'receipt') {
       if (legacyType === 'write_commit' && payload.result && typeof payload.result === 'object') {

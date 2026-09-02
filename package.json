@@ -5,6 +5,10 @@
   "private": true,
   "version": "3.2.2",
   "type": "module",
+  "packageManager": "yarn@1.22.22",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "bin": "server.js",
   "main": "electron/main.js",
   "build": {
@@ -70,13 +74,15 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "THIRD_PARTY_NOTICES.md",
       "src/mind/fontRegistry.js",
       "package.json",
       "src-rust/index.cjs",
       "src-rust/*.node"
     ],
     "asarUnpack": [
-      "**/*.node"
+      "**/*.node",
+      "electron/vibeAgent/runtime/**/*"
     ],
     "mac": {
       "icon": "build/icon.icns",
@@ -128,6 +134,22 @@
     "test:vibe-global-control": "node scripts/test-vibe-global-control-contract.mjs",
     "test:vibe-attachment-p0": "node scripts/test-vibe-attachment-p0-contract.mjs",
     "test:vibe-attachment-p1": "node scripts/test-vibe-attachment-p1-contract.mjs",
+    "test:vibe-local-attachment": "node scripts/test-vibe-local-attachment-contract.mjs",
+    "test:vibe-pi-local-files": "node scripts/test-vibe-pi-local-file-tools.mjs",
+    "test:vibe-electron-pi-readiness": "node scripts/test-vibe-electron-pi-readiness.mjs",
+    "test:vibe-account-binding": "node scripts/test-vibe-account-binding.mjs",
+    "test:vibe-knowledge-tool-wave": "node scripts/test-vibe-knowledge-tool-wave.mjs",
+    "test:vibe-knowledge-cache": "node scripts/test-vibe-knowledge-cache.mjs",
+    "test:vibe-always-active-skill": "node scripts/test-vibe-always-active-skill.mjs",
+    "test:vibe-local-file-refs": "node scripts/test-vibe-local-file-refs.mjs",
+    "test:vibe-local-document-parsers": "node scripts/test-vibe-local-document-parsers.mjs",
+    "test:vibe-local-session-title": "node scripts/test-vibe-local-session-title-contract.mjs",
+    "test:vibe-electron-trace-viewer": "node scripts/test-vibe-electron-trace-viewer-contract.mjs",
+    "test:vibe-trace-compaction": "node scripts/test-vibe-trace-compaction.mjs",
+    "test:vibe-local-agent-public-copy": "node scripts/test-vibe-local-agent-public-copy-contract.mjs",
+    "test:vibe-agent-startup-selection": "node scripts/test-vibe-agent-startup-selection-contract.mjs",
+    "test:vibe-knowledge-remote-outcome": "node scripts/test-vibe-knowledge-remote-outcome-contract.mjs",
+    "test:vibe-knowledge-interaction-continuation": "node scripts/test-vibe-knowledge-interaction-continuation-contract.mjs",
     "test:vibe-chat-markdown-editor": "node scripts/test-vibe-chat-markdown-editor-contract.mjs",
     "test:vibe-process-disclosure": "node scripts/test-vibe-process-disclosure-contract.mjs",
     "test:vibe-interaction-thread": "node scripts/test-vibe-interaction-thread-contract.mjs",
@@ -143,15 +165,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.4",
+    "@earendil-works/pi-ai": "0.84.4",
     "body-parser": "^1.20.1",
     "cfb": "^1.2.2",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
     "express": "^4.18.2",
     "iconv-lite": "^0.4.24",
-    "jszip": "^3.10.1",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "6.3.289",
     "thinking-orbs": "0.3.1",
-    "xlsx": "^0.18.5"
+    "undici": "8.9.0",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "@ag-grid-community/locale": "^34.0.2",
@@ -172,14 +198,14 @@
     "@types/node": "^18.11.9",
     "@typescript-eslint/eslint-plugin": "^5.42.0",
     "@typescript-eslint/parser": "^5.42.0",
-    "@vue-flow/core": "^1.48.2",
     "@vitejs/plugin-vue": "^5.0.4",
+    "@vue-flow/core": "^1.48.2",
     "ag-grid-community": "^34.0.2",
     "ag-grid-vue3": "^34.0.2",
     "axios": "^1.1.3",
     "concurrently": "^9.2.1",
-    "crypto-js": "^4.2.0",
     "cross-env": "^7.0.3",
+    "crypto-js": "^4.2.0",
     "deep-diff": "^1.0.2",
     "dompurify": "^3.2.6",
     "electron": "^40.6.1",
@@ -223,9 +249,9 @@
     "vue-i18n": "^9.2.2",
     "vue-json-pretty": "^2.2.3",
     "vue-router": "^4.0.13",
+    "vue-tsc": "^3.2.5",
     "vuedraggable": "^4.1.0",
     "vuex": "^4.1.0",
-    "vue-tsc": "^3.2.5",
     "wait-on": "^9.0.4"
   }
 }

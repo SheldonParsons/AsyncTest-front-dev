@@ -14,8 +14,8 @@
             <MarkdownFileIcon />
           </span>
           <span class="item-text">
-            <strong>Markdown 文件</strong>
-            <span>.md / .markdown</span>
+            <strong>{{ localMode ? '本机文件' : 'Markdown 文件' }}</strong>
+            <span>{{ localMode ? '文档、表格、演示、PDF、图片等' : '.md / .markdown' }}</span>
           </span>
         </button>
       </div>
@@ -227,7 +227,7 @@
             type="button"
             :aria-label="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
             :title="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
-            :disabled="uploading || stopping || (!sending && sendDisabled)"
+            :disabled="uploading || stopping || (!sending && effectiveSendDisabled)"
             @click="onSend()"
           >
             <svg class="send-arrow-flow" viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -255,7 +255,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { admitAttachmentSelection } from '../composables/attachmentAdmission'
+import {
+  admitAttachmentSelection,
+  MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
+  MAX_LOCAL_ATTACHMENT_BYTES,
+} from '../composables/attachmentAdmission'
 import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
 import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
 
@@ -279,7 +283,9 @@ const props = withDefaults(defineProps<{
   modelValueId?: string
   modelDisabled?: boolean
   uploading?: boolean
-}>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false })
+  localMode?: boolean
+  localAccountId?: string
+}>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false, localAccountId: '' })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -342,7 +348,14 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
   for (let i = a.length - e; i < a.length; i++) out.push({ t: 'ctx', text: a[i] })
   return out
 }
+// Keep the text-only predicate explicit for callers/tests that use the
+// composer as a plain editor; native local-file Goals extend it without
+// making an empty text draft look sendable in server mode.
 const sendDisabled = computed(() => editorValue.value.trim().length === 0)
+const effectiveSendDisabled = computed(() => (
+  sendDisabled.value
+  && !(props.localMode && selectedFiles.value.length > 0)
+))
 
 watch(() => props.question, () => {
   activeIndex.value = 0
@@ -383,8 +396,16 @@ function onSend(textOverride?: string) {
   if (props.uploading || props.stopping) return
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   const text = textOverride ?? inputEl.value?.getMarkdown?.() ?? editorValue.value
-  if (!text.trim()) return
   const outgoingFiles = [...selectedFiles.value]
+  if (!text.trim() && !(props.localMode && outgoingFiles.length)) return
+  // For a plain send there is no later admission step, so clear the Lexical
+  // source before emitting.  Attachment sends may still fail during upload;
+  // the parent clears them only after that admission succeeds.
+  if (!outgoingFiles.length) {
+    inputEl.value?.clearEditor?.()
+    editorValue.value = ''
+    emit('update:modelValue', '')
+  }
   if (textOverride === undefined && text === props.modelValue) {
     // Keep the original modelValue contract for button sends. Enter can submit
     // a fresh Lexical snapshot before Vue has re-rendered its parent.
@@ -395,12 +416,55 @@ function onSend(textOverride?: string) {
   clearAttachments()
 }
 
-function pickMarkdown() {
+async function pickMarkdown() {
   if (props.sending || props.uploading) return
   menuOpen.value = false
+  if (props.localMode) {
+    const localFiles = window.electronAPI?.vibeAgent?.localFiles
+    if (!localFiles?.pick) {
+      emitAttachmentNotice('本机文件必须通过 Electron 系统文件选择器打开。')
+      return
+    }
+    if (!props.localAccountId) {
+      emitAttachmentNotice('当前账号身份尚未就绪，请稍后再选择本机文件。')
+      return
+    }
+    try {
+      const result = await localFiles.pick({ accountId: props.localAccountId })
+      if (result?.canceled) return
+      const nativeFiles = Array.isArray(result?.files)
+        ? result.files.map((file: any) => ({
+            // Keep a File-shaped view while Main owns the typed reference and
+            // resolves its absolute path only when starting the local Goal.
+            name: String(file?.name || ''),
+            size: Number(file?.size || 0),
+            lastModified: Number(file?.last_modified || 0),
+            type: String(file?.mime || 'text/markdown'),
+            local_file_ref: { ...file },
+          }))
+        : []
+      if (!nativeFiles.length) return
+      const admission = admitAttachmentSelection(selectedFiles.value, nativeFiles as unknown as File[], {
+        maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
+        maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
+      })
+      selectedFiles.value = admission.files
+      // Native and browser pickers share the same toast owner.
+      const notifyAdmission = emitAttachmentNotice
+      notifyAdmission(admission.error)
+    } catch (error) {
+      emitAttachmentNotice(error instanceof Error ? error.message : String(error))
+    }
+    return
+  }
   fileInputEl.value?.click()
 }
-function fileKey(f: File) { return `${f.name}-${f.size}-${f.lastModified}` }
+function fileKey(f: File) {
+  const localRef = String((f as any)?.local_file_ref?.ref_id || '').trim()
+  if (localRef) return `local-file:${localRef}`
+  const admissionToken = String((f as any)?.admission_token || (f as any)?.admissionToken || '').trim()
+  return admissionToken ? `admission:${admissionToken}` : `${f.name}-${f.size}-${f.lastModified}`
+}
 function emitAttachmentNotice(error: string): void {
   const title = String(error || '').trim()
   if (!title) return
@@ -413,7 +477,9 @@ function onFileChange() {
   }
   const picked = Array.from(fileInputEl.value?.files || [])
   if (!picked.length) return
-  const admission = admitAttachmentSelection(selectedFiles.value, picked)
+  const admission = admitAttachmentSelection(selectedFiles.value, picked, props.localMode
+    ? { maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES, maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES }
+    : undefined)
   selectedFiles.value = admission.files
   emitAttachmentNotice(admission.error)
   if (fileInputEl.value) fileInputEl.value.value = ''
@@ -428,7 +494,12 @@ function clearAttachments() {
 }
 
 function restoreAttachments(files: File[]) {
-  const admission = admitAttachmentSelection([], files)
+  const admission = props.localMode
+    ? admitAttachmentSelection([], files, {
+        maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
+        maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
+      })
+    : admitAttachmentSelection([], files)
   selectedFiles.value = admission.files
   emitAttachmentNotice(admission.error)
   if (fileInputEl.value) fileInputEl.value.value = ''
@@ -536,7 +607,7 @@ function focusInput() {
   })
 }
 
-defineExpose({ clearAttachments, restoreAttachments, focusInput })
+defineExpose({ clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(), restoreAttachments, focusInput })
 </script>
 
 <style scoped>

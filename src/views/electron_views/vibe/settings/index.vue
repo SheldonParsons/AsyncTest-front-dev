@@ -401,8 +401,8 @@
         </template>
       </section>
 
-      <section v-else-if="activeKey === 'trace' && canViewTraceAudit" class="trace-panel">
-        <div class="trace-control">
+      <section v-else-if="activeKey === 'trace' && (canViewTraceAudit || canViewElectronTrace)" class="trace-panel">
+        <div v-if="canViewTraceAudit" class="trace-control">
           <div>
             <strong>记录新对话链路</strong>
             <span>{{ traceAuditEnabled ? '开启后，主对话区域的新请求会写入审计记录。' : '关闭后，新的对话链路不会再写入审计记录。' }}</span>
@@ -422,7 +422,7 @@
               <div class="trace-list-actions">
                 <button type="button" :disabled="!traceRuns.length" @click="toggleVisibleTraceSelection">{{ allVisibleTraceSelected ? '取消全选' : '全选' }}</button>
                 <button type="button" :disabled="!selectedTraceIds.size" @click="copySelectedTraceMarkers">{{ copiedAuditMarkerBatch ? '已复制标识' : '复制标识' }}</button>
-                <button type="button" :disabled="!selectedTraceIds.size || traceExporting" @click="exportSelectedTraces">{{ traceExporting ? '导出中' : '导出' }}</button>
+                <button type="button" :disabled="!selectedTraceIds.size || traceExporting" @click="exportSelectedTraces">{{ traceExporting ? '导出中' : '导出 AI 审计 JSON' }}</button>
                 <button type="button" @click="loadTraceRuns(true)" :disabled="traceRunsLoading">刷新</button>
               </div>
             </div>
@@ -522,6 +522,12 @@
                     <button type="button" @click="copyTraceAuditMarker(selectedTrace)">{{ copiedAuditMarker === traceAuditMarker(selectedTrace) ? '已复制' : '复制' }}</button>
                     <strong v-if="tracePrivateView">私有取证</strong>
                     <button type="button" @click="selectTrace(selectedTraceId, !tracePrivateView)">{{ tracePrivateView ? '返回安全视图' : '查看私有取证' }}</button>
+                    <button
+                      v-if="selectedTrace.trace_source === 'electron'"
+                      type="button"
+                      :disabled="traceRawDownloading"
+                      @click="downloadElectronTraceRaw"
+                    >{{ traceRawDownloading ? '下载中' : '下载原始取证包' }}</button>
                   </div>
                 </div>
                 <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status) }}</span>
@@ -611,7 +617,7 @@ import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
-import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -648,6 +654,7 @@ const traceDetailLoading = ref(false)
 const tracePrivateView = ref(false)
 const selectedTraceIds = ref<Set<string>>(new Set())
 const traceExporting = ref(false)
+const traceRawDownloading = ref(false)
 const copiedAuditMarker = ref('')
 const copiedAuditMarkerBatch = ref(false)
 const traceAuditMarkerFilter = ref('')
@@ -726,6 +733,7 @@ const traceFilterOptions = ref<{
 }>({ projects: [], users: [] })
 
 const canViewTraceAudit = computed(() => !!capabilities.value.trace_audit)
+const canViewElectronTrace = computed(() => typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent)
 const canViewSystemKnowledgeAdmin = computed(() => !!capabilities.value.system_knowledge_admin)
 const canViewAdminSettings = computed(() => canViewTraceAudit.value || canViewSystemKnowledgeAdmin.value)
 const traceAuditEnabled = computed(() => featureConfigs.value.trace_audit?.enabled !== false)
@@ -1383,18 +1391,89 @@ async function removeSystemKnowledge() {
 }
 
 async function loadTraceRuns(reset = false) {
-  if (!canViewTraceAudit.value || traceRunsLoading.value) return
+  const canViewElectronTrace = typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent
+  if ((!canViewTraceAudit.value && !canViewElectronTrace) || traceRunsLoading.value) return
   traceRunsLoading.value = true
   try {
-    const res = await listVibeDialogueTraceRuns({
-      limit: 30,
-      cursor: reset ? '' : traceNextCursor.value,
-      marker: traceAuditMarkerFilter.value,
-      q: traceContentFilter.value,
-      project: traceProjectFilter.value,
-      user: traceUserFilter.value,
-    })
+    let res: any = { items: [], next_cursor: '', filters: undefined }
+    try {
+      res = await listVibeDialogueTraceRuns({
+        limit: 30,
+        cursor: reset ? '' : traceNextCursor.value,
+        marker: traceAuditMarkerFilter.value,
+        q: traceContentFilter.value,
+        project: traceProjectFilter.value,
+        user: traceUserFilter.value,
+      })
+    } catch {
+      // Ordinary Electron users may not have the legacy audit capability;
+      // their local Trace list is still available through the passive ingest API.
+    }
     const items = res?.items || []
+    let electronItems: VibeDialogueTraceRun[] = []
+    let localItems: VibeDialogueTraceRun[] = []
+    if (typeof window !== 'undefined' && window.electronAPI?.vibeAgent?.trace?.list) {
+      try {
+        const accountId = String(sharedProfile.value?.id || currentUser.value?.id || '').trim()
+        const manifests: any[] = accountId
+          ? await window.electronAPI.vibeAgent.trace.list({ accountId, limit: 100 })
+          : []
+        localItems = manifests.map((manifest: any) => {
+          const metadata = manifest?.metadata && typeof manifest.metadata === 'object' ? manifest.metadata : {}
+          const status = String(manifest?.status || 'running')
+          const traceId = String(manifest?.trace_id || '')
+          const marker = traceId ? `DTA-${traceId.replace(/[^0-9a-f]/gi, '').slice(0, 8).toUpperCase()}` : ''
+          return {
+            trace_id: traceId,
+            audit_marker: marker,
+            session_id: String(manifest?.session_id || ''),
+            session_title: String(metadata.session_title || ''),
+            turn_id: String(metadata.turn_id || manifest?.goal_id || ''),
+            project_id: String(manifest?.project_id || metadata.project_id || ''),
+            project_name: String(metadata.project_name || ''),
+            user_id: accountId ? Number(accountId) : undefined,
+            input_text: String(metadata.request_text || metadata.input_text || ''),
+            final_status: status,
+            summary: '本机任务 Trace（本地）',
+            started_at: String(manifest?.created_at || ''),
+            ended_at: status === 'running' ? null : String(manifest?.updated_at || ''),
+            elapsed_ms: null,
+            trace_source: 'electron',
+            trace_local: true,
+          }
+        }).filter((item: VibeDialogueTraceRun) => {
+          if (traceProjectFilter.value && String(item.project_id || '') !== traceProjectFilter.value) return false
+          if (traceUserFilter.value && String(item.user_id || '') !== traceUserFilter.value) return false
+          if (traceAuditMarkerFilter.value && !String(item.audit_marker || '').includes(traceAuditMarkerFilter.value)) return false
+          if (traceContentFilter.value && !String(item.input_text || '').includes(traceContentFilter.value)) return false
+          return true
+        })
+      } catch { /* local Trace remains optional when the bridge is unavailable */ }
+    }
+    // Electron-owned runs use the passive Trace ingest store. Merge them into
+    // the existing audit list so the operator does not need a second viewer.
+    if (typeof window !== 'undefined' && window.electronAPI?.vibeAgent) {
+      try {
+        const remote = await listRemoteAgentTraces({ limit: 100 })
+        electronItems = (remote?.items || []).map((item: any) => ({
+          trace_id: String(item.trace_id || ''),
+          audit_marker: String(item.audit_marker || ''),
+          session_id: String(item.session_id || ''),
+          session_title: String(item.session_title || ''),
+          turn_id: String(item.turn_id || item.goal_id || ''),
+          project_id: String(item.project_id || ''),
+          project_name: String(item.project_name || ''),
+          user_id: item.user_id == null ? undefined : Number(item.user_id),
+          input_text: String(item.input_text || ''),
+          final_status: String(item.status || 'running'),
+          summary: '本机任务 Trace',
+          started_at: String(item.created_at || ''),
+          ended_at: item.completed_at || null,
+          elapsed_ms: null,
+          trace_source: 'electron',
+        }))
+      } catch { /* legacy audit list remains usable when ingest is unavailable */ }
+    }
     if (res?.filters) {
       traceFilterOptions.value = {
         projects: res.filters.projects || [],
@@ -1407,7 +1486,13 @@ async function loadTraceRuns(reset = false) {
       tracePrivateView.value = false
       selectedTraceIds.value = new Set()
     }
-    traceRuns.value = reset ? items : [...traceRuns.value, ...items]
+    const mergedItems = [...localItems, ...items, ...electronItems]
+      .filter((item, index, all) => {
+        const key = traceRunReference(item)
+        return key && all.findIndex(candidate => traceRunReference(candidate) === key) === index
+      })
+      .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')))
+    traceRuns.value = reset ? mergedItems : [...traceRuns.value, ...mergedItems.filter(item => !traceRuns.value.some(existing => traceRunReference(existing) === traceRunReference(item)))]
     traceNextCursor.value = res?.next_cursor || ''
     if (!selectedTraceId.value && traceRuns.value.length) await selectTrace(traceRunReference(traceRuns.value[0]))
   } finally {
@@ -1415,14 +1500,182 @@ async function loadTraceRuns(reset = false) {
   }
 }
 
+function resumeElectronTraceUploads() {
+  const bridge = typeof window !== 'undefined' ? window.electronAPI?.vibeAgent : null
+  const token = readLocalAuthToken()
+  const accountId = String(sharedProfile.value?.id || currentUser.value?.id || '').trim()
+  if (!bridge?.trace?.resume || !token || !accountId) return
+  const configured = String((import.meta as any).env?.VITE_VIBE_KNOWLEDGE_BASE_URL
+    || (import.meta as any).env?.VITE_API_URL || '').trim()
+  const baseUrl = configured
+    || ((import.meta as any).env?.DEV ? 'http://127.0.0.1:6001' : window.location.origin)
+  void bridge.trace.resume({
+    accountId,
+    baseUrl: String(baseUrl).replace(/\/$/, ''),
+    headers: { Authorization: `token=${token}` },
+  }).catch(() => undefined)
+}
+
+function tracePayloadFromFile(file: any): any {
+  const content = file?.content
+  if (content && typeof content === 'object') return content
+  if (typeof content !== 'string') return undefined
+  try { return JSON.parse(content) } catch { return { raw: content } }
+}
+
+function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceId: string): VibeDialogueTraceDetail {
+  const manifest = remote?.manifest || {}
+  const metadata = manifest?.metadata && typeof manifest.metadata === 'object' ? manifest.metadata : {}
+  const bundle = remote?.bundle || {}
+  const sourceEvents = Array.isArray(remote?.events)
+    ? remote.events
+    : Array.isArray(bundle.events) ? bundle.events : []
+  const sourceFiles = Array.isArray(remote?.files)
+    ? remote.files
+    : Array.isArray(bundle.files) ? bundle.files : []
+  const filesByPath = new Map(sourceFiles.map((file: any) => [String(file?.path || ''), file]))
+  const events = sourceEvents.map((event: any) => {
+    if (event?.payload !== undefined) return event
+    const payload = tracePayloadFromFile(filesByPath.get(String(event?.payload_ref || '')))
+    return payload === undefined ? event : { ...event, payload }
+  })
+  const eventBody = (event: any) => event?.payload?.payload ?? event?.payload ?? {}
+  const startEvent = events.find((event: any) => String(event?.name || '') === 'agent.start')
+  const startPayload = eventBody(startEvent)
+  const mainProviderEvent = events.find((event: any) => {
+    if (String(event?.name || '') !== 'pi.provider_payload') return false
+    return String(eventBody(event)?.purpose || '') === 'main_agent'
+  })
+  const providerBody = eventBody(mainProviderEvent)?.body || {}
+  const providerUserMessage = [...(Array.isArray(providerBody.messages) ? providerBody.messages : [])]
+    .reverse().find((message: any) => String(message?.role || '') === 'user')
+  const providerUserContent = Array.isArray(providerUserMessage?.content)
+    ? providerUserMessage.content.map((item: any) => String(item?.text || '')).join('')
+    : String(providerUserMessage?.content || '')
+  const finalEventNames = ['agent.final.accepted', 'agent.candidate_final', 'pi.candidate_final', 'pi.assistant_end', 'agent.run.completed']
+  let finalText = String(remote?.final_text || '')
+  if (!finalText) {
+    for (const name of finalEventNames) {
+      const candidate = [...events].reverse().find((event: any) => {
+        if (String(event?.name || '') !== name) return false
+        const body = eventBody(event)
+        return name !== 'pi.assistant_end' || String(body?.purpose || 'main_agent') === 'main_agent'
+      })
+      const text = String(eventBody(candidate)?.text || '').trim()
+      if (text) { finalText = text; break }
+    }
+  }
+  const terminalEvent = [...events].reverse().find((event: any) =>
+    ['agent.run.completed', 'pi.done'].includes(String(event?.name || '')))
+  const startedAt = String(remote?.started_at || manifest.created_at || selected.started_at || '')
+  const endedAt = String(remote?.ended_at || manifest.updated_at || selected.ended_at || '')
+  const startedMs = new Date(startedAt).getTime()
+  const endedMs = new Date(endedAt).getTime()
+  const projectedEvents: VibeDialogueTraceEvent[] = events.map((event: any, index: number) => ({
+    seq: Number(event.sequence || index + 1),
+    stage: 'electron',
+    event_type: String(event.name || 'agent.event'),
+    title: String(event.name || ''),
+    reason: '',
+    severity: String(event.status || 'info'),
+    elapsed_ms: Number.isFinite(startedMs) && event.timestamp
+      ? Math.max(0, new Date(event.timestamp).getTime() - startedMs)
+      : null,
+    created_at: String(event.timestamp || ''),
+    payload: event.payload ?? event.attributes ?? {},
+  }))
+  if (finalText) {
+    projectedEvents.push({
+      seq: projectedEvents.length + 1,
+      stage: 'electron',
+      event_type: 'answer.finished',
+      title: '最终回答',
+      reason: '本机任务已完成。',
+      severity: 'info',
+      elapsed_ms: Number.isFinite(startedMs) && Number.isFinite(endedMs) ? Math.max(0, endedMs - startedMs) : null,
+      created_at: String(terminalEvent?.timestamp || endedAt),
+      payload: { answer: finalText },
+    })
+  }
+  return {
+    trace_id: String(remote?.trace_id || manifest.trace_id || selected.trace_id || traceId),
+    audit_marker: String(remote?.audit_marker || selected.audit_marker || ''),
+    turn_id: String(remote?.turn_id || metadata.turn_id || manifest.goal_id || selected.turn_id || ''),
+    session_id: String(remote?.session_id || manifest.session_id || selected.session_id || ''),
+    session_title: String(remote?.session_title || metadata.session_title || selected.session_title || ''),
+    project_id: String(remote?.project_id || metadata.project_id || selected.project_id || ''),
+    project_name: String(remote?.project_name || metadata.project_name || selected.project_name || ''),
+    user_id: remote?.user_id == null ? selected.user_id : Number(remote.user_id),
+    input_text: String(remote?.input_text || metadata.request_text || startPayload.prompt || startPayload.user_text || providerUserContent || ''),
+    final_status: String(remote?.status || manifest.status || selected.final_status || ''),
+    started_at: startedAt,
+    ended_at: endedAt,
+    elapsed_ms: Number.isFinite(startedMs) && Number.isFinite(endedMs) ? Math.max(0, endedMs - startedMs) : null,
+    summary: finalText || '本机任务 Trace',
+    attachment_summary: remote?.attachment_summary || {},
+    side_effects: remote?.side_effects || {},
+    events: projectedEvents,
+    trace_source: 'electron',
+  }
+}
+
+async function loadElectronTraceSource(selected: VibeDialogueTraceRun, traceId: string): Promise<any> {
+  if (selected.trace_local) {
+    const bridge = window.electronAPI?.vibeAgent?.trace
+    const accountId = String(sharedProfile.value?.id || currentUser.value?.id || '').trim()
+    if (!bridge?.detail || !accountId) throw new Error('本机 Trace 暂不可读取')
+    const detail: any = await bridge.detail({
+      traceId: String(selected.trace_id || traceId),
+      accountId,
+      includePayload: true,
+      limit: 10_000,
+    })
+    const manifest = detail?.manifest || {}
+    return {
+      ...detail,
+      trace_id: String(manifest.trace_id || selected.trace_id || traceId),
+      status: String(manifest.status || selected.final_status || 'running'),
+      session_id: String(manifest.session_id || selected.session_id || ''),
+      project_id: String(manifest.project_id || selected.project_id || ''),
+      created_at: String(manifest.created_at || selected.started_at || ''),
+      completed_at: String(manifest.status || '') === 'running'
+        ? null
+        : String(manifest.updated_at || selected.ended_at || ''),
+    }
+  }
+  return await getRemoteAgentTrace(String(selected.trace_id || traceId), 'detail')
+}
+
 async function selectTrace(traceId: string, privateView = false) {
   if (!traceId) return
   selectedTraceId.value = traceId
   traceDetailLoading.value = true
   try {
-    const detail = await getVibeDialogueTraceDetail(traceId, privateView ? 'private' : 'public')
-    selectedTrace.value = detail
-    tracePrivateView.value = detail.detail_view === 'private'
+    const selected = traceRuns.value.find(item => traceRunReference(item) === traceId)
+    if (selected?.trace_source === 'electron') {
+      const remote: any = await loadElectronTraceSource(selected, traceId)
+      selectedTrace.value = electronTraceDetail(remote, selected, traceId)
+      tracePrivateView.value = true
+    } else {
+      const detail = await getVibeDialogueTraceDetail(traceId, privateView ? 'private' : 'public')
+      selectedTrace.value = detail
+      tracePrivateView.value = detail.detail_view === 'private'
+    }
+    if (selectedTrace.value) {
+      const detail = selectedTrace.value
+      traceRuns.value = traceRuns.value.map(item => traceRunReference(item) === traceId
+        ? {
+            ...item,
+            user_id: detail.user_id,
+            project_id: detail.project_id,
+            project_name: detail.project_name,
+            turn_id: detail.turn_id,
+            session_title: detail.session_title,
+            input_text: detail.input_text,
+            final_status: detail.final_status,
+          }
+        : item)
+    }
   } finally {
     traceDetailLoading.value = false
   }
@@ -1485,112 +1738,40 @@ function selectedTraceRunsInTimeOrder() {
     })
 }
 
-function mdValue(value: any) {
-  const text = String(value ?? '').trim()
-  return text || '-'
-}
-
-function mdFence(value: string, lang = '') {
-  return `\`\`\`\`${lang}\n${String(value || '').replace(/\`\`\`\`/g, '\`\`\`\\`')}\n\`\`\`\``
-}
 
 function exportStamp(date = new Date()) {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
 }
 
-function buildTraceExportMarkdown(details: VibeDialogueTraceDetail[]) {
-  const lines: string[] = []
-  lines.push('# 对话链路审计导出')
-  lines.push('')
-  lines.push(`- 导出时间：${new Date().toLocaleString('zh-CN')}`)
-  lines.push(`- 导出数量：${details.length}`)
-  lines.push('- 文件用途：离线交给 AI 分析主对话区域链路、决策过程、召回材料、落库/修改/删除动作。')
-  lines.push('')
 
-  details.forEach((trace, index) => {
-    lines.push(`## ${index + 1}. ${mdValue(trace.input_text || '未命名对话').split('\n')[0]}`)
-    lines.push('')
-    lines.push('| 字段 | 内容 |')
-    lines.push('| --- | --- |')
-    lines.push(`| 审计标识 | ${mdValue(traceAuditMarker(trace))} |`)
-    lines.push(`| 发起用户 | ${mdValue(traceActorLabel(trace))} |`)
-    lines.push(`| 所属项目 | ${mdValue(traceProjectLabel(trace))} |`)
-    lines.push(`| 对话会话 | ${mdValue(traceSessionLabel(trace))} |`)
-    lines.push(`| 状态 | ${mdValue(traceStatusText(trace.final_status))} |`)
-    lines.push(`| 路由动作 | ${mdValue(routeActionLabel(trace.route_action || ''))} |`)
-    lines.push(`| 开始时间 | ${mdValue(trace.started_at)} |`)
-    lines.push(`| 结束时间 | ${mdValue(trace.ended_at)} |`)
-    lines.push(`| 耗时 | ${mdValue(formatDuration(trace.elapsed_ms))} |`)
-    lines.push('')
-    lines.push('### 用户输入')
-    lines.push('')
-    lines.push(mdFence(trace.input_text || '-', 'markdown'))
-    lines.push('')
-    const files = traceAttachments(trace)
-    if (files.length) {
-      lines.push('### 使用文件')
-      lines.push('')
-      files.forEach((file, fileIndex) => {
-        lines.push(`#### ${fileIndex + 1}. ${mdValue(attachmentName(file))}`)
-        lines.push('')
-        lines.push(`- 大小：${mdValue(attachmentSizeLabel(file.size))}`)
-        lines.push(`- 类型：${mdValue(file.mime || '')}`)
-        lines.push('')
-        lines.push(mdFence(String(file.content ?? file.text ?? ''), 'markdown'))
-        lines.push('')
-      })
-    }
-    lines.push('### 最终结果')
-    lines.push('')
-    lines.push(mdFence(traceFinalAnswer(trace) || '-', 'markdown'))
-    lines.push('')
-    lines.push('### 副作用')
-    lines.push('')
-    lines.push(mdFence(formatJson(trace.side_effects || {}), 'json'))
-    lines.push('')
-    lines.push('### 事件时间线')
-    lines.push('')
-    if (!trace.events?.length) {
-      lines.push('- 无事件记录')
-      lines.push('')
-    } else {
-      trace.events.forEach((event) => {
-        lines.push(`#### #${event.seq} ${eventTypeLabel(event.event_type)}`)
-        lines.push('')
-        lines.push(`- 阶段：${mdValue(STAGE_LABELS[event.stage] ? withCode(STAGE_LABELS[event.stage], event.stage) : event.stage)}`)
-        lines.push(`- 标题：${mdValue(eventDisplayTitle(event))}`)
-        lines.push(`- 原因：${mdValue(event.reason)}`)
-        lines.push(`- 耗时：${mdValue(formatDuration(event.elapsed_ms))}`)
-        const text = eventText(event)
-        if (text) {
-          lines.push('')
-          lines.push('正文：')
-          lines.push('')
-          lines.push(mdFence(text, 'markdown'))
-        }
-        lines.push('')
-        lines.push('Payload：')
-        lines.push('')
-        lines.push(mdFence(formatJson(annotatedPayload(event.payload)), 'json'))
-        lines.push('')
-      })
-    }
-  })
-  return lines.join('\n')
+
+function buildTraceAnalysisExport(details: VibeDialogueTraceDetail[]) {
+  return {
+    schema: 'vibe.agent.trace.analysis.v1',
+    exported_at: new Date().toISOString(),
+    purpose: '供 AI 分析 Agent 输入、Provider 请求、工具调用、交互、最终结果与时序。',
+    traces: details.map(trace => ({
+      trace_id: trace.trace_id,
+      audit_marker: traceAuditMarker(trace),
+      source: trace.trace_source || 'server',
+      user: { id: trace.user_id, label: traceActorLabel(trace) },
+      project: { id: trace.project_id, name: trace.project_name || '' },
+      session: { id: trace.session_id, title: trace.session_title || '' },
+      turn_id: trace.turn_id || '',
+      status: trace.final_status || '',
+      started_at: trace.started_at || '',
+      ended_at: trace.ended_at || '',
+      elapsed_ms: trace.elapsed_ms ?? null,
+      input_text: trace.input_text || '',
+      final_text: traceFinalAnswer(trace),
+      attachments: traceAttachments(trace),
+      side_effects: trace.side_effects || {},
+      events: traceTimelineEvents(trace),
+    })),
+  }
 }
 
-function downloadMarkdown(filename: string, text: string) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
 
 function attachmentName(file: Partial<VibeAttachment> | any) {
   return String(file?.name || file?.filename || '未命名文件')
@@ -1632,6 +1813,7 @@ const HIDDEN_TRACE_EVENT_TYPES = new Set([
   'sse.answer_delta',
   'sse.answer_done',
   'sse.ping',
+  'pi.assistant_delta',
 ])
 
 function traceTimelineEvents(trace?: Partial<VibeDialogueTraceDetail> | null) {
@@ -1671,6 +1853,28 @@ function saveAttachmentBlob(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
+async function downloadElectronTraceRaw() {
+  const traceId = String(selectedTrace?.value?.trace_id || selectedTraceId.value || '').trim()
+  if (!traceId || selectedTrace?.value?.trace_source !== 'electron' || traceRawDownloading.value) return
+  traceRawDownloading.value = true
+  try {
+    const selected = traceRuns.value.find(item => traceRunReference(item) === selectedTraceId.value)
+    if (selected?.trace_local) {
+      const detail = await loadElectronTraceSource(selected, selectedTraceId.value)
+      const blob = new Blob([JSON.stringify(detail, null, 2)], { type: 'application/json;charset=utf-8' })
+      saveAttachmentBlob(blob, `electron-trace-${traceAuditMarker(selectedTrace.value)}.json`)
+      return
+    }
+    const raw = await getRemoteAgentTrace(traceId, 'raw')
+    if (!(raw instanceof Blob) || raw.size <= 0) throw new Error('Trace 原始包不可用')
+    saveAttachmentBlob(raw, `electron-trace-${traceAuditMarker(selectedTrace.value)}.framed`)
+  } catch {
+    window.$toast?.({ title: '原始 Trace 下载失败', type: 'error', position: 'bottom-right', duration: 4000, actionText: '关闭' })
+  } finally {
+    traceRawDownloading.value = false
+  }
+}
+
 async function downloadAttachment(file: Partial<VibeAttachment> | any, index: number) {
   const traceId = String(selectedTraceId.value || '').trim()
   const downloadUrl = String(file?.download_url || '').trim()
@@ -1696,17 +1900,26 @@ async function downloadAttachment(file: Partial<VibeAttachment> | any, index: nu
 }
 
 async function exportSelectedTraces() {
-  const ids = selectedTraceRunsInTimeOrder().map(traceRunReference)
-  if (!ids.length || traceExporting.value) return
+  const runs = selectedTraceRunsInTimeOrder()
+  if (!runs.length || traceExporting.value) return
   traceExporting.value = true
   try {
     const details: VibeDialogueTraceDetail[] = []
-    for (const id of ids) {
-      if (selectedTrace.value && selectedTraceId.value === id && !tracePrivateView.value) details.push(selectedTrace.value)
-      else details.push(await getVibeDialogueTraceDetail(id, 'public'))
+    for (const run of runs) {
+      const id = traceRunReference(run)
+      if (selectedTrace.value && selectedTraceId.value === id) {
+        details.push(selectedTrace.value)
+      } else if (run.trace_source === 'electron') {
+        const remote: any = await loadElectronTraceSource(run, id)
+        details.push(electronTraceDetail(remote, run, id))
+      } else {
+        details.push(await getVibeDialogueTraceDetail(id, 'public'))
+      }
     }
-    const markdown = buildTraceExportMarkdown(details)
-    downloadMarkdown(`dialogue-trace-${exportStamp()}-${details.length}.md`, markdown)
+    downloadJson(
+      `agent-trace-analysis-${exportStamp()}-${details.length}.json`,
+      buildTraceAnalysisExport(details),
+    )
   } finally {
     traceExporting.value = false
   }
@@ -1760,6 +1973,12 @@ function compactJson(value: any) {
 
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
+  'pi.ready': '本机运行组件已就绪',
+  'pi.provider_payload': '模型请求已准备',
+  'pi.assistant_stream': '模型输出流摘要',
+  'pi.assistant_end': '模型输出完成',
+  'pi.candidate_final': '候选答案已生成',
+  'pi.session_title': '会话标题已生成',
   'request.accepted': '请求已接收',
   'request.continuation_accepted': '确认回复并入父链路',
   'request.free_text_continuation_resolved': '自由文本承接已解析',
@@ -1901,6 +2120,7 @@ function withCode(label: string, code: string) {
 function eventTypeLabel(type?: string | null) {
   const raw = String(type || '').trim()
   if (!raw) return '未知事件'
+  if (raw.startsWith('pi.')) return EVENT_TYPE_LABELS[raw] || '本机运行事件'
   return withCode(EVENT_TYPE_LABELS[raw] || raw, raw)
 }
 
@@ -1921,7 +2141,8 @@ function eventDisplayTitle(event: VibeDialogueTraceEvent) {
   const payload = event?.payload || {}
   const payloadType = typeof payload.type === 'string' ? rawTypeLabel(payload.type) : ''
   const fallback = eventTypeLabel(event?.event_type)
-  return title ? `${title} · ${payloadType || fallback}` : (payloadType || fallback)
+  const publicTitle = title.startsWith('pi.') ? '' : title
+  return publicTitle ? `${publicTitle} · ${payloadType || fallback}` : (payloadType || fallback)
 }
 
 function annotatedPayload(value: any): any {
@@ -2109,12 +2330,15 @@ function trackMaximizeState() {
 }
 
 watch(canViewTraceAudit, (allowed) => {
-  if (!allowed && ['trace', 'admin-rerank-api', 'admin-embedding-api'].includes(activeKey.value)) activeKey.value = 'profile'
+  if (!allowed && !canViewElectronTrace.value && ['trace', 'admin-rerank-api', 'admin-embedding-api'].includes(activeKey.value)) activeKey.value = 'profile'
 })
 
 watch(activeKey, (key) => {
   if (key === 'profile') loadUsageSummary()
-  if (key === 'trace' && canViewTraceAudit.value && !traceRuns.value.length) loadTraceRuns(true)
+  if (key === 'trace' && (canViewTraceAudit.value || canViewElectronTrace.value)) {
+    resumeElectronTraceUploads()
+    if (!traceRuns.value.length) loadTraceRuns(true)
+  }
   if (key === 'admin-model' && canViewTraceAudit.value && !adminModelProviders.value.length) loadAdminModelDefaults()
   if (key === 'admin-scenes' && canViewTraceAudit.value && !adminScenes.value.length) loadAdminModelScenes()
   if (key === 'admin-system-knowledge' && canViewSystemKnowledgeAdmin.value && !systemKnowledgeItems.value.length) loadSystemKnowledge(true)
@@ -2130,9 +2354,10 @@ onMounted(async () => {
     loadUsageSummary(),
     profileRequest,
   ])
-  if (!canViewTraceAudit.value && activeKey.value === 'trace') activeKey.value = 'profile'
+  if (!canViewTraceAudit.value && !canViewElectronTrace.value && activeKey.value === 'trace') activeKey.value = 'profile'
   if (!canViewSystemKnowledgeAdmin.value && activeKey.value === 'admin-system-knowledge') activeKey.value = 'profile'
-  if (activeKey.value === 'trace' && canViewTraceAudit.value) {
+  if (activeKey.value === 'trace' && (canViewTraceAudit.value || canViewElectronTrace.value)) {
+    resumeElectronTraceUploads()
     await loadTraceRuns(true)
     const targetTraceId = String(route.query.trace_id || '').trim()
     if (targetTraceId && targetTraceId !== selectedTraceId.value) await selectTrace(targetTraceId)

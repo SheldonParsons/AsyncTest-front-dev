@@ -12,6 +12,7 @@ import { initGeneratorMain } from './generator/ipcMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
+import { initVibeAgentMain } from './vibeAgent/ipcMain.node.js';
 import {
   handleMindMcpRendererProgress,
   handleMindMcpRendererReady,
@@ -76,6 +77,9 @@ let mainCloseRequestedFromRenderer = false;
 let mindNodesClipboardPayload = null;
 let mindNodesClipboardText = null;
 let mindMcpBridge = null;
+let vibeAgentMain = null;
+let vibeAgentCleanupPromise = null;
+let vibeAgentCleanupComplete = false;
 
 // amind 主模块实例（必须由 initAmindMain 返回 openFileInWindow 等能力）
 let amindMain = null;
@@ -642,6 +646,10 @@ app.whenReady().then(async () => {
   initProjectFilesMain();
   initLspMain();
   initPythonRunnerMain();
+  vibeAgentMain = initVibeAgentMain({
+    windowManager,
+    isDevelopment: isDevelopmentRuntime,
+  });
 
   await flushPendingOpenQueue();
 
@@ -677,6 +685,18 @@ app.on('before-quit', (event) => {
   cleanupLsp();
   cleanupPythonRunner();
   if (isQuitApproved || isQuittingForUpdate()) {
+    if (!vibeAgentCleanupComplete && vibeAgentMain) {
+      event.preventDefault();
+      if (!vibeAgentCleanupPromise) {
+        vibeAgentCleanupPromise = vibeAgentMain.cleanup()
+          .catch(() => undefined)
+          .finally(() => {
+            vibeAgentCleanupComplete = true;
+            app.quit();
+          });
+      }
+      return;
+    }
     mindMcpBridge?.close?.();
     isQuitting = true;
     return;

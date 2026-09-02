@@ -1,5 +1,6 @@
 export interface SessionAttachmentLike {
   id?: unknown
+  ref_id?: unknown
   resource_id?: unknown
   source_ref_id?: unknown
   citation_span_id?: unknown
@@ -20,6 +21,11 @@ export interface SessionAttachmentLike {
   content?: unknown
   text?: unknown
   body_omitted?: unknown
+  workspace_id?: unknown
+  attachment_id?: unknown
+  account_id?: unknown
+  run_id?: unknown
+  session_id?: unknown
 }
 
 export interface SessionEventLike {

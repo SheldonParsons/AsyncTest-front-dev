@@ -3,11 +3,12 @@
     <div
       ref="rootEl"
       class="composer-input chat-markdown-editor-root"
-      contenteditable="true"
+      :contenteditable="sending || stopping || uploading ? 'false' : 'true'"
       role="textbox"
       aria-multiline="true"
       :aria-label="ariaLabel"
       :aria-placeholder="placeholder"
+      :aria-disabled="sending || stopping || uploading ? 'true' : undefined"
       :data-placeholder="placeholder"
       spellcheck="true"
       tabindex="0"
@@ -92,6 +93,10 @@ let initializing = true
 let lastEmittedMarkdown = currentMarkdown.value
 let lastPropMarkdown = currentMarkdown.value
 let externalSyncToken = 0
+// A queued Lexical serialization can outlive the click that submits the
+// message.  The epoch makes a stale callback a no-op after a synchronous
+// clear, instead of writing the just-sent draft back to the parent.
+let editorResetEpoch = 0
 let serializationQueued = false
 let heightRafId: number | null = null
 let suppressControlledPasteUntil = 0
@@ -141,9 +146,11 @@ function queueSerialization() {
   if (initializing) return
   if (serializationQueued) return
   serializationQueued = true
+  const queuedEpoch = editorResetEpoch
   const run = () => {
     serializationQueued = false
     if (!mounted || !editor) return
+    if (queuedEpoch !== editorResetEpoch) return
     const value = serializeEditorState()
     currentMarkdown.value = value
     scheduleHeightSync()
@@ -427,6 +434,23 @@ function importMarkdown(value: string) {
   scheduleHeightSync()
 }
 
+function clearEditor() {
+  const instance = editor
+  editorResetEpoch += 1
+  currentMarkdown.value = ''
+  lastPropMarkdown = ''
+  lastEmittedMarkdown = ''
+  externalSyncToken = 0
+  if (instance) {
+    instance.update(() => {
+      const root = $getRoot()
+      root.clear()
+      root.selectEnd()
+    }, { tag: 'chat-submit-clear', discrete: true })
+  }
+  scheduleHeightSync()
+}
+
 function setupEditor() {
   if (typeof window === 'undefined' || !rootEl.value) return
   const instance = createEditor({
@@ -559,7 +583,7 @@ onMounted(() => {
 
 onBeforeUnmount(disposeEditor)
 
-defineExpose({ focusEditor, getMarkdown })
+defineExpose({ clearEditor, focusEditor, getMarkdown })
 </script>
 
 <style scoped>

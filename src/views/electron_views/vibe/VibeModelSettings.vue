@@ -53,6 +53,11 @@
 
             <p v-if="!providers.length" class="vms-empty-line">新增自己的模型，或等待管理员配置系统默认模型。</p>
           </section>
+          <label v-if="localAgentAvailable" class="vms-local-agent-toggle">
+            <input v-model="localPiEnabled" type="checkbox" @change="persistLocalPiMode" />
+            <span>在本机运行</span>
+            <small>附件留在本机；服务端在任务开始时提供模型配置，随后由客户端直连模型</small>
+          </label>
 
           <footer v-if="statusText" class="vms-list-foot">
             <span :class="['vms-status', { ok: statusKind === 'ok', error: statusKind === 'error' }]">{{ statusText }}</span>
@@ -161,6 +166,8 @@ const providers = ref<VibeLLMProviderConfig[]>([])
 const editingProvider = ref<VibeLLMProviderConfig | null>(null)
 const statusText = ref('')
 const statusKind = ref<'idle' | 'ok' | 'error'>('idle')
+const localPiEnabled = ref(false)
+const localAgentAvailable = computed(() => typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent?.startLocal)
 let loadConfigRequest: Promise<void> | null = null
 
 const draft = reactive<VibeLLMProviderPayload>({
@@ -193,8 +200,28 @@ watch(open, (value) => {
 })
 
 onMounted(() => {
+  const configured = String((import.meta as any).env?.VITE_VIBE_AGENT_MODE || '').trim().toLowerCase()
+  const electronDefault = String((import.meta as any).env?.VITE_IS_ELECTRON || '').trim().toLowerCase() === 'true'
+  try {
+    const stored = String(window.localStorage.getItem('vibe-agent-execution') || '').trim().toLowerCase()
+    localPiEnabled.value = stored === 'electron-local' || stored === 'local'
+      || (!stored && configured !== 'server' && (
+        configured === 'electron-local' || configured === 'local' || electronDefault
+      ))
+  } catch {
+    localPiEnabled.value = configured !== 'server' && (
+      configured === 'electron-local' || configured === 'local' || electronDefault
+    )
+  }
   if (embedded.value) void loadConfig()
 })
+
+function persistLocalPiMode() {
+  try {
+    if (localPiEnabled.value) window.localStorage.setItem('vibe-agent-execution', 'electron-local')
+    else window.localStorage.setItem('vibe-agent-execution', 'server')
+  } catch { /* localStorage may be unavailable in a restricted profile */ }
+}
 
 function resetDraft() {
   Object.assign(draft, {
@@ -315,7 +342,7 @@ function buildPayload(): VibeLLMProviderPayload {
     name: String(draft.name || '').trim(),
     provider_type: 'deepseek',
     base_url: String(draft.base_url || DEEPSEEK_BASE_URL).trim(),
-    proxy_url: '',
+    proxy_url: String(draft.proxy_url || '').trim(),
     timeout_config: { connect: 30, read: 240, write: 60, pool: 30 },
     max_retries: 0,
     model_config: {
@@ -642,6 +669,29 @@ async function runProviderTest(provider: VibeLLMProviderConfig) {
   margin: 10px 2px;
   color: rgba(29, 29, 31, 0.48);
   font-size: 13px;
+}
+
+.vms-local-agent-toggle {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border: 1px solid rgba(22, 96, 74, 0.18);
+  border-radius: 12px;
+  background: rgba(235, 248, 242, 0.72);
+  color: rgba(29, 29, 31, 0.82);
+  font-size: 13px;
+  cursor: pointer;
+
+  input { accent-color: #16805c; }
+  small {
+    grid-column: 2;
+    color: rgba(29, 29, 31, 0.52);
+    font-size: 11px;
+  }
 }
 
 .vms-empty-state {
