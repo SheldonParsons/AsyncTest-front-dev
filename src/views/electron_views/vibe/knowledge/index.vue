@@ -2945,10 +2945,14 @@ async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payl
   const predictedId = localInteractionEventId(context.run.run_id, pendingId)
   if (predictedId) context.localInteractionEventId = predictedId
   const epoch = sessionRequestEpoch
+  // Capture the submission generation before the asynchronous history read.
+  // A late read from the original interaction must not resurrect a card that
+  // the user has already submitted.
+  const submissionSerial = clarificationSubmissionSerial
   const fresh = await requestSessionEvents(sessionId).catch(() => null)
   if (!fresh || epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return predictedId
   events.value = sortEvents(fresh)
-  restoreClarificationFromEvents()
+  if (submissionSerial === clarificationSubmissionSerial) restoreClarificationFromEvents()
   const persisted = events.value.find((event: any) => (
     event?.role === 'assistant'
     && event?.meta?.local_agent === true
@@ -3498,6 +3502,7 @@ const composerPlaceholder = computed(() => '随心输入')
 // 询问模式（Codex 反问）：后端 ask_clarification（录入纪律"这段要不要记进知识库"拿不准时）→ 输入框变选项
 // pending = 后端反问挂起时的"思考草稿"；用户回答时原样回传 → 续跑同一思考（不另起新轮）。
 const clarificationActive = ref<{ question: string; raw?: any; pending?: any[] } | null>(null)
+let clarificationSubmissionSerial = 0
 const composerQuestion = computed(() => {
   const c = clarificationActive.value
   if (!c?.question) return null
@@ -4832,6 +4837,40 @@ async function respondToLiveGoal(raw: any, payload: {
   action?: 'apply' | 'cancel' | 'stop_all'
   clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
 }) {
+  clarificationSubmissionSerial += 1
+  // Hide the submitted card before any recovery/status request.  The response
+  // may take a while (especially after a renderer reload), but the user's
+  // choice is already locally accepted.  Restore it only when the same
+  // interaction cannot be delivered and no newer card replaced it.
+  const submittedCard = clarificationActive.value
+  const submittedSessionId = String(
+    activeSessionId.value || activeTurnSessionId.value || '',
+  ).trim()
+  const submittedPendingId = String(
+    payload.confirmation_id || payload.interaction_id
+    || raw?.confirmation_id || raw?.interaction_id || '',
+  ).trim()
+  const currentPendingId = () => String(
+    clarificationActive.value?.raw?.confirmation_id
+    || clarificationActive.value?.raw?.interaction_id || '',
+  ).trim()
+  const hideSubmittedCard = () => {
+    if (submittedSessionId && String(activeSessionId.value || '').trim() !== submittedSessionId) return
+    const current = currentPendingId()
+    if (
+      clarificationActive.value === submittedCard
+      || (submittedPendingId && current === submittedPendingId)
+      || (!current && submittedPendingId)
+    ) clarificationActive.value = null
+  }
+  const restoreSubmittedCard = () => {
+    if (
+      (!submittedSessionId || String(activeSessionId.value || '').trim() === submittedSessionId)
+      && !currentPendingId()
+      && submittedCard
+    ) clarificationActive.value = submittedCard
+  }
+  hideSubmittedCard()
   const turnId = String(
     raw?.goal_turn_id
     || raw?.runtime_turn_id
@@ -4846,6 +4885,7 @@ async function respondToLiveGoal(raw: any, payload: {
   // 走后端 cold continuation；不能因为本地 Map 暂时为空就提示用户重复操作。
   if (!electronRun && electronAgentBridge() && turnId && sessionId) {
     await recoverElectronAgentRun(sessionId)
+    hideSubmittedCard()
     electronRun = electronRunForTurn(turnId, sessionId)
   }
   if (electronRun && !electronRun.localCold && electronAgentBridge()?.status) {
@@ -4859,10 +4899,12 @@ async function respondToLiveGoal(raw: any, payload: {
         electronRun.localDescriptor = descriptor
         electronRun.localCold = true
       }
+      hideSubmittedCard()
     }
   }
   if (electronRun) {
     const materializedParent = await materializeLocalWaitingRun(electronRun, raw)
+    hideSubmittedCard()
     const parentId = materializedParent
       || lastClarificationAssistantId()
       || electronRun.localInteractionEventId
@@ -4873,18 +4915,18 @@ async function respondToLiveGoal(raw: any, payload: {
     const bridge = electronAgentBridge()
     const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
     if (!bridge?.recoverLocal || !pendingId) {
+      restoreSubmittedCard()
       ElMessage.error('当前本地 Agent 冷恢复信息不完整，请重新打开会话')
       return true
     }
-    const submittedCard = clarificationActive.value
     try {
       const descriptorContext = electronRun.localDescriptor?.local_context || {}
       const authToken = readLocalAuthToken()
       if (!authToken) throw new Error('本机运行需要有效的登录状态')
-      // Remove the submitted card before starting the continuation. If Pi
-      // immediately asks a new question, its event handler will install that
-      // newer card and the guarded cleanup below will leave it visible.
-      clarificationActive.value = null
+      // The submitted card was removed before the first asynchronous wait. If
+      // the continuation immediately asks a new question, its event handler
+      // installs that newer card and the guarded cleanup leaves it visible.
+      hideSubmittedCard()
       await bridge.recoverLocal({
         runId: electronRun.run.run_id,
         accountId: localAccountId(),
@@ -4905,9 +4947,7 @@ async function respondToLiveGoal(raw: any, payload: {
       if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
       setSessionRunning(sessionId, true)
     } catch (error) {
-      const currentPendingId = String((clarificationActive.value as any)?.raw?.confirmation_id
-        || (clarificationActive.value as any)?.raw?.interaction_id || '')
-      if (!currentPendingId) clarificationActive.value = submittedCard
+      restoreSubmittedCard()
       ElMessage.error(`本地 Agent 冷恢复失败：${localAgentErrorMessage(error)}`)
     }
     return true
@@ -4916,6 +4956,7 @@ async function respondToLiveGoal(raw: any, payload: {
     const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
     const bridge = electronAgentBridge()
     if (!bridge || !pendingId) {
+      restoreSubmittedCard()
       ElMessage.error('当前 Electron Agent 交互状态不完整，请等待会话恢复')
       return true
     }
@@ -4927,17 +4968,17 @@ async function respondToLiveGoal(raw: any, payload: {
         response: payload,
       })
       if (result?.accepted) {
-        const currentPendingId = String(clarificationActive.value?.raw?.confirmation_id
-          || clarificationActive.value?.raw?.interaction_id || '')
-        if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
+        hideSubmittedCard()
       } else if (result?.unknown) {
-        clarificationActive.value = null
+        hideSubmittedCard()
         ElMessage.warning('交互响应正在由后端核对，请勿重复提交')
         void recoverElectronAgentRun(sessionId)
       } else {
+        restoreSubmittedCard()
         ElMessage.error('交互响应未被后端接受，请保留当前选择并稍后重试')
       }
     } catch (error) {
+      restoreSubmittedCard()
       ElMessage.error(`交互响应失败：${localAgentErrorMessage(error)}`)
     }
     // Electron 已拥有本轮后，任何交互失败都不能用服务端另起同一轮。
@@ -4947,8 +4988,10 @@ async function respondToLiveGoal(raw: any, payload: {
   // turn/input endpoint. Keep the card visible so the user can retry after
   // Main has recovered the owning Run.
   if (!turnId || !sessionId) {
+    restoreSubmittedCard()
     ElMessage.error('本地 Agent 交互身份不可用，请重新打开会话')
   } else {
+    restoreSubmittedCard()
     ElMessage.warning('本地 Agent 交互状态正在恢复，请稍后重试')
   }
   return true

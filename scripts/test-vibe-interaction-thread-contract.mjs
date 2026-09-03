@@ -143,4 +143,15 @@ assert.match(viewSource, /function localRunProcessSteps\(event: any\): ProcessSt
 assert.match(viewSource, /const toolResults = new Map/)
 assert.doesNotMatch(viewSource, /isClarifyThreadRoot/)
 
+// 选择反问后先撤下当前卡片，再进入 Main 的异步恢复/交互调用；失败时才恢复，
+// 避免网络或冷恢复耗时把旧卡片留在输入区。
+const responseStart = viewSource.indexOf('async function respondToLiveGoal(')
+const responseEnd = viewSource.indexOf('\nasync function onComposerAnswer(', responseStart)
+assert.ok(responseStart >= 0 && responseEnd > responseStart)
+const responseSource = viewSource.slice(responseStart, responseEnd)
+const hideIndex = responseSource.indexOf('hideSubmittedCard()')
+const firstAwait = responseSource.indexOf('await ')
+assert.ok(hideIndex >= 0 && firstAwait > hideIndex, 'submitted card must hide before the first await')
+assert.match(responseSource, /restoreSubmittedCard\(\)/)
+
 console.log('vibe interaction thread contract: PASS')
