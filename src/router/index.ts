@@ -69,7 +69,6 @@ const routes = [
     component: () => import('@/views/generator/index.vue')
   },
   ...vibeRoutes] : []),
-  ...(isElectronRouter ? [] : vibeRoutes),
   {
     path: '/login',
     name: 'login',

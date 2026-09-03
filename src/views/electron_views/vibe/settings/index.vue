@@ -402,16 +402,6 @@
       </section>
 
       <section v-else-if="activeKey === 'trace' && (canViewTraceAudit || canViewElectronTrace)" class="trace-panel">
-        <div v-if="canViewTraceAudit" class="trace-control">
-          <div>
-            <strong>记录新对话链路</strong>
-            <span>{{ traceAuditEnabled ? '开启后，主对话区域的新请求会写入审计记录。' : '关闭后，新的对话链路不会再写入审计记录。' }}</span>
-          </div>
-          <button class="trace-switch" type="button" :class="{ on: traceAuditEnabled }" :disabled="traceConfigSaving" @click="toggleTraceAudit" :aria-pressed="traceAuditEnabled ? 'true' : 'false'">
-            <i />
-          </button>
-        </div>
-
         <div class="trace-browser">
           <aside class="trace-list">
             <div class="trace-list-head">
@@ -505,7 +495,6 @@
                 <span class="trace-row-meta subtle">{{ traceSessionLabel(run) }} · {{ formatDuration(run.elapsed_ms) }} · {{ formatTime(run.started_at) }}</span>
               </button>
             </div>
-            <button v-if="traceNextCursor" class="trace-more" type="button" :disabled="traceRunsLoading" @click="loadTraceRuns(false)">加载更多</button>
           </aside>
 
           <section class="trace-detail">
@@ -521,8 +510,7 @@
                     <span>审计标识</span>
                     <code>{{ traceAuditMarker(selectedTrace) }}</code>
                     <button type="button" @click="copyTraceAuditMarker(selectedTrace)">{{ copiedAuditMarker === traceAuditMarker(selectedTrace) ? '已复制' : '复制' }}</button>
-                    <strong v-if="tracePrivateView">私有取证</strong>
-                    <button type="button" @click="selectTrace(selectedTraceId, !tracePrivateView)">{{ tracePrivateView ? '返回安全视图' : '查看私有取证' }}</button>
+                    <strong>完整取证</strong>
                     <button
                       v-if="selectedTrace.trace_source === 'electron'"
                       type="button"
@@ -544,7 +532,7 @@
                     class="trace-attachment-chip"
                     type="button"
                     :title="attachmentName(file)"
-                    :disabled="!tracePrivateView || traceAttachmentDownloading === `${selectedTraceId}:${fileIndex}`"
+                    :disabled="traceAttachmentDownloading === `${selectedTraceId}:${fileIndex}`"
                     @click="downloadAttachment(file, fileIndex)"
                   >
                     <span class="trace-attachment-icon" aria-hidden="true">
@@ -569,8 +557,8 @@
                 <div class="trace-kv"><span>发起用户</span><code>{{ traceActorLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>所属项目</span><code>{{ traceProjectLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>对话会话</span><code>{{ traceSessionLabel(selectedTrace) }}</code></div>
-                <div v-if="tracePrivateView" class="trace-kv"><span>Trace ID</span><code>{{ selectedTrace.trace_id }}</code></div>
-                <div v-if="tracePrivateView" class="trace-kv"><span>Turn ID</span><code>{{ selectedTrace.turn_id || '-' }}</code></div>
+                <div class="trace-kv"><span>Trace ID</span><code>{{ selectedTrace.trace_id }}</code></div>
+                <div class="trace-kv"><span>Turn ID</span><code>{{ selectedTrace.turn_id || '-' }}</code></div>
                 <div class="trace-kv"><span>动作</span><code>{{ routeActionLabel(selectedTrace.route_action || '') }}</code></div>
                 <div class="trace-kv"><span>副作用</span><code>{{ compactJson(selectedTrace.side_effects) }}</code></div>
               </div>
@@ -618,7 +606,7 @@ import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
-import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, downloadVibeDialogueTraceAttachment, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getVibeDialogueTraceDetail, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listVibeDialogueTraceRuns, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, updateVibeTraceAuditConfig, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeFeatureConfig, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -636,7 +624,6 @@ const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workben
 const winMaximized = ref(false)
 let offMaximizeState: (() => void) | null = null
 const capabilities = ref<Record<string, boolean>>({})
-const featureConfigs = ref<Record<string, VibeFeatureConfig>>({})
 const currentUser = ref<VibeCapabilityUser | null>(null)
 const usageSummary = ref<VibeUsageSummary>({
   total_tokens: 0,
@@ -645,15 +632,12 @@ const usageSummary = ref<VibeUsageSummary>({
   dialogue_turns: 0,
   latest_sent_at: null,
 })
-const traceConfigSaving = ref(false)
 const traceRuns = ref<VibeDialogueTraceRun[]>([])
 const selectedTraceId = ref('')
 const selectedTrace = ref<VibeDialogueTraceDetail | null>(null)
-const traceNextCursor = ref('')
 const traceRunsLoading = ref(false)
 const traceDetailLoading = ref(false)
 const traceDetailError = ref('')
-const tracePrivateView = ref(false)
 const selectedTraceIds = ref<Set<string>>(new Set())
 const traceExporting = ref(false)
 const traceRawDownloading = ref(false)
@@ -738,7 +722,6 @@ const canViewTraceAudit = computed(() => !!capabilities.value.trace_audit)
 const canViewElectronTrace = computed(() => typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent)
 const canViewSystemKnowledgeAdmin = computed(() => !!capabilities.value.system_knowledge_admin)
 const canViewAdminSettings = computed(() => canViewTraceAudit.value || canViewSystemKnowledgeAdmin.value)
-const traceAuditEnabled = computed(() => featureConfigs.value.trace_audit?.enabled !== false)
 const currentUserName = computed(() => String(sharedProfile.value?.nick_name || sharedProfile.value?.username || currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '用户'))
 const currentUsername = computed(() => String(sharedProfile.value?.username || currentUser.value?.username || 'user'))
 const currentUserAvatar = computed(() => sharedAvatarUrl.value)
@@ -783,11 +766,9 @@ async function loadCapabilities() {
   try {
     const res = await getVibeCapabilities()
     capabilities.value = res?.capabilities || {}
-    featureConfigs.value = res?.feature_configs || {}
     currentUser.value = res?.user || null
   } catch {
     capabilities.value = {}
-    featureConfigs.value = {}
     currentUser.value = null
   }
 }
@@ -1085,17 +1066,6 @@ async function setAdminModelEnabled(providerId: string, enabled: boolean) {
     adminSystemDefaultProviderIds.value = previous
   } finally {
     adminModelSaving.value = false
-  }
-}
-
-async function toggleTraceAudit() {
-  if (traceConfigSaving.value) return
-  traceConfigSaving.value = true
-  try {
-    const res = await updateVibeTraceAuditConfig(!traceAuditEnabled.value)
-    if (res?.item) featureConfigs.value = { ...featureConfigs.value, trace_audit: res.item }
-  } finally {
-    traceConfigSaving.value = false
   }
 }
 
@@ -1397,21 +1367,6 @@ async function loadTraceRuns(reset = false) {
   if ((!canViewTraceAudit.value && !canViewElectronTrace) || traceRunsLoading.value) return
   traceRunsLoading.value = true
   try {
-    let res: any = { items: [], next_cursor: '', filters: undefined }
-    try {
-      res = await listVibeDialogueTraceRuns({
-        limit: 30,
-        cursor: reset ? '' : traceNextCursor.value,
-        marker: traceAuditMarkerFilter.value,
-        q: traceContentFilter.value,
-        project: traceProjectFilter.value,
-        user: traceUserFilter.value,
-      })
-    } catch {
-      // Ordinary Electron users may not have the legacy audit capability;
-      // their local Trace list is still available through the passive ingest API.
-    }
-    const items = res?.items || []
     let electronItems: VibeDialogueTraceRun[] = []
     let localItems: VibeDialogueTraceRun[] = []
     if (typeof window !== 'undefined' && window.electronAPI?.vibeAgent?.trace?.list) {
@@ -1443,12 +1398,6 @@ async function loadTraceRuns(reset = false) {
             trace_source: 'electron',
             trace_local: true,
           }
-        }).filter((item: VibeDialogueTraceRun) => {
-          if (traceProjectFilter.value && String(item.project_id || '') !== traceProjectFilter.value) return false
-          if (traceUserFilter.value && String(item.user_id || '') !== traceUserFilter.value) return false
-          if (traceAuditMarkerFilter.value && !String(item.audit_marker || '').includes(traceAuditMarkerFilter.value)) return false
-          if (traceContentFilter.value && !String(item.input_text || '').includes(traceContentFilter.value)) return false
-          return true
         })
       } catch { /* local Trace remains optional when the bridge is unavailable */ }
     }
@@ -1474,29 +1423,34 @@ async function loadTraceRuns(reset = false) {
           elapsed_ms: null,
           trace_source: 'electron',
         }))
-      } catch { /* legacy audit list remains usable when ingest is unavailable */ }
-    }
-    if (res?.filters) {
-      traceFilterOptions.value = {
-        projects: res.filters.projects || [],
-        users: res.filters.users || [],
-      }
+      } catch { /* local Trace remains usable when remote ingest is unavailable */ }
     }
     if (reset) {
       selectedTraceId.value = ''
       selectedTrace.value = null
       traceDetailError.value = ''
-      tracePrivateView.value = false
       selectedTraceIds.value = new Set()
     }
-    const mergedItems = [...localItems, ...items, ...electronItems]
+    const mergedItems = [...localItems, ...electronItems]
       .filter((item, index, all) => {
         const key = traceRunReference(item)
-        return key && all.findIndex(candidate => traceRunReference(candidate) === key) === index
+        if (!key || all.findIndex(candidate => traceRunReference(candidate) === key) !== index) return false
+        if (traceProjectFilter.value
+          && ![String(item.project_id || ''), String(item.project_name || '')].includes(traceProjectFilter.value)) return false
+        if (traceUserFilter.value
+          && ![String(item.user_id || ''), traceActorLabel(item)].includes(traceUserFilter.value)) return false
+        if (traceAuditMarkerFilter.value && !String(item.audit_marker || '').includes(traceAuditMarkerFilter.value)) return false
+        if (traceContentFilter.value && !String(item.input_text || '').includes(traceContentFilter.value)) return false
+        return true
       })
       .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')))
+    traceFilterOptions.value = {
+      projects: [...new Set(mergedItems.map(item => String(item.project_name || '')).filter(Boolean))]
+        .map(project_name => ({ project_name, count: mergedItems.filter(item => item.project_name === project_name).length })),
+      users: [...new Set(mergedItems.map(item => traceActorLabel(item)).filter(Boolean))]
+        .map(label => ({ label, count: mergedItems.filter(item => traceActorLabel(item) === label).length })),
+    }
     traceRuns.value = reset ? mergedItems : [...traceRuns.value, ...mergedItems.filter(item => !traceRuns.value.some(existing => traceRunReference(existing) === traceRunReference(item)))]
-    traceNextCursor.value = res?.next_cursor || ''
     if (!selectedTraceId.value && traceRuns.value.length) await selectTrace(traceRunReference(traceRuns.value[0]))
   } finally {
     traceRunsLoading.value = false
@@ -1652,22 +1606,16 @@ async function loadElectronTraceSource(selected: VibeDialogueTraceRun, traceId: 
   return await getRemoteAgentTrace(String(selected.trace_id || traceId), 'detail')
 }
 
-async function selectTrace(traceId: string, privateView = false) {
+async function selectTrace(traceId: string) {
   if (!traceId) return
   selectedTraceId.value = traceId
   traceDetailError.value = ''
   traceDetailLoading.value = true
   try {
     const selected = traceRuns.value.find(item => traceRunReference(item) === traceId)
-    if (selected?.trace_source === 'electron') {
-      const remote: any = await loadElectronTraceSource(selected, traceId)
-      selectedTrace.value = electronTraceDetail(remote, selected, traceId)
-      tracePrivateView.value = true
-    } else {
-      const detail = await getVibeDialogueTraceDetail(traceId, privateView ? 'private' : 'public')
-      selectedTrace.value = detail
-      tracePrivateView.value = detail.detail_view === 'private'
-    }
+    if (!selected || selected.trace_source !== 'electron') throw new Error('Trace 不存在')
+    const remote: any = await loadElectronTraceSource(selected, traceId)
+    selectedTrace.value = electronTraceDetail(remote, selected, traceId)
     if (selectedTrace.value) {
       const detail = selectedTrace.value
       traceRuns.value = traceRuns.value.map(item => traceRunReference(item) === traceId
@@ -1685,7 +1633,6 @@ async function selectTrace(traceId: string, privateView = false) {
     }
   } catch {
     selectedTrace.value = null
-    tracePrivateView.value = false
     traceDetailError.value = '该 Trace 暂时无法读取，请刷新后重试。'
     window.$toast?.({ title: traceDetailError.value, type: 'error', position: 'bottom-right', duration: 4000, actionText: '关闭' })
   } finally {
@@ -1896,16 +1843,10 @@ async function downloadElectronTraceRaw() {
 
 async function downloadAttachment(file: Partial<VibeAttachment> | any, index: number) {
   const traceId = String(selectedTraceId.value || '').trim()
-  const downloadUrl = String(file?.download_url || '').trim()
   const downloadKey = `${traceId}:${index}`
   traceAttachmentDownloadError.value = ''
   traceAttachmentDownloading.value = downloadKey
   try {
-    if (traceId && downloadUrl) {
-      const result = await downloadVibeDialogueTraceAttachment(traceId, index, downloadUrl)
-      saveAttachmentBlob(result.blob, result.filename || attachmentName(file))
-      return
-    }
     const content = String(file?.content ?? file?.text ?? '')
     if (!content) throw new Error('文件内容已不可用')
     const blob = new Blob([content], { type: String(file?.mime || 'text/markdown;charset=utf-8') })
@@ -1928,11 +1869,9 @@ async function exportSelectedTraces() {
       const id = traceRunReference(run)
       if (selectedTrace.value && selectedTraceId.value === id) {
         details.push(selectedTrace.value)
-      } else if (run.trace_source === 'electron') {
+      } else {
         const remote: any = await loadElectronTraceSource(run, id)
         details.push(electronTraceDetail(remote, run, id))
-      } else {
-        details.push(await getVibeDialogueTraceDetail(id, 'public'))
       }
     }
     downloadJson(
@@ -2991,69 +2930,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.trace-control {
-  flex: 0 0 auto;
-  margin-top: 0;
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.trace-control div {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.trace-control strong {
-  flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 560;
-  color: var(--ink-1);
-}
-
-.trace-control span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
-.trace-switch {
-  width: 44px;
-  height: 25px;
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 999px;
-  padding: 2px;
-  background: rgba(18, 18, 18, 0.14);
-  cursor: pointer;
-  transition: background 0.18s ease;
-}
-
-.trace-switch i {
-  display: block;
-  width: 21px;
-  height: 21px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(18, 18, 18, 0.18);
-  transition: transform 0.18s ease;
-}
-
-.trace-switch.on { background: rgba(18, 18, 18, 0.86); }
-.trace-switch.on i { transform: translateX(19px); }
-.trace-switch:disabled { opacity: 0.58; cursor: default; }
-
-
 .trace-browser {
   flex: 1 1 auto;
   margin-top: 0;
@@ -3116,8 +2992,7 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.trace-list-actions button,
-.trace-more {
+.trace-list-actions button {
   border: 0;
   background: transparent;
   color: var(--ink-3);
@@ -3125,11 +3000,9 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.trace-list-actions button:hover,
-.trace-more:hover { color: var(--ink-1); }
+.trace-list-actions button:hover { color: var(--ink-1); }
 
-.trace-list-actions button:disabled,
-.trace-more:disabled {
+.trace-list-actions button:disabled {
   opacity: 0.42;
   cursor: default;
 }
@@ -3344,11 +3217,6 @@ onBeforeUnmount(() => {
 .trace-status.bad { background: #b84a4a; }
 .trace-status.warn { background: #9a6a16; }
 .trace-status.neutral { background: #8b8b8b; }
-
-.trace-more {
-  height: 36px;
-  border-top: 1px solid var(--line);
-}
 
 .trace-detail {
   min-width: 0;
@@ -3660,7 +3528,6 @@ onBeforeUnmount(() => {
 
 @media (max-width: 980px) {
   .trace-panel { height: auto; min-height: calc(100vh - 56px); overflow: visible; }
-  .trace-control div { align-items: flex-start; flex-direction: column; gap: 2px; }
   .trace-browser { grid-template-columns: 1fr; height: auto; min-height: 0; }
   .trace-list { max-height: 260px; border-right: 0; border-bottom: 1px solid var(--line); }
   .trace-section.compact { grid-template-columns: 1fr; }

@@ -176,15 +176,6 @@ export interface VibeCapabilityUser {
   avatar_url?: string
 }
 
-export interface VibeFeatureConfig {
-  account: string
-  feature_key: string
-  enabled: boolean
-  config: Record<string, any>
-  source: string
-  updated_at?: string | null
-}
-
 export interface VibeConversationControl {
   disabled: boolean
   message: string
@@ -198,7 +189,6 @@ export interface VibeCapabilities {
   account: string
   user: VibeCapabilityUser
   capabilities: Record<string, boolean>
-  feature_configs?: Record<string, VibeFeatureConfig>
 }
 
 export function getVibeCapabilities(): Promise<VibeCapabilities> {
@@ -271,15 +261,6 @@ export interface VibeUsageSummary {
 export function getVibeUsageSummary(): Promise<VibeUsageSummary> {
   return request('GET', '/vibe/usage/summary')
 }
-
-export function getVibeAdminFeatureConfigs(): Promise<{ items: Record<string, VibeFeatureConfig> }> {
-  return request('GET', '/vibe/admin/feature-configs')
-}
-
-export function updateVibeTraceAuditConfig(enabled: boolean): Promise<{ ok: boolean; item: VibeFeatureConfig }> {
-  return request('PATCH', '/vibe/admin/feature-configs/trace_audit', { enabled })
-}
-
 
 export interface VibeSystemKnowledgeItem {
   id: number
@@ -471,44 +452,6 @@ export interface VibeDialogueTraceDetail extends VibeDialogueTraceRun {
   attachment_summary?: Record<string, any>
   side_effects?: Record<string, any>
   events: VibeDialogueTraceEvent[]
-}
-
-export function listVibeDialogueTraceRuns(params: {
-  limit?: number
-  cursor?: string
-  project?: string
-  user?: string
-  status?: string
-  marker?: string
-  q?: string
-} = {}): Promise<{
-  items: VibeDialogueTraceRun[]
-  next_cursor: string
-  filters?: {
-    projects?: Array<{ project_name: string; count: number }>
-    users?: Array<{ label: string; count: number }>
-  }
-}> {
-  const query = new URLSearchParams()
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim()) query.set(key, String(value))
-  })
-  const qs = query.toString()
-  return request('GET', `/vibe/foundation/dialogue-trace/runs${qs ? `?${qs}` : ''}`)
-}
-
-export function getVibeDialogueTraceDetail(traceId: string, view: 'public' | 'private' = 'public'): Promise<VibeDialogueTraceDetail> {
-  const query = `?view=${view}`
-  return request('GET', `/vibe/foundation/dialogue-trace/runs/${encodeURIComponent(traceId)}${query}`)
-}
-
-export function downloadVibeDialogueTraceAttachment(
-  traceId: string,
-  index: number,
-  downloadUrl = '',
-) {
-  const path = downloadUrl || `/vibe/foundation/dialogue-trace/runs/${encodeURIComponent(traceId)}/attachments/${index}`
-  return harnessBlobRequest(path)
 }
 
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {
