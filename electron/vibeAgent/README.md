@@ -13,8 +13,8 @@ Vibe 对话固定由 Electron Main 启动本机 Pi；运行方式不是可切换
 VITE_VIBE_KNOWLEDGE_BASE_URL=http://127.0.0.1:6001
 ```
 
-服务端仍会在 `agent-bootstrap` 校验账号是否有本机运行权限；Renderer 没有
-server Agent 回退开关，也不会把普通对话发送到服务端 Turn 路由。
+服务端仍会在 `agent-bootstrap` 校验账号是否有本机运行权限；Renderer 不提供
+服务端 Agent 回退，也不会把普通对话发送到服务端 Turn 路由。
 
 每个 Goal 开始时，Electron Main 使用登录态向
 `POST /vibe/foundation/agent-bootstrap` 请求一次完整运行快照，包括系统提示、工具、
@@ -116,7 +116,7 @@ Trace 也不携带附件正文，需要另设 local-only Trace 投影。
 
 ## 服务端边界
 
-服务端旧 Agent Turn API 仅供后端质量工具或部署回滚使用，不属于 Electron 正常对话路径。
+服务端 Agent Turn API 已从 Electron 客户端移除；本节仅记录历史迁移边界，不构成可用调用契约。
 Electron 新 Goal 只发送 prompt/history、Provider 选择、local_file_ref 和登录上下文；
 Provider key 只能由 Main 的一次性快照交换注入子进程。旧会话里残留的 workspace 身份不会
 被恢复，Viewer 会提示重新选择原文件。

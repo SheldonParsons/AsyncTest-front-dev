@@ -1,11 +1,4 @@
-import { harnessBlobRequest, harnessMultipartRequest, harnessRequest, streamHarnessSse } from '@/api/harness'
-import {
-  canonicalAttachmentUploadMime,
-  normalizeAttachmentResourceRef,
-} from './attachmentResourceContract'
-import type { VibeAttachmentResourceRef } from './attachmentResourceContract'
-
-export type { VibeAttachmentResourceRef } from './attachmentResourceContract'
+import { harnessBlobRequest, harnessRequest, streamHarnessSse } from '@/api/harness'
 
 const request = harnessRequest
 
@@ -535,62 +528,6 @@ export function downloadVibeSessionEventAttachment(
   const path = downloadUrl || `/vibe/sessions/${encodeURIComponent(sessionId)}`
     + `/events/${encodeURIComponent(eventId)}/attachments/${index}`
   return harnessBlobRequest(path)
-}
-
-interface VibeAttachmentUploadResponse {
-  ok: true
-  resource: unknown
-  state: 'pending'
-  expires_at: string | null
-  idempotent_replay: boolean
-}
-
-export async function uploadVibeAttachmentResource(
-  sessionId: string,
-  file: File,
-  idempotencyKey: string,
-): Promise<VibeAttachmentResourceRef> {
-  // Electron's native local picker returns a metadata object carrying an
-  // admission token, not a browser Blob. Keep this guard at the uploader
-  // boundary so a future caller cannot accidentally send a local attachment
-  // through the legacy server resource endpoint.
-  if (String((file as any)?.admission_token || (file as any)?.admissionToken || '').trim()) {
-    throw new Error('本地附件不得上传到服务器')
-  }
-  if (!sessionId.trim()) throw new Error('上传附件前必须先创建会话')
-  if (!/^[\x20-\x7e]{1,128}$/.test(idempotencyKey)) throw new Error('附件上传幂等键无效')
-  const canonicalMime = canonicalAttachmentUploadMime(file.name, file.type)
-  const uploadBody = file.type === canonicalMime ? file : file.slice(0, file.size, canonicalMime)
-  const formData = new FormData()
-  formData.append('file', uploadBody, file.name)
-  const response = await harnessMultipartRequest<VibeAttachmentUploadResponse>(
-    'POST',
-    `/vibe/sessions/${encodeURIComponent(sessionId)}/attachments`,
-    formData,
-    { 'Idempotency-Key': idempotencyKey },
-  )
-  if (response.ok !== true || response.state !== 'pending'
-    || (response.expires_at !== null
-      && (typeof response.expires_at !== 'string' || !response.expires_at))
-    || typeof response.idempotent_replay !== 'boolean') {
-    throw new Error('附件上传响应 envelope 无效')
-  }
-  const resource = normalizeAttachmentResourceRef(response.resource)
-  const expectedDownloadUrl = `/vibe/sessions/${encodeURIComponent(sessionId)}`
-    + `/attachments/${encodeURIComponent(resource.resource_id)}`
-  if (resource.download_url !== expectedDownloadUrl) throw new Error('附件下载地址与资源身份不一致')
-  return resource
-}
-
-export function deleteVibeAttachmentResource(
-  sessionId: string,
-  resourceId: string,
-): Promise<{ ok: boolean }> {
-  if (!sessionId.trim() || !resourceId.trim()) return Promise.reject(new Error('附件资源身份无效'))
-  return request(
-    'DELETE',
-    `/vibe/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(resourceId)}`,
-  )
 }
 
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {
