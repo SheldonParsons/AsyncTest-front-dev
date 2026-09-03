@@ -3215,6 +3215,12 @@ function localAgentErrorMessage(error: unknown): string {
     vibe_agent_host_busy: '本机当前已有 5 个任务在运行，请等待其中一个结束后再试。',
     vibe_agent_session_busy: '这个会话已有一个任务正在运行或等你选择，请先完成或取消它。',
     vibe_agent_runtime_snapshot_invalid: '服务端返回的模型运行配置无效，请检查配置。',
+    vibe_agent_runtime_snapshot_contract_invalid: '服务端返回的模型运行配置不完整，请稍后重试。',
+    vibe_agent_runtime_snapshot_manifest_invalid: '服务端工具配置版本不匹配，请更新客户端。',
+    vibe_agent_runtime_snapshot_identity_drift: '本轮运行身份已变化，请重新发送。',
+    vibe_agent_runtime_snapshot_binding_identity_drift: '本轮运行身份已变化，请重新发送。',
+    vibe_agent_runtime_snapshot_skill_invalid: '本地能力配置无效，请更新客户端。',
+    vibe_agent_runtime_snapshot_skill_hash_invalid: '本地能力配置校验失败，请更新客户端。',
     vibe_agent_runtime_snapshot_provider_key_missing: '当前模型没有可用凭据，请检查 Provider 配置。',
     authentication_required: '登录状态已失效，请重新登录。',
     account_not_found: '当前登录账号不存在，请重新登录。',
@@ -3275,8 +3281,11 @@ function localAgentErrorMessage(error: unknown): string {
     .sort((left, right) => right.length - left.length)
     .find(code => raw.includes(code))
   if (wrappedCode) return messages[wrappedCode]
-  if (/(?:failed to fetch|networkerror|network request failed|econnrefused)/i.test(raw)) {
+  if (/(?:failed to fetch|fetch failed|networkerror|network request failed|econnrefused)/i.test(raw)) {
     return '暂时无法连接服务，请确认服务已启动后重试。'
+  }
+  if (/(?:could not be cloned|structured clone|not serializable|serializ)/i.test(raw)) {
+    return '附件引用准备失败，请重新选择文件。'
   }
   // Main/服务端的内部实现名、协议名和错误码只进入 Trace。只有不含
   // 内部术语的中文 public message 才允许直接展示。
@@ -5627,9 +5636,23 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   // Validate the opaque native references before creating a session or
   // clearing any composer state. A stale/partial chip must fail locally with
   // an actionable message and remain retryable.
-  const localFileRefs = localFiles.map((file: any) => (
-    file?.local_file_ref || file?.localFileRef || null
-  ))
+  const localFileRefs = localFiles.map((file: any) => {
+    const source = file?.local_file_ref || file?.localFileRef
+    if (!source || typeof source !== 'object') return null
+    // `selectedFiles` is a Vue ref, so nested values can be reactive Proxy
+    // objects. Electron IPC's structured-clone boundary rejects those
+    // proxies; copy only the native reference ABI into a plain JSON object.
+    const refId = String(source.ref_id || '').trim()
+    if (!refId) return null
+    return {
+      schema: 'local_file_ref.v1',
+      ref_id: refId,
+      name: String(source.name || file?.name || ''),
+      mime: String(source.mime || file?.type || 'application/octet-stream'),
+      size: Number(source.size || file?.size || 0),
+      last_modified: Number(source.last_modified || file?.lastModified || 0),
+    }
+  })
   if (localFileRefs.some((item: any) => !item?.ref_id)
     || localFileRefs.length !== localFiles.length) {
     throw new Error('vibe_agent_local_file_ref_invalid')
