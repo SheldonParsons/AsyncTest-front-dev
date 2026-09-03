@@ -4312,8 +4312,6 @@ function resetProjectConversationState() {
   sessionFilesError.value = ''
   processExpanded.value = false
   clarificationActive.value = null
-  clarificationSubmittingBySession.value = {}
-  clarificationSubmissionSerialBySession.clear()
   stopElapsedTicker()
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
