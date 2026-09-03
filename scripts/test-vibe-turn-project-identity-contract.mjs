@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const viewPath = path.join(root, 'src/views/electron_views/vibe/knowledge/index.vue')
 const source = fs.readFileSync(viewPath, 'utf8')
-const functionStart = source.indexOf('async function sendFoundationTurn(')
-const functionEnd = source.indexOf('\nfunction handleDraftKeydown(', functionStart)
-assert(functionStart >= 0 && functionEnd > functionStart, 'sendFoundationTurn must remain the turn request owner')
+const functionStart = source.indexOf('async function sendLocalPiTurn(')
+const functionEnd = source.indexOf('\nasync function sendFoundationTurn(', functionStart)
+assert(functionStart >= 0 && functionEnd > functionStart, 'local Pi turn must remain the turn request owner')
 const sendTurn = source.slice(functionStart, functionEnd)
 
 assert.match(
@@ -18,9 +18,10 @@ assert.match(
 )
 assert.match(
   sendTurn,
-  /streamFoundationTurn\(\{ project, text:/,
-  'streamFoundationTurn must receive the validated numeric project identity',
+  /project_id:\s*String\(project\)/,
+  'local Pi bootstrap must receive the validated project identity',
 )
+assert.doesNotMatch(sendTurn, /streamFoundationTurn|streamServerTurn|turnPayload/)
 
 const createSession = source.match(/createVibeSession\(([^,]+),/)
 assert(createSession, 'session creation must remain explicit')

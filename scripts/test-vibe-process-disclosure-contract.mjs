@@ -217,33 +217,6 @@ assert.equal(
   'snapshot disappearance is not a terminal boundary while authoritative recovery is pending',
 )
 
-// running lease 从 /turn/running 消失不代表失败：权威 replay 仍是活动前缀时继续 pending；
-// 只有 replay 明确收口但仍缺 terminal 才进入真实协议故障。
-assert.equal(turnPresentationPolicy.classifyTurnRecoveryReplay({
-  expectedTurnId: 'turn-handoff',
-  replayTurnId: 'turn-handoff',
-  state: 'running',
-  terminal: null,
-}), 'pending')
-assert.equal(turnPresentationPolicy.classifyTurnRecoveryReplay({
-  expectedTurnId: 'turn-handoff',
-  replayTurnId: 'turn-handoff',
-  state: 'succeeded',
-  terminal: 'completed',
-}), 'settled')
-assert.equal(turnPresentationPolicy.classifyTurnRecoveryReplay({
-  expectedTurnId: 'turn-handoff',
-  replayTurnId: 'turn-handoff',
-  state: 'succeeded',
-  terminal: null,
-}), 'missing_terminal')
-assert.equal(turnPresentationPolicy.classifyTurnRecoveryReplay({
-  expectedTurnId: 'turn-handoff',
-  replayTurnId: 'turn-foreign',
-  state: 'succeeded',
-  terminal: 'completed',
-}), 'identity_mismatch')
-
 // 切会话/恢复时，即使 event id 偶然相同，也不能用另一个 session/turn 的模型覆盖。
 const foreignTurnModel = { ...completedModel, turnId: 'turn-foreign' }
 assert.equal(turnPresentationPolicy.refreshAssistantTurnPresentation(
@@ -325,12 +298,12 @@ assert.match(viewSource, /assistantPresentationSessionId \|\| turnSessionId/)
 assert.match(viewSource, /assistantPresentationTurnId \|\| turnStartedId/)
 assert.match(viewSource, /shouldShowMissingTerminalNotice\(model, local, eventTurnIsStillActive\(event, model\)\)/)
 assert.match(viewSource, /function eventTurnIsStillActive\(event: any, model: TurnProtocolReadModel \| null\)/)
-assert.match(viewSource, /if \(replayedModel\.turnId !== turnId\)/)
 assert.doesNotMatch(viewSource, /turn\.protocol_events|turn\.events/)
-assert.match(viewSource, /adoptRunningTurnLease\(turn\)/)
-assert.match(viewSource, /replayFoundationTurn\(\{[\s\S]*?turn_id: turnId,[\s\S]*?session_id: sessionId,[\s\S]*?after_sequence: requestedSequence/)
-assert.match(viewSource, /classifyTurnRecoveryReplay/)
-assert.match(viewSource, /if \(!turnRecoveryRequestIsCurrent\(recoveryGuard\)\) return/)
+assert.match(viewSource, /async function recoverElectronAgentRunUnsafe\(sessionId: string\)/)
+assert.match(viewSource, /function recoverElectronAgentRun\(sessionId: string\): Promise<void>/)
+assert.match(viewSource, /bridge\.recoverableLocal/)
+assert.match(viewSource, /bridge\.attach\(\{ runId: context\.run\.run_id, accountId: localAccountId\(\) \}\)/)
+assert.doesNotMatch(viewSource, /adoptRunningTurnLease|replayFoundationTurn|classifyTurnRecoveryReplay/)
 assert.doesNotMatch(viewSource, /foundationBusy\.value = false\s*\n\s*streamingAssistantEventId\.value = ''/)
 assert.doesNotMatch(viewSource, /setTimeout\([^)]*本轮结果尚未确认/)
 assert.match(viewSource, /reconcileAuthoritativeEventProjections\(fresh\)/)

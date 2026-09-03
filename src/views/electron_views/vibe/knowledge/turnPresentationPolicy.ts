@@ -15,28 +15,6 @@ export interface AssistantTurnPresentationRefresh {
   terminalPending?: boolean
 }
 
-export type TurnRecoveryDisposition = 'pending' | 'settled' | 'missing_terminal' | 'identity_mismatch'
-
-export type TurnReplayGapDisposition = 'retry' | 'broken' | 'expired'
-
-export const TURN_REPLAY_FINAL_GRACE_MS = 30_000
-
-export interface TurnReplayGapObservation {
-  status?: number
-  code?: string
-  retryable?: boolean | null
-  liveLease: boolean
-  seenRunning: boolean
-  leaseMissingForMs?: number
-}
-
-export interface TurnRecoveryReplayObservation {
-  expectedTurnId: string
-  replayTurnId: string
-  state: string
-  terminal?: unknown
-}
-
 const LOCAL_TURN_PRESENTATION = '__localTurnPresentation'
 
 /**
@@ -110,62 +88,14 @@ export function shouldShowMissingTerminalNotice(
   presentation: LocalTurnPresentation | null = null,
   turnIsActive?: boolean,
 ): boolean {
-  // local terminalPending 表示该气泡仍由 running/replay owner 接管。/turn/running
-  // 的 lease 可以先于权威 terminal 消失，因此瞬时的外部 false 不能推翻 pending；
-  // 真正收口失败时 owner 会先把 terminalPending 明确降为 false。
+  // local terminalPending 表示该气泡仍由 Electron Main 的本地运行 owner
+  // 接管。Main 的瞬时状态变化不能推翻 pending；真正收口失败时 owner
+  // 会先把 terminalPending 明确降为 false。
   const active = turnIsActive === true || presentation?.terminalPending === true
   return !!model
     && !model.terminal
     && model.state !== 'waiting_user'
     && !active
-}
-
-/**
- * /turn/running 只是 live lease，不是完成边界。只有权威 replay 已给出 terminal、
- * waiting_user，或明确落在无 terminal 的最终态，前端才可以结束 pending。
- */
-export function classifyTurnRecoveryReplay(
-  observation: TurnRecoveryReplayObservation,
-): TurnRecoveryDisposition {
-  const expectedTurnId = String(observation.expectedTurnId || '')
-  const replayTurnId = String(observation.replayTurnId || '')
-  if (!expectedTurnId || replayTurnId !== expectedTurnId) return 'identity_mismatch'
-  if (String(observation.terminal || '')) return 'settled'
-  const state = String(observation.state || '')
-  if (state === 'waiting_user') return 'settled'
-  if (['queued', 'running', 'cancelling'].includes(state)) return 'pending'
-  return 'missing_terminal'
-}
-
-/**
- * running lease 可能先于第一条 Canonical 事件出现，也可能先于 terminal Journal
- * 消失。只要该 Turn 曾由 running 权威发现，暂态 HTTP/空页都必须在 live 期间
- * 保持恢复；lease 消失后再留一个时间有界的 final grace。只有明确权限/协议
- * 错误可立即 fail closed，绝不解析本地化错误文案。
- */
-export function classifyTurnReplayGap(
-  observation: TurnReplayGapObservation,
-): TurnReplayGapDisposition {
-  const status = Math.max(0, Math.floor(Number(observation.status) || 0))
-  const code = String(observation.code || '')
-  const explicitlyRetryable = code === 'turn_replay_not_ready'
-    || observation.retryable === true
-  const explicitlyOversized = code === 'journal_delta_event_too_large' || status === 413
-  const explicitIdentityFailure = code === 'turn_session_mismatch'
-    || code === 'turn_identity_mismatch'
-    || code.endsWith('_identity_mismatch')
-    || code.endsWith('_cursor_invalid')
-    || code.endsWith('_cursor_mismatch')
-  if (explicitlyOversized || status === 403 || status === 422 || explicitIdentityFailure) {
-    return 'broken'
-  }
-  const withinFinalGrace = observation.seenRunning
-    && Math.max(0, Number(observation.leaseMissingForMs) || 0) < TURN_REPLAY_FINAL_GRACE_MS
-  if (explicitlyRetryable && observation.seenRunning
-    && (observation.liveLease || withinFinalGrace)) return 'retry'
-  if (observation.seenRunning && observation.liveLease) return 'retry'
-  if (withinFinalGrace) return 'retry'
-  return 'expired'
 }
 
 /** 依次取第一项可信的正耗时；缺失值和历史 0 占位不能盖掉后续真实耗时。 */
