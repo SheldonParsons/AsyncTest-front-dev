@@ -228,7 +228,7 @@ function agentBinding(value, run) {
   return structuredClone(value);
 }
 
-function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
+function runtimeSnapshot(payload, run) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.schema !== RESPONSE_SCHEMA) {
     throw new Error("vibe_agent_runtime_snapshot_invalid");
   }
@@ -239,8 +239,7 @@ function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
   }
   if (typeof payload.system_prompt !== "string" || !Array.isArray(payload.tools)
     || !payload.options || typeof payload.options !== "object" || Array.isArray(payload.options)
-    || (!allowManifestDrift
-      && (!payload.skill || typeof payload.skill !== "object" || Array.isArray(payload.skill)))) {
+    || !payload.skill || typeof payload.skill !== "object" || Array.isArray(payload.skill)) {
     throw new Error("vibe_agent_runtime_snapshot_contract_invalid");
   }
   const manifestMatches = payload.tool_manifest
@@ -248,7 +247,7 @@ function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
     && Number(payload.tool_manifest.version) === EXPECTED_TOOL_MANIFEST_VERSION
     && toolManifestMatches(payload.tools)
     && !payload.tools.some((item) => ["read", "write", "edit", "bash", "list_knowledge_structure"].includes(String(item?.name || "")));
-  if (!allowManifestDrift && !manifestMatches) {
+  if (!manifestMatches) {
     throw new Error("vibe_agent_runtime_snapshot_manifest_invalid");
   }
   if (payload.skill !== undefined) validateSkillDescriptor(payload.skill);
@@ -273,7 +272,7 @@ function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
 /** Main-only, one-shot exchange. The returned secret is never cached here. */
 export async function fetchRuntimeSnapshot({
   baseUrl, authToken, isDevelopment = false, run, providerId = "", identity = {},
-  allowManifestDrift = false, fetchImpl = globalThis.fetch,
+  fetchImpl = globalThis.fetch,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("vibe_agent_runtime_snapshot_fetch_unavailable");
   const base = validatedBackendUrl(baseUrl, { isDevelopment });
@@ -318,10 +317,8 @@ export async function fetchRuntimeSnapshot({
       error.status = response.status;
       throw error;
     }
-    return runtimeSnapshot(payload, run, { allowManifestDrift });
+    return runtimeSnapshot(payload, run);
   } finally {
     clearTimeout(timer);
   }
 }
-
-export const runtimeSnapshotConstants = { REQUEST_SCHEMA, RESPONSE_SCHEMA, MAX_RESPONSE_BYTES };

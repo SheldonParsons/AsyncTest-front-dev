@@ -121,10 +121,3 @@ Provider key、Provider headers、登录 token、Cookie 和一次性票据永不
 这里的“原始附件不上传”指不创建服务端附件资源、不把文件本体送入 Knowledge Tool；
 为便于排障，Pi 实际读入上下文的附件片段可能随 Trace payload 上传。若未来要求连
 Trace 也不携带附件正文，需要另设 local-only Trace 投影。
-
-## 服务端边界
-
-服务端 Agent Turn API 已从 Electron 客户端移除；本节仅记录历史迁移边界，不构成可用调用契约。
-Electron 新 Goal 只发送 prompt/history、Provider 选择、local_file_ref 和登录上下文；
-Provider key 只能由 Main 的一次性快照交换注入子进程。旧会话里残留的 workspace 身份不会
-被恢复，Viewer 会提示重新选择原文件。

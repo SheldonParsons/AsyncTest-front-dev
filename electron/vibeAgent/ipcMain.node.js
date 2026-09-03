@@ -983,7 +983,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         run,
         providerId,
         identity: host.identity(),
-        allowManifestDrift: Boolean(resume),
         fetchImpl: (url, init = {}) => globalThis.fetch(url, {
           ...init,
           signal: init.signal

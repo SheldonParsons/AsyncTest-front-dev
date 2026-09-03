@@ -111,7 +111,7 @@ export interface VibeLLMModelPickerProvider {
   is_system_default: boolean
 }
 
-export interface VibeLLMModelPicker {
+interface VibeLLMModelPicker {
   schema: 'llm_model_picker.v1'
   selected_provider_id: string
   selection_source: 'user' | 'system_default' | 'none'
@@ -129,14 +129,14 @@ export interface VibeCapabilityUser {
   avatar_url?: string
 }
 
-export interface VibeConversationControl {
+interface VibeConversationControl {
   disabled: boolean
   message: string
   source?: string
   updated_at?: string | null
 }
 
-export interface VibeCapabilities {
+interface VibeCapabilities {
   user_id: number
   account: string
   user: VibeCapabilityUser
@@ -257,7 +257,7 @@ export function deleteVibeSystemKnowledge(itemId: number): Promise<{ ok: boolean
   return request('DELETE', `/vibe/admin/system-knowledge/${itemId}`)
 }
 
-export interface VibeSystemKnowledgeTransferItem {
+interface VibeSystemKnowledgeTransferItem {
   slug: string
   category: string
   title: string
@@ -315,7 +315,7 @@ export function importVibeSystemKnowledge(
   return request('POST', '/vibe/admin/system-knowledge-transfer', { config, mode, dry_run: false })
 }
 
-export interface VibeAdminConfigTransferPayload {
+interface VibeAdminConfigTransferPayload {
   schema: string
   version: number
   exported_at?: string
@@ -440,10 +440,6 @@ export function deleteVibeLLMProvider(providerId: string): Promise<{ ok: boolean
   return request('DELETE', `/vibe/llm/providers/${providerId}`)
 }
 
-export function activateVibeLLMProvider(providerId: string): Promise<{ ok: boolean; active_provider_id: string }> {
-  return request('POST', `/vibe/llm/providers/${providerId}/activate`)
-}
-
 export function testVibeLLMProvider(providerId: string, payload: { model?: string } = {}): Promise<{
   ok: boolean
   model: string
@@ -454,7 +450,7 @@ export function testVibeLLMProvider(providerId: string, payload: { model?: strin
   return request('POST', `/vibe/llm/providers/${providerId}/test`, payload)
 }
 
-export interface VibeLLMAdminUserDefault {
+interface VibeLLMAdminUserDefault {
   id: number
   username: string
   nick_name?: string
@@ -494,24 +490,6 @@ export function updateVibeLLMAdminModelScenes(scenes: Array<{ key: string; stren
   return request('PATCH', '/vibe/llm/admin/model-scenes', { scenes })
 }
 
-export interface ConvergeConfig {
-  auto_enabled: boolean
-  full_run_time: string
-  dedup_threshold_n: number
-  inline_converge: boolean
-  staleness_alarm_hours: number
-  updated_at?: string | null
-  is_admin?: boolean
-}
-
-export function getConvergeConfig(): Promise<ConvergeConfig> {
-  return request('GET', '/vibe/foundation/converge/config')
-}
-
-export function updateConvergeConfig(payload: Partial<ConvergeConfig>): Promise<ConvergeConfig> {
-  return request('PUT', '/vibe/foundation/converge/config', payload)
-}
-
 // Electron 本机 Run 元数据；对话执行与生命周期控制均通过 IPC，不再暴露服务端 Turn API。
 export interface FoundationAgentRun {
   schema: 'electron_agent_run.v1'
@@ -532,7 +510,7 @@ export interface FoundationAgentRun {
   start_payload?: Record<string, any>
 }
 
-export interface RemoteAgentTraceSummary {
+interface RemoteAgentTraceSummary {
   upload_id: string
   trace_id: string
   audit_marker?: string
@@ -689,7 +667,7 @@ export interface KnowledgeSearchHit extends KnowledgeSourceSpan {
   rank: number
 }
 
-export interface KnowledgeModuleSummary {
+interface KnowledgeModuleSummary {
   id: string
   title: string
   path: string[]
@@ -715,14 +693,14 @@ export interface KnowledgeStatus {
   }
 }
 
-export interface KnowledgeDiffLine {
+interface KnowledgeDiffLine {
   kind: 'context' | 'add' | 'delete'
   old_line: number | null
   new_line: number | null
   text: string
 }
 
-export interface KnowledgeDiffHunk {
+interface KnowledgeDiffHunk {
   header: string
   old_start: number
   old_lines: number
