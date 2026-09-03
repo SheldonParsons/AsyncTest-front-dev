@@ -319,14 +319,20 @@
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
                 @layout-change="syncTimelineNavigationAfterLayout"
-              >
-                <template v-if="threadRunning(event) && streamingAssistantContent">
-                  <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-                  <div v-if="streamingSources.length" class="answer-trust">
-                    <SourceChips :items="streamingSources" @open-source="openConversationSource" />
-                  </div>
-                </template>
-              </ProcessDisclosure>
+              />
+              <!-- 候选答案始终在思考竖线之外流式展示；工具调用旁白仍由
+                   ProcessDisclosure 承载，assistant_end 会负责两者之间的归类。 -->
+              <template v-if="isStreamingUnderEvent(event) && streamingAnswerPreview">
+                <div
+                  v-if="streamingLiveAnswerFormatted"
+                  class="message-md streaming-answer"
+                  v-html="renderMarkdown(streamingAnswerPreview)"
+                />
+                <div v-else class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
+                <div v-if="streamingSources.length" class="answer-trust">
+                  <SourceChips :items="streamingSources" @open-source="openConversationSource" />
+                </div>
+              </template>
               <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
               <template v-if="threadOutsideAnswer(event)">
                 <div class="message-md" v-html="renderMarkdown(threadOutsideAnswer(event))" />
@@ -488,17 +494,15 @@
                     :running="procRunning"
                     :duration-ms="procDurationMs"
                     @layout-change="syncTimelineNavigationAfterLayout"
-                  >
-                    <template v-if="procRunning && streamingAssistantContent">
-                      <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-                      <div v-if="streamingSources.length" class="answer-trust">
-                        <SourceChips :items="streamingSources" @open-source="openConversationSource" />
-                      </div>
-                    </template>
-                  </ProcessDisclosure>
+                  />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-                  <div v-if="!procRunning && streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-                  <div v-if="!procRunning && streamingAssistantContent && streamingSources.length" class="answer-trust">
+                  <div
+                    v-if="streamingAnswerPreview && streamingLiveAnswerFormatted"
+                    class="message-md streaming-answer"
+                    v-html="renderMarkdown(streamingAnswerPreview)"
+                  />
+                  <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
+                  <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
                     <SourceChips :items="streamingSources" @open-source="openConversationSource" />
                   </div>
                 </article>
@@ -545,17 +549,15 @@
               :running="procRunning"
               :duration-ms="procDurationMs"
               @layout-change="syncTimelineNavigationAfterLayout"
-            >
-              <template v-if="procRunning && streamingAssistantContent">
-                <div class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-                <div v-if="streamingSources.length" class="answer-trust">
-                  <SourceChips :items="streamingSources" @open-source="openConversationSource" />
-                </div>
-              </template>
-            </ProcessDisclosure>
+            />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-            <div v-if="!procRunning && streamingAssistantContent" class="message-md" v-html="renderMarkdown(streamingAssistantContent)" />
-            <div v-if="!procRunning && streamingAssistantContent && streamingSources.length" class="answer-trust">
+            <div
+              v-if="streamingAnswerPreview && streamingLiveAnswerFormatted"
+              class="message-md streaming-answer"
+              v-html="renderMarkdown(streamingAnswerPreview)"
+            />
+            <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
+            <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
               <SourceChips :items="streamingSources" @open-source="openConversationSource" />
             </div>
           </article>
@@ -2694,6 +2696,11 @@ const runningSessionIds = ref<string[]>([])
 const streamingOwnerSessionId = ref('')
 // 仅用于 event_saved 前的本地展示，不写入 events，也不参与 Canonical reducer。
 const pendingUserSubmissionText = ref('')
+// Candidate assistant text is intentionally separate from the persisted
+// Canonical answer. It can stream outside the process rail, then be replaced
+// atomically by the saved assistant event when the Goal completes.
+const streamingLiveAnswerContent = ref('')
+const streamingLiveAnswerFormatted = ref(false)
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
 let runningTurnPollInFlight = false
 const RUNNING_POLL_ACTIVE_MS = 1500
@@ -2702,11 +2709,41 @@ const RUNNING_POLL_IDLE_MS = 3500
 const activeTurnId = ref('')
 const activeTurnSessionId = ref('')
 const cancelRequested = ref(false)
+type ClarificationSubmission = {
+  sessionId: string
+  turnId: string
+  runId: string
+  pendingId: string
+}
+// A submitted choice is no longer an unanswered card, but the child may take
+// a few seconds to acknowledge it. Keep the process disclosure open during
+// that hand-off instead of making the conversation appear to have vanished.
+const clarificationSubmittingBySession = ref<Record<string, ClarificationSubmission>>({})
+function clarificationSubmissionForSession(sessionId = activeSessionId.value): ClarificationSubmission | null {
+  const key = String(sessionId || '').trim()
+  return key ? clarificationSubmittingBySession.value[key] || null : null
+}
+const clarificationSubmittingVisible = computed(() => {
+  const current = clarificationSubmissionForSession()
+  if (!current || current.sessionId !== String(activeSessionId.value || '').trim()) return false
+  if (current.turnId && activeTurnId.value && current.turnId !== activeTurnId.value) return false
+  return true
+})
 interface ElectronAgentRunContext {
   run: FoundationAgentRun
   protocolState: TurnProtocolState
   state: string
   ephemeralText: string
+  // The current Provider message starts life as a candidate.  Until Pi tells
+  // us whether it contains tool calls we show it as a live answer preview;
+  // a tool-bearing message is moved back into the process rail at
+  // assistant_end.  This keeps the UI responsive without guessing from prose.
+  liveAnswerText: string
+  answerPreviewFormatted: boolean
+  assistantStreamMode: 'candidate' | 'process' | 'answer' | 'private'
+  assistantStreamPurpose: string
+  processEphemeralSteps: ProcessStep[]
+  providerCallSequence: number
   startedAt: number
   acceptCanonical?: (model: TurnProtocolReadModel) => void
   localUserEventId?: string
@@ -2737,6 +2774,11 @@ function electronRunForTurn(turnId: string, sessionId = ''): ElectronAgentRunCon
   return null
 }
 
+function electronPresentationOwnedBy(context: ElectronAgentRunContext): boolean {
+  return activeSessionId.value === context.run.session_id
+    && (!activeTurnId.value || activeTurnId.value === context.run.turn_id)
+}
+
 function canonicalDeltaEvents(delta: any): any[] {
   if (Array.isArray(delta?.events)) return delta.events
   if (Array.isArray(delta?.journal?.events)) return delta.journal.events
@@ -2754,6 +2796,12 @@ function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunCont
     protocolState: createTurnProtocolState(),
     state: String(run.state || 'queued'),
     ephemeralText: '',
+    liveAnswerText: '',
+    answerPreviewFormatted: false,
+    assistantStreamMode: 'candidate',
+    assistantStreamPurpose: 'main_agent',
+    processEphemeralSteps: [],
+    providerCallSequence: 0,
     startedAt: Date.now(),
   }
   electronAgentRuns.set(run.run_id, context)
@@ -2767,7 +2815,7 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
   const previousState = context.state
   const model = applyTurnProtocolEvents(context.protocolState, rows)
   context.state = model.state
-  const live = activeSessionId.value === context.run.session_id
+  const live = electronPresentationOwnedBy(context)
   context.acceptCanonical?.(model)
   if (!live) return
   streamingOwnerSessionId.value = context.run.session_id
@@ -2776,18 +2824,34 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
   setSessionRunning(context.run.session_id, !model.terminal)
   if (previousState === 'waiting_user' && model.state === 'running') startElapsedTicker(Date.now())
   applyCanonicalReadModel(model)
+  // A journal delta can arrive between two Provider frames. Keep any
+  // renderer-only commentary that has not reached the journal yet, and keep
+  // the candidate answer in its own presentation lane.
+  streamingProcess.steps = mergeElectronProcessSteps(context)
+  streamingLiveAnswerContent.value = (context.assistantStreamPurpose === 'main_agent'
+    && ['candidate', 'answer'].includes(context.assistantStreamMode))
+    || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
+    ? context.liveAnswerText
+    : ''
+  streamingLiveAnswerFormatted.value = !!streamingLiveAnswerContent.value && context.answerPreviewFormatted
   scrollBottomIfFollowing()
 }
 
+function mergeElectronProcessSteps(context: ElectronAgentRunContext): ProcessStep[] {
+  const canonicalSteps = readTurnProtocol(context.protocolState).process
+  const canonicalKeys = new Set(canonicalSteps.map(step => String(step.key || '')))
+  const pending = context.processEphemeralSteps.filter(step => !canonicalKeys.has(String(step.key || '')))
+  return [...canonicalSteps, ...pending]
+}
+
 function projectElectronAgentProgress(context: ElectronAgentRunContext) {
-  if (activeSessionId.value !== context.run.session_id) return
+  if (!electronPresentationOwnedBy(context)) return
   streamingOwnerSessionId.value = context.run.session_id
   activeTurnId.value = context.run.turn_id
   activeTurnSessionId.value = context.run.session_id
   processExpanded.value = true
   streamingProcess.status = 'running'
-  const canonicalSteps = readTurnProtocol(context.protocolState).process
-  const partial: ProcessStep[] = context.ephemeralText ? [{
+  const partial: ProcessStep[] = context.assistantStreamMode === 'process' && context.ephemeralText ? [{
     kind: 'message',
     key: `electron-agent-delta:${context.run.run_id}`,
     text: context.ephemeralText,
@@ -2797,9 +2861,15 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
     streaming: true,
   }] : []
   streamingProcess.steps = [
-    ...canonicalSteps,
+    ...mergeElectronProcessSteps(context),
     ...partial,
   ]
+  streamingLiveAnswerContent.value = (context.assistantStreamPurpose === 'main_agent'
+    && ['candidate', 'answer'].includes(context.assistantStreamMode))
+    || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
+    ? context.liveAnswerText
+    : ''
+  streamingLiveAnswerFormatted.value = !!streamingLiveAnswerContent.value && context.answerPreviewFormatted
 }
 
 function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) {
@@ -2807,13 +2877,107 @@ function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) 
   // Keep the partial while another session is open, then re-project it when
   // the user returns. It remains ephemeral and never enters session history.
   context.ephemeralText = (context.ephemeralText + text).slice(-2_000_000)
+  if (context.assistantStreamPurpose === 'main_agent'
+    && ['candidate', 'answer'].includes(context.assistantStreamMode)) {
+    context.liveAnswerText = context.ephemeralText
+  }
   projectElectronAgentProgress(context)
   void scrollBottomIfFollowing()
 }
 
+function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: VibeAgentEvent): void {
+  const frameType = String(event.frameType || '').trim()
+  const payload = event.payload && typeof event.payload === 'object' ? event.payload as Record<string, any> : {}
+  if (frameType === 'provider_payload') {
+    context.providerCallSequence += 1
+    const purpose = String(payload.purpose || 'main_agent')
+    const preserveAnswer = purpose === 'session_title'
+      && context.assistantStreamMode === 'answer'
+      && !!context.liveAnswerText
+    context.assistantStreamPurpose = purpose
+    context.assistantStreamMode = purpose === 'main_agent' ? 'candidate' : 'private'
+    context.ephemeralText = ''
+    context.answerPreviewFormatted = preserveAnswer
+    if (!preserveAnswer) context.liveAnswerText = ''
+    if (electronPresentationOwnedBy(context) && !preserveAnswer) {
+      streamingLiveAnswerContent.value = ''
+      streamingAssistantContent.value = ''
+    }
+    projectElectronAgentProgress(context)
+    return
+  }
+  if (frameType === 'assistant_end') {
+    const purpose = String(payload.purpose || context.assistantStreamPurpose || 'main_agent')
+    const text = String(payload.text ?? context.ephemeralText ?? '')
+    const hasToolCalls = payload.has_tool_calls === true
+      || (Array.isArray(payload.tool_calls) && payload.tool_calls.length > 0)
+    context.assistantStreamPurpose = purpose
+    if (purpose !== 'main_agent') {
+      const preserveAnswer = purpose === 'session_title' && !!context.liveAnswerText
+      context.assistantStreamMode = 'private'
+      context.ephemeralText = ''
+      if (!preserveAnswer) {
+        context.liveAnswerText = ''
+        context.answerPreviewFormatted = false
+        if (electronPresentationOwnedBy(context)) streamingAssistantContent.value = ''
+      }
+    } else if (hasToolCalls) {
+      // This provider message is narration for a tool wave, not the final
+      // answer. Freeze it as a normal process step before the next call.
+      if (text) {
+        const callId = String(payload.call_id || `call-${context.providerCallSequence}`)
+        const key = `electron-agent-commentary:${context.run.run_id}:${callId}`
+        if (!context.processEphemeralSteps.some(step => step.key === key)) {
+          context.processEphemeralSteps.push({
+            kind: 'message',
+            key,
+            text,
+            phase: 'commentary',
+            source: 'model',
+            authority: 'ephemeral',
+            streaming: false,
+          })
+        }
+      }
+      context.assistantStreamMode = 'process'
+      context.ephemeralText = ''
+      context.liveAnswerText = ''
+      context.answerPreviewFormatted = false
+      if (electronPresentationOwnedBy(context)) streamingAssistantContent.value = ''
+    } else {
+      // No tool calls means this is the answer candidate. Keep rendering it
+      // outside the process rail while the protocol performs final checks.
+      context.assistantStreamMode = 'answer'
+      context.ephemeralText = ''
+      context.liveAnswerText = text
+      context.answerPreviewFormatted = true
+    }
+    projectElectronAgentProgress(context)
+    return
+  }
+  if (frameType === 'candidate_final') {
+    const text = String(payload.text ?? '')
+    context.assistantStreamPurpose = String(payload.purpose || 'main_agent')
+    context.assistantStreamMode = context.assistantStreamPurpose === 'main_agent' ? 'answer' : 'private'
+    context.ephemeralText = ''
+    context.liveAnswerText = context.assistantStreamPurpose === 'main_agent' ? text : ''
+    context.answerPreviewFormatted = context.assistantStreamPurpose === 'main_agent'
+    projectElectronAgentProgress(context)
+  }
+}
+
 function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAgentEvent) {
   const waiting = String(event.state || context.state) === 'waiting_user'
-  if (!waiting) context.ephemeralText = ''
+  if (!waiting) {
+    context.ephemeralText = ''
+    context.liveAnswerText = ''
+    context.answerPreviewFormatted = false
+    context.processEphemeralSteps = []
+    if (electronPresentationOwnedBy(context)) {
+      streamingLiveAnswerContent.value = ''
+      streamingLiveAnswerFormatted.value = false
+    }
+  }
   context.state = String(event.state || context.state)
   const waiter = electronAgentWaiters.get(context.run.run_id)
   if (event.type === 'error') {
@@ -2822,7 +2986,7 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
     waiter?.resolve(event)
   }
   electronAgentWaiters.delete(context.run.run_id)
-  if (activeSessionId.value === context.run.session_id) {
+  if (electronPresentationOwnedBy(context)) {
     if (waiting) {
       stopElapsedTicker()
       streamingProcess.status = 'done'
@@ -2831,20 +2995,27 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
       streamingProcess.steps = readTurnProtocol(context.protocolState).process
     }
   }
+  if (event.type === 'error') endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', true, context.run.turn_id)
   if (event.type === 'terminal') {
-    setLocalSessionRuntimeState(context.run.session_id, 'terminal')
-    setSessionRunning(context.run.session_id, false)
-    if (activeSessionId.value === context.run.session_id) cancelRequested.value = false
+    endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', true, context.run.turn_id)
+    const replacement = [...electronAgentRuns.values()].some(other =>
+      other.run.run_id !== context.run.run_id
+      && other.run.session_id === context.run.session_id
+      && !electronAgentStateIsTerminal(other.state),
+    )
+    if (!replacement) {
+      setLocalSessionRuntimeState(context.run.session_id, 'terminal')
+      setSessionRunning(context.run.session_id, false)
+    }
+    if (electronPresentationOwnedBy(context)) cancelRequested.value = false
     void finalizeElectronAgentPresentation(context)
     electronAgentRuns.delete(context.run.run_id)
   }
 }
 
 async function finalizeElectronAgentPresentation(context: ElectronAgentRunContext) {
-  if (
-    activeSessionId.value !== context.run.session_id
-    || streamingOwnerSessionId.value !== context.run.session_id
-  ) return
+  if (!electronPresentationOwnedBy(context)
+    || streamingOwnerSessionId.value !== context.run.session_id) return
   stopElapsedTicker()
   foundationBusy.value = false
   if (activeTurnId.value === context.run.turn_id) activeTurnId.value = ''
@@ -2865,6 +3036,12 @@ function consumeElectronAgentStatus(context: ElectronAgentRunContext, status: an
   }
   if (typeof status.assistantPartialText === 'string') {
     context.ephemeralText = status.assistantPartialText.slice(-2_000_000)
+    context.assistantStreamPurpose = 'main_agent'
+    context.assistantStreamMode = String(status.state || status.runtime_state || '') === 'waiting_user'
+      ? 'process'
+      : 'candidate'
+    context.liveAnswerText = context.assistantStreamMode === 'candidate' ? context.ephemeralText : ''
+    context.answerPreviewFormatted = false
   }
   if (status.journalDelta) applyElectronAgentCanonical(context, status.journalDelta)
   else if (status.journal_delta) applyElectronAgentCanonical(context, status.journal_delta)
@@ -2948,11 +3125,11 @@ async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payl
   // Capture the submission generation before the asynchronous history read.
   // A late read from the original interaction must not resurrect a card that
   // the user has already submitted.
-  const submissionSerial = clarificationSubmissionSerial
+  const submissionSerial = clarificationSubmissionSerialBySession.get(sessionId) || 0
   const fresh = await requestSessionEvents(sessionId).catch(() => null)
   if (!fresh || epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return predictedId
   events.value = sortEvents(fresh)
-  if (submissionSerial === clarificationSubmissionSerial) restoreClarificationFromEvents()
+  if (submissionSerial === (clarificationSubmissionSerialBySession.get(sessionId) || 0)) restoreClarificationFromEvents()
   const persisted = events.value.find((event: any) => (
     event?.role === 'assistant'
     && event?.meta?.local_agent === true
@@ -2964,7 +3141,8 @@ async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payl
     ) === pendingId)
   ))
   if (persisted?.id) context.localInteractionEventId = String(persisted.id)
-  if (persisted && eventProcessSteps(persisted).length && context.state === 'waiting_user') {
+  if (persisted && eventProcessSteps(persisted).length && context.state === 'waiting_user'
+    && !clarificationSubmissionMatches(sessionId, '', pendingId)) {
     // The Main-owned journal now renders the same process. Release only the
     // duplicate ephemeral overlay; the logical Run context remains parked.
     context.ephemeralText = ''
@@ -3036,7 +3214,6 @@ function localAgentErrorMessage(error: unknown): string {
   const messages: Record<string, string> = {
     vibe_agent_host_busy: '本机当前已有 5 个任务在运行，请等待其中一个结束后再试。',
     vibe_agent_session_busy: '这个会话已有一个任务正在运行或等你选择，请先完成或取消它。',
-    vibe_agent_runtime_snapshot_auth_missing: '当前登录状态无法领取模型配置，请重新登录。',
     vibe_agent_runtime_snapshot_invalid: '服务端返回的模型运行配置无效，请检查配置。',
     vibe_agent_runtime_snapshot_provider_key_missing: '当前模型没有可用凭据，请检查 Provider 配置。',
     authentication_required: '登录状态已失效，请重新登录。',
@@ -3072,8 +3249,17 @@ function localAgentErrorMessage(error: unknown): string {
     vibe_agent_attachment_source_changed: '本地附件在读取期间发生变化，请重新选择后再试。',
     vibe_agent_attachment_binding_required: '本地附件缺少当前 Run 绑定，请重新选择附件。',
     vibe_agent_local_file_ref_invalid: '本机文件引用已失效，请重新选择文件。',
+    vibe_agent_local_file_refs_invalid: '本机文件引用无效，请重新选择文件。',
+    vibe_agent_local_file_invalid: '本机文件不可读取，请重新选择文件。',
+    vibe_agent_local_file_name_invalid: '本机文件名不可用，请重新选择文件。',
     vibe_agent_local_file_changed: '本机文件在发送前发生了变化，请重新选择文件。',
+    vibe_agent_local_file_owner_invalid: '本机文件选择状态已失效，请重新选择文件。',
     vibe_agent_local_file_count_invalid: '本轮最多选择 10 个本机文件。',
+    vibe_agent_local_start_payload_invalid: '本轮输入准备失败，请重新发送。',
+    vibe_agent_local_start_payload_missing: '本轮输入准备失败，请重新发送。',
+    vibe_agent_local_start_renderer_field_forbidden: '本轮输入包含不支持的字段，请重新发送。',
+    vibe_agent_runtime_snapshot_binding_invalid: '当前模型运行配置无效，请重新登录后重试。',
+    vibe_agent_runtime_snapshot_auth_missing: '当前登录状态无法领取模型配置，请重新登录。',
     vibe_agent_runner_ready_timeout: '本机运行组件启动超时，请重启客户端后重试。',
     vibe_agent_knowledge_payload_too_large: '知识库录入正文超过当前传输上限，请缩小范围后再录入。',
     invalid_markdown_chunks: 'Markdown 分块校验失败，请重新整理附件后再试。',
@@ -3089,6 +3275,9 @@ function localAgentErrorMessage(error: unknown): string {
     .sort((left, right) => right.length - left.length)
     .find(code => raw.includes(code))
   if (wrappedCode) return messages[wrappedCode]
+  if (/(?:failed to fetch|networkerror|network request failed|econnrefused)/i.test(raw)) {
+    return '暂时无法连接服务，请确认服务已启动后重试。'
+  }
   // Main/服务端的内部实现名、协议名和错误码只进入 Trace。只有不含
   // 内部术语的中文 public message 才允许直接展示。
   if (/[一-鿿]/.test(raw) && !/(?:\bpi\b|electron|agent|runner)/i.test(raw)) return raw
@@ -3103,26 +3292,36 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   if (event.type === 'state') {
     const nextState = String(event.state || context.state)
     setLocalSessionRuntimeState(context.run.session_id, nextState)
-    if (['queued', 'connecting', 'running'].includes(nextState)) {
+    const ownsPresentation = electronPresentationOwnedBy(context)
+    if (['queued', 'connecting', 'running'].includes(nextState) && ownsPresentation) {
+      endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
       streamingOwnerSessionId.value = context.run.session_id
       activeTurnId.value = context.run.turn_id
       activeTurnSessionId.value = context.run.session_id
       processExpanded.value = true
       if (previousState === 'waiting_user') {
         context.ephemeralText = ''
-        streamingProcess.steps = []
+        context.liveAnswerText = ''
+        context.answerPreviewFormatted = false
+        context.assistantStreamMode = 'candidate'
+        context.assistantStreamPurpose = 'main_agent'
+        if (electronPresentationOwnedBy(context)) {
+          streamingLiveAnswerContent.value = ''
+          streamingLiveAnswerFormatted.value = false
+        }
         context.startedAt = Date.now()
         startElapsedTicker(context.startedAt)
       }
       streamingProcess.status = 'running'
       void scrollBottomIfFollowing()
-    } else if (nextState === 'waiting_user') {
+    } else if (nextState === 'waiting_user' && ownsPresentation) {
       stopElapsedTicker()
       streamingProcess.status = 'done'
       streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
     }
   }
   if (event.journalDelta) applyElectronAgentCanonical(context, event.journalDelta)
+  if (event.type === 'pi_frame') handleElectronAgentPiFrame(context, event)
   if (event.type === 'assistant_delta') showElectronAgentDelta(context, String(event.text || ''))
   if (event.type === 'session_title') {
     const title = String(event.title || '').trim()
@@ -3133,7 +3332,10 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
     // the durable checkpoint. Render/register the real card first; only then
     // may the sender promise settle. Otherwise the context can be removed by
     // sendLocalPiTurn before this request arrives, dropping the card entirely.
-    showLocalInteraction(context, event.payload)
+    if (electronPresentationOwnedBy(context)) {
+      endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
+      showLocalInteraction(context, event.payload)
+    }
     setLocalSessionRuntimeState(context.run.session_id, 'waiting_user')
     settleElectronAgentRun(context, { ...event, state: 'waiting_user' })
     void materializeLocalWaitingRun(context, event.payload)
@@ -3141,16 +3343,25 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   if (event.type === 'done') {
     const payload: any = event.payload || {}
     context.state = String(payload.status || context.state)
+    if (payload.status === 'waiting_user') {
+      endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
+    }
     if (payload.text && payload.status === 'completed') {
       const assistant = localDisplayEvent(context, 'assistant', String(payload.text), { stop_reason: 'stop' })
       context.localAssistantEventId = assistant.id
-      if (activeSessionId.value === context.run.session_id) {
-        // `done(completed)` is the atomic UI handoff: every preceding delta
-        // stays inside the process rail; only the complete answer moves out.
+      if (electronPresentationOwnedBy(context)) {
+        // `done(completed)` is the final durable handoff. Candidate text may
+        // already have streamed outside the process rail; the persisted event
+        // now replaces that preview atomically.
         stopElapsedTicker()
         streamingProcess.status = 'done'
         streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
         context.ephemeralText = ''
+        context.liveAnswerText = ''
+        context.answerPreviewFormatted = false
+        context.processEphemeralSteps = []
+        streamingLiveAnswerContent.value = ''
+        streamingLiveAnswerFormatted.value = false
         streamingAssistantEventId.value = assistant.id
         upsertEvent(assistant)
       }
@@ -3376,10 +3587,11 @@ const pendingUserSubmissionVisible = computed(() =>
   visibleStreamingOwner.value && !!pendingUserSubmissionText.value,
 )
 const procRunning = computed(() => visibleStreamingOwner.value
-  && streamingProcess.status === 'running')
+  && (streamingProcess.status === 'running' || clarificationSubmittingVisible.value))
 // Orb 只代表“答案开始前的思考阶段”。正式 assistant item 一出现就退出，不能等整轮 terminal。
 const thinkingOrbVisible = computed(() => procRunning.value
   && !(streamingCanonicalModel.value?.answers.length)
+  && !streamingAnswerPreview.value
   && !streamingAssistantEventId.value)
 const procDurationMs = computed(() =>
   procRunning.value ? streamingElapsedMs.value : streamingProcess.durationMs)
@@ -3514,7 +3726,77 @@ const composerPlaceholder = computed(() => '随心输入')
 // 询问模式（Codex 反问）：后端 ask_clarification（录入纪律"这段要不要记进知识库"拿不准时）→ 输入框变选项
 // pending = 后端反问挂起时的"思考草稿"；用户回答时原样回传 → 续跑同一思考（不另起新轮）。
 const clarificationActive = ref<{ question: string; raw?: any; pending?: any[] } | null>(null)
-let clarificationSubmissionSerial = 0
+const clarificationSubmissionSerialBySession = new Map<string, number>()
+
+function clarificationSubmissionMatches(
+  sessionId: string,
+  turnId = '',
+  pendingId = '',
+): boolean {
+  const current = clarificationSubmissionForSession(sessionId)
+  if (!current || current.sessionId !== String(sessionId || '').trim()) return false
+  if (turnId && current.turnId && current.turnId !== String(turnId)) return false
+  if (pendingId && current.pendingId && current.pendingId !== String(pendingId)) return false
+  return true
+}
+
+function beginClarificationSubmission(
+  sessionId: string,
+  turnId: string,
+  pendingId: string,
+  runId = '',
+): void {
+  const normalizedSessionId = String(sessionId || '').trim()
+  const normalizedPendingId = String(pendingId || '').trim()
+  if (!normalizedSessionId || !normalizedPendingId) return
+  clarificationSubmittingBySession.value = {
+    ...clarificationSubmittingBySession.value,
+    [normalizedSessionId]: {
+      sessionId: normalizedSessionId,
+      turnId: String(turnId || '').trim(),
+      runId: String(runId || '').trim(),
+      pendingId: normalizedPendingId,
+    },
+  }
+  if (activeSessionId.value !== normalizedSessionId) return
+  streamingOwnerSessionId.value = normalizedSessionId
+  if (turnId) activeTurnId.value = String(turnId)
+  activeTurnSessionId.value = normalizedSessionId
+  processExpanded.value = true
+  streamingProcess.status = 'running'
+  if (!_elapsedTimer) startElapsedTicker(Date.now())
+  void scrollBottomIfFollowing()
+}
+
+function updateClarificationSubmissionRun(runId: string, turnId = ''): void {
+  const current = clarificationSubmissionForSession()
+  if (!current) return
+  const next = { ...current }
+  if (runId) next.runId = String(runId)
+  if (turnId) next.turnId = String(turnId)
+  clarificationSubmittingBySession.value = {
+    ...clarificationSubmittingBySession.value,
+    [current.sessionId]: next,
+  }
+}
+
+function endClarificationSubmission(
+  sessionId: string,
+  pendingId = '',
+  failed = false,
+  turnId = '',
+): void {
+  if (!clarificationSubmissionMatches(sessionId, turnId, pendingId)) return
+  const key = String(sessionId || '').trim()
+  const next = { ...clarificationSubmittingBySession.value }
+  delete next[key]
+  clarificationSubmittingBySession.value = next
+  if (failed && activeSessionId.value === String(sessionId || '').trim()) {
+    stopElapsedTicker()
+    streamingProcess.status = 'done'
+    streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
+  }
+}
 const composerQuestion = computed(() => {
   const c = clarificationActive.value
   if (!c?.question) return null
@@ -3622,6 +3904,13 @@ const composerQuestion = computed(() => {
 function restoreClarificationFromEvents() {
   const evs = events.value as any[]
   const last = evs[evs.length - 1]
+  if (clarificationSubmissionForSession(activeSessionId.value)) {
+    // A response was already submitted locally. The durable event still has
+    // the old pending card until Main records the resumed turn; do not flash
+    // that stale card while the same logical Goal is being continued.
+    clarificationActive.value = null
+    return
+  }
   if (last && last.role === 'assistant') {
     const q = eventClarificationQuestion(last)
     const clar = eventClarificationData(last)
@@ -3637,11 +3926,18 @@ const streamingOutcomeNotice = computed<TurnOutcomeNoticeModel | null>(() => {
   return outcomeNoticeProps(streamingCanonicalModel.value?.outcome)
     || streamingTransportNotice.value
 })
+const streamingAnswerPreview = computed(() => {
+  if (streamingLiveAnswerContent.value) return streamingLiveAnswerContent.value
+  const context = electronRunForTurn(activeTurnId.value, activeSessionId.value)
+  if (context && ['process', 'private'].includes(context.assistantStreamMode)
+    && !context.liveAnswerText) return ''
+  return streamingAssistantContent.value
+})
 const streamingTurnVisible = computed(() =>
   visibleStreamingOwner.value
   && !streamingAssistantEventId.value
   && (
-    !!streamingAssistantContent.value
+    !!streamingAnswerPreview.value
     || !!streamingOutcomeNotice.value
     || procRunning.value
     || streamingProcess.steps.length > 0
@@ -4016,6 +4312,8 @@ function resetProjectConversationState() {
   sessionFilesError.value = ''
   processExpanded.value = false
   clarificationActive.value = null
+  clarificationSubmittingBySession.value = {}
+  clarificationSubmissionSerialBySession.clear()
   stopElapsedTicker()
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
@@ -4047,6 +4345,7 @@ interface ProjectContextSnapshot {
   currentView: 'conversation' | 'baseline'
   processExpanded: boolean
   clarificationActive: { question: string; raw?: any; pending?: any[] } | null
+  clarificationSubmitting: Record<string, ClarificationSubmission>
   baseline: { system_name: string; summary: string; system_goals: { name: string; description: string }[] }
   packageStatusOverrides: Record<string, string>
   sessionTitleOverrides: Record<string, string>
@@ -4062,6 +4361,8 @@ interface ProjectContextSnapshot {
   pendingUserSubmissionText: string
   streamingAssistantEventId: string
   streamingAssistantContent: string
+  streamingLiveAnswerContent: string
+  streamingLiveAnswerFormatted: boolean
   streamingSources: any[]
   streamingVerification: any | null
   streamingCanonicalModel: TurnProtocolReadModel | null
@@ -4101,6 +4402,9 @@ function captureProjectContextSnapshot(): ProjectContextSnapshot {
             : clarificationActive.value.pending,
         }
       : null,
+    clarificationSubmitting: Object.fromEntries(
+      Object.entries(clarificationSubmittingBySession.value).map(([key, value]) => [key, { ...value }]),
+    ),
     baseline: {
       system_name: baselineDraft.system_name,
       summary: baselineDraft.summary,
@@ -4120,6 +4424,8 @@ function captureProjectContextSnapshot(): ProjectContextSnapshot {
     pendingUserSubmissionText: pendingUserSubmissionText.value,
     streamingAssistantEventId: streamingAssistantEventId.value,
     streamingAssistantContent: streamingAssistantContent.value,
+    streamingLiveAnswerContent: streamingLiveAnswerContent.value,
+    streamingLiveAnswerFormatted: streamingLiveAnswerFormatted.value,
     streamingSources: [...streamingSources.value],
     streamingVerification: streamingVerification.value,
     streamingCanonicalModel: streamingCanonicalModel.value,
@@ -4168,6 +4474,9 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
           : snapshot.clarificationActive.pending,
       }
     : null
+  clarificationSubmittingBySession.value = Object.fromEntries(
+    Object.entries(snapshot.clarificationSubmitting || {}).map(([key, value]) => [key, { ...value }]),
+  )
   baselineDraft.system_name = snapshot.baseline.system_name
   baselineDraft.summary = snapshot.baseline.summary
   baselineDraft.system_goals = snapshot.baseline.system_goals.map(goal => ({ ...goal }))
@@ -4185,6 +4494,8 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
   pendingUserSubmissionText.value = snapshot.pendingUserSubmissionText
   streamingAssistantEventId.value = snapshot.streamingAssistantEventId
   streamingAssistantContent.value = snapshot.streamingAssistantContent
+  streamingLiveAnswerContent.value = snapshot.streamingLiveAnswerContent || ''
+  streamingLiveAnswerFormatted.value = Boolean(snapshot.streamingLiveAnswerFormatted)
   streamingSources.value = [...snapshot.streamingSources]
   streamingVerification.value = snapshot.streamingVerification
   streamingCanonicalModel.value = snapshot.streamingCanonicalModel
@@ -4849,7 +5160,6 @@ async function respondToLiveGoal(raw: any, payload: {
   action?: 'apply' | 'cancel' | 'stop_all'
   clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
 }) {
-  clarificationSubmissionSerial += 1
   // Hide the submitted card before any recovery/status request.  The response
   // may take a while (especially after a renderer reload), but the user's
   // choice is already locally accepted.  Restore it only when the same
@@ -4858,10 +5168,24 @@ async function respondToLiveGoal(raw: any, payload: {
   const submittedSessionId = String(
     activeSessionId.value || activeTurnSessionId.value || '',
   ).trim()
+  clarificationSubmissionSerialBySession.set(
+    submittedSessionId,
+    (clarificationSubmissionSerialBySession.get(submittedSessionId) || 0) + 1,
+  )
   const submittedPendingId = String(
     payload.confirmation_id || payload.interaction_id
     || raw?.confirmation_id || raw?.interaction_id || '',
   ).trim()
+  const turnId = String(
+    raw?.goal_turn_id
+    || raw?.runtime_turn_id
+    || raw?.turn_id
+    || activeTurnId.value
+    || streamingCanonicalModel.value?.turnId
+    || '',
+  )
+  const sessionId = String(activeSessionId.value || activeTurnSessionId.value || '')
+  const submittedParentId = lastClarificationAssistantId()
   const currentPendingId = () => String(
     clarificationActive.value?.raw?.confirmation_id
     || clarificationActive.value?.raw?.interaction_id || '',
@@ -4883,22 +5207,27 @@ async function respondToLiveGoal(raw: any, payload: {
     ) clarificationActive.value = submittedCard
   }
   hideSubmittedCard()
-  const turnId = String(
-    raw?.goal_turn_id
-    || raw?.runtime_turn_id
-    || raw?.turn_id
-    || activeTurnId.value
-    || streamingCanonicalModel.value?.turnId
-    || '',
-  )
-  const sessionId = String(activeSessionId.value || activeTurnSessionId.value || '')
   let electronRun = electronRunForTurn(turnId, sessionId)
+  // Do this before the first await. The choice is already accepted by the
+  // renderer, so the existing process rail must stay open while Main performs
+  // history/recovery and the child receives the response.
+  beginClarificationSubmission(sessionId, turnId, submittedPendingId, electronRun?.run.run_id || '')
+  if (electronRun) projectElectronAgentProgress(electronRun)
+  if (submittedParentId) streamingContinuationParentId.value = submittedParentId
   // Renderer 重载/切回会话时，先向 Main 重新挂接本地 Run，再决定是否需要
   // 走后端 cold continuation；不能因为本地 Map 暂时为空就提示用户重复操作。
   if (!electronRun && electronAgentBridge() && turnId && sessionId) {
-    await recoverElectronAgentRun(sessionId)
+    try {
+      await recoverElectronAgentRun(sessionId)
+    } catch (error) {
+      restoreSubmittedCard()
+      endClarificationSubmission(sessionId, submittedPendingId, true, turnId)
+      ElMessage.error(`本地 Agent 恢复失败：${localAgentErrorMessage(error)}`)
+      return true
+    }
     hideSubmittedCard()
     electronRun = electronRunForTurn(turnId, sessionId)
+    updateClarificationSubmissionRun(electronRun?.run.run_id || '', electronRun?.run.turn_id || turnId)
   }
   if (electronRun && !electronRun.localCold && electronAgentBridge()?.status) {
     const liveStatus = await electronAgentBridge()!.status({ runId: electronRun.run.run_id, accountId: localAccountId() }).catch(() => null)
@@ -4915,6 +5244,7 @@ async function respondToLiveGoal(raw: any, payload: {
     }
   }
   if (electronRun) {
+    updateClarificationSubmissionRun(electronRun.run.run_id, electronRun.run.turn_id)
     const materializedParent = await materializeLocalWaitingRun(electronRun, raw)
     hideSubmittedCard()
     const parentId = materializedParent
@@ -4928,6 +5258,7 @@ async function respondToLiveGoal(raw: any, payload: {
     const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
     if (!bridge?.recoverLocal || !pendingId) {
       restoreSubmittedCard()
+      endClarificationSubmission(sessionId, pendingId, true, turnId)
       ElMessage.error('当前本地 Agent 冷恢复信息不完整，请重新打开会话')
       return true
     }
@@ -4958,8 +5289,10 @@ async function respondToLiveGoal(raw: any, payload: {
         || (clarificationActive.value as any)?.raw?.interaction_id || '')
       if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
       setSessionRunning(sessionId, true)
+      endClarificationSubmission(sessionId, pendingId, false, turnId)
     } catch (error) {
       restoreSubmittedCard()
+      endClarificationSubmission(sessionId, pendingId, true, turnId)
       ElMessage.error(`本地 Agent 冷恢复失败：${localAgentErrorMessage(error)}`)
     }
     return true
@@ -4969,6 +5302,7 @@ async function respondToLiveGoal(raw: any, payload: {
     const bridge = electronAgentBridge()
     if (!bridge || !pendingId) {
       restoreSubmittedCard()
+      endClarificationSubmission(sessionId, pendingId, true, turnId)
       ElMessage.error('当前 Electron Agent 交互状态不完整，请等待会话恢复')
       return true
     }
@@ -4981,16 +5315,23 @@ async function respondToLiveGoal(raw: any, payload: {
       })
       if (result?.accepted) {
         hideSubmittedCard()
+        // Main has completed the idempotent response transaction. Keep the
+        // normal running state as the source of truth, but release the
+        // short-lived submission marker so it cannot linger if a state event
+        // was lost during an IPC reconnect.
+        endClarificationSubmission(sessionId, pendingId, false, turnId)
       } else if (result?.unknown) {
         hideSubmittedCard()
         ElMessage.warning('交互响应正在由后端核对，请勿重复提交')
         void recoverElectronAgentRun(sessionId)
       } else {
         restoreSubmittedCard()
+        endClarificationSubmission(sessionId, pendingId, true, turnId)
         ElMessage.error('交互响应未被后端接受，请保留当前选择并稍后重试')
       }
     } catch (error) {
       restoreSubmittedCard()
+      endClarificationSubmission(sessionId, pendingId, true, turnId)
       ElMessage.error(`交互响应失败：${localAgentErrorMessage(error)}`)
     }
     // Electron 已拥有本轮后，任何交互失败都不能用服务端另起同一轮。
@@ -5001,9 +5342,11 @@ async function respondToLiveGoal(raw: any, payload: {
   // Main has recovered the owning Run.
   if (!turnId || !sessionId) {
     restoreSubmittedCard()
+    endClarificationSubmission(sessionId, submittedPendingId, true, turnId)
     ElMessage.error('本地 Agent 交互身份不可用，请重新打开会话')
   } else {
     restoreSubmittedCard()
+    endClarificationSubmission(sessionId, submittedPendingId, true, turnId)
     ElMessage.warning('本地 Agent 交互状态正在恢复，请稍后重试')
   }
   return true
@@ -5282,6 +5625,17 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   if (!vibeProject.value) throw new Error('请先选择项目')
   const project = knowledgeStatsProjectId(selectedProjectId.value)
   if (!project) throw new Error('当前项目身份无效，请重新选择项目')
+  const localFiles = [...(opts.localFiles || [])]
+  // Validate the opaque native references before creating a session or
+  // clearing any composer state. A stale/partial chip must fail locally with
+  // an actionable message and remain retryable.
+  const localFileRefs = localFiles.map((file: any) => (
+    file?.local_file_ref || file?.localFileRef || null
+  ))
+  if (localFileRefs.some((item: any) => !item?.ref_id)
+    || localFileRefs.length !== localFiles.length) {
+    throw new Error('vibe_agent_local_file_ref_invalid')
+  }
   clarificationActive.value = null
   processExpanded.value = true
   clearStreamingAssistant()
@@ -5333,11 +5687,6 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   const turnId = localId('lt')
   const requestId = localId('lreq')
   const traceId = localTraceId()
-  const localFiles = [...(opts.localFiles || [])]
-  const localFileRefs = localFiles.map((file: any) => file?.local_file_ref).filter((item: any) => item?.ref_id)
-  if (localFileRefs.length !== localFiles.length) {
-    throw new Error('本机文件尚未通过系统文件选择器注册，请重新选择')
-  }
   const localFileEventRefs = localFileRefs.map((item: any) => ({
     schema: 'local_file_ref.v1',
     id: String(item.ref_id || ''),
@@ -5425,6 +5774,10 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
       },
     })
     localStartAccepted = true
+    // The native reference is now owned by the accepted Run. Clear the
+    // composer chip only at this boundary; failed preflight/admission keeps
+    // the original selection available for an immediate retry.
+    if (localFiles.length) composerRef.value?.clearAttachments?.()
     const terminal = await completed
     settledEvent = terminal
     if (String(terminal.state || '') === 'waiting_user') {
@@ -5527,6 +5880,8 @@ function sortEvents(rows: VibeEvent[]) {
 function clearStreamingAssistant() {
   streamingAssistantEventId.value = ''
   streamingAssistantContent.value = ''
+  streamingLiveAnswerContent.value = ''
+  streamingLiveAnswerFormatted.value = false
   streamingSources.value = []
   streamingVerification.value = null
   streamingCanonicalModel.value = null
@@ -5575,7 +5930,9 @@ function answerForUserEvent(userEvent: any, visibleEvents: any[]) {
   }
   const isLastUser = !visibleEvents.slice(userIndex + 1).some((event: any) =>
     event?.role === 'user' && !isConfirmationReplyEvent(event))
-  return isLastUser ? streamingAssistantContent.value : ''
+  return isLastUser
+    ? (streamingLiveAnswerContent.value || streamingAssistantContent.value)
+    : ''
 }
 
 function conversationPreviewText(value: unknown, fallback = '') {
@@ -6335,6 +6692,15 @@ async function copyUserMessage(event: VibeEvent) {
   if (!text) return
   try {
     await writeClipboardText(text)
+    if (typeof window.$toast === 'function') {
+      window.$toast({
+        title: '复制成功',
+        type: 'success',
+        position: 'bottom-right',
+        duration: 2500,
+        actionText: '关闭',
+      })
+    }
   } catch {
     ElMessage.error('复制失败')
   }
@@ -6358,6 +6724,15 @@ async function handleTimelineClick(event: MouseEvent) {
       button.classList.remove('copied')
       button.setAttribute('title', previous)
     }, 1100)
+    if (typeof window.$toast === 'function') {
+      window.$toast({
+        title: '复制成功',
+        type: 'success',
+        position: 'bottom-right',
+        duration: 2500,
+        actionText: '关闭',
+      })
+    }
   } catch {
     ElMessage.error('复制失败')
   }
@@ -8956,6 +9331,13 @@ function isStreamingUnderEvent(event: any) {
       text-decoration: underline;
     }
   }
+}
+
+/* Incremental candidate text is plain during the stream. Markdown parsing is
+ * deferred until assistant_end/candidate_final so token delivery never makes
+ * the Electron renderer re-parse a growing document on every delta. */
+.streaming-answer-plain {
+  white-space: pre-wrap;
 }
 
 .thought-line {

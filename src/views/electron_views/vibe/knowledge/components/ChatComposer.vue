@@ -441,7 +441,11 @@ function onSend(textOverride?: string) {
   } else {
     emit('send', { text, files: outgoingFiles })
   }
-  clearAttachments()
+  // Native local-file selections are opaque Main-owned references. Keep the
+  // chip until Main accepts the Goal so a preflight/IPC failure does not make
+  // the user's selected file disappear before it can be retried. The parent
+  // clears it immediately after startLocal is accepted.
+  if (!props.localMode || !outgoingFiles.length) clearAttachments()
 }
 
 async function pickMarkdown() {

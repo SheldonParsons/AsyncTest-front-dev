@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-markdown-editor" :class="{ 'is-empty': isEmpty }">
+  <div class="chat-markdown-editor" :class="{ 'is-empty': isEmpty, 'is-composing': composing || compositionPending }">
     <div
       ref="rootEl"
       class="composer-input chat-markdown-editor-root"
@@ -103,6 +103,10 @@ let heightRafId: number | null = null
 let suppressControlledPasteUntil = 0
 let resizeListener: (() => void) | null = null
 const composing = ref(false)
+// Lexical can update its DOM one frame after compositionend. Keep the
+// placeholder hidden for that hand-off frame so the IME candidate text never
+// draws on top of it.
+const compositionPending = ref(false)
 
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n?/g, '\n')
@@ -155,6 +159,7 @@ function queueSerialization() {
     if (queuedEpoch !== editorResetEpoch) return
     if (composing.value) return
     const value = serializeEditorState()
+    compositionPending.value = false
     currentMarkdown.value = value
     scheduleHeightSync()
 
@@ -193,6 +198,7 @@ function onEditorUpdate() {
 
 function onCompositionStart() {
   composing.value = true
+  compositionPending.value = true
 }
 
 function onCompositionEnd() {
@@ -466,6 +472,8 @@ function clearEditor() {
   const instance = editor
   cancelQueuedSerialization()
   editorResetEpoch += 1
+  composing.value = false
+  compositionPending.value = false
   currentMarkdown.value = ''
   lastPropMarkdown = ''
   lastEmittedMarkdown = ''
@@ -557,6 +565,8 @@ function setupEditor() {
 function disposeEditor() {
   mounted = false
   pluginsReady = false
+  composing.value = false
+  compositionPending.value = false
   cancelQueuedSerialization()
   if (resizeListener && typeof window !== 'undefined') {
     window.removeEventListener('resize', resizeListener)
@@ -667,6 +677,12 @@ defineExpose({ clearEditor, focusEditor, getMarkdown })
 }
 
 .chat-markdown-editor:not(.is-empty) .chat-markdown-placeholder { display: none; }
+
+/* During a native CJK composition the browser paints the candidate before
+ * Lexical has committed the first character to currentMarkdown.  Hiding the
+ * decorative placeholder for that short interval avoids the overlap without
+ * changing the editor's actual value or IME behavior. */
+.chat-markdown-editor.is-composing .chat-markdown-placeholder { visibility: hidden; }
 
 .chat-markdown-editor-root :deep(p),
 .chat-markdown-editor-root :deep(h1),

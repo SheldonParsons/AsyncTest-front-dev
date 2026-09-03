@@ -308,9 +308,12 @@ assert.match(viewSource, /showElectronAgentDelta[\s\S]*scrollBottomIfFollowing\(
 assert.match(viewSource, /const action = timelineLayoutAction\(timelineFollow\.value\)/)
 assert.match(viewSource, /if \(!waiting\) \{[\s\S]*electronAgentRuns\.delete\(runId\)/)
 assert.match(viewSource, /await materializeLocalWaitingRun\(context, terminal\.payload\)/)
-assert.equal((viewSource.match(/<template v-if="procRunning && streamingAssistantContent">/g) || []).length, 2)
-assert.match(viewSource, /threadRunning\(event\) && streamingAssistantContent/)
-assert.match(viewSource, /v-if="!procRunning && streamingAssistantContent"/)
+// Live answer candidates are rendered outside ProcessDisclosure while they
+// stream; the rail only owns tool/process narration.
+assert.equal((viewSource.match(/<template v-if="procRunning && streamingAssistantContent">/g) || []).length, 0)
+assert.match(viewSource, /isStreamingUnderEvent\(event\) && streamingAnswerPreview/)
+assert.match(viewSource, /streamingAnswerPreview/)
+assert.match(viewSource, /handleElectronAgentPiFrame/)
 assert.match(viewSource, /function threadOutsideAnswer\(root: any\)/)
 assert.match(viewSource, /function clearStreamingAssistant\(\)[\s\S]*streamingAssistantEventId\.value = ''/)
 assert.match(viewSource, /function projectElectronAgentProgress\(context: ElectronAgentRunContext\)[\s\S]*streamingProcess\.status = 'running'/)
