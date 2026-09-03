@@ -638,9 +638,7 @@ class HostedRun {
     if (frame.type === "interaction_request") {
       if (this.state === "cancelling") return;
       this.setState("waiting_user");
-      // Preserve the complete payload for the renderer while retaining the
-      // legacy top-level fields used by older listeners.
-      this.event("interaction_request", { ...frame.payload, payload: frame.payload });
+      this.event("interaction_request", { payload: frame.payload });
       try {
         await this.localHandlers.onInteraction?.({
           run: this.run,
@@ -711,7 +709,7 @@ class HostedRun {
     const pending = [...this.localPending.values()].find((item) => !item.responded);
     if (pending) queueMicrotask(() => {
       if (!this.closed && this.state !== "cancelling") {
-        this.event("interaction_request", { ...pending.payload, payload: pending.payload });
+        this.event("interaction_request", { payload: pending.payload });
       }
     });
     return this.status();
@@ -910,7 +908,7 @@ class HostedRun {
     // reattach the pending card and explicitly request a safe continuation.
     this.state = "waiting_user";
     this.event("state", { state: "waiting_user", code: "runner_restarted" });
-    if (pendingPayload) this.event("interaction_request", { ...pendingPayload, payload: pendingPayload });
+    if (pendingPayload) this.event("interaction_request", { payload: pendingPayload });
     await Promise.resolve().then(() => this.localHandlers.onPark?.({
       run: this.run,
       context: this.localContext,

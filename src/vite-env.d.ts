@@ -83,8 +83,6 @@ export interface IElectronAPI {
     startLocal?: (payload: {
       run: Record<string, unknown>;
       provider_id?: string;
-      providerId?: string;
-      start?: Record<string, unknown>;
       start_payload?: Record<string, unknown>;
       local_file_refs?: ElectronLocalFileRef[];
       local_context?: {
@@ -118,7 +116,6 @@ export interface IElectronAPI {
     list: (payload: { accountId: string }) => Promise<ElectronAgentStatus[]>;
     logout: (payload?: { accountId?: string }) => Promise<ElectronAgentLogoutResult>;
     localFiles: ElectronLocalFilesAPI;
-    files?: ElectronLocalFilesAPI;
     trace: ElectronTraceAPI;
     sessions?: ElectronLocalSessionAPI;
     onEvent: (callback: (event: VibeAgentEvent) => void) => (() => void);

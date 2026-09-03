@@ -22,12 +22,6 @@ const KNOWLEDGE_TOOLS = new Map([
   ["delete_knowledge", "prepare_change"],
   ["move_knowledge_section", "prepare_change"],
 ]);
-// Frozen pre-v2 descriptors may still be resumed during rollback. These names
-// are never advertised by the v2 manifest, but retain their transport aliases.
-const LEGACY_KNOWLEDGE_TOOLS = new Map([
-  ["list_knowledge_structure", "structure"],
-  ["move_knowledge", "prepare_change"],
-]);
 const HIDDEN_TOOLS = new Set(["apply_confirmation", "cancel_confirmation", "read", "bash", "edit", "write"]);
 const READ_WAVE_TOOLS = new Set([
   "search_knowledge", "search_vibe_platform_docs", "get_knowledge_overview", "read_knowledge",
@@ -500,7 +494,7 @@ export class LocalToolRouter {
         },
       };
     }
-    const operation = KNOWLEDGE_TOOLS.get(name) || LEGACY_KNOWLEDGE_TOOLS.get(name);
+    const operation = KNOWLEDGE_TOOLS.get(name);
     if (!operation) throw new Error("vibe_agent_unknown_tool");
     if (!this.knowledgeClient) throw new Error("vibe_agent_knowledge_client_unconfigured");
     const payload = await this.knowledgePayload(name, operation, args);
@@ -644,7 +638,7 @@ export class LocalToolRouter {
       payload.operation = name === "add_knowledge" ? "insert"
         : name === "edit_knowledge" ? "update"
           : name === "delete_knowledge" ? "delete" : "move";
-      if (name === "move_knowledge_section" || name === "move_knowledge") {
+      if (name === "move_knowledge_section") {
         payload.changes = [{
           target: payload.target,
           source_path: payload.source_path,

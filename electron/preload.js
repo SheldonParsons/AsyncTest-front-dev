@@ -3,12 +3,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 // These are deliberately explicit channels.  Agent-private frames must not
 // travel through the legacy generic `send/invoke` bridge.
 const vibeLocalFiles = {
-    pick: ({ accountId, account_id: accountIdSnake } = {}) => ipcRenderer.invoke('vibeAgent:localFilePick', {
-        ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+    pick: ({ accountId } = {}) => ipcRenderer.invoke('vibeAgent:localFilePick', {
+        ...(accountId ? { account_id: accountId } : {}),
     }),
-    preview: ({ refId, ref_id: refIdSnake, accountId, account_id: accountIdSnake }) => ipcRenderer.invoke('vibeAgent:localFilePreview', {
-        ref_id: refId ?? refIdSnake,
-        ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+    preview: ({ refId, accountId }) => ipcRenderer.invoke('vibeAgent:localFilePreview', {
+        ref_id: refId,
+        ...(accountId ? { account_id: accountId } : {}),
     }),
 };
 
@@ -45,27 +45,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
             check: () => ipcRenderer.invoke('vibeAgent:readinessCheck'),
             export: () => ipcRenderer.invoke('vibeAgent:readinessExport'),
         },
-        // Local mode starts Pi directly in Electron Main.  The renderer only
+        // Local mode starts the Agent directly in Electron Main. The renderer only
         // supplies a validated start descriptor; provider credentials are
         // injected by Main and never exposed through this API.
-        startLocal: ({ run, start, start_payload: startPayload, provider_id: providerId, providerId: camelProviderId, local_context: localContext, localContext: camelLocalContext, local_file_refs: localFileRefs, localFileRefs: camelLocalFileRefs }) =>
+        startLocal: ({ run, start_payload: startPayload, provider_id: providerId, local_context: localContext, local_file_refs: localFileRefs }) =>
             ipcRenderer.invoke('vibeAgent:startLocal', {
                 run,
-                start,
                 start_payload: startPayload,
-                ...(providerId ?? camelProviderId ? { provider_id: providerId ?? camelProviderId } : {}),
-                ...(localContext ?? camelLocalContext ? { local_context: localContext ?? camelLocalContext } : {}),
-                ...(localFileRefs ?? camelLocalFileRefs ? { local_file_refs: localFileRefs ?? camelLocalFileRefs } : {}),
+                ...(providerId ? { provider_id: providerId } : {}),
+                ...(localContext ? { local_context: localContext } : {}),
+                ...(localFileRefs ? { local_file_refs: localFileRefs } : {}),
             }),
         recoverableLocal: (payload = {}) => ipcRenderer.invoke('vibeAgent:recoverableLocal', payload),
-        recoverLocal: ({ runId, run_id: runIdSnake, accountId, account_id: accountIdSnake, projectId, project_id: projectIdSnake, sessionId, session_id: sessionIdSnake, response, local_context: localContext, localContext: camelLocalContext }) =>
+        recoverLocal: ({ runId, accountId, projectId, sessionId, response, local_context: localContext }) =>
             ipcRenderer.invoke('vibeAgent:recoverLocal', {
-                run_id: runId ?? runIdSnake,
-                account_id: accountId ?? accountIdSnake,
-                ...(projectId ?? projectIdSnake ? { project_id: projectId ?? projectIdSnake } : {}),
-                ...(sessionId ?? sessionIdSnake ? { session_id: sessionId ?? sessionIdSnake } : {}),
+                run_id: runId,
+                account_id: accountId,
+                ...(projectId ? { project_id: projectId } : {}),
+                ...(sessionId ? { session_id: sessionId } : {}),
                 response,
-                ...(localContext ?? camelLocalContext ? { local_context: localContext ?? camelLocalContext } : {}),
+                ...(localContext ? { local_context: localContext } : {}),
             }),
         attach: ({ runId, accountId }) => ipcRenderer.invoke('vibeAgent:attach', { runId, accountId }),
         respond: ({ runId, accountId, pendingId, response }) =>
@@ -74,13 +73,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.invoke('vibeAgent:cancel', { runId, accountId, turnId, sessionId }),
         status: ({ runId, accountId }) => ipcRenderer.invoke('vibeAgent:status', { runId, accountId }),
         list: (payload = {}) => ipcRenderer.invoke('vibeAgent:list', payload),
-        logout: ({ accountId, account_id: accountIdSnake } = {}) => ipcRenderer.invoke('vibeAgent:logout', {
-            ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+        logout: ({ accountId } = {}) => ipcRenderer.invoke('vibeAgent:logout', {
+            ...(accountId ? { account_id: accountId } : {}),
         }),
         localFiles: vibeLocalFiles,
-        // Public name used by the local-file model; keep `localFiles` as the
-        // compatibility spelling used by the current renderer.
-        files: vibeLocalFiles,
         trace: vibeTrace,
         sessions: {
             create: (payload) => ipcRenderer.invoke('vibeAgent:sessionCreate', payload),

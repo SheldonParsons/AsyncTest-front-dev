@@ -434,7 +434,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             goalId: run.goal_id || run.run_id,
             projectId: run.project_id,
           metadata: {
-            agent_backend: "pi",
             agent_execution_host: "electron",
             execution_host: "electron",
             agent_core_version: host?.identity?.().piAgentCoreVersion || "0.84.4",
@@ -445,7 +444,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             project_id: run.project_id,
             // Keep the transport boundary visible in the Trace manifest. This
             // is metadata only: the Main-owned injector still decides the mode,
-            // and the Renderer cannot use it to bypass the proxy policy.
+            // and the Renderer cannot select another Provider transport.
             provider_transport: "electron_direct",
             // New Goals use opaque native local_file_ref values.  A run with
             // no selected file is explicitly marked as such in the manifest.
@@ -700,14 +699,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         }
         const frameCode = String(frame.payload?.code || frame.payload?.reason || "").trim();
         const requestedCancelReason = String(localUserCancelRequests.get(runId) || "").trim();
-        // Runner uses `aborted` for the normal user stop path.  A direct
-        // `cancelled` status is also accepted for cold/legacy runtimes, but
-        // app_exit is deliberately excluded so shutdown never masquerades as
-        // an interactive user decision.
+        // Runner uses `aborted` for the normal user stop path. Cold cancellation
+        // is handled before a child starts and therefore never enters here.
         const explicitCancelReason = requestedCancelReason
-          || (frameCode === "user_stop_all" || frameCode === "user_cancelled" ? frameCode : "")
-          || (status === "cancelled" && frameCode !== "app_exit" ? (frameCode || "user_cancelled") : "");
-        if (["aborted", "cancelled"].includes(status) && explicitCancelReason) {
+          || (frameCode === "user_stop_all" || frameCode === "user_cancelled" ? frameCode : "");
+        if (status === "aborted" && explicitCancelReason) {
           const persisted = await appendLocalCancellationReceipt(run, {
             reason: explicitCancelReason,
             terminalStatus: status,
@@ -1014,11 +1010,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
   };
   const injectLocalStartPayload = async (candidate, sender) => {
-    const start = candidate?.start_payload ?? candidate?.start ?? candidate?.payload;
+    const start = candidate?.start_payload;
     if (!start || typeof start !== "object" || Array.isArray(start)) throw new Error("vibe_agent_local_start_payload_missing");
-    const run = candidate.run || candidate;
+    const run = candidate.run;
     const context = validContext({
-      ...(candidate.local_context || candidate.localContext || {}),
+      ...(candidate.local_context || {}),
     });
     if (!context.authToken || !context.baseUrl) throw new Error("vibe_agent_runtime_snapshot_auth_missing");
     const dynamicKeys = new Set([
@@ -1028,13 +1024,13 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       throw new Error("vibe_agent_local_start_renderer_field_forbidden");
     }
     const dynamic = Object.fromEntries(Object.entries(start).filter(([key]) => dynamicKeys.has(key)));
-    const requestedLocalRefs = candidate?.local_file_refs ?? candidate?.localFileRefs;
+    const requestedLocalRefs = candidate?.local_file_refs;
     const selectedLocalFiles = candidate?.resume
       ? null
       : requestedLocalRefs === undefined
         ? []
         : await localFileRefs.resolve(requestedLocalRefs, context.accountId);
-    const providerId = String(candidate?.provider_id ?? candidate?.providerId ?? "").trim();
+    const providerId = String(candidate?.provider_id ?? "").trim();
     if (candidate?._runtime_snapshot && !candidate?.resume) {
       throw new Error("vibe_agent_local_start_renderer_field_forbidden");
     }
@@ -1241,7 +1237,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (!new Set(["waiting_user", "resume_ready"]).has(String(descriptor.phase || ""))) {
       throw new Error("vibe_agent_run_not_recoverable");
     }
-    const suppliedContext = payload?.local_context ?? payload?.localContext ?? {};
+    const suppliedContext = payload?.local_context ?? {};
     const descriptorContext = descriptor.local_context && typeof descriptor.local_context === "object" ? descriptor.local_context : {};
     const context = validContext({
       ...descriptorContext,
@@ -1585,8 +1581,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   register("vibeAgent:readinessExport", async (_payload, sender) => {
     const report = await readinessPromise;
     const choice = await dialog.showSaveDialog(BrowserWindow.fromWebContents(sender), {
-      title: "导出 Electron Pi 启动自检结果",
-      defaultPath: path.join(app.getPath("documents"), "electron_pi_readiness.json"),
+      title: "导出 Electron Agent 启动自检结果",
+      defaultPath: path.join(app.getPath("documents"), "electron_agent_readiness.json"),
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (choice.canceled || !choice.filePath) return { canceled: true, report };
@@ -1596,11 +1592,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   register("vibeAgent:startLocal", async (payload, sender) => {
     await runReconcilePromise;
     if (payload?.resume === true) throw new Error("vibe_agent_resume_internal_only");
-    const runId = String(payload?.run?.run_id ?? payload?.run?.runId ?? "").trim();
+    const runId = String(payload?.run?.run_id ?? "").trim();
     if (!runId) throw new Error("vibe_agent_run_invalid");
     const requestedAccountId = accountForLocalOperation(
       normalizeBoundAccountId(
-        payload?.run?.account_id ?? payload?.run?.accountId,
+        payload?.run?.account_id,
         "vibe_agent_run_account_required",
       ),
     );
@@ -1619,12 +1615,12 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       const requestedRun = payload?.run || {};
       const reservation = await host.reserveLocal({
         runId,
-        turnId: requestedRun.turn_id ?? requestedRun.turnId,
-        sessionId: requestedRun.session_id ?? requestedRun.sessionId,
-        projectId: requestedRun.project_id ?? requestedRun.projectId ?? requestedRun.project,
-        accountId: requestedRun.account_id ?? requestedRun.accountId,
+        turnId: requestedRun.turn_id,
+        sessionId: requestedRun.session_id,
+        projectId: requestedRun.project_id ?? requestedRun.project,
+        accountId: requestedRun.account_id,
       }, sender);
-      const candidate = payload?.start_payload ?? payload?.start ?? payload?.payload;
+      const candidate = payload?.start_payload;
       try {
         const suppliedKey = candidate?.provider?.api_key ?? candidate?.provider?.apiKey;
         if (suppliedKey !== undefined) throw new Error("vibe_agent_local_provider_key_renderer_forbidden");
@@ -1635,8 +1631,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         const injectedProvider = enriched.start_payload?.provider;
         if (String(injectedProvider?.mode || "") !== "direct") throw new Error("vibe_agent_provider_mode_invalid");
         const context = {
-          ...(payload?.local_context ?? payload?.localContext ?? {}),
-          ...(enriched?.local_context ?? enriched?.localContext ?? {}),
+          ...(payload?.local_context ?? {}),
+          ...(enriched?.local_context ?? {}),
         };
         validContext(context);
         const run = enriched.run || enriched;

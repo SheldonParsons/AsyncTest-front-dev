@@ -252,7 +252,7 @@ function knowledgeRequestBody({
   traceId = "",
 } = {}) {
   const op = String(operation ?? "").trim().toLowerCase();
-  if (!new Set(["search", "overview", "structure", "read_source", "prepare_change", "resolve_confirmation", "get_receipt"]).has(op)) {
+  if (!new Set(["search", "overview", "read_source", "prepare_change", "resolve_confirmation", "get_receipt"]).has(op)) {
     throw new Error("vibe_agent_knowledge_operation_invalid");
   }
   const bodyPayload = payload === undefined || payload === null

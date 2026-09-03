@@ -704,7 +704,7 @@ class BridgeSession {
     if (
       interaction.kind === "clarification" && toolName !== "ask_clarification"
       || interaction.kind === "knowledge_confirmation"
-      && !new Set(["add_knowledge", "edit_knowledge", "delete_knowledge", "move_knowledge_section", "move_knowledge"]).has(toolName)
+      && !new Set(["add_knowledge", "edit_knowledge", "delete_knowledge", "move_knowledge_section"]).has(toolName)
     ) throw new ProtocolError("interaction_tool_kind_mismatch");
     if (interaction.sequence !== this.interactionSequence + 1 || this.seenInteractionIds.has(interaction.interaction_id)) throw new ProtocolError("interaction_identity_invalid");
     const expected = {

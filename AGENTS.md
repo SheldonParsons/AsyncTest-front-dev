@@ -12,20 +12,18 @@ AsyncTest 是一个基于 Vue 3 + TypeScript + Vite 的 API 测试和管理平�
 # 安装依赖（使用 yarn，不要使用 npm）
 yarn install
 
-# 启动开发服务器 (端口 3333)
-yarn dev
+# 启动 Electron 开发环境（Renderer 端口 3333）
+yarn electron:dev
 
-# 启动 SSR 开发服务器 (端口 3333)
-yarn dev:ssr
+# 仅启动 Renderer，供页面调试使用；Vibe Agent 入口只在 Electron 中可用
+yarn dev
 
 # 构建项目（包含类型检查）
 yarn build
 
-# 构建 SSR 版本
-yarn build:ssr
-
-# 生产环境运行 SSR (端口 3000)
-yarn prod:ssr
+# 打包 Electron
+yarn build:mac:prod
+yarn build:win:prod
 ```
 
 ## 架构概览
@@ -76,10 +74,11 @@ src/
 - Cookie 管理封装在 `/src/utils/cookies.ts`
 - 全局状态由 `GlobalStatus`（`/src/global.ts`）管理
 
-### SSR 支持
-- 入口文件：`entry-client.ts`（客户端）、`entry-server.ts`（服务端）
-- SSR 服务器：`server.js`（基于 Express）
-- 使用 `createSSRApp`、`createSSRrouter`、`createSSRstore`、`createSSRi18n` 创建实例
+### Electron Agent 运行时
+- Electron Main 入口：`electron/main.js`
+- Agent Host：`electron/vibeAgent/agentHost.node.js`
+- 独立子进程入口：`electron/vibeAgent/runtime/runner.mjs`
+- 对话固定走 Electron Main → 官方 AgentSession → Provider 直连 → 远程 Knowledge/Trace；没有浏览器或服务端 Agent 回退
 
 ### 组件开发规范
 1. 使用 Vue 3 Composition API + `<script setup>` 语法
