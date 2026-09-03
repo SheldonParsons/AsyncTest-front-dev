@@ -96,37 +96,77 @@ async function readJson(filePath, fallback = null) {
 
 async function reconcileSequence(directory, manifest) {
   const eventsPath = path.join(directory, EVENTS_FILE);
-  try { await fs.access(eventsPath); } catch { return manifest; }
+  try { await fs.access(eventsPath); } catch { return { manifest, sequenceProjection: "" }; }
   const input = nodeFs.createReadStream(eventsPath, { encoding: "utf8", highWaterMark: 256 * 1024 });
   input.once("error", () => {});
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
   let highest = 0;
-  let invalidTail = false;
+  let eventCount = 0;
+  let malformedTail = false;
+  let repairedMalformedTail = false;
+  let structuralError = false;
+  let firstEventName = "";
+  let startupRace = false;
+  let startupRaceIdentityValid = true;
+  const eventIds = new Set();
+  const payloadRefs = new Set();
   try {
     for await (const line of lines) {
-      if (invalidTail && line.trim()) {
+      if (malformedTail && line.trim()) {
         // A malformed line followed by another event is corruption in the
         // middle of the journal, not a crash-truncated tail.  Do not skip it
         // and silently renumber later events.
         throw new Error("vibe_agent_trace_journal_corrupt");
       }
+      let event;
       try {
-        const event = JSON.parse(line);
-        if (!event || typeof event !== "object" || Array.isArray(event)
-          || !Number.isSafeInteger(event.sequence) || event.sequence < 1
-          || event.sequence <= highest) {
-          invalidTail = true;
-        } else {
-          highest = event.sequence;
-        }
+        event = JSON.parse(line);
       } catch {
-        invalidTail = true;
+        malformedTail = true;
+        continue;
+      }
+      if (!event || typeof event !== "object" || Array.isArray(event)
+        || !Number.isSafeInteger(event.sequence) || event.sequence < 1) {
+        structuralError = true;
+        break;
+      }
+      eventCount += 1;
+      if (eventCount === 1) firstEventName = String(event.name || "");
+      const eventId = String(event.event_id || "");
+      const payloadRef = String(event.payload_ref || "");
+      if (!eventId || eventIds.has(eventId)
+        || (payloadRef && payloadRefs.has(payloadRef))) startupRaceIdentityValid = false;
+      eventIds.add(eventId);
+      if (payloadRef) payloadRefs.add(payloadRef);
+      for (const field of ["trace_id", "session_id", "goal_id", "run_id"]) {
+        if (String(manifest[field] || "") && String(event[field] || "") !== String(manifest[field])) {
+          startupRaceIdentityValid = false;
+        }
+      }
+      if (event.sequence > highest) {
+        if (startupRace && event.sequence !== eventCount - 1) {
+          structuralError = true;
+          break;
+        }
+        highest = event.sequence;
+      } else if (
+        eventCount === 2
+        && highest === 1
+        && event.sequence === 1
+        && firstEventName === "provider.snapshot.acquired"
+        && String(event.name || "") === "agent.start"
+      ) {
+        startupRace = true;
+      } else {
+        structuralError = true;
+        break;
       }
     }
   } finally {
     lines.close();
     input.destroy();
   }
+  if (structuralError) throw new Error("vibe_agent_trace_journal_corrupt");
   // A crash can leave a valid final JSON event without its newline, or a
   // partially written JSON tail.  Normalize that tail before the next append;
   // otherwise the next event would be concatenated to invalid JSON forever.
@@ -157,6 +197,7 @@ async function reconcileSequence(directory, manifest) {
             // a clean JSONL boundary.
             const truncateAt = newline >= 0 ? start + newline + 1 : start;
             await fs.truncate(eventsPath, truncateAt);
+            repairedMalformedTail = true;
           }
         }
       } finally {
@@ -166,11 +207,16 @@ async function reconcileSequence(directory, manifest) {
   } catch {
     // A missing/locked journal is handled by the normal trace failure path.
   }
-  if (highest + 1 > Number(manifest.next_sequence)) {
-    manifest.next_sequence = highest + 1;
-    manifest.event_count = Math.max(Number(manifest.event_count || 0), highest);
+  if (malformedTail && !repairedMalformedTail) throw new Error("vibe_agent_trace_journal_corrupt");
+  if (startupRace && (!startupRaceIdentityValid || highest !== eventCount - 1)) {
+    throw new Error("vibe_agent_trace_journal_corrupt");
   }
-  return manifest;
+  manifest.next_sequence = highest + 1;
+  manifest.event_count = eventCount;
+  return {
+    manifest,
+    sequenceProjection: startupRace ? "startup_create_race_v1" : "",
+  };
 }
 
 function serializePayload(payload) {
@@ -211,6 +257,7 @@ export class LocalTraceStore {
     this.rootPath = path.resolve(rootPath);
     this.chains = new Map();
     this.manifests = new Map();
+    this.sequenceProjections = new Map();
   }
 
   tracePath(traceId) {
@@ -219,65 +266,72 @@ export class LocalTraceStore {
 
   async create({ traceId = newTraceId(), accountId: rawAccountId, sessionId = "", goalId = "", runId = "", projectId = "", metadata = {} } = {}) {
     const resolvedId = id(traceId);
-    const owner = accountId(rawAccountId);
-    const directory = this.tracePath(resolvedId);
-    const manifestFile = path.join(directory, MANIFEST_FILE);
-    await fs.mkdir(path.join(directory, PAYLOAD_DIR), { recursive: true, mode: 0o700 });
-    let existingRaw;
-    try {
-      existingRaw = await fs.readFile(manifestFile, "utf8");
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw new Error("vibe_agent_trace_manifest_unavailable");
-    }
-    if (existingRaw !== undefined) {
-      let existing;
-      try { existing = JSON.parse(existingRaw); } catch { throw new Error("vibe_agent_trace_manifest_invalid"); }
-      const manifest = normalizeManifest(existing, resolvedId);
-      // A renderer may know an old trace id from a visible event, but it must
-      // not be able to attach a different run/session/goal to that chain.  An
-      // omitted identity keeps the low-level trace API usable for inspection;
-      // when Main supplies one, a mismatch is a hard boundary failure.
-      for (const [field, expected] of [
-        ["account_id", owner],
-        ["session_id", sessionId],
-        ["goal_id", goalId],
-        ["run_id", runId],
-        ["project_id", projectId],
-      ]) {
-        const value = String(expected ?? "").trim();
-        if (value && String(manifest[field] ?? "") !== value) {
-          throw new Error("vibe_agent_trace_identity_conflict");
+    return this.enqueue(resolvedId, async () => {
+      const owner = accountId(rawAccountId);
+      const directory = this.tracePath(resolvedId);
+      const manifestFile = path.join(directory, MANIFEST_FILE);
+      await fs.mkdir(path.join(directory, PAYLOAD_DIR), { recursive: true, mode: 0o700 });
+      let existingRaw;
+      try {
+        existingRaw = await fs.readFile(manifestFile, "utf8");
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw new Error("vibe_agent_trace_manifest_unavailable");
+      }
+      if (existingRaw !== undefined) {
+        let existing;
+        try { existing = JSON.parse(existingRaw); } catch { throw new Error("vibe_agent_trace_manifest_invalid"); }
+        let manifest = normalizeManifest(existing, resolvedId);
+        // A renderer may know an old trace id from a visible event, but it must
+        // not be able to attach a different run/session/goal to that chain.  An
+        // omitted identity keeps the low-level trace API usable for inspection;
+        // when Main supplies one, a mismatch is a hard boundary failure.
+        for (const [field, expected] of [
+          ["account_id", owner],
+          ["session_id", sessionId],
+          ["goal_id", goalId],
+          ["run_id", runId],
+          ["project_id", projectId],
+        ]) {
+          const value = String(expected ?? "").trim();
+          if (value && String(manifest[field] ?? "") !== value) {
+            throw new Error("vibe_agent_trace_identity_conflict");
+          }
         }
+        if (projectId && !String(manifest.project_id || "")) {
+          manifest.project_id = String(projectId);
+          await atomicWrite(manifestFile, JSON.stringify(manifest, null, 2));
+        }
+        const reconciled = await reconcileSequence(directory, manifest);
+        manifest = reconciled.manifest;
+        if (reconciled.sequenceProjection) this.sequenceProjections.set(resolvedId, reconciled.sequenceProjection);
+        else this.sequenceProjections.delete(resolvedId);
+        this.manifests.set(resolvedId, manifest);
+        return { ...manifest };
       }
-      if (projectId && !String(manifest.project_id || "")) {
-        manifest.project_id = String(projectId);
-        await atomicWrite(manifestFile, JSON.stringify(manifest, null, 2));
-      }
+      const cleanMetadata = withoutCredentials(metadata);
+      if (Buffer.byteLength(JSON.stringify(cleanMetadata), "utf8") > MAX_ATTRIBUTE_BYTES) throw new Error("vibe_agent_trace_metadata_too_large");
+      const manifest = {
+        schema: TRACE_SCHEMA,
+        trace_id: resolvedId,
+        account_id: owner,
+        session_id: String(sessionId ?? ""),
+        goal_id: String(goalId ?? ""),
+        run_id: String(runId ?? ""),
+        project_id: String(projectId ?? ""),
+        execution_host: "electron",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        next_sequence: 1,
+        event_count: 0,
+        status: "running",
+        metadata: cleanMetadata,
+      };
+      await atomicWrite(manifestFile, JSON.stringify(manifest, null, 2));
+      await fs.writeFile(path.join(directory, EVENTS_FILE), "", { encoding: "utf8", mode: 0o600 });
+      this.sequenceProjections.delete(resolvedId);
       this.manifests.set(resolvedId, manifest);
       return { ...manifest };
-    }
-    const cleanMetadata = withoutCredentials(metadata);
-    if (Buffer.byteLength(JSON.stringify(cleanMetadata), "utf8") > MAX_ATTRIBUTE_BYTES) throw new Error("vibe_agent_trace_metadata_too_large");
-    const manifest = {
-      schema: TRACE_SCHEMA,
-      trace_id: resolvedId,
-      account_id: owner,
-      session_id: String(sessionId ?? ""),
-      goal_id: String(goalId ?? ""),
-      run_id: String(runId ?? ""),
-      project_id: String(projectId ?? ""),
-      execution_host: "electron",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      next_sequence: 1,
-      event_count: 0,
-      status: "running",
-      metadata: cleanMetadata,
-    };
-    await atomicWrite(manifestFile, JSON.stringify(manifest, null, 2));
-    await fs.writeFile(path.join(directory, EVENTS_FILE), "", { encoding: "utf8", mode: 0o600 });
-    this.manifests.set(resolvedId, manifest);
-    return { ...manifest };
+    });
   }
 
   async ensure(traceId, { accountId: rawAccountId, projectId: expectedProjectId } = {}) {
@@ -289,10 +343,13 @@ export class LocalTraceStore {
       return cached;
     }
     const directory = this.tracePath(resolvedId);
-    const manifest = normalizeManifest(await readJson(path.join(directory, MANIFEST_FILE)), resolvedId);
+    let manifest = normalizeManifest(await readJson(path.join(directory, MANIFEST_FILE)), resolvedId);
     if (rawAccountId !== undefined) assertAccount(manifest, rawAccountId);
     if (expectedProjectId !== undefined) assertProject(manifest, expectedProjectId);
-    await reconcileSequence(directory, manifest);
+    const reconciled = await reconcileSequence(directory, manifest);
+    manifest = reconciled.manifest;
+    if (reconciled.sequenceProjection) this.sequenceProjections.set(resolvedId, reconciled.sequenceProjection);
+    else this.sequenceProjections.delete(resolvedId);
     this.manifests.set(resolvedId, manifest);
     return manifest;
   }
@@ -400,7 +457,9 @@ export class LocalTraceStore {
     });
     // The files remain the durable Trace source; release the hot manifest so
     // long-running clients do not retain one object per completed Goal.
-    this.manifests.delete(id(traceId));
+    const resolvedId = id(traceId);
+    this.manifests.delete(resolvedId);
+    this.sequenceProjections.delete(resolvedId);
     return event;
   }
 
@@ -438,6 +497,8 @@ export class LocalTraceStore {
     const events = [];
     let expandedPayloadBytes = 0;
     let hasMore = false;
+    let physicalIndex = 0;
+    const sequenceProjection = this.sequenceProjections.get(resolvedId) || "";
     const eventsPath = path.join(this.tracePath(resolvedId), EVENTS_FILE);
     let input;
     try {
@@ -451,6 +512,14 @@ export class LocalTraceStore {
       for await (const line of lines) {
         let event;
         try { event = JSON.parse(line); } catch { continue; }
+        physicalIndex += 1;
+        if (sequenceProjection === "startup_create_race_v1") {
+          event = {
+            ...event,
+            recorded_sequence: event.sequence,
+            sequence: physicalIndex,
+          };
+        }
         if (!Number.isSafeInteger(event?.sequence) || event.sequence <= cursor) continue;
         if (events.length >= count) { hasMore = true; break; }
         if (includePayload && event.payload_ref) {
@@ -483,10 +552,14 @@ export class LocalTraceStore {
       input.destroy();
     }
     return {
-      manifest: { ...manifest },
+      manifest: {
+        ...manifest,
+        ...(sequenceProjection ? { next_sequence: Number(manifest.event_count || 0) + 1 } : {}),
+      },
       events,
       next_sequence: events.length ? events.at(-1).sequence : cursor,
       has_more: hasMore,
+      ...(sequenceProjection ? { sequence_projection: sequenceProjection } : {}),
     };
   }
 
@@ -523,6 +596,7 @@ export class LocalTraceStore {
       });
       await fs.rm(this.tracePath(resolvedId), { recursive: true, force: true });
       this.manifests.delete(resolvedId);
+      this.sequenceProjections.delete(resolvedId);
     });
     return { trace_id: resolvedId, removed: true };
   }
@@ -530,6 +604,7 @@ export class LocalTraceStore {
   async close() {
     await Promise.allSettled([...this.chains.values()]);
     this.chains.clear();
+    this.sequenceProjections.clear();
   }
 }
 

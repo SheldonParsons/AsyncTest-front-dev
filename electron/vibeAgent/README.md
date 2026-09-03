@@ -96,6 +96,11 @@ payload 文件。Provider 调用默认只保留请求摘要、hash、大小、�
 下一次本地 Agent 发送请求且用户仍登录时，Main 会在后台尝试续传已完成但尚未上传
 完的 Trace，不会重跑 Agent 或 Provider 请求。
 
+同一 Trace 的创建与追加共用一条 Main 写队列，启动事件不会再竞争序号。旧版本已产生的
+`provider.snapshot.acquired(1) → agent.start(1) → 后续连续事件` 只在详情/AI 审计投影中
+恢复为唯一顺序并保留 `recorded_sequence`；本机原始 JSONL、payload 和 OSS `.framed`
+不会被改写。任何不符合这一已知签名的重复、倒序或中段损坏仍会拒绝读取。
+
 ## 重启与崩溃恢复
 
 Main 会在 `userData/vibe-agent/runs/<run_id>/descriptor.json` 保存不含凭据的运行描述：

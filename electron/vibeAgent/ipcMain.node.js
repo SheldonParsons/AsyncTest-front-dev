@@ -1107,7 +1107,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (!knownBinding) runBindings.set(bindingRunId, structuredClone(binding));
     run.account_id = snapshot.account_id;
     run.provider_mode = "direct";
-    void appendTrace(run, "provider.snapshot.acquired", {
+    await appendTrace(run, "provider.snapshot.acquired", {
       mode: "direct",
       provider_id: snapshot.provider.id,
       model: snapshot.provider.model,

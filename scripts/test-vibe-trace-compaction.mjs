@@ -129,6 +129,46 @@ try {
   assert.match(uploadSource, /format: "framed-v1"/);
   assert.match(uploadSource, /bundle_sha256/);
 
+  const raceRoot = path.join(temp, "create-race");
+  const race = new LocalTraceStore({ rootPath: raceRoot });
+  await Promise.all(Array.from({ length: 8 }, (_, index) => (
+    race.create({ traceId: "trace-create-race", accountId, runId: "run-race", sessionId: "session-race", goalId: "goal-race" })
+      .then(() => race.append({ traceId: "trace-create-race", accountId, name: `event-${index}` }))
+  )));
+  const raceDetail = await race.detail("trace-create-race", { accountId, includePayload: false });
+  assert.deepEqual(raceDetail.events.map((event) => event.sequence), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(raceDetail.manifest.event_count, 8);
+  assert.equal(raceDetail.manifest.next_sequence, 9);
+  await race.close();
+
+  const legacyRoot = path.join(temp, "legacy-startup-race");
+  const legacy = new LocalTraceStore({ rootPath: legacyRoot });
+  await legacy.create({ traceId: "trace-legacy-race", accountId, runId: "run-legacy", sessionId: "session-legacy", goalId: "goal-legacy" });
+  await legacy.append({ traceId: "trace-legacy-race", accountId, name: "provider.snapshot.acquired" });
+  await legacy.append({ traceId: "trace-legacy-race", accountId, name: "agent.start" });
+  await legacy.append({ traceId: "trace-legacy-race", accountId, name: "pi.ready" });
+  await legacy.close();
+  const legacyDir = path.join(legacyRoot, "trace-legacy-race");
+  const legacyEventsPath = path.join(legacyDir, "events.jsonl");
+  const legacyEvents = (await fs.readFile(legacyEventsPath, "utf8")).trim().split("\n").map(JSON.parse);
+  legacyEvents.forEach((event, index) => { event.sequence = index === 0 ? 1 : index; });
+  await fs.writeFile(legacyEventsPath, `${legacyEvents.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+  const legacyManifestPath = path.join(legacyDir, "manifest.json");
+  const legacyManifest = JSON.parse(await fs.readFile(legacyManifestPath, "utf8"));
+  legacyManifest.event_count = 2;
+  legacyManifest.next_sequence = 3;
+  await fs.writeFile(legacyManifestPath, JSON.stringify(legacyManifest, null, 2), "utf8");
+  const recovered = new LocalTraceStore({ rootPath: legacyRoot });
+  const recoveredDetail = await recovered.detail("trace-legacy-race", { accountId, includePayload: false });
+  assert.equal(recoveredDetail.sequence_projection, "startup_create_race_v1");
+  assert.deepEqual(recoveredDetail.events.map((event) => event.sequence), [1, 2, 3]);
+  assert.deepEqual(recoveredDetail.events.map((event) => event.recorded_sequence), [1, 1, 2]);
+  assert.deepEqual(
+    (await fs.readFile(legacyEventsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line).sequence),
+    [1, 1, 2],
+  );
+  await recovered.close();
+
   console.log(`vibe trace compaction contract: PASS (${compactBytes}/${naiveBytes} bytes)`);
 } finally {
   await fs.rm(temp, { recursive: true, force: true });

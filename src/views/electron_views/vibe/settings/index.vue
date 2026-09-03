@@ -510,6 +510,7 @@
 
           <section class="trace-detail">
             <div v-if="traceDetailLoading" class="trace-detail-state">读取链路详情...</div>
+            <div v-else-if="traceDetailError" class="trace-detail-state">{{ traceDetailError }}</div>
             <div v-else-if="!selectedTrace" class="trace-detail-state">选择一条链路查看详情</div>
             <template v-else>
               <div class="trace-detail-head">
@@ -651,6 +652,7 @@ const selectedTrace = ref<VibeDialogueTraceDetail | null>(null)
 const traceNextCursor = ref('')
 const traceRunsLoading = ref(false)
 const traceDetailLoading = ref(false)
+const traceDetailError = ref('')
 const tracePrivateView = ref(false)
 const selectedTraceIds = ref<Set<string>>(new Set())
 const traceExporting = ref(false)
@@ -1483,6 +1485,7 @@ async function loadTraceRuns(reset = false) {
     if (reset) {
       selectedTraceId.value = ''
       selectedTrace.value = null
+      traceDetailError.value = ''
       tracePrivateView.value = false
       selectedTraceIds.value = new Set()
     }
@@ -1572,7 +1575,10 @@ function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceI
   const startedMs = new Date(startedAt).getTime()
   const endedMs = new Date(endedAt).getTime()
   const projectedEvents: VibeDialogueTraceEvent[] = events.map((event: any, index: number) => ({
-    seq: Number(event.sequence || index + 1),
+    event_id: String(event.event_id || ''),
+    trace_id: String(event.trace_id || remote?.trace_id || manifest.trace_id || selected.trace_id || ''),
+    seq: index + 1,
+    recorded_sequence: Number(event.recorded_sequence ?? event.sequence ?? index + 1),
     stage: 'electron',
     event_type: String(event.name || 'agent.event'),
     title: String(event.name || ''),
@@ -1649,6 +1655,7 @@ async function loadElectronTraceSource(selected: VibeDialogueTraceRun, traceId: 
 async function selectTrace(traceId: string, privateView = false) {
   if (!traceId) return
   selectedTraceId.value = traceId
+  traceDetailError.value = ''
   traceDetailLoading.value = true
   try {
     const selected = traceRuns.value.find(item => traceRunReference(item) === traceId)
@@ -1676,6 +1683,11 @@ async function selectTrace(traceId: string, privateView = false) {
           }
         : item)
     }
+  } catch {
+    selectedTrace.value = null
+    tracePrivateView.value = false
+    traceDetailError.value = '该 Trace 暂时无法读取，请刷新后重试。'
+    window.$toast?.({ title: traceDetailError.value, type: 'error', position: 'bottom-right', duration: 4000, actionText: '关闭' })
   } finally {
     traceDetailLoading.value = false
   }
@@ -1860,6 +1872,13 @@ async function downloadElectronTraceRaw() {
   try {
     const selected = traceRuns.value.find(item => traceRunReference(item) === selectedTraceId.value)
     if (selected?.trace_local) {
+      try {
+        const raw = await getRemoteAgentTrace(traceId, 'raw')
+        if (raw instanceof Blob && raw.size > 0) {
+          saveAttachmentBlob(raw, `electron-trace-${traceAuditMarker(selectedTrace.value)}.framed`)
+          return
+        }
+      } catch { /* A not-yet-uploaded local Trace falls back to its readable JSON projection. */ }
       const detail = await loadElectronTraceSource(selected, selectedTraceId.value)
       const blob = new Blob([JSON.stringify(detail, null, 2)], { type: 'application/json;charset=utf-8' })
       saveAttachmentBlob(blob, `electron-trace-${traceAuditMarker(selectedTrace.value)}.json`)
@@ -1920,6 +1939,8 @@ async function exportSelectedTraces() {
       `agent-trace-analysis-${exportStamp()}-${details.length}.json`,
       buildTraceAnalysisExport(details),
     )
+  } catch {
+    window.$toast?.({ title: 'AI 审计 JSON 导出失败，请重试。', type: 'error', position: 'bottom-right', duration: 4000, actionText: '关闭' })
   } finally {
     traceExporting.value = false
   }

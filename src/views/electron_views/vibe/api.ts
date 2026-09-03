@@ -460,8 +460,10 @@ export interface VibeDialogueTraceRun {
 
 export interface VibeDialogueTraceEvent {
   id?: number
+  event_id?: string
   trace_id?: string
   seq: number
+  recorded_sequence?: number
   stage: string
   event_type: string
   title?: string
