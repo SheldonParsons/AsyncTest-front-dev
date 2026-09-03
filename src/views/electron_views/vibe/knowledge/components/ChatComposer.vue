@@ -10,25 +10,8 @@
       <div class="menu-section">
         <div class="menu-title">文件</div>
         <button class="menu-item" type="button" role="menuitem" @click="pickMarkdown">
-          <span class="markdown-icon" :class="{ 'file-text-icon-container': localMode }" aria-hidden="true">
-            <svg
-              v-if="localMode"
-              class="lucide lucide-file-text-icon lucide-file-text file-text-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-              <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-              <path d="M10 9H8" />
-              <path d="M16 13H8" />
-              <path d="M16 17H8" />
-            </svg>
-            <MarkdownFileIcon v-else />
+          <span class="markdown-icon file-text-icon-container" aria-hidden="true">
+            <FileTextIcon :size="20" />
           </span>
           <span class="item-text">
             <strong>{{ localMode ? '本机文件' : 'Markdown 文件' }}</strong>
@@ -161,14 +144,41 @@
 
       <!-- 普通输入模式 -->
       <div v-else class="normal-view">
-        <div class="attachment-list" :class="{ 'is-visible': selectedFiles.length > 0 }" aria-live="polite">
-          <span v-for="(file, i) in selectedFiles" :key="fileKey(file)" class="attachment-chip">
-            <span class="chip-icon" aria-hidden="true">
-              <MarkdownFileIcon />
-            </span>
-            <span class="chip-name">{{ file.name }}</span>
-            <button class="chip-remove" type="button" :aria-label="`移除附件 ${file.name}`" @click="removeFile(i)">×</button>
-          </span>
+        <div
+          ref="attachmentListEl"
+          class="attachment-list"
+          :class="{ 'is-visible': selectedFiles.length > 0 }"
+          role="list"
+          tabindex="0"
+          aria-label="已选附件"
+          aria-live="polite"
+          @scroll="rememberAttachmentScroll"
+          @keydown="onAttachmentListKeydown"
+        >
+          <div class="attachment-list-track">
+            <article v-for="(file, i) in selectedFiles" :key="fileKey(file)" class="attachment-chip" role="listitem">
+              <span class="chip-icon" aria-hidden="true">
+                <FileTextIcon :size="24" />
+              </span>
+              <span class="chip-copy">
+                <span class="chip-name" :title="file.name">{{ file.name }}</span>
+                <span class="chip-type">{{ fileTypeLabel(file) }}</span>
+              </span>
+              <button
+                class="chip-remove"
+                type="button"
+                :disabled="sending || uploading || stopping"
+                :aria-label="`移除附件 ${file.name}`"
+                :title="`移除附件 ${file.name}`"
+                @click.stop="removeFile(i, $event)"
+              >
+                <svg class="chip-remove-icon" viewBox="0 0 24 24" fill="none" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+            </article>
+          </div>
         </div>
 
         <div class="input-row">
@@ -278,7 +288,7 @@ import {
   MAX_LOCAL_ATTACHMENT_BYTES,
 } from '../composables/attachmentAdmission'
 import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
-import MarkdownFileIcon from './icons/MarkdownFileIcon.vue'
+import FileTextIcon from './icons/FileTextIcon.vue'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
@@ -317,6 +327,7 @@ const emit = defineEmits<{
 const rootEl = ref<HTMLElement | null>(null)
 const inputEl = ref<InstanceType<typeof ChatMarkdownEditor> | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
+const attachmentListEl = ref<HTMLElement | null>(null)
 const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
 const editorValue = ref(props.modelValue)
@@ -482,6 +493,42 @@ function fileKey(f: File) {
   const admissionToken = String((f as any)?.admission_token || (f as any)?.admissionToken || '').trim()
   return admissionToken ? `admission:${admissionToken}` : `${f.name}-${f.size}-${f.lastModified}`
 }
+function fileTypeLabel(file: File): string {
+  const name = String(file?.name || '')
+  const extension = /\.([^.\s]+)$/u.exec(name)?.[1]?.toLowerCase() || ''
+  if (extension === 'md' || extension === 'markdown') return 'MD'
+  if (extension === 'html' || extension === 'htm') return 'HTML'
+  if (extension) return extension.toUpperCase()
+  const mimePart = String(file?.type || '').split('/').pop()?.trim()
+  return mimePart ? mimePart.toUpperCase() : 'FILE'
+}
+let attachmentScrollLeft = 0
+function rememberAttachmentScroll() {
+  if (attachmentListEl.value) attachmentScrollLeft = attachmentListEl.value.scrollLeft
+}
+function restoreAttachmentScroll() {
+  const list = attachmentListEl.value
+  if (!list) return
+  const maxScrollLeft = Math.max(0, list.scrollWidth - list.clientWidth)
+  list.scrollLeft = Math.min(Math.max(0, attachmentScrollLeft), maxScrollLeft)
+}
+function onAttachmentListKeydown(event: KeyboardEvent) {
+  const list = attachmentListEl.value
+  if (!list) return
+  const distance = Math.max(160, Math.round(list.clientWidth * 0.75))
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault()
+    list.scrollLeft = event.key === 'Home' ? 0 : list.scrollWidth
+    rememberAttachmentScroll()
+    return
+  }
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  const delta = event.key === 'ArrowLeft' ? -distance : distance
+  if (typeof list.scrollBy === 'function') list.scrollBy({ left: delta, behavior: 'smooth' })
+  else list.scrollLeft += delta
+  rememberAttachmentScroll()
+}
 function emitAttachmentNotice(error: string): void {
   const title = String(error || '').trim()
   if (!title) return
@@ -501,12 +548,31 @@ function onFileChange() {
   emitAttachmentNotice(admission.error)
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
-function removeFile(i: number) {
+function removeFile(i: number, event?: Event) {
+  if (props.sending || props.uploading || props.stopping) return
+  const target = event?.currentTarget
+  const shouldRestoreFocus = typeof document !== 'undefined'
+    && typeof HTMLElement !== 'undefined'
+    && target instanceof HTMLElement
+    && document.activeElement === target
   selectedFiles.value = selectedFiles.value.filter((_, idx) => idx !== i)
+  if (!shouldRestoreFocus) return
+  nextTick(() => {
+    const list = attachmentListEl.value
+    if (!list) return
+    const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>('.chip-remove'))
+    const nextButton = buttons[Math.min(i, buttons.length - 1)]
+    if (nextButton) nextButton.focus()
+    else inputEl.value?.focusEditor?.()
+  })
 }
+
+watch(selectedFiles, () => nextTick(restoreAttachmentScroll))
 
 function clearAttachments() {
   selectedFiles.value = []
+  attachmentScrollLeft = 0
+  if (attachmentListEl.value) attachmentListEl.value.scrollLeft = 0
   if (fileInputEl.value) fileInputEl.value.value = ''
 }
 
@@ -751,25 +817,106 @@ defineExpose({ clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(
 .menu-title { padding: 4px 8px; color: #4b5563; font-size: 12px; font-weight: 650; }
 .menu-item { width: 100%; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 10px; border: 0; border-radius: 12px; padding: 8px; color: #171b21; background: transparent; text-align: left; cursor: pointer; }
 .menu-item:hover { background: #f3f4f6; }
-.markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; --markdown-file-icon-font-size: 11px; }
-.markdown-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
-.file-text-icon-container { color: #5f6670; background: #f1f3f5; }
-.file-text-icon { width: 20px; height: 20px; display: block; }
+.markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; }
+.file-text-icon-container { color: #626a74; background: #f3f4f5; }
+.file-text-icon-container :deep(.file-text-icon) { width: 20px; height: 20px; }
 .item-text { display: grid; gap: 1px; }
 .item-text strong { font-size: 13px; font-weight: 700; }
 .item-text span { color: #8a8f98; font-size: 12px; }
 
-.normal-view { display: grid; gap: 6px; }
-.attachment-list { display: none; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
-.attachment-list.is-visible { display: flex; }
-.attachment-chip { display: grid; width: fit-content; max-width: 100%; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px 6px 6px; border: 1px solid #e4e6ea; border-radius: 12px; background: #f9fafb; color: #374151; font-size: 12px; }
-.chip-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; }
-.chip-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
-.chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-remove { width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; color: #6b7280; background: transparent; cursor: pointer; }
-.chip-remove:hover { color: #171b21; background: #e5e7eb; }
+.normal-view { display: grid; gap: 6px; min-width: 0; }
+.attachment-list {
+  display: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 72px;
+  max-height: 72px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  white-space: nowrap;
+  padding: 6px 0 9px;
+  scrollbar-width: thin;
+  scrollbar-color: #cfd3d8 transparent;
+}
+.attachment-list::-webkit-scrollbar { height: 5px; }
+.attachment-list::-webkit-scrollbar-track { background: transparent; }
+.attachment-list::-webkit-scrollbar-thumb { border-radius: 999px; background: #cfd3d8; }
+.attachment-list.is-visible { display: block; }
+.attachment-list:focus-visible { outline: 2px solid rgba(47, 140, 255, .65); outline-offset: 2px; border-radius: 10px; }
+.attachment-list-track {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  height: 52px;
+  min-height: 52px;
+  white-space: nowrap;
+  gap: 8px;
+  padding: 0 1px;
+  box-sizing: border-box;
+}
+.attachment-chip {
+  position: relative;
+  flex: 0 0 224px;
+  width: 224px;
+  min-width: 224px;
+  max-width: 224px;
+  height: 52px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 36px 6px 6px;
+  box-sizing: border-box;
+  border: 1px solid #e1e3e6;
+  border-radius: 14px;
+  background: #fbfbfc;
+  color: #252a31;
+  font-size: 12px;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+.attachment-chip:hover { border-color: #cfd3d8; background: #fff; box-shadow: 0 2px 8px rgba(17, 24, 39, .05); }
+.chip-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #626a74;
+  background: #f3f4f5;
+}
+.chip-icon :deep(.file-text-icon) { width: 24px; height: 24px; }
+.chip-copy { min-width: 0; display: grid; gap: 2px; align-content: center; }
+.chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; line-height: 1.25; }
+.chip-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #707780; font-size: 12px; line-height: 1.2; }
+.chip-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: #171b21;
+  z-index: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+.chip-remove:hover { background: #05070a; transform: scale(1.04); }
+.chip-remove:active { transform: scale(.94); }
+.chip-remove:focus-visible { outline: 2px solid #2f8cff; outline-offset: 2px; }
+.chip-remove:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.chip-remove-icon { width: 12px; height: 12px; display: block; }
 
-.input-row { min-height: 40px; }
+.input-row { min-width: 0; min-height: 40px; }
 .composer-input { width: 100%; min-height: 40px; max-height: 170px; resize: none; border: 0; outline: none; overflow: auto; padding: 3px 2px; color: #171b21; background: transparent; font-size: 14px; font-weight: 400; line-height: 1.5; box-sizing: border-box; }
 .composer-input::placeholder { font-weight: 400; }
 .composer-input::placeholder { color: #9ca3af; }
@@ -847,6 +994,7 @@ defineExpose({ clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(
 }
 
 @media (max-width: 420px) {
+  .attachment-chip { flex-basis: 208px; width: 208px; min-width: 208px; max-width: 208px; }
   .composer-actions { gap: 6px; }
   .model-picker-anchor { max-width: calc(100% - 68px); }
   .model-menu { max-width: calc(100vw - 56px); }
