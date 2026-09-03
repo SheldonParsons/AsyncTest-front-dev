@@ -60,44 +60,6 @@ export interface VibeEvent {
   created_at?: string
 }
 
-export interface VibeLabCase {
-  id: string
-  title: string
-  description: string
-  input_text: string
-  expected: Record<string, any>
-  sort_order: number
-  enabled: boolean
-}
-
-export interface VibeLabAssertion {
-  id: string
-  run_id: string
-  name: string
-  title: string
-  passed: boolean
-  severity: string
-  detail: string
-  expected: Record<string, any>
-  actual: Record<string, any>
-  created_at?: string
-}
-
-export interface VibeLabRun {
-  id: string
-  test_run_id: string
-  case_id?: string
-  vibe_project_id?: string
-  package_id?: string
-  input_text: string
-  status: string
-  trace: Record<string, any>
-  db_diff: Record<string, any>
-  assertions: VibeLabAssertion[]
-  created_at?: string
-  updated_at?: string
-}
-
 export interface VibeLLMProviderConfig {
   id: string
   user_id: number
@@ -139,14 +101,6 @@ export interface VibeLLMSceneConfig {
   default_strength: 'mini' | 'strong'
   strength: 'mini' | 'strong'
   is_overridden?: boolean
-}
-
-export interface VibeLLMRuntimeConfig {
-  schema: 'llm_runtime_selection.v1'
-  session_id: string
-  selected_provider_id: string
-  selection_source: 'session' | 'user' | 'system_default' | 'none'
-  error?: string
 }
 
 export interface VibeLLMModelPickerProvider {
@@ -517,11 +471,6 @@ export function testVibeLLMProvider(providerId: string, payload: { model?: strin
   return request('POST', `/vibe/llm/providers/${providerId}/test`, payload)
 }
 
-export function getVibeLLMRuntimeConfig(sessionId?: string): Promise<VibeLLMRuntimeConfig> {
-  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
-  return request('GET', `/vibe/llm/runtime-config${query}`)
-}
-
 export interface VibeLLMAdminUserDefault {
   id: number
   username: string
@@ -580,258 +529,6 @@ export function updateConvergeConfig(payload: Partial<ConvergeConfig>): Promise<
   return request('PUT', '/vibe/foundation/converge/config', payload)
 }
 
-export function listVibeLabCases(): Promise<VibeLabCase[]> {
-  return request('GET', '/vibe/lab/cases')
-}
-
-export function runVibeLab(payload: {
-  input_text: string
-  vibe_project_id?: string
-  expected?: Record<string, any>
-}): Promise<VibeLabRun> {
-  return request('POST', '/vibe/lab/runs', payload)
-}
-
-export function streamVibeLab(
-  payload: {
-    input_text: string
-    vibe_project_id?: string
-    expected?: Record<string, any>
-  },
-  handlers: Parameters<typeof streamHarnessSse>[2] = {},
-) {
-  return streamHarnessSse('/vibe/lab/runs/stream', payload, handlers)
-}
-
-export function runVibeLabCase(caseId: string, payload: Record<string, any> = {}): Promise<VibeLabRun> {
-  return request('POST', `/vibe/lab/cases/${caseId}/run`, payload)
-}
-
-export function streamVibeLabCase(
-  caseId: string,
-  payload: Record<string, any> = {},
-  handlers: Parameters<typeof streamHarnessSse>[2] = {},
-) {
-  return streamHarnessSse(`/vibe/lab/cases/${caseId}/run/stream`, payload, handlers)
-}
-
-export function getVibeLabRun(runId: string): Promise<VibeLabRun> {
-  return request('GET', `/vibe/lab/runs/${runId}`)
-}
-
-export function confirmVibeLabRun(runId: string): Promise<VibeLabRun> {
-  return request('POST', `/vibe/lab/runs/${runId}/confirm`, {})
-}
-
-export function cleanupVibeLabRun(runId: string): Promise<VibeLabRun> {
-  return request('POST', `/vibe/lab/runs/${runId}/cleanup`, {})
-}
-
-// =====================================================================
-// Lab v2 — sessions / messages stream / overview / cleanup-all
-// =====================================================================
-
-export type VibeLabCardType =
-  | 'answer'
-  | 'sources'
-  | 'clarify'
-  | 'package'
-  | 'tool_plan'
-  | 'tool_result'
-  | 'test_draft'
-  | 'trace'
-
-export interface VibeLabCard {
-  id: string
-  type: VibeLabCardType
-  title?: string
-  [key: string]: any
-}
-
-export interface VibeLabTask {
-  id: string
-  status: string
-  mode?: string
-  intent?: string | null
-  user_event_id?: string | null
-  assistant_event_id?: string | null
-  created_at?: string
-  updated_at?: string
-  cards?: VibeLabCard[]
-  run_ids?: string[]
-}
-
-export interface VibeLabSessionSummary {
-  id: string
-  title: string
-  focus: string
-  status: string
-  user_id: number
-  created_at?: string
-  updated_at?: string
-  last_event_at?: string | null
-  stats: {
-    user_msgs: number
-    assistant_msgs: number
-    runs?: { total: number; by_status: Record<string, number> }
-  }
-}
-
-export interface VibeLabSessionDetail extends VibeLabSessionSummary {
-  events: VibeEvent[]
-  tasks: VibeLabTask[]
-  runs: VibeLabRun[]
-}
-
-export interface VibeLabOverviewSummary {
-  project_id: string
-  project_name: string
-  baseline: Record<string, any>
-  totals: {
-    facts: number
-    relations: number
-    context_notes: number
-    candidate_assets: number
-    impact_records: number
-    pending_questions: number
-    silent_facts: number
-  }
-  facts_by_type: Record<string, number>
-}
-
-export interface VibePagedResult<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface VibeLabGraphNode {
-  id: string
-  kind: 'fact'
-  fact_type: string
-  label: string
-  summary: string
-  content?: string
-  status: string
-  meta?: Record<string, any>
-}
-
-export interface VibeLabGraphEdge {
-  id: string
-  source: string
-  target: string
-  relation_type: string
-  label: string
-  status: string
-  strength?: string
-  description?: string
-  meta?: Record<string, any>
-}
-
-export interface VibeLabGraph {
-  nodes: VibeLabGraphNode[]
-  edges: VibeLabGraphEdge[]
-  stats: {
-    facts: number
-    relations: number
-    isolated: number
-    mode: 'focus' | 'all'
-    depth: number
-    include_isolated: boolean
-    total_facts: number
-    total_relations: number
-    broken_relations: number
-  }
-  warnings?: Array<Record<string, any>>
-}
-
-export function listVibeLabSessions(params: { keyword?: string; limit?: number } = {}): Promise<VibeLabSessionSummary[]> {
-  const usp = new URLSearchParams()
-  if (params.keyword) usp.set('keyword', params.keyword)
-  if (params.limit) usp.set('limit', String(params.limit))
-  const qs = usp.toString()
-  return request('GET', `/vibe/lab/sessions${qs ? `?${qs}` : ''}`)
-}
-
-export function createVibeLabSession(title?: string): Promise<VibeLabSessionSummary> {
-  return request('POST', '/vibe/lab/sessions', { title: title || '' })
-}
-
-export function getVibeLabSession(sessionId: string): Promise<VibeLabSessionDetail> {
-  return request('GET', `/vibe/lab/sessions/${sessionId}`)
-}
-
-export function renameVibeLabSession(sessionId: string, title: string): Promise<VibeLabSessionDetail> {
-  return request('PATCH', `/vibe/lab/sessions/${sessionId}`, { title })
-}
-
-export function deleteVibeLabSession(sessionId: string): Promise<{ ok: boolean }> {
-  return request('DELETE', `/vibe/lab/sessions/${sessionId}`)
-}
-
-export function streamVibeLabMessage(
-  sessionId: string,
-  payload: { text: string; mode: 'chat' | 'ingest'; task_id?: string },
-  handlers: Parameters<typeof streamHarnessSse>[2] = {},
-) {
-  return streamHarnessSse(`/vibe/lab/sessions/${sessionId}/messages/stream`, payload, handlers)
-}
-
-export function getVibeLabOverview(): Promise<VibeLabOverviewSummary> {
-  return request('GET', '/vibe/lab/overview')
-}
-
-export function getVibeLabOverviewFacts(params: { fact_type?: string; keyword?: string; page?: number; page_size?: number } = {}): Promise<VibePagedResult<any>> {
-  const usp = new URLSearchParams()
-  if (params.fact_type) usp.set('fact_type', params.fact_type)
-  if (params.keyword) usp.set('keyword', params.keyword)
-  if (params.page) usp.set('page', String(params.page))
-  if (params.page_size) usp.set('page_size', String(params.page_size))
-  const qs = usp.toString()
-  return request('GET', `/vibe/lab/overview/facts${qs ? `?${qs}` : ''}`)
-}
-
-export function getVibeLabOverviewRelations(page = 1, pageSize = 50): Promise<VibePagedResult<any>> {
-  return request('GET', `/vibe/lab/overview/relations?page=${page}&page_size=${pageSize}`)
-}
-
-export function getVibeLabGraph(params: { mode?: 'focus' | 'all'; fact_id?: string; depth?: 1 | 2; include_isolated?: boolean } = {}): Promise<VibeLabGraph> {
-  const usp = new URLSearchParams()
-  if (params.mode) usp.set('mode', params.mode)
-  if (params.fact_id) usp.set('fact_id', params.fact_id)
-  if (params.depth) usp.set('depth', String(params.depth))
-  if (params.include_isolated != null) usp.set('include_isolated', params.include_isolated ? 'true' : 'false')
-  const qs = usp.toString()
-  return request('GET', `/vibe/lab/graph${qs ? `?${qs}` : ''}`)
-}
-
-export function getVibeLabOverviewNotes(page = 1, pageSize = 50): Promise<VibePagedResult<any>> {
-  return request('GET', `/vibe/lab/overview/context-notes?page=${page}&page_size=${pageSize}`)
-}
-
-export function getVibeLabOverviewCandidates(params: { asset_type?: string; keyword?: string; page?: number; page_size?: number } = {}): Promise<VibePagedResult<any>> {
-  const usp = new URLSearchParams()
-  if (params.asset_type) usp.set('asset_type', params.asset_type)
-  if (params.keyword) usp.set('keyword', params.keyword)
-  if (params.page) usp.set('page', String(params.page))
-  if (params.page_size) usp.set('page_size', String(params.page_size))
-  const qs = usp.toString()
-  return request('GET', `/vibe/lab/overview/candidate-assets${qs ? `?${qs}` : ''}`)
-}
-
-export function getVibeLabOverviewImpacts(page = 1, pageSize = 50): Promise<VibePagedResult<any>> {
-  return request('GET', `/vibe/lab/overview/impacts?page=${page}&page_size=${pageSize}`)
-}
-
-export function getVibeLabOverviewQuestions(status = 'pending', page = 1, pageSize = 50): Promise<VibePagedResult<any>> {
-  return request('GET', `/vibe/lab/overview/questions?status=${encodeURIComponent(status)}&page=${page}&page_size=${pageSize}`)
-}
-
-export function cleanupAllVibeLab(confirmToken: string): Promise<{ ok: boolean; project_id: string; deleted: Record<string, number> }> {
-  return request('POST', '/vibe/lab/cleanup-all', { confirm_token: confirmToken })
-}
-
 // Electron 本机 Run 元数据；对话执行与生命周期控制均通过 IPC，不再暴露服务端 Turn API。
 export interface FoundationAgentRun {
   schema: 'electron_agent_run.v1'
@@ -846,7 +543,7 @@ export interface FoundationAgentRun {
   journal_delta?: Record<string, any>
   state?: string
   execution_mode?: 'local'
-  provider_mode?: 'proxy' | 'direct'
+  provider_mode?: 'direct'
   trace_id?: string
   goal_id?: string
   start_payload?: Record<string, any>
@@ -885,12 +582,6 @@ export function listRemoteAgentTraces(params: { limit?: number; cursor?: string 
 export function getRemoteAgentTrace(traceId: string, view: 'detail' | 'raw' = 'detail'): Promise<Record<string, any> | Blob> {
   if (view === 'raw') return harnessBlobRequest(`/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}?view=raw`).then(({ blob }) => blob)
   return request('GET', `/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}`)
-}
-
-export function getRemoteAgentTracePayload(traceId: string, payloadId: string): Promise<Blob> {
-  return harnessBlobRequest(
-    `/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}/payload/${encodeURIComponent(payloadId)}`,
-  ).then(({ blob }) => blob)
 }
 
 export function getFoundationKnowledgeStatsMany(

@@ -128,42 +128,6 @@ export async function harnessRequest<T = any>(method: string, path: string, body
   }
 }
 
-/**
- * Vibe 私有附件上传专用 multipart 请求。
- * 不设置 Content-Type，让浏览器为 FormData 生成带 boundary 的请求头。
- */
-export async function harnessMultipartRequest<T = any>(
-  method: string,
-  path: string,
-  body: FormData,
-  headers: Record<string, string> = {},
-): Promise<T> {
-  const response = await fetch(buildUrl(path), {
-    method,
-    headers: {
-      ...getAuthHeader(),
-      ...headers,
-    },
-    body,
-  })
-  const raw = await response.text().catch(() => '')
-  let payload: any = null
-  try {
-    payload = raw ? JSON.parse(raw) : null
-  } catch {
-    payload = raw
-  }
-  if (!response.ok) {
-    await handleAuthenticationFailure(response.status, payload, { forceVibe: true })
-    const message = typeof payload?.error?.detail === 'string'
-      ? payload.error.detail
-      : (typeof payload?.detail === 'string' ? payload.detail : (raw || `HTTP ${response.status}`))
-    throw new Error(message)
-  }
-  if (!payload || typeof payload !== 'object') throw new Error('附件上传响应无效')
-  return payload as T
-}
-
 export interface HarnessBlobDownload {
   blob: Blob
   filename: string
