@@ -113,9 +113,8 @@ export interface VibeLLMModelPickerProvider {
 
 export interface VibeLLMModelPicker {
   schema: 'llm_model_picker.v1'
-  session_id: string
   selected_provider_id: string
-  selection_source: 'session' | 'user' | 'system_default' | 'none'
+  selection_source: 'user' | 'system_default' | 'none'
   providers: VibeLLMModelPickerProvider[]
 }
 
