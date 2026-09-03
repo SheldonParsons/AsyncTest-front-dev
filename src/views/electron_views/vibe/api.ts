@@ -1082,20 +1082,7 @@ export function cleanupAllVibeLab(confirmToken: string): Promise<{ ok: boolean; 
   return request('POST', '/vibe/lab/cleanup-all', { confirm_token: confirmToken })
 }
 
-// ===== 第四代主对话管线 =====
-
-/** 主入口：后端先做意图分析（提问/录入/混合），再自动路由 ingest/recall */
-export function streamFoundationTurn(
-  // seed_messages：回答上一轮反问时回传的"挂起草稿"，让后端【续跑同一思考】（不另起新轮）。
-  // continuation_parent_id：把续跑轮的事件挂到上一轮反问那条 assistant 之下，前端渲染成同一条思考。
-  // attachments：只携带已上传完成的 attachment_resource_ref.v1，不携带文件正文。
-  // apply_edit：确认时只回传服务端 confirmation_id；客户端预览内容不参与写入。
-  payload: { project: string; text: string; session_id?: string; llm_provider_id?: string; budget_chars?: number; seed_messages?: any[]; continuation_parent_id?: string; attachments?: VibeAttachmentResourceRef[]; apply_edit?: any; clarification_cancel?: boolean; clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string } },
-  handlers: Parameters<typeof streamHarnessSse>[2] = {},
-) {
-  return streamHarnessSse('/vibe/foundation/turn/stream', payload, handlers)
-}
-
+// Electron 本机 Run 元数据；对话执行与生命周期控制均通过 IPC，不再暴露服务端 Turn API。
 export interface FoundationAgentRun {
   schema: 'electron_agent_run.v1'
   execution_host: 'electron' | 'server'
@@ -1156,95 +1143,6 @@ export function getRemoteAgentTracePayload(traceId: string, payloadId: string): 
   return harnessBlobRequest(
     `/vibe/foundation/agent-traces/${encodeURIComponent(traceId)}/payload/${encodeURIComponent(payloadId)}`,
   ).then(({ blob }) => blob)
-}
-
-export function respondFoundationTurnInteraction(payload: {
-  project: string
-  session_id: string
-  turn_id: string
-  interaction_id?: string
-  confirmation_id?: string
-  action?: 'apply' | 'cancel' | 'stop_all'
-  clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
-}): Promise<{
-  ok: boolean
-  accepted: boolean
-  turn_id: string
-  interaction_id?: string
-  confirmation_id?: string
-  response_digest?: string
-}> {
-  return request('POST', '/vibe/foundation/turn/input', payload)
-}
-
-export interface FoundationRunningTurn {
-  turn_id: string
-  session_id: string
-  project: string
-  done: boolean
-  runtime_state?: 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed' | 'interrupted'
-  stop_metadata?: { source?: string; reason?: string; scope?: string; requested_at?: number; detail?: string }
-  commit_state?: 'not_started' | 'in_transaction' | 'committed' | 'rolled_back'
-  failed?: string
-  last_sequence?: number
-  replay_ready?: boolean
-  started_at?: number
-  updated_at?: number
-  deadline_at?: number
-  protocol_state?: 'queued' | 'running' | 'waiting_user' | 'cancelling' | 'cancelled' | 'interrupted' | 'succeeded' | 'failed'
-}
-
-export interface FoundationTurnReplay {
-  projection: 'journal_delta.v1'
-  turn_id: string
-  state: 'queued' | 'running' | 'waiting_user' | 'cancelling' | 'cancelled' | 'interrupted' | 'succeeded' | 'failed'
-  terminal: string | null
-  journal: {
-    after_sequence: number
-    events: any[]
-    latest_sequence: number
-    delivered_through_sequence: number
-    has_more: boolean
-  }
-}
-
-export interface FoundationCancelResult {
-  ok: boolean
-  accepted: boolean
-  cancelled: boolean
-  idempotent?: boolean
-  current_state: string
-  reason: string
-  committed: boolean
-}
-
-export function listFoundationRunningTurns(params: { project?: string; session_id?: string } = {}): Promise<{ items: FoundationRunningTurn[] }> {
-  const query = new URLSearchParams()
-  if (params.project) query.set('project', params.project)
-  if (params.session_id) query.set('session_id', params.session_id)
-  const qs = query.toString()
-  return request('GET', `/vibe/foundation/turn/running${qs ? `?${qs}` : ''}`)
-}
-
-/** 权威 Turn Journal；running lease 只提供身份，首次全量、后续按 sequence 增量恢复。 */
-export function replayFoundationTurn(params: {
-  turn_id: string
-  session_id: string
-  after_sequence?: number
-  last_event_id?: string
-}): Promise<FoundationTurnReplay> {
-  const query = new URLSearchParams()
-  query.set('turn_id', params.turn_id)
-  query.set('session_id', params.session_id)
-  query.set('projection', 'journal_delta')
-  query.set('after_sequence', String(Math.max(0, Math.floor(Number(params.after_sequence) || 0))))
-  if (params.last_event_id) query.set('last_event_id', params.last_event_id)
-  return request('GET', `/vibe/foundation/turn/replay?${query.toString()}`)
-}
-
-/** T26 停止本轮：置位后端取消令牌。流会自己发 cancelled+已停止回执+done 正常收尾，无需 abort。 */
-export function cancelFoundationTurn(turnId: string, sessionId = ''): Promise<FoundationCancelResult> {
-  return request('POST', '/vibe/foundation/turn/cancel', { turn_id: turnId, session_id: sessionId })
 }
 
 export function getFoundationKnowledgeStatsMany(

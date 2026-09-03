@@ -693,7 +693,6 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
-import { HarnessRequestError } from '@/api/harness'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
 import ProjectSwitchDialog from './components/ProjectSwitchDialog.vue'
@@ -759,15 +758,12 @@ import {
   attachLocalTurnPresentation,
   localTurnPresentation,
   preferredProcessDuration,
-  classifyTurnRecoveryReplay,
-  classifyTurnReplayGap,
   refreshAssistantTurnPresentation,
   shouldShowMissingTerminalNotice,
 } from './turnPresentationPolicy'
 import {
   autoTitleVibeSession,
   createVibeSession,
-  deleteVibeAttachmentResource,
   deleteVibeSession,
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
@@ -776,27 +772,18 @@ import {
   listVibeEvents,
   listVibeSessions,
   downloadVibeSessionEventAttachment,
-  listFoundationRunningTurns,
-  replayFoundationTurn,
   getKnowledgeCommit,
   getKnowledgeCommits,
   getVibeSessionSource,
   getVibeSessionSourceFragment,
   streamKnowledgeActivity,
-  streamFoundationTurn,
-  respondFoundationTurnInteraction,
-  cancelFoundationTurn,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
   updateVibeSession,
-  uploadVibeAttachmentResource,
-  type FoundationRunningTurn,
   type FoundationAgentRun,
-  type FoundationTurnReplay,
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
   type VibeAttachment,
-  type VibeAttachmentResourceRef,
   type VibeEvent,
   type VibeLLMModelPickerProvider,
   type VibeProject,
@@ -806,7 +793,6 @@ import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 type VibeAgentEvent = Record<string, any>
 import {
   collectKnowledgeStatsProjectIds,
-  hasKnowledgeWriteCommit,
   knowledgeStatsProjectId,
   readKnowledgeStats,
   writeKnowledgeStats,
@@ -2747,23 +2733,6 @@ const draft = computed<string>({
 // foundation 新管线（知识库前端唯一管线，不再有灰度开关）
 const foundationBusy = ref(false)
 const runningSessionIds = ref<string[]>([])
-const runningTurns = ref<FoundationRunningTurn[]>([])
-const recoveredTurnId = ref('')
-interface TurnReplayRecoveryState {
-  protocolState: TurnProtocolState
-  seenEventIds: Set<string>
-  latestSequence: number
-  lastEventId: string
-  seenRunning: boolean
-  leaseMissingAt: number | null
-  initialized: boolean
-  broken: boolean
-  terminalModel: TurnProtocolReadModel | null
-  terminalBridgeStartedAt: number | null
-  terminalBridgeAttempts: number
-  terminalBridgeExhausted: boolean
-}
-const turnReplayRecoveryStates = new Map<string, TurnReplayRecoveryState>()
 // 临时过程区必须有明确会话所有者。窗口级 busy 只表示本窗口有请求，不能决定当前会话显示什么。
 const streamingOwnerSessionId = ref('')
 // 仅用于 event_saved 前的本地展示，不写入 events，也不参与 Canonical reducer。
@@ -3408,14 +3377,11 @@ async function stopFoundationTurn() {
       }
       return
     }
-    const result = await cancelFoundationTurn(
-      targetTurnId,
-      activeSessionId.value,
-    )
-    if (!result.accepted && result.current_state !== 'cancel_requested') {
-      cancelRequested.value = false
-    }
-    // 不 abort 流：后端置位后会自己发 cancelled + 已停止回执 + done 正常收尾
+    // Local Pi has no server-side Turn owner. If the local Run disappeared
+    // between the button press and this check, keep the identity unconfirmed
+    // instead of sending it to the retired server cancel endpoint.
+    cancelRequested.value = false
+    ElMessage.error('本地 Agent 状态暂时不可用，请稍后重试停止。')
   } catch { cancelRequested.value = false /* 失败允许再点 */ }
 }
 // “已处理”计时由 Canonical 业务生命周期驱动，不使用旧 process_done，也不以 SSE 关闭代替 terminal。
@@ -3567,16 +3533,11 @@ const activeConversationRailIndex = computed(() => {
 const sending = computed(() =>
   projectSwitchPhase.value === 'working'
   || preparingSend.value
-  || (!useLocalPiAgent() && foundationBusy.value)
-  || (!useLocalPiAgent() && sendingSessionIds.value.length > 0)
+  || foundationBusy.value
+  || sendingSessionIds.value.length > 0
   || activeSessionSending.value,
 )
 const composerPlaceholder = computed(() => '随心输入')
-const KNOWLEDGE_WRITE_ACTIONS = new Set(['save', 'insert', 'edit', 'delete', 'delete_many', 'cascade_apply'])
-function turnMayChangeKnowledge(actions: string[], applyEdit?: any) {
-  return applyEdit?.kind === 'knowledge_change'
-    || actions.some(action => KNOWLEDGE_WRITE_ACTIONS.has(String(action || '').trim()))
-}
 // 询问模式（Codex 反问）：后端 ask_clarification（录入纪律"这段要不要记进知识库"拿不准时）→ 输入框变选项
 // pending = 后端反问挂起时的"思考草稿"；用户回答时原样回传 → 续跑同一思考（不另起新轮）。
 const clarificationActive = ref<{ question: string; raw?: any; pending?: any[] } | null>(null)
@@ -4084,7 +4045,6 @@ function resetProjectConversationState() {
   stopElapsedTicker()
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
-  recoveredTurnId.value = ''
   streamingOwnerSessionId.value = ''
   activeTurnId.value = ''
   activeTurnSessionId.value = ''
@@ -4096,7 +4056,6 @@ function resetProjectConversationState() {
   sendingSessionIds.value = []
   runningSessionIds.value = []
   localSessionRunStates.value = {}
-  runningTurns.value = []
   currentView.value = 'conversation'
 }
 
@@ -4121,11 +4080,9 @@ interface ProjectContextSnapshot {
   llmProviders: VibeLLMModelPickerProvider[]
   sendingSessionIds: string[]
   runningSessionIds: string[]
-  runningTurns: FoundationRunningTurn[]
   foundationBusy: boolean
   activeTurnId: string
   activeTurnSessionId: string
-  recoveredTurnId: string
   streamingOwnerSessionId: string
   cancelRequested: boolean
   pendingUserSubmissionText: string
@@ -4181,11 +4138,9 @@ function captureProjectContextSnapshot(): ProjectContextSnapshot {
     llmProviders: [...llmProviders.value],
     sendingSessionIds: [...sendingSessionIds.value],
     runningSessionIds: [...runningSessionIds.value],
-    runningTurns: [...runningTurns.value],
     foundationBusy: foundationBusy.value,
     activeTurnId: activeTurnId.value,
     activeTurnSessionId: activeTurnSessionId.value,
-    recoveredTurnId: recoveredTurnId.value,
     streamingOwnerSessionId: streamingOwnerSessionId.value,
     cancelRequested: cancelRequested.value,
     pendingUserSubmissionText: pendingUserSubmissionText.value,
@@ -4248,11 +4203,9 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
   llmProviders.value = [...snapshot.llmProviders]
   sendingSessionIds.value = [...snapshot.sendingSessionIds]
   runningSessionIds.value = [...snapshot.runningSessionIds]
-  runningTurns.value = [...snapshot.runningTurns]
   foundationBusy.value = snapshot.foundationBusy
   activeTurnId.value = snapshot.activeTurnId
   activeTurnSessionId.value = snapshot.activeTurnSessionId
-  recoveredTurnId.value = snapshot.recoveredTurnId
   streamingOwnerSessionId.value = snapshot.streamingOwnerSessionId
   cancelRequested.value = snapshot.cancelRequested
   pendingUserSubmissionText.value = snapshot.pendingUserSubmissionText
@@ -4554,25 +4507,16 @@ async function openSession(sessionId: string, preloadedEvents: VibeEvent[] | nul
   currentView.value = 'conversation'
   processExpanded.value = false
   stopElapsedTicker()
-  recoveredTurnId.value = ''
   streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
   const currentSession = sessions.value.find(item => item.id === sessionId)
   selectedLlmProviderId.value = currentSession?.llm_provider_id || selectedLlmProviderId.value
   void loadModelConfig(sessionId).catch(() => {})
-  // 切回正在答题的会话时，先用上一帧 running 快照立刻把"正在思考"接上，
-  // 不等历史事件请求返回 —— 否则这段等待期内回复区是空的，看起来像思考中断，
-  // 直到答案一次性蹦出来。快照来自 refreshProjectRunningTurns 的轮询缓存。
-  const cachedTurn = runningTurns.value.find(
-    item => String(item.session_id || '') === sessionId,
-  ) || null
-  if (cachedTurn) adoptRunningTurnLease(cachedTurn)
   try {
-    // 历史事件与 running 快照并行取，谁先回来谁先渲染。
-    const runningRefresh = sessionId.startsWith('session_')
-      ? refreshLocalAgentStatuses().catch(() => {})
-      : refreshProjectRunningTurns().catch(() => {})
+    // Local Agent status and history are both client-owned; refresh them in
+    // parallel while the session event projection loads.
+    const runningRefresh = refreshLocalAgentStatuses().catch(() => {})
     const electronRecovery = recoverElectronAgentRun(sessionId).catch(() => {})
     const loadedEvents = preloadedEvents || await requestSessionEvents(sessionId)
     if (epoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch || activeSessionId.value !== sessionId) return false
@@ -4687,617 +4631,20 @@ function applyCanonicalReadModel(model: TurnProtocolReadModel) {
 async function refreshProjectRunningTurns() {
   if (!vibeProject.value?.id) {
     runningSessionIds.value = []
-    runningTurns.value = []
     return
   }
   if (runningTurnPollInFlight) return
   runningTurnPollInFlight = true
   const contextEpoch = projectContextEpoch
-  if (localPiAgentEnabled() || sessions.value.some(item => String(item.id || '').startsWith('session_'))) {
-    try {
-      await refreshLocalAgentStatuses()
-      runningSessionIds.value = []
-      runningTurns.value = []
-    } finally {
-      runningTurnPollInFlight = false
-      if (contextEpoch === projectContextEpoch) scheduleRunningTurnPolling()
-    }
-    return
-  }
-  // 后端按 row["project"] 精确比对，而发起提问时存进去的是
-  // knowledgeStatsProjectId(selectedProjectId) —— AsyncTest 数字 ID。
-  // 这里若用 vibeProject.id（UUID）查，永远匹配不上、items 恒为空，
-  // 复接就拿不到运行快照（切回会话看不到"正在思考"的真正原因）。
-  const projectId = knowledgeStatsProjectId(selectedProjectId.value)
-    || String(vibeProject.value.id)
-  const guardId = String(vibeProject.value.id)
   try {
-    const res = await listFoundationRunningTurns({ project: projectId })
-    if (contextEpoch !== projectContextEpoch || String(vibeProject.value?.id || '') !== guardId) return
-    const items = Array.isArray(res.items) ? res.items : []
-    const previousIds = new Set(runningSessionIds.value)
-    runningTurns.value = items
-    runningSessionIds.value = Array.from(new Set(items
-      .map(item => String(item.session_id || ''))
-      .filter(Boolean)))
-    if (Array.from(previousIds).some(id => !runningSessionIds.value.includes(id))) {
-      void loadCurrentKbStats()
-    }
-    await recoverRunningTurnForSession(activeSessionId.value, items)
+    await refreshLocalAgentStatuses()
+    if (contextEpoch === projectContextEpoch) runningSessionIds.value = []
   } catch {
-    // 短暂网络失败时保留上一帧，避免所有运行图标闪烁消失。
+    // 短暂 Main/IPC 失败时保留上一帧，避免运行图标闪烁消失。
   } finally {
     runningTurnPollInFlight = false
     if (contextEpoch === projectContextEpoch) scheduleRunningTurnPolling()
   }
-}
-
-function turnReplayRecoveryState(turnId: string): TurnReplayRecoveryState {
-  const existing = turnReplayRecoveryStates.get(turnId)
-  if (existing) return existing
-  const created: TurnReplayRecoveryState = {
-    protocolState: createTurnProtocolState(),
-    seenEventIds: new Set<string>(),
-    latestSequence: 0,
-    lastEventId: '',
-    seenRunning: false,
-    leaseMissingAt: null,
-    initialized: false,
-    broken: false,
-    terminalModel: null,
-    terminalBridgeStartedAt: null,
-    terminalBridgeAttempts: 0,
-    terminalBridgeExhausted: false,
-  }
-  turnReplayRecoveryStates.set(turnId, created)
-  return created
-}
-
-function adoptRunningTurnLease(turn: FoundationRunningTurn) {
-  const turnId = String(turn.turn_id || '')
-  const sessionId = String(turn.session_id || '')
-  if (!turnId || !sessionId || activeSessionId.value !== sessionId) return
-  const changingTurn = recoveredTurnId.value !== turnId
-  streamingOwnerSessionId.value = sessionId
-  activeTurnSessionId.value = sessionId
-  const startedAt = Number(turn.started_at || 0) > 0 ? Number(turn.started_at) * 1000 : Date.now()
-  if (changingTurn) {
-    recoveredTurnId.value = turnId
-    startElapsedTicker(startedAt)
-    resetProcessState(streamingProcess)
-    streamingAssistantEventId.value = ''
-    streamingAssistantContent.value = ''
-    streamingSources.value = []
-    streamingVerification.value = null
-    streamingCanonicalModel.value = null
-  }
-  activeTurnId.value = turnId
-  cancelRequested.value = turn.runtime_state === 'cancel_requested'
-    || turn.protocol_state === 'cancelling'
-  const recovery = turnReplayRecoveryState(turnId)
-  recovery.seenRunning = true
-  recovery.leaseMissingAt = null
-  if (!recovery.broken) {
-    streamingProcess.status = 'running'
-    streamingTransportNotice.value = null
-  }
-}
-
-interface TurnRecoveryRequestGuard {
-  epoch: number
-  projectId: string
-  sessionId: string
-  turnId: string
-}
-
-function turnRecoveryRequestIsCurrent(guard: TurnRecoveryRequestGuard): boolean {
-  if (sessionRequestEpoch !== guard.epoch) return false
-  if (String(vibeProject.value?.id || '') !== guard.projectId) return false
-  if (activeSessionId.value !== guard.sessionId) return false
-  if (streamingOwnerSessionId.value !== guard.sessionId) return false
-  return [
-    recoveredTurnId.value,
-    activeTurnId.value,
-    streamingCanonicalModel.value?.turnId,
-  ].some(value => String(value || '') === guard.turnId)
-}
-
-function refreshRecoveredAssistantPresentation(
-  sessionId: string,
-  model: TurnProtocolReadModel,
-  terminalPending: boolean,
-): boolean {
-  const input = {
-    assistantEventId: streamingAssistantEventId.value,
-    sessionId,
-    model,
-    observedDurationMs: Math.max(streamingElapsedMs.value, streamingProcess.durationMs),
-    terminalPending,
-  }
-  const refreshed = refreshAssistantTurnPresentation(events.value, input)
-    || (() => {
-      const event = events.value.find(item =>
-        String(item?.role || '') === 'assistant'
-        && String(item?.session_id || '') === sessionId
-        && eventTurnProtocol(item)?.turnId === model.turnId)
-      return event
-        ? attachLocalTurnPresentation(event as unknown as Record<string, any>, model, input.observedDurationMs, { terminalPending })
-        : null
-    })()
-  if (!refreshed) return false
-  streamingAssistantEventId.value = String(refreshed.id || streamingAssistantEventId.value)
-  upsertEvent(refreshed as VibeEvent)
-  return true
-}
-
-function releaseRecoveredTurnOwner(sessionId: string) {
-  const turnId = String(
-    recoveredTurnId.value || activeTurnId.value || streamingCanonicalModel.value?.turnId || '',
-  )
-  if (turnId) turnReplayRecoveryStates.delete(turnId)
-  setSessionRunning(sessionId, false)
-  stopElapsedTicker()
-  activeTurnId.value = ''
-  activeTurnSessionId.value = ''
-  recoveredTurnId.value = ''
-  streamingAssistantEventId.value = ''
-  streamingOwnerSessionId.value = ''
-  cancelRequested.value = false
-  clearStreamingAssistant()
-  resetProcessState(streamingProcess)
-}
-
-function markRecoveredTurnBroken(
-  sessionId: string,
-  model: TurnProtocolReadModel | null,
-  notice: TurnTransportNotice,
-  turnId = '',
-) {
-  const recovery = turnReplayRecoveryStates.get(String(turnId || ''))
-  if (recovery) recovery.broken = true
-  if (model) refreshRecoveredAssistantPresentation(sessionId, model, false)
-  setSessionRunning(sessionId, false)
-  stopElapsedTicker()
-  activeTurnId.value = ''
-  activeTurnSessionId.value = ''
-  recoveredTurnId.value = ''
-  streamingAssistantEventId.value = ''
-  cancelRequested.value = false
-  streamingProcess.status = 'done'
-  streamingTransportNotice.value = notice
-}
-
-const TURN_REPLAY_MAX_PAGES_PER_POLL = 8
-const TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS = 12
-const TERMINAL_HISTORY_BRIDGE_MAX_MS = 30_000
-
-function turnReplayFailureFacts(reason: unknown): {
-  status: number
-  code: string
-  retryable: boolean | null
-} {
-  if (!(reason instanceof HarnessRequestError)) return { status: 0, code: '', retryable: null }
-  return { status: reason.status, code: reason.code, retryable: reason.retryable }
-}
-
-function turnReplayLeaseMissingForMs(recovery: TurnReplayRecoveryState): number {
-  if (recovery.leaseMissingAt === null) return 0
-  return Math.max(0, Date.now() - recovery.leaseMissingAt)
-}
-
-function keepRecoveredTurnPending(sessionId: string) {
-  setSessionRunning(sessionId, true)
-  streamingProcess.status = 'running'
-  streamingTransportNotice.value = null
-}
-
-function keepRecoveredTerminalBridgePending(
-  sessionId: string,
-  turnId: string,
-  model: TurnProtocolReadModel,
-  assistantAttached: boolean,
-) {
-  // Canonical terminal 已足以展示答案，但只有正式 history assistant envelope 才能
-  // 接管持久化气泡。在它出现前保留同一 overlay/owner；不合成本地第二份答案。
-  streamingOwnerSessionId.value = sessionId
-  activeTurnId.value = turnId
-  activeTurnSessionId.value = sessionId
-  recoveredTurnId.value = turnId
-  // refreshRecoveredAssistantPresentation 可能已经把同 Turn 模型挂到一个合法
-  // assistant 气泡；history 暂时失败时保留该绑定，避免气泡与 standalone overlay 双显。
-  if (!assistantAttached) streamingAssistantEventId.value = ''
-  applyCanonicalReadModel(model)
-  streamingProcess.status = 'done'
-  streamingTransportNotice.value = null
-  setSessionRunning(sessionId, true)
-}
-
-function recoveredTerminalAssistantIsAttached(sessionId: string, turnId: string): boolean {
-  const assistantEventId = String(streamingAssistantEventId.value || '')
-  return !!assistantEventId && events.value.some(event =>
-    String(event?.id || '') === assistantEventId
-    && String(event?.role || '') === 'assistant'
-    && String(event?.session_id || '') === sessionId
-    && eventTurnProtocol(event)?.turnId === turnId)
-}
-
-function exhaustRecoveredTerminalBridge(
-  sessionId: string,
-  turnId: string,
-  model: TurnProtocolReadModel,
-  assistantAttached: boolean,
-) {
-  const recovery = turnReplayRecoveryState(turnId)
-  const newlyExhausted = !recovery.terminalBridgeExhausted
-  recovery.terminalBridgeExhausted = true
-  keepRecoveredTerminalBridgePending(sessionId, turnId, model, assistantAttached)
-  setSessionRunning(sessionId, false)
-  streamingProcess.status = 'done'
-  streamingTransportNotice.value = {
-    kind: 'connection',
-    title: '本轮结果已恢复，但保存状态尚未确认',
-    detail: '页面已保留权威 Canonical 答案；会话历史尚未提供同一 Turn 的正式回答记录，已停止自动重试。',
-  }
-  if (newlyExhausted) {
-    showComposerToast({
-      title: '本轮答案已保留，但保存状态尚未确认',
-      type: 'info',
-      duration: 5000,
-    })
-  }
-}
-
-async function bridgeRecoveredTerminalHistory(
-  sessionId: string,
-  turnId: string,
-  model: TurnProtocolReadModel,
-  recoveryGuard: TurnRecoveryRequestGuard,
-) {
-  // 每次 poll 最多做一次 history bridge；Canonical terminal 已缓存，不再重放 Journal。
-  const recovery = turnReplayRecoveryState(turnId)
-  const assistantAttachedBeforeRequest = recoveredTerminalAssistantIsAttached(sessionId, turnId)
-  if (recovery.terminalBridgeExhausted) {
-    // 自动 bridge 已耗尽后不再请求 history；但项目/会话的其他正常刷新仍可能
-    // 把同 Turn 正式 assistant 带入当前 events。此时让该气泡接管并释放 overlay，
-    // 避免永久保留“历史气泡 + Canonical overlay”的双显状态。
-    const currentHistoryHasTurnAssistant = events.value.some(event =>
-      String(event?.role || '') === 'assistant'
-      && String(event?.session_id || '') === sessionId
-      && eventTurnProtocol(event)?.turnId === turnId)
-    const currentHistoryOwnsTurn = currentHistoryHasTurnAssistant
-      && refreshRecoveredAssistantPresentation(sessionId, model, false)
-    if (currentHistoryOwnsTurn) {
-      releaseRecoveredTurnOwner(sessionId)
-      await scrollBottomIfFollowing()
-      return
-    }
-    exhaustRecoveredTerminalBridge(
-      sessionId, turnId, model, assistantAttachedBeforeRequest,
-    )
-    return
-  }
-  const bridgeNow = Date.now()
-  if (recovery.terminalBridgeStartedAt === null) recovery.terminalBridgeStartedAt = bridgeNow
-  if (
-    recovery.terminalBridgeAttempts >= TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS
-    || bridgeNow - recovery.terminalBridgeStartedAt >= TERMINAL_HISTORY_BRIDGE_MAX_MS
-  ) {
-    exhaustRecoveredTerminalBridge(
-      sessionId, turnId, model, assistantAttachedBeforeRequest,
-    )
-    return
-  }
-  recovery.terminalBridgeAttempts += 1
-  const fresh = await listVibeEvents(sessionId).catch(() => null)
-  if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
-  if (fresh) {
-    const sortedFresh = sortEvents(fresh)
-    const sameIds = sortedFresh.length === events.value.length
-      && sortedFresh.every((event, index) => event.id === events.value[index]?.id)
-    if (sameIds) reconcileAuthoritativeEventProjections(sortedFresh)
-    else events.value = sortedFresh
-  }
-  restoreClarificationFromEvents()
-  applyCanonicalReadModel(model)
-  const assistantAttached = recoveredTerminalAssistantIsAttached(sessionId, turnId)
-  const historyHasTurnAssistant = !!fresh && events.value.some(event =>
-    String(event?.role || '') === 'assistant'
-    && String(event?.session_id || '') === sessionId
-    && eventTurnProtocol(event)?.turnId === turnId)
-  const historyOwnsTurn = historyHasTurnAssistant
-    && refreshRecoveredAssistantPresentation(sessionId, model, false)
-  if (!historyOwnsTurn) {
-    // history 请求失败、尚未出现 assistant，或 assistant 尚无同 Turn 权威身份时，
-    // Canonical terminal overlay 继续展示；下一次1.5s poll只重试一次 bridge。
-    const bridgeElapsedMs = Date.now() - Number(recovery.terminalBridgeStartedAt || 0)
-    if (
-      recovery.terminalBridgeAttempts >= TERMINAL_HISTORY_BRIDGE_MAX_ATTEMPTS
-      || bridgeElapsedMs >= TERMINAL_HISTORY_BRIDGE_MAX_MS
-    ) {
-      exhaustRecoveredTerminalBridge(sessionId, turnId, model, assistantAttached)
-    } else {
-      keepRecoveredTerminalBridgePending(sessionId, turnId, model, assistantAttached)
-    }
-    await scrollBottomIfFollowing()
-    return
-  }
-  releaseRecoveredTurnOwner(sessionId)
-  await scrollBottomIfFollowing()
-}
-
-function breakRecoveredTurn(
-  sessionId: string,
-  turnId: string,
-  detail: string,
-  model: TurnProtocolReadModel | null = streamingCanonicalModel.value,
-) {
-  markRecoveredTurnBroken(sessionId, model, {
-    kind: 'protocol',
-    title: '暂时无法恢复本轮状态',
-    detail,
-  }, turnId)
-}
-
-async function recoverCanonicalTurnReplay(input: {
-  sessionId: string
-  turnId: string
-  liveLease: boolean
-  advertisedSequence?: number
-}) {
-  const { sessionId, turnId, liveLease } = input
-  const recovery = turnReplayRecoveryState(turnId)
-  if (recovery.broken) return
-  const recoveryGuard: TurnRecoveryRequestGuard = {
-    epoch: sessionRequestEpoch,
-    projectId: String(vibeProject.value?.id || ''),
-    sessionId,
-    turnId,
-  }
-  if (recovery.terminalModel) {
-    await bridgeRecoveredTerminalHistory(
-      sessionId, turnId, recovery.terminalModel, recoveryGuard,
-    )
-    return
-  }
-  const advertisedSequence = Number(input.advertisedSequence)
-  if (liveLease && recovery.initialized
-    && Number.isFinite(advertisedSequence)
-    && advertisedSequence <= recovery.latestSequence) {
-    const cachedModel = applyTurnProtocolEvents(recovery.protocolState, [])
-    if (cachedModel.turnId === turnId) {
-      applyCanonicalReadModel(cachedModel)
-      refreshRecoveredAssistantPresentation(sessionId, cachedModel, true)
-    }
-    keepRecoveredTurnPending(sessionId)
-    return
-  }
-
-  let replay: FoundationTurnReplay | null = null
-  let replayedModel: TurnProtocolReadModel | null = null
-  let hasMore = false
-  for (let page = 0; page < TURN_REPLAY_MAX_PAGES_PER_POLL; page += 1) {
-    const requestedSequence = recovery.latestSequence
-    try {
-      replay = await replayFoundationTurn({
-        turn_id: turnId,
-        session_id: sessionId,
-        after_sequence: requestedSequence,
-        last_event_id: requestedSequence > 0 ? recovery.lastEventId : '',
-      })
-    } catch (reason) {
-      if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
-      const failure = turnReplayFailureFacts(reason)
-      const disposition = classifyTurnReplayGap({
-        status: failure.status,
-        code: failure.code,
-        retryable: failure.retryable,
-        liveLease,
-        seenRunning: recovery.seenRunning,
-        leaseMissingForMs: turnReplayLeaseMissingForMs(recovery),
-      })
-      if (disposition === 'retry') {
-        keepRecoveredTurnPending(sessionId)
-      } else {
-        breakRecoveredTurn(
-          sessionId,
-          turnId,
-          failure.status === 403
-            ? '当前用户无权读取这一本轮的 Canonical Journal。'
-            : failure.status === 422
-              ? '权威 Canonical Journal 拒绝了当前 Turn 的身份或增量游标。'
-              : '运行 lease 已结束，但权威 Canonical Journal 在 final grace 内始终不可用。',
-        )
-      }
-      return
-    }
-    if (!turnRecoveryRequestIsCurrent(recoveryGuard)) return
-    if (replay.projection !== 'journal_delta.v1' || String(replay.turn_id || '') !== turnId) {
-      breakRecoveredTurn(
-        sessionId,
-        turnId,
-        '权威 Journal delta 的投影版本或 Turn 身份不一致，页面已拒绝混合展示。',
-      )
-      return
-    }
-    const journal = replay.journal && typeof replay.journal === 'object' ? replay.journal : null
-    const journalEvents = Array.isArray(journal?.events) ? journal.events : []
-    const eventIds = new Set<string>()
-    const deliveredThroughSequence = Number(journal?.delivered_through_sequence)
-    const latestSequence = Number(journal?.latest_sequence)
-    const expectedDeliveredSequence = journalEvents.length
-      ? requestedSequence + journalEvents.length
-      : requestedSequence
-    const eventIdentityInvalid = Number(journal?.after_sequence) !== requestedSequence
-      || !Number.isInteger(deliveredThroughSequence)
-      || deliveredThroughSequence !== expectedDeliveredSequence
-      || !Number.isInteger(latestSequence)
-      || latestSequence < deliveredThroughSequence
-      || journal?.has_more !== (deliveredThroughSequence < latestSequence)
-      || journalEvents.some((event, index) => {
-        const eventId = String(event?.event_id || '')
-        const invalid = !eventId
-          || eventIds.has(eventId)
-          || recovery.seenEventIds.has(eventId)
-          || String(event?.turn_id || '') !== turnId
-          || Number(event?.sequence) !== requestedSequence + index + 1
-        eventIds.add(eventId)
-        return invalid
-      })
-    if (eventIdentityInvalid) {
-      breakRecoveredTurn(
-        sessionId,
-        turnId,
-        '权威 Canonical Journal 的 Turn 身份或增量游标不一致，页面已拒绝混合展示。',
-      )
-      return
-    }
-    if (!journalEvents.length && !recovery.initialized) {
-      const disposition = classifyTurnReplayGap({
-        status: 200,
-        code: 'empty_journal',
-        liveLease,
-        seenRunning: recovery.seenRunning,
-        leaseMissingForMs: turnReplayLeaseMissingForMs(recovery),
-      })
-      if (disposition === 'retry') keepRecoveredTurnPending(sessionId)
-      else breakRecoveredTurn(
-        sessionId,
-        turnId,
-        '权威 Turn replay 在有界恢复窗口内没有提供 Canonical Journal。',
-      )
-      return
-    }
-    if (journalEvents.length) {
-      replayedModel = applyTurnProtocolEvents(recovery.protocolState, journalEvents)
-      for (const event of journalEvents) recovery.seenEventIds.add(String(event.event_id))
-      const newest = journalEvents.at(-1)
-      const nextSequence = Number(newest?.sequence || 0)
-      if (!(nextSequence > requestedSequence)) {
-        breakRecoveredTurn(
-          sessionId,
-          turnId,
-          '权威 Canonical Journal 返回了不前进的增量游标。',
-        )
-        return
-      }
-      recovery.latestSequence = nextSequence
-      recovery.lastEventId = String(newest?.event_id || '')
-      recovery.initialized = true
-    } else {
-      replayedModel = applyTurnProtocolEvents(recovery.protocolState, [])
-    }
-    hasMore = journal?.has_more === true
-    if (!hasMore) break
-  }
-  if (!replay || !replayedModel) return
-  if (replayedModel.turnId !== turnId) {
-    breakRecoveredTurn(
-      sessionId,
-      turnId,
-      '权威 Turn replay 的聚合结果与当前 Turn 身份不一致，页面已拒绝混合展示。',
-    )
-    return
-  }
-  applyCanonicalReadModel(replayedModel)
-  if (hasMore) {
-    refreshRecoveredAssistantPresentation(sessionId, replayedModel, true)
-    keepRecoveredTurnPending(sessionId)
-    return
-  }
-  const disposition = classifyTurnRecoveryReplay({
-    expectedTurnId: turnId,
-    replayTurnId: replay.turn_id,
-    state: replay.state || replayedModel.state,
-    terminal: replay.terminal || replayedModel.terminal,
-  })
-  refreshRecoveredAssistantPresentation(sessionId, replayedModel, disposition === 'pending')
-  if (disposition === 'pending') {
-    activeTurnId.value = turnId
-    activeTurnSessionId.value = sessionId
-    recoveredTurnId.value = turnId
-    keepRecoveredTurnPending(sessionId)
-    return
-  }
-  if (disposition === 'missing_terminal') {
-    markRecoveredTurnBroken(sessionId, replayedModel, {
-      kind: 'protocol',
-      title: '本轮结果尚未确认',
-      detail: '权威 Turn replay 已结束，但仍没有正式 terminal；当前内容不会被标记为成功。',
-    }, turnId)
-    return
-  }
-
-  // terminal/waiting_user 已由权威 replay 证明；history 只负责刷新 timeline，
-  // 即使 Session 投影慢一拍，也用 replay 模型原地桥接同一气泡后再释放 owner。
-  recovery.terminalModel = replayedModel
-  await bridgeRecoveredTerminalHistory(sessionId, turnId, replayedModel, recoveryGuard)
-}
-
-async function recoverRunningTurnForSession(
-  sessionId: string,
-  snapshot: FoundationRunningTurn[] = runningTurns.value,
-) {
-  if (!sessionId || !vibeProject.value?.id) return
-  // 本地 Session 的运行身份和 Journal 都由 Electron Main 持有；服务端
-  // running/Canonical replay 只认识服务端 Turn，二者绝不能互相兜底。
-  if (sessionId.startsWith('session_')) return
-  // The foreground sender is the owner until its Electron Run promise settles.
-  // A polling snapshot can legitimately lag while the backend is still
-  // admitting the turn; recovery must not reset its timer or replace its
-  // in-memory owner during that window.
-  if (
-    foundationBusy.value
-    && streamingOwnerSessionId.value === sessionId
-    && sendingSessionIds.value.includes(sessionId)
-  ) {
-    setSessionRunning(sessionId, true)
-    return
-  }
-  const turn = snapshot.find(item => String(item.session_id || '') === sessionId) || null
-  if (turn) {
-    setSessionRunning(sessionId, true)
-    // 当前窗口自己的 SSE 已实时驱动界面，禁止迟到 replay 覆盖同一轮实时 reducer。
-    adoptRunningTurnLease(turn)
-    if (turn.replay_ready === false) {
-      keepRecoveredTurnPending(sessionId)
-      return
-    }
-    await recoverCanonicalTurnReplay({
-      sessionId,
-      turnId: String(turn.turn_id || ''),
-      liveLease: true,
-      advertisedSequence: turn.last_sequence,
-    })
-    await scrollBottomIfFollowing()
-    return
-  }
-
-  const ownsRecoverableTurn = (
-    activeSessionId.value === sessionId
-    && streamingOwnerSessionId.value === sessionId
-    && (recoveredTurnId.value || activeTurnId.value || streamingTransportNotice.value)
-  )
-  if (!ownsRecoverableTurn) {
-    setSessionRunning(sessionId, false)
-    return
-  }
-  const turnId = String(
-    recoveredTurnId.value || activeTurnId.value || streamingCanonicalModel.value?.turnId || '',
-  )
-  if (!turnId) {
-    breakRecoveredTurn(
-      sessionId,
-      '',
-      '运行快照已结束，但页面没有可验证的 Turn 身份，无法读取权威 Canonical Journal。',
-    )
-    return
-  }
-  // live lease 先消失、权威 Journal 稍后 terminalize 是合法收口阶段。
-  // 继续使用同一个增量 reducer，绝不回退会话文本或重新下载完整 Journal。
-  const recovery = turnReplayRecoveryState(turnId)
-  if (recovery.leaseMissingAt === null) recovery.leaseMissingAt = Date.now()
-  keepRecoveredTurnPending(sessionId)
-  await recoverCanonicalTurnReplay({ sessionId, turnId, liveLease: false })
 }
 
 function newConversation() {
@@ -5312,7 +4659,6 @@ function newConversation() {
   processExpanded.value = false
   clarificationActive.value = null
   stopElapsedTicker()
-  recoveredTurnId.value = ''
   streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
@@ -5370,7 +4716,6 @@ async function deleteSession(sessionId: string) {
       sessionFilesError.value = ''
       processExpanded.value = false
       stopElapsedTicker()
-      recoveredTurnId.value = ''
       streamingOwnerSessionId.value = ''
       clearStreamingAssistant()
       resetProcessState(streamingProcess)
@@ -5491,35 +4836,8 @@ async function send() {
   await sendFoundationTurn()
 }
 
-const attachmentIdempotencyKeys = new WeakMap<File, string>()
-type PendingComposerAttachment = { file: File; resource: VibeAttachmentResourceRef }
-
-function attachmentIdempotencyKey(file: File): string {
-  const current = attachmentIdempotencyKeys.get(file)
-  if (current) return current
-  const suffix = typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const key = `vibe-attachment-${suffix}`
-  attachmentIdempotencyKeys.set(file, key)
-  return key
-}
-
-async function cleanupUploadedPendingAttachments(
-  sessionId: string,
-  uploaded: PendingComposerAttachment[],
-): Promise<boolean> {
-  const cleanup = await Promise.allSettled(uploaded.map(async ({ file, resource }) => {
-    const result = await deleteVibeAttachmentResource(sessionId, resource.resource_id)
-    if (result?.ok !== true) throw new Error('临时附件清理失败')
-    attachmentIdempotencyKeys.delete(file)
-  }))
-  return cleanup.every(item => item.status === 'fulfilled')
-}
-
-// 前端先把完整附件批次换成私有资源引用，再提交输入框与 refs；
+// 本机文件只携带受控引用交给 Electron Main；不创建服务端附件资源。
 // 不通过关键词决定录入/总结/问答，输入框仍是目的轴心。
-// 输入框是目的轴心，后端目标计划是唯一语义权威。
 function restoreComposerAttachments(files: File[]) {
   const snapshot = [...files]
   // emit('send') 的父处理器与子组件清空动作处于同一调用栈；延后一拍才能保证
@@ -5539,95 +4857,14 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   // summarize, ingest, or ask what the user wants; the renderer must not
   // silently discard the selected file before Pi can make that decision.
   if (!base && !fileList.length) return
-  if (useLocalPiAgent()) {
-    try {
-      const outcome = await sendFoundationTurn(base, { localFiles: fileList })
-      if (outcome?.failed) restoreComposerAttachments(fileList)
-    } catch (reason) {
-      const message = localAgentErrorMessage(reason)
-      ElMessage.error(message)
-      restoreComposerAttachments(fileList)
-    }
-    return
-  }
-  // A native local picker returns metadata plus an opaque local file ref rather
-  // than a browser Blob. If the user toggles back to server mode before
-  // pressing send, never feed that synthetic object to FormData/upload code.
-  if (fileList.some((file: any) => String(file?.local_file_ref?.ref_id || '').trim())) {
-    ElMessage.warning('这些文件已按本机模式选择，请切回本机运行后发送。')
-    restoreComposerAttachments(fileList)
-    return
-  }
-  if (!fileList.length) {
-    await sendFoundationTurn(base)
-    return
-  }
-
-  const uploadProjectEpoch = projectContextEpoch
-  const uploadProjectId = String(selectedProjectId.value ?? '')
-  const uploadContextIsCurrent = () => uploadProjectEpoch === projectContextEpoch
-    && uploadProjectId === String(selectedProjectId.value ?? '')
-
-  const uploaded: PendingComposerAttachment[] = []
-  let uploadSessionId = ''
-  preparingSend.value = true
   try {
-    if (!vibeProject.value) throw new Error('请先选择项目')
-    const project = knowledgeStatsProjectId(selectedProjectId.value)
-    if (!project) throw new Error('当前项目身份无效，请重新选择项目')
-    if (!(await ensureComposerModelUsable(uploadContextIsCurrent))) {
-      restoreComposerAttachments(fileList)
-      return
-    }
-    uploadSessionId = await ensureSession()
-    if (!uploadContextIsCurrent()) throw new Error('项目已切换，请重新发送附件')
-    for (const file of fileList) {
-      const resource = await uploadVibeAttachmentResource(
-        uploadSessionId,
-        file,
-        attachmentIdempotencyKey(file),
-      )
-      uploaded.push({ file, resource })
-    }
-    if (!uploadContextIsCurrent() || activeSessionId.value !== uploadSessionId) {
-      throw new Error('上传期间项目或会话已切换，请重新发送附件')
-    }
+    const outcome = await sendFoundationTurn(base, { localFiles: fileList })
+    if (outcome?.failed) restoreComposerAttachments(fileList)
   } catch (reason) {
+    const message = localAgentErrorMessage(reason)
+    ElMessage.error(message)
     restoreComposerAttachments(fileList)
-    const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
-    const message = reason instanceof Error ? reason.message : String(reason)
-    ElMessage.error(cleaned ? message : `${message}；部分临时附件清理失败，请稍后重试`)
-    return
-  } finally {
-    preparingSend.value = false
   }
-
-  const attachments = uploaded.map(item => item.resource)
-  let attachmentBound = false
-  const turnOutcome = await sendFoundationTurn(base, {
-    attachments,
-    modelValidated: true,
-    onUserEventSaved: () => {
-      attachmentBound = true
-    },
-  }).catch((reason) => {
-    ElMessage.error(`本轮发送失败：${reason instanceof Error ? reason.message : String(reason)}`)
-    return undefined
-  })
-  if (attachmentBound || turnOutcome?.userEventSaved) return
-  if (turnOutcome?.unresolved) {
-    // 连接结束但后端业务状态未知时，删除私有资源可能破坏仍在恢复的真实请求。
-    // 先保留服务端资源，等待 running snapshot / replay 给出正式结果。
-    ElMessage.warning('连接已结束，正在恢复本轮状态；附件暂不清理，请勿重复发送')
-    return
-  }
-  restoreComposerAttachments(fileList)
-  const cleaned = await cleanupUploadedPendingAttachments(uploadSessionId, uploaded)
-  setDraftByKey(sessionDraftKey(uploadSessionId), base)
-  resizeDraft()
-  ElMessage.warning(cleaned
-    ? '本轮未能绑定附件，已保留文件，请重新发送'
-    : '本轮未能确认附件绑定状态，文件已保留，请稍后重试')
 }
 
 // 询问模式（clarification）选项被选/提交：把答案【续跑同一思考】发出去（空=跳过，仅收起反问）。
@@ -5749,29 +4986,15 @@ async function respondToLiveGoal(raw: any, payload: {
     // Electron 已拥有本轮后，任何交互失败都不能用服务端另起同一轮。
     return true
   }
-  const project = knowledgeStatsProjectId(selectedProjectId.value)
-  if (!turnId || !sessionId || !project) return false
-  try {
-    const result = await respondFoundationTurnInteraction({
-      project: String(project),
-      session_id: sessionId,
-      turn_id: turnId,
-      ...payload,
-    })
-    if (!result?.accepted) return false
-    clarificationActive.value = null
-    return true
-  } catch (error) {
-    if (
-      error instanceof HarnessRequestError
-      && error.code === 'live_goal_acceptance_unknown'
-    ) {
-      ElMessage.warning('确认响应正在核对，请等待当前会话恢复，不要重复提交')
-      clarificationActive.value = null
-      return true
-    }
-    return false
+  // A local interaction must never be re-issued through the retired server
+  // turn/input endpoint. Keep the card visible so the user can retry after
+  // Main has recovered the owning Run.
+  if (!turnId || !sessionId) {
+    ElMessage.error('本地 Agent 交互身份不可用，请重新打开会话')
+  } else {
+    ElMessage.warning('本地 Agent 交互状态正在恢复，请稍后重试')
   }
+  return true
 }
 
 async function onComposerAnswer(value: string) {
@@ -6002,7 +5225,6 @@ function toggleAttachmentsExpanded(eventId: string) {
 interface SendFoundationTurnOptions {
   seedMessages?: any[]
   continuationParentId?: string
-  attachments?: VibeAttachmentResourceRef[]
   modelValidated?: boolean
   onUserEventSaved?: () => void
   applyEdit?: any
@@ -6011,34 +5233,13 @@ interface SendFoundationTurnOptions {
   localFiles?: File[]
 }
 
-/**
- * Host selection is local product state, never a public request field.
- * Electron now defaults to its client-owned Pi runtime; the explicit `server`
- * override remains only as a development rollback switch.
- */
-function localPiAgentConfigured(): boolean {
-  const configured = String((import.meta as any).env?.VITE_VIBE_AGENT_MODE || '').trim().toLowerCase()
-  let stored = ''
-  try { stored = String(window.localStorage.getItem('vibe-agent-execution') || '').trim().toLowerCase() } catch { /* fall back to build config */ }
-  // An explicit user switch wins over the build default so migration testing
-  // can return to the legacy server path without rebuilding the app.
-  if (stored === 'server') return false
-  if (stored === 'electron-local' || stored === 'local') return true
-  if (configured === 'server') return false
-  if (configured === 'electron-local' || configured === 'local') return true
-  return String((import.meta as any).env?.VITE_IS_ELECTRON || '').trim().toLowerCase() === 'true'
-}
-
 function localPiAgentEnabled(): boolean {
-  return localPiAgentConfigured() && !!window.electronAPI?.vibeAgent?.startLocal
+  return !!window.electronAPI?.vibeAgent?.startLocal
 }
 
 function useLocalPiAgent(): boolean {
-  // Host selection is a turn-level product setting.  Do not infer it from a
-  // session id: older server sessions can use the same `session_` prefix, and
-  // an explicit server rollback must apply consistently to both old and new
-  // sessions instead of silently creating/using an empty local journal.
-  return localPiAgentConfigured()
+  // Vibe conversations are Electron-owned; there is no server Agent fallback.
+  return true
 }
 
 function localKnowledgeBaseUrl(): string {
@@ -6073,7 +5274,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   processExpanded.value = true
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
-  const sessionId = useLocalPiAgent() ? await ensureLocalSession() : await ensureSession()
+  const sessionId = await ensureLocalSession()
   const admitted: any = await bridge.list?.({ accountId: localAccountId() })
   const liveRuns = (Array.isArray(admitted) ? admitted : Array.isArray(admitted?.items) ? admitted.items : [])
     .filter((item: any) => !electronAgentStateIsTerminal(item?.state) && item?.lifecycle !== 'terminal')
@@ -6249,10 +5450,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
 
 async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTurnOptions) {
   const content = (overrideText ?? draft.value).trim()
-  const hasAttachments = Boolean(
-    (Array.isArray(opts?.localFiles) && opts.localFiles.length)
-      || (Array.isArray(opts?.attachments) && opts.attachments.length),
-  )
+  const hasAttachments = Boolean(Array.isArray(opts?.localFiles) && opts.localFiles.length)
   if ((!content && !hasAttachments) || sending.value) return
   if (useLocalPiAgent()) {
     try {
@@ -6269,336 +5467,10 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
       }
     }
   }
-  const sendProjectEpoch = projectContextEpoch
-  const sendProjectId = String(selectedProjectId.value ?? '')
-  const sendProjectIsCurrent = () =>
-    sendProjectEpoch === projectContextEpoch
-    && sendProjectId === String(selectedProjectId.value ?? '')
-  const originDraftKey = activeDraftKey.value
-  const restoreDraftAfterAdmissionFailure = () => {
-    setDraftByKey(originDraftKey, content)
-    resizeDraft()
-  }
-  const seedMessages = opts?.seedMessages  // 续跑：上一轮反问的挂起草稿，回传后端接着想
-  const attachments = opts?.attachments || []
-  const applyEdit = opts?.applyEdit  // 改原文·确认：回传 diff 提案，后端确定性落库
-  const clarificationCancel = !!opts?.clarificationCancel  // 取消反问/确认：写终态回执，避免刷新后旧反问复活
-  // 续跑·视觉一体化：本轮(回答+续跑答案)挂到上一轮反问那条 assistant 之下，渲染成同一条思考。
-  const contParent = opts?.continuationParentId && hasEvent(opts.continuationParentId) ? opts.continuationParentId : ''
-  if (!vibeProject.value) {
-    restoreDraftAfterAdmissionFailure()
-    ElMessage.warning('请先选择项目')
-    return
-  }
-  const project = knowledgeStatsProjectId(selectedProjectId.value)
-  if (!project) {
-    restoreDraftAfterAdmissionFailure()
-    ElMessage.warning('当前项目身份无效，请重新选择项目')
-    return
-  }
-  if (!opts?.modelValidated && !(await ensureComposerModelUsable(sendProjectIsCurrent))) {
-    restoreDraftAfterAdmissionFailure()
-    return
-  }
-  // A model check can outlive a project switch. Never create/send a turn with
-  // the provider or session that belongs to a newer project context.
-  if (!sendProjectIsCurrent()) {
-    restoreDraftAfterAdmissionFailure()
-    return
-  }
-  clarificationActive.value = null  // 发新一轮即收起上一轮的反问
-  const startedAt = Date.now()
-  streamingOwnerSessionId.value = activeSessionId.value
-  activeTurnSessionId.value = activeSessionId.value
-  foundationBusy.value = true
-  startElapsedTicker(startedAt)  // "已处理 Xs"前端秒表:整轮在途一直数,不听 process_done
-  processExpanded.value = true
-  clearStreamingAssistant()
-  streamingAssistantEventId.value = ''
-  streamingContinuationParentId.value = contParent  // 必须在 clearStreamingAssistant 之后（它会清空）
-  resetProcessState(streamingProcess)
-  streamingProcess.status = 'running'
-  pendingUserSubmissionText.value = contParent ? '' : content
-  setDraftByKey(originDraftKey, '')
-  // Keep the editor's internal Lexical state in sync with the draft map.  This
-  // also covers programmatic sends (confirmation/continuation) and attachment
-  // sends, whose composer is cleared only after upload admission succeeds.
-  composerRef.value?.clearInput?.()
-  resizeDraft()
-  scrollBottom()
-
-  let actions: string[] = []
-  let transportFailure = ''
-  let sessionId = ''
-  let turnSessionId = ''
-  let userEventSaved = false
-  let assistantEventSaved = false
-  let turnStartedId = ''
-  // send 闭包内持有本轮正式气泡三重身份；全局 ref 会在切会话/恢复时重置，不能单独作为回写依据。
-  let assistantPresentationEventId = ''
-  let assistantPresentationSessionId = ''
-  let assistantPresentationTurnId = ''
-  let turnCancelled = false
-  const canonicalState: TurnProtocolState = createTurnProtocolState()
-  let canonicalSeen = false
-  let canonicalModel: TurnProtocolReadModel | null = null
-  const currentCanonicalModel = (): TurnProtocolReadModel | null => canonicalModel
-  let knowledgeCommitObserved = false
-  let unresolved = false
-
-  const refreshSavedAssistantPresentation = (
-    model: TurnProtocolReadModel,
-    live: boolean,
-    terminalPending: boolean,
-  ) => {
-    if (!live || !turnSessionId) return
-    const targetSessionId = assistantPresentationSessionId || turnSessionId
-    const targetTurnId = assistantPresentationTurnId || turnStartedId
-    if (targetSessionId !== turnSessionId || activeSessionId.value !== targetSessionId) return
-    if (targetTurnId && model.turnId !== targetTurnId) return
-    if (turnStartedId && model.turnId !== turnStartedId) return
-    if (!assistantPresentationTurnId) assistantPresentationTurnId = model.turnId
-    const refreshed = refreshAssistantTurnPresentation(events.value, {
-      assistantEventId: assistantPresentationEventId || streamingAssistantEventId.value,
-      sessionId: targetSessionId,
-      model,
-      observedDurationMs: Math.max(streamingElapsedMs.value, Date.now() - startedAt),
-      terminalPending,
-    })
-    if (!refreshed) return
-    streamingAssistantEventId.value = String(refreshed.id || streamingAssistantEventId.value)
-    upsertEvent(refreshed as VibeEvent)
-  }
-
-  const acceptCanonicalModel = (model: TurnProtocolReadModel, live: boolean) => {
-    canonicalSeen = true
-    canonicalModel = model
-    actions = model.actions
-    turnCancelled = model.state === 'cancelled'
-    if (hasKnowledgeWriteCommit(model) && !knowledgeCommitObserved) {
-      knowledgeCommitObserved = true
-      if (live) void loadCurrentKbStats(project)
-    }
-    if (live) {
-      applyCanonicalReadModel(model)
-      refreshSavedAssistantPresentation(
-        model,
-        live,
-        !model.terminal && model.state !== 'waiting_user',
-      )
-    }
-  }
-
-  const onEvent = (event: any) => {
-    // #2 切换查看：本轮进行中用户切到别的会话时，只【静默渲染】，但本轮数据照常收集
-    // （answers / 标志位 / 来源等都要收，否则切回来本轮回答会丢——这是上一版回答消失的根因）。
-    // 后端始终持久化，切回本轮会话会通过 event_saved / 重载补全。
-    const live = sendProjectIsCurrent()
-      && (!turnSessionId || activeSessionId.value === turnSessionId)
-    const type = String(event?.type || '')
-    const packetProvided = hasTurnProtocolPacket(event)
-    if (packetProvided) {
-      acceptCanonicalModel(applyTurnProtocolPacket(canonicalState, event.turn_protocol), live)
-    }
-    // 外层 SSE 只承担 turn 身份和持久化通知；回答、过程、来源、反问与终态均由上面的 Canonical reducer 投影。
-    switch (type) {
-      case 'turn_started':
-        // T26：后端本轮令牌 id——停止按钮凭它调 cancel 接口
-        turnStartedId = String(event.turn_id || '')
-        // turn_started 与 running lease 都是可信 Turn 身份来源。若 SSE 随后断开且
-        // lease 恰好先消失，仍必须进入 final grace，而不是把首个暂态 404 当永久故障。
-        if (turnStartedId) turnReplayRecoveryState(turnStartedId).seenRunning = true
-        if (live) {
-          activeTurnId.value = turnStartedId
-          activeTurnSessionId.value = turnSessionId
-        }
-        break
-      case 'event_saved': {
-        // 后端已把本轮消息写进会话历史。标志位无论是否在场都要置（兜底/重载判定要用）；
-        // 只有【当前正看本轮会话】时才把服务器事件写进 events.value（避免串到别的会话）。
-        const saved = event.event as VibeEvent
-        let displayEvent = saved
-        // event_saved 的 Session row 是轻量投影；完整实时语义来自此前持续归并的
-        // Canonical 增量包。若旧服务直接在 meta 带日志，仍合进同一个 reducer。
-        if (!packetProvided) {
-          const persistedProtocolEvents = protocolEventsFromMeta((saved as any)?.meta)
-          if (persistedProtocolEvents.length) {
-            acceptCanonicalModel(applyTurnProtocolEvents(canonicalState, persistedProtocolEvents), live)
-          }
-        }
-        if (event.role === 'user') {
-          if (!userEventSaved) {
-            userEventSaved = true
-            opts?.onUserEventSaved?.()
-          }
-        } else if (event.role === 'assistant') {
-          assistantEventSaved = true
-          assistantPresentationEventId = String(saved?.id || '')
-          assistantPresentationSessionId = turnSessionId
-          assistantPresentationTurnId = String(canonicalModel?.turnId || turnStartedId || '')
-          const presentationIdentityMatches = !canonicalModel?.turnId
-            || !turnStartedId
-            || canonicalModel.turnId === turnStartedId
-          displayEvent = attachLocalTurnPresentation(
-            saved as unknown as Record<string, any>,
-            presentationIdentityMatches ? canonicalModel : null,
-            Math.max(streamingElapsedMs.value, Date.now() - startedAt),
-            {
-              terminalPending: !!canonicalModel
-                && !canonicalModel.terminal
-                && canonicalModel.state !== 'waiting_user',
-            },
-          ) as VibeEvent
-          // 0704 防闪:持久化气泡即将插入列表,同帧清掉流式气泡——否则"流式份+持久份"双显一瞬,
-          // finally 再清时肉眼看到答案闪一下/整块跳动。
-          if (live) {
-            streamingAssistantEventId.value = assistantPresentationEventId
-            streamingAssistantContent.value = ''
-            streamingSources.value = []
-            streamingVerification.value = null
-            streamingCanonicalModel.value = null
-            streamingTransportNotice.value = null
-          }
-        }
-        if (live) upsertEvent(displayEvent)
-        if (event.role === 'user') clearPendingUserSubmission()
-        break
-      }
-      default:
-        break
-    }
-    if (live) scrollBottomIfFollowing()
-  }
-
-  try {
-    sessionId = await ensureSession()
-    if (!sendProjectIsCurrent()) return
-    if (!contParent) void autoNameSessionFromFirstInput(sessionId, content)
-    turnSessionId = sessionId
-    activeTurnSessionId.value = turnSessionId
-    markSessionSending(turnSessionId, true)
-    setSessionRunning(turnSessionId, true)
-    if (activeSessionId.value === turnSessionId) streamingOwnerSessionId.value = turnSessionId
-    const turnPayload = {
-      project,
-      text: content,
-      session_id: sessionId,
-      llm_provider_id: selectedLlmProviderId.value || undefined,
-      seed_messages: seedMessages,
-      continuation_parent_id: contParent || undefined,
-      attachments: attachments.length ? attachments : undefined,
-      apply_edit: applyEdit || undefined,
-      clarification_cancel: clarificationCancel || undefined,
-      clarification_response: opts?.clarificationResponse || undefined,
-    }
-    // Keep the validated numeric project and the user text explicit at the
-    // legacy SSE boundary while avoiding duplicate object-spread keys.
-    const streamServerTurn = (payload: any, handlers: any) => {
-      const { project, text, ...rest } = payload
-      return streamFoundationTurn({ project, text: text, ...rest }, handlers)
-    }
-    // Server is an explicit rollback path only.  Electron/local runs have
-    // already returned through sendLocalPiTurn → startLocal above; they must
-    // never pass through the server-side run-admission selector.
-    const transportResult: { closeReason: 'done_signal' | 'eof' | 'error_event' } = await streamServerTurn(turnPayload, {
-      onEvent,
-      onError(message: string) { transportFailure = transportFailure || message },
-    })
-    if (transportResult.closeReason === 'error_event' && !transportFailure) {
-      transportFailure = 'SSE 返回了传输错误事件'
-    }
-  } catch (error) {
-    transportFailure = transportFailure || (error instanceof Error ? error.message : String(error))
-  } finally {
-    const contextStillCurrent = sendProjectIsCurrent()
-    const settledCanonicalModel = currentCanonicalModel()
-    const canonicalSettled = !!settledCanonicalModel?.terminal || settledCanonicalModel?.state === 'waiting_user'
-    const canonicalFailed = settledCanonicalModel?.state === 'failed'
-    unresolved = !canonicalSettled
-    if (contextStillCurrent) {
-      markSessionSending(turnSessionId, false)
-      setSessionRunning(turnSessionId, unresolved)
-    }
-    const ownsVisibleStream = !!turnSessionId
-      && contextStillCurrent
-      && streamingOwnerSessionId.value === turnSessionId
-    if (ownsVisibleStream) {
-      stopElapsedTicker()
-      streamingProcess.status = 'done'
-      streamingProcess.durationMs = Date.now() - startedAt
-      if (unresolved) {
-        streamingTransportNotice.value = canonicalSeen
-          ? {
-              kind: 'connection',
-              title: '连接已结束，正在恢复状态',
-              detail: transportFailure || '尚未收到后端正式 terminal；页面会等待运行快照或会话 replay 恢复。',
-            }
-          : {
-              kind: 'protocol',
-              title: '未收到 Canonical Journal',
-              detail: transportFailure || '本轮连接已结束，但没有可验证的规范事件；页面不会生成本地答案。',
-            }
-        void refreshProjectRunningTurns()
-      } else if (!assistantEventSaved) {
-        streamingTransportNotice.value = {
-          kind: 'connection',
-          title: '本轮结果尚未确认保存',
-          detail: transportFailure || '已收到后端正式状态，但尚未收到 assistant event_saved；当前结果不会伪装成已持久化记录。',
-        }
-      }
-    }
-    if (contextStillCurrent && canonicalSettled && activeTurnSessionId.value === turnSessionId) {
-      activeTurnId.value = ''
-      activeTurnSessionId.value = ''
-      cancelRequested.value = false
-    }
-    if (contextStillCurrent && transportFailure && !userEventSaved) {
-      clearPendingUserSubmission()
-      // 请求没有形成正式 user event 时才恢复草稿；已经持久化的请求不能自动回填，避免误触重复提交。
-      setDraftByKey(turnSessionId ? sessionDraftKey(turnSessionId) : originDraftKey, content)
-      resizeDraft()
-      if (!turnSessionId) ElMessage.error(`本轮未发送：${transportFailure}`)
-    }
-    if (contextStillCurrent && canonicalSettled && !userEventSaved) clearPendingUserSubmission()
-    if (ownsVisibleStream && assistantEventSaved && canonicalSettled) {
-      streamingOwnerSessionId.value = ''
-      clearStreamingAssistant()
-      resetProcessState(streamingProcess)
-    }
-    // #2：流已结束、答案已落在 events 里 → 立刻解除"发送中"（停止按钮动画），
-    // 后面的服务器刷新是后台事，不该让按钮继续转。
-    if (contextStillCurrent) foundationBusy.value = false
-    if (ownsVisibleStream) streamingAssistantEventId.value = ''
-    if (contextStillCurrent && !canonicalFailed && !turnCancelled && canonicalSettled
-      && (knowledgeCommitObserved || turnMayChangeKnowledge(actions, applyEdit))) {
-      void loadCurrentKbStats(project)
-    }
-    // 与 sendMessage 一致的服务器刷新；仅在两条都已持久化时做，否则会把仅存在于本地的合成兜底气泡刷掉
-    if (contextStillCurrent && sessionId && userEventSaved && assistantEventSaved && activeSessionId.value === sessionId) {
-      try {
-        await refreshState()
-        // 0704 防闪:event_saved 已把本轮两条真实事件插进列表,全量替换会让整个回答区
-        // v-html 重渲染闪一下——id 序列没变化就跳过替换。
-        const fresh = sortEvents(await listVibeEvents(sessionId).catch(() => events.value))
-        const sameIds = fresh.length === events.value.length
-          && fresh.every((e, i) => e.id === events.value[i]?.id)
-        if (!sameIds) events.value = fresh
-        else reconcileAuthoritativeEventProjections(fresh)
-      } catch { /* 刷新失败不影响本轮结果展示 */ }
-    }
-    if (contextStillCurrent) await scrollBottomIfFollowing()
-  }
-  const finalCanonicalModel = currentCanonicalModel()
-  return {
-    userEventSaved,
-    failed: !!transportFailure
-      || finalCanonicalModel?.state === 'failed'
-      || (!finalCanonicalModel?.terminal && finalCanonicalModel?.state !== 'waiting_user'),
-    turnCancelled,
-    unresolved,
-  }
+  const error = new Error('当前客户端不支持本机运行，请更新客户端')
+  ElMessage.error(localAgentErrorMessage(error))
+  return { failed: true, unresolved: false, attachmentSelectionReusable: true }
 }
-
 function handleDraftKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
   event.preventDefault()
@@ -6857,7 +5729,6 @@ function eventTurnIsStillActive(event: any, model: TurnProtocolReadModel | null)
   if (streamingOwnerSessionId.value !== sessionId || activeTurnSessionId.value !== sessionId) return false
   const sameTurn = [
     activeTurnId.value,
-    recoveredTurnId.value,
     streamingCanonicalModel.value?.turnId,
   ].some(value => String(value || '') === turnId)
   if (!sameTurn) return false
