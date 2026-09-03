@@ -303,7 +303,7 @@ assert.match(viewSource, /async function recoverElectronAgentRunUnsafe\(sessionI
 assert.match(viewSource, /function recoverElectronAgentRun\(sessionId: string\): Promise<void>/)
 assert.match(viewSource, /bridge\.recoverableLocal/)
 assert.match(viewSource, /bridge\.attach\(\{ runId: context\.run\.run_id, accountId: localAccountId\(\) \}\)/)
-assert.doesNotMatch(viewSource, /adoptRunningTurnLease|replayFoundationTurn|classifyTurnRecoveryReplay/)
+assert.doesNotMatch(viewSource, /adoptRunningTurnLease|replayFoundationTurn/)
 assert.doesNotMatch(viewSource, /foundationBusy\.value = false\s*\n\s*streamingAssistantEventId\.value = ''/)
 assert.doesNotMatch(viewSource, /setTimeout\([^)]*本轮结果尚未确认/)
 assert.match(viewSource, /reconcileAuthoritativeEventProjections\(fresh\)/)

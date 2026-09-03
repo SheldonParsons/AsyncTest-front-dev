@@ -378,7 +378,7 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
 }
 // Keep the text-only predicate explicit for callers/tests that use the
 // composer as a plain editor; native local-file Goals extend it without
-// making an empty text draft look sendable in server mode.
+// making an empty text draft look sendable in local mode.
 const sendDisabled = computed(() => editorValue.value.trim().length === 0)
 const effectiveSendDisabled = computed(() => (
   sendDisabled.value
