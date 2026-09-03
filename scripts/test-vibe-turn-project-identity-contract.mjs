@@ -23,14 +23,12 @@ assert.match(
 )
 assert.doesNotMatch(sendTurn, /streamFoundationTurn|streamServerTurn|turnPayload/)
 
-const createSession = source.match(/createVibeSession\(([^,]+),/)
-assert(createSession, 'session creation must remain explicit')
-assert.equal(createSession[1].trim(), 'ownerProjectId', 'session creation must use its frozen owner identity')
 assert.match(
   source,
-  /const ownerProjectId = vibeProject\.value\.id[\s\S]*createVibeSession\(ownerProjectId,/,
-  'session ownership must keep the VibeProject UUID',
+  /async function ensureLocalSession\([\s\S]*const projectId = workspaceProjectContextId\(\)[\s\S]*sessionsApi\.create\(\{[\s\S]*projectId,/,
+  'Electron session creation must use the current project identity',
 )
+assert.doesNotMatch(source, /createVibeSession\(/)
 assert(!sendTurn.includes('String(vibeProject.value.id)'), 'VibeProject UUID must never authorize a knowledge turn')
 
 console.log('vibe turn project identity contract: PASS')

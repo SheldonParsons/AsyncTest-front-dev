@@ -93,9 +93,8 @@
             v-for="item in detail.sources"
             :key="item.id"
             type="button"
-            :disabled="!detail.session_id"
-            :title="detail.session_id ? `在 Viewer 中打开 ${item.display_name || item.filename}` : '该变更缺少所属会话，无法安全读取来源'"
-            :aria-label="detail.session_id ? `打开来源：${item.display_name || item.filename}` : `${item.display_name || item.filename} 暂不可打开`"
+            :title="`在 Viewer 中打开 ${item.display_name || item.filename}`"
+            :aria-label="`打开来源：${item.display_name || item.filename}`"
             @click="emit('open-source', item.id)"
           >
             <strong>{{ item.display_name || item.filename }}</strong>

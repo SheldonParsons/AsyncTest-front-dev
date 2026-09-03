@@ -22,15 +22,9 @@ for (const [file, source] of [
   assert.deepEqual(parse(source, { filename: file }).errors, [])
 }
 
-assert.match(apiSource, /export interface VibeSessionPage\s*\{[\s\S]*sessions:\s*VibeSession\[\][\s\S]*next_cursor:\s*string \| null/)
-assert.match(apiSource, /listVibeSessions\([\s\S]*options:\s*\{ cursor\?: string; limit\?: number \}[\s\S]*Promise<VibeSessionPage>/)
-assert.match(apiSource, /new URLSearchParams\(\{ limit: String\(options\.limit \?\? 100\) \}\)/)
-assert.match(apiSource, /if \(options\.cursor\) query\.set\('cursor', options\.cursor\)/)
-
-assert.match(conversationSource, /v-if="sessionNextCursor"[\s\S]*@click="loadMoreSessions"/)
-assert.match(conversationSource, /const sessionNextCursor = ref\(''\)/)
-assert.match(conversationSource, /async function loadMoreSessions\(\)[\s\S]*listVibeSessions\(ownerId, \{ cursor \}\)/)
-assert.match(conversationSource, /const seen = new Set\(sessions\.value\.map\(item => item\.id\)\)/)
+assert.doesNotMatch(apiSource, /VibeSessionPage|listVibeSessions/)
+assert.match(conversationSource, /const loadedSessions = await localSessionsForProject\(String\(project\.id\)\)/)
+assert.match(conversationSource, /const sessionsApi = electronAgentBridge\(\)\?\.sessions/)
 
 assert.match(apiSource, /schema:\s*'llm_provider_settings\.v1'/)
 assert.match(apiSource, /export function getVibeLLMModelPicker\([\s\S]*\/vibe\/llm\/model-picker/)
