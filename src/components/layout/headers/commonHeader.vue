@@ -228,6 +228,7 @@ const { locale: localeLang } = useI18n()
 const isMac = computed(() => window.electronAPI?.platform === 'darwin');
 const currentWindowKey = computed(() => (route.query.windowKey as string) || 'main')
 const {
+  profile: currentUserProfile,
   avatarUrl: userImage,
   avatarRenderKey: userAvatarRenderKey,
   fetchProfile,
@@ -421,6 +422,24 @@ function applyLoggedOutState() {
 }
 
 async function logout() {
+  if (isElectron) {
+    const agentLogout = window.electronAPI?.vibeAgent?.logout
+    if (!agentLogout) {
+      window.$toast({ title: '退出登录失败，请更新客户端', type: 'error' })
+      return
+    }
+    try {
+      let accountId = String(currentUserProfile.value?.id || '').trim()
+      if (!accountId) {
+        const cachedUser = await store.dispatch("getUser").catch(() => null)
+        accountId = String(cachedUser?.userId || '').trim()
+      }
+      await agentLogout(accountId ? { accountId } : {})
+    } catch {
+      window.$toast({ title: '退出登录失败，请稍后重试', type: 'error' })
+      return
+    }
+  }
   await ClearServerCookie()
   window.$toast({ title: '退出登录' })
   applyLoggedOutState()

@@ -116,12 +116,22 @@ export interface IElectronAPI {
     cancel: (payload: { runId: string; accountId: string; turnId: string; sessionId: string }) => Promise<ElectronAgentCommandResult>;
     status: (payload: { runId: string; accountId: string }) => Promise<ElectronAgentStatus>;
     list: (payload: { accountId: string }) => Promise<ElectronAgentStatus[]>;
+    logout: (payload?: { accountId?: string }) => Promise<ElectronAgentLogoutResult>;
     localFiles: ElectronLocalFilesAPI;
     files?: ElectronLocalFilesAPI;
     trace: ElectronTraceAPI;
     sessions?: ElectronLocalSessionAPI;
     onEvent: (callback: (event: VibeAgentEvent) => void) => (() => void);
   },
+}
+
+export interface ElectronAgentLogoutResult {
+  schema: 'vibe_agent_logout.v1';
+  account_id: string;
+  terminated_runs: number;
+  released_reservations: number;
+  terminated_parked_runs: number;
+  released: true;
 }
 
 export interface ElectronPiReadinessReport {

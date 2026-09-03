@@ -40,6 +40,7 @@ const CHANNELS = [
   "vibeAgent:cancel",
   "vibeAgent:status",
   "vibeAgent:list",
+  "vibeAgent:logout",
   "vibeAgent:localFilePick",
   "vibeAgent:localFilePreview",
   "vibeAgent:traceCreate",
@@ -111,7 +112,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // waiting interactions stay resumable; every in-flight phase becomes an
   // explicit unknown/failed descriptor and is never replayed automatically.
   const runReconcilePromise = runStore.reconcileAfterRestart().catch(() => []);
-  const localFileRefs = new LocalFileRefs();
+  let localFileRefs = new LocalFileRefs();
   const traceStore = new LocalTraceStore({
     rootPath: path.join(userDataPath, "vibe-agent", "traces"),
   });
@@ -122,7 +123,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     rootPath: path.join(userDataPath, "vibe-agent", "skills"),
   });
   const traceSubscribers = new Set();
-  const traceUploadQueue = new TraceUploadQueue({
+  const createTraceUploadQueue = () => new TraceUploadQueue({
     store: traceStore,
     isDevelopment,
     onStatus: (event) => {
@@ -135,6 +136,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }
     },
   });
+  let traceUploadQueue = createTraceUploadQueue();
   const reconcileTracePromise = runReconcilePromise.then(async () => {
     // If Main died while a child was in flight, the run descriptor is now a
     // durable failure but its local Trace may still say `running`. Close that
@@ -169,10 +171,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // A renderer-provided account id is only a routing hint.  Bind the Main
   // process to the account returned by the first authenticated runtime
   // snapshot, then require the same identity for every local store/Run IPC.
-  // The binding is intentionally memory-only; logout/re-login requires a new
-  // app process until an explicit, authenticated reset flow exists.
+  // The binding is intentionally memory-only. The typed logout IPC drains the
+  // bound account before releasing it for a later login in the same process.
   const accountBinding = new AccountBinding();
-  const requireBoundAccount = (value) => accountBinding.require(value);
+  let accountContextEpoch = 0;
   const payloadAccountId = (payload = {}, code = "vibe_agent_account_required") => {
     const raw = payload?.accountId ?? payload?.account_id;
     return normalizeBoundAccountId(raw, code);
@@ -183,12 +185,13 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     // picks files before the first bootstrap).  Once an authenticated
     // bootstrap has supplied the account, every later local operation is
     // fail-closed on identity drift.
-    return accountBinding.get() ? requireBoundAccount(accountId) : accountId;
+    return accountBinding.accept(accountId);
   };
   // Handlers close over the host identity for trace metadata; assign the host
   // after the handlers are assembled, before any IPC call can invoke them.
   let host;
   const assistantStreams = new Map();
+  const runtimeSnapshotRequests = new Map();
   // `HostedRun.cancel()` returns as soon as the abort frame is accepted.  Keep
   // the explicit user intent until the runner's terminal `done` frame arrives
   // so an `aborted` status can be distinguished from an app-exit/crash abort.
@@ -532,7 +535,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       ...(payload === undefined ? {} : { payload }),
     }).catch(() => undefined);
     const normalized = validContext(context);
-    if (normalized.authToken && normalized.traceUploadBaseUrl) {
+    if (normalized.authToken && normalized.traceUploadBaseUrl
+      && !accountBinding.isReleasing(run.account_id ?? run.accountId)) {
       void traceUploadQueue.enqueue(traceId, {
         accountId: run.account_id ?? run.accountId,
         baseUrl: normalized.traceUploadBaseUrl,
@@ -968,31 +972,46 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // only the current prompt/history and Provider choice; prompt policy, tools,
   // options and the Provider credential arrive together from the server.
   const fetchRunSnapshot = async (run, context, providerId = "", { resume = false } = {}) => {
-    const snapshot = await fetchRuntimeSnapshot({
-      baseUrl: context.baseUrl,
-      authToken: context.authToken,
-      isDevelopment,
-      run,
-      providerId,
-      identity: host.identity(),
-      allowManifestDrift: Boolean(resume),
-    });
-    if (String(context.accountId || "") !== String(run.account_id || run.accountId || "")
-      || String(snapshot.account_id || "") !== String(run.account_id || run.accountId || "")) {
-      throw new Error("vibe_agent_local_account_drift");
-    }
-    accountBinding.bind(snapshot.account_id);
-    if (String(snapshot.project_id || "") !== String(run.project_id || run.projectId || run.project || "")) {
-      throw new Error("vibe_agent_local_project_drift");
-    }
     const runId = String(run.run_id || run.runId || "").trim();
     if (!runId) throw new Error("vibe_agent_run_invalid");
-    const binding = snapshot.agent_binding;
-    const bindingToken = String(binding?.token || "").trim();
-    if (!bindingToken) throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
-    // The bearer remains in Main memory and is never sent to the child.
-    runBindings.set(runId, structuredClone(binding));
-    return snapshot;
+    const accountId = String(run.account_id || run.accountId || "").trim();
+    if (accountBinding.isReleasing(accountId)) throw new Error("vibe_agent_account_releasing");
+    const controller = new AbortController();
+    const request = { accountId, controller };
+    runtimeSnapshotRequests.set(runId, request);
+    try {
+      const snapshot = await fetchRuntimeSnapshot({
+        baseUrl: context.baseUrl,
+        authToken: context.authToken,
+        isDevelopment,
+        run,
+        providerId,
+        identity: host.identity(),
+        allowManifestDrift: Boolean(resume),
+        fetchImpl: (url, init = {}) => globalThis.fetch(url, {
+          ...init,
+          signal: init.signal
+            ? AbortSignal.any([init.signal, controller.signal])
+            : controller.signal,
+        }),
+      });
+      if (String(context.accountId || "") !== accountId
+        || String(snapshot.account_id || "") !== accountId) {
+        throw new Error("vibe_agent_local_account_drift");
+      }
+      accountBinding.bind(snapshot.account_id);
+      if (String(snapshot.project_id || "") !== String(run.project_id || run.projectId || run.project || "")) {
+        throw new Error("vibe_agent_local_project_drift");
+      }
+      const binding = snapshot.agent_binding;
+      const bindingToken = String(binding?.token || "").trim();
+      if (!bindingToken) throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
+      // The bearer remains in Main memory and is never sent to the child.
+      runBindings.set(runId, structuredClone(binding));
+      return snapshot;
+    } finally {
+      if (runtimeSnapshotRequests.get(runId) === request) runtimeSnapshotRequests.delete(runId);
+    }
   };
   const injectLocalStartPayload = async (candidate, sender) => {
     const start = candidate?.start_payload ?? candidate?.start ?? candidate?.payload;
@@ -1404,10 +1423,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }
       return existing.promise;
     }
+    const accountId = String(payload?.accountId ?? payload?.account_id ?? "").trim();
     const task = Promise.resolve()
       .then(() => recoverLocalUnsafe(payload, sender))
-      .finally(() => recoveryInFlight.delete(runId));
-    recoveryInFlight.set(runId, { promise: task, signature: responseSignature(payload?.response) });
+      .finally(() => {
+        if (recoveryInFlight.get(runId)?.promise === task) recoveryInFlight.delete(runId);
+      });
+    recoveryInFlight.set(runId, {
+      promise: task,
+      signature: responseSignature(payload?.response),
+      accountId,
+    });
     return task;
   };
   const register = (channel, handler) => {
@@ -1417,6 +1443,144 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     });
   };
   const localStartInFlight = new Map();
+  let accountLogoutInFlight = null;
+  register("vibeAgent:logout", async (payload) => {
+    const supplied = payload?.accountId ?? payload?.account_id;
+    const requestedAccountId = supplied === undefined || supplied === null || supplied === ""
+      ? ""
+      : normalizeBoundAccountId(supplied, "vibe_agent_logout_account_required");
+    const boundAccountId = accountBinding.get();
+    if (boundAccountId && requestedAccountId && boundAccountId !== requestedAccountId) {
+      throw new Error("vibe_agent_account_drift");
+    }
+    const accountId = boundAccountId || requestedAccountId;
+    if (!accountId) {
+      return {
+        schema: "vibe_agent_logout.v1",
+        account_id: "",
+        terminated_runs: 0,
+        released_reservations: 0,
+        terminated_parked_runs: 0,
+        released: true,
+      };
+    }
+    if (accountLogoutInFlight) {
+      if (accountLogoutInFlight.accountId !== accountId) {
+        throw new Error("vibe_agent_account_binding_conflict");
+      }
+      return accountLogoutInFlight.promise;
+    }
+    accountBinding.beginRelease(accountId);
+    accountContextEpoch += 1;
+    const task = (async () => {
+      const before = await runStore.list({ accountId, includeTerminal: false }).catch(() => []);
+      for (const request of runtimeSnapshotRequests.values()) {
+        if (request.accountId === accountId) request.controller.abort();
+      }
+      const pendingTasks = [
+        ...[...localStartInFlight.values()]
+          .filter((entry) => entry.accountId === accountId)
+          .map((entry) => entry.promise),
+        ...[...recoveryInFlight.values()]
+          .filter((entry) => entry.accountId === accountId)
+          .map((entry) => entry.promise),
+      ];
+      const first = await host.terminateAccount(accountId, { reason: "account_logout" });
+      await Promise.allSettled(pendingTasks);
+      const second = await host.terminateAccount(accountId, { reason: "account_logout" });
+      const after = await runStore.list({ accountId, includeTerminal: false }).catch(() => []);
+      const descriptors = new Map(
+        [...before, ...after]
+          .filter((descriptor) => descriptor?.run_id)
+          .map((descriptor) => [String(descriptor.run_id), descriptor]),
+      );
+      const liveRuns = new Map(
+        [...(first.runs || []), ...(second.runs || [])]
+          .filter((run) => run?.run_id)
+          .map((run) => [String(run.run_id), run]),
+      );
+      for (const descriptor of descriptors.values()) {
+        const pending = descriptor.pending;
+        if (pending && typeof pending === "object") {
+          const pendingId = String(pending.confirmation_id || pending.interaction_id || "");
+          if (pendingId) {
+            await appendLocalSessionEvent(descriptor.run, "user", "本轮已因退出登录取消", {
+              local_event_key: `response:${pendingId}:account_logout`,
+              interaction_id: pending.interaction_id,
+              ...(pending.confirmation_id ? { confirmation_id: pending.confirmation_id } : {}),
+              interaction_response: { action: "stop_all", reason: "account_logout" },
+            }).catch(() => undefined);
+          }
+        }
+        await runStore.markTerminal(descriptor.run_id, "aborted", "account_logout").catch(() => undefined);
+        await appendLocalCancellationReceipt(descriptor.run, {
+          reason: "account_logout",
+          terminalStatus: "aborted",
+        }).catch(() => undefined);
+        await finishTrace(
+          descriptor.run,
+          descriptor.local_context || { account_id: accountId },
+          "aborted",
+          { code: "account_logout" },
+        ).catch(() => undefined);
+      }
+      for (const run of liveRuns.values()) {
+        if (descriptors.has(String(run.run_id))) continue;
+        await appendLocalCancellationReceipt(run, {
+          reason: "account_logout",
+          terminalStatus: "aborted",
+        }).catch(() => undefined);
+      }
+      return {
+        schema: "vibe_agent_logout.v1",
+        account_id: accountId,
+        terminated_runs: new Set([
+          ...(first.runIds || []),
+          ...(second.runIds || []),
+          ...descriptors.keys(),
+        ]).size,
+        released_reservations: new Set([
+          ...(first.reservationRunIds || []),
+          ...(second.reservationRunIds || []),
+        ]).size,
+        terminated_parked_runs: [...descriptors.values()]
+          .filter((descriptor) => new Set(["waiting_user", "resume_ready"])
+            .has(String(descriptor.phase || ""))).length,
+        released: true,
+      };
+    })();
+    let operation;
+    operation = (async () => {
+      try {
+        return await task;
+      } finally {
+        for (const request of runtimeSnapshotRequests.values()) request.controller.abort();
+        for (const router of routers.values()) router?.pending?.clear?.();
+        routers.clear();
+        runBindings.clear();
+        traces.clear();
+        assistantStreams.clear();
+        localUserCancelRequests.clear();
+        recoveryInFlight.clear();
+        localStartInFlight.clear();
+        runtimeSnapshotRequests.clear();
+        knowledgeCache.inflight?.clear?.();
+        traceSubscribers.clear();
+        localFileRefs = new LocalFileRefs();
+        const uploadQueue = traceUploadQueue;
+        traceUploadQueue = createTraceUploadQueue();
+        await uploadQueue.close().catch(() => undefined);
+        try {
+          accountBinding.release(accountId);
+        } finally {
+          host.finishAccountTermination(accountId);
+          if (accountLogoutInFlight?.promise === operation) accountLogoutInFlight = null;
+        }
+      }
+    })();
+    accountLogoutInFlight = { accountId, promise: operation };
+    return await operation;
+  });
   register("vibeAgent:readinessCheck", async () => readinessPromise);
   register("vibeAgent:readinessExport", async (_payload, sender) => {
     const report = await readinessPromise;
@@ -1434,19 +1598,22 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (payload?.resume === true) throw new Error("vibe_agent_resume_internal_only");
     const runId = String(payload?.run?.run_id ?? payload?.run?.runId ?? "").trim();
     if (!runId) throw new Error("vibe_agent_run_invalid");
+    const requestedAccountId = accountForLocalOperation(
+      normalizeBoundAccountId(
+        payload?.run?.account_id ?? payload?.run?.accountId,
+        "vibe_agent_run_account_required",
+      ),
+    );
     try {
-      const accountId = String(payload?.run?.account_id ?? payload?.run?.accountId ?? "").trim();
-      if (!accountId) throw new Error("vibe_agent_run_account_required");
-      return host.attach({ runId, accountId }, sender);
+      return host.attach({ runId, accountId: requestedAccountId }, sender);
     } catch (error) {
       if (String(error?.message || "") !== "vibe_agent_run_not_found") throw error;
     }
     const active = localStartInFlight.get(runId);
     if (active) {
-      await active;
-      const accountId = String(payload?.run?.account_id ?? payload?.run?.accountId ?? "").trim();
-      if (!accountId) throw new Error("vibe_agent_run_account_required");
-      return host.attach({ runId, accountId }, sender);
+      if (active.accountId !== requestedAccountId) throw new Error("vibe_agent_run_account_drift");
+      await active.promise;
+      return host.attach({ runId, accountId: requestedAccountId }, sender);
     }
     const task = (async () => {
       const requestedRun = payload?.run || {};
@@ -1499,11 +1666,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         host.releaseLocalReservation(runId, reservation.reservationId);
       }
     })();
-    localStartInFlight.set(runId, task);
+    localStartInFlight.set(runId, { promise: task, accountId: requestedAccountId });
     try {
       return await task;
     } finally {
-      localStartInFlight.delete(runId);
+      if (localStartInFlight.get(runId)?.promise === task) localStartInFlight.delete(runId);
     }
   });
   const localRunAccount = (payload = {}) => {
@@ -1630,6 +1797,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     return host.list({ accountId });
   });
   register("vibeAgent:localFilePick", async (_payload, sender) => {
+    const requestEpoch = accountContextEpoch;
+    const requestedAccount = accountForLocalOperation(
+      payloadAccountId(_payload, "vibe_agent_local_file_account_required"),
+      "vibe_agent_local_file_account_required",
+    );
     const browserWindow = BrowserWindow.fromWebContents(sender);
     const result = await dialog.showOpenDialog(browserWindow && !browserWindow.isDestroyed() ? browserWindow : undefined, {
       title: "选择本机文件",
@@ -1638,18 +1810,21 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (result.canceled || !result.filePaths?.length) {
       return { schema: "vibe_agent_local_file_selection.v1", canceled: true, files: [] };
     }
-    const requestedAccount = accountForLocalOperation(payloadAccountId(_payload, "vibe_agent_local_file_account_required"), "vibe_agent_local_file_account_required");
+    if (requestEpoch !== accountContextEpoch) throw new Error("vibe_agent_account_context_changed");
+    accountForLocalOperation(requestedAccount, "vibe_agent_local_file_account_required");
     return localFileRefs.admit(result.filePaths, requestedAccount);
   });
-  register("vibeAgent:localFilePreview", async (payload, sender) => (
-    (() => {
-      const accountId = accountForLocalOperation(payloadAccountId(payload, "vibe_agent_local_file_account_required"), "vibe_agent_local_file_account_required");
-      return localFileRefs.preview(
-        payload?.refId ?? payload?.ref_id,
-        accountId,
-      );
-    })()
-  ));
+  register("vibeAgent:localFilePreview", async (payload) => {
+    const requestEpoch = accountContextEpoch;
+    const accountId = accountForLocalOperation(payloadAccountId(payload, "vibe_agent_local_file_account_required"), "vibe_agent_local_file_account_required");
+    const result = await localFileRefs.preview(
+      payload?.refId ?? payload?.ref_id,
+      accountId,
+    );
+    if (requestEpoch !== accountContextEpoch) throw new Error("vibe_agent_account_context_changed");
+    accountForLocalOperation(accountId, "vibe_agent_local_file_account_required");
+    return result;
+  });
   const accountBoundPayload = (payload = {}) => {
     const accountId = accountForLocalOperation(payloadAccountId(payload));
     return { ...payload, accountId };
@@ -1728,6 +1903,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   return {
     host,
     async cleanup() {
+      await accountLogoutInFlight?.promise?.catch(() => undefined);
       await host.cleanup();
       // Runs whose child already parked at a waiting interaction are no
       // longer present in Host's in-memory map. An intentional app exit still

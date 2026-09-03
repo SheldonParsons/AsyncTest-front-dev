@@ -11,5 +11,12 @@ assert.equal(binding.require("7"), "7");
 assert.throws(() => binding.require("8"), /vibe_agent_account_drift/);
 assert.throws(() => binding.bind("8"), /vibe_agent_account_binding_conflict/);
 assert.throws(() => binding.require(""), /vibe_agent_account_required/);
+assert.equal(binding.beginRelease("7"), "7");
+assert.throws(() => binding.require("7"), /vibe_agent_account_releasing/);
+assert.throws(() => binding.bind("7"), /vibe_agent_account_releasing/);
+assert.equal(binding.release("7"), "7");
+assert.equal(binding.get(), "");
+assert.equal(binding.accept("8"), "8");
+assert.equal(binding.bind("8"), "8");
 
 console.log("vibe Main account binding contract: PASS");

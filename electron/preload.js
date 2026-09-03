@@ -74,6 +74,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.invoke('vibeAgent:cancel', { runId, accountId, turnId, sessionId }),
         status: ({ runId, accountId }) => ipcRenderer.invoke('vibeAgent:status', { runId, accountId }),
         list: (payload = {}) => ipcRenderer.invoke('vibeAgent:list', payload),
+        logout: ({ accountId, account_id: accountIdSnake } = {}) => ipcRenderer.invoke('vibeAgent:logout', {
+            ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
+        }),
         localFiles: vibeLocalFiles,
         // Public name used by the local-file model; keep `localFiles` as the
         // compatibility spelling used by the current renderer.
