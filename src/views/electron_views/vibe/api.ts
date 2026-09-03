@@ -480,69 +480,6 @@ export function updateVibeProject(vibeProjectId: string, payload: {
   return request('PATCH', `/vibe/projects/${vibeProjectId}`, payload)
 }
 
-export interface VibeSessionSourceLocator {
-  offset_unit: 'unicode_code_point'
-  start_offset: number
-  end_offset: number
-}
-
-export interface VibeSessionSourceDetail {
-  schema: 'source_content.v1'
-  source_id: string
-  display_name: string
-  source_kind: string
-  mime_type: string
-  content_hash: string
-  text: string
-  chars: number
-  range_sha256: string
-  locator?: VibeSessionSourceLocator
-}
-
-export interface VibeSessionSourceFragment extends Omit<VibeSessionSourceDetail, 'schema' | 'locator'> {
-  schema: 'source_fragment.v1'
-  locator: VibeSessionSourceLocator
-}
-
-export interface VibeSessionSourceDetailResponse {
-  ok: true
-  source: VibeSessionSourceDetail
-}
-
-export interface VibeSessionSourceFragmentResponse {
-  ok: true
-  source: VibeSessionSourceFragment
-}
-
-/** 会话引用正文按需读取；events 只承载 public_source_ref.v1 轻量定位符。 */
-export function getVibeSessionSourceFragment(
-  sessionId: string,
-  sourceId: string,
-  locator: { startOffset: number; endOffset: number },
-): Promise<VibeSessionSourceFragmentResponse> {
-  const query = new URLSearchParams({
-    start_offset: String(locator.startOffset),
-    end_offset: String(locator.endOffset),
-  })
-  return request(
-    'GET',
-    `/vibe/sessions/${encodeURIComponent(sessionId)}`
-      + `/sources/${encodeURIComponent(sourceId)}/fragment?${query.toString()}`,
-  )
-}
-
-/** 缺少引用区间时按需读取会话授权范围内的完整来源；不回退项目级旧接口。 */
-export function getVibeSessionSource(
-  sessionId: string,
-  sourceId: string,
-): Promise<VibeSessionSourceDetailResponse> {
-  return request(
-    'GET',
-    `/vibe/sessions/${encodeURIComponent(sessionId)}`
-      + `/sources/${encodeURIComponent(sourceId)}`,
-  )
-}
-
 export async function listVibeLLMProviders(): Promise<{
   schema: 'llm_provider_settings.v1'
   providers: VibeLLMProviderConfig[]

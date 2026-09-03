@@ -759,8 +759,7 @@ import {
   getVibeLLMModelPicker,
   getKnowledgeCommit,
   getKnowledgeCommits,
-  getVibeSessionSource,
-  getVibeSessionSourceFragment,
+  getKnowledgeSource,
   streamKnowledgeActivity,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
@@ -2297,8 +2296,8 @@ async function loadWorkspaceFile(tabId: string): Promise<void> {
         end_offset: current.file.citation_end_offset,
       },
     }, 0)
-    if (current.sessionId && source.canOpen) {
-      await loadWorkspaceCitationSource(tabId, current.sessionId, source)
+    if (source.canOpen) {
+      await loadWorkspaceCitationSource(tabId, source)
     } else {
       replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
         ? { ...tab, loading: false, error: '该引用缺少可读取的来源标识。' }
@@ -2308,11 +2307,11 @@ async function loadWorkspaceFile(tabId: string): Promise<void> {
   }
   if (String(current.file.kind || '') === 'knowledge-source') {
     const sourceId = String(current.file.source_ref_id || '').trim()
-    if (current.sessionId && sourceId) {
-      await loadWorkspaceSessionSource(tabId, current.sessionId, sourceId)
+    if (sourceId && workspaceProjectContextId()) {
+      await loadWorkspaceKnowledgeSource(tabId, sourceId)
     } else {
       replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-        ? { ...tab, loading: false, error: '该来源缺少所属会话，无法安全读取。' }
+        ? { ...tab, loading: false, error: '该来源缺少项目或来源标识，无法读取。' }
         : tab)
     }
     return
@@ -2409,7 +2408,7 @@ function openConversationSource(source: ConversationSourceCitation): void {
     activeWorkspaceTabId.value = id
     setWorkspaceWindowOpen(true)
     if (existing.kind === 'file' && !existing.loading && existing.error) {
-      void loadWorkspaceCitationSource(id, sessionId, source)
+      void loadWorkspaceCitationSource(id, source)
     }
     return
   }
@@ -2441,12 +2440,11 @@ function openConversationSource(source: ConversationSourceCitation): void {
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
   setWorkspaceWindowOpen(true)
-  void loadWorkspaceCitationSource(id, sessionId, source)
+  void loadWorkspaceCitationSource(id, source)
 }
 
 async function loadWorkspaceCitationSource(
   tabId: string,
-  sessionId: string,
   source: ConversationSourceCitation,
 ): Promise<void> {
   if (
@@ -2456,19 +2454,28 @@ async function loadWorkspaceCitationSource(
   ) {
     await loadWorkspaceSourceFragment(
       tabId,
-      sessionId,
       source.sourceId,
       source.startOffset,
       source.endOffset,
     )
     return
   }
-  await loadWorkspaceSessionSource(tabId, sessionId, source.sourceId)
+  await loadWorkspaceKnowledgeSource(tabId, source.sourceId)
+}
+
+function sliceUnicodeCodePoints(value: string, startOffset: number, endOffset: number): string {
+  let offset = 0
+  let result = ''
+  for (const character of value) {
+    if (offset >= endOffset) break
+    if (offset >= startOffset) result += character
+    offset += 1
+  }
+  return result
 }
 
 async function loadWorkspaceSourceFragment(
   tabId: string,
-  sessionId: string,
   sourceId: string,
   startOffset: number,
   endOffset: number,
@@ -2478,10 +2485,9 @@ async function loadWorkspaceSourceFragment(
     ? { ...tab, loading: true, error: '' }
     : tab)
   try {
-    const payload = await getVibeSessionSourceFragment(sessionId, sourceId, {
-      startOffset,
-      endOffset,
-    })
+    const projectId = workspaceProjectContextId()
+    if (!projectId) throw new Error('当前项目身份无效')
+    const payload = await getKnowledgeSource(projectId, sourceId)
     if (!workspaceRequestIsCurrent(tabId, token)) return
     const source = payload.source
     replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
@@ -2490,7 +2496,7 @@ async function loadWorkspaceSourceFragment(
           title: source.display_name || tab.title,
           loading: false,
           error: '',
-          content: source.text || '',
+          content: sliceUnicodeCodePoints(String(source.content || ''), startOffset, endOffset),
           file: {
             ...tab.file,
             filename: source.display_name || tab.file.filename,
@@ -2523,24 +2529,22 @@ function openWorkspaceSource(source: string | ConversationSourceCitation): void 
       }, 0)
     : source
   const normalizedSourceId = reference.sourceId
-  const sessionId = selectedTab?.kind === 'change'
-    ? String(selectedTab.detail?.session_id || selectedTab.summary.session_id || '').trim()
-    : ''
-  if (!sessionId) {
-    ElMessage.warning('该变更缺少所属会话，无法安全读取来源。')
+  const projectId = workspaceProjectContextId()
+  if (!projectId) {
+    ElMessage.warning('当前项目身份无效，无法读取来源。')
     return
   }
   if (!normalizedSourceId) return
   const identity = sourceCitationViewerIdentity(reference)
   if (!identity) return
   workspaceFocusAfterEnter = true
-  const id = workspaceFileViewerTabId(sessionId, identity)
+  const id = workspaceFileViewerTabId(projectId, identity)
   const existing = workspaceTabById(id)
   if (existing) {
     activeWorkspaceTabId.value = id
     setWorkspaceWindowOpen(true)
     if (existing.kind === 'file' && !existing.loading && existing.error) {
-      void loadWorkspaceSessionSource(id, sessionId, normalizedSourceId)
+      void loadWorkspaceKnowledgeSource(id, normalizedSourceId)
     }
     return
   }
@@ -2564,18 +2568,17 @@ function openWorkspaceSource(source: string | ConversationSourceCitation): void 
     title: file.filename,
     loading: true,
     error: '',
-    sessionId,
+    sessionId: String(activeSessionId.value || '').trim(),
     file,
     content: '',
   }
   applyWorkspaceTabsState(upsertViewerTab(workspaceTabs.value, tab))
   setWorkspaceWindowOpen(true)
-  void loadWorkspaceSessionSource(id, sessionId, normalizedSourceId)
+  void loadWorkspaceKnowledgeSource(id, normalizedSourceId)
 }
 
-async function loadWorkspaceSessionSource(
+async function loadWorkspaceKnowledgeSource(
   tabId: string,
-  sessionId: string,
   sourceId: string,
 ): Promise<void> {
   const token = beginWorkspaceRequest(tabId)
@@ -2583,7 +2586,9 @@ async function loadWorkspaceSessionSource(
     ? { ...tab, loading: true, error: '' }
     : tab)
   try {
-    const payload = await getVibeSessionSource(sessionId, sourceId)
+    const projectId = workspaceProjectContextId()
+    if (!projectId) throw new Error('当前项目身份无效')
+    const payload = await getKnowledgeSource(projectId, sourceId)
     if (!workspaceRequestIsCurrent(tabId, token)) return
     const source = payload.source
     replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
@@ -2592,7 +2597,7 @@ async function loadWorkspaceSessionSource(
           title: source.display_name || tab.title,
           loading: false,
           error: '',
-          content: source.text || '',
+          content: source.content || '',
           file: {
             ...tab.file,
             filename: source.display_name || tab.file.filename,
