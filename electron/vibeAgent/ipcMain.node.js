@@ -947,7 +947,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     },
   };
   const effectiveLocalHandlers = { ...builtInLocalHandlers, ...(localHandlers || {}) };
-  host = new VibeAgentHost({ isDevelopment, localHandlers: effectiveLocalHandlers, maxActiveRuns, runStore });
+  host = new VibeAgentHost({ localHandlers: effectiveLocalHandlers, maxActiveRuns, runStore });
   // Main owns the single runtime bootstrap exchange. Renderer contributes
   // only the current prompt/history and Provider choice; prompt policy, tools,
   // options and the Provider credential arrive together from the server.

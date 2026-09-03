@@ -20,7 +20,6 @@ const PI_AI_VERSION = "0.84.4";
 const RUN_SCHEMA = "electron_agent_run.v1";
 const EVENT_SCHEMA = "vibe_agent_event.v1";
 const MAX_ACTIVE_RUNS = 5;
-const SLOT_WAIT_MS = 5_000;
 const GRACEFUL_ABORT_MS = 2_000;
 const TERMINATE_WAIT_MS = 2_000;
 
@@ -176,9 +175,8 @@ function validateLocalRun(input) {
   }
   const payload = input?.start_payload ?? input?.start ?? input?.payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("vibe_agent_local_start_payload_missing");
-  // Reuse the child protocol validator at this trust boundary.  This keeps
-  // local and server starts on one message contract without duplicating the
-  // large provider/tool schema here.
+  // Reuse the child protocol validator at this trust boundary instead of
+  // duplicating the large provider/tool schema here.
   const { serialized } = makeFrame(identityOf({ ...run }), "start", {
     ...payload,
     execution_mode: "local",
@@ -240,13 +238,10 @@ function waitForExit(child, timeoutMs) {
 }
 
 class HostedRun {
-  constructor({ run, sender, host, isDevelopment, identity, local = true, startPayload, localHandlers = {}, localContext = {}, runStore = null, resume = false }) {
+  constructor({ run, sender, host, startPayload, localHandlers = {}, localContext = {}, runStore = null, resume = false }) {
     this.run = run;
     this.sender = sender;
     this.host = host;
-    this.isDevelopment = isDevelopment;
-    this.hostIdentity = identity;
-    this.localMode = local;
     this.startPayload = startPayload;
     this.localHandlers = localHandlers;
     this.runStore = runStore;
@@ -256,13 +251,11 @@ class HostedRun {
     this.localResolving = new Set();
     this.localResolved = new Map();
     // A malformed/replayed child frame must not execute a tool wave or create
-    // a second interaction. Keep a bounded correlation digest just like the
-    // server control store; exact duplicates are harmless, conflicting IDs
-    // fail closed.
+    // a second interaction. Keep a bounded correlation digest in Main; exact
+    // duplicates are harmless, conflicting IDs fail closed.
     this.seenChildMessageDigests = new Map();
     this.childFrameChain = Promise.resolve();
     this.abortController = new AbortController();
-    this.countsSlot = !local;
     this.child = undefined;
     this.protocolIdentity = undefined;
     this.state = "connecting";
@@ -273,7 +266,6 @@ class HostedRun {
     this.readyResolve = undefined;
     this.readyReject = undefined;
     this.localTerminalState = undefined;
-    this.localCrashed = false;
     this.readyReached = false;
     this.crashNotified = false;
     this.crashRecoveryPromise = Promise.resolve();
@@ -302,46 +294,44 @@ class HostedRun {
       this.readyResolve = resolve;
       this.readyReject = reject;
     });
-    if (this.localMode) {
-      this.protocolIdentity = identityOf({
-        run_id: this.run.run_id,
-        turn_id: this.run.turn_id,
-        request_id: this.run.request_id,
-      });
-      const traceStart = structuredClone(this.startPayload);
-      if (traceStart?.provider && typeof traceStart.provider === "object") {
-        traceStart.provider = {
-          id: traceStart.provider.id,
-          name: traceStart.provider.name,
-          model: traceStart.provider.model,
-          mode: traceStart.provider.mode,
-          reasoning: false,
-          context_window: traceStart.provider.context_window,
-          max_tokens: traceStart.provider.max_tokens,
-        };
-      }
-      // The handler writes the authoritative user-message journal before the
-      // child can call a Provider. Its Trace append is already best-effort;
-      // any remaining error must stop startup rather than lose context.
-      await this.localHandlers.onStart?.({ run: this.run, payload: traceStart, context: this.localContext });
-      // Persist the secret-free descriptor before the child can issue a
-      // Provider request. A crash between this write and `ready` is therefore
-      // classified as interrupted instead of being silently replayed.
-      await this.runStore?.create({
-        run: this.run,
-        startPayload: this.startPayload,
-        localContext: this.localContext,
-        replace: this.resume,
-      });
-      this.spawnChild();
-      await this.writeChildFrame(makeFrame(this.protocolIdentity, "start", this.startPayload).serialized);
-      // The child now owns its private copy. Remove credentials from Main's
-      // live run object immediately instead of waiting for terminal cleanup.
-      if (this.startPayload?.provider && typeof this.startPayload.provider === "object") {
-        delete this.startPayload.provider.api_key;
-        delete this.startPayload.provider.apiKey;
-        delete this.startPayload.provider.headers;
-      }
+    this.protocolIdentity = identityOf({
+      run_id: this.run.run_id,
+      turn_id: this.run.turn_id,
+      request_id: this.run.request_id,
+    });
+    const traceStart = structuredClone(this.startPayload);
+    if (traceStart?.provider && typeof traceStart.provider === "object") {
+      traceStart.provider = {
+        id: traceStart.provider.id,
+        name: traceStart.provider.name,
+        model: traceStart.provider.model,
+        mode: traceStart.provider.mode,
+        reasoning: false,
+        context_window: traceStart.provider.context_window,
+        max_tokens: traceStart.provider.max_tokens,
+      };
+    }
+    // The handler writes the authoritative user-message journal before the
+    // child can call a Provider. Its Trace append is already best-effort;
+    // any remaining error must stop startup rather than lose context.
+    await this.localHandlers.onStart?.({ run: this.run, payload: traceStart, context: this.localContext });
+    // Persist the secret-free descriptor before the child can issue a
+    // Provider request. A crash between this write and `ready` is therefore
+    // classified as interrupted instead of being silently replayed.
+    await this.runStore?.create({
+      run: this.run,
+      startPayload: this.startPayload,
+      localContext: this.localContext,
+      replace: this.resume,
+    });
+    this.spawnChild();
+    await this.writeChildFrame(makeFrame(this.protocolIdentity, "start", this.startPayload).serialized);
+    // The child now owns its private copy. Remove credentials from Main's
+    // live run object immediately instead of waiting for terminal cleanup.
+    if (this.startPayload?.provider && typeof this.startPayload.provider === "object") {
+      delete this.startPayload.provider.api_key;
+      delete this.startPayload.provider.apiKey;
+      delete this.startPayload.provider.headers;
     }
     const timeout = setTimeout(() => this.readyReject?.(new Error("vibe_agent_runner_ready_timeout")), 10_000);
     timeout.unref?.();
@@ -361,11 +351,6 @@ class HostedRun {
       this.child.stdin.once("drain", resolve);
       this.child.stdin.once("error", reject);
     });
-  }
-
-  acceptPublicEvent(event) {
-    if (event?.state) this.state = String(event.state);
-    this.host.emitTo(this.sender, event);
   }
 
   spawnChild() {
@@ -416,11 +401,11 @@ class HostedRun {
           // then exit non-zero because the parent protocol failed. Preserve
           // that authoritative status instead of reclassifying a known
           // failure as an unknown in-flight Provider/tool outcome.
-          if (this.localMode && ["completed", "failed", "aborted", "cancelled"].includes(String(this.localTerminalState || ""))) {
+          if (["completed", "failed", "aborted", "cancelled"].includes(String(this.localTerminalState || ""))) {
             await this.close({ state: this.localTerminalState, fromExit: true });
             return;
           }
-          if (this.localMode && this.runStore) {
+          if (this.runStore) {
             const descriptor = await this.runStore.get(this.run.run_id).catch(() => null);
             const phase = String(descriptor?.phase || "");
             const unknown = phase === "provider_in_flight" || phase === "response_in_flight"
@@ -433,31 +418,28 @@ class HostedRun {
           this.fail(signal ? "runner_signalled" : "runner_exited");
           return;
         }
-        if (this.localMode) {
-          if (!this.localTerminalState) {
-            this.fail("runner_terminal_missing");
-            return;
-          }
-          if (this.localTerminalState === "waiting_user") {
-            // Pi intentionally exits after publishing a waiting checkpoint.
-            // This is not a terminal run: retain the durable descriptor and
-            // let a later response cold-start the continuation.
-            const descriptor = await this.runStore?.get(this.run.run_id).catch(() => null);
-            if (!descriptor?.pending && !localRunConstants.RECOVERABLE_PHASES.has(String(descriptor?.phase || ""))) {
-              this.fail("runner_waiting_without_interaction");
-              return;
-            }
-            await Promise.resolve().then(() => this.localHandlers.onPark?.({
-              run: this.run,
-              context: this.localContext,
-              reason: "waiting_child_exit",
-            })).catch(() => undefined);
-            await this.close({ state: "waiting_user", fromExit: true, preserveWaiting: true });
-            return;
-          }
-          await this.close({ state: this.localTerminalState, fromExit: true });
+        if (!this.localTerminalState) {
+          this.fail("runner_terminal_missing");
           return;
         }
+        if (this.localTerminalState === "waiting_user") {
+          // Pi intentionally exits after publishing a waiting checkpoint.
+          // This is not a terminal run: retain the durable descriptor and
+          // let a later response cold-start the continuation.
+          const descriptor = await this.runStore?.get(this.run.run_id).catch(() => null);
+          if (!descriptor?.pending && !localRunConstants.RECOVERABLE_PHASES.has(String(descriptor?.phase || ""))) {
+            this.fail("runner_waiting_without_interaction");
+            return;
+          }
+          await Promise.resolve().then(() => this.localHandlers.onPark?.({
+            run: this.run,
+            context: this.localContext,
+            reason: "waiting_child_exit",
+          })).catch(() => undefined);
+          await this.close({ state: "waiting_user", fromExit: true, preserveWaiting: true });
+          return;
+        }
+        await this.close({ state: this.localTerminalState, fromExit: true });
       })();
     });
   }
@@ -533,7 +515,7 @@ class HostedRun {
         this.setState("waiting_user");
       }
     }
-    if (this.localMode && this.runStore) {
+    if (this.runStore) {
       if (frame.type === "provider_payload") {
         await this.runStore.phase(this.run.run_id, "provider_in_flight", {
           state: "running",
@@ -693,7 +675,7 @@ class HostedRun {
         ? "completed"
         : frame.payload.status === "aborted" ? "aborted" : frame.payload.status;
       this.event("done", { ...frame.payload, payload: frame.payload });
-      if (this.localMode && this.runStore) {
+      if (this.runStore) {
         if (frame.payload.status === "waiting_user") {
           await this.runStore.phase(this.run.run_id, "waiting_user", { state: "waiting_user" }).catch(() => undefined);
         } else {
@@ -707,14 +689,12 @@ class HostedRun {
 
   attach(sender) {
     this.sender = sender;
-    if (this.localMode) {
-      const pending = [...this.localPending.values()].find((item) => !item.responded);
-      if (pending) queueMicrotask(() => {
-        if (!this.closed && this.state !== "cancelling") {
-          this.event("interaction_request", { ...pending.payload, payload: pending.payload });
-        }
-      });
-    }
+    const pending = [...this.localPending.values()].find((item) => !item.responded);
+    if (pending) queueMicrotask(() => {
+      if (!this.closed && this.state !== "cancelling") {
+        this.event("interaction_request", { ...pending.payload, payload: pending.payload });
+      }
+    });
     return this.status();
   }
 
@@ -847,9 +827,7 @@ class HostedRun {
   }
 
   status() {
-    const pending = this.localMode
-      ? [...this.localPending.values()].find((item) => !item.responded)
-      : undefined;
+    const pending = [...this.localPending.values()].find((item) => !item.responded);
     return {
       execution_host: "electron",
       run_id: this.run.run_id,
@@ -881,13 +859,12 @@ class HostedRun {
   }
 
   async handleUnexpectedLocalExit(code, signal) {
-    if (this.closed || !this.localMode) return false;
+    if (this.closed) return false;
     const pending = [...this.localPending.values()].find((item) => !item.responded);
     const descriptor = await this.runStore?.get(this.run.run_id).catch(() => null);
     const phase = String(descriptor?.phase || "");
     const recoverable = Boolean(pending) || localRunConstants.RECOVERABLE_PHASES.has(phase);
     if (!recoverable) return false;
-    this.localCrashed = true;
     const pendingPayload = pending?.payload || descriptor?.pending;
     if (phase === "resume_ready" && descriptor?.response && descriptor?.resolved_result) {
       await this.runStore?.phase(this.run.run_id, "resume_ready", {
@@ -927,28 +904,26 @@ class HostedRun {
     const safeCode = /^(?:vibe_agent|runner|pi|provider|tool|interaction|knowledge|electron|backend|trace|session|local|attachment|context|model|wall|total|credential|protocol|request|response|candidate|unknown|cancel|host)[A-Za-z0-9_.:-]{0,127}$/u.test(rawCode)
       ? rawCode
       : "vibe_agent_failed";
-    if (this.localMode) {
-      if (!this.crashNotified) {
-        this.crashNotified = true;
-        try {
-          this.crashRecoveryPromise = Promise.resolve(this.localHandlers.onCrash?.({
-            run: this.run,
-            code: safeCode,
-            context: this.localContext,
-            pending_tool_call_id: [...this.localPending.values()]
-              .find((item) => !item.responded)?.payload?.tool_call_id || "",
-          })).catch(() => undefined);
-        } catch { this.crashRecoveryPromise = Promise.resolve(); }
-      }
+    if (!this.crashNotified) {
+      this.crashNotified = true;
       try {
-        Promise.resolve(this.localHandlers.onError?.({
+        this.crashRecoveryPromise = Promise.resolve(this.localHandlers.onCrash?.({
           run: this.run,
           code: safeCode,
           context: this.localContext,
-          startup_recovery: this.resume && !this.readyReached,
-        })).catch(() => {});
-      } catch { /* diagnostics must not mask the terminal failure */ }
+          pending_tool_call_id: [...this.localPending.values()]
+            .find((item) => !item.responded)?.payload?.tool_call_id || "",
+        })).catch(() => undefined);
+      } catch { this.crashRecoveryPromise = Promise.resolve(); }
     }
+    try {
+      Promise.resolve(this.localHandlers.onError?.({
+        run: this.run,
+        code: safeCode,
+        context: this.localContext,
+        startup_recovery: this.resume && !this.readyReached,
+      })).catch(() => {});
+    } catch { /* diagnostics must not mask the terminal failure */ }
     this.setState("failed", safeCode);
     this.event("error", { code: safeCode });
     this.readyReject?.(new Error(safeCode));
@@ -976,11 +951,11 @@ class HostedRun {
     try { child?.stdin?.destroy(); } catch {}
     try { child?.stdout?.destroy(); } catch {}
     try { child?.stderr?.destroy(); } catch {}
-    if (this.localMode && this.startPayload?.provider && typeof this.startPayload.provider === "object") {
+    if (this.startPayload?.provider && typeof this.startPayload.provider === "object") {
       delete this.startPayload.provider.api_key;
       delete this.startPayload.provider.apiKey;
     }
-    if (this.localMode && String(state) === "aborted") {
+    if (String(state) === "aborted") {
       try {
         await this.localHandlers.onClose?.({ run: this.run, context: this.localContext, state });
       } catch {
@@ -990,7 +965,7 @@ class HostedRun {
       }
     }
     const preserveFailedResumeCheckpoint = this.resume && !this.readyReached && String(state) === "failed";
-    if (this.localMode && this.runStore && !preserveWaiting && !preserveFailedResumeCheckpoint && String(state) !== "waiting_user") {
+    if (this.runStore && !preserveWaiting && !preserveFailedResumeCheckpoint && String(state) !== "waiting_user") {
       const terminalState = ["completed", "failed", "aborted", "cancelled", "closed"].includes(String(state))
         ? String(state) : "failed";
       await this.runStore.markTerminal(this.run.run_id, terminalState, terminalState).catch(() => undefined);
@@ -1005,14 +980,12 @@ class HostedRun {
 }
 
 export class VibeAgentHost {
-  constructor({ isDevelopment = !app.isPackaged, localHandlers = {}, maxActiveRuns = MAX_ACTIVE_RUNS, runStore = null } = {}) {
-    this.isDevelopment = isDevelopment;
+  constructor({ localHandlers = {}, maxActiveRuns = MAX_ACTIVE_RUNS, runStore = null } = {}) {
     this.localHandlers = localHandlers;
     this.runStore = runStore;
     this.maxActiveRuns = Number.isFinite(maxActiveRuns) && maxActiveRuns > 0 ? Math.floor(maxActiveRuns) : MAX_ACTIVE_RUNS;
     this.runs = new Map();
     this.localReservations = new Map();
-    this.waiters = [];
     this.activeSlots = 0;
     this.reservationChain = Promise.resolve();
     const clientInstanceId = stableClientIdentity();
@@ -1034,28 +1007,6 @@ export class VibeAgentHost {
 
   emitTo(sender, event) {
     if (sender && !sender.isDestroyed?.()) sender.send("vibeAgent:event", event);
-  }
-
-  async acquire({ local = false } = {}) {
-    // The cap is per Electron Main, not per transport mode. During migration
-    // a user can have a legacy server-hosted run and a local run at once; both
-    // still consume a real Node child and must share the same memory bound.
-    void local;
-    if (this.activeSlots < this.maxActiveRuns) {
-      this.activeSlots += 1;
-      return;
-    }
-    const waiters = this.waiters;
-    await new Promise((resolve, reject) => {
-      const waiter = { resolve, reject, timer: undefined };
-      waiter.timer = setTimeout(() => {
-        const index = waiters.indexOf(waiter);
-        if (index >= 0) waiters.splice(index, 1);
-        reject(new Error("vibe_agent_host_busy"));
-      }, SLOT_WAIT_MS);
-      waiter.timer.unref?.();
-      waiters.push(waiter);
-    });
   }
 
   reservationStatus(reservation) {
@@ -1174,18 +1125,12 @@ export class VibeAgentHost {
 
   releaseSlot() {
     this.activeSlots = Math.max(0, this.activeSlots - 1);
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      clearTimeout(waiter.timer);
-      this.activeSlots += 1;
-      waiter.resolve();
-    }
   }
 
   release(runId) {
     const run = this.runs.get(runId);
     this.runs.delete(runId);
-    if (!run?.countsSlot && !run?.localMode) return;
+    if (!run) return;
     this.releaseSlot();
   }
 
@@ -1210,7 +1155,6 @@ export class VibeAgentHost {
     }
     const existing = this.runs.get(run.run_id);
     if (existing) {
-      if (!existing.localMode) throw new Error("vibe_agent_run_mode_conflict");
       this.releaseLocalReservation(run.run_id, reservationId);
       return existing.attach(sender);
     }
@@ -1240,9 +1184,6 @@ export class VibeAgentHost {
       run,
       sender,
       host: this,
-      isDevelopment: this.isDevelopment,
-      identity: this.identityFacts,
-      local: true,
       startPayload: payload,
       localHandlers: this.localHandlers,
       localContext,
@@ -1345,7 +1286,7 @@ export class VibeAgentHost {
     const run = this.runs.get(id);
     if (!run) throw new Error("vibe_agent_run_not_found");
     const owner = String(accountId || "").trim();
-    if (run.localMode && !owner) throw new Error("vibe_agent_run_account_required");
+    if (!owner) throw new Error("vibe_agent_run_account_required");
     if (owner && String(run.run.account_id || "") !== owner) throw new Error("vibe_agent_run_account_drift");
     return run;
   }
@@ -1353,14 +1294,9 @@ export class VibeAgentHost {
   async cleanup() {
     const runs = [...this.runs.values()];
     await Promise.allSettled(runs.map((run) => run.close({ state: "aborted" })));
-    for (const waiter of this.waiters.splice(0)) {
-      clearTimeout(waiter.timer);
-      waiter.reject(new Error("vibe_agent_host_closed"));
-    }
     for (const reservation of [...this.localReservations.values()]) {
       this.releaseLocalReservation(reservation.runId, reservation.reservationId);
     }
-    // All modes share `waiters`; there is no second local queue to drain.
   }
 }
 
