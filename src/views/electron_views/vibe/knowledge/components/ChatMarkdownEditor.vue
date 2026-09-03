@@ -98,6 +98,7 @@ let externalSyncToken = 0
 // clear, instead of writing the just-sent draft back to the parent.
 let editorResetEpoch = 0
 let serializationQueued = false
+let serializationFrameId: number | null = null
 let heightRafId: number | null = null
 let suppressControlledPasteUntil = 0
 let resizeListener: (() => void) | null = null
@@ -143,14 +144,16 @@ function syncHeight() {
 }
 
 function queueSerialization() {
-  if (initializing) return
+  if (initializing || composing.value) return
   if (serializationQueued) return
   serializationQueued = true
   const queuedEpoch = editorResetEpoch
   const run = () => {
+    serializationFrameId = null
     serializationQueued = false
     if (!mounted || !editor) return
     if (queuedEpoch !== editorResetEpoch) return
+    if (composing.value) return
     const value = serializeEditorState()
     currentMarkdown.value = value
     scheduleHeightSync()
@@ -167,13 +170,24 @@ function queueSerialization() {
     emit('update:modelValue', value)
   }
   // Markdown shortcuts can enqueue a nested Lexical update (notably code
-  // fences). Give that reconciliation a turn before serializing, so parents
-  // receive the final block state rather than a transient marker-only draft.
-  if (typeof queueMicrotask === 'function') queueMicrotask(() => queueMicrotask(run))
-  else setTimeout(run, 0)
+  // fences). A single animation-frame flush gives those updates time to
+  // settle while coalescing rapid keypresses into one full-document walk.
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    serializationFrameId = window.requestAnimationFrame(run)
+  } else if (typeof window !== 'undefined') {
+    serializationFrameId = window.setTimeout(run, 16)
+  } else {
+    serializationFrameId = setTimeout(run, 16) as unknown as number
+  }
 }
 
 function onEditorUpdate() {
+  // CJK IME composition emits several transient Lexical states for one
+  // visible character. Serializing the whole document for each transient
+  // state makes the Electron renderer compete with the keyboard event loop.
+  // The final compositionend callback schedules the single authoritative
+  // serialization below.
+  if (composing.value) return
   queueSerialization()
 }
 
@@ -183,6 +197,7 @@ function onCompositionStart() {
 
 function onCompositionEnd() {
   composing.value = false
+  queueSerialization()
 }
 
 function plainTextFromHtml(html: string): string | null {
@@ -414,6 +429,19 @@ function onEnter(event: KeyboardEvent | null): boolean {
   return true
 }
 
+function cancelQueuedSerialization() {
+  if (serializationFrameId === null) return
+  if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(serializationFrameId)
+  } else if (typeof window !== 'undefined') {
+    window.clearTimeout(serializationFrameId)
+  } else {
+    clearTimeout(serializationFrameId)
+  }
+  serializationFrameId = null
+  serializationQueued = false
+}
+
 function importMarkdown(value: string) {
   const instance = editor
   if (!instance) return
@@ -436,6 +464,7 @@ function importMarkdown(value: string) {
 
 function clearEditor() {
   const instance = editor
+  cancelQueuedSerialization()
   editorResetEpoch += 1
   currentMarkdown.value = ''
   lastPropMarkdown = ''
@@ -528,6 +557,7 @@ function setupEditor() {
 function disposeEditor() {
   mounted = false
   pluginsReady = false
+  cancelQueuedSerialization()
   if (resizeListener && typeof window !== 'undefined') {
     window.removeEventListener('resize', resizeListener)
     resizeListener = null

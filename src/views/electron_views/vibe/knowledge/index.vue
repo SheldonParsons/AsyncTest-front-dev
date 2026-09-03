@@ -5590,13 +5590,45 @@ function conversationPreviewText(value: unknown, fallback = '') {
   return text || fallback
 }
 
+// 输入框每次变更都会让会话视图重新 patch。历史消息本身没有变化时，重复跑
+// marked + DOMPurify 会把解析成本直接放到键盘事件的同一帧里，长会话尤其明显。
+// 用有界 LRU 缓存复用稳定正文；缓存只在 Renderer 内存中存在，不改变事件数据。
+const MARKDOWN_RENDER_CACHE_MAX_ENTRIES = 128
+const MARKDOWN_RENDER_CACHE_MAX_CHARS = 8 * 1024 * 1024
+const markdownRenderCache = new Map<string, { html: string; chars: number }>()
+let markdownRenderCacheChars = 0
+
 function renderMarkdown(content: string) {
-  const html = marked.parse(normalizeCopyableMarkdownFence(content || '')) as string
+  const source = String(content || '')
+  const cached = markdownRenderCache.get(source)
+  if (cached) {
+    // Refresh recency so active/current messages survive a long conversation.
+    markdownRenderCache.delete(source)
+    markdownRenderCache.set(source, cached)
+    return cached.html
+  }
+  const html = marked.parse(normalizeCopyableMarkdownFence(source)) as string
   const sanitized = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
     ADD_ATTR: ['target', 'rel'],
   })
-  return enhanceCopyableCodeBlocks(sanitized)
+  const result = enhanceCopyableCodeBlocks(sanitized)
+  const chars = source.length + result.length
+  // Do not retain a single giant answer or unboundedly grow memory. Such
+  // entries are rare; parsing them once per parent render is preferable to
+  // keeping another large copy in the Renderer heap.
+  if (chars <= MARKDOWN_RENDER_CACHE_MAX_CHARS) {
+    markdownRenderCache.set(source, { html: result, chars })
+    markdownRenderCacheChars += chars
+    while (markdownRenderCache.size > MARKDOWN_RENDER_CACHE_MAX_ENTRIES
+      || markdownRenderCacheChars > MARKDOWN_RENDER_CACHE_MAX_CHARS) {
+      const oldest = markdownRenderCache.entries().next().value
+      if (!oldest) break
+      markdownRenderCache.delete(oldest[0])
+      markdownRenderCacheChars = Math.max(0, markdownRenderCacheChars - Number(oldest[1]?.chars || 0))
+    }
+  }
+  return result
 }
 
 function normalizeCopyableMarkdownFence(content: string) {
