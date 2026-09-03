@@ -755,10 +755,8 @@ import {
   type TurnProtocolState,
 } from './composables/turnProtocol'
 import {
-  attachLocalTurnPresentation,
   localTurnPresentation,
   preferredProcessDuration,
-  refreshAssistantTurnPresentation,
   shouldShowMissingTerminalNotice,
 } from './turnPresentationPolicy'
 import {
@@ -5451,46 +5449,6 @@ function upsertEvent(event?: VibeEvent) {
   if (idx >= 0) events.value.splice(idx, 1, event)
   else events.value.push(event)
   events.value = sortEvents(events.value)
-}
-
-function eventProtocolProjectionSignature(event: any): string {
-  if (event?.turn?.schema === 'session_turn_public.v1') {
-    return `compact:${JSON.stringify([
-      event.turn_id,
-      event.turn,
-      event.content,
-      event.attachments,
-      event.meta,
-    ])}`
-  }
-  const protocol = event?.meta?.turn_protocol
-  const rows = protocol?.events
-  if (!Array.isArray(rows) || !rows.length) return ''
-  const last = rows[rows.length - 1]
-  return [
-    rows.length,
-    String(last?.event_id || ''),
-    String(last?.event_type || ''),
-    String(protocol?.state || ''),
-    String(protocol?.terminal || ''),
-  ].join(':')
-}
-
-/**
- * event_saved 先插入同 ID 的轻量行；历史查询稍后返回完整权威投影。
- * 只升级发生语义变化的对象，其余对象沿用原引用，避免整段回答重新渲染闪烁。
- */
-function reconcileAuthoritativeEventProjections(fresh: VibeEvent[]) {
-  let changed = false
-  const next = events.value.map((current, index) => {
-    const incoming = fresh[index]
-    if (!incoming || incoming.id !== current.id) return current
-    const incomingSignature = eventProtocolProjectionSignature(incoming)
-    if (!incomingSignature || incomingSignature === eventProtocolProjectionSignature(current)) return current
-    changed = true
-    return incoming
-  })
-  if (changed) events.value = next
 }
 
 function sortEvents(rows: VibeEvent[]) {
