@@ -3,13 +3,15 @@ import { createDocumentReadTool } from "./localDocumentParser.mjs";
 
 export const LOCAL_FILE_TOOL_NAMES = Object.freeze(["read", "write", "edit", "bash"]);
 
-export function createLocalFileTools({ core, NodeExecutionEnv, documentParsers = null, cwd = process.cwd() } = {}) {
-  if (!core || typeof NodeExecutionEnv !== "function") throw new Error("pi_local_file_runtime_unavailable");
+export function createLocalFileTools({ core, codingAgent, NodeExecutionEnv, documentParsers = null, cwd = process.cwd() } = {}) {
+  if (!core || !codingAgent || typeof NodeExecutionEnv !== "function") {
+    throw new Error("pi_local_file_runtime_unavailable");
+  }
   const factories = [
-    core.createReadTool,
-    core.createWriteTool,
-    core.createEditTool,
-    core.createBashTool,
+    codingAgent.createReadToolDefinition,
+    codingAgent.createWriteToolDefinition,
+    codingAgent.createEditToolDefinition,
+    codingAgent.createBashToolDefinition,
   ];
   if (factories.some((factory) => typeof factory !== "function")) {
     throw new Error("pi_local_file_exports_unavailable");
@@ -17,18 +19,13 @@ export function createLocalFileTools({ core, NodeExecutionEnv, documentParsers =
   const env = new NodeExecutionEnv({ cwd: String(cwd || process.cwd()), shellEnv: process.env });
   const cleanups = [];
   const tools = factories.map((factory, index) => {
-    const tool = factory();
+    const tool = factory(String(cwd || process.cwd()));
     if (index === 0 && documentParsers) {
       const adapted = createDocumentReadTool({ core, env, officialRead: tool, parsers: documentParsers });
       if (typeof adapted.cleanup === "function") cleanups.push(adapted.cleanup);
       return adapted;
     }
-    return {
-      ...tool,
-      execute: (toolCallId, args, signal, onUpdate) => (
-        tool.execute(toolCallId, args, signal, onUpdate, { env })
-      ),
-    };
+    return tool;
   });
   const cleanup = async () => {
     await Promise.allSettled(cleanups.map((dispose) => dispose()));

@@ -118,7 +118,10 @@ async function responseTextBounded(response, maxBytes) {
 
 function providerDescriptor(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("vibe_agent_runtime_snapshot_provider_invalid");
-  if (value.mode !== "direct" || value.reasoning !== false) throw new Error("vibe_agent_runtime_snapshot_provider_policy_invalid");
+  if (value.mode !== "direct") throw new Error("vibe_agent_runtime_snapshot_provider_policy_invalid");
+  if (value.reasoning !== undefined && typeof value.reasoning !== "boolean") {
+    throw new Error("vibe_agent_runtime_snapshot_provider_policy_invalid");
+  }
   const baseUrl = required(value.base_url, "vibe_agent_runtime_snapshot_provider_url_missing");
   if (/[\u0000-\u001f\u007f]/u.test(baseUrl) || baseUrl.includes("\\")) throw new Error("vibe_agent_runtime_snapshot_provider_url_invalid");
   try {
@@ -131,21 +134,32 @@ function providerDescriptor(value) {
   const result = {
     id: required(value.id, "vibe_agent_runtime_snapshot_provider_id_missing", 256),
     name: String(value.name || value.id),
+    provider_type: required(value.provider_type || "openai-compatible", "vibe_agent_runtime_snapshot_provider_type_invalid", 128),
     api: String(value.api || "openai-completions"),
     mode: "direct",
     base_url: baseUrl,
     api_key: apiKey,
     model,
     model_name: model,
-    reasoning: false,
-    context_window: Number(value.context_window || 275_000),
-    max_tokens: Number(value.max_tokens || 8_192),
+    ...(value.reasoning === undefined ? {} : { reasoning: value.reasoning }),
   };
-  if (!Number.isSafeInteger(result.context_window) || result.context_window < 1
-    || result.context_window > 2_000_000
-    || !Number.isSafeInteger(result.max_tokens) || result.max_tokens < 1
-    || result.max_tokens > 1_000_000) {
+  if (value.context_window !== undefined) result.context_window = Number(value.context_window);
+  if (value.max_tokens !== undefined) result.max_tokens = Number(value.max_tokens);
+  if ((result.context_window !== undefined
+      && (!Number.isSafeInteger(result.context_window) || result.context_window < 1
+        || result.context_window > 2_000_000))
+    || (result.max_tokens !== undefined
+      && (!Number.isSafeInteger(result.max_tokens) || result.max_tokens < 1
+        || result.max_tokens > 1_000_000))) {
     throw new Error("vibe_agent_runtime_snapshot_provider_limits_invalid");
+  }
+  if (value.input !== undefined) {
+    if (!Array.isArray(value.input) || !value.input.length
+      || !value.input.includes("text")
+      || value.input.some((item) => !new Set(["text", "image"]).has(item))) {
+      throw new Error("vibe_agent_runtime_snapshot_provider_input_invalid");
+    }
+    result.input = [...new Set(value.input)];
   }
   if (value.proxy_url) {
     const proxy = required(value.proxy_url, "vibe_agent_runtime_snapshot_proxy_url_invalid");

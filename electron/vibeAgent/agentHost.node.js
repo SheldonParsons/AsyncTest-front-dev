@@ -305,9 +305,13 @@ class HostedRun {
       traceStart.provider = {
         id: traceStart.provider.id,
         name: traceStart.provider.name,
+        provider_type: traceStart.provider.provider_type,
         model: traceStart.provider.model,
         mode: traceStart.provider.mode,
-        reasoning: false,
+        ...(traceStart.provider.reasoning === undefined
+          ? {} : { reasoning: Boolean(traceStart.provider.reasoning) }),
+        ...(traceStart.provider.input === undefined
+          ? {} : { input: traceStart.provider.input }),
         context_window: traceStart.provider.context_window,
         max_tokens: traceStart.provider.max_tokens,
       };
@@ -571,7 +575,7 @@ class HostedRun {
       // These frames update the authoritative local conversation journal.
       // Continuing without them would make the next Goal rebuild a different
       // transcript from the one the user just saw.
-      if (new Set(["assistant_end", "local_tool_end", "interaction_request", "session_title"]).has(frame.type)) throw error;
+      if (new Set(["assistant_end", "local_tool_end", "tool_rejected", "interaction_request", "session_title"]).has(frame.type)) throw error;
       // Streaming/Trace telemetry remains observational.
       this.event("trace_error", { frameType: frame.type });
     }

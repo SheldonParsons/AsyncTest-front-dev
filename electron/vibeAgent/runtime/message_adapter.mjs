@@ -176,7 +176,7 @@ export function adaptPrompt(payload) {
   throw new Error("prompt_invalid");
 }
 
-export function adaptModel(payload) {
+export function adaptModel(payload, catalogModel = undefined) {
   if ((payload.execution_mode ?? "local") !== "local") throw new Error("execution_mode_invalid");
   const provider = payload.provider;
   const supplied = payload.model ?? {};
@@ -192,17 +192,29 @@ export function adaptModel(payload) {
   if (!id || !providerId || !baseUrl) throw new Error("provider_model_incomplete");
   return {
     id,
-    name: String(supplied.name ?? provider.model_name ?? id),
-    api: String(supplied.api ?? provider.api ?? "openai-completions"),
+    name: String(supplied.name ?? provider.model_name ?? catalogModel?.name ?? id),
+    api: String(supplied.api ?? provider.api ?? catalogModel?.api ?? "openai-completions"),
     provider: providerId,
     baseUrl,
-    reasoning: false,
-    input: supplied.input ?? ["text"],
-    cost: supplied.cost ?? provider.cost ?? { ...EMPTY_COST },
-    contextWindow: Number(supplied.context_window ?? provider.context_window ?? 275_000),
-    maxTokens: Number(supplied.max_tokens ?? provider.max_tokens ?? payload.options?.max_tokens ?? 8192),
-    ...(supplied.compat ?? provider.compat ? { compat: supplied.compat ?? provider.compat } : {}),
-    ...(supplied.sampling_params ? { samplingParams: supplied.sampling_params } : {}),
+    reasoning: Boolean(supplied.reasoning ?? provider.reasoning ?? catalogModel?.reasoning ?? false),
+    input: supplied.input ?? provider.input ?? catalogModel?.input ?? ["text"],
+    cost: supplied.cost ?? provider.cost ?? catalogModel?.cost ?? { ...EMPTY_COST },
+    contextWindow: Number(
+      supplied.context_window ?? provider.context_window ?? catalogModel?.contextWindow ?? 275_000,
+    ),
+    maxTokens: Number(
+      supplied.max_tokens ?? provider.max_tokens ?? payload.options?.max_tokens
+      ?? catalogModel?.maxTokens ?? 8_192,
+    ),
+    ...((supplied.thinking_level_map ?? provider.thinking_level_map ?? catalogModel?.thinkingLevelMap)
+      ? { thinkingLevelMap: supplied.thinking_level_map ?? provider.thinking_level_map ?? catalogModel.thinkingLevelMap }
+      : {}),
+    ...(supplied.compat ?? provider.compat ?? catalogModel?.compat
+      ? { compat: supplied.compat ?? provider.compat ?? catalogModel.compat }
+      : {}),
+    ...(supplied.sampling_params ?? provider.sampling_params ?? catalogModel?.samplingParams
+      ? { samplingParams: supplied.sampling_params ?? provider.sampling_params ?? catalogModel.samplingParams }
+      : {}),
     ...((supplied.headers ?? provider.headers) ? { headers: supplied.headers ?? provider.headers } : {}),
   };
 }
@@ -214,10 +226,12 @@ export function adaptToolDefinitions(tools, execute) {
     const name = String(source.name ?? "").trim();
     if (!name || seen.has(name)) throw new Error("tool_name_invalid_or_duplicated");
     seen.add(name);
+    const description = String(source.description ?? "");
     return {
       name,
       label: String(raw.label ?? source.name),
-      description: String(source.description ?? ""),
+      description,
+      ...(description ? { promptSnippet: description } : {}),
       parameters: source.parameters,
       executionMode: raw.execution_mode ?? "parallel",
       execute: (toolCallId, args, signal) => execute(toolCallId, name, args, signal),

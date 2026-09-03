@@ -40,8 +40,9 @@ MIME、大小和修改时间）；Renderer 不获得通用 IPC 或绝对路径�
 请求最多 512KiB 的预览；不会回退到服务器附件下载接口。路径、文件名和正文都属于
 不可信数据，不能改变系统合同。
 
-Pi 直接使用 `@earendil-works/pi-agent-core` 的 `createReadTool`、`createWriteTool`、
-`createEditTool`、`createBashTool` 和 `NodeExecutionEnv`。JSONL v2 会保留每个本机调用
+主循环由 `@earendil-works/pi-coding-agent@0.84.4` 的 `AgentSession` 托管，并直接使用
+其 `createReadToolDefinition`、`createWriteToolDefinition`、`createEditToolDefinition`、
+`createBashToolDefinition`；文档读取适配器另用 Pi Core 的 `NodeExecutionEnv`。JSONL v2 会保留每个本机调用
 的 `local_tool_start`、`local_tool_update`、`local_tool_end`，并把真实 tool result 与
 assistant tool call 配对写入 LocalSessionStore 和 Trace。
 
@@ -52,13 +53,14 @@ PDF、Excel、PPTX（旧版 PPT 不做转换）和图片是普通本机能力，
 字符，PPTX 解压和单页 XML 也有独立上限）；超限会明确失败。分页产生的临时 Markdown
 只存在本次 Pi 运行期间，终态先停止子进程再清理，用户原文件永不删除。
 
-当本地 Pi 的上下文接近 247,500 estimated tokens 时，runner 会用一次无工具的
-`context_checkpoint` 摘要压缩旧历史；摘要作为私有会话边界保存，不显示给用户。单页或
-未完成工具波次超过 275K 硬上限时会明确失败，不会静默截断或自动重试。
+上下文管理、截断工具调用恢复和压缩续跑由官方 `AgentSession` 完成。模型能力优先取
+Provider 明确配置；未配置时按 Provider family + 精确 model id 使用 Pi 0.84.4 官方模型目录，
+不再继承旧服务端 ReAct 的 12 次调用、275K 上下文、8192 输出或 360 秒预算。Provider
+自动重试保持关闭；Thinking 未显式配置时保持 `off`。
 
 本地会话第一次 Goal 真正完成后，同一个 Pi 子进程会用同一份 Provider 快照执行一次
 无工具的私有标题总结；标题最多 12 个字符，只写入 LocalSessionStore，不进入聊天正文。
-该调用计入本地模型预算，失败或结果不合格时保留默认标题。
+该调用单独记录 Provider usage，失败或结果不合格时保留默认标题。
 
 只有 Pi 整理出的最终 Markdown、并经过用户确认的 `model_authored` 文档，才会通过
 `POST /vibe/foundation/knowledge/tool` 进入知识库；不会把原始文件路径、文件引用或
@@ -78,8 +80,9 @@ PDF、Excel、PPTX（旧版 PPT 不做转换）和图片是普通本机能力，
 pending confirmation。
 
 每个新 Goal 从服务端取得一次 `vibe-knowledge` Skill 的 name/description/version/SHA/content。
-Main 按 hash 写入不可变本地缓存，runner 使用 Pi 官方 `loadSkills` 和
-`formatSkillInvocation` 注入完整正文；冷恢复沿用原 hash。Trace 记录 Skill 元数据和最终
+Main 按 hash 写入不可变本地缓存，runner 使用 Pi 官方 `loadSkills` 与隔离的
+`DefaultResourceLoader` 把它登记到官方 Skill 清单；Pi 按标准 Skill 机制在需要时读取正文，
+不会扫描用户的 `~/.pi` 或项目级扩展。冷恢复沿用原 hash。Trace 记录 Skill 元数据和最终
 system prompt 摘要。
 
 ## Trace

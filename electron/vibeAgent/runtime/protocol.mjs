@@ -16,7 +16,7 @@ const RESPONSE_TYPES = new Set([
 ]);
 const OUTBOUND_TYPES = new Set([
   "ready", "provider_preflight_request", "provider_payload_request", "provider_payload", "assistant_delta",
-  "assistant_end", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "skill_loaded",
+  "assistant_end", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
   "interaction_request", "candidate_final",
   "complete_no_tools_result", "session_title", "done", "error", "aborted",
 ]);
@@ -140,8 +140,8 @@ function validateModel(value) {
 
 function validateProvider(value) {
   const row = exact(value, new Set([
-    "id", "name", "proxy_base_url", "base_url", "proxy_url", "api_key", "model", "model_name", "model_config", "api", "headers",
-    "context_window", "max_tokens", "cost", "reasoning", "compat", "mode",
+    "id", "name", "provider_type", "proxy_base_url", "base_url", "proxy_url", "api_key", "model", "model_name", "model_config", "api", "headers",
+    "context_window", "max_tokens", "cost", "reasoning", "input", "compat", "mode",
   ]), new Set(["model"]), "start_provider_invalid");
   const mode = row.mode ?? "proxy";
   if (!["direct", "proxy"].includes(mode)) fail("start_provider_mode_invalid");
@@ -159,7 +159,7 @@ function validateProvider(value) {
     validateUrl(row.proxy_base_url, "start_provider_proxy_base_url_invalid");
     if (row.base_url !== undefined || row.api_key !== undefined || row.proxy_url !== undefined) fail("start_provider_proxy_credential_forbidden");
   }
-  for (const key of ["id", "name", "model", "model_name", "api"]) {
+  for (const key of ["id", "name", "provider_type", "model", "model_name", "api"]) {
     optionalString(row[key], `start_provider_${key}_invalid`, { max: 512 });
   }
   for (const key of ["cost", "compat", "model_config"]) {
@@ -168,7 +168,14 @@ function validateProvider(value) {
   if (row.headers !== undefined) validateHeaders(row.headers, "start_provider_headers_invalid");
   if (row.context_window !== undefined) finiteNumber(row.context_window, "start_provider_context_invalid", { min: 1, integer: true });
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_provider_max_tokens_invalid", { min: 1, integer: true });
-  if (row.reasoning !== undefined && row.reasoning !== false) fail("start_provider_reasoning_must_be_false");
+  if (row.reasoning !== undefined) boolean(row.reasoning, "start_provider_reasoning_invalid");
+  if (row.input !== undefined) {
+    const input = array(row.input, "start_provider_input_invalid", 2);
+    if (!input.length || !input.includes("text")
+      || input.some((item) => !new Set(["text", "image"]).has(item))) {
+      fail("start_provider_input_invalid");
+    }
+  }
 }
 
 function validateToolChoice(value, code) {
@@ -193,7 +200,7 @@ function validateOptions(value) {
   const row = exact(value, new Set([
     "temperature", "max_tokens", "timeout_ms", "max_retries", "max_retry_delay_ms",
     "sampling_params", "payload_overrides", "payload_capture", "session_id", "tool_choice",
-    "transport", "ipc_timeout_ms", "budget", "generate_session_title",
+    "transport", "ipc_timeout_ms", "budget", "generate_session_title", "thinking_level",
   ]), new Set(), "start_options_invalid");
   if (row.temperature !== undefined) finiteNumber(row.temperature, "start_temperature_invalid", { min: 0, max: 2 });
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_max_tokens_invalid", { min: 1, integer: true });
@@ -203,6 +210,10 @@ function validateOptions(value) {
   if (row.ipc_timeout_ms !== undefined) finiteNumber(row.ipc_timeout_ms, "start_ipc_timeout_invalid", { min: 1_000, max: 1_200_000, integer: true });
   if (row.payload_capture !== undefined) boolean(row.payload_capture, "start_payload_capture_invalid");
   if (row.generate_session_title !== undefined) boolean(row.generate_session_title, "start_generate_session_title_invalid");
+  if (row.thinking_level !== undefined
+    && !new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).has(row.thinking_level)) {
+    fail("start_thinking_level_invalid");
+  }
   if (row.session_id !== undefined) string(row.session_id, "start_session_id_invalid", { max: 512 });
   if (row.tool_choice !== undefined) validateToolChoice(row.tool_choice, "start_tool_choice_invalid");
   if (row.transport !== undefined && !new Set(["sse", "auto"]).has(row.transport)) fail("start_transport_invalid");
@@ -530,6 +541,16 @@ function validateOutboundPayload(frame) {
     if (!["read", "write", "edit", "bash"].includes(row.tool_name)) fail("local_tool_end_name_invalid");
     validateToolResult(row.result, "local_tool_end_result_invalid");
     boolean(row.is_error, "local_tool_end_error_invalid");
+  } else if (frame.type === "tool_rejected") {
+    const row = exact(payload, new Set([
+      "tool_call_id", "tool_name", "result", "is_error",
+    ]), new Set([
+      "tool_call_id", "tool_name", "result", "is_error",
+    ]), "tool_rejected_payload_invalid");
+    string(row.tool_call_id, "tool_rejected_call_invalid", { max: 256 });
+    string(row.tool_name, "tool_rejected_name_invalid", { max: 128 });
+    validateToolResult(row.result, "tool_rejected_result_invalid");
+    if (row.is_error !== true) fail("tool_rejected_error_invalid");
   } else if (frame.type === "skill_loaded") {
     const row = exact(payload, new Set([
       "name", "version", "sha256", "system_prompt_sha256", "system_prompt_characters",

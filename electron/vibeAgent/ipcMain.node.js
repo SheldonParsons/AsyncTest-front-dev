@@ -811,13 +811,13 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           });
         }
       }
-      if (frame?.type === "local_tool_end") {
+      if (frame?.type === "local_tool_end" || frame?.type === "tool_rejected") {
         const toolCallId = String(frame.payload?.tool_call_id || "").trim();
         const result = frame.payload?.result && typeof frame.payload.result === "object"
           ? frame.payload.result : { content: [] };
         if (toolCallId) {
           await appendLocalSessionEvent(run, "tool", localToolContentText(result.content), {
-            local_event_key: `local-tool:${String(run?.run_id || run?.runId || "")}:${toolCallId}`,
+            local_event_key: `${frame.type === "tool_rejected" ? "tool-rejected" : "local-tool"}:${String(run?.run_id || run?.runId || "")}:${toolCallId}`,
             tool_call_id: toolCallId,
             name: String(frame.payload?.tool_name || ""),
             is_error: Boolean(frame.payload?.is_error),

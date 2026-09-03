@@ -27,11 +27,6 @@ import {
   localFilesContext,
   publicDelta,
 } from "./message_adapter.mjs";
-import {
-  CONTEXT_SUMMARY_PROMPT,
-  CONTEXT_SUMMARY_SYSTEM_PROMPT,
-  makeCompactionPlan,
-} from "./contextCompaction.mjs";
 import { createLocalFileTools, LOCAL_FILE_TOOL_NAMES } from "./localFileTools.mjs";
 
 for (const method of ["log", "info", "warn", "error", "debug"]) console[method] = () => {};
@@ -57,14 +52,6 @@ const EXPECTED_AI_VERSION = "0.84.4";
 const EXPECTED_CODING_AGENT_VERSION = "0.84.4";
 const EXPECTED_UNDICI_VERSION = "8.9.0";
 const MIN_NODE = [22, 19, 0];
-const DEFAULT_LOCAL_BUDGET = Object.freeze({
-  max_model_calls: 12,
-  max_context_tokens: 275_000,
-  max_total_tokens: 300_000,
-  output_reserve_tokens: 8_192,
-  max_wall_clock_s: 360,
-  step_timeout_s: 180,
-});
 const SESSION_TITLE_SYSTEM_PROMPT = `你只负责给一段已经完成的对话生成简体中文会话标题。
 标题必须准确概括用户目标，最多 12 个字符，至少包含一个汉字。
 专有名词、产品名和数字可以保留原文。
@@ -77,17 +64,34 @@ function messageText(message) {
   return content.filter((block) => block?.type === "text").map((block) => String(block.text ?? "")).join("");
 }
 
+function sessionPromptContent(value) {
+  if (typeof value === "string") return value;
+  const rows = Array.isArray(value) ? value : [value];
+  if (rows.every((item) => item?.type === "text" || item?.type === "image")) return rows;
+  const content = [];
+  for (const row of rows) {
+    if (row?.role !== "user" || !Array.isArray(row.content)) {
+      throw new ProtocolError("prompt_invalid");
+    }
+    if (content.length) content.push({ type: "text", text: "\n\n" });
+    content.push(...row.content);
+  }
+  return content;
+}
+
+function abortQuietly(target) {
+  try {
+    void Promise.resolve(target?.abort?.()).catch(() => undefined);
+  } catch {
+    // Cancellation is best effort; the outer lifecycle still closes IPC.
+  }
+}
+
 function validSessionTitle(value) {
   const title = String(value ?? "").trim();
   const characters = [...title];
   if (characters.length < 1 || characters.length > 12 || /[\r\n`#*]/u.test(title)) return "";
   return /\p{Script=Han}/u.test(title) ? title : "";
-}
-
-function estimatedTokens(value) {
-  // Direct Electron runs own their budget locally. Use a conservative UTF-8
-  // estimate so a Provider that omits usage cannot bypass the same ceilings.
-  return Math.ceil(Buffer.byteLength(JSON.stringify(value ?? ""), "utf8") / 3);
 }
 
 function versionTuple(value) {
@@ -317,114 +321,16 @@ class BridgeSession {
     this.fatalProtocolError = undefined;
     this.failPromise = null;
     this.agent = undefined;
+    this.agentSession = undefined;
     this.activeAgents = new Set();
     this.abortReason = "";
     this.runtime = undefined;
     this.model = undefined;
+    this.modelRuntime = undefined;
     this.finalSystemPrompt = "";
     this.providerTools = new Map();
     this.streamForPurpose = undefined;
-    // Context projection is local to this logical Pi run.  It only changes
-    // the private provider context array; Agent.state/messages (and thus UI,
-    // session history and final text) remain the original transcript.
-    this.compactionBusy = false;
-    this.compactionFailures = new Set();
-    this.compactionSummaries = new Map();
     this.options = startFrame.payload.options ?? {};
-    const restoredBudget = this.options.budget && typeof this.options.budget === "object" ? this.options.budget : {};
-    this.localBudget = {
-      ...DEFAULT_LOCAL_BUDGET,
-      ...restoredBudget,
-      model_calls: Number(restoredBudget.model_calls || 0),
-      input_tokens: Number(restoredBudget.input_tokens || 0),
-      output_tokens: Number(restoredBudget.output_tokens || 0),
-      reserved_output_tokens: Number(restoredBudget.reserved_output_tokens || 0),
-      compute_elapsed_s: Number(restoredBudget.compute_elapsed_s || 0),
-      compute_started_at: Date.now(),
-      compute_paused: false,
-      call_started_at: 0,
-    };
-  }
-
-  directBudgetSnapshot() {
-    const active = this.localBudget.compute_paused ? 0 : Math.max(0, Date.now() - this.localBudget.compute_started_at) / 1000;
-    return {
-      max_model_calls: Number(this.localBudget.max_model_calls),
-      max_context_tokens: Number(this.localBudget.max_context_tokens),
-      max_total_tokens: Number(this.localBudget.max_total_tokens),
-      output_reserve_tokens: Number(this.localBudget.output_reserve_tokens),
-      max_wall_clock_s: Number(this.localBudget.max_wall_clock_s),
-      step_timeout_s: Number(this.localBudget.step_timeout_s),
-      model_calls: Number(this.localBudget.model_calls),
-      input_tokens: Number(this.localBudget.input_tokens),
-      output_tokens: Number(this.localBudget.output_tokens),
-      reserved_output_tokens: Number(this.localBudget.reserved_output_tokens),
-      compute_elapsed_s: Number(this.localBudget.compute_elapsed_s) + active,
-    };
-  }
-
-  directBudgetFields() {
-    return (this.startFrame.payload.provider?.mode ?? "proxy") === "direct"
-      ? { budget: this.directBudgetSnapshot() } : {};
-  }
-
-  pauseDirectBudget() {
-    if (this.localBudget.compute_paused) return;
-    this.localBudget.compute_elapsed_s = this.directBudgetSnapshot().compute_elapsed_s;
-    this.localBudget.compute_paused = true;
-  }
-
-  resumeDirectBudget() {
-    if (!this.localBudget.compute_paused) return;
-    this.localBudget.compute_started_at = Date.now();
-    this.localBudget.compute_paused = false;
-  }
-
-  admitDirectBudget(context) {
-    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
-    const input = estimatedTokens({
-      system_prompt: context.systemPrompt,
-      messages: context.messages,
-      tools: context.tools,
-      tool_choice: this.options.tool_choice ?? "auto",
-    });
-    const elapsed = this.directBudgetSnapshot().compute_elapsed_s;
-    if (elapsed >= Number(this.localBudget.max_wall_clock_s)) throw new ProtocolError("wall_clock_exhausted");
-    if (this.localBudget.model_calls >= Number(this.localBudget.max_model_calls)) throw new ProtocolError("model_call_budget_exhausted");
-    if (input + Number(this.localBudget.output_reserve_tokens) > Number(this.localBudget.max_context_tokens)) throw new ProtocolError("context_budget_exhausted");
-    if (this.localBudget.input_tokens + this.localBudget.output_tokens + this.localBudget.reserved_output_tokens + input + Number(this.localBudget.output_reserve_tokens) > Number(this.localBudget.max_total_tokens)) throw new ProtocolError("total_token_budget_exhausted");
-    this.localBudget.model_calls += 1;
-    this.localBudget.input_tokens += input;
-    this.localBudget.reserved_output_tokens += Number(this.localBudget.output_reserve_tokens);
-    this.localBudget.call_started_at = Date.now();
-  }
-
-  finishDirectBudget(message) {
-    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
-    const usage = message?.usage && typeof message.usage === "object" ? message.usage : {};
-    const output = Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0);
-    const observed = Number.isFinite(output) && output > 0
-      ? Math.floor(output)
-      : Number(this.localBudget.output_reserve_tokens);
-    this.localBudget.reserved_output_tokens = Math.max(0, this.localBudget.reserved_output_tokens - Number(this.localBudget.output_reserve_tokens));
-    this.localBudget.output_tokens += observed;
-    if (this.localBudget.input_tokens + this.localBudget.output_tokens + this.localBudget.reserved_output_tokens > Number(this.localBudget.max_total_tokens)) throw new ProtocolError("total_token_budget_exhausted");
-    if (this.localBudget.call_started_at && Date.now() - this.localBudget.call_started_at >= Number(this.localBudget.step_timeout_s) * 1000) throw new ProtocolError("step_timeout");
-    if (this.directBudgetSnapshot().compute_elapsed_s >= Number(this.localBudget.max_wall_clock_s)) throw new ProtocolError("wall_clock_exhausted");
-  }
-
-  failDirectBudget() {
-    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
-    // If a private completion fails before emitting an assistant message,
-    // consume its reserved output conservatively. This prevents a retry from
-    // turning an unknown Provider outcome into free budget while releasing
-    // the reservation so later calls can still be accounted for.
-    this.localBudget.reserved_output_tokens = Math.max(
-      0,
-      this.localBudget.reserved_output_tokens - Number(this.localBudget.output_reserve_tokens),
-    );
-    this.localBudget.output_tokens += Number(this.localBudget.output_reserve_tokens);
-    this.localBudget.call_started_at = 0;
   }
 
   async emit(type, payload, correlation = {}) {
@@ -465,7 +371,7 @@ class BridgeSession {
     }
     if (frame.type === "abort") {
       this.abortReason = String(frame.payload.reason ?? "aborted");
-      for (const agent of this.activeAgents) agent.abort();
+      for (const agent of this.activeAgents) abortQuietly(agent);
       for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
         pending.reject(new ProtocolError("operation_aborted"));
@@ -501,14 +407,17 @@ class BridgeSession {
       if (this.startFrame.payload.operation === "self_check") {
         const localRuntime = createLocalFileTools({
           core: this.runtime.core,
+          codingAgent: this.runtime.codingAgent,
           NodeExecutionEnv: this.runtime.NodeExecutionEnv,
           documentParsers: this.runtime.documentParsers,
           cwd: homedir(),
         });
-        if (["loadSkills", "formatSkillInvocation", "formatSkillsForSystemPrompt"].some(
-          (name) => typeof this.runtime.core[name] !== "function",
-        )) throw new ProtocolError("pi_skill_exports_unavailable");
-        if (["createAgentSession", "AgentSession", "SessionManager"].some(
+        if ([
+          "createAgentSession", "AgentSession", "SessionManager", "SettingsManager",
+          "ModelRuntime", "DefaultResourceLoader", "loadSkills",
+          "createReadToolDefinition", "createWriteToolDefinition",
+          "createEditToolDefinition", "createBashToolDefinition",
+        ].some(
           (name) => typeof this.runtime.codingAgent[name] !== "function",
         )) throw new ProtocolError("pi_coding_agent_sdk_exports_unavailable");
         try { await localRuntime.env.cleanup(); }
@@ -596,7 +505,21 @@ class BridgeSession {
 
   async configure() {
     const payload = this.startFrame.payload;
-    this.model = adaptModel(payload);
+    this.modelRuntime = await this.runtime.codingAgent.ModelRuntime.create({
+      credentials: new this.runtime.ai.InMemoryCredentialStore(),
+      modelsPath: null,
+      allowModelNetwork: false,
+      refreshOnCreate: false,
+    });
+    const requestedModelId = String(payload.model?.id ?? payload.provider?.model ?? "").trim();
+    const providerFamily = String(payload.provider?.provider_type ?? "").trim();
+    const familyModel = providerFamily
+      ? this.modelRuntime.getModel(providerFamily, requestedModelId)
+      : undefined;
+    const exactCatalogMatches = familyModel ? [] : this.modelRuntime.getModels()
+      .filter((candidate) => candidate.id === requestedModelId && candidate.api === "openai-completions");
+    const catalogModel = familyModel ?? (exactCatalogMatches.length === 1 ? exactCatalogMatches[0] : undefined);
+    this.model = adaptModel(payload, catalogModel);
     if (this.model.api !== "openai-completions") throw new ProtocolError("provider_api_unsupported");
     this.providerTools = new Map(payload.tools.map((raw) => {
       const source = raw.type === "function" ? raw.function : raw;
@@ -615,6 +538,7 @@ class BridgeSession {
       : undefined;
     this.streamForPurpose = (
       purpose, requestedCallId = "", requestedMaxTokens = undefined,
+      { useRunMaxTokens = true } = {},
     ) => async (model, context, options = {}) => {
       if (this.fatalProtocolError) throw this.fatalProtocolError;
       if (this.abortReason) throw new ProtocolError("operation_aborted");
@@ -627,7 +551,6 @@ class BridgeSession {
       const startOverrides = this.options.payload_overrides ?? {};
       const providerConfig = this.startFrame.payload.provider ?? {};
       const direct = (providerConfig.mode ?? "proxy") === "direct";
-      this.admitDirectBudget(providerContext);
       let requestContext = providerContext;
       let requestOverrides = {};
       let permit = { permit: true };
@@ -720,7 +643,7 @@ class BridgeSession {
         signal: options.signal,
         fetch: proxyFetch,
         temperature: this.options.temperature,
-        maxTokens: requestedMaxTokens ?? this.options.max_tokens ?? model.maxTokens,
+        maxTokens: requestedMaxTokens ?? (useRunMaxTokens ? this.options.max_tokens : undefined) ?? model.maxTokens,
         timeoutMs: this.options.timeout_ms,
         maxRetries: 0,
         maxRetryDelayMs: this.options.max_retry_delay_ms ?? 0,
@@ -728,7 +651,6 @@ class BridgeSession {
         sessionId: this.options.session_id,
         transport: this.options.transport ?? "sse",
         toolChoice: permit.tool_choice ?? this.options.tool_choice ?? "auto",
-        reasoning: undefined,
         onPayload: async (body) => {
           const merged = { ...body, ...startOverrides, ...requestOverrides };
           const serialized = canonicalJson(merged);
@@ -764,6 +686,32 @@ class BridgeSession {
       }
       return stream;
     };
+    this.modelRuntime.registerProvider(this.model.provider, {
+      name: "Vibe run-scoped Provider",
+      baseUrl: this.model.baseUrl,
+      apiKey: "vibe-run-scoped",
+      api: this.model.api,
+      streamSimple: (model, context, options) => this.streamForPurpose(
+        "main_agent", "", undefined, { useRunMaxTokens: false },
+      )(model, context, options),
+      models: [{
+        id: this.model.id,
+        name: this.model.name,
+        api: this.model.api,
+        baseUrl: this.model.baseUrl,
+        reasoning: Boolean(this.model.reasoning),
+        ...(this.model.thinkingLevelMap ? { thinkingLevelMap: this.model.thinkingLevelMap } : {}),
+        input: this.model.input,
+        cost: this.model.cost,
+        contextWindow: this.model.contextWindow,
+        maxTokens: this.model.maxTokens,
+        ...(this.model.samplingParams ? { samplingParams: this.model.samplingParams } : {}),
+        ...(this.model.compat ? { compat: this.model.compat } : {}),
+      }],
+    });
+    const registeredModel = this.modelRuntime.getModel(this.model.provider, this.model.id);
+    if (!registeredModel) throw new ProtocolError("provider_model_registration_failed");
+    this.model = registeredModel;
   }
 
   async ensureWave(assistant) {
@@ -791,7 +739,7 @@ class BridgeSession {
       })().catch((error) => {
         if (error instanceof ProtocolError) {
           this.fatalProtocolError = error;
-          this.agent?.abort();
+          abortQuietly(this.agent);
         }
         throw error;
       });
@@ -807,81 +755,11 @@ class BridgeSession {
       || calls.some((call) => this.seenToolCallIds.has(call.id))) {
       const error = new ProtocolError("tool_call_id_duplicate");
       this.fatalProtocolError = error;
-      this.agent?.abort();
+      abortQuietly(this.agent);
       throw error;
     }
     for (const call of calls) this.seenToolCallIds.add(call.id);
     this.admittedAssistantWaves.add(assistant);
-  }
-
-  async transformMainContext(messages, tools, signal) {
-    if (this.abortReason) throw new ProtocolError("operation_aborted");
-    const budget = this.options.budget && typeof this.options.budget === "object"
-      ? this.options.budget : {};
-    const toolChoice = this.options.tool_choice ?? "auto";
-    const plan = makeCompactionPlan({
-      systemPrompt: this.finalSystemPrompt || appendChineseContract(this.startFrame.payload.system_prompt),
-      messages,
-      tools,
-      toolChoice,
-      budget,
-    });
-    if (!plan) return messages;
-    if (this.compactionBusy) throw new ProtocolError("context_compaction_reentrant");
-    if (this.compactionFailures.has(plan.sourceDigest)) {
-      throw new ProtocolError("context_compaction_failed");
-    }
-    this.compactionBusy = true;
-    try {
-      signal?.throwIfAborted?.();
-      const cached = this.compactionSummaries.get(plan.sourceDigest);
-      let summary = cached;
-      if (!summary) {
-        // This private Agent has no transformContext hook, so a checkpoint
-        // cannot recursively trigger another checkpoint call.
-        const completion = await this.completeNoTools({
-          purpose: "context_checkpoint",
-          call_id: `context-checkpoint-${++this.callNumber}`,
-          max_output_tokens: plan.summaryOutput,
-          system_prompt: CONTEXT_SUMMARY_SYSTEM_PROMPT,
-          messages: plan.summarySource,
-          prompt: CONTEXT_SUMMARY_PROMPT,
-        });
-        let parsed;
-        try {
-          parsed = JSON.parse(String(completion.text || "").trim());
-        } catch {
-          throw new ProtocolError("context_compaction_json_invalid");
-        }
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
-          || Object.keys(parsed).length !== 1 || typeof parsed.summary !== "string"
-          || !parsed.summary.trim()) {
-          throw new ProtocolError("context_compaction_contract_invalid");
-        }
-        summary = parsed.summary.trim();
-        // The summary is data, not a second answer.  Reject an oversized
-        // result instead of truncating it and changing Pi's evidence.
-        const summaryTokens = Math.ceil(Buffer.byteLength(summary, "utf8") / 3);
-        if (summaryTokens > plan.summaryOutput) throw new ProtocolError("context_compaction_summary_invalid");
-        this.compactionSummaries.set(plan.sourceDigest, summary);
-        while (this.compactionSummaries.size > 8) {
-          this.compactionSummaries.delete(this.compactionSummaries.keys().next().value);
-        }
-      }
-      signal?.throwIfAborted?.();
-      const replacement = plan.buildReplacement(summary, this.model);
-      // Mutate the loop-owned array in place.  Pi's Agent keeps its public
-      // transcript in a separate array, while runAgentLoop reuses this array
-      // for subsequent tool turns; this makes compaction persistent without
-      // invoking prepareNextTurn or adding a model loop of our own.
-      messages.splice(0, messages.length, ...replacement.messages);
-      return messages;
-    } catch (error) {
-      this.compactionFailures.add(plan.sourceDigest);
-      throw error;
-    } finally {
-      this.compactionBusy = false;
-    }
   }
 
   async awaitInteraction(result, toolCallId, toolName) {
@@ -911,7 +789,6 @@ class BridgeSession {
     this.activeInteraction = expected;
     this.seenInteractionIds.add(expected.interaction_id);
     this.interactionSequence = expected.sequence;
-    this.pauseDirectBudget();
     try {
       const response = await this.request("interaction_request", {
         interaction_id: expected.interaction_id,
@@ -942,27 +819,24 @@ class BridgeSession {
         : new Set(["resolved", "cancelled", "failed", "stopped"]);
       if (!allowed.has(payload.status)) throw new ProtocolError("interaction_response_status_mismatch");
       if (payload.user_message) {
-        if (!this.agent) throw new ProtocolError("interaction_agent_missing");
-        this.agent.steer({ role: "user", content: payload.user_message, timestamp: Date.now() });
+        if (!this.agentSession) throw new ProtocolError("interaction_agent_missing");
+        await this.agentSession.steer(payload.user_message);
       }
       return { ...payload.result, terminate: Boolean(payload.result.terminate) };
     } catch (error) {
       if (error instanceof ProtocolError && error.code !== "operation_aborted") {
         this.fatalProtocolError = error;
-        this.agent?.abort();
+        abortQuietly(this.agent);
       }
       throw error;
     } finally {
-      this.resumeDirectBudget();
       this.activeInteraction = undefined;
     }
   }
 
-  async injectedSystemPrompt(payload, localRuntime) {
-    const base = appendChineseContract(payload.system_prompt);
+  frozenSkill(payload) {
     const descriptor = payload.skill;
-    if (!descriptor) return base;
-    if (!localRuntime) throw new ProtocolError("pi_skill_environment_unavailable");
+    if (!descriptor) return undefined;
     let raw;
     try {
       raw = readFileSync(descriptor.file_path, "utf8");
@@ -973,7 +847,12 @@ class BridgeSession {
     if (digest !== descriptor.sha256 || raw !== descriptor.content) {
       throw new ProtocolError("pi_skill_hash_mismatch");
     }
-    const loaded = await this.runtime.core.loadSkills(localRuntime.env, dirname(descriptor.file_path));
+    const loaded = this.runtime.codingAgent.loadSkills({
+      cwd: homedir(),
+      agentDir: runtimeApplicationRoot(),
+      skillPaths: [descriptor.file_path],
+      includeDefaults: false,
+    });
     if (loaded.diagnostics.length || loaded.skills.length !== 1) {
       throw new ProtocolError("pi_skill_load_failed");
     }
@@ -981,14 +860,14 @@ class BridgeSession {
     if (skill.name !== descriptor.name || skill.description !== descriptor.description) {
       throw new ProtocolError("pi_skill_metadata_mismatch");
     }
-    const invocation = this.runtime.core.formatSkillInvocation(skill);
-    return `${base}\n\n${invocation}`;
+    return skill;
   }
 
   async runAgent() {
     const payload = this.startFrame.payload;
     const history = adaptHistory(payload, this.model);
     let activeAssistant;
+    const routedRemoteToolCalls = new Set();
     const remoteTools = adaptToolDefinitions(payload.tools, async (toolCallId, name, _args, signal) => {
       signal?.throwIfAborted?.();
       if (!activeAssistant) throw new ProtocolError("tool_wave_context_missing");
@@ -1011,6 +890,7 @@ class BridgeSession {
     });
     const localRuntime = createLocalFileTools({
       core: this.runtime.core,
+      codingAgent: this.runtime.codingAgent,
       NodeExecutionEnv: this.runtime.NodeExecutionEnv,
       documentParsers: this.runtime.documentParsers,
       cwd: homedir(),
@@ -1023,12 +903,88 @@ class BridgeSession {
         parameters: tool.parameters,
       });
     }
-    this.finalSystemPrompt = await this.injectedSystemPrompt(payload, localRuntime);
-    // `Agent.continue()` does not call adaptPrompt(), so a cold-resumed Goal
-    // would otherwise lose the original local file list.  Keep it in the
-    // private system context only on continuation; initial prompts already
-    // receive the same context through adaptPrompt().
-    if (history.continueFromHistory) this.finalSystemPrompt += localFilesContext(payload);
+    const cwd = homedir();
+    const agentDir = runtimeApplicationRoot();
+    const frozenSkill = this.frozenSkill(payload);
+    const settingsManager = this.runtime.codingAgent.SettingsManager.inMemory({
+      defaultThinkingLevel: "off",
+      compaction: { enabled: true },
+      retry: {
+        enabled: false,
+        maxRetries: 0,
+        provider: { maxRetries: 0, maxRetryDelayMs: 0 },
+      },
+    });
+    const appendSystemPrompt = appendChineseContract(payload.system_prompt)
+      + (history.continueFromHistory ? localFilesContext(payload) : "");
+    const resourceLoader = new this.runtime.codingAgent.DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager,
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      appendSystemPrompt: [appendSystemPrompt],
+      skillsOverride: () => ({
+        skills: frozenSkill ? [frozenSkill] : [],
+        diagnostics: [],
+      }),
+    });
+    await resourceLoader.reload();
+
+    let prompt = adaptPrompt(payload);
+    let seedMessages = history.messages;
+    if (history.continueFromHistory && seedMessages.at(-1)?.role === "user") {
+      prompt = seedMessages.at(-1).content;
+      seedMessages = seedMessages.slice(0, -1);
+    } else if (history.continueFromHistory) {
+      prompt = "继续完成当前任务。";
+    }
+    const sessionManager = this.runtime.codingAgent.SessionManager.inMemory(cwd);
+    for (const message of seedMessages) sessionManager.appendMessage(message);
+    const { session } = await this.runtime.codingAgent.createAgentSession({
+      cwd,
+      agentDir,
+      model: this.model,
+      thinkingLevel: this.options.thinking_level ?? "off",
+      tools: tools.map((tool) => tool.name),
+      customTools: tools,
+      resourceLoader,
+      sessionManager,
+      settingsManager,
+      modelRuntime: this.modelRuntime,
+    });
+    const agent = session.agent;
+    this.agentSession = session;
+    this.agent = agent;
+    this.finalSystemPrompt = session.systemPrompt;
+    const sessionBeforeToolCall = agent.beforeToolCall;
+    agent.beforeToolCall = async (context, signal) => {
+      const sessionResult = await sessionBeforeToolCall?.(context, signal);
+      if (sessionResult?.block) return sessionResult;
+      signal?.throwIfAborted?.();
+      activeAssistant = context.assistantMessage;
+      this.admitAssistantWave(context.assistantMessage);
+      if (!LOCAL_FILE_TOOL_NAMES.includes(context.toolCall.name)) {
+        routedRemoteToolCalls.add(context.toolCall.id);
+        await this.ensureWave(context.assistantMessage);
+      }
+      return sessionResult;
+    };
+    const sessionAfterToolCall = agent.afterToolCall;
+    agent.afterToolCall = async (context, signal) => {
+      const sessionResult = await sessionAfterToolCall?.(context, signal);
+      if (LOCAL_FILE_TOOL_NAMES.includes(context.toolCall.name)) return sessionResult;
+      const results = await this.ensureWave(context.assistantMessage);
+      const result = results.get(context.toolCall.id);
+      return {
+        ...sessionResult,
+        isError: Boolean(result?.is_error),
+        terminate: Boolean(result?.terminate),
+      };
+    };
     if (payload.skill) {
       await this.emit("skill_loaded", {
         name: payload.skill.name,
@@ -1038,34 +994,7 @@ class BridgeSession {
         system_prompt_characters: this.finalSystemPrompt.length,
       });
     }
-    const agent = new this.runtime.Agent({
-      initialState: {
-        systemPrompt: this.finalSystemPrompt,
-        model: this.model,
-        thinkingLevel: "off",
-        tools,
-        messages: history.messages,
-      },
-      streamFn: this.streamForPurpose("main_agent"),
-      transformContext: (messages, signal) => this.transformMainContext(messages, tools, signal),
-      getApiKey: () => undefined,
-      toolExecution: "parallel",
-      maxRetryDelayMs: 0,
-      beforeToolCall: async ({ assistantMessage, toolCall }, signal) => {
-        signal?.throwIfAborted?.();
-        activeAssistant = assistantMessage;
-        this.admitAssistantWave(assistantMessage);
-        if (!LOCAL_FILE_TOOL_NAMES.includes(toolCall.name)) await this.ensureWave(assistantMessage);
-      },
-      afterToolCall: async ({ assistantMessage, toolCall }) => {
-        if (LOCAL_FILE_TOOL_NAMES.includes(toolCall.name)) return undefined;
-        const results = await this.ensureWave(assistantMessage);
-        const result = results.get(toolCall.id);
-        return { isError: Boolean(result?.is_error), terminate: Boolean(result?.terminate) };
-      },
-    });
-    this.agent = agent;
-    this.activeAgents.add(agent);
+    this.activeAgents.add(session);
     agent.subscribe(async (event) => {
       if (event.type === "tool_execution_start" && LOCAL_FILE_TOOL_NAMES.includes(event.toolName)) {
         await this.emit("local_tool_start", {
@@ -1086,6 +1015,19 @@ class BridgeSession {
           result: event.result,
           is_error: Boolean(event.isError),
         });
+      } else if (event.type === "tool_execution_end"
+        && !LOCAL_FILE_TOOL_NAMES.includes(event.toolName)
+        && !routedRemoteToolCalls.has(event.toolCallId)) {
+        // Pi rejects truncated or schema-invalid calls before the remote
+        // executor/hook runs. Persist that official error result locally so
+        // the next Goal never restores an assistant tool call without its
+        // paired toolResult; this frame never invokes the Knowledge backend.
+        await this.emit("tool_rejected", {
+          tool_call_id: event.toolCallId,
+          tool_name: event.toolName,
+          result: event.result,
+          is_error: true,
+        });
       } else if (event.type === "message_update") {
         const delta = publicDelta(event.assistantMessageEvent);
         if (delta) await this.emit("assistant_delta", { text: delta, public: false });
@@ -1093,10 +1035,9 @@ class BridgeSession {
         const calls = extractToolCalls(event.message);
         if (calls.some((call) => !this.providerTools.has(call.name))) {
           this.fatalProtocolError = new ProtocolError("unknown_tool_rejected");
-          agent.abort();
+          abortQuietly(agent);
           throw this.fatalProtocolError;
         }
-        this.finishDirectBudget(event.message);
         await this.emit("assistant_end", {
           ...(this.activeProviderCall ?? {}),
           text: extractAssistantText(event.message),
@@ -1104,18 +1045,21 @@ class BridgeSession {
           tool_calls: calls,
           stop_reason: event.message.stopReason,
           usage: event.message.usage,
-          ...this.directBudgetFields(),
         });
       }
     });
+    let final;
     try {
-      if (history.continueFromHistory) await agent.continue();
-      else await agent.prompt(adaptPrompt(payload));
+      const promptContent = sessionPromptContent(prompt);
+      await session.sendUserMessage(promptContent, { expandPromptTemplates: false });
+      final = [...session.messages].reverse().find((message) => message.role === "assistant");
     } catch (error) {
       if (this.fatalProtocolError) throw this.fatalProtocolError;
       throw error;
     } finally {
-      this.activeAgents.delete(agent);
+      this.activeAgents.delete(session);
+      session.dispose();
+      this.agentSession = undefined;
       if (localRuntime) {
         try { await localRuntime.env.cleanup(); }
         finally { await localRuntime.cleanup?.(); }
@@ -1130,7 +1074,6 @@ class BridgeSession {
       await this.emit("done", { status: "aborted", code: "user_stop_all" });
       return;
     }
-    const final = [...agent.state.messages].reverse().find((message) => message.role === "assistant");
     if (!final || final.stopReason === "error") throw new ProtocolError("agent_provider_failed");
     if (final.stopReason === "aborted" || this.abortReason) {
       await this.emit("done", { status: "aborted" });
@@ -1203,15 +1146,12 @@ class BridgeSession {
       maxRetryDelayMs: 0,
     });
     this.activeAgents.add(agent);
-    let budgetSettled = false;
     try {
       await agent.prompt(payload.prompt);
       const final = [...agent.state.messages].reverse().find((message) => message.role === "assistant");
       if (this.abortReason) throw new ProtocolError("operation_aborted");
       if (!final || final.stopReason !== "stop" || extractToolCalls(final).length) throw new ProtocolError("private_completion_failed");
       const text = extractAssistantText(final);
-      try { this.finishDirectBudget(final); }
-      finally { budgetSettled = true; }
       await this.emit("assistant_end", {
         ...(this.activeProviderCall ?? {}),
         purpose: payload.purpose,
@@ -1220,12 +1160,8 @@ class BridgeSession {
         tool_calls: [],
         stop_reason: final.stopReason,
         usage: final.usage,
-        ...this.directBudgetFields(),
       });
       return { text, usage: final.usage };
-    } catch (error) {
-      if (!budgetSettled) this.failDirectBudget();
-      throw error;
     } finally {
       this.activeAgents.delete(agent);
     }
@@ -1261,7 +1197,7 @@ class BridgeSession {
       if (!gracefulAbort) {
         if (error instanceof ProtocolError) this.fatalProtocolError = error;
         for (const agent of this.activeAgents) {
-          try { agent.abort(); } catch { /* best effort */ }
+          abortQuietly(agent);
         }
       }
       for (const pending of this.pending.values()) {
