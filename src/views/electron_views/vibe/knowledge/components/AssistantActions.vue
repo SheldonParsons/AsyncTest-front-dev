@@ -8,10 +8,21 @@
 <template>
   <div class="assistant-actions" :class="{ 'is-last': isLast }">
     <button class="aa-btn" type="button" title="复制回答" aria-label="复制回答内容" @click.stop="onCopy">
-      <svg class="copy-stack-pop" width="20" height="20" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect class="copy-back" x="11" y="9" width="16" height="16" rx="3" stroke="currentColor" stroke-width="2.2" />
-        <rect class="copy-front" x="14" y="14" width="16" height="16" rx="3" fill="#fff" stroke="currentColor" stroke-width="2.2" />
-        <rect class="copy-flash" x="14" y="14" width="16" height="16" rx="3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="lucide lucide-copy-icon lucide-copy copy-icon"
+        aria-hidden="true"
+      >
+        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
       </svg>
     </button>
     <button
@@ -52,6 +63,15 @@ async function onCopy() {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
+    if (typeof window.$toast === 'function') {
+      window.$toast({
+        title: '复制成功',
+        type: 'success',
+        position: 'bottom-right',
+        duration: 2500,
+        actionText: '关闭',
+      })
+    }
   } catch {
     const textarea = document.createElement('textarea')
     textarea.value = text
@@ -59,8 +79,20 @@ async function onCopy() {
     textarea.style.opacity = '0'
     document.body.appendChild(textarea)
     textarea.select()
-    try { document.execCommand('copy') } catch { /* ignore */ }
+    let copied = false
+    try {
+      copied = document.execCommand('copy')
+    } catch { /* ignore */ }
     document.body.removeChild(textarea)
+    if (copied && typeof window.$toast === 'function') {
+      window.$toast({
+        title: '复制成功',
+        type: 'success',
+        position: 'bottom-right',
+        duration: 2500,
+        actionText: '关闭',
+      })
+    }
   }
 }
 
@@ -121,30 +153,9 @@ function toggle(kind: 'up' | 'down') {
   pointer-events: auto;
 }
 
-/* 复制图标动画，与提问区一致 */
-.copy-stack-pop { overflow: visible; }
-.copy-stack-pop .copy-back,
-.copy-stack-pop .copy-flash { transform-origin: 20px 20px; }
-.copy-stack-pop .copy-flash {
-  opacity: 0;
-  stroke-dasharray: 18 82;
-  stroke-dashoffset: 18;
-}
-.aa-btn:hover .copy-stack-pop .copy-back {
-  animation: copy-back-pop 1200ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
-}
-.aa-btn:hover .copy-stack-pop .copy-flash {
-  animation: copy-flash-run 1200ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
-}
-
-@keyframes copy-back-pop {
-  0%, 100% { opacity: 0.5; transform: translate(0, 0); }
-  42%, 64% { opacity: 0.82; transform: translate(5px, -5px); }
-}
-@keyframes copy-flash-run {
-  0%, 20% { opacity: 0; stroke-dashoffset: 18; }
-  34% { opacity: 0.9; }
-  72% { opacity: 0.9; stroke-dashoffset: -58; }
-  88%, 100% { opacity: 0; stroke-dashoffset: -82; }
+.copy-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
 }
 </style>
