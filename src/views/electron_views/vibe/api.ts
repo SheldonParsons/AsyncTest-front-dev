@@ -159,10 +159,11 @@ export function updateVibeConversationControl(payload: {
 }
 
 export type VibeKnowledgeApiModelRole = 'rerank' | 'embedding'
+export type VibeKnowledgeApiProviderType = 'dashscope' | 'openai-compatible'
 
 export interface VibeKnowledgeApiModelConfig {
   role: VibeKnowledgeApiModelRole
-  provider_type: 'dashscope'
+  provider_type: VibeKnowledgeApiProviderType
   enabled: boolean
   endpoint: string
   model: string
@@ -175,7 +176,7 @@ export interface VibeKnowledgeApiModelConfig {
 }
 
 export interface VibeKnowledgeApiModelPayload {
-  provider_type: 'dashscope'
+  provider_type: VibeKnowledgeApiProviderType
   enabled: boolean
   endpoint: string
   model: string

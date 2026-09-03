@@ -27,7 +27,10 @@
         <div class="form-grid">
           <label>
             <span>服务协议</span>
-            <input :value="copy.protocolLabel" disabled />
+            <select v-model="draft.provider_type" :disabled="saving" @change="applyProviderDefaults">
+              <option value="dashscope">DashScope</option>
+              <option value="openai-compatible">OpenAI-compatible（百通/内网）</option>
+            </select>
           </label>
           <label>
             <span>模型</span>
@@ -44,10 +47,10 @@
               type="password"
               autocomplete="new-password"
               spellcheck="false"
-              :placeholder="apiKeyConfigured ? '已配置；留空表示保持不变' : '请输入 DashScope API Key'"
+              :placeholder="activeApiKeyConfigured ? '已配置；留空表示保持不变' : '请输入 API Key'"
               :disabled="saving"
             />
-            <small>{{ apiKeyConfigured ? '密钥已配置，读取时不会回显。输入新值只会覆盖原密钥。' : '密钥尚未配置。' }}</small>
+            <small>{{ activeApiKeyConfigured ? '密钥已配置，读取时不会回显。输入新值只会覆盖原密钥。' : '当前协议尚未配置密钥。' }}</small>
           </label>
           <label>
             <span>请求超时（秒）</span>
@@ -57,14 +60,15 @@
           <template v-if="role === 'embedding'">
             <label>
               <span>向量维度</span>
-              <input v-model.number="draft.dimension" type="number" min="64" max="2048" step="1" :disabled="saving" />
+              <input v-model.number="draft.dimension" type="number" min="0" max="8192" step="1" :disabled="saving" />
+              <small v-if="draft.provider_type === 'openai-compatible' && !draft.dimension">可以先填 0 保存；实测向量长度后填写并启用。</small>
             </label>
             <label>
               <span>单批文本数量</span>
               <input v-model.number="draft.batch_size" type="number" min="1" max="10" step="1" :disabled="saving" />
-              <small>DashScope 原生接口每批最多 10 条。</small>
+              <small>系统保守限制为每批最多 10 条。</small>
             </label>
-            <label class="wide">
+            <label v-if="draft.provider_type === 'dashscope'" class="wide">
               <span>查询向量指令（可选）</span>
               <textarea v-model="draft.query_instruct" rows="2" maxlength="500" :disabled="saving" placeholder="英文检索任务说明，建议默认留空" />
               <small>仅用于 text_type=query；填写英文检索任务说明，通常保持默认留空即可。</small>
@@ -90,38 +94,68 @@ import {
   updateVibeKnowledgeApiModelConfig,
   type VibeKnowledgeApiModelPayload,
   type VibeKnowledgeApiModelRole,
+  type VibeKnowledgeApiProviderType,
 } from '../api'
 
 const props = defineProps<{ role: VibeKnowledgeApiModelRole }>()
 
-const DEFAULTS = {
+type ProviderDefaults = {
+  endpoint: string
+  model: string
+  timeout_seconds: number
+  dimension: number
+  batch_size: number
+}
+
+const DEFAULTS: Record<
+  VibeKnowledgeApiModelRole,
+  Record<VibeKnowledgeApiProviderType, ProviderDefaults>
+> = {
   rerank: {
-    endpoint: 'https://dashscope.aliyuncs.com/compatible-api/v1/reranks',
-    model: 'qwen3-rerank',
-    timeout_seconds: 30,
+    dashscope: {
+      endpoint: 'https://dashscope.aliyuncs.com/compatible-api/v1/reranks',
+      model: 'qwen3-rerank',
+      timeout_seconds: 30,
+      dimension: 0,
+      batch_size: 4,
+    },
+    'openai-compatible': {
+      endpoint: 'https://baitong-ai.gree.com/openapi/embed/v1/rerank',
+      model: 'bge-reranker-v2-m3',
+      timeout_seconds: 60,
+      dimension: 0,
+      batch_size: 4,
+    },
   },
   embedding: {
-    endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding',
-    model: 'text-embedding-v4',
-    timeout_seconds: 60,
-    dimension: 1024,
-    batch_size: 10,
+    dashscope: {
+      endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding',
+      model: 'text-embedding-v4',
+      timeout_seconds: 60,
+      dimension: 1024,
+      batch_size: 10,
+    },
+    'openai-compatible': {
+      endpoint: 'https://baitong-ai.gree.com/openapi/embed/v1/embeddings',
+      model: 'Qwen3-Embedding-4B',
+      timeout_seconds: 60,
+      dimension: 0,
+      batch_size: 10,
+    },
   },
-} as const
+}
 
 const COPY = {
   rerank: {
     title: 'ReRank API 模型配置',
     shortTitle: '重排模型',
-    protocolLabel: 'DashScope OpenAI-compatible API',
     description: '配置知识检索唯一使用的远程重排模型，与默认对话模型完全独立。',
     noteTitle: '使用边界',
-    note: '检索候选只会发送给这里配置的 DashScope 重排接口。调用失败时不会使用默认模型或本地 BGE 兜底。',
+    note: '检索候选只会发送给这里配置的重排接口。调用失败时不会使用默认模型或本地 BGE 兜底。',
   },
   embedding: {
     title: 'Embedding API 模型配置',
     shortTitle: '向量模型',
-    protocolLabel: 'DashScope 原生 API',
     description: '配置知识入库和查询唯一使用的远程向量模型。',
     noteTitle: '重要说明',
     note: '修改模型、维度或指令后，已有项目需要重新生成 Current View。系统不会继续使用本地向量模型。',
@@ -129,7 +163,6 @@ const COPY = {
 } as const
 
 const role = computed(() => props.role)
-const defaults = computed(() => DEFAULTS[role.value])
 const copy = computed(() => COPY[role.value])
 const loading = ref(false)
 const saving = ref(false)
@@ -137,7 +170,9 @@ const status = ref('')
 const statusKind = ref<'ok' | 'error'>('ok')
 const apiKey = ref('')
 const apiKeyConfigured = ref(false)
+const storedProviderType = ref<VibeKnowledgeApiProviderType>('dashscope')
 const draft = reactive({
+  provider_type: 'dashscope' as VibeKnowledgeApiProviderType,
   enabled: false,
   endpoint: '',
   model: '',
@@ -146,28 +181,50 @@ const draft = reactive({
   batch_size: 10,
   query_instruct: '',
 })
+const defaults = computed(() => DEFAULTS[role.value][draft.provider_type])
+const activeApiKeyConfigured = computed(() => apiKeyConfigured.value
+  && storedProviderType.value === draft.provider_type)
 
 const canSave = computed(() => {
   if (!draft.endpoint.trim() || !draft.model.trim()) return false
   if (draft.timeout_seconds < 1 || draft.timeout_seconds > 600) return false
   if (role.value === 'embedding' && (draft.batch_size < 1 || draft.batch_size > 10)) return false
-  if (role.value === 'embedding' && (draft.dimension < 64 || draft.dimension > 2048)) return false
-  return !draft.enabled || apiKeyConfigured.value || !!apiKey.value.trim()
+  if (role.value === 'embedding' && (draft.dimension < 0 || draft.dimension > 8192)) return false
+  if (role.value === 'embedding' && draft.enabled && draft.dimension < 1) return false
+  return !draft.enabled || activeApiKeyConfigured.value || !!apiKey.value.trim()
 })
 
 function resetToDefaults() {
-  const value = role.value === 'embedding' ? DEFAULTS.embedding : DEFAULTS.rerank
+  const providerType: VibeKnowledgeApiProviderType = 'dashscope'
+  const value = DEFAULTS[role.value][providerType]
+  Object.assign(draft, {
+    provider_type: providerType,
+    enabled: false,
+    endpoint: value.endpoint,
+    model: value.model,
+    timeout_seconds: value.timeout_seconds,
+    dimension: value.dimension,
+    batch_size: value.batch_size,
+    query_instruct: '',
+  })
+  apiKey.value = ''
+  apiKeyConfigured.value = false
+  storedProviderType.value = providerType
+}
+
+function applyProviderDefaults() {
+  const value = defaults.value
   Object.assign(draft, {
     enabled: false,
     endpoint: value.endpoint,
     model: value.model,
     timeout_seconds: value.timeout_seconds,
-    dimension: role.value === 'embedding' ? DEFAULTS.embedding.dimension : 1024,
-    batch_size: role.value === 'embedding' ? DEFAULTS.embedding.batch_size : 10,
+    dimension: value.dimension,
+    batch_size: value.batch_size,
     query_instruct: '',
   })
   apiKey.value = ''
-  apiKeyConfigured.value = false
+  status.value = ''
 }
 
 async function load() {
@@ -177,13 +234,18 @@ async function load() {
   try {
     const response = await getVibeKnowledgeApiModelConfig(role.value)
     const item = response.item
+    const providerType = item.provider_type === 'openai-compatible'
+      ? 'openai-compatible'
+      : 'dashscope'
+    draft.provider_type = providerType
+    storedProviderType.value = providerType
     Object.assign(draft, {
       enabled: item.enabled === true,
       endpoint: String(item.endpoint || defaults.value.endpoint),
       model: String(item.model || defaults.value.model),
       timeout_seconds: Number(item.timeout_seconds || defaults.value.timeout_seconds),
-      dimension: Number(item.dimension || (role.value === 'embedding' ? DEFAULTS.embedding.dimension : 1024)),
-      batch_size: Number(item.batch_size || (role.value === 'embedding' ? DEFAULTS.embedding.batch_size : 10)),
+      dimension: Number(item.dimension ?? defaults.value.dimension),
+      batch_size: Number(item.batch_size ?? defaults.value.batch_size),
       query_instruct: String(item.query_instruct || ''),
     })
     apiKeyConfigured.value = item.api_key_configured === true
@@ -197,7 +259,7 @@ async function load() {
 
 function buildPayload(): VibeKnowledgeApiModelPayload {
   const payload: VibeKnowledgeApiModelPayload = {
-    provider_type: 'dashscope',
+    provider_type: draft.provider_type,
     enabled: draft.enabled,
     endpoint: draft.endpoint.trim(),
     model: draft.model.trim(),
@@ -207,7 +269,9 @@ function buildPayload(): VibeKnowledgeApiModelPayload {
   if (role.value === 'embedding') {
     payload.dimension = Number(draft.dimension)
     payload.batch_size = Number(draft.batch_size)
-    payload.query_instruct = draft.query_instruct.trim()
+    if (draft.provider_type === 'dashscope') {
+      payload.query_instruct = draft.query_instruct.trim()
+    }
   }
   return payload
 }
@@ -220,6 +284,7 @@ async function save() {
     const response = await updateVibeKnowledgeApiModelConfig(role.value, buildPayload())
     const item = response.item
     draft.enabled = item.enabled === true
+    storedProviderType.value = item.provider_type
     apiKeyConfigured.value = item.api_key_configured === true
     apiKey.value = ''
     status.value = '已保存'
@@ -258,10 +323,10 @@ watch(role, load, { immediate: true })
 .form-grid label { display: grid; align-content: start; gap: 7px; }
 .form-grid label.wide { grid-column: 1 / -1; }
 .form-grid label > span { color: rgba(18, 18, 18, .72); font-size: 12px; font-weight: 560; }
-.form-grid input, .form-grid textarea { width: 100%; border: 1px solid rgba(18, 18, 18, .14); border-radius: 9px; padding: 10px 11px; color: #181818; background: #fff; font: inherit; font-size: 13px; line-height: 1.45; outline: none; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; border: 1px solid rgba(18, 18, 18, .14); border-radius: 9px; padding: 10px 11px; color: #181818; background: #fff; font: inherit; font-size: 13px; line-height: 1.45; outline: none; }
 .form-grid textarea { resize: vertical; }
-.form-grid input:focus, .form-grid textarea:focus { border-color: rgba(18, 18, 18, .4); box-shadow: 0 0 0 3px rgba(18, 18, 18, .05); }
-.form-grid input:disabled { color: rgba(18, 18, 18, .5); background: rgba(18, 18, 18, .035); }
+.form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus { border-color: rgba(18, 18, 18, .4); box-shadow: 0 0 0 3px rgba(18, 18, 18, .05); }
+.form-grid input:disabled, .form-grid select:disabled { color: rgba(18, 18, 18, .5); background: rgba(18, 18, 18, .035); }
 .form-grid label > small { color: rgba(18, 18, 18, .42); font-size: 11px; line-height: 1.45; }
 .secret-field input { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .contract-note { margin-top: 20px; border-radius: 10px; padding: 12px 14px; color: rgba(18, 18, 18, .62); background: rgba(18, 18, 18, .035); }
