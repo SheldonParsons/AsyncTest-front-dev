@@ -132,7 +132,6 @@ export interface VibeCapabilityUser {
 export interface VibeConversationControl {
   disabled: boolean
   message: string
-  attachment_oss_base_url: string
   source?: string
   updated_at?: string | null
 }
@@ -155,7 +154,6 @@ export function getVibeConversationControl(): Promise<{ item: VibeConversationCo
 export function updateVibeConversationControl(payload: {
   disabled: boolean
   message: string
-  attachment_oss_base_url: string
 }): Promise<{ ok: boolean; item: VibeConversationControl }> {
   return request('PATCH', '/vibe/admin/conversation-control', payload)
 }

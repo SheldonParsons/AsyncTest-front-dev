@@ -34,21 +34,6 @@
         <small>{{ draft.message.length }}/500</small>
       </label>
 
-      <label class="namespace-field">
-        <span>附件 OSS 存储地址</span>
-        <input
-          v-model="draft.attachment_oss_base_url"
-          type="url"
-          inputmode="url"
-          autocomplete="off"
-          placeholder="https://asynctest.oss-cn-shenzhen.aliyuncs.com/vibe/files/dev"
-          :aria-invalid="ossUrlError ? 'true' : 'false'"
-          :disabled="loading || saving"
-        />
-        <small v-if="ossUrlError" class="field-error">{{ ossUrlError }}</small>
-        <small v-else>当前环境的服务端附件命名空间；下载按钮仍经服务端鉴权，Bucket 公私属性由部署方承担；不填写任何密钥</small>
-      </label>
-
       <p v-if="status" :class="['status', statusKind]">{{ status }}</p>
     </article>
   </section>
@@ -57,10 +42,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getVibeConversationControl, updateVibeConversationControl } from '../api'
-import {
-  attachmentOssBaseUrlValidationMessage,
-  normalizeAttachmentOssBaseUrlInput,
-} from './attachmentOssBaseUrlPolicy'
 
 const DEFAULT_MESSAGE = '系统维护中，请稍后再试'
 const loading = ref(false)
@@ -70,10 +51,8 @@ const statusKind = ref<'ok' | 'error'>('ok')
 const draft = reactive({
   disabled: false,
   message: DEFAULT_MESSAGE,
-  attachment_oss_base_url: '',
 })
-const ossUrlError = computed(() => attachmentOssBaseUrlValidationMessage(draft.attachment_oss_base_url))
-const canSave = computed(() => (!draft.disabled || !!draft.message.trim()) && !ossUrlError.value)
+const canSave = computed(() => !draft.disabled || !!draft.message.trim())
 
 async function load() {
   loading.value = true
@@ -82,7 +61,6 @@ async function load() {
     const response = await getVibeConversationControl()
     draft.disabled = response.item?.disabled === true
     draft.message = String(response.item?.message || DEFAULT_MESSAGE)
-    draft.attachment_oss_base_url = String(response.item?.attachment_oss_base_url || '')
   } catch (error: any) {
     status.value = `加载失败：${error?.message || String(error)}`
     statusKind.value = 'error'
@@ -99,11 +77,9 @@ async function save() {
     const response = await updateVibeConversationControl({
       disabled: draft.disabled,
       message: draft.message.trim() || DEFAULT_MESSAGE,
-      attachment_oss_base_url: normalizeAttachmentOssBaseUrlInput(draft.attachment_oss_base_url),
     })
     draft.disabled = response.item?.disabled === true
     draft.message = String(response.item?.message || DEFAULT_MESSAGE)
-    draft.attachment_oss_base_url = String(response.item?.attachment_oss_base_url || '')
     status.value = '已保存'
     statusKind.value = 'ok'
   } catch (error: any) {
@@ -134,15 +110,11 @@ onMounted(load)
 .control-toggle strong, .control-toggle small { display: block; }
 .control-toggle strong { font-size: 15px; font-weight: 580; }
 .control-toggle small { margin-top: 5px; color: rgba(18, 18, 18, .48); font-size: 12px; line-height: 1.5; }
-.reply-field, .namespace-field { display: grid; gap: 8px; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(18, 18, 18, .07); }
-.reply-field > span, .namespace-field > span { font-size: 13px; font-weight: 550; }
+.reply-field { display: grid; gap: 8px; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(18, 18, 18, .07); }
+.reply-field > span { font-size: 13px; font-weight: 550; }
 .reply-field textarea { width: 100%; resize: vertical; border: 1px solid rgba(18, 18, 18, .14); border-radius: 10px; padding: 11px 12px; color: #181818; font: inherit; line-height: 1.6; outline: none; }
-.namespace-field input { width: 100%; border: 1px solid rgba(18, 18, 18, .14); border-radius: 10px; padding: 11px 12px; color: #181818; font: inherit; outline: none; }
-.reply-field textarea:focus, .namespace-field input:focus { border-color: rgba(18, 18, 18, .4); box-shadow: 0 0 0 3px rgba(18, 18, 18, .05); }
-.namespace-field input[aria-invalid='true'] { border-color: rgba(180, 35, 24, .55); }
+.reply-field textarea:focus { border-color: rgba(18, 18, 18, .4); box-shadow: 0 0 0 3px rgba(18, 18, 18, .05); }
 .reply-field small { justify-self: end; color: rgba(18, 18, 18, .4); font-size: 11px; }
-.namespace-field small { color: rgba(18, 18, 18, .48); font-size: 11px; line-height: 1.5; }
-.namespace-field .field-error { color: #b42318; }
 .status { margin-top: 14px !important; font-size: 12px !important; }
 .status.ok { color: #2f6b3d !important; }
 .status.error { color: #b42318 !important; }
