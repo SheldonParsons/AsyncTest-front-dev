@@ -3071,12 +3071,24 @@ function localAgentErrorMessage(error: unknown): string {
     vibe_agent_attachment_authored_body_too_large: '本地整理后的 Markdown 超过当前 4,000,000 字符上限，请缩小范围后再录入。',
     vibe_agent_attachment_source_changed: '本地附件在读取期间发生变化，请重新选择后再试。',
     vibe_agent_attachment_binding_required: '本地附件缺少当前 Run 绑定，请重新选择附件。',
+    vibe_agent_local_file_ref_invalid: '本机文件引用已失效，请重新选择文件。',
+    vibe_agent_local_file_changed: '本机文件在发送前发生了变化，请重新选择文件。',
+    vibe_agent_local_file_count_invalid: '本轮最多选择 10 个本机文件。',
+    vibe_agent_runner_ready_timeout: '本机运行组件启动超时，请重启客户端后重试。',
     vibe_agent_knowledge_payload_too_large: '知识库录入正文超过当前传输上限，请缩小范围后再录入。',
     invalid_markdown_chunks: 'Markdown 分块校验失败，请重新整理附件后再试。',
     pi_dependency_version_mismatch: '本机运行组件版本不兼容，请更新客户端。',
     node_version_unsupported: '本地运行环境版本不兼容，请更新客户端。',
   }
   if (messages[raw]) return messages[raw]
+  // Electron prefixes an ipcRenderer.invoke rejection with the channel name
+  // (for example "Error invoking remote method ...: vibe_agent_session_busy").
+  // Recover the stable code so Main admission/identity failures remain
+  // actionable instead of becoming the generic failure toast.
+  const wrappedCode = Object.keys(messages)
+    .sort((left, right) => right.length - left.length)
+    .find(code => raw.includes(code))
+  if (wrappedCode) return messages[wrappedCode]
   // Main/服务端的内部实现名、协议名和错误码只进入 Trace。只有不含
   // 内部术语的中文 public message 才允许直接展示。
   if (/[一-鿿]/.test(raw) && !/(?:\bpi\b|electron|agent|runner)/i.test(raw)) return raw
@@ -5275,7 +5287,21 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
   const sessionId = await ensureLocalSession()
-  const admitted: any = await bridge.list?.({ accountId: localAccountId() })
+  let admitted: any = []
+  try {
+    admitted = await Promise.race([
+      Promise.resolve(bridge.list?.({ accountId: localAccountId() })),
+      // This is only an advisory UI preflight. Main repeats the check
+      // atomically, so a slow diagnostic enumeration must not hold the
+      // composer hostage.
+      new Promise(resolve => setTimeout(() => resolve([]), 1000)),
+    ])
+  } catch {
+    // Main performs the authoritative atomic slot/session admission. A stale
+    // diagnostic list must not prevent a new Goal from reaching that check;
+    // any genuine rejection is returned by startLocal with its stable code.
+    admitted = []
+  }
   const liveRuns = (Array.isArray(admitted) ? admitted : Array.isArray(admitted?.items) ? admitted.items : [])
     .filter((item: any) => !electronAgentStateIsTerminal(item?.state) && item?.lifecycle !== 'terminal')
   if (liveRuns.some((item: any) => String(item?.session_id || item?.sessionId || '') === sessionId)) {

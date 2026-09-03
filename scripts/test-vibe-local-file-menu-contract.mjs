@@ -62,10 +62,11 @@ assert.match(composer, /function clearAttachments\(\)[\s\S]*attachmentScrollLeft
 
 // The native picker is intentionally broad; Pi's local reader and the OS
 // decide how a selected file is interpreted.
-assert.match(composer, /accept="\.md,\.markdown,text\/markdown,text\/plain"/)
+assert.match(composer, /accept="\.md,\.markdown,\.txt,\.csv,\.json,\.yaml,\.yml,\.xml,\.html,\.htm,text\/markdown,text\/plain,text\/html"/)
 
 // Native local selection has no restrictive dialog filter and maps HTML/TXT to text.
-assert.match(localRefs, /\.txt.*\.csv.*\.json.*\.yaml.*\.yml.*\.xml.*\.html.*\.htm/)
+assert.match(localRefs, /\.html.*\.htm/)
+assert.match(localRefs, /\.txt.*\.csv.*\.json.*\.yaml.*\.yml.*\.xml/)
 assert.match(ipcMain, /properties:\s*\["openFile",\s*"multiSelections"\]/)
 
 console.log('vibe local file menu contract: PASS')

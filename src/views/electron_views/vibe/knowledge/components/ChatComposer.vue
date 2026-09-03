@@ -276,7 +276,7 @@
     </div>
 
     <span v-if="uploading" class="visually-hidden" role="status" aria-live="polite">正在上传附件</span>
-    <input ref="fileInputEl" type="file" accept=".md,.markdown,text/markdown,text/plain" multiple hidden @change="onFileChange" />
+    <input ref="fileInputEl" type="file" accept=".md,.markdown,.txt,.csv,.json,.yaml,.yml,.xml,.html,.htm,text/markdown,text/plain,text/html" multiple hidden @change="onFileChange" />
   </section>
 </template>
 

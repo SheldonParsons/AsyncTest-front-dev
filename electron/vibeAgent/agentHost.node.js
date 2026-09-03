@@ -828,6 +828,10 @@ class HostedRun {
 
   status() {
     const pending = [...this.localPending.values()].find((item) => !item.responded);
+    const terminalState = this.localTerminalState && this.localTerminalState !== "waiting_user"
+      ? this.localTerminalState : "";
+    const effectiveState = terminalState || (pending && !this.closed && this.state !== "cancelling"
+      ? "waiting_user" : this.state);
     return {
       execution_host: "electron",
       run_id: this.run.run_id,
@@ -838,8 +842,8 @@ class HostedRun {
       runId: this.run.run_id,
       turnId: this.run.turn_id,
       sessionId: this.run.session_id,
-      state: pending && !this.closed && this.state !== "cancelling" ? "waiting_user" : this.state,
-      lifecycle: lifecycleState(pending && !this.closed && this.state !== "cancelling" ? "waiting_user" : this.state),
+      state: effectiveState,
+      lifecycle: lifecycleState(effectiveState),
       protocolVersion: PROTOCOL_VERSION,
       agentCoreVersion: AGENT_CORE_VERSION,
       piAgentCoreVersion: AGENT_CORE_VERSION,
@@ -1041,6 +1045,10 @@ export class VibeAgentHost {
     const owners = [];
     for (const [runId, hosted] of this.runs) {
       if (runId === exceptRunId) continue;
+      // `done` is the logical end of a Goal. The child can need a short
+      // cleanup window before its close event, but that window must not make a
+      // just-finished session look occupied to the next user submission.
+      if (hosted.localTerminalState && hosted.localTerminalState !== "waiting_user") continue;
       owners.push(sessionOwner(hosted.run.account_id, hosted.run.session_id));
     }
     for (const [runId, reservation] of this.localReservations) {
@@ -1063,6 +1071,12 @@ export class VibeAgentHost {
         const conflicting = waiting.find((item) => {
           const stored = item?.run || {};
           if (resume && String(stored.run_id || item?.run_id || "") === id) return false;
+          // The descriptor write can lag the child `done` frame by one async
+          // filesystem turn. If this Main still owns that same run and has
+          // already observed its terminal frame, the stale waiting descriptor
+          // is no longer a live session owner; do not reject the follow-up.
+          const hosted = this.runs.get(String(stored.run_id || item?.run_id || ""));
+          if (hosted?.localTerminalState && hosted.localTerminalState !== "waiting_user") return false;
           return sameSessionOwner(sessionOwner(stored.account_id, stored.session_id), owner);
         });
         if (conflicting) throw new Error("vibe_agent_session_busy");

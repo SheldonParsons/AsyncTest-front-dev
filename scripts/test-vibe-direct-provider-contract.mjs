@@ -196,6 +196,9 @@ assert.equal(renderer.includes("getLocalPiBootstrap"), false);
 assert.equal(renderer.includes("api_key"), false);
 assert.match(hostSource, /const MAX_ACTIVE_RUNS = 5;/);
 assert.match(hostSource, /sameSessionOwner[\s\S]*vibe_agent_session_busy/);
+assert.match(hostSource, /localTerminalState[\s\S]*effectiveState/);
+assert.match(hostSource, /liveSessionOwners[\s\S]*localTerminalState/);
+assert.match(hostSource, /stale waiting descriptor[\s\S]*hosted\?\.localTerminalState/);
 const localStartBlock = ipcSource.slice(ipcSource.indexOf('register("vibeAgent:startLocal"'));
 assert.ok(localStartBlock.indexOf("host.reserveLocal") < localStartBlock.indexOf("injectLocalStartPayload"));
 assert.match(localStartBlock, /bindLocalReservation[\s\S]*host\.startLocal/);
@@ -203,5 +206,7 @@ const runningRefresh = renderer.slice(renderer.indexOf("async function refreshPr
 assert.match(runningRefresh, /await refreshLocalAgentStatuses\(\)/);
 assert.doesNotMatch(runningRefresh, /listFoundationRunningTurns|replayFoundationTurn|cancelFoundationTurn/);
 assert.match(renderer, /bridge\.list\?\.\(\{ accountId: localAccountId\(\) \}\)[\s\S]*liveRuns[\s\S]*>= 5/);
+assert.match(renderer, /Electron prefixes an ipcRenderer\.invoke rejection/);
+assert.match(renderer, /Main performs the authoritative atomic slot\/session admission/);
 
 console.log("vibe direct Provider contract: PASS");

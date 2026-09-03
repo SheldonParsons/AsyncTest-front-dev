@@ -8,7 +8,8 @@ const MAX_PREVIEW_BYTES = 512 * 1024;
 function mimeType(file) {
   const extension = path.extname(file).toLowerCase();
   if ([".md", ".markdown"].includes(extension)) return "text/markdown";
-  if ([".txt", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".htm"].includes(extension)) return "text/plain";
+  if ([".html", ".htm"].includes(extension)) return "text/html";
+  if ([".txt", ".csv", ".json", ".yaml", ".yml", ".xml"].includes(extension)) return "text/plain";
   if (extension === ".pdf") return "application/pdf";
   if ([".xlsx", ".xls"].includes(extension)) return extension === ".xls"
     ? "application/vnd.ms-excel"
