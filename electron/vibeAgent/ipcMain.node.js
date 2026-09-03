@@ -189,6 +189,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // after the handlers are assembled, before any IPC call can invoke them.
   let host;
   const assistantStreams = new Map();
+  // `HostedRun.cancel()` returns as soon as the abort frame is accepted.  Keep
+  // the explicit user intent until the runner's terminal `done` frame arrives
+  // so an `aborted` status can be distinguished from an app-exit/crash abort.
+  const localUserCancelRequests = new Map();
+  const LOCAL_CANCELLATION_RECEIPT = "已停止本轮处理，本轮未产生任何录入或改动。";
   const localPromptText = (value) => {
     if (typeof value === "string") return value;
     if (Array.isArray(value)) return value.map((item) => localPromptText(item?.content ?? item)).filter(Boolean).join("\n");
@@ -220,6 +225,27 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       attachments: Array.isArray(attachments) ? attachments : [],
       internal: true,
     });
+  };
+  // Cancellation is a lifecycle receipt, not a model answer. Persist it under
+  // its own idempotent key so it survives reload and never replaces a partial
+  // or completed assistant message from the same Run.
+  const appendLocalCancellationReceipt = async (run, {
+    reason = "user_cancelled",
+    terminalStatus = "cancelled",
+  } = {}) => {
+    if (String(run?.execution_mode || "") !== "local") return false;
+    const sessionId = String(run?.session_id || run?.sessionId || "").trim();
+    const runId = String(run?.run_id || run?.runId || "").trim();
+    const accountId = String(run?.account_id || run?.accountId || "").trim();
+    if (!sessionId || !runId || !accountId) return false;
+    await appendLocalSessionEvent(run, "assistant", LOCAL_CANCELLATION_RECEIPT, {
+      local_event_key: `${runId}:cancelled`,
+      message_kind: "status",
+      outcome: "cancelled",
+      stop_reason: String(reason || "user_cancelled"),
+      terminal_status: String(terminalStatus || "cancelled"),
+    });
+    return true;
   };
   const repairDanglingLocalToolResults = async ({ run, code, pending_tool_call_id = "" }) => {
     if (String(run?.execution_mode || "") !== "local") return;
@@ -623,12 +649,24 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         ...(signal === undefined ? {} : { signal: String(signal) }),
       }, "waiting_user");
     },
-    onClose: ({ run, context, state }) => {
+    onClose: async ({ run, context, state }) => {
       // A normal app quit closes the child before it can emit its own `done`
       // frame. Finalize the local Trace from the Host lifecycle so an abort
       // is still visible and can be uploaded; finishTrace is idempotent when
       // a terminal frame was already persisted.
       const resolvedState = String(state || "aborted");
+      const runId = String(run?.run_id || run?.runId || "").trim();
+      const requestedCancelReason = String(localUserCancelRequests.get(runId) || "").trim();
+      // If the child exits before emitting `done`, this is the last reliable
+      // lifecycle boundary for a user stop. App-exit cleanup does not set the
+      // intent map, so an application shutdown is never mislabeled here.
+      if (requestedCancelReason && ["aborted", "cancelled"].includes(resolvedState)) {
+        await appendLocalCancellationReceipt(run, {
+          reason: requestedCancelReason,
+          terminalStatus: resolvedState,
+        }).catch(() => undefined);
+        localUserCancelRequests.delete(runId);
+      }
       const traceStatus = resolvedState === "failed" ? "failed" : resolvedState === "closed" ? "closed" : "aborted";
       return finishTrace(run, context, traceStatus, { code: `host_${traceStatus}` });
     },
@@ -649,11 +687,33 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       const name = `pi.${String(frame?.type || "frame")}`;
       if (frame?.type === "done") {
         const status = String(frame.payload?.status || "ok");
+        const runId = String(run?.run_id || run?.runId || "").trim();
         if (status === "waiting_user") {
           // A waiting interaction is not a terminal Trace. Flush any partial
           // narration, retain the router's pending interaction, and let the
           // same logical Goal append more frames after the user responds.
           return finishTrace(run, context, status, frame.payload);
+        }
+        const frameCode = String(frame.payload?.code || frame.payload?.reason || "").trim();
+        const requestedCancelReason = String(localUserCancelRequests.get(runId) || "").trim();
+        // Runner uses `aborted` for the normal user stop path.  A direct
+        // `cancelled` status is also accepted for cold/legacy runtimes, but
+        // app_exit is deliberately excluded so shutdown never masquerades as
+        // an interactive user decision.
+        const explicitCancelReason = requestedCancelReason
+          || (frameCode === "user_stop_all" || frameCode === "user_cancelled" ? frameCode : "")
+          || (status === "cancelled" && frameCode !== "app_exit" ? (frameCode || "user_cancelled") : "");
+        if (["aborted", "cancelled"].includes(status) && explicitCancelReason) {
+          const persisted = await appendLocalCancellationReceipt(run, {
+            reason: explicitCancelReason,
+            terminalStatus: status,
+          }).catch(() => false);
+          // A later Host close can make one final idempotent persistence
+          // attempt if the journal was momentarily unavailable here.
+          if (persisted) localUserCancelRequests.delete(runId);
+          else localUserCancelRequests.set(runId, explicitCancelReason);
+        } else {
+          localUserCancelRequests.delete(runId);
         }
         const finalReference = status === "completed" && frame.payload?.text !== undefined
           ? contentReference(frame.payload.text) : null;
@@ -1266,6 +1326,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       // to ask Pi for another answer; that would violate the original stop
       // semantics and could trigger a new Provider call.
       await runStore.markTerminal(runId, "cancelled", "user_stop_all").catch(() => undefined);
+      await appendLocalCancellationReceipt(run, {
+        reason: "user_stop_all",
+        terminalStatus: "cancelled",
+      }).catch(() => undefined);
       await finishTrace(run, context, "cancelled", { code: "user_stop_all", recovery: "cold" }).catch(() => undefined);
       host.emitTo(sender, {
         schema: "vibe_agent_event.v1",
@@ -1504,16 +1568,29 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           );
         }
       }
+      // Mark the explicit user intent before asking Host to abort.  The child
+      // reports `aborted` (rather than `cancelled`) for this live path; the
+      // marker lets the `done` observer attach the receipt without treating a
+      // crash or app shutdown as a user cancellation.
+      localUserCancelRequests.set(runId, "user_cancelled");
       return await host.cancel(payload);
     } catch (error) {
+      // A failed live cancel must not leak intent into a later terminal frame.
+      if (String(error?.message || "") !== "vibe_agent_run_not_found") {
+        localUserCancelRequests.delete(runId);
+      }
       // A waiting run may have no child after a crash/release. Cancel its
       // durable checkpoint directly instead of falling through to the server
       // Agent endpoint (which does not own local runs).
       if (String(error?.message || "") !== "vibe_agent_run_not_found") throw error;
       const descriptor = descriptorIdentity;
-      if (!descriptor || !["waiting_user", "resume_ready"].includes(String(descriptor.phase || ""))) throw error;
+      if (!descriptor || !["waiting_user", "resume_ready"].includes(String(descriptor.phase || ""))) {
+        localUserCancelRequests.delete(runId);
+        throw error;
+      }
       if (String(payload?.turnId ?? payload?.turn_id ?? "") !== String(descriptor.run?.turn_id || "")
         || String(payload?.sessionId ?? payload?.session_id ?? "") !== String(descriptor.run?.session_id || "")) {
+        localUserCancelRequests.delete(runId);
         throw new Error("vibe_agent_cancel_identity_drift");
       }
       await runStore.markTerminal(runId, "cancelled", "user_cancelled");
@@ -1529,6 +1606,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           });
         }
       }
+      await appendLocalCancellationReceipt(descriptor.run, {
+        reason: "user_cancelled",
+        terminalStatus: "cancelled",
+      }).catch(() => undefined);
+      localUserCancelRequests.delete(runId);
       const context = validContext(descriptor.local_context || {});
       await finishTrace(descriptor.run, context, "cancelled", { code: "user_cancelled", recovery: "cold" }).catch(() => undefined);
       host.emitTo(sender, {
@@ -1694,6 +1776,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       await traceStore.close();
       recoveryInFlight.clear();
       localStartInFlight.clear();
+      localUserCancelRequests.clear();
       await runStore.close();
       traceSubscribers.clear();
       routers.clear();

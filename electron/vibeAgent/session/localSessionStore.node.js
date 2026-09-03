@@ -170,6 +170,10 @@ function projectHistory(rows) {
     const role = String(event?.role || "");
     if (!["user", "assistant", "tool", "toolResult"].includes(role)) return false;
     if (role === "assistant" && event?.meta?.clarification) return false;
+    // Lifecycle receipts are rendered by the conversation UI, but they are
+    // not model-authored turns. Do not feed a cancellation notice back into
+    // Pi as if it were an assistant answer on the next user turn.
+    if (role === "assistant" && event?.meta?.outcome === "cancelled") return false;
     return !(role === "assistant" && String(event?.meta?.purpose || "") === "language_repair");
   }).map((event) => {
     const role = event.role === "toolResult" ? "tool" : event.role;

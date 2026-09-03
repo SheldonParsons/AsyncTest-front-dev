@@ -1969,9 +1969,11 @@ function requestSessionEvents(sessionId: string, options: { includePrivate?: boo
         const persistedRole = String(row.role || 'assistant')
         const persistedKey = String(row.meta?.local_event_key || '').trim()
         const roleKey = `${persistedRunId}:${persistedRole}`
-        const stableSuffix = persistedKey === roleKey || persistedKey === 'assistant:final'
-          ? persistedRole
-          : (persistedKey || persistedRole)
+        const stableSuffix = persistedKey === `${persistedRunId}:cancelled`
+          ? 'cancelled'
+          : persistedKey === roleKey || persistedKey === 'assistant:final'
+            ? persistedRole
+            : (persistedKey || persistedRole)
         const stableId = persistedRunId
           ? `local:${persistedRunId}:${stableSuffix}`
           : `local:${normalizedSessionId}:${row.sequence}`
@@ -2973,6 +2975,13 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
 
 function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAgentEvent) {
   const waiting = String(event.state || context.state) === 'waiting_user'
+  const terminalState = String(event.state || context.state)
+  if (event.type === 'terminal'
+    && (terminalState === 'cancelled' || terminalState === 'aborted')
+    && (terminalState === 'cancelled' || cancelRequested.value)) {
+    const receipt = localCancellationEvent(context, String(event.code || 'user_cancelled'))
+    if (receipt && electronPresentationOwnedBy(context)) upsertEvent(receipt)
+  }
   if (!waiting) {
     context.ephemeralText = ''
     context.liveAnswerText = ''
@@ -3081,17 +3090,35 @@ function localEventId(context: ElectronAgentRunContext, role: string): string {
   return `local:${context.run.run_id}:${role}`
 }
 
+// 取消是一个终态回执，不是模型答案。保留和 Main 本地 journal 相同的
+// 独立 identity/key，Renderer 可以先即时展示，随后由持久化历史无缝接管。
+const LOCAL_CANCELLATION_RECEIPT = '已停止本轮处理，本轮未产生任何录入或改动。'
+
+function localCancellationEvent(context: ElectronAgentRunContext, reason = 'user_cancelled'): VibeEvent {
+  return localDisplayEvent(context, 'assistant', LOCAL_CANCELLATION_RECEIPT, {
+    // This row is a receipt for the lifecycle outcome, not an answer that
+    // should be sent back to Pi as conversational history.
+    message_kind: 'status',
+    outcome: 'cancelled',
+    stop_reason: String(reason || 'user_cancelled'),
+    committed: false,
+    local_event_key: `${context.run.run_id}:cancelled`,
+  }, [], 'cancelled')
+}
+
 function localDisplayEvent(
   context: ElectronAgentRunContext,
   role: string,
   content: string,
   meta: Record<string, any> = {},
   attachments: any[] = [],
+  identity = role,
 ): VibeEvent {
-  const existing = events.value.find((item: any) => item.id === localEventId(context, role))
+  const eventId = localEventId(context, identity)
+  const existing = events.value.find((item: any) => item.id === eventId)
   const nextOrder = existing?.event_order || Math.max(0, ...events.value.map((item: any) => Number(item.event_order || 0))) + 1
   return {
-    id: localEventId(context, role),
+    id: eventId,
     session_id: context.run.session_id,
     vibe_project_id: String(context.run.project_id || context.run.project || ''),
     user_id: Number(currentUser.value?.id || 0),
@@ -3354,6 +3381,11 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   if (event.type === 'done') {
     const payload: any = event.payload || {}
     context.state = String(payload.status || context.state)
+    if ((payload.status === 'aborted' || payload.status === 'cancelled')
+      && (payload.status === 'cancelled' || cancelRequested.value || payload.code === 'user_stop_all')) {
+      const receipt = localCancellationEvent(context, String(payload.code || 'user_cancelled'))
+      if (receipt && electronPresentationOwnedBy(context)) upsertEvent(receipt)
+    }
     if (payload.status === 'waiting_user') {
       endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
     }
@@ -5150,6 +5182,13 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   const base = (text || '').trim()
   const fileList = [...(files || [])]
   if (sending.value) {
+    // ChatComposer clears a plain text submission before emitting it.  A
+    // stale same-tick running flag must therefore restore the text as well as
+    // any attachment chips instead of silently dropping the user's request.
+    if (base) {
+      setDraftByKey(activeDraftKey.value, base)
+      resizeDraft()
+    }
     restoreComposerAttachments(fileList)
     return
   }
@@ -5158,7 +5197,6 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   // summarize, ingest, or ask what the user wants; the renderer must not
   // silently discard the selected file before Pi can make that decision.
   if (!base && !fileList.length) return
-  preparingSend.value = true
   try {
     const outcome = await sendFoundationTurn(base, { localFiles: fileList })
     if (outcome?.failed) restoreComposerAttachments(fileList)
@@ -5166,8 +5204,6 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     const message = localAgentErrorMessage(reason)
     ElMessage.error(message)
     restoreComposerAttachments(fileList)
-  } finally {
-    preparingSend.value = false
   }
 }
 
@@ -5865,6 +5901,11 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   const hasAttachments = Boolean(Array.isArray(opts?.localFiles) && opts.localFiles.length)
   if ((!content && !hasAttachments) || sending.value) return
   if (useLocalPiAgent()) {
+    // Set the composer preflight flag only after the guard above has admitted
+    // this call. `onComposerSend` may be invoked before Vue flushes the
+    // previous input update; setting it in the caller made `sending` true and
+    // caused this very guard to drop the new request as a no-op.
+    preparingSend.value = true
     try {
       return await sendLocalPiTurn(content, opts || {})
     } catch (error) {
@@ -5877,6 +5918,8 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
         unresolved: false,
         attachmentSelectionReusable: (error as any)?.attachmentSelectionReusable !== false,
       }
+    } finally {
+      preparingSend.value = false
     }
   }
   const error = new Error('当前客户端不支持本机运行，请更新客户端')
@@ -6178,6 +6221,13 @@ function eventOutcomeNotice(event: any): TurnOutcomeNoticeModel | null {
   const model = eventTurnProtocol(event)
   const canonical = outcomeNoticeProps(model?.outcome)
   if (canonical) return canonical
+  if (event?.role === 'assistant' && event?.meta?.outcome === 'cancelled') {
+    return {
+      kind: 'cancelled',
+      title: '本轮已取消',
+      detail: String(event?.content || LOCAL_CANCELLATION_RECEIPT),
+    }
+  }
   if (shouldShowMissingTerminalNotice(model, local, eventTurnIsStillActive(event, model))) {
     return {
       kind: 'protocol',
@@ -6224,6 +6274,7 @@ function threadOutcomeNotice(root: any): TurnOutcomeNoticeModel | null {
 function eventIndependentAnswerText(event: any): string {
   const canonical = eventTurnProtocol(event)
   if (canonical) return canonical.content
+  if (event?.meta?.outcome === 'cancelled') return ''
   if (event?.meta?.failed === true || event?.meta?.message_kind === 'error') return ''
   const content = String(event?.content || '')
   const answerCard = answerCards(event).find((card: any) => card?.type === 'answer' && card?.answer_text)
@@ -6273,6 +6324,7 @@ function eventHasAnswerContent(event: any): boolean {
 function eventCanUseAnswerActions(event: any): boolean {
   const canonical = eventTurnProtocol(event)
   if (canonical) return canonical.state === 'succeeded'
+  if (event?.meta?.outcome === 'cancelled') return false
   return event?.meta?.failed !== true && event?.meta?.message_kind !== 'error'
 }
 
