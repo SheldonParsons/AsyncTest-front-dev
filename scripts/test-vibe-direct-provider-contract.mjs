@@ -24,6 +24,18 @@ const skill = {
   sha256: createHash("sha256").update(skillContent).digest("hex"),
   content: skillContent,
 };
+const agentBinding = (accountId = run.account_id) => ({
+  schema: "electron_agent_binding.v1",
+  binding_id: "a".repeat(32),
+  token: "binding-test",
+  account_id: String(accountId),
+  project_id: run.project_id,
+  session_id: run.session_id,
+  run_id: run.run_id,
+  turn_id: run.turn_id,
+  client_instance_id: "client-test",
+  protocol_version: 2,
+});
 let calls = 0;
 const fetchImpl = async (url, init) => {
   calls += 1;
@@ -67,6 +79,7 @@ const fetchImpl = async (url, init) => {
       parameters: { type: "object", properties: {}, additionalProperties: false },
     })),
     tool_manifest: { schema: "knowledge_tool_manifest.v2", version: 2 },
+    agent_binding: agentBinding(),
     skill,
     hidden_tools: [],
     options: { max_retries: 0, payload_overrides: { enable_thinking: false } },
@@ -116,6 +129,7 @@ const numericSnapshot = await fetchRuntimeSnapshot({
     const response = await fetchImpl(...args);
     const payload = await response.json();
     payload.account_id = 1;
+    payload.agent_binding.account_id = "1";
     return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
   },
 });

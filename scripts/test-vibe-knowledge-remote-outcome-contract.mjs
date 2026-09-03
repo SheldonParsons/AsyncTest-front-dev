@@ -9,6 +9,7 @@ function clientWith(payload, status) {
   return new KnowledgeRemoteClient({
     baseUrl: 'http://127.0.0.1:6001',
     authToken: 'test-token',
+    agentBinding: 'binding-test',
     isDevelopment: true,
     fetchImpl: async () => new Response(JSON.stringify(payload), {
       status,

@@ -161,6 +161,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
   }).catch(() => undefined);
   const routers = new Map();
+  // Per-run binding tokens are bootstrap credentials. Keep them in Main
+  // memory only; neither the renderer nor a durable run descriptor receives
+  // the bearer value.
+  const runBindings = new Map();
   const traces = new Map();
   // A renderer-provided account id is only a routing hint.  Bind the Main
   // process to the account returned by the first authenticated runtime
@@ -358,7 +362,26 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             && !/[\u0000-\u001f\u007f]/u.test(header);
         }).map(([name, header]) => [name, String(header)]))
       : {};
-    return { accountId, authToken, baseUrl, requestText, traceUploadBaseUrl, traceHeaders };
+    const rawBinding = value.agent_binding ?? value.agentBinding;
+    const bindingToken = rawBinding && typeof rawBinding === "object" && !Array.isArray(rawBinding)
+      ? rawBinding.token
+      : rawBinding;
+    if (bindingToken !== undefined && bindingToken !== null && typeof bindingToken !== "string") {
+      throw new Error("vibe_agent_local_binding_invalid");
+    }
+    const agentBinding = String(bindingToken ?? "").trim();
+    if (agentBinding.length > 4096 || /[\u0000-\u001f\u007f]/u.test(agentBinding)) {
+      throw new Error("vibe_agent_local_binding_invalid");
+    }
+    return {
+      accountId,
+      authToken,
+      baseUrl,
+      requestText,
+      traceUploadBaseUrl,
+      traceHeaders,
+      agentBinding,
+    };
   };
   const localContextPayload = (context) => ({
     account_id: context.accountId,
@@ -488,8 +511,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         accountId: run.account_id ?? run.accountId,
         baseUrl: normalized.traceUploadBaseUrl,
         headers: { ...normalized.traceHeaders, Authorization: `token=${normalized.authToken}` },
+        bindingToken: normalized.agentBinding || runBindings.get(String(run?.run_id || run?.runId || ""))?.token || "",
       }).catch(() => undefined);
     }
+    runBindings.delete(String(run?.run_id || run?.runId || ""));
   };
   // Complete traces for runs discovered as in-flight during a Main restart.
   // This writes only a local failure checkpoint; authenticated upload remains
@@ -531,8 +556,14 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (refresh) routers.delete(key);
     if (routers.has(key)) return routers.get(key);
     const normalized = validContext(context);
+    const bindingToken = normalized.agentBinding || runBindings.get(key)?.token || "";
     const knowledgeClient = normalized.authToken && normalized.baseUrl
-      ? new KnowledgeRemoteClient({ baseUrl: normalized.baseUrl, authToken: normalized.authToken, isDevelopment })
+      ? new KnowledgeRemoteClient({
+          baseUrl: normalized.baseUrl,
+          authToken: normalized.authToken,
+          agentBinding: bindingToken,
+          isDevelopment,
+        })
       : null;
     const router = new LocalToolRouter({
       knowledgeClient,
@@ -876,6 +907,33 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // Main owns the single runtime bootstrap exchange. Renderer contributes
   // only the current prompt/history and Provider choice; prompt policy, tools,
   // options and the Provider credential arrive together from the server.
+  const fetchRunSnapshot = async (run, context, providerId = "", { resume = false } = {}) => {
+    const snapshot = await fetchRuntimeSnapshot({
+      baseUrl: context.baseUrl,
+      authToken: context.authToken,
+      isDevelopment,
+      run,
+      providerId,
+      identity: host.identity(),
+      allowManifestDrift: Boolean(resume),
+    });
+    if (String(context.accountId || "") !== String(run.account_id || run.accountId || "")
+      || String(snapshot.account_id || "") !== String(run.account_id || run.accountId || "")) {
+      throw new Error("vibe_agent_local_account_drift");
+    }
+    accountBinding.bind(snapshot.account_id);
+    if (String(snapshot.project_id || "") !== String(run.project_id || run.projectId || run.project || "")) {
+      throw new Error("vibe_agent_local_project_drift");
+    }
+    const runId = String(run.run_id || run.runId || "").trim();
+    if (!runId) throw new Error("vibe_agent_run_invalid");
+    const binding = snapshot.agent_binding;
+    const bindingToken = String(binding?.token || "").trim();
+    if (!bindingToken) throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
+    // The bearer remains in Main memory and is never sent to the child.
+    runBindings.set(runId, structuredClone(binding));
+    return snapshot;
+  };
   const injectLocalStartPayload = async (candidate, sender) => {
     const start = candidate?.start_payload ?? candidate?.start ?? candidate?.payload;
     if (!start || typeof start !== "object" || Array.isArray(start)) throw new Error("vibe_agent_local_start_payload_missing");
@@ -898,30 +956,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         ? []
         : await localFileRefs.resolve(requestedLocalRefs, context.accountId);
     const providerId = String(candidate?.provider_id ?? candidate?.providerId ?? "").trim();
-    const snapshot = await fetchRuntimeSnapshot({
-      baseUrl: context.baseUrl,
-      authToken: context.authToken,
-      isDevelopment,
-      run,
-      providerId,
-      identity: host.identity(),
-      // A cold continuation must keep the original Skill/tool ABI from its
-      // durable descriptor.  Requiring today's manifest here would make a
-      // safe frozen Goal unrecoverable after a server-side ABI rollout; the
-      // provider/account/project checks still run against the fresh snapshot.
-      allowManifestDrift: Boolean(candidate?.resume),
-    });
-    if (String(context.accountId || "") !== String(run.account_id || run.accountId || "")
-      || String(snapshot.account_id || "") !== String(run.account_id || run.accountId || "")) {
-      throw new Error("vibe_agent_local_account_drift");
+    if (candidate?._runtime_snapshot && !candidate?.resume) {
+      throw new Error("vibe_agent_local_start_renderer_field_forbidden");
     }
-    // This is the first trustworthy account identity in the local path: the
-    // server derived it from the authenticated token while issuing the
-    // runtime snapshot.  Bind only after all three identities agree.
-    accountBinding.bind(snapshot.account_id);
-    if (String(snapshot.project_id || "") !== String(run.project_id || run.projectId || run.project || "")) {
-      throw new Error("vibe_agent_local_project_drift");
-    }
+    const snapshot = candidate?._runtime_snapshot
+      || await fetchRunSnapshot(run, context, providerId, { resume: Boolean(candidate?.resume) });
     const priorDescriptor = candidate?.resume
       ? await runStore.get(String(run.run_id || ""), { accountId: snapshot.account_id })
       : null;
@@ -995,6 +1034,18 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const skill = frozenSkill ? await skillCache.put(frozenSkill) : null;
     if (!candidate?.resume && !skill) throw new Error("vibe_agent_skill_required");
     if (!systemPrompt || !Array.isArray(tools)) throw new Error("vibe_agent_run_descriptor_policy_missing");
+    const binding = snapshot.agent_binding;
+    if (!binding || typeof binding !== "object" || Array.isArray(binding)
+      || !String(binding.token || "").trim()) {
+      throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
+    }
+    const bindingRunId = String(run.run_id || run.runId || "").trim();
+    if (!bindingRunId) throw new Error("vibe_agent_run_invalid");
+    const knownBinding = runBindings.get(bindingRunId);
+    if (knownBinding && String(knownBinding.token || "") !== String(binding.token || "")) {
+      throw new Error("vibe_agent_runtime_snapshot_binding_drift");
+    }
+    if (!knownBinding) runBindings.set(bindingRunId, structuredClone(binding));
     run.account_id = snapshot.account_id;
     run.provider_mode = "direct";
     void appendTrace(run, "provider.snapshot.acquired", {
@@ -1149,6 +1200,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       throw new Error("vibe_agent_response_replay_mismatch");
     }
     const run = descriptor.run;
+    const basePayload = descriptor.start_payload && typeof descriptor.start_payload === "object"
+      ? descriptor.start_payload : {};
+    // Acquire the fresh signed binding before resolving the pending business
+    // interaction. The same snapshot is passed into injectLocalStartPayload
+    // below, so a cold continuation performs one bootstrap exchange only.
+    const recoverySnapshot = await fetchRunSnapshot(
+      run,
+      context,
+      String(basePayload.provider?.id || ""),
+      { resume: true },
+    );
     let outcome = descriptor.resolved_result;
     // Always refresh the per-run router with the recovery caller's current
     // authenticated context.  Even a resume_ready checkpoint may continue
@@ -1217,7 +1279,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
     const history = await sessionStore.history(run.session_id, { accountId: descriptorAccount });
     if (!history.length) throw new Error("vibe_agent_run_descriptor_history_missing");
-    const basePayload = descriptor.start_payload && typeof descriptor.start_payload === "object" ? descriptor.start_payload : {};
     if (resolvedCallId && !history.some((item) => item.role === "tool" && String(item.tool_call_id || "") === resolvedCallId)) {
       throw new Error("vibe_agent_run_descriptor_tool_result_missing");
     }
@@ -1241,6 +1302,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         prompt: "",
       },
       local_context: resumeContext,
+      _runtime_snapshot: recoverySnapshot,
     };
     const reservation = await host.reserveLocal({
       runId,
@@ -1518,6 +1580,19 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const accountId = accountForLocalOperation(payloadAccountId(payload));
     return { ...payload, accountId };
   };
+  const rendererTraceUploadPayload = (payload = {}) => {
+    const bound = accountBoundPayload(payload);
+    // A renderer may request an upload, but it cannot supply or override the
+    // bootstrap bearer. Terminal handlers inject the trusted token directly;
+    // restart/resume uploads intentionally use the server's upload_id owner
+    // path until a fresh run bootstrap is available.
+    const {
+      bindingToken: _bindingToken,
+      agentBinding: _agentBinding,
+      ...withoutBinding
+    } = bound;
+    return withoutBinding;
+  };
   register("vibeAgent:traceCreate", async (payload) => traceStore.create(accountBoundPayload(payload)));
   register("vibeAgent:traceAppend", async (payload) => traceStore.append(accountBoundPayload(payload)));
   register("vibeAgent:traceFinish", async (payload) => traceStore.finish(accountBoundPayload(payload)));
@@ -1526,11 +1601,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   register("vibeAgent:tracePayload", async (payload) => traceStore.readPayload(payload?.traceId ?? payload?.trace_id, payload?.payloadRef ?? payload?.payload_ref, accountBoundPayload(payload)));
   register("vibeAgent:traceExport", async (payload) => traceStore.export(payload?.traceId ?? payload?.trace_id, payload?.destinationPath ?? payload?.destination_path, accountBoundPayload(payload)));
   register("vibeAgent:traceRemove", async (payload) => traceStore.remove(payload?.traceId ?? payload?.trace_id, accountBoundPayload(payload)));
-  register("vibeAgent:traceUpload", async (payload) => traceUploadQueue.enqueue(payload?.traceId ?? payload?.trace_id, accountBoundPayload(payload)));
+  register("vibeAgent:traceUpload", async (payload) => traceUploadQueue.enqueue(payload?.traceId ?? payload?.trace_id, rendererTraceUploadPayload(payload)));
   register("vibeAgent:traceResume", async (payload) => {
     await runReconcilePromise;
     await reconcileTracePromise;
-    return traceUploadQueue.resumePending(accountBoundPayload(payload));
+    return traceUploadQueue.resumePending(rendererTraceUploadPayload(payload));
   });
   register("vibeAgent:traceUploadWait", async (payload) => {
     await traceStore.ensure(payload?.traceId ?? payload?.trace_id, accountBoundPayload(payload));
@@ -1622,6 +1697,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       await runStore.close();
       traceSubscribers.clear();
       routers.clear();
+      runBindings.clear();
       traces.clear();
       assistantStreams.clear();
       for (const channel of CHANNELS) ipcMain.removeHandler(channel);

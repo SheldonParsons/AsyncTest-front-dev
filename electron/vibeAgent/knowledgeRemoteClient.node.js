@@ -30,6 +30,26 @@ const OUTCOME_STATUSES = new Set([
   "retryable_failure", "non_retryable_failure",
 ]);
 
+const AGENT_BINDING_HEADER = "X-Vibe-Agent-Run-Binding";
+const MAX_AGENT_BINDING_LENGTH = 4096;
+
+function normalizeAgentBinding(value) {
+  // The binding is issued by the authenticated bootstrap response and is
+  // consumed only by Electron Main.  Keep it out of JSON payloads so Pi
+  // cannot accidentally echo it to the Knowledge capability.
+  const token = value && typeof value === "object" && !Array.isArray(value)
+    ? value.token
+    : value;
+  if (token === undefined || token === null || token === "") return "";
+  if (typeof token !== "string") throw new Error("vibe_agent_knowledge_binding_invalid");
+  const result = token.trim();
+  if (!result || result.length > MAX_AGENT_BINDING_LENGTH
+    || /[\u0000-\u001f\u007f]/u.test(result)) {
+    throw new Error("vibe_agent_knowledge_binding_invalid");
+  }
+  return result;
+}
+
 function outcomeContractError(code, status, payload) {
   return new KnowledgeRemoteError(
     code,
@@ -312,7 +332,7 @@ function publicRemoteErrorMessage(value, fallback = "知识服务请求失败") 
 }
 
 export class KnowledgeRemoteClient {
-  constructor({ baseUrl, authToken, fetchImpl = globalThis.fetch, isDevelopment = false } = {}) {
+  constructor({ baseUrl, authToken, agentBinding = "", bindingToken = "", fetchImpl = globalThis.fetch, isDevelopment = false } = {}) {
     if (baseUrl !== undefined && baseUrl !== null && typeof baseUrl !== "string") {
       throw new Error("vibe_agent_knowledge_base_url_invalid");
     }
@@ -338,6 +358,9 @@ export class KnowledgeRemoteClient {
     if (typeof fetchImpl !== "function") throw new Error("vibe_agent_knowledge_fetch_unavailable");
     this.baseUrl = parsed;
     this.authToken = token;
+    this.agentBinding = normalizeAgentBinding(
+      agentBinding || bindingToken,
+    );
     this.fetch = fetchImpl;
   }
 
@@ -375,6 +398,12 @@ export class KnowledgeRemoteClient {
     traceId = "",
     signal,
   } = {}) {
+    if (turnId && !this.agentBinding) {
+      throw new KnowledgeRemoteError(
+        "agent_binding_required",
+        "本机 Agent 请求缺少身份绑定",
+      );
+    }
     const body = knowledgeRequestBody({
       operation, projectId, sessionId, turnId, goalId, requestId, toolCallId,
       payload, idempotencyKey, traceId,
@@ -395,6 +424,7 @@ export class KnowledgeRemoteClient {
           "Content-Type": "application/json",
           Accept: "application/json",
           Authorization: `token=${this.authToken}`,
+          ...(this.agentBinding ? { [AGENT_BINDING_HEADER]: this.agentBinding } : {}),
         },
         body: serialized,
         signal: controller.signal,
@@ -448,6 +478,12 @@ export class KnowledgeRemoteClient {
       throw new Error("vibe_agent_knowledge_wave_calls_invalid");
     }
     const requestCalls = calls.map((call) => knowledgeRequestBody(call));
+    if (requestCalls.some((call) => call.turn_id) && !this.agentBinding) {
+      throw new KnowledgeRemoteError(
+        "agent_binding_required",
+        "本机 Agent 请求缺少身份绑定",
+      );
+    }
     if (requestCalls.some((call) => !new Set(["search", "overview", "read_source"]).has(call.operation))) {
       throw new Error("vibe_agent_knowledge_wave_read_only_required");
     }
@@ -478,6 +514,7 @@ export class KnowledgeRemoteClient {
           "Content-Type": "application/json",
           Accept: "application/json",
           Authorization: `token=${this.authToken}`,
+          ...(this.agentBinding ? { [AGENT_BINDING_HEADER]: this.agentBinding } : {}),
         },
         body: serialized,
         signal: controller.signal,
@@ -549,7 +586,11 @@ export class KnowledgeRemoteClient {
         this.sessionEndpoint(sessionId, resourceId),
         {
           method: "GET",
-          headers: { Accept: "text/markdown, text/plain", Authorization: `token=${this.authToken}` },
+          headers: {
+            Accept: "text/markdown, text/plain",
+            Authorization: `token=${this.authToken}`,
+            ...(this.agentBinding ? { [AGENT_BINDING_HEADER]: this.agentBinding } : {}),
+          },
           signal: controller.signal,
         },
       );
@@ -583,4 +624,5 @@ export class KnowledgeRemoteClient {
 export const knowledgeRemoteConstants = {
   REQUEST_SCHEMA, RESPONSE_SCHEMA, ERROR_SCHEMA,
   WAVE_REQUEST_SCHEMA, WAVE_RESPONSE_SCHEMA, MAX_BODY_BYTES,
+  AGENT_BINDING_HEADER, MAX_AGENT_BINDING_LENGTH,
 };

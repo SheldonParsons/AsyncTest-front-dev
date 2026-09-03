@@ -184,6 +184,36 @@ function providerDescriptor(value) {
   return result;
 }
 
+function agentBinding(value, run) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || value.schema !== "electron_agent_binding.v1"
+    || typeof value.token !== "string" || !value.token.trim()
+    || value.token.length > 4096
+    || !/^[A-Za-z0-9._:-]+$/u.test(value.token)
+    || typeof value.binding_id !== "string"
+    || !/^[0-9a-f]{32}$/iu.test(value.binding_id)) {
+    throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
+  }
+  const expected = {
+    account_id: String(run?.account_id || ""),
+    project_id: String(run?.project_id || ""),
+    session_id: String(run?.session_id || ""),
+    run_id: String(run?.run_id || ""),
+    turn_id: String(run?.turn_id || ""),
+  };
+  for (const [key, wanted] of Object.entries(expected)) {
+    if (String(value[key] || "") !== wanted) {
+      throw new Error("vibe_agent_runtime_snapshot_binding_identity_drift");
+    }
+  }
+  if (typeof value.client_instance_id !== "string"
+    || !value.client_instance_id.trim()
+    || Number(value.protocol_version) !== 2) {
+    throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
+  }
+  return structuredClone(value);
+}
+
 function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.schema !== RESPONSE_SCHEMA) {
     throw new Error("vibe_agent_runtime_snapshot_invalid");
@@ -208,6 +238,7 @@ function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
     throw new Error("vibe_agent_runtime_snapshot_manifest_invalid");
   }
   if (payload.skill !== undefined) validateSkillDescriptor(payload.skill);
+  const binding = agentBinding(payload.agent_binding, run);
   return {
     schema: RESPONSE_SCHEMA,
     account_id: requiredAccountId(payload.account_id, "vibe_agent_runtime_snapshot_account_missing"),
@@ -218,6 +249,7 @@ function runtimeSnapshot(payload, run, { allowManifestDrift = false } = {}) {
     tools: structuredClone(payload.tools),
     hidden_tools: Array.isArray(payload.hidden_tools) ? payload.hidden_tools.map(String) : [],
     tool_manifest: structuredClone(payload.tool_manifest),
+    agent_binding: binding,
     ...(payload.skill && typeof payload.skill === "object" && !Array.isArray(payload.skill)
       ? { skill: structuredClone(payload.skill) } : {}),
     options: structuredClone(payload.options),

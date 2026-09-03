@@ -7,11 +7,13 @@ let httpCalls = 0;
 const client = new KnowledgeRemoteClient({
   baseUrl: "http://127.0.0.1:6001",
   authToken: "test-token",
+  agentBinding: "binding-test",
   isDevelopment: true,
   fetchImpl: async (url, init) => {
     httpCalls += 1;
     assert.match(String(url), /\/foundation\/knowledge\/tool-wave$/);
     const request = JSON.parse(init.body);
+    assert.equal(init.headers["X-Vibe-Agent-Run-Binding"], "binding-test");
     assert.equal(request.schema, "knowledge_tool_wave_request.v1");
     assert.deepEqual(request.calls.map((item) => item.tool_call_id), ["search-1", "read-1"]);
     return new Response(JSON.stringify({

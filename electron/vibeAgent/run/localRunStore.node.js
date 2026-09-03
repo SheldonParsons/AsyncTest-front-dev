@@ -18,6 +18,8 @@ const ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const CREDENTIAL_KEYS = new Set([
   "api_key", "apiKey", "apikey", "auth_token", "authToken", "access_token", "accessToken", "refresh_token", "refreshToken",
   "run_token", "runToken",
+  "agent_binding", "agentBinding", "agent_binding_token", "agentBindingToken", "binding_id", "bindingId",
+  "binding_token", "bindingToken", "run_binding", "runBinding",
   "proxy_token", "proxyToken", "session_token", "sessionToken", "provider_token", "providerToken",
   "provider_session_token", "providerSessionToken",
   "host_ticket", "hostTicket", "authorization", "cookie", "set-cookie",

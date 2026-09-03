@@ -14,6 +14,27 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const UPLOAD_STATE_FILE = "upload.json";
 const BUNDLE_FILE = ".trace.bundle";
 const TRUSTED_ORIGINS = new Set(["https://www.asynctest.com", "http://10.23.224.40"]);
+const AGENT_BINDING_HEADER = "X-Vibe-Agent-Run-Binding";
+const MAX_AGENT_BINDING_LENGTH = 4096;
+
+function normalizeAgentBinding(value) {
+  const token = value && typeof value === "object" && !Array.isArray(value)
+    ? value.token
+    : value;
+  if (token === undefined || token === null || token === "") return "";
+  if (typeof token !== "string") throw new Error("vibe_agent_trace_binding_invalid");
+  const result = token.trim();
+  if (!result || result.length > MAX_AGENT_BINDING_LENGTH
+    || /[\u0000-\u001f\u007f]/u.test(result)) {
+    throw new Error("vibe_agent_trace_binding_invalid");
+  }
+  return result;
+}
+
+function trustedHeaders(headers, bindingToken) {
+  const token = normalizeAgentBinding(bindingToken);
+  return token ? { ...headers, [AGENT_BINDING_HEADER]: token } : { ...headers };
+}
 
 function requireTraceId(value) {
   const traceId = String(value ?? "").trim();
@@ -44,6 +65,7 @@ function safeUploadHeaders(value) {
     if (new Set([
       "cookie", "set-cookie", "host", "content-length", "content-type",
       "transfer-encoding", "connection", "proxy-authorization",
+      AGENT_BINDING_HEADER.toLowerCase(),
     ]).has(lower)) continue;
     if (typeof rawValue !== "string") continue;
     const text = rawValue;
@@ -243,7 +265,7 @@ export class TraceUploadQueue {
     }
   }
 
-  async enqueue(traceId, { accountId, baseUrl, headers = {}, chunkSize = DEFAULT_CHUNK_SIZE, force = false } = {}) {
+  async enqueue(traceId, { accountId, baseUrl, headers = {}, bindingToken = "", agentBinding = "", chunkSize = DEFAULT_CHUNK_SIZE, force = false } = {}) {
     if (this.closed || this.closing) throw new Error("vibe_agent_trace_upload_queue_closed");
     const id = requireTraceId(traceId);
     this.endpoint(baseUrl, "/agent-traces/uploads");
@@ -252,12 +274,25 @@ export class TraceUploadQueue {
     // `force` after the current attempt settles to rebuild the bundle.
     if (this.running.has(id)) return { trace_id: id, status: "queued" };
     const existing = this.pending.get(id);
-    if (existing && !force) return { trace_id: id, status: "queued" };
+    if (existing && !force) {
+      // A terminal run may supply a binding after an earlier restart-resume
+      // queued the same trace without one. Upgrade the in-memory request
+      // before it reaches postBegin; never replace an active upload.
+      const suppliedBinding = normalizeAgentBinding(bindingToken || agentBinding);
+      if (existing.bindingToken && suppliedBinding && existing.bindingToken !== suppliedBinding) {
+        throw new Error("vibe_agent_trace_binding_conflict");
+      }
+      if (!existing.bindingToken && suppliedBinding) existing.bindingToken = suppliedBinding;
+      return { trace_id: id, status: "queued" };
+    }
     const request = {
       traceId: id,
       accountId: String(accountId || ""),
       baseUrl: String(baseUrl),
       headers: safeUploadHeaders(headers),
+      // The bootstrap binding stays in Main memory. upload.json contains only
+      // resumable chunk state and never receives this bearer value.
+      bindingToken: normalizeAgentBinding(bindingToken || agentBinding),
       chunkSize: size,
     };
     await this.store.ensure(id, { accountId: request.accountId });
@@ -279,7 +314,7 @@ export class TraceUploadQueue {
     return null;
   }
 
-  async resumePending({ accountId, baseUrl, headers = {}, limit = 100 } = {}) {
+  async resumePending({ accountId, baseUrl, headers = {}, bindingToken = "", agentBinding = "", limit = 100 } = {}) {
     if (this.closed || this.closing) throw new Error("vibe_agent_trace_upload_queue_closed");
     this.endpoint(baseUrl, "/agent-traces/uploads");
     const count = Number(limit);
@@ -295,7 +330,10 @@ export class TraceUploadQueue {
       // terminal handler; resuming it here would upload a moving bundle.
       if (!traceId || state === "running" || state === "waiting_user" || state === "uploaded") continue;
       try {
-        queued.push(await this.enqueue(traceId, { accountId, baseUrl, headers }));
+        queued.push(await this.enqueue(traceId, {
+          accountId, baseUrl, headers,
+          bindingToken: bindingToken || agentBinding,
+        }));
       } catch (error) {
         // One stale/corrupt local trace must not prevent newer traces from
         // being resumed. The caller receives the successfully queued set.
@@ -313,7 +351,7 @@ export class TraceUploadQueue {
   }
 
   async run(request) {
-    const { traceId, accountId, baseUrl, headers, chunkSize } = request;
+    const { traceId, accountId, baseUrl, headers, bindingToken, chunkSize } = request;
     const directory = safeTraceDir(this.rootPath, traceId);
     let bundle;
     try {
@@ -342,7 +380,7 @@ export class TraceUploadQueue {
           chunk_size: chunkSize,
           total_chunks: Math.ceil(bundle.totalBytes / chunkSize),
           bundle_sha256: bundle.bundleSha256,
-        });
+        }, bindingToken);
         if (begin.bundle_sha256 && String(begin.bundle_sha256).toLowerCase() !== bundle.bundleSha256) {
           throw new Error("vibe_agent_trace_upload_bundle_conflict");
         }
@@ -392,7 +430,7 @@ export class TraceUploadQueue {
           const buffer = Buffer.allocUnsafe(length);
           const result = await handle.read(buffer, 0, length, offset);
           if (result.bytesRead !== length) throw new Error("vibe_agent_trace_bundle_read_short");
-          await this.putChunk(baseUrl, headers, state, index, buffer);
+          await this.putChunk(baseUrl, headers, state, index, buffer, bindingToken);
           completed.add(index);
           state.completed_chunks = [...completed].sort((a, b) => a - b);
           await atomicJson(stateFile, state);
@@ -401,7 +439,7 @@ export class TraceUploadQueue {
       } finally {
         await handle.close();
       }
-      const complete = await this.postComplete(baseUrl, headers, state);
+      const complete = await this.postComplete(baseUrl, headers, state, bindingToken);
       state.status = "uploaded";
       state.completed_at = new Date().toISOString();
       state.result = withoutCredentials(complete);
@@ -417,16 +455,16 @@ export class TraceUploadQueue {
     }
   }
 
-  async postBegin(baseUrl, headers, body) {
+  async postBegin(baseUrl, headers, body, bindingToken = "") {
     const response = await this.request(this.endpoint(baseUrl, "/agent-traces/uploads"), {
       method: "POST",
-      headers: { ...headers, "Content-Type": "application/json", Accept: "application/json" },
+      headers: trustedHeaders({ ...headers, "Content-Type": "application/json", Accept: "application/json" }, bindingToken),
       body: JSON.stringify(body),
     });
     return responseJson(response, "vibe_agent_trace_upload_begin");
   }
 
-  async putChunk(baseUrl, headers, state, index, bytes) {
+  async putChunk(baseUrl, headers, state, index, bytes, bindingToken = "") {
     const traceId = requireTraceId(state.trace_id);
     const uploadId = requireUploadId(state.upload_id);
     const url = this.endpoint(baseUrl, `/agent-traces/uploads/${encodeURIComponent(uploadId)}/chunks/${index}`);
@@ -436,7 +474,7 @@ export class TraceUploadQueue {
         const chunkHash = sha256(bytes);
         const response = await this.request(url, {
           method: "PUT",
-          headers: {
+          headers: trustedHeaders({
             ...headers,
             Accept: "application/json",
             "Content-Type": "application/octet-stream",
@@ -445,7 +483,7 @@ export class TraceUploadQueue {
             // Kept for early development servers that used the prefixed name.
             "X-Vibe-Chunk-Sha256": chunkHash,
             "Idempotency-Key": `${uploadId}:${index}`,
-          },
+          }, bindingToken),
           body: bytes,
         }, 60_000);
         await responseJson(response, "vibe_agent_trace_upload_chunk");
@@ -465,12 +503,12 @@ export class TraceUploadQueue {
     throw lastError;
   }
 
-  async postComplete(baseUrl, headers, state) {
+  async postComplete(baseUrl, headers, state, bindingToken = "") {
     const uploadId = requireUploadId(state.upload_id);
     const url = this.endpoint(baseUrl, `/agent-traces/uploads/${encodeURIComponent(uploadId)}/complete`);
     const response = await this.request(url, {
       method: "POST",
-      headers: { ...headers, "Content-Type": "application/json", Accept: "application/json" },
+      headers: trustedHeaders({ ...headers, "Content-Type": "application/json", Accept: "application/json" }, bindingToken),
       body: JSON.stringify({
         schema: TRACE_UPLOAD_SCHEMA,
         trace_id: state.trace_id,
@@ -520,4 +558,6 @@ export const traceUploadConstants = {
   DEFAULT_CHUNK_SIZE,
   MAX_CHUNK_SIZE,
   BUNDLE_FILE,
+  AGENT_BINDING_HEADER,
+  MAX_AGENT_BINDING_LENGTH,
 };
