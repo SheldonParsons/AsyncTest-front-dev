@@ -3,8 +3,8 @@
  *
  * The descriptor is deliberately not a transcript or a credential store. It
  * only keeps enough immutable run metadata to identify a waiting interaction
- * after Main/child restart. Provider keys, auth tokens, cookies and host/run
- * tickets are removed before anything reaches disk. The session journal remains
+ * after Main/child restart. Provider keys, auth tokens, cookies and run
+ * bindings are removed before anything reaches disk. The session journal remains
  * the source used to rebuild Pi's message history.
  */
 import fs from "node:fs/promises";
@@ -227,7 +227,7 @@ function normalizeProviderBudget(value) {
 
 /**
  * Main-process only durable run state. This is intentionally a small JSON
- * journal rather than another server-side runtime owner: local session events
+ * journal rather than another runtime owner: local session events
  * and Trace hold the detailed evidence; descriptors only enable cold attach.
  */
 export class LocalRunStore {

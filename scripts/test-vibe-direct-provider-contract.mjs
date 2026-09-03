@@ -200,7 +200,8 @@ const localStartBlock = ipcSource.slice(ipcSource.indexOf('register("vibeAgent:s
 assert.ok(localStartBlock.indexOf("host.reserveLocal") < localStartBlock.indexOf("injectLocalStartPayload"));
 assert.match(localStartBlock, /bindLocalReservation[\s\S]*host\.startLocal/);
 const runningRefresh = renderer.slice(renderer.indexOf("async function refreshProjectRunningTurns"));
-assert.ok(runningRefresh.indexOf("localPiAgentEnabled() || sessions.value.some") < runningRefresh.indexOf("listFoundationRunningTurns"));
+assert.match(runningRefresh, /await refreshLocalAgentStatuses\(\)/);
+assert.doesNotMatch(runningRefresh, /listFoundationRunningTurns|replayFoundationTurn|cancelFoundationTurn/);
 assert.match(renderer, /bridge\.list\?\.\(\{ accountId: localAccountId\(\) \}\)[\s\S]*liveRuns[\s\S]*>= 5/);
 
 console.log("vibe direct Provider contract: PASS");

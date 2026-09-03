@@ -177,13 +177,15 @@ export function adaptPrompt(payload) {
 }
 
 export function adaptModel(payload) {
+  if ((payload.execution_mode ?? "local") !== "local") throw new Error("execution_mode_invalid");
   const provider = payload.provider;
   const supplied = payload.model ?? {};
   const id = String(supplied.id ?? provider.model ?? "").trim();
   const providerId = String(supplied.provider ?? provider.id ?? "vibe-backend-proxy").trim();
-  const direct = payload.execution_mode === "local" && (provider.mode ?? "proxy") === "direct";
+  const direct = (payload.execution_mode ?? "local") === "local"
+    && (provider.mode ?? "proxy") === "direct";
   // Electron-local runs use the upstream URL from Main's one-shot snapshot;
-  // the retained server runner still resolves through its backend proxy.
+  // proxy mode still resolves through the authenticated backend capability.
   const baseUrl = String(
     direct ? (provider.base_url ?? "") : (provider.proxy_base_url ?? ""),
   ).trim();

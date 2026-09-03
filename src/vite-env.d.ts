@@ -297,15 +297,7 @@ export interface ElectronAgentRun {
   project?: string;
   project_id?: string;
   host_id?: string;
-  host_ticket: string;
-  host_ticket_expires_at?: string;
-  expires_at?: string;
   protocol_version: number;
-  backend_base_url?: string;
-  attach_url?: string;
-  control_url?: string;
-  heartbeat_url?: string;
-  provider_proxy_base_url?: string;
 }
 
 export interface ElectronAgentStatus {
@@ -324,7 +316,7 @@ export interface ElectronAgentStatus {
   agentCoreVersion: string;
   piAgentCoreVersion: string;
   piAiVersion: string;
-  executionMode?: 'server' | 'local';
+  executionMode?: 'local';
   startedAt?: number;
   assistantPartialText?: string;
   traceId?: string;

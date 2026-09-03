@@ -784,6 +784,7 @@ import {
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
   type VibeAttachment,
+  type VibeAttachmentResourceRef,
   type VibeEvent,
   type VibeLLMModelPickerProvider,
   type VibeProject,
@@ -5225,6 +5226,7 @@ function toggleAttachmentsExpanded(eventId: string) {
 interface SendFoundationTurnOptions {
   seedMessages?: any[]
   continuationParentId?: string
+  attachments?: VibeAttachmentResourceRef[]
   modelValidated?: boolean
   onUserEventSaved?: () => void
   applyEdit?: any

@@ -53,11 +53,10 @@
 
             <p v-if="!providers.length" class="vms-empty-line">新增自己的模型，或等待管理员配置系统默认模型。</p>
           </section>
-          <label v-if="localAgentAvailable" class="vms-local-agent-toggle">
-            <input v-model="localPiEnabled" type="checkbox" @change="persistLocalPiMode" />
-            <span>在本机运行</span>
-            <small>附件留在本机；服务端在任务开始时提供模型配置，随后由客户端直连模型</small>
-          </label>
+          <div v-if="localAgentAvailable" class="vms-local-agent-toggle" role="status">
+            <span>本机运行</span>
+            <small>对话由桌面客户端处理，附件留在本机</small>
+          </div>
 
           <footer v-if="statusText" class="vms-list-foot">
             <span :class="['vms-status', { ok: statusKind === 'ok', error: statusKind === 'error' }]">{{ statusText }}</span>
@@ -166,7 +165,6 @@ const providers = ref<VibeLLMProviderConfig[]>([])
 const editingProvider = ref<VibeLLMProviderConfig | null>(null)
 const statusText = ref('')
 const statusKind = ref<'idle' | 'ok' | 'error'>('idle')
-const localPiEnabled = ref(false)
 const localAgentAvailable = computed(() => typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent?.startLocal)
 let loadConfigRequest: Promise<void> | null = null
 
@@ -200,28 +198,8 @@ watch(open, (value) => {
 })
 
 onMounted(() => {
-  const configured = String((import.meta as any).env?.VITE_VIBE_AGENT_MODE || '').trim().toLowerCase()
-  const electronDefault = String((import.meta as any).env?.VITE_IS_ELECTRON || '').trim().toLowerCase() === 'true'
-  try {
-    const stored = String(window.localStorage.getItem('vibe-agent-execution') || '').trim().toLowerCase()
-    localPiEnabled.value = stored === 'electron-local' || stored === 'local'
-      || (!stored && configured !== 'server' && (
-        configured === 'electron-local' || configured === 'local' || electronDefault
-      ))
-  } catch {
-    localPiEnabled.value = configured !== 'server' && (
-      configured === 'electron-local' || configured === 'local' || electronDefault
-    )
-  }
   if (embedded.value) void loadConfig()
 })
-
-function persistLocalPiMode() {
-  try {
-    if (localPiEnabled.value) window.localStorage.setItem('vibe-agent-execution', 'electron-local')
-    else window.localStorage.setItem('vibe-agent-execution', 'server')
-  } catch { /* localStorage may be unavailable in a restricted profile */ }
-}
 
 function resetDraft() {
   Object.assign(draft, {

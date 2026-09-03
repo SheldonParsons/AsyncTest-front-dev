@@ -1085,19 +1085,17 @@ export function cleanupAllVibeLab(confirmToken: string): Promise<{ ok: boolean; 
 // Electron 本机 Run 元数据；对话执行与生命周期控制均通过 IPC，不再暴露服务端 Turn API。
 export interface FoundationAgentRun {
   schema: 'electron_agent_run.v1'
-  execution_host: 'electron' | 'server'
+  execution_host: 'electron'
   run_id: string
   turn_id: string
   request_id: string
   session_id: string
   project: string
   project_id?: string
-  host_ticket?: string
-  host_ticket_expires_at?: string | number
   protocol_version: number
   journal_delta?: Record<string, any>
   state?: string
-  execution_mode?: 'server' | 'local'
+  execution_mode?: 'local'
   provider_mode?: 'proxy' | 'direct'
   trace_id?: string
   goal_id?: string

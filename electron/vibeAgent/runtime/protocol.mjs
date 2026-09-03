@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 export const PROTOCOL_VERSION = 2;
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
-export const EXECUTION_MODES = Object.freeze(["server", "local"]);
+// The Electron child is client-owned; server-hosted Agent frames are retired.
+export const EXECUTION_MODES = Object.freeze(["local"]);
 
 const ENVELOPE_KEYS = new Set([
   "protocol_version", "type", "run_id", "turn_id", "request_id",
@@ -137,35 +138,26 @@ function validateModel(value) {
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_model_max_tokens_invalid", { min: 1, integer: true });
 }
 
-function validateProvider(value, { executionMode = "server" } = {}) {
+function validateProvider(value) {
   const row = exact(value, new Set([
     "id", "name", "proxy_base_url", "base_url", "proxy_url", "api_key", "model", "model_name", "model_config", "api", "headers",
     "context_window", "max_tokens", "cost", "reasoning", "compat", "mode",
   ]), new Set(["model"]), "start_provider_invalid");
-  const isLocal = executionMode === "local";
-  if (isLocal) {
-    const mode = row.mode ?? "proxy";
-    if (!["direct", "proxy"].includes(mode)) fail("start_provider_mode_invalid");
-    if (mode === "direct") {
-      // Electron Main receives one complete run snapshot and is the only
-      // caller allowed to inject this credential into the child start frame.
-      if (row.base_url === undefined) fail("start_provider_base_url_missing");
-      if (row.api_key === undefined) fail("start_provider_api_key_missing");
-      validateUrl(row.base_url, "start_provider_base_url_invalid");
-      if (row.proxy_url !== undefined) validateUrl(row.proxy_url, "start_provider_proxy_url_invalid");
-      string(row.api_key, "start_provider_api_key_invalid", { max: 32_768 });
-      if (/[\u0000-\u001f\u007f]/u.test(row.api_key)) fail("start_provider_api_key_invalid");
-    } else {
-      if (row.proxy_base_url === undefined) fail("start_provider_proxy_base_url_missing");
-      validateUrl(row.proxy_base_url, "start_provider_proxy_base_url_invalid");
-      if (row.base_url !== undefined || row.api_key !== undefined || row.proxy_url !== undefined) fail("start_provider_proxy_credential_forbidden");
-    }
+  const mode = row.mode ?? "proxy";
+  if (!["direct", "proxy"].includes(mode)) fail("start_provider_mode_invalid");
+  if (mode === "direct") {
+    // Electron Main receives one complete run snapshot and is the only
+    // caller allowed to inject this credential into the child start frame.
+    if (row.base_url === undefined) fail("start_provider_base_url_missing");
+    if (row.api_key === undefined) fail("start_provider_api_key_missing");
+    validateUrl(row.base_url, "start_provider_base_url_invalid");
+    if (row.proxy_url !== undefined) validateUrl(row.proxy_url, "start_provider_proxy_url_invalid");
+    string(row.api_key, "start_provider_api_key_invalid", { max: 32_768 });
+    if (/[\u0000-\u001f\u007f]/u.test(row.api_key)) fail("start_provider_api_key_invalid");
   } else {
+    if (row.proxy_base_url === undefined) fail("start_provider_proxy_base_url_missing");
     validateUrl(row.proxy_base_url, "start_provider_proxy_base_url_invalid");
-    if (row.mode !== undefined && row.mode !== "proxy") fail("start_provider_mode_invalid");
-    if (row.base_url !== undefined) validateUrl(row.base_url, "start_provider_base_url_invalid");
-    if (row.proxy_url !== undefined) fail("start_provider_proxy_url_forbidden");
-    if (row.api_key !== undefined) fail("start_provider_api_key_forbidden");
+    if (row.base_url !== undefined || row.api_key !== undefined || row.proxy_url !== undefined) fail("start_provider_proxy_credential_forbidden");
   }
   for (const key of ["id", "name", "model", "model_name", "api"]) {
     optionalString(row[key], `start_provider_${key}_invalid`, { max: 512 });
@@ -301,13 +293,13 @@ function validateStartPayload(value) {
   const operation = candidate.operation ?? "agent";
   const required = operation === "self_check"
     ? new Set(["operation", "execution_mode"])
-    : new Set(["system_prompt", "tools", "provider"]);
+    : new Set(["system_prompt", "tools", "provider", "execution_mode"]);
   const row = exact(candidate, allowed, required, "start_payload_invalid");
   if (!new Set(["agent", "complete_no_tools", "self_check"]).has(operation)) fail("start_operation_invalid");
-  const executionMode = row.execution_mode ?? "server";
+  const executionMode = row.execution_mode ?? "local";
   if (!EXECUTION_MODES.includes(executionMode)) fail("start_execution_mode_invalid");
   if (operation === "self_check") {
-    if (executionMode !== "local" || Object.keys(row).some((key) => !new Set(["operation", "execution_mode"]).has(key))) {
+    if (Object.keys(row).some((key) => !new Set(["operation", "execution_mode"]).has(key))) {
       fail("start_self_check_invalid");
     }
     return;
@@ -322,7 +314,7 @@ function validateStartPayload(value) {
   if (row.skill !== undefined) validateSkill(row.skill);
   if (row.local_files !== undefined) validateLocalFiles(row.local_files);
   if (row.model !== undefined) validateModel(row.model);
-  validateProvider(row.provider, { executionMode });
+  validateProvider(row.provider);
   validateOptions(row.options ?? {});
   if (row.fake !== undefined && row.fake !== null) jsonValue(object(row.fake, "start_fake_invalid"), "start_fake_invalid");
   if (row.prompt === undefined && row.user_text === undefined && operation !== "complete_no_tools") fail("start_prompt_missing");
@@ -475,10 +467,10 @@ export function parseInboundLine(line, session = undefined) {
 function validateOutboundPayload(frame) {
   const payload = object(frame.payload, "outbound_payload_invalid");
   if (frame.type === "ready") {
-    const row = exact(payload, new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version"]), "ready_payload_invalid");
+    const row = exact(payload, new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), "ready_payload_invalid");
     for (const key of ["agent_core_version", "pi_ai_version", "undici_version", "node_version"]) string(row[key], `ready_${key}_invalid`, { max: 64 });
     finiteNumber(row.bridge_protocol_version, "ready_protocol_invalid", { min: 1, integer: true });
-    if (row.execution_mode !== undefined && !EXECUTION_MODES.includes(row.execution_mode)) fail("ready_execution_mode_invalid");
+    if (!EXECUTION_MODES.includes(row.execution_mode)) fail("ready_execution_mode_invalid");
   } else if (frame.type === "provider_preflight_request") {
     const row = exact(payload, new Set(["call_id", "purpose", "model", "tool_names", "message_count", "message_characters", "tool_choice", "context"]), new Set(["call_id", "purpose", "model", "tool_names", "message_count", "message_characters", "tool_choice", "context"]), "provider_preflight_payload_invalid");
     string(row.call_id, "provider_preflight_call_invalid", { max: 256 });

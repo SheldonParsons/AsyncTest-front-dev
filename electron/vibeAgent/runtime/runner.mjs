@@ -296,7 +296,6 @@ class BridgeSession {
   constructor(startFrame, closeInput) {
     this.startFrame = startFrame;
     this.identity = identityOf(startFrame);
-    this.executionMode = startFrame.payload.execution_mode ?? "server";
     this.closeInput = closeInput;
     this.pending = new Map();
     this.seenInboundMessageIds = new Set([startFrame.message_id]);
@@ -363,7 +362,7 @@ class BridgeSession {
   }
 
   directBudgetFields() {
-    return this.executionMode === "local" && (this.startFrame.payload.provider?.mode ?? "proxy") === "direct"
+    return (this.startFrame.payload.provider?.mode ?? "proxy") === "direct"
       ? { budget: this.directBudgetSnapshot() } : {};
   }
 
@@ -380,7 +379,7 @@ class BridgeSession {
   }
 
   admitDirectBudget(context) {
-    if (this.executionMode !== "local" || (this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
+    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
     const input = estimatedTokens({
       system_prompt: context.systemPrompt,
       messages: context.messages,
@@ -399,7 +398,7 @@ class BridgeSession {
   }
 
   finishDirectBudget(message) {
-    if (this.executionMode !== "local" || (this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
+    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
     const usage = message?.usage && typeof message.usage === "object" ? message.usage : {};
     const output = Number(usage.output ?? usage.completion_tokens ?? usage.output_tokens ?? 0);
     const observed = Number.isFinite(output) && output > 0
@@ -413,7 +412,7 @@ class BridgeSession {
   }
 
   failDirectBudget() {
-    if (this.executionMode !== "local" || (this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
+    if ((this.startFrame.payload.provider?.mode ?? "proxy") !== "direct") return;
     // If a private completion fails before emitting an assistant message,
     // consume its reserved output conservatively. This prevents a retry from
     // turning an unknown Provider outcome into free budget while releasing
@@ -515,7 +514,7 @@ class BridgeSession {
         undici_version: versions.undici,
         bridge_protocol_version: PROTOCOL_VERSION,
         node_version: process.versions.node,
-        execution_mode: this.executionMode,
+        execution_mode: "local",
       }, { reply_to: this.startFrame.message_id });
       if (this.startFrame.payload.operation === "self_check") {
         await this.emit("done", { status: "completed", code: "self_check_completed" });
@@ -565,19 +564,16 @@ class BridgeSession {
       importPackage("@earendil-works/pi-ai/api/openai-completions"),
       importPackage("undici"),
     ]);
-    let documentParsers = null;
-    if (this.executionMode === "local") {
-      const [xlsx, jszip, pdfjs] = await Promise.all([
-        importPackage("xlsx"),
-        importPackage("jszip"),
-        importPackage("pdfjs-dist/legacy/build/pdf.mjs"),
-      ]);
-      documentParsers = {
-        XLSX: xlsx.default ?? xlsx,
-        JSZip: jszip.default ?? jszip,
-        pdfjs,
-      };
-    }
+    const [xlsx, jszip, pdfjs] = await Promise.all([
+      importPackage("xlsx"),
+      importPackage("jszip"),
+      importPackage("pdfjs-dist/legacy/build/pdf.mjs"),
+    ]);
+    const documentParsers = {
+      XLSX: xlsx.default ?? xlsx,
+      JSZip: jszip.default ?? jszip,
+      pdfjs,
+    };
     return {
       Agent: core.Agent,
       core,
@@ -621,13 +617,13 @@ class BridgeSession {
       const messageCharacters = JSON.stringify(context.messages).length + String(context.systemPrompt ?? "").length;
       const startOverrides = this.options.payload_overrides ?? {};
       const providerConfig = this.startFrame.payload.provider ?? {};
-      const direct = this.executionMode === "local" && (providerConfig.mode ?? "proxy") === "direct";
+      const direct = (providerConfig.mode ?? "proxy") === "direct";
       this.admitDirectBudget(providerContext);
       let requestContext = providerContext;
       let requestOverrides = {};
       let permit = { permit: true };
       let capturePayload = Boolean(this.options.payload_capture ?? false);
-      if (this.executionMode !== "local" || !direct) {
+      if (!direct) {
         const permitFrame = await this.request("provider_preflight_request", {
           call_id: callId,
           purpose,
@@ -709,7 +705,7 @@ class BridgeSession {
       };
       const stream = callProvider.stream(callModel, requestContext, {
         ...options,
-        // Server mode replaces this placeholder with a one-call permit. Local
+        // Proxy mode replaces this placeholder with a one-call permit. Direct
         // mode resolves the key from the trusted Main-provided start frame.
         apiKey: direct ? directKey : "vibe-call-scoped-placeholder",
         signal: options.signal,
@@ -810,10 +806,6 @@ class BridgeSession {
   }
 
   async transformMainContext(messages, tools, signal) {
-    // Server-hosted Pi already has Vibe's canonical ContextCompactionLifecycle
-    // and checkpoint projection.  The local runner owns this fallback only;
-    // running both would add duplicate summaries and provider calls.
-    if (this.executionMode !== "local") return messages;
     if (this.abortReason) throw new ProtocolError("operation_aborted");
     const budget = this.options.budget && typeof this.options.budget === "object"
       ? this.options.budget : {};
@@ -960,7 +952,7 @@ class BridgeSession {
   async injectedSystemPrompt(payload, localRuntime) {
     const base = appendChineseContract(payload.system_prompt);
     const descriptor = payload.skill;
-    if (this.executionMode !== "local" || !descriptor) return base;
+    if (!descriptor) return base;
     if (!localRuntime) throw new ProtocolError("pi_skill_environment_unavailable");
     let raw;
     try {
@@ -1007,19 +999,13 @@ class BridgeSession {
         ...(result.usage === undefined ? {} : { usage: result.usage }),
         terminate: Boolean(result.terminate),
       };
-    }).map((tool) => this.executionMode === "local"
-      ? tool
-      // Preserve the legacy server bridge's permissive argument envelope
-      // until its provider-side schema contract is migrated separately.
-      : { ...tool, parameters: { type: "object", additionalProperties: true } });
-    const localRuntime = this.executionMode === "local"
-      ? createLocalFileTools({
-          core: this.runtime.core,
-          NodeExecutionEnv: this.runtime.NodeExecutionEnv,
-          documentParsers: this.runtime.documentParsers,
-          cwd: homedir(),
-        })
-      : null;
+    });
+    const localRuntime = createLocalFileTools({
+      core: this.runtime.core,
+      NodeExecutionEnv: this.runtime.NodeExecutionEnv,
+      documentParsers: this.runtime.documentParsers,
+      cwd: homedir(),
+    });
     const tools = [...remoteTools, ...(localRuntime?.tools ?? [])];
     for (const tool of localRuntime?.tools ?? []) {
       this.providerTools.set(tool.name, {
@@ -1168,7 +1154,7 @@ class BridgeSession {
   }
 
   async maybeGenerateSessionTitle(finalText) {
-    if (this.executionMode !== "local" || this.options.generate_session_title !== true) return;
+    if (this.options.generate_session_title !== true) return;
     try {
       const firstUserText = (this.agent?.state.messages ?? [])
         .filter((message) => message?.role === "user")

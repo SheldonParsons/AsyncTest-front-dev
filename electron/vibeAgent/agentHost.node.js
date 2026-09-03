@@ -141,7 +141,7 @@ function validateLocalRun(input) {
   const source = input?.run;
   if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("vibe_agent_run_invalid");
   if (source.schema !== RUN_SCHEMA || source.execution_host !== "electron") throw new Error("vibe_agent_run_schema_invalid");
-  if (source.execution_mode !== undefined && source.execution_mode !== "local") throw new Error("vibe_agent_local_mode_required");
+  if (source.execution_mode !== "local") throw new Error("vibe_agent_local_mode_required");
   const run = {
     schema: RUN_SCHEMA,
     execution_host: "electron",
@@ -481,7 +481,7 @@ class HostedRun {
         frame.payload.agent_core_version !== AGENT_CORE_VERSION
         || frame.payload.pi_ai_version !== PI_AI_VERSION
         || frame.payload.bridge_protocol_version !== PROTOCOL_VERSION
-        || (frame.payload.execution_mode && frame.payload.execution_mode !== "local")
+        || frame.payload.execution_mode !== "local"
       ) throw new Error("vibe_agent_runner_version_mismatch");
       this.setState("running");
       this.readyReached = true;

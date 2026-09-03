@@ -4,22 +4,17 @@
 启动 Agent 循环，只提供版本化的 Knowledge Tool、被动 Trace 接收，以及每个 Goal
 开始时的一次 Provider/Skill 运行快照。
 
-## 启用
+## 运行方式
 
-迁移开关不是 HTTP 请求字段。开发版可以设置：
+Vibe 对话固定由 Electron Main 启动本机 Pi；运行方式不是可切换的 HTTP 请求字段。
+开发版只需配置知识服务地址：
 
 ```text
-VITE_VIBE_AGENT_MODE=electron-local
 VITE_VIBE_KNOWLEDGE_BASE_URL=http://127.0.0.1:6001
 ```
 
-服务端还必须把账号加入 Electron 灰度（例如
-`VIBE_AGENT_BACKEND=pi`、`VIBE_AGENT_EXECUTION_HOST=electron`，或设置
-`VIBE_ELECTRON_AGENT_USER_IDS`）。仅修改 Renderer 开关不会绕过服务端准入。
-
-或者在开发者控制台写入 `localStorage.vibe-agent-execution =
-"electron-local"`。Electron 构建默认使用本机 Pi；写入 `"server"` 可将新会话切回
-旧服务端路径，便于回滚。
+服务端仍会在 `agent-bootstrap` 校验账号是否有本机运行权限；Renderer 没有
+server Agent 回退开关，也不会把普通对话发送到服务端 Turn 路由。
 
 每个 Goal 开始时，Electron Main 使用登录态向
 `POST /vibe/foundation/agent-bootstrap` 请求一次完整运行快照，包括系统提示、工具、
@@ -63,7 +58,7 @@ PDF、Excel、PPTX（旧版 PPT 不做转换）和图片是普通本机能力，
 
 本地会话第一次 Goal 真正完成后，同一个 Pi 子进程会用同一份 Provider 快照执行一次
 无工具的私有标题总结；标题最多 12 个字符，只写入 LocalSessionStore，不进入聊天正文。
-该调用计入本地模型预算，失败或结果不合格时保留默认标题，不向服务端标题接口回退。
+该调用计入本地模型预算，失败或结果不合格时保留默认标题。
 
 只有 Pi 整理出的最终 Markdown、并经过用户确认的 `model_authored` 文档，才会通过
 `POST /vibe/foundation/knowledge/tool` 进入知识库；不会把原始文件路径、文件引用或
@@ -92,7 +87,7 @@ system prompt 摘要。
 每个 local run 生成一个 `vibe.agent.trace.v1` 目录：manifest、events.jsonl 和独立
 payload 文件。Provider 调用默认只保留请求摘要、hash、大小、工具元数据和结果；不会重复
 保存完整的 system prompt、工具 Schema 和历史。需要一次深度排障时，Main 可通过受控的
-`VIBE_PI_TRACE_CAPTURE_PAYLOAD=1` 临时保留完整请求体。无论哪种模式都只
+`VIBE_PI_TRACE_CAPTURE_PAYLOAD=1` 临时保留完整请求体。本机运行只
 移除凭据字段（这是密钥安全，不是隐私脱敏）。结束后由 TraceUploadQueue 以 framed-v1
 分块上传到后端 `/vibe/foundation/agent-traces`，失败可从 `upload.json` 继续。
 下一次本地 Agent 发送请求且用户仍登录时，Main 会在后台尝试续传已完成但尚未上传
@@ -119,10 +114,9 @@ Provider key、Provider headers、登录 token、Cookie 和一次性票据永不
 为便于排障，Pi 实际读入上下文的附件片段可能随 Trace payload 上传。若未来要求连
 Trace 也不携带附件正文，需要另设 local-only Trace 投影。
 
-## 兼容保留
+## 服务端边界
 
-服务端旧 Agent 和旧会话/附件 HTTP API 只作为明确的回滚入口保留；Electron 不再包含
-attachment workspace、attachment_* IPC 或对应的本地工具分支。新 Goal 只发送
-prompt/history、Provider 选择、local_file_ref 和登录上下文；Provider key 只能由 Main
-的一次性快照交换注入子进程。旧会话里残留的 workspace 身份不会被恢复，Viewer 会提示
-重新选择原文件。
+服务端旧 Agent Turn API 仅供后端质量工具或部署回滚使用，不属于 Electron 正常对话路径。
+Electron 新 Goal 只发送 prompt/history、Provider 选择、local_file_ref 和登录上下文；
+Provider key 只能由 Main 的一次性快照交换注入子进程。旧会话里残留的 workspace 身份不会
+被恢复，Viewer 会提示重新选择原文件。
