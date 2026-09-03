@@ -28,15 +28,6 @@ export interface VibeSession {
   last_event_at?: string
 }
 
-export interface VibeSessionPage {
-  sessions: VibeSession[]
-  page: {
-    limit: number
-    has_more: boolean
-    next_cursor: string | null
-  }
-}
-
 export interface VibeAttachment {
   schema?: 'attachment_resource_ref.v1'
   resource_id?: string
@@ -537,49 +528,6 @@ export function initVibeProject(projectId: number, payload: {
   return request('POST', `/vibe/projects/by-async-project/${projectId}/init`, payload)
 }
 
-export function listVibeSessions(
-  vibeProjectId: string,
-  options: { cursor?: string; limit?: number } = {},
-): Promise<VibeSessionPage> {
-  const query = new URLSearchParams({ limit: String(options.limit ?? 100) })
-  if (options.cursor) query.set('cursor', options.cursor)
-  return request('GET', `/vibe/projects/${vibeProjectId}/sessions?${query.toString()}`)
-}
-
-export function createVibeSession(vibeProjectId: string, payload: {
-  title?: string
-  focus?: string
-  llm_provider_id?: string
-} = {}): Promise<VibeSession> {
-  return request('POST', `/vibe/projects/${vibeProjectId}/sessions`, payload)
-}
-
-export function deleteVibeSession(sessionId: string): Promise<void> {
-  return request('DELETE', `/vibe/sessions/${sessionId}`)
-}
-
-export function updateVibeSession(sessionId: string, payload: {
-  title?: string
-  focus?: string
-  status?: string
-  llm_provider_id?: string
-}): Promise<VibeSession> {
-  return request('PATCH', `/vibe/sessions/${sessionId}`, payload)
-}
-
-export function autoTitleVibeSession(sessionId: string, content: string): Promise<VibeSession> {
-  return request('POST', `/vibe/sessions/${sessionId}/auto-title`, { content })
-}
-
-export function cleanupVibeSessionTestData(sessionId: string, payload: {
-  reset_baseline?: boolean
-} = {}): Promise<{ ok: boolean; session_id: string; project_id: string; deleted: Record<string, number> }> {
-  return request('POST', `/vibe/sessions/${sessionId}/test-cleanup`, {
-    reset_baseline: true,
-    ...payload,
-  })
-}
-
 export function updateVibeProject(vibeProjectId: string, payload: {
   name?: string
   description?: string
@@ -587,10 +535,6 @@ export function updateVibeProject(vibeProjectId: string, payload: {
   baseline?: Record<string, any>
 }): Promise<VibeProject> {
   return request('PATCH', `/vibe/projects/${vibeProjectId}`, payload)
-}
-
-export function listVibeEvents(sessionId: string): Promise<VibeEvent[]> {
-  return request('GET', `/vibe/sessions/${sessionId}/events`)
 }
 
 export interface VibeSessionSourceLocator {
@@ -663,9 +607,8 @@ export async function listVibeLLMProviders(): Promise<{
   return request('GET', '/vibe/llm/providers')
 }
 
-export function getVibeLLMModelPicker(sessionId?: string): Promise<VibeLLMModelPicker> {
-  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
-  return request('GET', `/vibe/llm/model-picker${query}`)
+export function getVibeLLMModelPicker(): Promise<VibeLLMModelPicker> {
+  return request('GET', '/vibe/llm/model-picker')
 }
 
 export function createVibeLLMProvider(payload: VibeLLMProviderPayload): Promise<VibeLLMProviderConfig> {

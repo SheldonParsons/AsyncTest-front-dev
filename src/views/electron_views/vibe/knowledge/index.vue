@@ -89,15 +89,6 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
           </div>
-          <button
-            v-if="sessionNextCursor"
-            class="session-load-more"
-            type="button"
-            :disabled="sessionsLoadingMore"
-            @click="loadMoreSessions"
-          >
-            {{ sessionsLoadingMore ? '加载中…' : '加载更早对话' }}
-          </button>
           <p v-if="!sessions.length" class="muted">开始第一轮录入后，这里会出现对话记录。</p>
         </div>
       </section>
@@ -763,15 +754,10 @@ import {
   shouldShowMissingTerminalNotice,
 } from './turnPresentationPolicy'
 import {
-  autoTitleVibeSession,
-  createVibeSession,
-  deleteVibeSession,
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
   initVibeProject,
   getVibeLLMModelPicker,
-  listVibeEvents,
-  listVibeSessions,
   getKnowledgeCommit,
   getKnowledgeCommits,
   getVibeSessionSource,
@@ -779,7 +765,6 @@ import {
   streamKnowledgeActivity,
   getFoundationKnowledgeStatsMany,
   updateVibeProject,
-  updateVibeSession,
   type FoundationAgentRun,
   type KnowledgeActivityEvent,
   type KnowledgeCommitSummary,
@@ -821,7 +806,6 @@ import {
   WORKSPACE_FILE_LIST_PAGE_SIZE,
   mergeKnowledgeChangeSummaries,
   WorkspaceViewerConversationStore,
-  workspaceDraftCreationIsStillActive,
   workspaceViewerConversationKey,
   workspaceFileLocatorSignature,
   workspaceFileViewerTabId,
@@ -885,8 +869,6 @@ const projectListRefreshing = ref(false)
 const projectListRefreshError = ref('')
 let projectListRefreshEpoch = 0
 const sessions = ref<VibeSession[]>([])
-const sessionNextCursor = ref('')
-const sessionsLoadingMore = ref(false)
 const events = ref<VibeEvent[]>([])
 
 // 最后一条 assistant 回复的 id（其操作按钮常驻显示）
@@ -1038,17 +1020,12 @@ async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent
   const requestEpoch = ++modelConfigRequestEpoch
   if (!opts.silent) modelConfigLoading.value = true
   try {
-    const localSession = String(sessionId || '').startsWith('session_')
-    // 服务端选择器只认识 VibeSession；本地 Session 的绑定由 Electron
-    // Session Store 持有，传给服务端只会得到一个必然的 404。
-    const picker = await getVibeLLMModelPicker(localSession ? undefined : (sessionId || undefined))
+    const picker = await getVibeLLMModelPicker()
     if (requestEpoch !== modelConfigRequestEpoch) return
     const providers = (picker.providers || []).filter((item) => item.enabled !== false)
     llmProviders.value = providers
-    let localProviderId = localSession
-      ? String(sessions.value.find(item => item.id === sessionId)?.llm_provider_id || '')
-      : ''
-    if (localSession && !localProviderId) {
+    let localProviderId = String(sessions.value.find(item => item.id === sessionId)?.llm_provider_id || '')
+    if (sessionId && !localProviderId) {
       const manifestRequest = electronAgentBridge()?.sessions?.manifest?.({
         sessionId,
         accountId: localAccountId(),
@@ -1057,8 +1034,8 @@ async function loadModelConfig(sessionId = activeSessionId.value, opts: { silent
       if (requestEpoch !== modelConfigRequestEpoch) return
       localProviderId = String(manifest?.provider_id || '')
     }
-    // 本地绑定只有在账号当前仍可见时才生效；撤权或禁用后使用服务端
-    // 权威默认值，后续发送准入会把新选择写回本地 Session。
+    // 本地绑定只有在账号当前仍可见时才生效；撤权或禁用后使用
+    // 当前权威默认值，后续发送准入会把新选择写回本地 Session。
     const candidate = String(picker.selected_provider_id || '')
     const preferred = localProviderId && providers.some(item => item.id === localProviderId)
       ? localProviderId
@@ -1074,12 +1051,9 @@ function applySessionModel(sessionId: string, providerId: string) {
 }
 
 async function persistSessionModel(sessionId: string, providerId: string) {
-  if (sessionId.startsWith('session_')) {
-    const api = electronAgentBridge()?.sessions
-    if (!api?.update) throw new Error('本地会话存储不可用')
-    return await api.update({ sessionId, accountId: localAccountId(), providerId })
-  }
-  return await updateVibeSession(sessionId, { llm_provider_id: providerId })
+  const api = electronAgentBridge()?.sessions
+  if (!api?.update) throw new Error('本地会话存储不可用')
+  return await api.update({ sessionId, accountId: localAccountId(), providerId })
 }
 
 async function refreshComposerModels() {
@@ -1934,8 +1908,8 @@ function workspaceFileListCacheKey(sessionId: string, projectId = workspaceProje
   return `${String(projectId || '').trim()}::${String(sessionId || '').trim()}`
 }
 
-/** Share an in-flight authoritative event request between the conversation
- * loader and the file-list tab so opening "查看全部" cannot duplicate it. */
+/** Share an in-flight local journal request between the conversation loader
+ * and the file-list tab so opening "查看全部" cannot duplicate it. */
 function requestSessionEvents(sessionId: string, options: { includePrivate?: boolean } = {}): Promise<VibeEvent[]> {
   const normalizedSessionId = String(sessionId || '').trim()
   if (!normalizedSessionId) return Promise.resolve([])
@@ -1943,21 +1917,14 @@ function requestSessionEvents(sessionId: string, options: { includePrivate?: boo
   const existing = sessionEventsRequests.get(cacheKey)
   if (existing) return existing
   const request = (async () => {
-    const [serverResult, localResult] = await Promise.allSettled([
-      normalizedSessionId.startsWith('session_')
-        ? Promise.resolve([])
-        : listVibeEvents(normalizedSessionId),
-      electronAgentBridge()?.sessions?.events
-        ? electronAgentBridge()!.sessions!.events({ sessionId: normalizedSessionId, accountId: localAccountId(), limit: 100000 })
-        : Promise.resolve([]),
-    ])
-    const serverEvents = serverResult.status === 'fulfilled' && Array.isArray(serverResult.value)
-      ? serverResult.value : []
-    const localRows: any[] = localResult.status === 'fulfilled' && Array.isArray(localResult.value)
-      ? localResult.value : []
-    if (normalizedSessionId.startsWith('session_') && localResult.status === 'rejected') {
-      throw localResult.reason instanceof Error ? localResult.reason : new Error(String(localResult.reason))
-    }
+    const eventsApi = electronAgentBridge()?.sessions?.events
+    if (!eventsApi) throw new Error('本地会话存储不可用')
+    const rows = await eventsApi({
+      sessionId: normalizedSessionId,
+      accountId: localAccountId(),
+      limit: 100000,
+    })
+    const localRows: any[] = Array.isArray(rows) ? rows : []
     const localEvents: VibeEvent[] = localRows
       .filter((row: any) => options.includePrivate
         || !new Set(['context_checkpoint', 'language_repair']).has(String(row?.meta?.purpose || '')))
@@ -1992,15 +1959,7 @@ function requestSessionEvents(sessionId: string, options: { includePrivate?: boo
           created_at: row.created_at,
         })
       })
-    const merged = [...serverEvents]
-    const seen = new Set(merged.map((event: any) => String(event.id || '')))
-    localEvents.forEach((event) => {
-      if (!seen.has(event.id)) merged.push(event)
-    })
-    if (serverResult.status === 'rejected' && localEvents.length === 0 && !normalizedSessionId.startsWith('session_')) {
-      throw serverResult.reason instanceof Error ? serverResult.reason : new Error(String(serverResult.reason))
-    }
-    return sortEvents(merged)
+    return sortEvents(localEvents)
   })()
   sessionEventsRequests.set(cacheKey, request)
   const clear = () => {
@@ -3713,7 +3672,7 @@ const composerAttachmentStorageKey = computed(() => {
 const localDraftPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 watch([composerDraft, activeSessionId], ([value, sessionId]) => {
   const key = String(sessionId || '')
-  if (!key.startsWith('session_')) return
+  if (!key) return
   const current = localDraftPersistTimers.get(key)
   if (current) clearTimeout(current)
   const accountId = localAccountId()
@@ -4189,7 +4148,6 @@ type LoadedProjectSwitchContext = {
   project: any
   vibeProject: VibeProject
   sessions: VibeSession[]
-  nextCursor: string
   firstSessionId: string
   firstEvents: VibeEvent[] | null
 }
@@ -4300,25 +4258,8 @@ async function loadProjectSwitchContext(
   if (!projectSwitchRequestIsActive(request)) return null
   if (!resolvedProject?.id) throw new Error('项目初始化响应无效，请重试。')
 
-  let loadedPage: any = { sessions: [], page: { next_cursor: '' } }
-  try {
-    loadedPage = await listVibeSessions(resolvedProject.id)
-  } catch (error) {
-    // Electron local sessions are authoritative on the client. If the legacy
-    // server session list is temporarily unreachable, keep navigation usable
-    // from the local journal instead of hiding every local conversation.
-    if (!electronAgentBridge()?.sessions?.list) throw error
-  }
+  const loadedSessions = await localSessionsForProject(String(project.id))
   if (!projectSwitchRequestIsActive(request)) return null
-  if (!loadedPage || !Array.isArray(loadedPage.sessions)) {
-    throw new Error('会话列表响应无效，请重试。')
-  }
-  const remoteSessions = loadedPage.sessions
-  const loadedSessions = [
-    ...remoteSessions,
-    ...(await localSessionsForProject(String(project.id))).filter(local =>
-      !remoteSessions.some((remote: any) => remote.id === local.id)),
-  ]
   projectSwitchState.value = markProjectSwitchSessionsLoaded(
     projectSwitchState.value,
     request,
@@ -4346,7 +4287,6 @@ async function loadProjectSwitchContext(
     project,
     vibeProject: resolvedProject,
     sessions: loadedSessions,
-    nextCursor: loadedPage.page?.next_cursor || '',
     firstSessionId,
     firstEvents,
   }
@@ -4356,8 +4296,6 @@ function resetProjectConversationState() {
   sessionRequestEpoch += 1
   activeSessionId.value = ''
   sessions.value = []
-  sessionNextCursor.value = ''
-  sessionsLoadingMore.value = false
   events.value = []
   sessionFilesLoading.value = false
   sessionFilesError.value = ''
@@ -4385,8 +4323,6 @@ interface ProjectContextSnapshot {
   projectId: string | number | null
   vibeProject: VibeProject | null
   sessions: VibeSession[]
-  sessionNextCursor: string
-  sessionsLoadingMore: boolean
   activeSessionId: string
   events: VibeEvent[]
   sessionFilesLoading: boolean
@@ -4434,8 +4370,6 @@ function captureProjectContextSnapshot(): ProjectContextSnapshot {
     projectId: selectedProjectId.value,
     vibeProject: vibeProject.value,
     sessions: [...sessions.value],
-    sessionNextCursor: sessionNextCursor.value,
-    sessionsLoadingMore: sessionsLoadingMore.value,
     activeSessionId: activeSessionId.value,
     events: [...events.value],
     sessionFilesLoading: sessionFilesLoading.value,
@@ -4506,8 +4440,6 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
   selectedProjectId.value = snapshot.projectId
   vibeProject.value = snapshot.vibeProject
   sessions.value = [...snapshot.sessions]
-  sessionNextCursor.value = snapshot.sessionNextCursor
-  sessionsLoadingMore.value = snapshot.sessionsLoadingMore
   activeSessionId.value = snapshot.activeSessionId
   events.value = [...snapshot.events]
   sessionFilesLoading.value = snapshot.sessionFilesLoading
@@ -4593,7 +4525,6 @@ async function commitLoadedProjectSwitch(
   sessionTitleOverrides.value = {}
   syncBaselineDraft()
   sessions.value = context.sessions
-  sessionNextCursor.value = context.nextCursor
   localStorage.setItem('vibe_project_source_project_id', String(context.project.id))
   void startKnowledgeActivity(context.project.id)
   void loadCurrentKbStats(context.project.id)
@@ -4705,11 +4636,6 @@ function sessionDisplayTitle(session: VibeSession) {
   return sessionTitleOverrides.value[session.id] || session.title || 'Vibe 需求对话'
 }
 
-function isDefaultSessionTitle(title?: string) {
-  const value = (title || '').trim()
-  return !value || ['新的需求对话', 'Vibe 需求对话', '未命名对话'].includes(value)
-}
-
 function applySessionTitle(sessionId: string, title: string) {
   if (!title) return
   sessionTitleOverrides.value = { ...sessionTitleOverrides.value, [sessionId]: title }
@@ -4718,7 +4644,7 @@ function applySessionTitle(sessionId: string, title: string) {
 
 async function localSessionsForProject(projectId: string): Promise<VibeSession[]> {
   const api = electronAgentBridge()?.sessions
-  if (!api?.list) return []
+  if (!api?.list) throw new Error('本地会话存储不可用')
   const rows: any[] = await api.list({ accountId: localAccountId(), projectId, limit: 1000 })
   rows.forEach((row) => {
     if (row?.session_id && typeof row?.draft === 'string') setDraftByKey(sessionDraftKey(String(row.session_id)), row.draft)
@@ -4734,36 +4660,6 @@ async function localSessionsForProject(projectId: string): Promise<VibeSession[]
   }))
 }
 
-const sessionTitleRequests = new Set<string>()
-
-async function autoNameSessionFromFirstInput(sessionId: string, content: string) {
-  // Electron-owned sessions are local-only. Do not send their first prompt to
-  // the legacy server title endpoint (which could leak local attachment
-  // context through a server session and cannot persist a `session_` id).
-  if (String(sessionId || '').startsWith('session_')) return
-  const requestProjectEpoch = projectContextEpoch
-  const requestProjectId = String(selectedProjectId.value ?? '')
-  const session = sessions.value.find(item => item.id === sessionId)
-  if (!session || !isDefaultSessionTitle(session.title) || sessionTitleRequests.has(sessionId)) return
-  sessionTitleRequests.add(sessionId)
-  // 标题请求与主对话并行；后端负责 LLM 总结与确定性失败兜底，前端不再落库首句截断。
-  autoTitleVibeSession(sessionId, content)
-    .then((updated) => {
-      if (requestProjectEpoch !== projectContextEpoch
-        || requestProjectId !== String(selectedProjectId.value ?? '')) {
-        sessionTitleRequests.delete(sessionId)
-        return
-      }
-      if (updated?.title) applySessionTitle(sessionId, updated.title)
-    })
-    .catch(() => {
-      if (requestProjectEpoch === projectContextEpoch
-        && requestProjectId === String(selectedProjectId.value ?? '')) {
-        sessionTitleRequests.delete(sessionId)
-      }
-    })
-}
-
 function addBaselineGoal() {
   baselineDraft.system_goals.push({ name: '', description: '' })
 }
@@ -4776,22 +4672,11 @@ async function refreshState(
   options: { autoOpenLatest?: boolean } = {},
   contextEpoch = projectContextEpoch,
 ) {
-  const ownerId = vibeProject.value?.id || ''
-  if (!ownerId) return
-  let loadedPage: any = { sessions: [], page: { next_cursor: '' } }
-  try {
-    loadedPage = await listVibeSessions(ownerId)
-  } catch (error) {
-    if (!electronAgentBridge()?.sessions?.list) throw error
-  }
-  if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
-  const remoteSessions = loadedPage.sessions || []
-  sessions.value = [
-    ...remoteSessions,
-    ...(await localSessionsForProject(String(workspaceProjectContextId()))).filter(local =>
-      !remoteSessions.some((remote: any) => remote.id === local.id)),
-  ]
-  sessionNextCursor.value = loadedPage.page?.next_cursor || ''
+  const projectId = workspaceProjectContextId()
+  if (!projectId || !vibeProject.value?.id) return
+  const loadedSessions = await localSessionsForProject(projectId)
+  if (contextEpoch !== projectContextEpoch || workspaceProjectContextId() !== projectId) return
+  sessions.value = loadedSessions
   if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
     await openSession(sessions.value[0].id)
     return
@@ -4800,28 +4685,6 @@ async function refreshState(
     loadModelConfig(activeSessionId.value).catch(() => {}),
     refreshProjectRunningTurns(),
   ])
-}
-
-async function loadMoreSessions() {
-  const ownerId = vibeProject.value?.id || ''
-  const cursor = sessionNextCursor.value
-  const contextEpoch = projectContextEpoch
-  if (!ownerId || !cursor || sessionsLoadingMore.value) return
-  sessionsLoadingMore.value = true
-  try {
-    const loadedPage = await listVibeSessions(ownerId, { cursor })
-    if (contextEpoch !== projectContextEpoch || vibeProject.value?.id !== ownerId) return
-    const seen = new Set(sessions.value.map(item => item.id))
-    sessions.value = [
-      ...sessions.value,
-      ...(loadedPage.sessions || []).filter(item => !seen.has(item.id)),
-    ]
-    sessionNextCursor.value = loadedPage.page?.next_cursor || ''
-  } catch (error: any) {
-    ElMessage.error(`加载更早对话失败：${error?.message || String(error)}`)
-  } finally {
-    if (contextEpoch === projectContextEpoch) sessionsLoadingMore.value = false
-  }
 }
 
 async function openSession(sessionId: string, preloadedEvents: VibeEvent[] | null = null) {
@@ -4896,14 +4759,7 @@ function scheduleRunningTurnPolling(delay?: number) {
 
 function setSessionRunning(sessionId: string, running: boolean) {
   if (!sessionId) return
-  if (sessionId.startsWith('session_')) {
-    setLocalSessionRuntimeState(sessionId, running ? 'running' : 'terminal')
-    return
-  }
-  const next = new Set(runningSessionIds.value)
-  if (running) next.add(sessionId)
-  else next.delete(sessionId)
-  runningSessionIds.value = Array.from(next)
+  setLocalSessionRuntimeState(sessionId, running ? 'running' : 'terminal')
 }
 
 function setLocalSessionRuntimeState(sessionId: string, state: string) {
@@ -5024,13 +4880,9 @@ async function deleteSession(sessionId: string) {
   deletingSessionId.value = sessionId
   const deletionProjectId = workspaceProjectContextId()
   try {
-    if (sessionId.startsWith('session_')) {
-      const localRemove = electronAgentBridge()?.sessions?.remove
-      if (!localRemove) throw new Error('本地会话存储不可用')
-      await localRemove({ sessionId, accountId: localAccountId() })
-    } else {
-      await deleteVibeSession(sessionId)
-    }
+    const localRemove = electronAgentBridge()?.sessions?.remove
+    if (!localRemove) throw new Error('本地会话存储不可用')
+    await localRemove({ sessionId, accountId: localAccountId() })
     clearSessionDraft(sessionId)
     const currentDeletionProjectId = workspaceProjectContextId()
     const deletingCurrentProject = currentDeletionProjectId === deletionProjectId
@@ -5064,76 +4916,11 @@ async function deleteSession(sessionId: string) {
   }
 }
 
-async function ensureSession() {
-  if (activeSessionId.value) return activeSessionId.value
-  if (!vibeProject.value) throw new Error('Vibe 项目未初始化')
-  const creationProjectId = workspaceProjectContextId()
-  const creationProjectEpoch = projectContextEpoch
-  const creationSessionEpoch = sessionRequestEpoch
-  const creationDraftKey = workspaceViewerConversationKey(creationProjectId, '')
-  const creationWorkspaceSnapshot = snapshotWorkspaceViewerConversation(
-    workspaceTabs.value,
-    activeWorkspaceTabId.value,
-    workspaceWindowRequestedOpen.value,
-    workspacePanelViewerState.value.autoCollapsedPanelRevision,
-  )
-  const ownerProjectId = vibeProject.value.id
-  const session = await createVibeSession(ownerProjectId, {
-    title: '新的需求对话',
-    llm_provider_id: selectedLlmProviderId.value || undefined,
-  })
-  const creationContextStillActive = workspaceDraftCreationIsStillActive({
-    creationProjectEpoch,
-    currentProjectEpoch: projectContextEpoch,
-    creationSessionEpoch,
-    currentSessionEpoch: sessionRequestEpoch,
-    activeSessionId: activeSessionId.value,
-    activeConversationKey: workspaceConversationStore.currentKey,
-    creationDraftKey,
-  })
-  if (!creationContextStillActive) {
-    const sessionKey = workspaceViewerConversationKey(creationProjectId, session.id)
-    const savedDraft = workspaceConversationStore.currentKey === creationDraftKey
-      ? null
-      : workspaceConversationStore.read(creationDraftKey)
-    const saved = savedDraft || creationWorkspaceSnapshot
-    workspaceConversationStore.write(sessionKey, saved)
-    if (savedDraft) workspaceConversationStore.drop(creationDraftKey)
-    if (
-      workspaceProjectContextId() === creationProjectId
-      && !sessions.value.some(item => item.id === session.id)
-    ) sessions.value.unshift(session)
-    return session.id
-  }
-
-  adoptWorkspaceDraftForSession(creationProjectId, session.id)
-  activeSessionId.value = session.id
-  const migratedFileList = workspaceTabById(workspaceFileListViewerTabId(session.id))
-  if (migratedFileList?.kind === 'file-list' && migratedFileList.loading) {
-    void loadWorkspaceFileList(migratedFileList.id, session.id, true)
-  }
-  selectedLlmProviderId.value = session.llm_provider_id || selectedLlmProviderId.value
-  await refreshState({}, creationProjectEpoch)
-  if (
-    creationProjectEpoch === projectContextEpoch
-    && activeSessionId.value === session.id
-    && !sessions.value.some(item => item.id === session.id)
-  ) {
-    sessions.value.unshift(session)
-  }
-  return session.id
-}
-
-/** Local Pi sessions do not need a server VibeSession. Keep a small compatible
- * projection in the renderer so existing session navigation can display it. */
+/** Keep a small renderer projection of the Electron-owned session manifest. */
 async function ensureLocalSession(): Promise<string> {
-  // Local sessions have an Electron-owned journal and must never reuse a
-  // server-backed session id.  The mode toggle can be changed while an old
-  // server session is open; silently appending local events to that session
-  // would make history/recovery split across two owners.
   const currentId = String(activeSessionId.value || '')
   const current = sessions.value.find(item => String(item.id) === currentId)
-  if (currentId.startsWith('session_') && current
+  if (currentId && current
     && String(current.vibe_project_id || workspaceProjectContextId()) === String(workspaceProjectContextId())) {
     return currentId
   }
@@ -5160,8 +4947,13 @@ async function ensureLocalSession(): Promise<string> {
     updated_at: created.updated_at,
   }
   sessions.value.unshift(projected)
+  adoptWorkspaceDraftForSession(projectId, sessionId)
   activeSessionId.value = sessionId
   activateWorkspaceConversation(projectId, sessionId)
+  const migratedFileList = workspaceTabById(workspaceFileListViewerTabId(sessionId))
+  if (migratedFileList?.kind === 'file-list' && migratedFileList.loading) {
+    void loadWorkspaceFileList(migratedFileList.id, sessionId, true)
+  }
   return sessionId
 }
 
@@ -5736,9 +5528,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   // Main keeps the authoritative local transcript even when the renderer was
   // detached during the previous run. Load it before constructing Pi history
   // so assistant tool calls and their results remain paired on the next turn.
-  const persistedHistory = sessionId.startsWith('session_')
-    ? await requestSessionEvents(sessionId, { includePrivate: true })
-    : []
+  const persistedHistory = await requestSessionEvents(sessionId, { includePrivate: true })
   if (persistedHistory.length && activeSessionId.value === sessionId) {
     events.value = sortEvents(persistedHistory)
   }
@@ -7832,31 +7622,6 @@ function isStreamingUnderEvent(event: any) {
   flex-direction: column;
   gap: 1px;
   padding-right: 1px;
-}
-
-.session-load-more {
-  flex: 0 0 auto;
-  align-self: center;
-  margin: 5px 0 2px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink-3);
-  font-size: 12px;
-  line-height: 1.4;
-  cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
-
-  &:hover:not(:disabled) {
-    background: var(--fill-1);
-    color: var(--ink-2);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.56;
-  }
 }
 
 .session-title { font-weight: 450; }
