@@ -547,65 +547,24 @@ class BridgeSession {
       this.seenProviderCallIds.add(callId);
       const strictTools = (context.tools ?? []).map((tool) => this.providerTools.get(tool.name) ?? tool);
       const providerContext = { ...context, tools: strictTools };
-      const messageCharacters = JSON.stringify(context.messages).length + String(context.systemPrompt ?? "").length;
       const startOverrides = this.options.payload_overrides ?? {};
       const providerConfig = this.startFrame.payload.provider ?? {};
-      const direct = (providerConfig.mode ?? "proxy") === "direct";
-      let requestContext = providerContext;
-      let requestOverrides = {};
-      let permit = { permit: true };
-      let capturePayload = Boolean(this.options.payload_capture ?? false);
-      if (!direct) {
-        const permitFrame = await this.request("provider_preflight_request", {
-          call_id: callId,
-          purpose,
-          model: { id: model.id, provider: model.provider, api: model.api },
-          tool_names: strictTools.map((tool) => tool.name),
-          message_count: context.messages.length,
-          message_characters: messageCharacters,
-          tool_choice: this.options.tool_choice ?? "auto",
-          context: {
-            system_prompt: String(context.systemPrompt ?? ""),
-            messages: context.messages,
-            tools: strictTools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
-          },
-        }, ["provider_permit"]);
-        permit = permitFrame.payload;
-        if (!permit.permit) throw new ProtocolError("provider_permit_denied");
-        const allowedNames = permit.visible_tool_names ? new Set(permit.visible_tool_names) : undefined;
-        requestContext = {
-          ...providerContext,
-          tools: allowedNames ? strictTools.filter((tool) => allowedNames.has(tool.name)) : strictTools,
-        };
-        if (permit.context_patch) {
-          const patchHistory = permit.context_patch.messages === undefined
-            ? undefined
-            : adaptHistory({ messages: permit.context_patch.messages }, model).messages;
-          requestContext = {
-            ...requestContext,
-            ...(permit.context_patch.system_prompt === undefined ? {} : { systemPrompt: permit.context_patch.system_prompt }),
-            ...(patchHistory === undefined ? {} : { messages: patchHistory }),
-          };
-        }
-        capturePayload = Boolean(permit.capture_payload ?? this.options.payload_capture ?? false);
-        requestOverrides = permit.request_overrides ?? {};
-      }
+      if (providerConfig.mode !== "direct") throw new ProtocolError("provider_mode_invalid");
+      const capturePayload = Boolean(this.options.payload_capture ?? false);
       this.activeProviderCall = { call_id: callId, purpose };
 
-      if (fakeStream) return fakeStream(model, requestContext, options);
-      const endpoint = direct
-        ? String(providerConfig.base_url ?? model.baseUrl ?? "").trim()
-        : String(permit.proxy_base_url ?? "").trim();
-      if (!endpoint) throw new ProtocolError(direct ? "provider_direct_url_missing" : "provider_proxy_permit_missing");
+      if (fakeStream) return fakeStream(model, providerContext, options);
+      const endpoint = String(providerConfig.base_url ?? model.baseUrl ?? "").trim();
+      if (!endpoint) throw new ProtocolError("provider_direct_url_missing");
       const endpointUrl = new URL(endpoint);
       if (!new Set(["https:", "http:"]).has(endpointUrl.protocol)) {
-        throw new ProtocolError(direct ? "provider_direct_url_invalid" : "provider_proxy_url_invalid");
+        throw new ProtocolError("provider_direct_url_invalid");
       }
       const callModel = { ...model, baseUrl: endpoint };
-      const directKey = direct ? String(providerConfig.api_key ?? "") : "";
-      if (direct && !directKey) throw new ProtocolError("provider_direct_key_missing");
+      const directKey = String(providerConfig.api_key ?? "");
+      if (!directKey) throw new ProtocolError("provider_direct_key_missing");
       let directProxyAgent;
-      if (direct && providerConfig.proxy_url) {
+      if (providerConfig.proxy_url) {
         try {
           const parsedProxy = new URL(String(providerConfig.proxy_url));
           if (!new Set(["http:", "https:"]).has(parsedProxy.protocol) || parsedProxy.username || parsedProxy.password || parsedProxy.hash || parsedProxy.search) throw new Error();
@@ -616,32 +575,21 @@ class BridgeSession {
       }
       const callProvider = this.runtime.ai.createProvider({
         id: callModel.provider,
-        name: direct ? "Vibe local Provider" : "Vibe backend Provider proxy",
+        name: "Vibe local Provider",
         baseUrl: endpoint,
-        ...(direct && providerConfig.headers ? { headers: providerConfig.headers } : {}),
-        auth: { apiKey: { name: direct ? "Local provider credential" : "Run-scoped proxy credential", resolve: async () => directKey || undefined } },
+        ...(providerConfig.headers ? { headers: providerConfig.headers } : {}),
+        auth: { apiKey: { name: "Local provider credential", resolve: async () => directKey } },
         models: [callModel],
         api: this.runtime.openAI,
       });
-      let callScopedProxyToken = "";
-      const proxyFetch = async (input, init = {}) => {
-        if (direct) return this.runtime.undici.fetch(input, directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init);
-        if (!callScopedProxyToken) throw new ProtocolError("provider_payload_permit_missing");
-        const headers = new this.runtime.undici.Headers(
-          input && typeof input === "object" && input.headers ? input.headers : undefined,
-        );
-        for (const [key, value] of new this.runtime.undici.Headers(init.headers ?? {})) headers.set(key, value);
-        headers.set("Authorization", `Bearer ${callScopedProxyToken}`);
-        callScopedProxyToken = "";
-        return this.runtime.undici.fetch(input, { ...init, headers });
-      };
-      const stream = callProvider.stream(callModel, requestContext, {
+      const stream = callProvider.stream(callModel, providerContext, {
         ...options,
-        // Proxy mode replaces this placeholder with a one-call permit. Direct
-        // mode resolves the key from the trusted Main-provided start frame.
-        apiKey: direct ? directKey : "vibe-call-scoped-placeholder",
+        apiKey: directKey,
         signal: options.signal,
-        fetch: proxyFetch,
+        fetch: (input, init = {}) => this.runtime.undici.fetch(
+          input,
+          directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init,
+        ),
         temperature: this.options.temperature,
         maxTokens: requestedMaxTokens ?? (useRunMaxTokens ? this.options.max_tokens : undefined) ?? model.maxTokens,
         timeoutMs: this.options.timeout_ms,
@@ -650,30 +598,17 @@ class BridgeSession {
         samplingParams: this.options.sampling_params,
         sessionId: this.options.session_id,
         transport: this.options.transport ?? "sse",
-        toolChoice: permit.tool_choice ?? this.options.tool_choice ?? "auto",
+        toolChoice: this.options.tool_choice ?? "auto",
         onPayload: async (body) => {
-          const merged = { ...body, ...startOverrides, ...requestOverrides };
+          const merged = { ...body, ...startOverrides };
           const serialized = canonicalJson(merged);
           const digest = createHash("sha256").update(serialized).digest("hex");
-          if (!direct) {
-            const payloadPermit = await this.request("provider_payload_request", {
-              call_id: callId,
-              purpose,
-              sha256: digest,
-              characters: serialized.length,
-              tool_names: (requestContext.tools ?? []).map((tool) => tool.name),
-              body: merged,
-            }, ["provider_payload_permit"]);
-            callScopedProxyToken = String(payloadPermit.payload.proxy_token ?? "").trim();
-            payloadPermit.payload.proxy_token = "";
-            if (!callScopedProxyToken) throw new ProtocolError("provider_payload_permit_missing");
-          }
           await this.emit("provider_payload", {
             call_id: callId,
             purpose,
             sha256: digest,
             characters: serialized.length,
-            tool_names: (requestContext.tools ?? []).map((tool) => tool.name),
+            tool_names: (providerContext.tools ?? []).map((tool) => tool.name),
             ...(capturePayload ? { body: merged } : {}),
           });
           return merged;

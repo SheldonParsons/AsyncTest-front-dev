@@ -11,11 +11,10 @@ const ENVELOPE_KEYS = new Set([
 ]);
 const REQUEST_TYPES = new Set(["start", "abort", "complete_no_tools"]);
 const RESPONSE_TYPES = new Set([
-  "provider_permit", "provider_payload_permit", "tool_wave_result", "interaction_response",
-  "finish", "repair_final",
+  "tool_wave_result", "interaction_response", "finish", "repair_final",
 ]);
 const OUTBOUND_TYPES = new Set([
-  "ready", "provider_preflight_request", "provider_payload_request", "provider_payload", "assistant_delta",
+  "ready", "provider_payload", "assistant_delta",
   "assistant_end", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
   "interaction_request", "candidate_final",
   "complete_no_tools_result", "session_title", "done", "error", "aborted",
@@ -140,25 +139,16 @@ function validateModel(value) {
 
 function validateProvider(value) {
   const row = exact(value, new Set([
-    "id", "name", "provider_type", "proxy_base_url", "base_url", "proxy_url", "api_key", "model", "model_name", "model_config", "api", "headers",
+    "id", "name", "provider_type", "base_url", "proxy_url", "api_key", "model", "model_name", "model_config", "api", "headers",
     "context_window", "max_tokens", "cost", "reasoning", "input", "compat", "mode",
-  ]), new Set(["model"]), "start_provider_invalid");
-  const mode = row.mode ?? "proxy";
-  if (!["direct", "proxy"].includes(mode)) fail("start_provider_mode_invalid");
-  if (mode === "direct") {
-    // Electron Main receives one complete run snapshot and is the only
-    // caller allowed to inject this credential into the child start frame.
-    if (row.base_url === undefined) fail("start_provider_base_url_missing");
-    if (row.api_key === undefined) fail("start_provider_api_key_missing");
-    validateUrl(row.base_url, "start_provider_base_url_invalid");
-    if (row.proxy_url !== undefined) validateUrl(row.proxy_url, "start_provider_proxy_url_invalid");
-    string(row.api_key, "start_provider_api_key_invalid", { max: 32_768 });
-    if (/[\u0000-\u001f\u007f]/u.test(row.api_key)) fail("start_provider_api_key_invalid");
-  } else {
-    if (row.proxy_base_url === undefined) fail("start_provider_proxy_base_url_missing");
-    validateUrl(row.proxy_base_url, "start_provider_proxy_base_url_invalid");
-    if (row.base_url !== undefined || row.api_key !== undefined || row.proxy_url !== undefined) fail("start_provider_proxy_credential_forbidden");
-  }
+  ]), new Set(["model", "mode", "base_url", "api_key"]), "start_provider_invalid");
+  if (row.mode !== "direct") fail("start_provider_mode_invalid");
+  // Electron Main receives one complete run snapshot and is the only caller
+  // allowed to inject this credential into the child start frame.
+  validateUrl(row.base_url, "start_provider_base_url_invalid");
+  if (row.proxy_url !== undefined) validateUrl(row.proxy_url, "start_provider_proxy_url_invalid");
+  string(row.api_key, "start_provider_api_key_invalid", { max: 32_768 });
+  if (/[\u0000-\u001f\u007f]/u.test(row.api_key)) fail("start_provider_api_key_invalid");
   for (const key of ["id", "name", "provider_type", "model", "model_name", "api"]) {
     optionalString(row[key], `start_provider_${key}_invalid`, { max: 512 });
   }
@@ -314,32 +304,6 @@ function validateStartPayload(value) {
   if (row.prompt === undefined && row.user_text === undefined && operation !== "complete_no_tools") fail("start_prompt_missing");
 }
 
-function validatePermitPayload(value) {
-  const row = exact(value, new Set([
-    "permit", "reason", "request_overrides", "capture_payload", "tool_choice",
-    "visible_tool_names", "context_patch", "proxy_base_url",
-  ]), new Set(["permit"]), "provider_permit_payload_invalid");
-  boolean(row.permit, "provider_permit_invalid");
-  optionalString(row.reason, "provider_permit_reason_invalid", { allowEmpty: true, max: 512 });
-  if (row.capture_payload !== undefined) boolean(row.capture_payload, "provider_permit_capture_invalid");
-  if (row.tool_choice !== undefined) validateToolChoice(row.tool_choice, "provider_permit_tool_choice_invalid");
-  if (row.visible_tool_names !== undefined) {
-    for (const name of array(row.visible_tool_names, "provider_permit_tools_invalid", 128)) string(name, "provider_permit_tool_invalid", { max: 128 });
-  }
-  if (row.request_overrides !== undefined) validateRequestOverrides(row.request_overrides, "provider_permit_overrides_invalid");
-  if (row.context_patch !== undefined) {
-    const patch = exact(row.context_patch, new Set(["system_prompt", "messages"]), new Set(), "provider_permit_context_invalid");
-    optionalString(patch.system_prompt, "provider_permit_context_prompt_invalid", { allowEmpty: true, max: 2_000_000 });
-    if (patch.messages !== undefined) jsonValue(array(patch.messages, "provider_permit_context_messages_invalid", 100_000), "provider_permit_context_messages_invalid");
-  }
-  if (row.proxy_base_url !== undefined) validateUrl(row.proxy_base_url, "provider_permit_proxy_base_url_invalid");
-}
-
-function validatePayloadPermit(value) {
-  const row = exact(value, new Set(["proxy_token"]), new Set(["proxy_token"]), "provider_payload_permit_invalid");
-  string(row.proxy_token, "provider_payload_permit_token_invalid", { max: 32_768 });
-}
-
 function validateToolResult(value, code) {
   const row = exact(value, new Set(["content", "details", "is_error", "terminate", "usage"]), new Set(["content"]), code);
   jsonValue(row.content, `${code}_content_invalid`);
@@ -443,9 +407,7 @@ export function parseInboundLine(line, session = undefined) {
     optionalString(payload.system_prompt, "complete_no_tools_system_prompt_invalid", { allowEmpty: true, max: 200_000 });
     jsonValue(payload.messages ?? [], "complete_no_tools_messages_invalid");
     jsonValue(payload.prompt, "complete_no_tools_prompt_invalid");
-  } else if (frame.type === "provider_permit") validatePermitPayload(frame.payload);
-  else if (frame.type === "provider_payload_permit") validatePayloadPermit(frame.payload);
-  else if (frame.type === "tool_wave_result") validateToolWaveResult(frame.payload);
+  } else if (frame.type === "tool_wave_result") validateToolWaveResult(frame.payload);
   else if (frame.type === "interaction_response") validateInteractionResponse(frame.payload);
   else if (frame.type === "finish") {
     const row = exact(frame.payload, new Set(["publish_text"]), new Set(), "finish_payload_invalid");
@@ -465,24 +427,6 @@ function validateOutboundPayload(frame) {
     for (const key of ["agent_core_version", "pi_ai_version", "pi_coding_agent_version", "undici_version", "node_version"]) string(row[key], `ready_${key}_invalid`, { max: 64 });
     finiteNumber(row.bridge_protocol_version, "ready_protocol_invalid", { min: 1, integer: true });
     if (!EXECUTION_MODES.includes(row.execution_mode)) fail("ready_execution_mode_invalid");
-  } else if (frame.type === "provider_preflight_request") {
-    const row = exact(payload, new Set(["call_id", "purpose", "model", "tool_names", "message_count", "message_characters", "tool_choice", "context"]), new Set(["call_id", "purpose", "model", "tool_names", "message_count", "message_characters", "tool_choice", "context"]), "provider_preflight_payload_invalid");
-    string(row.call_id, "provider_preflight_call_invalid", { max: 256 });
-    if (!new Set(["main_agent", "context_checkpoint", "language_repair"]).has(row.purpose)) fail("provider_preflight_purpose_invalid");
-    jsonValue(row.model, "provider_preflight_model_invalid");
-    for (const name of array(row.tool_names, "provider_preflight_tools_invalid", 128)) string(name, "provider_preflight_tool_invalid", { max: 128 });
-    finiteNumber(row.message_count, "provider_preflight_message_count_invalid", { min: 0, integer: true });
-    finiteNumber(row.message_characters, "provider_preflight_message_characters_invalid", { min: 0, integer: true });
-    validateToolChoice(row.tool_choice, "provider_preflight_tool_choice_invalid");
-    jsonValue(row.context, "provider_preflight_context_invalid");
-  } else if (frame.type === "provider_payload_request") {
-    const row = exact(payload, new Set(["call_id", "purpose", "sha256", "characters", "tool_names", "body"]), new Set(["call_id", "purpose", "sha256", "characters", "tool_names", "body"]), "provider_payload_request_invalid");
-    string(row.call_id, "provider_payload_request_call_invalid", { max: 256 });
-    string(row.purpose, "provider_payload_request_purpose_invalid", { max: 64 });
-    if (!/^[0-9a-f]{64}$/.test(String(row.sha256 ?? ""))) fail("provider_payload_request_digest_invalid");
-    finiteNumber(row.characters, "provider_payload_request_characters_invalid", { min: 0, integer: true });
-    jsonValue(array(row.tool_names, "provider_payload_request_tools_invalid", 128), "provider_payload_request_tools_invalid");
-    jsonValue(row.body, "provider_payload_request_body_invalid");
   } else if (frame.type === "provider_payload") {
     const row = exact(payload, new Set(["call_id", "purpose", "sha256", "characters", "tool_names", "body"]), new Set(["call_id", "purpose", "sha256", "characters", "tool_names"]), "provider_payload_invalid");
     string(row.call_id, "provider_payload_call_invalid", { max: 256 });
