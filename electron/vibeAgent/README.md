@@ -121,7 +121,8 @@ Trace 也不携带附件正文，需要另设 local-only Trace 投影。
 
 ## 兼容保留
 
-服务端旧 Agent、旧会话/附件 API，以及 Electron attachment workspace 分支仅为冻结旧
-Goal 的恢复和回滚保留；新 Goal 不再构造 attachment_* 工具或身份。不要把兼容分支重新
-加入 v2 manifest。Renderer 只发送 prompt/history、Provider 选择、local_file_ref 和
-登录上下文；Provider key 只能由 Main 的一次性快照交换注入子进程。
+服务端旧 Agent 和旧会话/附件 HTTP API 只作为明确的回滚入口保留；Electron 不再包含
+attachment workspace、attachment_* IPC 或对应的本地工具分支。新 Goal 只发送
+prompt/history、Provider 选择、local_file_ref 和登录上下文；Provider key 只能由 Main
+的一次性快照交换注入子进程。旧会话里残留的 workspace 身份不会被恢复，Viewer 会提示
+重新选择原文件。

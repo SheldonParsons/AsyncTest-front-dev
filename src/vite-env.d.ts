@@ -90,7 +90,6 @@ export interface IElectronAPI {
       local_context?: {
         account_id?: string;
         auth_token?: string;
-        workspace_id?: string;
         knowledge_base_url?: string;
         trace_upload_base_url?: string;
         trace_upload_headers?: Record<string, string>;
@@ -107,7 +106,6 @@ export interface IElectronAPI {
       local_context?: {
         account_id?: string;
         auth_token?: string;
-        workspace_id?: string;
         knowledge_base_url?: string;
         trace_upload_base_url?: string;
         request_text?: string;
@@ -120,8 +118,6 @@ export interface IElectronAPI {
     list: (payload: { accountId: string }) => Promise<ElectronAgentStatus[]>;
     localFiles: ElectronLocalFilesAPI;
     files?: ElectronLocalFilesAPI;
-    attachmentWorkspace: ElectronAttachmentWorkspaceAPI;
-    attachments: ElectronAttachmentWorkspaceAPI;
     trace: ElectronTraceAPI;
     sessions?: ElectronLocalSessionAPI;
     onEvent: (callback: (event: VibeAgentEvent) => void) => (() => void);
@@ -184,49 +180,6 @@ export interface ElectronLocalSessionEvent {
   created_at: string;
 }
 
-export interface ElectronAttachmentWorkspaceAPI {
-  pathForFile?: (file: unknown) => string;
-  pick?: () => Promise<{
-    schema: 'vibe_agent_attachment_admission.v1';
-    canceled?: boolean;
-    expires_at?: string;
-    files: Array<{
-      schema?: 'vibe_agent_attachment_admission.v1';
-      admission_token: string;
-      name: string;
-      mime?: string;
-      size: number;
-      last_modified?: number;
-      expires_at?: string;
-    }>;
-  }>;
-  create: (payload: {
-    accountId: string;
-    workspaceId?: string;
-    runId?: string;
-    sessionId?: string;
-    files?: Array<{
-      path?: string;
-      filePath?: string;
-      name?: string;
-      mime?: string;
-      size?: number;
-      last_modified?: number;
-      admission_token?: string;
-      admissionToken?: string;
-    }>;
-  }) => Promise<ElectronAttachmentWorkspaceManifest>;
-  manifest: (payload: { workspaceId: string; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachmentWorkspaceManifest>;
-  list: (payload: { workspaceId: string; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachment[]>;
-  read: (payload: { workspaceId: string; attachmentId: string; offset?: number; length?: number; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachmentReadResult>;
-  readLines: (payload: { workspaceId: string; attachmentId: string; startLine?: number; maxLines?: number; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachmentLinesResult>;
-  outline: (payload: { workspaceId: string; attachmentId: string; maxItems?: number; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachmentOutlineResult>;
-  search: (payload: { workspaceId: string; attachmentId: string; pattern: string; maxResults?: number; caseSensitive?: boolean; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachmentSearchResult>;
-  write: (payload: { workspaceId: string; attachmentId: string; content: string; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachment>;
-  edit: (payload: { workspaceId: string; attachmentId: string; replacements: Array<{ find: string; replace: string; all?: boolean }>; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<ElectronAttachment>;
-  remove: (payload: { workspaceId: string; expectedAccountId: string; expectedRunId: string; expectedSessionId: string }) => Promise<{ workspace_id: string; removed: boolean }>;
-}
-
 export interface ElectronLocalFileRef {
   schema: 'local_file_ref.v1';
   ref_id: string;
@@ -251,67 +204,6 @@ export interface ElectronLocalFilesAPI {
     text: string;
     truncated: boolean;
   }>;
-}
-
-export interface ElectronAttachment {
-  schema: 'vibe_agent_attachment.v1';
-  attachment_id: string;
-  name: string;
-  mime: string;
-  relative_path: string;
-  size: number;
-  sha256: string;
-}
-
-export interface ElectronAttachmentWorkspaceManifest {
-  schema: 'vibe_agent_attachment_workspace.v1';
-  workspace_id: string;
-  account_id: string;
-  run_id: string;
-  session_id: string;
-  created_at: string;
-  updated_at: string;
-  attachments: ElectronAttachment[];
-}
-
-export interface ElectronAttachmentReadResult {
-  schema: 'vibe_agent_attachment.v1';
-  attachment_id: string;
-  name: string;
-  mime: string;
-  offset: number;
-  next_offset: number;
-  eof: boolean;
-  bytes_read: number;
-  text: string;
-}
-
-export interface ElectronAttachmentLinesResult {
-  schema: 'vibe_agent_attachment.v1';
-  attachment_id: string;
-  name: string;
-  start_line: number;
-  next_line: number;
-  eof: boolean;
-  bytes_read?: number;
-  lines: Array<{ line: number; text: string }>;
-}
-
-export interface ElectronAttachmentOutlineResult {
-  schema: 'vibe_agent_attachment.v1';
-  attachment_id: string;
-  name: string;
-  truncated: boolean;
-  headings: Array<{ line: number; level: number; text: string }>;
-}
-
-export interface ElectronAttachmentSearchResult {
-  schema: 'vibe_agent_attachment.v1';
-  attachment_id: string;
-  name: string;
-  pattern: string;
-  truncated: boolean;
-  matches: Array<{ line: number; text: string }>;
 }
 
 export interface ElectronTraceAPI {

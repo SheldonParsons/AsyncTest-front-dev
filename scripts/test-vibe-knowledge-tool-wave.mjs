@@ -31,7 +31,6 @@ const client = new KnowledgeRemoteClient({
 });
 
 const router = new LocalToolRouter({
-  workspace: {},
   knowledgeClient: client,
   run: {
     run_id: "run-wave",
@@ -59,7 +58,6 @@ const writeClient = {
   call: async () => { singleCalls += 1; return { status: "waiting_user", result: { clarification: { question: "确认" } } }; },
 };
 const writeRouter = new LocalToolRouter({
-  workspace: {},
   knowledgeClient: writeClient,
   run: { run_id: "run-write", turn_id: "turn-write", goal_id: "goal-write", project_id: "1137", session_id: "session-write" },
 });
@@ -72,7 +70,7 @@ assert.equal(singleCalls, 1);
 assert.equal(writes.results[1].is_error, true);
 console.log("PASS: knowledge writes remain serial and stop after one pending interaction");
 
-const largeRouter = new LocalToolRouter({ workspace: {} });
+const largeRouter = new LocalToolRouter();
 const largeBody = "# 大文档\n\n" + "内容。".repeat(130_000);
 const largeDocument = await largeRouter.authoredDocument({ filename: "large.md", body: largeBody });
 assert.ok(Array.isArray(largeDocument.chunks));

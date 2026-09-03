@@ -170,6 +170,21 @@ function normalize(raw, expectedId = "") {
       throw new Error("vibe_agent_run_descriptor_pending_invalid");
     }
   }
+  // Descriptors created by the removed attachment workspace may still be on
+  // disk after an upgrade.  Keep only the context needed to reattach a native
+  // local-file run; silently dropping the obsolete workspace identity makes
+  // old descriptors harmless instead of reviving the deleted API.
+  const storedContext = cleanRaw.local_context && typeof cleanRaw.local_context === "object"
+    && !Array.isArray(cleanRaw.local_context) ? cleanRaw.local_context : {};
+  const localContext = {
+    account_id: owner,
+    ...(typeof storedContext.knowledge_base_url === "string"
+      ? { knowledge_base_url: storedContext.knowledge_base_url } : {}),
+    ...(typeof storedContext.trace_upload_base_url === "string"
+      ? { trace_upload_base_url: storedContext.trace_upload_base_url } : {}),
+    ...(typeof storedContext.request_text === "string"
+      ? { request_text: storedContext.request_text } : {}),
+  };
   return {
     ...cleanRaw,
     schema: SCHEMA,
@@ -180,7 +195,7 @@ function normalize(raw, expectedId = "") {
     pending,
     run: cleanRaw.run,
     start_payload: cleanRaw.start_payload,
-    local_context: cleanRaw.local_context || {},
+    local_context: localContext,
   };
 }
 
@@ -257,7 +272,7 @@ export class LocalRunStore {
     }
     // The transcript is authoritative in LocalSessionStore. Keeping it out of
     // the descriptor both bounds restart metadata and prevents a duplicate
-    // copy of large attachment excerpts.
+    // copy of large local-file excerpts.
     for (const key of ["messages", "history_messages", "seed_messages", "prompt", "user_text"]) delete payload[key];
     const descriptor = {
       schema: SCHEMA,
@@ -282,7 +297,6 @@ export class LocalRunStore {
       provider_budget: { ...DEFAULT_PROVIDER_BUDGET },
       local_context: cloneWithoutCredentials({
         account_id: owner,
-        workspace_id: localContext.workspace_id ?? localContext.workspaceId ?? "",
         knowledge_base_url: localContext.knowledge_base_url ?? localContext.knowledgeBaseUrl ?? "",
         trace_upload_base_url: localContext.trace_upload_base_url ?? localContext.traceUploadBaseUrl ?? "",
         request_text: localContext.request_text ?? localContext.requestText ?? "",

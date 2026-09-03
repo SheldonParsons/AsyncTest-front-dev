@@ -38,12 +38,18 @@ try {
   await assert.rejects(registry.resolve(selection.files, "renderer-1"), /local_file_changed/);
 
   const page = readFileSync(path.join(root, "src/views/electron_views/vibe/knowledge/index.vue"), "utf8");
+  const preload = readFileSync(path.join(root, "electron/preload.js"), "utf8");
+  const ipcMain = readFileSync(path.join(root, "electron/vibeAgent/ipcMain.node.js"), "utf8");
+  const routerSource = readFileSync(path.join(root, "electron/vibeAgent/localToolRouter.node.js"), "utf8");
   const localStart = page.slice(page.indexOf("async function sendLocalPiTurn"), page.indexOf("async function sendFoundationTurn"));
   assert.match(localStart, /local_file_refs:\s*localFileRefs/);
   assert.doesNotMatch(localStart, /workspace\.create\(/);
   assert.doesNotMatch(localStart, /admission_token/);
+  assert.doesNotMatch(preload, /attachmentWorkspace|vibeAgent:attachment/);
+  assert.doesNotMatch(ipcMain, /AttachmentWorkspace|attachmentWorkspace|vibeAgent:attachment/);
+  assert.doesNotMatch(routerSource, /AttachmentWorkspace|attachmentWorkspace|read_attachment|write_attachment/);
   assert.match(localFilesContext({ local_files: resolved }), /absolute_path|\"path\"/);
-  console.log("PASS: native local_file_ref keeps the source in place and new Goals skip AttachmentWorkspace");
+  console.log("PASS: native local_file_ref keeps the source in place and new Goals use Pi native file tools");
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

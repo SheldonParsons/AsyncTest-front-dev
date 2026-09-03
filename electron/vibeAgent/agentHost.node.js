@@ -1140,7 +1140,7 @@ export class VibeAgentHost {
     if (!localContext || typeof localContext !== "object" || Array.isArray(localContext)) {
       throw new Error("vibe_agent_local_context_invalid");
     }
-    const contextKeys = new Set(["account_id", "auth_token", "workspace_id", "knowledge_base_url", "trace_upload_base_url", "trace_upload_headers", "request_text"]);
+    const contextKeys = new Set(["account_id", "auth_token", "knowledge_base_url", "trace_upload_base_url", "trace_upload_headers", "request_text"]);
     if (Object.keys(localContext).some((key) => !contextKeys.has(key))) {
       throw new Error("vibe_agent_local_context_unknown_field");
     }

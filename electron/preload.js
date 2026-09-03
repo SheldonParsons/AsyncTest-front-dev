@@ -1,25 +1,7 @@
-const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 // These are deliberately explicit channels.  Agent-private frames must not
 // travel through the legacy generic `send/invoke` bridge.
-const vibeAttachmentWorkspace = {
-    pathForFile: (file) => webUtils?.getPathForFile?.(file) || String(file?.path || ''),
-    // The native picker is the trust boundary for local attachments. It
-    // returns opaque, one-use admission tokens; it never exposes a source
-    // path to the renderer.
-    pick: () => ipcRenderer.invoke('vibeAgent:attachmentPick'),
-    create: (payload) => ipcRenderer.invoke('vibeAgent:attachmentCreate', payload),
-    manifest: (payload) => ipcRenderer.invoke('vibeAgent:attachmentManifest', payload),
-    list: (payload) => ipcRenderer.invoke('vibeAgent:attachmentList', payload),
-    read: (payload) => ipcRenderer.invoke('vibeAgent:attachmentRead', payload),
-    readLines: (payload) => ipcRenderer.invoke('vibeAgent:attachmentReadLines', payload),
-    outline: (payload) => ipcRenderer.invoke('vibeAgent:attachmentOutline', payload),
-    search: (payload) => ipcRenderer.invoke('vibeAgent:attachmentSearch', payload),
-    write: (payload) => ipcRenderer.invoke('vibeAgent:attachmentWrite', payload),
-    edit: (payload) => ipcRenderer.invoke('vibeAgent:attachmentEdit', payload),
-    remove: (payload) => ipcRenderer.invoke('vibeAgent:attachmentRemove', payload),
-};
-
 const vibeLocalFiles = {
     pick: ({ accountId, account_id: accountIdSnake } = {}) => ipcRenderer.invoke('vibeAgent:localFilePick', {
         ...(accountId ?? accountIdSnake ? { account_id: accountId ?? accountIdSnake } : {}),
@@ -96,9 +78,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // Public name used by the local-file model; keep `localFiles` as the
         // compatibility spelling used by the current renderer.
         files: vibeLocalFiles,
-        attachmentWorkspace: vibeAttachmentWorkspace,
-        // `attachments` is a short alias retained for early renderer callers.
-        attachments: vibeAttachmentWorkspace,
         trace: vibeTrace,
         sessions: {
             create: (payload) => ipcRenderer.invoke('vibeAgent:sessionCreate', payload),

@@ -2411,56 +2411,13 @@ async function loadWorkspaceFile(tabId: string): Promise<void> {
     }
     return
   }
-  if (String(current.file.kind || '') === 'local-attachment') {
-    const workspaceId = String(current.file.workspace_id || '').trim()
-    const attachmentId = String(current.file.attachment_id || '').trim()
-    const workspace = electronAgentBridge()?.attachmentWorkspace || electronAgentBridge()?.attachments
-    if (!workspaceId || !attachmentId || !workspace?.read) {
-      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-        ? { ...tab, loading: false, error: '本地附件工作区已释放，无法读取此文件。' }
-        : tab)
-      return
-    }
-    const token = beginWorkspaceRequest(tabId)
+  // Unknown local identities are legacy references from before native
+  // local_file_ref support.  They have no safe server download route; keep
+  // the historical tab visible but fail closed before attempting a request.
+  if (String(current.file.kind || '').startsWith('local-')) {
     replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-      ? { ...tab, loading: true, error: '' }
+      ? { ...tab, loading: false, error: '此本机文件引用已失效，请重新选择原文件。' }
       : tab)
-    try {
-      // Viewer is a bounded preview; Pi itself remains the only path that can
-      // page through the complete large file. Never fall back to the server
-      // attachment download route for a local-attachment identity.
-      const result = await workspace.read({
-        workspaceId,
-        attachmentId,
-        expectedAccountId: String(current.file.account_id || localAccountId()).trim(),
-        expectedRunId: String(current.file.run_id || '').trim(),
-        expectedSessionId: String(current.file.session_id || current.sessionId || '').trim(),
-        offset: 0,
-        length: 512 * 1024,
-      })
-      if (!workspaceRequestIsCurrent(tabId, token)) return
-      const suffix = result?.eof ? '' : '\n\n[文件较大，此处仅显示本地预览前 512KiB；仍可继续分页读取。]'
-      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-        ? {
-            ...tab,
-            title: String(result?.name || tab.title),
-            loading: false,
-            error: '',
-            content: `${String(result?.text || '')}${suffix}`,
-            file: {
-              ...tab.file,
-              filename: String(result?.name || tab.file.filename),
-              mime: String(result?.mime || tab.file.mime),
-              body_omitted: !Boolean(result?.eof),
-            },
-          }
-        : tab)
-    } catch (reason) {
-      if (!workspaceRequestIsCurrent(tabId, token)) return
-      replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-        ? { ...tab, loading: false, error: workspaceErrorMessage(reason, '本地附件已释放或读取失败。') }
-        : tab)
-    }
     return
   }
   const downloadUrl = String(current.file.download_url || '').trim()

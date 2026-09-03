@@ -1,9 +1,10 @@
 export const MAX_ATTACHMENT_COUNT = 10
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 export const MAX_ATTACHMENT_BATCH_BYTES = 50 * 1024 * 1024
-// Electron local Pi keeps the file in its bounded Main-process workspace, so
-// large Markdown is admitted without changing the read/edit path. The legacy
-// server upload route keeps the smaller limits above until it is removed.
+// Electron local Pi keeps the original file in place and passes a typed native
+// reference to the child process, so large Markdown is admitted without a
+// server upload. The explicit server rollback route keeps the smaller limits
+// above until that route is retired.
 export const MAX_LOCAL_ATTACHMENT_BYTES = 512 * 1024 * 1024
 export const MAX_LOCAL_ATTACHMENT_BATCH_BYTES = 512 * 1024 * 1024
 

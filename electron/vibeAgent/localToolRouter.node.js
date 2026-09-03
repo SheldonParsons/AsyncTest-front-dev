@@ -2,12 +2,10 @@
  * Local Pi tool adapter.
  *
  * Pi remains the decision maker. This adapter only dispatches an already
- * selected tool call to either the local attachment workspace or the remote
- * Knowledge Capability. It never invents a tool, retries a business decision,
- * or edits a user-selected file outside the run sandbox.
+ * selected tool call to the remote Knowledge Capability. Native file tools are
+ * owned directly by Pi's child runtime; this adapter never proxies attachments.
  */
 import { createHash } from "node:crypto";
-import { KnowledgeRemoteError } from "./knowledgeRemoteClient.node.js";
 import {
   authoredMarkdownChunks,
   codePointLength,
@@ -31,10 +29,6 @@ const LEGACY_KNOWLEDGE_TOOLS = new Map([
   ["move_knowledge", "prepare_change"],
 ]);
 const HIDDEN_TOOLS = new Set(["apply_confirmation", "cancel_confirmation", "read", "bash", "edit", "write"]);
-const ATTACHMENT_TOOLS = new Set([
-  "read_attachment", "read_attachment_lines", "outline_attachment", "search_attachment",
-  "write_attachment", "edit_attachment", "read_attachments",
-]);
 const READ_WAVE_TOOLS = new Set([
   "search_knowledge", "search_vibe_platform_docs", "get_knowledge_overview", "read_knowledge",
 ]);
@@ -98,17 +92,6 @@ function clarificationOption(options, optionId) {
     return [item.id, item.option_id, item.value, item.label]
       .some((value) => String(value ?? "").trim() === wanted);
   }) ?? null;
-}
-
-function attachmentArgs(args, workspaceId) {
-  const bound = String(workspaceId ?? "").trim();
-  if (!bound) throw new Error("vibe_agent_attachment_workspace_unbound");
-  const requested = String(args.workspace_id ?? args.workspaceId ?? "").trim();
-  if (requested && requested !== bound) throw new Error("vibe_agent_attachment_workspace_drift");
-  return {
-    workspaceId: bound,
-    attachmentId: String(args.attachment_id ?? args.attachmentId ?? ""),
-  };
 }
 
 function result(toolCallId, value, { details = {}, isError = false } = {}) {
@@ -207,10 +190,7 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ workspace, workspaceId = "", knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
-    if (!workspace) throw new Error("vibe_agent_attachment_workspace_required");
-    this.workspace = workspace;
-    this.workspaceId = String(workspaceId || "");
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
@@ -497,7 +477,6 @@ export class LocalToolRouter {
   async executeOne({ toolCallId, name, args, signal }) {
     if (HIDDEN_TOOLS.has(name)) throw new Error("vibe_agent_tool_not_exposed");
     await this.trace("tool.requested", { tool_call_id: toolCallId, tool: name, arguments: args });
-    if (ATTACHMENT_TOOLS.has(name)) return this.executeAttachment(name, args, signal);
     if (name === "ask_clarification") {
       const question = String(args.question_to_user ?? args.question ?? args.text ?? "").trim();
       if (!question) throw new Error("vibe_agent_clarification_question_missing");
@@ -525,9 +504,8 @@ export class LocalToolRouter {
     if (!operation) throw new Error("vibe_agent_unknown_tool");
     if (!this.knowledgeClient) throw new Error("vibe_agent_knowledge_client_unconfigured");
     const payload = await this.knowledgePayload(name, operation, args);
-    // Trace the exact post-materialization request. For a large attachment
-    // this is the authored chunks/hash payload, never the original source
-    // path or an attachment resource reference.
+    // Trace the exact post-materialization request. For a large authored
+    // document this is the chunks/hash payload, never a local source path.
     await this.trace("knowledge.request", {
       tool_call_id: toolCallId,
       tool: name,
@@ -610,29 +588,6 @@ export class LocalToolRouter {
       throw new Error("vibe_agent_authored_document_filename_invalid");
     }
     const filename = String(rawFilename ?? "");
-    const source = document.source && typeof document.source === "object" && !Array.isArray(document.source)
-      ? document.source : null;
-    const sourceKind = String(source?.kind || "").trim();
-    if (sourceKind === "local_workspace") {
-      const workspaceId = String(source.workspace_id ?? source.workspaceId ?? "").trim();
-      const attachmentId = String(source.attachment_id ?? source.attachmentId ?? "").trim();
-      if (!workspaceId || workspaceId !== this.workspaceId || !attachmentId) {
-        throw new Error("vibe_agent_attachment_workspace_drift");
-      }
-      const materialized = await this.workspace.authoredChunks({
-        workspaceId,
-        attachmentId,
-        expectedAccountId: String(this.run?.account_id || this.run?.accountId || ""),
-        expectedRunId: String(this.run?.run_id || this.run?.runId || ""),
-        expectedSessionId: String(this.run?.session_id || this.run?.sessionId || ""),
-      });
-      return {
-        filename: filename || materialized.filename,
-        origin_kind: "model_authored",
-        chunks: materialized.chunks,
-        content_hash: materialized.content_hash,
-      };
-    }
     // The ordinary branch is Pi-authored text.  Do not forward its internal
     // source marker: the remote service should see only model_authored data.
     if (Array.isArray(document.chunks)) {
@@ -699,8 +654,8 @@ export class LocalToolRouter {
         delete payload.source_path;
         delete payload.target_path;
       }
-      // A local attachment is a source material, never an attachment resource
-      // uploaded to the server. Pi must send the authored, user-confirmed body.
+      // Only Pi-authored, user-confirmed Markdown crosses the Knowledge API;
+      // local source paths never cross this boundary.
       if (Array.isArray(payload.documents)) {
         const documents = [];
         for (const doc of payload.documents) documents.push(await this.authoredDocument(doc));
@@ -708,17 +663,7 @@ export class LocalToolRouter {
       }
       const document = payload.document;
       if (document && typeof document === "object" && !Array.isArray(document)) {
-        const source = document.source && typeof document.source === "object" && !Array.isArray(document.source)
-          ? document.source : null;
-        if (String(source?.kind || "").trim() === "local_workspace") {
-          const materialized = await this.authoredDocument(document);
-          payload.document = {
-            target: document.target,
-            filename: materialized.filename,
-            chunks: materialized.chunks,
-            content_hash: materialized.content_hash,
-          };
-        } else if (document.body !== undefined) {
+        if (document.body !== undefined) {
           const materialized = await this.authoredDocument({
             filename: document.filename || document.target?.source_name || "document.md",
             body: document.body,
@@ -806,29 +751,6 @@ export class LocalToolRouter {
     };
   }
 
-  async executeAttachment(name, args, signal) {
-    if (signal?.aborted) throw new Error("vibe_agent_attachment_aborted");
-    const base = attachmentArgs(args, this.workspaceId);
-    if (!base.workspaceId || !base.attachmentId) throw new Error("vibe_agent_attachment_identity_invalid");
-    const binding = {
-      expectedAccountId: String(this.run?.account_id || this.run?.accountId || ""),
-      expectedRunId: String(this.run?.run_id || this.run?.runId || ""),
-      expectedSessionId: String(this.run?.session_id || this.run?.sessionId || ""),
-    };
-    if (name === "read_attachment") return this.workspace.read({ ...base, ...binding, offset: args.offset, length: args.length });
-    if (name === "read_attachments") {
-      if (args.action === "outline") return this.workspace.outline({ ...base, ...binding, maxItems: args.max_items });
-      if (args.action === "search") return this.workspace.search({ ...base, ...binding, pattern: args.pattern, maxResults: args.max_results, caseSensitive: args.case_sensitive });
-      if (args.action === "lines") return this.workspace.readLines({ ...base, ...binding, startLine: args.start_line, maxLines: args.max_lines });
-      return this.workspace.read({ ...base, ...binding, offset: args.offset, length: args.length });
-    }
-    if (name === "read_attachment_lines") return this.workspace.readLines({ ...base, ...binding, startLine: args.start_line, maxLines: args.max_lines });
-    if (name === "outline_attachment") return this.workspace.outline({ ...base, ...binding, maxItems: args.max_items });
-    if (name === "search_attachment") return this.workspace.search({ ...base, ...binding, pattern: args.pattern, maxResults: args.max_results, caseSensitive: args.case_sensitive });
-    if (name === "write_attachment") return this.workspace.write({ ...base, ...binding, content: args.content });
-    if (name === "edit_attachment") return this.workspace.edit({ ...base, ...binding, replacements: args.replacements });
-    throw new Error("vibe_agent_attachment_tool_invalid");
-  }
 
   async resolveInteraction(interactionId, response) {
     const id = String(interactionId || "");
@@ -949,4 +871,4 @@ export class LocalToolRouter {
   }
 }
 
-export const localToolRouterConstants = { KNOWLEDGE_TOOLS, ATTACHMENT_TOOLS };
+export const localToolRouterConstants = { KNOWLEDGE_TOOLS };

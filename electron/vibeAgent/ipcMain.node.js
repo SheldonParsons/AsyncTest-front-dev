@@ -7,7 +7,6 @@ import {
   vibeAgentChildEnvironment,
   vibeAgentRuntimePath,
 } from "./agentHost.node.js";
-import { AttachmentWorkspace } from "./attachmentWorkspace.node.js";
 import { LocalTraceStore } from "./trace/localTraceStore.node.js";
 import { TraceUploadQueue } from "./trace/traceUploadQueue.node.js";
 import {
@@ -43,17 +42,6 @@ const CHANNELS = [
   "vibeAgent:list",
   "vibeAgent:localFilePick",
   "vibeAgent:localFilePreview",
-  "vibeAgent:attachmentCreate",
-  "vibeAgent:attachmentPick",
-  "vibeAgent:attachmentManifest",
-  "vibeAgent:attachmentList",
-  "vibeAgent:attachmentRead",
-  "vibeAgent:attachmentReadLines",
-  "vibeAgent:attachmentOutline",
-  "vibeAgent:attachmentSearch",
-  "vibeAgent:attachmentWrite",
-  "vibeAgent:attachmentEdit",
-  "vibeAgent:attachmentRemove",
   "vibeAgent:traceCreate",
   "vibeAgent:traceAppend",
   "vibeAgent:traceFinish",
@@ -124,14 +112,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // explicit unknown/failed descriptor and is never replayed automatically.
   const runReconcilePromise = runStore.reconcileAfterRestart().catch(() => []);
   const localFileRefs = new LocalFileRefs();
-  const attachmentWorkspace = new AttachmentWorkspace({
-    rootPath: path.join(userDataPath, "vibe-agent", "attachments"),
-  });
-  const cleanupAttachmentWorkspace = (context) => {
-    const workspaceId = String(context?.workspace_id ?? context?.workspaceId ?? "").trim();
-    if (!workspaceId || process.env.VIBE_KEEP_LOCAL_ATTACHMENT_WORKSPACE === "1") return;
-    void attachmentWorkspace.remove(workspaceId).catch(() => undefined);
-  };
   const traceStore = new LocalTraceStore({
     rootPath: path.join(userDataPath, "vibe-agent", "traces"),
   });
@@ -163,13 +143,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const descriptors = await runStore.list({ includeTerminal: true, limit: 500 }).catch(() => []);
     for (const descriptor of descriptors) {
       const state = String(descriptor?.state || "");
-      if (new Set(["failed", "aborted", "cancelled", "closed", "completed"]).has(state)) {
-        // A Main crash can happen after the run descriptor became terminal but
-        // before the normal Host cleanup removed the local attachment copy.
-        // The source attachment is not authoritative, so reclaim it on the
-        // next launch (unless a developer explicitly asked to retain it).
-        cleanupAttachmentWorkspace(descriptor.local_context || {});
-      }
       if (!new Set(["failed", "aborted", "cancelled", "closed"]).has(state)) continue;
       const traceId = traceIdFor(descriptor.run);
       if (!traceId) continue;
@@ -354,7 +327,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     };
     const baseUrl = validateBase(rawBaseUrl);
     const traceUploadBaseUrl = validateBase(rawTraceUrl);
-    const workspaceId = aliasedText(["workspace_id", "workspaceId"], "vibe_agent_local_workspace_invalid", { max: 256 });
     const rawAccountId = Object.hasOwn(value, "account_id") ? value.account_id : value.accountId;
     if (rawAccountId !== undefined && rawAccountId !== null
       && typeof rawAccountId !== "string" && !(Number.isSafeInteger(rawAccountId) && rawAccountId >= 0)) {
@@ -386,12 +358,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             && !/[\u0000-\u001f\u007f]/u.test(header);
         }).map(([name, header]) => [name, String(header)]))
       : {};
-    return { accountId, authToken, baseUrl, workspaceId, requestText, traceUploadBaseUrl, traceHeaders };
+    return { accountId, authToken, baseUrl, requestText, traceUploadBaseUrl, traceHeaders };
   };
   const localContextPayload = (context) => ({
     account_id: context.accountId,
     auth_token: context.authToken,
-    workspace_id: context.workspaceId,
     knowledge_base_url: context.baseUrl,
     trace_upload_base_url: context.traceUploadBaseUrl,
     trace_upload_headers: context.traceHeaders,
@@ -424,11 +395,9 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             // is metadata only: the Main-owned injector still decides the mode,
             // and the Renderer cannot use it to bypass the proxy policy.
             provider_transport: "electron_direct",
-            // New Goals use opaque native local_file_ref values.  Keep the
-            // legacy workspace label only for frozen compatibility runs so a
-            // Trace never claims that a ref-backed file was copied into a
-            // workspace that does not exist.
-            attachment_transport: String(run?.attachment_transport || "electron_local_file_ref"),
+            // New Goals use opaque native local_file_ref values.  A run with
+            // no selected file is explicitly marked as such in the manifest.
+            attachment_transport: String(run?.attachment_transport || "none"),
           },
         });
       } catch (error) {
@@ -557,43 +526,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }).catch(() => undefined);
     }
   }).catch(() => undefined);
-  const attachmentSessionRefs = async (workspaceId, run = {}) => {
-    const id = String(workspaceId || "").trim();
-    if (!id) return [];
-    const manifest = await attachmentWorkspace.manifest(id).catch(() => null);
-    if (!manifest) return [];
-    const expectedRunId = String(run?.run_id || run?.runId || "").trim();
-    const expectedSessionId = String(run?.session_id || run?.sessionId || "").trim();
-    const expectedAccountId = String(run?.account_id || run?.accountId || "").trim();
-    // The workspace manifest is the source of the binding. If a stale or
-    // renderer-supplied workspace id points at another run, do not project its
-    // files into this session's history.
-    if (expectedRunId && String(manifest.run_id || "") !== expectedRunId) {
-      throw new Error("vibe_agent_attachment_run_drift");
-    }
-    if (expectedSessionId && String(manifest.session_id || "") !== expectedSessionId) {
-      throw new Error("vibe_agent_attachment_session_drift");
-    }
-    if (expectedAccountId && String(manifest.account_id || "") !== expectedAccountId) {
-      throw new Error("vibe_agent_attachment_account_drift");
-    }
-    const rows = Array.isArray(manifest?.attachments) ? manifest.attachments : [];
-    return rows.map((item) => ({
-      schema: "attachment_resource_ref.v1",
-      id: `local:${id}:${String(item?.attachment_id || "")}`,
-      resource_id: `local:${id}:${String(item?.attachment_id || "")}`,
-      name: String(item?.name || ""),
-      filename: String(item?.name || ""),
-      mime: String(item?.mime || "text/markdown"),
-      size: Number(item?.size || 0),
-      content_sha256: String(item?.sha256 || ""),
-      kind: "local-attachment",
-      workspace_id: id,
-      attachment_id: String(item?.attachment_id || ""),
-      ...(expectedRunId ? { run_id: expectedRunId } : String(manifest.run_id || "") ? { run_id: String(manifest.run_id) } : {}),
-      ...(expectedSessionId ? { session_id: expectedSessionId } : String(manifest.session_id || "") ? { session_id: String(manifest.session_id) } : {}),
-    }));
-  };
   const routerFor = (run, context, { refresh = false } = {}) => {
     const key = String(run?.run_id || run?.runId || "");
     if (refresh) routers.delete(key);
@@ -603,8 +535,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       ? new KnowledgeRemoteClient({ baseUrl: normalized.baseUrl, authToken: normalized.authToken, isDevelopment })
       : null;
     const router = new LocalToolRouter({
-      workspace: attachmentWorkspace,
-      workspaceId: normalized.workspaceId,
       knowledgeClient,
       knowledgeCache,
       run,
@@ -619,7 +549,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       // Main owns the durable journal write as well as the child lifecycle.
       // Renderer still writes an optimistic copy for instant UI feedback;
       // local_event_key makes the two paths one idempotent event.
-      const legacyAttachments = await attachmentSessionRefs(context?.workspace_id, run);
       const localFiles = Array.isArray(payload?.local_files) ? payload.local_files.map((item) => ({
         schema: "local_file_ref.v1",
         id: String(item.ref_id || ""),
@@ -636,7 +565,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         : localPromptText(payload?.prompt);
       await appendLocalSessionEvent(run, "user", userText, {
         local_event_key: `${String(run?.run_id || run?.runId || "")}:user`,
-      }, [...localFiles, ...legacyAttachments]);
+      }, localFiles);
       const traceId = await ensureTrace(run);
       if (traceId) {
         await traceStore.updateMetadata(traceId, {
@@ -670,21 +599,18 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       // a terminal frame was already persisted.
       const resolvedState = String(state || "aborted");
       const traceStatus = resolvedState === "failed" ? "failed" : resolvedState === "closed" ? "closed" : "aborted";
-      return finishTrace(run, context, traceStatus, { code: `host_${traceStatus}` }).finally(() => {
-        cleanupAttachmentWorkspace(context);
-      });
+      return finishTrace(run, context, traceStatus, { code: `host_${traceStatus}` });
     },
     onError: ({ run, code, context, startup_recovery = false }) => {
       if (String(run?.execution_mode || "") !== "local") return undefined;
       if (startup_recovery) {
         void appendTrace(run, "agent.run.recovery_start_failed", { code: String(code || "") }, "error");
-        // Keep the attachment workspace and waiting descriptor. The outer
-        // recovery handler records the known response and lets the user retry.
+        // Keep the waiting descriptor. The outer recovery handler records the
+        // known response and lets the user retry.
         return undefined;
       }
       const result = finishTrace(run, context, "failed", { code: String(code || "vibe_agent_failed") });
       routers.delete(String(run?.run_id || run?.runId || ""));
-      cleanupAttachmentWorkspace(context);
       return result;
     },
     onCrash: ({ run, code, pending_tool_call_id }) => repairDanglingLocalToolResults({ run, code, pending_tool_call_id }),
@@ -715,7 +641,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           },
         );
         routers.delete(String(run?.run_id || run?.runId || ""));
-        cleanupAttachmentWorkspace(context);
         return result;
       }
       if (frame?.type === "interaction_request") {
@@ -958,12 +883,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const context = validContext({
       ...(candidate.local_context || candidate.localContext || {}),
     });
-    // Carry the transport kind only in Main's in-memory run object so Trace
-    // metadata describes the actual path without exposing file references to
-    // the Renderer or persisting another source identity.
-    run.attachment_transport = context.workspaceId
-      ? "electron_local_workspace"
-      : "electron_local_file_ref";
     if (!context.authToken || !context.baseUrl) throw new Error("vibe_agent_runtime_snapshot_auth_missing");
     const dynamicKeys = new Set([
       "execution_mode", "prompt", "user_text", "messages", "history_messages", "seed_messages",
@@ -1064,6 +983,9 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const localFiles = candidate?.resume
       ? (Array.isArray(frozenStart?.local_files) ? structuredClone(frozenStart.local_files) : [])
       : selectedLocalFiles;
+    // Trace metadata distinguishes a native file reference from a prompt with
+    // No local copy is created or persisted; Pi receives native file refs.
+    run.attachment_transport = localFiles.length ? "electron_local_file_ref" : "none";
     let systemPrompt = candidate?.resume ? String(frozenStart?.system_prompt || "") : snapshot.system_prompt.trim();
     let tools = candidate?.resume && Array.isArray(frozenStart?.tools)
       ? structuredClone(frozenStart.tools) : snapshot.tools;
@@ -1075,21 +997,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (!systemPrompt || !Array.isArray(tools)) throw new Error("vibe_agent_run_descriptor_policy_missing");
     run.account_id = snapshot.account_id;
     run.provider_mode = "direct";
-    const workspaceId = String(context.workspaceId || "");
-    let attachmentContext = "";
-    if (workspaceId) {
-      await attachmentWorkspace.assertBinding(workspaceId, {
-        accountId: String(run.account_id || run.accountId || ""),
-        runId: String(run.run_id || ""),
-        sessionId: String(run.session_id || ""),
-      });
-      const manifest = await attachmentWorkspace.manifest(workspaceId);
-      const attachments = Array.isArray(manifest?.attachments) ? manifest.attachments : [];
-      if (!candidate?.resume && attachments.length) {
-        attachmentContext = `\n\n【本轮本地附件清单】workspace_id=${workspaceId}\n${attachments.map((item) => `- attachment_id=${item.attachment_id}，文件名=${item.name}，大小=${item.size} 字节，sha256=${item.sha256}`).join("\n")}\n需要正文时使用对应的本地 attachment 工具，按范围分页读取。`;
-      }
-    }
-    systemPrompt = `${systemPrompt}${attachmentContext}`;
     void appendTrace(run, "provider.snapshot.acquired", {
       mode: "direct",
       provider_id: snapshot.provider.id,
@@ -1214,11 +1121,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
     const suppliedContext = payload?.local_context ?? payload?.localContext ?? {};
     const descriptorContext = descriptor.local_context && typeof descriptor.local_context === "object" ? descriptor.local_context : {};
-    const requestedWorkspace = String(suppliedContext?.workspace_id ?? suppliedContext?.workspaceId ?? "").trim();
-    const storedWorkspace = String(descriptorContext.workspace_id || "").trim();
-    if (requestedWorkspace && storedWorkspace && requestedWorkspace !== storedWorkspace) {
-      throw new Error("vibe_agent_local_attachment_workspace_drift");
-    }
     const context = validContext({
       ...descriptorContext,
       ...(suppliedContext || {}),
@@ -1303,7 +1205,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       // semantics and could trigger a new Provider call.
       await runStore.markTerminal(runId, "cancelled", "user_stop_all").catch(() => undefined);
       await finishTrace(run, context, "cancelled", { code: "user_stop_all", recovery: "cold" }).catch(() => undefined);
-      cleanupAttachmentWorkspace(context);
       host.emitTo(sender, {
         schema: "vibe_agent_event.v1",
         runId,
@@ -1474,7 +1375,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
               .replace(/[^A-Za-z0-9_:-]/g, "_").slice(0, 160);
             await finishTrace(run, context, "failed", { code }).catch(() => undefined);
           }
-          cleanupAttachmentWorkspace(context);
           throw error;
         }
       } finally {
@@ -1569,7 +1469,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }
       const context = validContext(descriptor.local_context || {});
       await finishTrace(descriptor.run, context, "cancelled", { code: "user_cancelled", recovery: "cold" }).catch(() => undefined);
-      cleanupAttachmentWorkspace(descriptor.local_context || {});
       host.emitTo(sender, {
         schema: "vibe_agent_event.v1",
         runId,
@@ -1615,86 +1514,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       );
     })()
   ));
-  register("vibeAgent:attachmentPick", async (_payload, sender) => {
-    // Legacy attachment workspace remains available only for frozen
-    // compatibility Goals.  Apply the same post-bootstrap account binding;
-    // pre-bootstrap calls retain the historical admission flow.
-    if (_payload?.account_id !== undefined || _payload?.accountId !== undefined) {
-      accountForLocalOperation(payloadAccountId(_payload, "vibe_agent_attachment_account_required"), "vibe_agent_attachment_account_required");
-    }
-    const browserWindow = BrowserWindow.fromWebContents(sender);
-    const result = await dialog.showOpenDialog(browserWindow && !browserWindow.isDestroyed() ? browserWindow : undefined, {
-      title: "选择 Markdown 附件",
-      properties: ["openFile", "multiSelections"],
-      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-    });
-    if (result.canceled || !result.filePaths?.length) {
-      return { schema: "vibe_agent_attachment_admission.v1", canceled: true, files: [] };
-    }
-    return attachmentWorkspace.admit({ ownerId: String(sender.id), filePaths: result.filePaths });
-  });
-  register("vibeAgent:attachmentCreate", async (payload, sender) => {
-    const files = payload?.files;
-    // Preserve the old empty-workspace call while making every actual source
-    // file go through Main's admission registry.
-    if (Array.isArray(files) && files.length === 0) return attachmentWorkspace.create(payload);
-    if (files === undefined) return attachmentWorkspace.create(payload);
-    const runId = String(payload?.runId ?? payload?.run_id ?? "").trim();
-    const sessionId = String(payload?.sessionId ?? payload?.session_id ?? "").trim();
-    const accountId = accountForLocalOperation(
-      payloadAccountId(payload, "vibe_agent_attachment_binding_required"),
-      "vibe_agent_attachment_binding_required",
-    );
-    if (!accountId || !runId || !sessionId) throw new Error("vibe_agent_attachment_binding_required");
-    const admission = await attachmentWorkspace.resolveAdmissions(files, String(sender.id));
-    try {
-      const result = await attachmentWorkspace.create(
-        { ...payload, files: admission.files },
-        { admissionRecords: admission.records },
-      );
-      attachmentWorkspace.releaseAdmissions(admission.records, true);
-      return result;
-    } catch (error) {
-      attachmentWorkspace.releaseAdmissions(admission.records, false);
-      throw error;
-    }
-  });
-  const boundAttachmentPayload = async (payload = {}) => {
-    const workspaceId = payload?.workspaceId ?? payload?.workspace_id;
-    const accountId = payload?.expectedAccountId ?? payload?.expected_account_id ?? payload?.accountId ?? payload?.account_id;
-    const runId = payload?.expectedRunId ?? payload?.expected_run_id ?? payload?.runId ?? payload?.run_id;
-    const sessionId = payload?.expectedSessionId ?? payload?.expected_session_id ?? payload?.sessionId ?? payload?.session_id;
-    const boundAccountId = accountForLocalOperation(accountId, "vibe_agent_attachment_account_required");
-    await attachmentWorkspace.assertBinding(workspaceId, {
-      accountId: boundAccountId,
-      runId,
-      sessionId,
-    });
-    return { ...payload, accountId: boundAccountId };
-  };
-  register("vibeAgent:attachmentManifest", async (payload) => attachmentWorkspace.manifest((await boundAttachmentPayload(payload)).workspaceId ?? payload?.workspace_id));
-  register("vibeAgent:attachmentList", async (payload) => {
-    const bound = await boundAttachmentPayload(payload);
-    return attachmentWorkspace.list(bound.workspaceId ?? bound.workspace_id, {
-      expectedAccountId: bound.expectedAccountId ?? bound.expected_account_id ?? bound.accountId ?? bound.account_id,
-      expectedRunId: bound.expectedRunId ?? bound.expected_run_id ?? bound.runId ?? bound.run_id,
-      expectedSessionId: bound.expectedSessionId ?? bound.expected_session_id ?? bound.sessionId ?? bound.session_id,
-    });
-  });
-  register("vibeAgent:attachmentRead", async (payload) => attachmentWorkspace.read(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentReadLines", async (payload) => attachmentWorkspace.readLines(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentOutline", async (payload) => attachmentWorkspace.outline(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentSearch", async (payload) => attachmentWorkspace.search(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentWrite", async (payload) => attachmentWorkspace.write(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentEdit", async (payload) => attachmentWorkspace.edit(await boundAttachmentPayload(payload)));
-  register("vibeAgent:attachmentRemove", async (payload) => {
-    const bound = await boundAttachmentPayload(payload);
-    return attachmentWorkspace.remove(bound.workspaceId ?? bound.workspace_id, {
-      expectedAccountId: bound.expectedAccountId ?? bound.expected_account_id ?? bound.accountId ?? bound.account_id,
-      expectedRunId: bound.expectedRunId ?? bound.expected_run_id ?? bound.runId ?? bound.run_id,
-      expectedSessionId: bound.expectedSessionId ?? bound.expected_session_id ?? bound.sessionId ?? bound.session_id,
-    });
-  });
   const accountBoundPayload = (payload = {}) => {
     const accountId = accountForLocalOperation(payloadAccountId(payload));
     return { ...payload, accountId };
@@ -1786,7 +1605,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           }
         }
         await finishTrace(descriptor.run, descriptor.local_context || {}, "aborted", { code: "app_exit" }).catch(() => undefined);
-        cleanupAttachmentWorkspace(descriptor.local_context || {});
       }
       // Host shutdown may persist one final local user/assistant/interaction
       // event. Drain the session journal only after all children have reached

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { LocalToolRouter } from '../electron/vibeAgent/localToolRouter.node.js'
 
 const router = new LocalToolRouter({
-  workspace: {},
   run: { run_id: 'run-1', project_id: 'project-1', session_id: 'session-1', turn_id: 'turn-1' },
   knowledgeClient: {
     async call() {
@@ -56,7 +55,6 @@ assert.equal(outcome.result.content[0].text.includes('large original request'), 
 assert.equal(outcome.result.content[0].text.includes('internal-document'), false)
 
 const authorityRouter = new LocalToolRouter({
-  workspace: {},
   defaultQuery: '请修改 示例.md 的状态。',
 })
 const payload = await authorityRouter.knowledgePayload('edit_knowledge', 'prepare_change', {

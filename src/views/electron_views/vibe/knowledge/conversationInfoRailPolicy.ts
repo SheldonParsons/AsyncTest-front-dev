@@ -21,8 +21,6 @@ export interface SessionAttachmentLike {
   content?: unknown
   text?: unknown
   body_omitted?: unknown
-  workspace_id?: unknown
-  attachment_id?: unknown
   account_id?: unknown
   run_id?: unknown
   session_id?: unknown
