@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import ts from 'typescript'
 
 const root = path.resolve(import.meta.dirname, '..')
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8')
@@ -10,7 +9,6 @@ const composer = read('src/views/electron_views/vibe/knowledge/components/ChatCo
 const chatFileIcon = read('src/views/electron_views/vibe/knowledge/components/icons/FileTextIcon.vue')
 const localRefs = read('electron/vibeAgent/localFileRefs.node.js')
 const ipcMain = read('electron/vibeAgent/ipcMain.node.js')
-const resourceContract = read('src/views/electron_views/vibe/attachmentResourceContract.ts')
 
 const menu = composer.match(/<!-- 添加内容菜单（文件） -->([\s\S]*?)<div class="composer-shell"/)?.[1] || ''
 assert.ok(menu, '本机文件菜单必须保留在 ChatComposer')
@@ -62,18 +60,9 @@ assert.match(composer, /\.chip-remove:focus-visible\s*\{[\s\S]*outline:/)
 assert.match(composer, /function removeFile\(i: number, event\?: Event\)[\s\S]*props\.sending \|\| props\.uploading \|\| props\.stopping/)
 assert.match(composer, /function clearAttachments\(\)[\s\S]*attachmentScrollLeft = 0/)
 
-// The browser/server picker stays aligned with the backend's frozen suffix contract.
+// The native picker is intentionally broad; Pi's local reader and the OS
+// decide how a selected file is interpreted.
 assert.match(composer, /accept="\.md,\.markdown,text\/markdown,text\/plain"/)
-assert.match(resourceContract, /basename\.endsWith\('\.txt'\)/)
-assert.doesNotMatch(resourceContract, /basename\.endsWith\('\.(?:html|htm)'\)/)
-const compiled = ts.transpileModule(resourceContract, {
-  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022, strict: true },
-  reportDiagnostics: true,
-})
-assert.deepEqual(compiled.diagnostics || [], [])
-const contract = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`)
-assert.equal(contract.canonicalAttachmentUploadMime('notes.txt', 'application/octet-stream'), 'text/plain')
-assert.throws(() => contract.canonicalAttachmentUploadMime('notes.html', 'text/html'))
 
 // Native local selection has no restrictive dialog filter and maps HTML/TXT to text.
 assert.match(localRefs, /\.txt.*\.csv.*\.json.*\.yaml.*\.yml.*\.xml.*\.html.*\.htm/)

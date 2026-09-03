@@ -771,7 +771,6 @@ import {
   getVibeLLMModelPicker,
   listVibeEvents,
   listVibeSessions,
-  downloadVibeSessionEventAttachment,
   getKnowledgeCommit,
   getKnowledgeCommits,
   getVibeSessionSource,
@@ -2406,54 +2405,14 @@ async function loadWorkspaceFile(tabId: string): Promise<void> {
       : tab)
     return
   }
-  const downloadUrl = String(current.file.download_url || '').trim()
-  const eventId = String(current.file.event_id || '').trim()
-  const attachmentIndex = Math.max(0, Number(current.file.attachment_index) || 0)
-  if (!downloadUrl && (!current.sessionId || !eventId)) {
-    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-      ? { ...tab, loading: false, error: '文件正文暂不可读取。' }
-      : tab)
-    return
-  }
-
-  const token = beginWorkspaceRequest(tabId)
+  // Server-side session attachment storage was retired.  A legacy row may
+  // still contain only metadata; never turn that metadata into a network
+  // download request.  Users can reselect the original local file when they
+  // need its contents again.  Inline historical content was handled above by
+  // `workspaceInlineFileContent` and remains readable without this branch.
   replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-    ? { ...tab, loading: true, error: '' }
+    ? { ...tab, loading: false, error: '历史附件已不再从服务器读取，请重新选择本机文件。' }
     : tab)
-  try {
-    const result = await downloadVibeSessionEventAttachment(
-      current.sessionId,
-      eventId,
-      attachmentIndex,
-      downloadUrl,
-    )
-    const content = await result.blob.text()
-    if (!workspaceRequestIsCurrent(tabId, token)) return
-    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-      ? {
-          ...tab,
-          title: result.filename || tab.title,
-          loading: false,
-          error: '',
-          content,
-          file: {
-            ...tab.file,
-            filename: result.filename || tab.file.filename,
-            mime: result.contentType || tab.file.mime,
-            body_omitted: false,
-          },
-        }
-      : tab)
-  } catch (reason) {
-    if (!workspaceRequestIsCurrent(tabId, token)) return
-    replaceWorkspaceTab(tabId, tab => tab.kind === 'file'
-      ? {
-          ...tab,
-          loading: false,
-          error: workspaceErrorMessage(reason, '文件读取失败，请稍后重试。'),
-        }
-      : tab)
-  }
 }
 
 function retryWorkspaceFile(tabId: string): void {

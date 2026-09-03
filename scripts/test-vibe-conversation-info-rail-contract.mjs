@@ -48,7 +48,7 @@ const events = [
   ] },
   { id: 'e3', session_id: 'session-a', event_order: 3, created_at: '2026-08-01T03:00:00Z', attachments: [
     { id: 'file-a', filename: 'a-renamed.md', mime: 'text/markdown', size: 100 },
-    { resource_id: 'resource-c', filename: 'c.txt', status: 'ready', download_url: '/vibe/sessions/session-a/attachments/resource-c', body_omitted: true },
+    { resource_id: 'resource-c', filename: 'c.txt', status: 'legacy', body_omitted: true },
     { source_ref_id: 'source-d', filename: 'd.csv' },
     { attachment_source_ref: { ref_id: 'ref-e' }, filename: 'e.docx' },
     { id: 'file-f', filename: 'f.md' },
@@ -65,7 +65,6 @@ assert.equal(recent.length, 5)
 assert.deepEqual(recent.map(item => item.filename), ['g.md', 'f.md', 'e.docx', 'd.csv', 'c.txt'])
 assert.equal(recent[0].event_id, 'e3')
 assert.equal(recent[0].attachment_index, 5)
-assert.equal(recent[4].download_url, '/vibe/sessions/session-a/attachments/resource-c')
 assert.equal(recent[4].body_omitted, true)
 assert.equal(policy.recentSessionFiles(events, 'session-b')[0].filename, 'foreign.md')
 assert.deepEqual(policy.recentSessionFiles(events, ''), [])

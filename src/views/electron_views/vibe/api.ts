@@ -518,18 +518,6 @@ export function downloadVibeDialogueTraceAttachment(
   return harnessBlobRequest(path)
 }
 
-// 会话事件附件正文按需取：events 列表不再内联正文，只给 download_url。
-export function downloadVibeSessionEventAttachment(
-  sessionId: string,
-  eventId: string,
-  index: number,
-  downloadUrl = '',
-) {
-  const path = downloadUrl || `/vibe/sessions/${encodeURIComponent(sessionId)}`
-    + `/events/${encodeURIComponent(eventId)}/attachments/${index}`
-  return harnessBlobRequest(path)
-}
-
 export function getVibeProjectByAsyncProject(projectId: number): Promise<VibeProject> {
   return request('GET', `/vibe/projects/by-async-project/${projectId}`)
 }

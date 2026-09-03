@@ -132,8 +132,6 @@
     "build": "vite build",
     "test:user-profile-avatar": "node scripts/test-user-profile-avatar-contract.mjs",
     "test:vibe-global-control": "node scripts/test-vibe-global-control-contract.mjs",
-    "test:vibe-attachment-p0": "node scripts/test-vibe-attachment-p0-contract.mjs",
-    "test:vibe-attachment-p1": "node scripts/test-vibe-attachment-p1-contract.mjs",
     "test:vibe-pi-local-files": "node scripts/test-vibe-pi-local-file-tools.mjs",
     "test:vibe-electron-pi-readiness": "node scripts/test-vibe-electron-pi-readiness.mjs",
     "test:vibe-account-binding": "node scripts/test-vibe-account-binding.mjs",
