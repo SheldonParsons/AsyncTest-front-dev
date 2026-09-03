@@ -324,9 +324,9 @@
                    ProcessDisclosure 承载，assistant_end 会负责两者之间的归类。 -->
               <template v-if="isStreamingUnderEvent(event) && streamingAnswerPreview">
                 <div
-                  v-if="streamingLiveAnswerFormatted"
+                  v-if="streamingAnswerHtml"
                   class="message-md streaming-answer"
-                  v-html="renderMarkdown(streamingAnswerPreview)"
+                  v-html="streamingAnswerHtml"
                 />
                 <div v-else class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
                 <div v-if="streamingSources.length" class="answer-trust">
@@ -497,9 +497,9 @@
                   />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
                   <div
-                    v-if="streamingAnswerPreview && streamingLiveAnswerFormatted"
+                    v-if="streamingAnswerPreview && streamingAnswerHtml"
                     class="message-md streaming-answer"
-                    v-html="renderMarkdown(streamingAnswerPreview)"
+                    v-html="streamingAnswerHtml"
                   />
                   <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
                   <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
@@ -552,9 +552,9 @@
             />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
             <div
-              v-if="streamingAnswerPreview && streamingLiveAnswerFormatted"
+              v-if="streamingAnswerPreview && streamingAnswerHtml"
               class="message-md streaming-answer"
-              v-html="renderMarkdown(streamingAnswerPreview)"
+              v-html="streamingAnswerHtml"
             />
             <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
             <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
@@ -591,6 +591,7 @@
             :question="composerQuestion"
             :local-mode="useLocalPiAgent()"
             :local-account-id="String(currentUser?.id || '')"
+            :attachment-storage-key="composerAttachmentStorageKey"
             :model-options="composerModelOptions"
             :model-value-id="selectedLlmProviderId"
             :model-disabled="modelConfigLoading"
@@ -2700,7 +2701,10 @@ const pendingUserSubmissionText = ref('')
 // Canonical answer. It can stream outside the process rail, then be replaced
 // atomically by the saved assistant event when the Goal completes.
 const streamingLiveAnswerContent = ref('')
-const streamingLiveAnswerFormatted = ref(false)
+const streamingLiveAnswerHtml = ref('')
+const streamingLiveAnswerHtmlSource = ref('')
+let streamingAnswerRenderTimer: ReturnType<typeof setTimeout> | null = null
+let streamingAnswerRenderEpoch = 0
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
 let runningTurnPollInFlight = false
 const RUNNING_POLL_ACTIVE_MS = 1500
@@ -2739,7 +2743,6 @@ interface ElectronAgentRunContext {
   // a tool-bearing message is moved back into the process rail at
   // assistant_end.  This keeps the UI responsive without guessing from prose.
   liveAnswerText: string
-  answerPreviewFormatted: boolean
   assistantStreamMode: 'candidate' | 'process' | 'answer' | 'private'
   assistantStreamPurpose: string
   processEphemeralSteps: ProcessStep[]
@@ -2797,7 +2800,6 @@ function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunCont
     state: String(run.state || 'queued'),
     ephemeralText: '',
     liveAnswerText: '',
-    answerPreviewFormatted: false,
     assistantStreamMode: 'candidate',
     assistantStreamPurpose: 'main_agent',
     processEphemeralSteps: [],
@@ -2833,7 +2835,8 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
     || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
     ? context.liveAnswerText
     : ''
-  streamingLiveAnswerFormatted.value = !!streamingLiveAnswerContent.value && context.answerPreviewFormatted
+  if (!streamingLiveAnswerContent.value) clearStreamingAnswerHtml()
+  else if (streamingAnswerHtmlSource.value !== streamingLiveAnswerContent.value) scheduleStreamingAnswerRender()
   scrollBottomIfFollowing()
 }
 
@@ -2869,7 +2872,8 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
     || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
     ? context.liveAnswerText
     : ''
-  streamingLiveAnswerFormatted.value = !!streamingLiveAnswerContent.value && context.answerPreviewFormatted
+  if (!streamingLiveAnswerContent.value) clearStreamingAnswerHtml()
+  else if (streamingAnswerHtmlSource.value !== streamingLiveAnswerContent.value) scheduleStreamingAnswerRender()
 }
 
 function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) {
@@ -2897,7 +2901,6 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     context.assistantStreamPurpose = purpose
     context.assistantStreamMode = purpose === 'main_agent' ? 'candidate' : 'private'
     context.ephemeralText = ''
-    context.answerPreviewFormatted = preserveAnswer
     if (!preserveAnswer) context.liveAnswerText = ''
     if (electronPresentationOwnedBy(context) && !preserveAnswer) {
       streamingLiveAnswerContent.value = ''
@@ -2918,7 +2921,6 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
       context.ephemeralText = ''
       if (!preserveAnswer) {
         context.liveAnswerText = ''
-        context.answerPreviewFormatted = false
         if (electronPresentationOwnedBy(context)) streamingAssistantContent.value = ''
       }
     } else if (hasToolCalls) {
@@ -2942,7 +2944,6 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
       context.assistantStreamMode = 'process'
       context.ephemeralText = ''
       context.liveAnswerText = ''
-      context.answerPreviewFormatted = false
       if (electronPresentationOwnedBy(context)) streamingAssistantContent.value = ''
     } else {
       // No tool calls means this is the answer candidate. Keep rendering it
@@ -2950,9 +2951,11 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
       context.assistantStreamMode = 'answer'
       context.ephemeralText = ''
       context.liveAnswerText = text
-      context.answerPreviewFormatted = true
     }
     projectElectronAgentProgress(context)
+    if (electronPresentationOwnedBy(context) && purpose === 'main_agent' && !hasToolCalls) {
+      commitStreamingAnswerHtml(text, true)
+    }
     return
   }
   if (frameType === 'candidate_final') {
@@ -2961,8 +2964,10 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     context.assistantStreamMode = context.assistantStreamPurpose === 'main_agent' ? 'answer' : 'private'
     context.ephemeralText = ''
     context.liveAnswerText = context.assistantStreamPurpose === 'main_agent' ? text : ''
-    context.answerPreviewFormatted = context.assistantStreamPurpose === 'main_agent'
     projectElectronAgentProgress(context)
+    if (electronPresentationOwnedBy(context) && context.assistantStreamPurpose === 'main_agent') {
+      commitStreamingAnswerHtml(text, true)
+    }
   }
 }
 
@@ -2971,11 +2976,10 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
   if (!waiting) {
     context.ephemeralText = ''
     context.liveAnswerText = ''
-    context.answerPreviewFormatted = false
     context.processEphemeralSteps = []
     if (electronPresentationOwnedBy(context)) {
       streamingLiveAnswerContent.value = ''
-      streamingLiveAnswerFormatted.value = false
+      clearStreamingAnswerHtml()
     }
   }
   context.state = String(event.state || context.state)
@@ -3041,7 +3045,6 @@ function consumeElectronAgentStatus(context: ElectronAgentRunContext, status: an
       ? 'process'
       : 'candidate'
     context.liveAnswerText = context.assistantStreamMode === 'candidate' ? context.ephemeralText : ''
-    context.answerPreviewFormatted = false
   }
   if (status.journalDelta) applyElectronAgentCanonical(context, status.journalDelta)
   else if (status.journal_delta) applyElectronAgentCanonical(context, status.journal_delta)
@@ -3311,12 +3314,11 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
       if (previousState === 'waiting_user') {
         context.ephemeralText = ''
         context.liveAnswerText = ''
-        context.answerPreviewFormatted = false
         context.assistantStreamMode = 'candidate'
         context.assistantStreamPurpose = 'main_agent'
         if (electronPresentationOwnedBy(context)) {
           streamingLiveAnswerContent.value = ''
-          streamingLiveAnswerFormatted.value = false
+          clearStreamingAnswerHtml()
         }
         context.startedAt = Date.now()
         startElapsedTicker(context.startedAt)
@@ -3367,10 +3369,9 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
         streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
         context.ephemeralText = ''
         context.liveAnswerText = ''
-        context.answerPreviewFormatted = false
         context.processEphemeralSteps = []
         streamingLiveAnswerContent.value = ''
-        streamingLiveAnswerFormatted.value = false
+        clearStreamingAnswerHtml()
         streamingAssistantEventId.value = assistant.id
         upsertEvent(assistant)
       }
@@ -3668,6 +3669,14 @@ const baselineDraft = reactive<{ system_name: string; summary: string; system_go
 const composerDraft = computed({
   get: () => draft.value,
   set: (value: string) => { draft.value = value },
+})
+const composerAttachmentStorageKey = computed(() => {
+  const account = String(currentUser.value?.id || 'anonymous').trim() || 'anonymous'
+  const project = workspaceProjectContextId() || 'pending'
+  const session = String(activeSessionId.value || '').trim() || `new:${project}`
+  // Keep account/project/session boundaries explicit while making the value
+  // safe to use as a localStorage key in every deployment.
+  return [account, project, session].map(value => encodeURIComponent(value)).join(':')
 })
 const localDraftPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 watch([composerDraft, activeSessionId], ([value, sessionId]) => {
@@ -4056,6 +4065,7 @@ onBeforeUnmount(() => {
   sessionEventsRequests.clear()
   workspaceSessionFileSnapshots.clear()
   stopElapsedTicker()
+  clearStreamingAnswerHtml()
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
@@ -4369,7 +4379,6 @@ interface ProjectContextSnapshot {
   streamingAssistantEventId: string
   streamingAssistantContent: string
   streamingLiveAnswerContent: string
-  streamingLiveAnswerFormatted: boolean
   streamingSources: any[]
   streamingVerification: any | null
   streamingCanonicalModel: TurnProtocolReadModel | null
@@ -4432,7 +4441,6 @@ function captureProjectContextSnapshot(): ProjectContextSnapshot {
     streamingAssistantEventId: streamingAssistantEventId.value,
     streamingAssistantContent: streamingAssistantContent.value,
     streamingLiveAnswerContent: streamingLiveAnswerContent.value,
-    streamingLiveAnswerFormatted: streamingLiveAnswerFormatted.value,
     streamingSources: [...streamingSources.value],
     streamingVerification: streamingVerification.value,
     streamingCanonicalModel: streamingCanonicalModel.value,
@@ -4460,6 +4468,7 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
   stopElapsedTicker()
+  clearStreamingAnswerHtml()
 
   selectedProject.value = snapshot.project
   selectedProjectId.value = snapshot.projectId
@@ -4502,7 +4511,7 @@ function restoreProjectContextSnapshot(snapshot: ProjectContextSnapshot): void {
   streamingAssistantEventId.value = snapshot.streamingAssistantEventId
   streamingAssistantContent.value = snapshot.streamingAssistantContent
   streamingLiveAnswerContent.value = snapshot.streamingLiveAnswerContent || ''
-  streamingLiveAnswerFormatted.value = Boolean(snapshot.streamingLiveAnswerFormatted)
+  if (streamingLiveAnswerContent.value) scheduleStreamingAnswerRender()
   streamingSources.value = [...snapshot.streamingSources]
   streamingVerification.value = snapshot.streamingVerification
   streamingCanonicalModel.value = snapshot.streamingCanonicalModel
@@ -5149,6 +5158,7 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   // summarize, ingest, or ask what the user wants; the renderer must not
   // silently discard the selected file before Pi can make that decision.
   if (!base && !fileList.length) return
+  preparingSend.value = true
   try {
     const outcome = await sendFoundationTurn(base, { localFiles: fileList })
     if (outcome?.failed) restoreComposerAttachments(fileList)
@@ -5156,6 +5166,8 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
     const message = localAgentErrorMessage(reason)
     ElMessage.error(message)
     restoreComposerAttachments(fileList)
+  } finally {
+    preparingSend.value = false
   }
 }
 
@@ -5902,7 +5914,7 @@ function clearStreamingAssistant() {
   streamingAssistantEventId.value = ''
   streamingAssistantContent.value = ''
   streamingLiveAnswerContent.value = ''
-  streamingLiveAnswerFormatted.value = false
+  clearStreamingAnswerHtml()
   streamingSources.value = []
   streamingVerification.value = null
   streamingCanonicalModel.value = null
@@ -5975,6 +5987,72 @@ const MARKDOWN_RENDER_CACHE_MAX_ENTRIES = 128
 const MARKDOWN_RENDER_CACHE_MAX_CHARS = 8 * 1024 * 1024
 const markdownRenderCache = new Map<string, { html: string; chars: number }>()
 let markdownRenderCacheChars = 0
+
+// The live answer changes for every Provider delta. Render a lightweight
+// Markdown projection at most once per 80ms, and leave the copy-code controls
+// to the final render. This keeps incremental output formatted without
+// putting DOM work on every token or keyboard event.
+const STREAMING_MARKDOWN_RENDER_DELAY_MS = 80
+const STREAMING_MARKDOWN_RENDER_MAX_CHARS = 128 * 1024
+
+function cancelStreamingAnswerRender(): void {
+  if (streamingAnswerRenderTimer) {
+    clearTimeout(streamingAnswerRenderTimer)
+    streamingAnswerRenderTimer = null
+  }
+  streamingAnswerRenderEpoch += 1
+}
+
+function clearStreamingAnswerHtml(): void {
+  cancelStreamingAnswerRender()
+  streamingLiveAnswerHtml.value = ''
+  streamingLiveAnswerHtmlSource.value = ''
+}
+
+function renderStreamingMarkdown(content: string): string {
+  const html = marked.parse(normalizeCopyableMarkdownFence(String(content || ''))) as string
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ['target', 'rel'],
+  })
+}
+
+function scheduleStreamingAnswerRender(): void {
+  const source = streamingLiveAnswerContent.value || streamingAssistantContent.value
+  if (!source || source.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
+    if (streamingAnswerRenderTimer) cancelStreamingAnswerRender()
+    streamingLiveAnswerHtml.value = ''
+    streamingLiveAnswerHtmlSource.value = ''
+    return
+  }
+  if (streamingAnswerRenderTimer) return
+  const epoch = streamingAnswerRenderEpoch
+  streamingAnswerRenderTimer = setTimeout(() => {
+    streamingAnswerRenderTimer = null
+    if (epoch !== streamingAnswerRenderEpoch) return
+    const current = streamingLiveAnswerContent.value || streamingAssistantContent.value
+    if (!current || current.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
+      streamingLiveAnswerHtml.value = ''
+      streamingLiveAnswerHtmlSource.value = ''
+      return
+    }
+    streamingLiveAnswerHtml.value = renderStreamingMarkdown(current)
+    streamingLiveAnswerHtmlSource.value = current
+  }, STREAMING_MARKDOWN_RENDER_DELAY_MS)
+}
+
+function commitStreamingAnswerHtml(content: string, complete = false): void {
+  const source = String(content || '')
+  if (!source) {
+    clearStreamingAnswerHtml()
+    return
+  }
+  cancelStreamingAnswerRender()
+  streamingLiveAnswerHtml.value = complete
+    ? renderMarkdown(source)
+    : renderStreamingMarkdown(source)
+  streamingLiveAnswerHtmlSource.value = source
+}
 
 function renderMarkdown(content: string) {
   const source = String(content || '')
@@ -9354,9 +9432,9 @@ function isStreamingUnderEvent(event: any) {
   }
 }
 
-/* Incremental candidate text is plain during the stream. Markdown parsing is
- * deferred until assistant_end/candidate_final so token delivery never makes
- * the Electron renderer re-parse a growing document on every delta. */
+/* If the throttled streaming projection is not ready for the newest token,
+ * briefly keep the safe text fallback; the next scheduled render replaces it
+ * with Markdown without waiting for the whole answer. */
 .streaming-answer-plain {
   white-space: pre-wrap;
 }

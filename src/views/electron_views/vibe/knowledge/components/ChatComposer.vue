@@ -298,6 +298,14 @@ interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyP
 interface ModelOption { value: string; label: string; hint?: string }
 interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
 interface ComposerNotice { title: string; type: 'error' | 'info'; duration?: number }
+interface PersistedLocalAttachment {
+  schema: 'local_file_ref.v1'
+  ref_id: string
+  name: string
+  mime: string
+  size: number
+  last_modified: number
+}
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -312,7 +320,8 @@ const props = withDefaults(defineProps<{
   uploading?: boolean
   localMode?: boolean
   localAccountId?: string
-}>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false, localAccountId: '' })
+  attachmentStorageKey?: string
+}>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false, localAccountId: '', attachmentStorageKey: '' })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: string): void
@@ -330,6 +339,10 @@ const fileInputEl = ref<HTMLInputElement | null>(null)
 const attachmentListEl = ref<HTMLElement | null>(null)
 const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
+const ATTACHMENT_DRAFT_SCHEMA = 'vibe_agent_composer_attachments.v1'
+const ATTACHMENT_DRAFT_PREFIX = 'vibe_agent_composer_attachments:'
+let restoringAttachmentDraft = false
+let attachmentRestoreEpoch = 0
 const editorValue = ref(props.modelValue)
 const menuOpen = ref(false)
 const modelMenuOpen = ref(false)
@@ -384,6 +397,83 @@ const effectiveSendDisabled = computed(() => (
   sendDisabled.value
   && !(props.localMode && selectedFiles.value.length > 0)
 ))
+
+function attachmentDraftKey(): string {
+  const value = String(props.attachmentStorageKey || '').trim()
+  return value ? `${ATTACHMENT_DRAFT_PREFIX}${value}` : ''
+}
+
+function persistedAttachment(file: any): PersistedLocalAttachment | null {
+  const source = file?.local_file_ref || file?.localFileRef
+  const refId = String(source?.ref_id || '').trim()
+  if (!refId) return null
+  const size = Number(source?.size ?? file?.size ?? 0)
+  const lastModified = Number(source?.last_modified ?? file?.lastModified ?? 0)
+  if (!Number.isFinite(size) || size < 0 || !Number.isFinite(lastModified) || lastModified < 0) return null
+  return {
+    schema: 'local_file_ref.v1',
+    ref_id: refId,
+    name: String(source?.name || file?.name || '未命名文件'),
+    mime: String(source?.mime || file?.type || 'application/octet-stream'),
+    size: Math.trunc(size),
+    last_modified: Math.trunc(lastModified),
+  }
+}
+
+function persistAttachmentDraft(): void {
+  if (restoringAttachmentDraft || !props.localMode) return
+  const key = attachmentDraftKey()
+  if (!key || typeof localStorage === 'undefined') return
+  try {
+    const items = selectedFiles.value
+      .map(file => persistedAttachment(file))
+      .filter((file): file is PersistedLocalAttachment => !!file)
+    if (!items.length) localStorage.removeItem(key)
+    else localStorage.setItem(key, JSON.stringify({ schema: ATTACHMENT_DRAFT_SCHEMA, items }))
+  } catch {
+    // A full/disabled localStorage must not block selecting or sending a file.
+  }
+}
+
+function restoreAttachmentDraft(): void {
+  const key = attachmentDraftKey()
+  if (!props.localMode || !key || typeof localStorage === 'undefined') return
+  let parsed: any
+  try {
+    parsed = JSON.parse(localStorage.getItem(key) || '')
+  } catch {
+    return
+  }
+  if (parsed?.schema !== ATTACHMENT_DRAFT_SCHEMA || !Array.isArray(parsed.items)) return
+  const files = parsed.items.map((item: any) => {
+    const parsedSize = Number(item?.size)
+    const parsedLastModified = Number(item?.last_modified)
+    const source: PersistedLocalAttachment = {
+      schema: 'local_file_ref.v1',
+      ref_id: String(item?.ref_id || '').trim(),
+      name: String(item?.name || '未命名文件'),
+      mime: String(item?.mime || 'application/octet-stream'),
+      size: Number.isFinite(parsedSize) ? Math.max(0, Math.trunc(parsedSize)) : 0,
+      last_modified: Number.isFinite(parsedLastModified) ? Math.max(0, Math.trunc(parsedLastModified)) : 0,
+    }
+    return {
+      name: source.name,
+      size: source.size,
+      lastModified: source.last_modified,
+      type: source.mime,
+      local_file_ref: source,
+    } as unknown as File
+  }).filter((file: any) => !!file.local_file_ref.ref_id)
+  restoringAttachmentDraft = true
+  try {
+    selectedFiles.value = admitAttachmentSelection([], files, {
+      maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
+      maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
+    }).files
+  } finally {
+    nextTick(() => { restoringAttachmentDraft = false })
+  }
+}
 
 watch(() => props.question, () => {
   activeIndex.value = 0
@@ -571,13 +661,63 @@ function removeFile(i: number, event?: Event) {
   })
 }
 
-watch(selectedFiles, () => nextTick(restoreAttachmentScroll))
+watch(selectedFiles, () => {
+  void nextTick(restoreAttachmentScroll)
+  persistAttachmentDraft()
+}, { deep: true, flush: 'sync' })
+
+watch(
+  [() => props.attachmentStorageKey, () => props.localMode],
+  (nextValues, previousValues) => {
+    const [nextStorageKey, nextLocalMode] = nextValues
+    const previousStorageKey = previousValues?.[0]
+    const epoch = ++attachmentRestoreEpoch
+    const nextKey = String(nextStorageKey || '').trim()
+    const previousKey = String(previousStorageKey || '').trim()
+    // Creating the first local session changes the storage key while the
+    // attachment is already being submitted. Move that draft with the
+    // session instead of clearing the chip mid-send. Ordinary session
+    // switching happens while `sending` is false and loads the target draft.
+    if (props.sending && props.localMode && nextLocalMode && previousKey && nextKey
+      && previousKey !== nextKey && selectedFiles.value.length) {
+      restoringAttachmentDraft = true
+      try {
+        const items = selectedFiles.value
+          .map(file => persistedAttachment(file))
+          .filter((file): file is PersistedLocalAttachment => !!file)
+        if (typeof localStorage !== 'undefined') {
+          if (items.length) localStorage.setItem(`${ATTACHMENT_DRAFT_PREFIX}${nextKey}`, JSON.stringify({ schema: ATTACHMENT_DRAFT_SCHEMA, items }))
+          localStorage.removeItem(`${ATTACHMENT_DRAFT_PREFIX}${previousKey}`)
+        }
+      } catch {
+        // Storage migration is best effort; the in-memory selection remains.
+      } finally {
+        restoringAttachmentDraft = false
+      }
+      return
+    }
+    restoringAttachmentDraft = true
+    selectedFiles.value = []
+    nextTick(() => {
+      if (epoch !== attachmentRestoreEpoch) return
+      restoreAttachmentDraft()
+      nextTick(() => {
+        if (epoch === attachmentRestoreEpoch) restoringAttachmentDraft = false
+      })
+    })
+  },
+  { immediate: true },
+)
 
 function clearAttachments() {
+  const key = attachmentDraftKey()
   selectedFiles.value = []
   attachmentScrollLeft = 0
   if (attachmentListEl.value) attachmentListEl.value.scrollLeft = 0
   if (fileInputEl.value) fileInputEl.value.value = ''
+  if (key && typeof localStorage !== 'undefined') {
+    try { localStorage.removeItem(key) } catch { /* ignore storage failures */ }
+  }
 }
 
 function restoreAttachments(files: File[]) {
