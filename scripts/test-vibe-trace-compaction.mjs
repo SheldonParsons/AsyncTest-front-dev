@@ -130,6 +130,7 @@ try {
   assert.match(ipcSource, /VIBE_PI_TRACE_CAPTURE_PAYLOAD/);
   assert.match(ipcSource, /payload_capture: localTracePayloadCapture/);
   assert.doesNotMatch(ipcSource, /payload_capture: true/);
+  assert.match(ipcSource, /purpose \|\| "main_agent"\) !== "compaction"/);
   const uploadSource = await fs.readFile(new URL("../electron/vibeAgent/trace/traceUploadQueue.node.js", import.meta.url), "utf8");
   assert.match(uploadSource, /format: "framed-v1"/);
   assert.match(uploadSource, /bundle_sha256/);

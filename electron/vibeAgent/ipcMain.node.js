@@ -834,11 +834,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         }
       }
       if (frame?.type === "provider_payload") {
-        assistantStreams.set(traceIdFor(run), createAssistantStream({
-          callId: frame.payload?.call_id,
-          purpose: frame.payload?.purpose,
-          startedAt: Date.now(),
-        }));
+        // Native compaction streams into Pi's CompactionEntry, not the user
+        // answer lane, and therefore has no ordinary assistant_end frame.
+        // Tracking it as a public stream would leave a false partial-answer
+        // event when the run finishes immediately after compaction.
+        if (String(frame.payload?.purpose || "main_agent") !== "compaction") {
+          assistantStreams.set(traceIdFor(run), createAssistantStream({
+            callId: frame.payload?.call_id,
+            purpose: frame.payload?.purpose,
+            startedAt: Date.now(),
+          }));
+        }
       }
       // assistant_end/provider_payload carry the complete evidence. Deltas are
       // accumulated in memory and produce one metric-only stream event per
