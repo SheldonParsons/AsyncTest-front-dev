@@ -10,12 +10,29 @@
       <div class="menu-section">
         <div class="menu-title">文件</div>
         <button class="menu-item" type="button" role="menuitem" @click="pickMarkdown">
-          <span class="markdown-icon" aria-hidden="true">
-            <MarkdownFileIcon />
+          <span class="markdown-icon" :class="{ 'file-text-icon-container': localMode }" aria-hidden="true">
+            <svg
+              v-if="localMode"
+              class="lucide lucide-file-text-icon lucide-file-text file-text-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+              <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+              <path d="M10 9H8" />
+              <path d="M16 13H8" />
+              <path d="M16 17H8" />
+            </svg>
+            <MarkdownFileIcon v-else />
           </span>
           <span class="item-text">
             <strong>{{ localMode ? '本机文件' : 'Markdown 文件' }}</strong>
-            <span>{{ localMode ? '文档、表格、演示、PDF、图片等' : '.md / .markdown' }}</span>
+            <span>{{ localMode ? 'markdown、txt、HTML 等文件' : '.md / .markdown' }}</span>
           </span>
         </button>
       </div>
@@ -736,6 +753,8 @@ defineExpose({ clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(
 .menu-item:hover { background: #f3f4f6; }
 .markdown-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; --markdown-file-icon-font-size: 11px; }
 .markdown-icon :deep(.markdown-file-icon) { width: 100%; height: 100%; }
+.file-text-icon-container { color: #5f6670; background: #f1f3f5; }
+.file-text-icon { width: 20px; height: 20px; display: block; }
 .item-text { display: grid; gap: 1px; }
 .item-text strong { font-size: 13px; font-weight: 700; }
 .item-text span { color: #8a8f98; font-size: 12px; }

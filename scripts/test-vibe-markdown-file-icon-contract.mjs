@@ -22,7 +22,7 @@ assert.match(iconSource, /size\?:\s*number/)
 assert.match(iconSource, /fontSize\?:\s*number/)
 assert.match(iconSource, /radius\?:\s*number/)
 
-assert.equal((composerSource.match(/<MarkdownFileIcon\s*\/>/g) || []).length, 2)
+assert.equal((composerSource.match(/<MarkdownFileIcon(?:\s+[^>]*)?\s*\/>/g) || []).length, 2)
 assert.doesNotMatch(composerSource, /class="chip-icon">\s*MD\s*</)
 assert.match(composerSource, /\.chip-icon :deep\(\.markdown-file-icon\)\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;/)
 assert.match(composerSource, /\.markdown-icon\s*\{[^}]*--markdown-file-icon-font-size:\s*11px;/)

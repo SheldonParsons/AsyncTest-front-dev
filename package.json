@@ -150,6 +150,7 @@
     "test:vibe-knowledge-remote-outcome": "node scripts/test-vibe-knowledge-remote-outcome-contract.mjs",
     "test:vibe-knowledge-interaction-continuation": "node scripts/test-vibe-knowledge-interaction-continuation-contract.mjs",
     "test:vibe-chat-markdown-editor": "node scripts/test-vibe-chat-markdown-editor-contract.mjs",
+    "test:vibe-local-file-menu": "node scripts/test-vibe-local-file-menu-contract.mjs",
     "test:vibe-process-disclosure": "node scripts/test-vibe-process-disclosure-contract.mjs",
     "test:vibe-interaction-thread": "node scripts/test-vibe-interaction-thread-contract.mjs",
     "test:vibe-source-viewer": "node scripts/test-vibe-source-viewer-contract.mjs",
