@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
@@ -12,6 +13,7 @@ const runner = path.join(root, "electron", "vibeAgent", "runtime", "runner.mjs")
 const electron = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "electron.cmd" : "electron");
 
 async function fakeRun(title) {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "vibe-session-title-"));
   const identity = {
     run_id: `session-title-${title.length}`,
     turn_id: `turn-title-${title.length}`,
@@ -21,6 +23,12 @@ async function fakeRun(title) {
     execution_mode: "local",
     system_prompt: "请完成用户任务。",
     tools: [],
+    pi_session: {
+      schema: "vibe.pi_session.v1", mode: "create", session_id: `title-session-${title.length}`,
+      directory: path.join(temporary, "pi-session"),
+      file_path: path.join(temporary, "pi-session", "session.jsonl"),
+      format_version: 3, bootstrap_messages: [], bootstrap_sequence: 0,
+    },
     provider: {
       id: "fake-provider",
       mode: "direct",
@@ -33,6 +41,7 @@ async function fakeRun(title) {
     options: {
       max_retries: 0,
       generate_session_title: true,
+      session_id: `title-session-${title.length}`,
     },
     prompt: "请规划知识库迁移。",
     fake: {
@@ -64,7 +73,9 @@ async function fakeRun(title) {
       try {
         const frame = parseOutboundLine(line, identityOf(start.frame));
         frames.push(frame);
-        if (frame.type === "candidate_final") {
+        if (frame.type === "session_open") {
+          child.stdin.write(`${makeFrame(identity, "session_open_result", { accepted: true }, { reply_to: frame.message_id }).serialized}\n`);
+        } else if (frame.type === "candidate_final") {
           child.stdin.write(`${makeFrame(identity, "finish", {}, { reply_to: frame.message_id }).serialized}\n`);
         }
       } catch (error) {
@@ -79,6 +90,7 @@ async function fakeRun(title) {
     });
     child.stdin.write(`${start.serialized}\n`);
   });
+  await rm(temporary, { recursive: true, force: true });
   return frames;
 }
 

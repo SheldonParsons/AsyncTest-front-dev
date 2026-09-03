@@ -34,7 +34,10 @@ try {
   const start = traceStartPayload({
     execution_mode: "local",
     prompt: "请总结",
-    history_messages: [{ role: "user", content: "历史" }],
+    pi_session: {
+      schema: "vibe.pi_session.v1", mode: "create", format_version: 3,
+      bootstrap_messages: [{ role: "user", content: "历史" }], bootstrap_sequence: 1,
+    },
     provider: { id: "provider-1", model: "strong", mode: "direct" },
     options: { max_retries: 0 },
     system_prompt: "不能重复保存的系统提示词",
@@ -44,6 +47,8 @@ try {
   assert.equal(JSON.stringify(start).includes("search_knowledge"), false);
   assert.equal(start.system_prompt_summary.count, "不能重复保存的系统提示词".length);
   assert.equal(start.tools_summary.count, 1);
+  assert.equal(start.pi_session.bootstrap_message_count, 1);
+  assert.equal(JSON.stringify(start).includes("历史"), false);
   assert.match(start.system_prompt_summary.sha256, /^[0-9a-f]{64}$/);
   assert.match(start.tools_summary.sha256, /^[0-9a-f]{64}$/);
 

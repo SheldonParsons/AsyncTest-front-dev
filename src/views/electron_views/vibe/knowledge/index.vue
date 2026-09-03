@@ -2860,6 +2860,10 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
   if (frameType === 'provider_payload') {
     context.providerCallSequence += 1
     const purpose = String(payload.purpose || 'main_agent')
+    // Official context compaction is an internal continuation of the same
+    // turn. Its summarization request must not erase or restyle the answer
+    // that has already streamed from the main Agent call.
+    if (purpose === 'compaction') return
     const preserveAnswer = purpose === 'session_title'
       && context.assistantStreamMode === 'answer'
       && !!context.liveAnswerText
@@ -5003,8 +5007,7 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
   }
 }
 
-// 询问模式（clarification）选项被选/提交：把答案【续跑同一思考】发出去（空=跳过，仅收起反问）。
-// 关键：先取 pending（挂起草稿），再清反问；带 seedMessages 回传后端 → 接着上一轮思路想，不另起新轮。
+// 询问模式（clarification）选项被选/提交：把答案续跑到同一个本机 Goal。
 async function respondToLiveGoal(raw: any, payload: {
   interaction_id?: string
   confirmation_id?: string
@@ -5326,7 +5329,6 @@ async function onComposerAnswer(value: string) {
     return
   }
 
-  const seed = c?.pending
   // 续跑挂到"反问那条 assistant"之下 → 渲染成同一条思考。反问 = 当前最后一条 assistant 事件。
   const parentId = lastClarificationAssistantId()
   clarificationActive.value = null
@@ -5340,7 +5342,6 @@ async function onComposerAnswer(value: string) {
   const v = (value || '').trim()
   if (!v || sending.value) return
   await sendFoundationTurn(v, {
-    seedMessages: Array.isArray(seed) && seed.length ? seed : undefined,
     continuationParentId: parentId,
   })
 }
@@ -5429,7 +5430,6 @@ function toggleAttachmentsExpanded(eventId: string) {
 }
 
 interface SendFoundationTurnOptions {
-  seedMessages?: any[]
   continuationParentId?: string
   modelValidated?: boolean
   onUserEventSaved?: () => void
@@ -5559,10 +5559,6 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
     session_id: sessionId,
     account_id: localAccountId(),
   }))
-  const history = Array.isArray(opts.seedMessages) && opts.seedMessages.length
-    ? opts.seedMessages
-    : await bridge.sessions?.history?.({ sessionId, accountId: localAccountId() })
-  if (!Array.isArray(history)) throw new Error('本地会话上下文无法读取')
   // A file-only submission still needs one user message for the Provider
   // protocol.  This sentence is only a transport seed; Pi remains free to
   // ask what the user wants instead of assuming “ingest”.  Keep the visible
@@ -5574,9 +5570,6 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   const startPayload = {
     execution_mode: 'local',
     user_text: content,
-    ...(Array.isArray(opts.seedMessages) && opts.seedMessages.length
-      ? { seed_messages: history }
-      : { history_messages: history }),
     prompt: agentPrompt,
   }
   const run: any = {
@@ -5592,7 +5585,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
     trace_id: traceId,
     goal_id: turnId,
     host_id: 'electron-main',
-    protocol_version: 2,
+    protocol_version: 3,
   }
   registerElectronAgentRun(run)
   const context = electronAgentRuns.get(runId)!

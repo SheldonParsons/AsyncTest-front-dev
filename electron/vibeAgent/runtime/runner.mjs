@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import readline from "node:readline";
 import {
@@ -52,6 +52,10 @@ const EXPECTED_AI_VERSION = "0.84.4";
 const EXPECTED_CODING_AGENT_VERSION = "0.84.4";
 const EXPECTED_UNDICI_VERSION = "8.9.0";
 const MIN_NODE = [22, 19, 0];
+const PI_SESSION_SCHEMA = "vibe.pi_session.v1";
+const PI_SESSION_FORMAT_VERSION = 3;
+const PI_BOOTSTRAP_ENTRY = "vibe.bootstrap.v1";
+const PI_RECOVERY_ENTRY = "vibe.recovery.v1";
 const SESSION_TITLE_SYSTEM_PROMPT = `你只负责给一段已经完成的对话生成简体中文会话标题。
 标题必须准确概括用户目标，最多 12 个字符，至少包含一个汉字。
 专有名词、产品名和数字可以保留原文。
@@ -77,6 +81,138 @@ function sessionPromptContent(value) {
     content.push(...row.content);
   }
   return content;
+}
+
+function resolvedPiSession(value, expectedSessionId) {
+  const descriptor = value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  if (!descriptor || descriptor.schema !== PI_SESSION_SCHEMA
+    || descriptor.format_version !== PI_SESSION_FORMAT_VERSION
+    || descriptor.session_id !== expectedSessionId) {
+    throw new ProtocolError("pi_session_binding_invalid");
+  }
+  const directory = resolve(String(descriptor.directory || ""));
+  const filePath = resolve(String(descriptor.file_path || ""));
+  const child = relative(directory, filePath);
+  if (!directory || !filePath || child !== "session.jsonl" || isAbsolute(child)) {
+    throw new ProtocolError("pi_session_path_invalid");
+  }
+  return { ...descriptor, directory, file_path: filePath };
+}
+
+function validatePiSessionJournal(filePath) {
+  let raw;
+  try { raw = readFileSync(filePath, "utf8"); }
+  catch { throw new ProtocolError("pi_session_unavailable"); }
+  if (!raw || !raw.endsWith("\n")) throw new ProtocolError("pi_session_corrupt");
+  const entries = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let entry;
+    try { entry = JSON.parse(line); }
+    catch { throw new ProtocolError("pi_session_corrupt"); }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ProtocolError("pi_session_corrupt");
+    }
+    entries.push(entry);
+  }
+  const header = entries[0];
+  if (!header || header.type !== "session" || header.version !== PI_SESSION_FORMAT_VERSION
+    || typeof header.id !== "string" || !header.id
+    || entries.slice(1).some((entry) => entry.type === "session")) {
+    throw new ProtocolError("pi_session_corrupt");
+  }
+  const ids = new Set();
+  for (const entry of entries.slice(1)) {
+    if (typeof entry.id !== "string" || !entry.id || ids.has(entry.id)
+      || (entry.parentId !== null && !ids.has(entry.parentId))) {
+      throw new ProtocolError("pi_session_corrupt");
+    }
+    ids.add(entry.id);
+  }
+}
+
+function openPiSession(codingAgent, descriptor, model) {
+  try {
+    mkdirSync(descriptor.directory, { recursive: true, mode: 0o700 });
+    const directoryStat = lstatSync(descriptor.directory);
+    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+      throw new ProtocolError("pi_session_path_invalid");
+    }
+    let manager;
+    if (descriptor.mode === "create") {
+      if (existsSync(descriptor.file_path)) throw new ProtocolError("pi_session_create_conflict");
+      const fd = openSync(descriptor.file_path, "wx", 0o600);
+      closeSync(fd);
+    } else if (!existsSync(descriptor.file_path)) {
+      throw new ProtocolError("pi_session_missing");
+    }
+    const fileStat = lstatSync(descriptor.file_path);
+    if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+      throw new ProtocolError("pi_session_path_invalid");
+    }
+    if (descriptor.mode === "create") {
+      // SessionManager.open() initializes an explicitly empty file with Pi's
+      // native v3 header. This also makes every subsequent append durable,
+      // including a user message written before the first assistant response.
+      manager = codingAgent.SessionManager.open(descriptor.file_path, descriptor.directory, homedir());
+    }
+    validatePiSessionJournal(descriptor.file_path);
+    manager ??= codingAgent.SessionManager.open(descriptor.file_path, descriptor.directory, homedir());
+    if (resolve(String(manager.getSessionFile() || "")) !== descriptor.file_path) {
+      throw new ProtocolError("pi_session_path_invalid");
+    }
+
+    const entries = manager.getEntries();
+    const bootstrap = entries.find((entry) => entry.type === "custom"
+      && entry.customType === PI_BOOTSTRAP_ENTRY);
+    if (descriptor.mode === "create") {
+      const messages = adaptHistory({ messages: descriptor.bootstrap_messages }, model).messages;
+      for (const message of messages) manager.appendMessage(message);
+      manager.appendCustomEntry(PI_BOOTSTRAP_ENTRY, {
+        schema: PI_BOOTSTRAP_ENTRY,
+        product_session_id: descriptor.session_id,
+        through_sequence: descriptor.bootstrap_sequence,
+        message_count: messages.length,
+      });
+    } else if (!bootstrap || bootstrap.data?.schema !== PI_BOOTSTRAP_ENTRY
+      || bootstrap.data?.product_session_id !== descriptor.session_id) {
+      throw new ProtocolError("pi_session_bootstrap_incomplete");
+    }
+
+    if (descriptor.resume_messages) {
+      const existingRecovery = manager.getEntries().find((entry) => entry.type === "custom"
+        && entry.customType === PI_RECOVERY_ENTRY
+        && entry.data?.resume_key === descriptor.resume_key);
+      if (!existingRecovery) {
+        const messages = adaptHistory({ messages: descriptor.resume_messages }, model).messages;
+        if (!messages.length || messages.some((message) => message.role !== "toolResult")) {
+          throw new ProtocolError("pi_session_resume_invalid");
+        }
+        const knownToolCalls = new Set(manager.buildSessionContext().messages
+          .filter((message) => message?.role === "assistant" && Array.isArray(message.content))
+          .flatMap((message) => message.content)
+          .filter((block) => block?.type === "toolCall")
+          .map((block) => String(block.id || "")));
+        const existingToolResults = new Set(manager.getEntries()
+          .filter((entry) => entry.type === "message" && entry.message?.role === "toolResult")
+          .map((entry) => String(entry.message.toolCallId || "")));
+        if (messages.some((message) => !knownToolCalls.has(String(message.toolCallId || ""))
+          || existingToolResults.has(String(message.toolCallId || "")))) {
+          throw new ProtocolError("pi_session_resume_pair_invalid");
+        }
+        for (const message of messages) manager.appendMessage(message);
+        manager.appendCustomEntry(PI_RECOVERY_ENTRY, {
+          schema: PI_RECOVERY_ENTRY,
+          resume_key: descriptor.resume_key,
+          tool_call_ids: messages.map((message) => message.toolCallId),
+        });
+      }
+    }
+    return manager;
+  } catch (error) {
+    if (error instanceof ProtocolError) throw error;
+    throw new ProtocolError("pi_session_open_failed");
+  }
 }
 
 function abortQuietly(target) {
@@ -322,6 +458,8 @@ class BridgeSession {
     this.failPromise = null;
     this.agent = undefined;
     this.agentSession = undefined;
+    this.piSessionManager = undefined;
+    this.piSessionDescriptor = undefined;
     this.activeAgents = new Set();
     this.abortReason = "";
     this.runtime = undefined;
@@ -330,6 +468,7 @@ class BridgeSession {
     this.finalSystemPrompt = "";
     this.providerTools = new Map();
     this.streamForPurpose = undefined;
+    this.compactionReason = "";
     this.options = startFrame.payload.options ?? {};
   }
 
@@ -627,7 +766,10 @@ class BridgeSession {
       apiKey: "vibe-run-scoped",
       api: this.model.api,
       streamSimple: (model, context, options) => this.streamForPurpose(
-        "main_agent", "", undefined, { useRunMaxTokens: false },
+        this.compactionReason ? "compaction" : "main_agent",
+        "",
+        undefined,
+        { useRunMaxTokens: false },
       )(model, context, options),
       models: [{
         id: this.model.id,
@@ -798,9 +940,30 @@ class BridgeSession {
     return skill;
   }
 
+  async emitSessionCheckpoint(phase) {
+    const manager = this.piSessionManager;
+    const descriptor = this.piSessionDescriptor;
+    if (!manager || !descriptor) return;
+    await this.emit("session_checkpoint", {
+      schema: PI_SESSION_SCHEMA,
+      session_id: descriptor.session_id,
+      pi_session_id: manager.getSessionId(),
+      format_version: PI_SESSION_FORMAT_VERSION,
+      resumed: descriptor.mode === "open",
+      phase,
+      entry_count: manager.getEntries().length,
+      context_message_count: manager.buildSessionContext().messages.length,
+      ...(manager.getLeafId() ? { last_entry_id: manager.getLeafId() } : {}),
+      bootstrap_sequence: Number(descriptor.bootstrap_sequence || 0),
+    });
+  }
+
   async runAgent() {
     const payload = this.startFrame.payload;
-    const history = adaptHistory(payload, this.model);
+    const piSession = resolvedPiSession(payload.pi_session, String(this.options.session_id || ""));
+    const sessionManager = openPiSession(this.runtime.codingAgent, piSession, this.model);
+    this.piSessionManager = sessionManager;
+    this.piSessionDescriptor = piSession;
     let activeAssistant;
     const routedRemoteToolCalls = new Set();
     const remoteTools = adaptToolDefinitions(payload.tools, async (toolCallId, name, _args, signal) => {
@@ -843,7 +1006,7 @@ class BridgeSession {
     const frozenSkill = this.frozenSkill(payload);
     const settingsManager = this.runtime.codingAgent.SettingsManager.inMemory({
       defaultThinkingLevel: "off",
-      compaction: { enabled: true },
+      compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
       retry: {
         enabled: false,
         maxRetries: 0,
@@ -851,7 +1014,7 @@ class BridgeSession {
       },
     });
     const appendSystemPrompt = appendChineseContract(payload.system_prompt)
-      + (history.continueFromHistory ? localFilesContext(payload) : "");
+      + (piSession.resume_messages ? localFilesContext(payload) : "");
     const resourceLoader = new this.runtime.codingAgent.DefaultResourceLoader({
       cwd,
       agentDir,
@@ -869,16 +1032,7 @@ class BridgeSession {
     });
     await resourceLoader.reload();
 
-    let prompt = adaptPrompt(payload);
-    let seedMessages = history.messages;
-    if (history.continueFromHistory && seedMessages.at(-1)?.role === "user") {
-      prompt = seedMessages.at(-1).content;
-      seedMessages = seedMessages.slice(0, -1);
-    } else if (history.continueFromHistory) {
-      prompt = "继续完成当前任务。";
-    }
-    const sessionManager = this.runtime.codingAgent.SessionManager.inMemory(cwd);
-    for (const message of seedMessages) sessionManager.appendMessage(message);
+    const prompt = adaptPrompt(payload);
     const { session } = await this.runtime.codingAgent.createAgentSession({
       cwd,
       agentDir,
@@ -930,6 +1084,30 @@ class BridgeSession {
       });
     }
     this.activeAgents.add(session);
+    session.subscribe(async (event) => {
+      if (event.type === "compaction_start") {
+        this.compactionReason = event.reason;
+        await this.emit("compaction_start", { reason: event.reason });
+      } else if (event.type === "compaction_end") {
+        const entry = [...sessionManager.getEntries()].reverse()
+          .find((item) => item.type === "compaction");
+        this.compactionReason = "";
+        await this.emit("compaction_end", {
+          reason: event.reason,
+          aborted: Boolean(event.aborted),
+          will_retry: Boolean(event.willRetry),
+          ...(event.errorMessage ? { error: String(event.errorMessage) } : {}),
+          ...(event.result ? {
+            summary: String(event.result.summary || ""),
+            first_kept_entry_id: String(event.result.firstKeptEntryId || ""),
+            tokens_before: Number(event.result.tokensBefore || 0),
+            estimated_tokens_after: Number(event.result.estimatedTokensAfter || 0),
+            ...(event.result.usage === undefined ? {} : { usage: event.result.usage }),
+            entry_id: String(entry?.id || ""),
+          } : {}),
+        });
+      }
+    });
     agent.subscribe(async (event) => {
       if (event.type === "tool_execution_start" && LOCAL_FILE_TOOL_NAMES.includes(event.toolName)) {
         await this.emit("local_tool_start", {
@@ -983,6 +1161,18 @@ class BridgeSession {
         });
       }
     });
+    const opened = await this.request("session_open", {
+      schema: PI_SESSION_SCHEMA,
+      session_id: piSession.session_id,
+      pi_session_id: sessionManager.getSessionId(),
+      format_version: PI_SESSION_FORMAT_VERSION,
+      resumed: piSession.mode === "open",
+      entry_count: sessionManager.getEntries().length,
+      context_message_count: sessionManager.buildSessionContext().messages.length,
+      ...(sessionManager.getLeafId() ? { last_entry_id: sessionManager.getLeafId() } : {}),
+      bootstrap_sequence: Number(piSession.bootstrap_sequence || 0),
+    }, ["session_open_result"]);
+    if (opened.payload.accepted !== true) throw new ProtocolError("pi_session_not_accepted");
     let final;
     try {
       const promptContent = sessionPromptContent(prompt);
@@ -1002,15 +1192,18 @@ class BridgeSession {
     }
     if (this.fatalProtocolError) throw this.fatalProtocolError;
     if (this.stoppedAfterWave) {
+      await this.emitSessionCheckpoint("waiting_user");
       await this.emit("done", { status: "waiting_user" });
       return;
     }
     if (this.terminatedByTool) {
+      await this.emitSessionCheckpoint("aborted");
       await this.emit("done", { status: "aborted", code: "user_stop_all" });
       return;
     }
     if (!final || final.stopReason === "error") throw new ProtocolError("agent_provider_failed");
     if (final.stopReason === "aborted" || this.abortReason) {
+      await this.emitSessionCheckpoint("aborted");
       await this.emit("done", { status: "aborted" });
       return;
     }
@@ -1033,9 +1226,11 @@ class BridgeSession {
     const publishText = response.payload.publish_text ?? text;
     await this.maybeGenerateSessionTitle(publishText);
     if (this.abortReason) {
+      await this.emitSessionCheckpoint("aborted");
       await this.emit("done", { status: "aborted" });
       return;
     }
+    await this.emitSessionCheckpoint("completed");
     await this.emit("done", { status: "completed", text: publishText });
   }
 
@@ -1145,6 +1340,7 @@ class BridgeSession {
       if (!gracefulAbort) {
         const correlation = this.runtime ? {} : { reply_to: this.startFrame.message_id };
         try {
+          await this.emitSessionCheckpoint("failed").catch(() => undefined);
           await this.emit("error", { code, node_version: process.versions.node }, correlation);
           await this.emit("done", { status: "failed", code });
         } catch {

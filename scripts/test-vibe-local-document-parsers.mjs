@@ -37,6 +37,7 @@ const temporary = await mkdtemp(path.join(os.tmpdir(), "vibe-doc-parser-"));
 const pdfPath = path.join(temporary, "sample.pdf");
 const sheetPath = path.join(temporary, "sample.xlsx");
 const slidesPath = path.join(temporary, "sample.pptx");
+const piDirectory = path.join(temporary, "pi-session");
 await writeFile(pdfPath, minimalPdf("PDF local parse"));
 const workbook = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Name", "Value"], ["Alpha", "42"]]), "Data");
@@ -50,12 +51,17 @@ const start = makeFrame(identity, "start", {
   execution_mode: "local",
   system_prompt: "读取文件。",
   prompt: "读取三个文件。",
+  pi_session: {
+    schema: "vibe.pi_session.v1", mode: "create", session_id: "document-session",
+    directory: piDirectory, file_path: path.join(piDirectory, "session.jsonl"), format_version: 3,
+    bootstrap_messages: [], bootstrap_sequence: 0,
+  },
   tools: [],
   provider: {
     id: "fake", model: "fake-model", api: "openai-completions", mode: "direct",
     base_url: "https://example.invalid/v1", api_key: "fake-key", reasoning: false,
   },
-  options: { max_retries: 0, tool_choice: "auto" },
+  options: { max_retries: 0, tool_choice: "auto", session_id: "document-session" },
   fake: { responses: [
     { tool_calls: [
       { id: "pdf", name: "read", arguments: { path: pdfPath } },
@@ -85,7 +91,9 @@ const frames = [];
 for await (const line of readline.createInterface({ input: child.stdout, crlfDelay: Infinity })) {
   const frame = parseOutboundLine(line, identityOf(start.frame));
   frames.push(frame);
-  if (frame.type === "candidate_final") {
+  if (frame.type === "session_open") {
+    child.stdin.write(`${makeFrame(identity, "session_open_result", { accepted: true }, { reply_to: frame.message_id }).serialized}\n`);
+  } else if (frame.type === "candidate_final") {
     child.stdin.write(`${makeFrame(identity, "finish", {}, { reply_to: frame.message_id }).serialized}\n`);
   }
 }

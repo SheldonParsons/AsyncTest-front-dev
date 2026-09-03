@@ -60,7 +60,6 @@ const CHANNELS = [
   "vibeAgent:sessionManifest",
   "vibeAgent:sessionList",
   "vibeAgent:sessionEvents",
-  "vibeAgent:sessionHistory",
   "vibeAgent:sessionAppend",
   "vibeAgent:sessionUpdate",
   "vibeAgent:sessionTitle",
@@ -438,7 +437,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             execution_host: "electron",
             agent_core_version: host?.identity?.().piAgentCoreVersion || "0.84.4",
             pi_ai_version: host?.identity?.().piAiVersion || "0.84.4",
-            bridge_protocol_version: host?.identity?.().protocolVersion || 2,
+            bridge_protocol_version: host?.identity?.().protocolVersion || 3,
             client_instance_hash: host?.identity?.().clientInstanceHash || "",
             turn_id: run.turn_id,
             project_id: run.project_id,
@@ -645,6 +644,23 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }
       return appendTrace(run, "agent.start", traceStartPayload(payload));
     },
+    onSessionOpen: async ({ run, session }) => {
+      const sessionId = String(run?.session_id || run?.sessionId || "").trim();
+      const accountId = String(run?.account_id || run?.accountId || "").trim();
+      if (String(session?.session_id || "") !== sessionId) {
+        throw new Error("vibe_agent_pi_session_identity_drift");
+      }
+      await sessionStore.recordPiSession(sessionId, {
+        accountId,
+        piSessionId: session.pi_session_id,
+        entryCount: session.entry_count,
+        contextMessageCount: session.context_message_count,
+        lastEntryId: session.last_entry_id,
+        bootstrapSequence: session.bootstrap_sequence,
+        resumed: Boolean(session.resumed),
+      });
+      return { accepted: true };
+    },
     onPark: async ({ run, reason, code, signal }) => {
       return appendTrace(run, "agent.run.parked", {
         reason: String(reason || "waiting_child_exit"),
@@ -780,23 +796,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         const messageId = String(frame.message_id || "").trim();
         const purpose = String(frame.payload?.purpose || "main_agent");
         const toolCalls = Array.isArray(frame.payload?.tool_calls) ? frame.payload.tool_calls : [];
-        // Context checkpoints/language repairs are private control calls. Keep
-        // a checkpoint in the local journal so cold recovery can reuse it, but
-        // never project it as a visible chat message (the Renderer filters the
-        // private purpose). Language repairs are diagnostic-only and need not
-        // enter the replay journal at all.
-        if (purpose === "context_checkpoint") {
-          const key = messageId
-            ? `checkpoint:${messageId}`
-            : `checkpoint:${String(frame.payload?.call_id || "")}:${JSON.stringify(frame.payload || {}).length}`;
-          await appendLocalSessionEvent(run, "assistant", String(frame.payload?.text || ""), {
-            local_event_key: key,
-            purpose,
-            private_checkpoint: true,
-            stop_reason: frame.payload?.stop_reason,
-            usage: frame.payload?.usage,
-          });
-        } else if (purpose === "main_agent") {
+        if (purpose === "main_agent") {
           const key = !toolCalls.length
             ? `${String(run?.run_id || run?.runId || "")}:assistant`
             : messageId
@@ -862,6 +862,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           endedAt: Date.now(),
         }));
         assistantStreams.delete(traceId);
+      }
+      if (frame?.type === "session_checkpoint") {
+        await sessionStore.recordPiSession(String(run?.session_id || run?.sessionId || ""), {
+          accountId: String(run?.account_id || run?.accountId || ""),
+          piSessionId: frame.payload?.pi_session_id,
+          entryCount: frame.payload?.entry_count,
+          contextMessageCount: frame.payload?.context_message_count,
+          lastEntryId: frame.payload?.last_entry_id,
+          bootstrapSequence: frame.payload?.bootstrap_sequence,
+          resumed: Boolean(frame.payload?.resumed),
+        });
       }
       if (frame?.type === "candidate_final") {
         const reference = contentReference(frame.payload?.text);
@@ -1016,9 +1027,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       ...(candidate.local_context || {}),
     });
     if (!context.authToken || !context.baseUrl) throw new Error("vibe_agent_runtime_snapshot_auth_missing");
-    const dynamicKeys = new Set([
-      "execution_mode", "prompt", "user_text", "messages", "history_messages", "seed_messages",
-    ]);
+    const dynamicKeys = new Set(["execution_mode", "prompt", "user_text"]);
     if (!candidate?.resume && Object.keys(start).some((key) => !dynamicKeys.has(key))) {
       throw new Error("vibe_agent_local_start_renderer_field_forbidden");
     }
@@ -1030,7 +1039,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         ? []
         : await localFileRefs.resolve(requestedLocalRefs, context.accountId);
     const providerId = String(candidate?.provider_id ?? "").trim();
-    if (candidate?._runtime_snapshot && !candidate?.resume) {
+    if ((candidate?._runtime_snapshot || candidate?._pi_resume) && !candidate?.resume) {
       throw new Error("vibe_agent_local_start_renderer_field_forbidden");
     }
     const snapshot = candidate?._runtime_snapshot
@@ -1057,10 +1066,25 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (sessionProjectId && sessionProjectId !== String(run.project_id || "").trim()) {
       throw new Error("vibe_agent_session_project_drift");
     }
-    const sourceHistory = dynamic.seed_messages ?? dynamic.history_messages ?? dynamic.messages ?? [];
+    const piSession = await sessionStore.piSession(String(run.session_id || ""), {
+      accountId: snapshot.account_id,
+    });
+    if (candidate?.resume && piSession.mode !== "open") {
+      throw new Error("vibe_agent_pi_session_missing");
+    }
+    const bootstrapHistory = piSession.mode === "create"
+      ? await sessionStore.history(String(run.session_id || ""), { accountId: snapshot.account_id })
+      : [];
+    const bootstrapSequence = Math.max(0, Number(sessionManifest.next_sequence || 1) - 1);
+    const piResume = candidate?.resume ? candidate?._pi_resume : null;
+    if (candidate?.resume && (!piResume || typeof piResume !== "object" || Array.isArray(piResume)
+      || !Array.isArray(piResume.messages) || !piResume.messages.length
+      || typeof piResume.resume_key !== "string" || !piResume.resume_key.trim())) {
+      throw new Error("vibe_agent_pi_session_resume_invalid");
+    }
     const inheritedTitleRequest = candidate?.resume && start?.options?.generate_session_title === true;
     const generateSessionTitle = isDefaultSessionTitle(sessionManifest.title)
-      && (inheritedTitleRequest || (!candidate?.resume && Array.isArray(sourceHistory) && sourceHistory.length === 0));
+      && (inheritedTitleRequest || (!candidate?.resume && bootstrapSequence === 0));
     const frozenStart = priorDescriptor?.start_payload && typeof priorDescriptor.start_payload === "object"
       ? priorDescriptor.start_payload : null;
     if (candidate?.resume && (!frozenStart
@@ -1139,6 +1163,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         execution_mode: "local",
         system_prompt: systemPrompt,
         tools,
+        pi_session: {
+          ...piSession,
+          ...(piSession.mode === "create" ? {
+            bootstrap_messages: bootstrapHistory,
+            bootstrap_sequence: bootstrapSequence,
+          } : {}),
+          ...(piResume ? {
+            resume_messages: piResume.messages,
+            resume_key: piResume.resume_key,
+          } : {}),
+        },
         ...(localFiles?.length ? { local_files: localFiles } : {}),
         ...(skill ? { skill } : {}),
         provider: snapshot.provider,
@@ -1347,19 +1382,19 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       });
       return { accepted: true, stopped: true, runId };
     }
-    const history = await sessionStore.history(run.session_id, { accountId: descriptorAccount });
-    if (!history.length) throw new Error("vibe_agent_run_descriptor_history_missing");
-    if (resolvedCallId && !history.some((item) => item.role === "tool" && String(item.tool_call_id || "") === resolvedCallId)) {
+    if (!resolvedCallId || !outcome?.result || typeof outcome.result !== "object"
+      || Array.isArray(outcome.result) || outcome.result.content === undefined) {
       throw new Error("vibe_agent_run_descriptor_tool_result_missing");
     }
-    if (resolvedCallId && !history.some((item) => item.role === "assistant"
-      && Array.isArray(item.tool_calls)
-      && item.tool_calls.some((call) => String(call?.id || "") === resolvedCallId))) {
-      throw new Error("vibe_agent_run_descriptor_tool_call_missing");
-    }
-    if (!new Set(["user", "tool"]).has(String(history.at(-1)?.role || ""))) {
-      throw new Error("vibe_agent_run_descriptor_history_tail_invalid");
-    }
+    const recoveryMessages = [{
+      role: "tool",
+      content: outcome.result.content,
+      tool_call_id: resolvedCallId,
+      name: String(pending.tool_name || ""),
+      ...(outcome.result.details === undefined ? {} : { details: outcome.result.details }),
+      ...(outcome.result.usage === undefined ? {} : { usage: outcome.result.usage }),
+      is_error: Boolean(outcome.result.is_error),
+    }];
     const resumeContext = localContextPayload(context);
     const candidate = {
       run,
@@ -1368,11 +1403,14 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       start_payload: {
         ...basePayload,
         execution_mode: "local",
-        seed_messages: history,
-        prompt: "",
+        prompt: responseText,
       },
       local_context: resumeContext,
       _runtime_snapshot: recoverySnapshot,
+      _pi_resume: {
+        messages: recoveryMessages,
+        resume_key: `${runId}:${resolvedCallId}:${responseSignature(response)}`,
+      },
     };
     const reservation = await host.reserveLocal({
       runId,
@@ -1873,10 +1911,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   register("vibeAgent:sessionEvents", async (payload) => {
     const bound = accountBoundPayload(payload);
     return sessionStore.events(payload?.sessionId ?? payload?.session_id, bound);
-  });
-  register("vibeAgent:sessionHistory", async (payload) => {
-    const bound = accountBoundPayload(payload);
-    return sessionStore.history(payload?.sessionId ?? payload?.session_id, bound);
   });
   register("vibeAgent:sessionAppend", async (payload) => {
     const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};

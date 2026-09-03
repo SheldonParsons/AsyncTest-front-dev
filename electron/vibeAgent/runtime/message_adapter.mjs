@@ -129,17 +129,10 @@ function adaptOne(message, model, toolNames) {
 }
 
 export function adaptHistory(payload, model) {
-  const hasHistory = Array.isArray(payload.history_messages) && payload.history_messages.length > 0;
-  const hasSeed = Array.isArray(payload.seed_messages) && payload.seed_messages.length > 0;
-  if (hasHistory && hasSeed) throw new Error("history_and_seed_conflict");
-  const source = payload.messages ?? (hasSeed ? payload.seed_messages : payload.history_messages) ?? [];
+  const source = payload.messages ?? [];
   if (!Array.isArray(source)) throw new Error("history_invalid");
   const toolNames = new Map();
-  const messages = source.map((message) => adaptOne(message, model, toolNames));
-  return {
-    messages,
-    continueFromHistory: hasSeed && new Set(["toolResult", "user"]).has(messages.at(-1)?.role),
-  };
+  return { messages: source.map((message) => adaptOne(message, model, toolNames)) };
 }
 
 export function localFilesContext(payload) {

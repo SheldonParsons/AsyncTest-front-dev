@@ -4,8 +4,8 @@
  * The descriptor is deliberately not a transcript or a credential store. It
  * only keeps enough immutable run metadata to identify a waiting interaction
  * after Main/child restart. Provider keys, auth tokens, cookies and run
- * bindings are removed before anything reaches disk. The session journal remains
- * the source used to rebuild Pi's message history.
+ * bindings are removed before anything reaches disk. Pi's own JSONL is the
+ * model-context authority; this file only retains cold-interaction metadata.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -196,7 +196,8 @@ function phaseFailure(phase) {
 /**
  * Main-process only durable run state. This is intentionally a small JSON
  * journal rather than another runtime owner: local session events
- * and Trace hold the detailed evidence; descriptors only enable cold attach.
+ * Pi's native session and Trace hold the detailed evidence; descriptors only
+ * enable cold attach.
  */
 export class LocalRunStore {
   constructor({ rootPath } = {}) {
@@ -240,10 +241,14 @@ export class LocalRunStore {
       const model = String(payload.provider.model ?? payload.provider.model_name ?? "").trim();
       payload.provider = providerId ? { id: providerId, ...(model ? { model } : {}) } : {};
     }
-    // The transcript is authoritative in LocalSessionStore. Keeping it out of
-    // the descriptor both bounds restart metadata and prevents a duplicate
-    // copy of large local-file excerpts.
-    for (const key of ["messages", "history_messages", "seed_messages", "prompt", "user_text"]) delete payload[key];
+    // Pi's JSONL is the model-context authority. Bootstrap/recovery messages
+    // are one-shot child input and must not become a second transcript here.
+    for (const key of ["messages", "prompt", "user_text"]) delete payload[key];
+    if (payload.pi_session && typeof payload.pi_session === "object" && !Array.isArray(payload.pi_session)) {
+      delete payload.pi_session.bootstrap_messages;
+      delete payload.pi_session.resume_messages;
+      delete payload.pi_session.resume_key;
+    }
     const descriptor = {
       schema: SCHEMA,
       run_id: id,
@@ -261,7 +266,7 @@ export class LocalRunStore {
         goal_id: run.goal_id ?? run.goalId ?? "",
         provider_mode: run.provider_mode ?? run.providerMode ?? "direct",
         host_id: run.host_id ?? run.hostId ?? "electron-main",
-        protocol_version: run.protocol_version ?? run.protocolVersion ?? 2,
+        protocol_version: run.protocol_version ?? run.protocolVersion ?? 3,
       }),
       start_payload: payload,
       local_context: cloneWithoutCredentials({

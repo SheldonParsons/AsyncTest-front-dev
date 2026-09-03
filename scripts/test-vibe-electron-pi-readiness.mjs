@@ -40,7 +40,7 @@ assert.deepEqual({
   ok: true,
   runner_spawn: true,
   dependencies_loaded: true,
-  protocol_version: 2,
+  protocol_version: 3,
   agent_core_version: "0.84.4",
   pi_ai_version: "0.84.4",
   pi_coding_agent_version: "0.84.4",

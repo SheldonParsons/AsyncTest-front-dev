@@ -154,7 +154,6 @@ export interface ElectronLocalSessionAPI {
   manifest: (payload: { sessionId: string; accountId: string }) => Promise<ElectronLocalSessionManifest>;
   list: (payload: { accountId: string; projectId?: string; limit?: number }) => Promise<ElectronLocalSessionManifest[]>;
   events: (payload: { sessionId: string; accountId: string; afterSequence?: number; limit?: number }) => Promise<ElectronLocalSessionEvent[]>;
-  history: (payload: { sessionId: string; accountId: string }) => Promise<Array<Record<string, unknown>>>;
   append: (payload: { sessionId: string; accountId: string; role: string; content?: string; meta?: Record<string, unknown>; attachments?: unknown[] }) => Promise<ElectronLocalSessionEvent>;
   update: (payload: { sessionId: string; accountId: string; title?: string; providerId?: string; draft?: string }) => Promise<ElectronLocalSessionManifest>;
   updateTitle: (payload: { sessionId: string; accountId: string; title: string }) => Promise<ElectronLocalSessionManifest>;
@@ -174,6 +173,19 @@ export interface ElectronLocalSessionManifest {
   updated_at: string;
   next_sequence: number;
   status: string;
+  pi_session?: {
+    schema: 'vibe.pi_session.v1';
+    format_version: 3;
+    relative_path: 'pi-session/session.jsonl';
+    initialized: boolean;
+    pi_session_id?: string;
+    migrated_through_sequence?: number;
+    entry_count?: number;
+    context_message_count?: number;
+    last_entry_id?: string;
+    last_opened_at?: string;
+    last_open_mode?: 'create' | 'open';
+  };
 }
 
 export interface ElectronLocalSessionEvent {

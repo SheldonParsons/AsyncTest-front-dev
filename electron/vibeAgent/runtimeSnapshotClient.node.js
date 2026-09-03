@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { validatedBackendUrl } from "./backendUrl.node.js";
+import { PROTOCOL_VERSION } from "./runtime/protocol.mjs";
 
 const REQUEST_SCHEMA = "electron_pi_runtime_snapshot_request.v1";
 const RESPONSE_SCHEMA = "electron_pi_runtime_snapshot.v1";
@@ -222,7 +223,7 @@ function agentBinding(value, run) {
   }
   if (typeof value.client_instance_id !== "string"
     || !value.client_instance_id.trim()
-    || Number(value.protocol_version) !== 2) {
+    || Number(value.protocol_version) !== PROTOCOL_VERSION) {
     throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
   }
   return structuredClone(value);

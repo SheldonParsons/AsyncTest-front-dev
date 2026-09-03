@@ -32,17 +32,23 @@ try {
   );
 
   const identity = { run_id: "skill-run", turn_id: "skill-turn", request_id: "skill-request" };
+  const piDirectory = path.join(temporary, "pi-session");
   const start = makeFrame(identity, "start", {
     execution_mode: "local",
     system_prompt: "基础系统提示。",
     prompt: "完成。",
+    pi_session: {
+      schema: "vibe.pi_session.v1", mode: "create", session_id: "skill-session",
+      directory: piDirectory, file_path: path.join(piDirectory, "session.jsonl"), format_version: 3,
+      bootstrap_messages: [], bootstrap_sequence: 0,
+    },
     tools: [],
     skill,
     provider: {
       id: "fake", model: "fake-model", api: "openai-completions", mode: "direct",
       base_url: "https://example.invalid/v1", api_key: "fake-key", reasoning: false,
     },
-    options: { max_retries: 0, tool_choice: "auto" },
+    options: { max_retries: 0, tool_choice: "auto", session_id: "skill-session" },
     fake: { responses: [{ text: "完成。" }] },
   });
   const electron = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "electron.cmd" : "electron");
@@ -65,7 +71,9 @@ try {
   for await (const line of readline.createInterface({ input: child.stdout, crlfDelay: Infinity })) {
     const frame = parseOutboundLine(line, identityOf(start.frame));
     frames.push(frame);
-    if (frame.type === "candidate_final") {
+    if (frame.type === "session_open") {
+      child.stdin.write(`${makeFrame(identity, "session_open_result", { accepted: true }, { reply_to: frame.message_id }).serialized}\n`);
+    } else if (frame.type === "candidate_final") {
       child.stdin.write(`${makeFrame(identity, "finish", {}, { reply_to: frame.message_id }).serialized}\n`);
     }
   }

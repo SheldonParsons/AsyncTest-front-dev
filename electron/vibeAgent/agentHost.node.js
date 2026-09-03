@@ -588,12 +588,24 @@ class HostedRun {
       // These frames update the authoritative local conversation journal.
       // Continuing without them would make the next Goal rebuild a different
       // transcript from the one the user just saw.
-      if (new Set(["assistant_end", "local_tool_end", "tool_rejected", "interaction_request", "session_title"]).has(frame.type)) throw error;
+      if (new Set(["session_open", "assistant_end", "local_tool_end", "tool_rejected", "interaction_request", "session_title"]).has(frame.type)) throw error;
       // Streaming/Trace telemetry remains observational.
       this.event("trace_error", { frameType: frame.type });
     }
     if (frame.type === "assistant_end") this.assistantPartialText = "";
     if (this.closed) return;
+    if (frame.type === "session_open") {
+      const outcome = await this.localHandlers.onSessionOpen?.({
+        run: this.run,
+        session: frame.payload,
+        context: this.localContext,
+      });
+      if (outcome?.accepted !== true) throw new Error("vibe_agent_pi_session_not_accepted");
+      await this.writeChildFrame(makeFrame(this.protocolIdentity, "session_open_result", {
+        accepted: true,
+      }, { reply_to: frame.message_id }).serialized);
+      return;
+    }
     if (frame.type === "tool_wave") {
       const callback = this.localHandlers.onToolWave;
       if (typeof callback !== "function") throw new Error("vibe_agent_local_tool_handler_unconfigured");

@@ -13,6 +13,7 @@ const temporary = await mkdtemp(path.join(os.tmpdir(), "vibe-pi-files-"));
 const readPath = path.join(temporary, "read.txt");
 const writePath = path.join(temporary, "write.txt");
 const editPath = path.join(temporary, "edit.txt");
+const piDirectory = path.join(temporary, "pi-session");
 await writeFile(readPath, "read-ok\n", "utf8");
 await writeFile(editPath, "before\n", "utf8");
 
@@ -21,6 +22,11 @@ const start = makeFrame(identity, "start", {
   execution_mode: "local",
   system_prompt: "完成测试。",
   prompt: "运行工具。",
+  pi_session: {
+    schema: "vibe.pi_session.v1", mode: "create", session_id: "local-files-session",
+    directory: piDirectory, file_path: path.join(piDirectory, "session.jsonl"), format_version: 3,
+    bootstrap_messages: [], bootstrap_sequence: 0,
+  },
   tools: [],
   provider: {
     id: "fake",
@@ -31,7 +37,7 @@ const start = makeFrame(identity, "start", {
     api_key: "fake-key",
     reasoning: false,
   },
-  options: { max_retries: 0, tool_choice: "auto" },
+  options: { max_retries: 0, tool_choice: "auto", session_id: "local-files-session" },
   fake: { responses: [
     { tool_calls: [
       { id: "read-call", name: "read", arguments: { path: readPath } },
@@ -66,7 +72,9 @@ child.stdin.write(`${start.serialized}\n`);
 for await (const line of lines) {
   const frame = parseOutboundLine(line, identityOf(start.frame));
   frames.push(frame);
-  if (frame.type === "candidate_final") {
+  if (frame.type === "session_open") {
+    child.stdin.write(`${makeFrame(identity, "session_open_result", { accepted: true }, { reply_to: frame.message_id }).serialized}\n`);
+  } else if (frame.type === "candidate_final") {
     child.stdin.write(`${makeFrame(identity, "finish", { publish_text: frame.payload.text }, { reply_to: frame.message_id }).serialized}\n`);
   }
 }

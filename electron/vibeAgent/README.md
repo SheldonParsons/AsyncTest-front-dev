@@ -85,6 +85,19 @@ Main 按 hash 写入不可变本地缓存，runner 使用 Pi 官方 `loadSkills`
 不会扫描用户的 `~/.pi` 或项目级扩展。冷恢复沿用原 hash。Trace 记录 Skill 元数据和最终
 system prompt 摘要。
 
+## Pi 官方会话与上下文压缩
+
+每个产品会话在 `userData/vibe-agent/sessions/<session_id>/pi-session/session.jsonl`
+拥有一份 Pi 官方 v3 Session。Renderer 只提交本轮输入；Main 根据已绑定的账号、项目和
+会话生成私有路径，runner 使用官方 `SessionManager.open()` 恢复消息、工具调用、工具结果和
+`CompactionEntry`。升级前已有会话只在首次创建 Pi Session 时从 `events.jsonl` 导入一次，
+后续不再把完整历史跨 IPC 发送。
+
+自动压缩使用 Pi 0.84.4 默认边界（`reserveTokens=16384`、
+`keepRecentTokens=20000`），Thinking 和 Provider 自动重试仍关闭。压缩摘要只进入 Pi Session
+和 Trace，不成为用户可见回答。产品 `events.jsonl` 继续负责 UI、附件、确认卡与生命周期，
+不再承担模型上下文或自研 checkpoint。
+
 ## Trace
 
 每个 local run 生成一个 `vibe.agent.trace.v1` 目录：manifest、events.jsonl 和独立
@@ -106,7 +119,7 @@ payload 文件。Provider 调用默认只保留请求摘要、hash、大小、�
 Main 会在 `userData/vibe-agent/runs/<run_id>/descriptor.json` 保存不含凭据的运行描述：
 Provider key、Provider headers、登录 token、Cookie 和一次性票据永不落盘。描述只在已经形成完整
 `interaction_request` 时可恢复；重启后 Renderer 打开对应本地会话即可重新显示卡片，
-用户作答时 Main 从本地会话日志重建 Pi 的 `seed_messages`，用同一个 `run_id` 冷启动
+用户作答时 Main 重新打开该产品会话绑定的 Pi 官方 JSONL Session，只补入已完成且尚未交付的工具结果，并用同一个 `run_id` 冷启动
 续跑，不重放原来的 Provider/tool wave。Provider 或工具处于进行中时一律标记
 `provider_outcome_unknown` / `tool_outcome_unknown`（或 `runner_interrupted`），不自动
 重试。确认结果已经返回但子进程尚未接收时会保存 `resume_ready`，再次操作只复用已知

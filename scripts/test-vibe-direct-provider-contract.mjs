@@ -34,7 +34,7 @@ const agentBinding = (accountId = run.account_id) => ({
   run_id: run.run_id,
   turn_id: run.turn_id,
   client_instance_id: "client-test",
-  protocol_version: 2,
+  protocol_version: 3,
 });
 let calls = 0;
 const fetchImpl = async (url, init) => {
@@ -94,7 +94,7 @@ const snapshot = await fetchRuntimeSnapshot({
   providerId: "provider-1",
   identity: {
     appVersion: "test",
-    protocolVersion: 2,
+    protocolVersion: 3,
     piAgentCoreVersion: "0.84.4",
     piAiVersion: "0.84.4",
     clientInstanceId: "client-test",
@@ -120,7 +120,7 @@ const numericSnapshot = await fetchRuntimeSnapshot({
   providerId: "provider-1",
   identity: {
     appVersion: "test",
-    protocolVersion: 2,
+    protocolVersion: 3,
     piAgentCoreVersion: "0.84.4",
     piAiVersion: "0.84.4",
     clientInstanceId: "client-test",

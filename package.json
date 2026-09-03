@@ -140,6 +140,8 @@
     "test:vibe-local-file-refs": "node scripts/test-vibe-local-file-refs.mjs",
     "test:vibe-local-document-parsers": "node scripts/test-vibe-local-document-parsers.mjs",
     "test:vibe-local-session-title": "node scripts/test-vibe-local-session-title-contract.mjs",
+    "test:vibe-pi-persistent-session": "node scripts/test-vibe-pi-persistent-session.mjs",
+    "test:vibe-pi-native-compaction": "node scripts/test-vibe-pi-native-compaction.mjs",
     "test:vibe-electron-trace-viewer": "node scripts/test-vibe-electron-trace-viewer-contract.mjs",
     "test:vibe-trace-compaction": "node scripts/test-vibe-trace-compaction.mjs",
     "test:vibe-local-agent-public-copy": "node scripts/test-vibe-local-agent-public-copy-contract.mjs",

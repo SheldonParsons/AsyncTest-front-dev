@@ -30,13 +30,25 @@ export function traceStartPayload(payload = {}) {
       bytes: Buffer.byteLength(toolJson, "utf8"),
       sha256: sha256(toolJson),
     },
+    ...(source.pi_session && typeof source.pi_session === "object" ? {
+      pi_session: {
+        schema: String(source.pi_session.schema || ""),
+        mode: String(source.pi_session.mode || ""),
+        format_version: Number(source.pi_session.format_version || 0),
+        bootstrap_message_count: Array.isArray(source.pi_session.bootstrap_messages)
+          ? source.pi_session.bootstrap_messages.length : 0,
+        bootstrap_sequence: Number(source.pi_session.bootstrap_sequence || 0),
+        resume_message_count: Array.isArray(source.pi_session.resume_messages)
+          ? source.pi_session.resume_messages.length : 0,
+      },
+    } : {}),
     ...(source.skill && typeof source.skill === "object" ? { skill: {
       name: String(source.skill.name || ""),
       version: String(source.skill.version || ""),
       sha256: String(source.skill.sha256 || ""),
     } } : {}),
   };
-  for (const key of ["prompt", "user_text", "messages", "history_messages", "seed_messages"]) {
+  for (const key of ["prompt", "user_text", "messages"]) {
     if (source[key] !== undefined) output[key] = source[key];
   }
   return output;

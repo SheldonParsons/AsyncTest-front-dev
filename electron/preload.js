@@ -83,7 +83,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
             manifest: (payload) => ipcRenderer.invoke('vibeAgent:sessionManifest', payload),
             list: (payload) => ipcRenderer.invoke('vibeAgent:sessionList', payload),
             events: (payload) => ipcRenderer.invoke('vibeAgent:sessionEvents', payload),
-            history: (payload) => ipcRenderer.invoke('vibeAgent:sessionHistory', payload),
             append: (payload) => ipcRenderer.invoke('vibeAgent:sessionAppend', payload),
             update: (payload) => ipcRenderer.invoke('vibeAgent:sessionUpdate', payload),
             updateTitle: (payload) => ipcRenderer.invoke('vibeAgent:sessionTitle', payload),

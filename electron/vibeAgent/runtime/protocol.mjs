@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 // The Electron child is client-owned; server-hosted Agent frames are retired.
 export const EXECUTION_MODES = Object.freeze(["local"]);
@@ -11,12 +11,12 @@ const ENVELOPE_KEYS = new Set([
 ]);
 const REQUEST_TYPES = new Set(["start", "abort", "complete_no_tools"]);
 const RESPONSE_TYPES = new Set([
-  "tool_wave_result", "interaction_response", "finish", "repair_final",
+  "session_open_result", "tool_wave_result", "interaction_response", "finish", "repair_final",
 ]);
 const OUTBOUND_TYPES = new Set([
-  "ready", "provider_payload", "assistant_delta",
+  "ready", "session_open", "session_checkpoint", "provider_payload", "assistant_delta",
   "assistant_end", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
-  "interaction_request", "candidate_final",
+  "interaction_request", "candidate_final", "compaction_start", "compaction_end",
   "complete_no_tools_result", "session_title", "done", "error", "aborted",
 ]);
 
@@ -268,16 +268,56 @@ function validateLocalFiles(value) {
   }
 }
 
+function validatePiSession(value) {
+  const row = exact(value, new Set([
+    "schema", "mode", "session_id", "directory", "file_path", "format_version",
+    "bootstrap_messages", "bootstrap_sequence", "resume_messages", "resume_key",
+  ]), new Set([
+    "schema", "mode", "session_id", "directory", "file_path", "format_version",
+  ]), "start_pi_session_invalid");
+  if (row.schema !== "vibe.pi_session.v1") fail("start_pi_session_schema_invalid");
+  if (!new Set(["create", "open"]).has(row.mode)) fail("start_pi_session_mode_invalid");
+  string(row.session_id, "start_pi_session_id_invalid", { max: 160 });
+  for (const key of ["directory", "file_path"]) {
+    string(row[key], "start_pi_session_path_invalid", { max: 4096 });
+    if (/[\u0000-\u001f\u007f]/u.test(row[key])) fail("start_pi_session_path_invalid");
+  }
+  if (row.format_version !== 3) fail("start_pi_session_version_invalid");
+  if (row.bootstrap_messages !== undefined) {
+    jsonValue(array(row.bootstrap_messages, "start_pi_session_bootstrap_invalid", 100_000), "start_pi_session_bootstrap_invalid");
+  }
+  if (row.bootstrap_sequence !== undefined) {
+    finiteNumber(row.bootstrap_sequence, "start_pi_session_bootstrap_sequence_invalid", { min: 0, integer: true });
+  }
+  if (row.resume_messages !== undefined) {
+    jsonValue(array(row.resume_messages, "start_pi_session_resume_invalid", 8), "start_pi_session_resume_invalid");
+  }
+  optionalString(row.resume_key, "start_pi_session_resume_key_invalid", { max: 512 });
+  if (row.mode === "create") {
+    if (!Array.isArray(row.bootstrap_messages) || row.bootstrap_sequence === undefined
+      || row.resume_messages !== undefined || row.resume_key !== undefined) {
+      fail("start_pi_session_create_invalid");
+    }
+  } else if (row.bootstrap_messages !== undefined || row.bootstrap_sequence !== undefined
+    || Boolean(row.resume_messages) !== Boolean(row.resume_key)) {
+    fail("start_pi_session_open_invalid");
+  }
+}
+
 function validateStartPayload(value) {
-  const allowed = new Set([
-    "operation", "system_prompt", "messages", "history_messages", "seed_messages", "prompt",
-    "user_text", "tools", "model", "provider", "options", "fake", "execution_mode", "skill", "local_files",
-  ]);
   const candidate = object(value, "start_payload_invalid");
   const operation = candidate.operation ?? "agent";
+  const allowed = new Set([
+    "operation", "system_prompt", "prompt", "user_text", "tools", "model", "provider",
+    "options", "fake", "execution_mode", "skill", "local_files",
+    ...(operation === "complete_no_tools" ? ["messages"] : []),
+    ...(operation === "agent" ? ["pi_session"] : []),
+  ]);
   const required = operation === "self_check"
     ? new Set(["operation", "execution_mode"])
-    : new Set(["system_prompt", "tools", "provider", "execution_mode"]);
+    : operation === "agent"
+      ? new Set(["system_prompt", "tools", "provider", "execution_mode", "pi_session"])
+      : new Set(["system_prompt", "tools", "provider", "execution_mode"]);
   const row = exact(candidate, allowed, required, "start_payload_invalid");
   if (!new Set(["agent", "complete_no_tools", "self_check"]).has(operation)) fail("start_operation_invalid");
   const executionMode = row.execution_mode ?? "local";
@@ -289,14 +329,13 @@ function validateStartPayload(value) {
     return;
   }
   string(row.system_prompt, "start_system_prompt_invalid", { allowEmpty: true, max: 2_000_000 });
-  for (const key of ["messages", "history_messages", "seed_messages"]) {
-    if (row[key] !== undefined) jsonValue(array(row[key], `start_${key}_invalid`, 100_000), `start_${key}_invalid`);
-  }
+  if (row.messages !== undefined) jsonValue(array(row.messages, "start_messages_invalid", 100_000), "start_messages_invalid");
   if (row.prompt !== undefined) jsonValue(row.prompt, "start_prompt_invalid");
   optionalString(row.user_text, "start_user_text_invalid", { allowEmpty: true, max: 2_000_000 });
   validateTools(row.tools);
   if (row.skill !== undefined) validateSkill(row.skill);
   if (row.local_files !== undefined) validateLocalFiles(row.local_files);
+  if (row.pi_session !== undefined) validatePiSession(row.pi_session);
   if (row.model !== undefined) validateModel(row.model);
   validateProvider(row.provider);
   validateOptions(row.options ?? {});
@@ -401,12 +440,15 @@ export function parseInboundLine(line, session = undefined) {
   else if (frame.type === "abort") exact(frame.payload, new Set(["reason"]), new Set(), "abort_payload_invalid");
   else if (frame.type === "complete_no_tools") {
     const payload = exact(frame.payload, new Set(["purpose", "system_prompt", "messages", "prompt", "call_id", "max_output_tokens"]), new Set(["purpose", "prompt", "call_id", "max_output_tokens"]), "complete_no_tools_payload_invalid");
-    if (!new Set(["context_checkpoint", "language_repair"]).has(payload.purpose)) fail("complete_no_tools_purpose_invalid");
+    if (payload.purpose !== "language_repair") fail("complete_no_tools_purpose_invalid");
     string(payload.call_id, "complete_no_tools_call_id_invalid", { max: 256 });
     finiteNumber(payload.max_output_tokens, "complete_no_tools_max_output_invalid", { min: 1, max: 65_536, integer: true });
     optionalString(payload.system_prompt, "complete_no_tools_system_prompt_invalid", { allowEmpty: true, max: 200_000 });
     jsonValue(payload.messages ?? [], "complete_no_tools_messages_invalid");
     jsonValue(payload.prompt, "complete_no_tools_prompt_invalid");
+  } else if (frame.type === "session_open_result") {
+    const row = exact(frame.payload, new Set(["accepted"]), new Set(["accepted"]), "session_open_result_payload_invalid");
+    if (row.accepted !== true) fail("session_open_result_rejected");
   } else if (frame.type === "tool_wave_result") validateToolWaveResult(frame.payload);
   else if (frame.type === "interaction_response") validateInteractionResponse(frame.payload);
   else if (frame.type === "finish") {
@@ -427,6 +469,41 @@ function validateOutboundPayload(frame) {
     for (const key of ["agent_core_version", "pi_ai_version", "pi_coding_agent_version", "undici_version", "node_version"]) string(row[key], `ready_${key}_invalid`, { max: 64 });
     finiteNumber(row.bridge_protocol_version, "ready_protocol_invalid", { min: 1, integer: true });
     if (!EXECUTION_MODES.includes(row.execution_mode)) fail("ready_execution_mode_invalid");
+  } else if (frame.type === "session_open") {
+    const row = exact(payload, new Set([
+      "schema", "session_id", "pi_session_id", "format_version", "resumed",
+      "entry_count", "context_message_count", "last_entry_id", "bootstrap_sequence",
+    ]), new Set([
+      "schema", "session_id", "pi_session_id", "format_version", "resumed",
+      "entry_count", "context_message_count", "bootstrap_sequence",
+    ]), "session_open_payload_invalid");
+    if (row.schema !== "vibe.pi_session.v1") fail("session_open_schema_invalid");
+    for (const key of ["session_id", "pi_session_id"]) string(row[key], `session_open_${key}_invalid`, { max: 160 });
+    if (row.format_version !== 3) fail("session_open_version_invalid");
+    boolean(row.resumed, "session_open_resumed_invalid");
+    for (const key of ["entry_count", "context_message_count", "bootstrap_sequence"]) {
+      finiteNumber(row[key], `session_open_${key}_invalid`, { min: 0, integer: true });
+    }
+    optionalString(row.last_entry_id, "session_open_leaf_invalid", { max: 160 });
+  } else if (frame.type === "session_checkpoint") {
+    const row = exact(payload, new Set([
+      "schema", "session_id", "pi_session_id", "format_version", "resumed", "phase",
+      "entry_count", "context_message_count", "last_entry_id", "bootstrap_sequence",
+    ]), new Set([
+      "schema", "session_id", "pi_session_id", "format_version", "resumed", "phase",
+      "entry_count", "context_message_count", "bootstrap_sequence",
+    ]), "session_checkpoint_payload_invalid");
+    if (row.schema !== "vibe.pi_session.v1") fail("session_checkpoint_schema_invalid");
+    for (const key of ["session_id", "pi_session_id"]) string(row[key], `session_checkpoint_${key}_invalid`, { max: 160 });
+    if (row.format_version !== 3) fail("session_checkpoint_version_invalid");
+    boolean(row.resumed, "session_checkpoint_resumed_invalid");
+    if (!new Set(["completed", "waiting_user", "aborted", "failed"]).has(row.phase)) {
+      fail("session_checkpoint_phase_invalid");
+    }
+    for (const key of ["entry_count", "context_message_count", "bootstrap_sequence"]) {
+      finiteNumber(row[key], `session_checkpoint_${key}_invalid`, { min: 0, integer: true });
+    }
+    optionalString(row.last_entry_id, "session_checkpoint_leaf_invalid", { max: 160 });
   } else if (frame.type === "provider_payload") {
     const row = exact(payload, new Set(["call_id", "purpose", "sha256", "characters", "tool_names", "body"]), new Set(["call_id", "purpose", "sha256", "characters", "tool_names"]), "provider_payload_invalid");
     string(row.call_id, "provider_payload_call_invalid", { max: 256 });
@@ -508,6 +585,30 @@ function validateOutboundPayload(frame) {
     string(row.text, "candidate_final_text_invalid", { allowEmpty: true, max: 2_000_000 });
     jsonValue(row.usage, "candidate_final_usage_invalid");
     string(row.stop_reason, "candidate_final_stop_invalid", { max: 64 });
+  } else if (frame.type === "compaction_start") {
+    const row = exact(payload, new Set(["reason"]), new Set(["reason"]), "compaction_start_payload_invalid");
+    if (!new Set(["manual", "threshold", "overflow"]).has(row.reason)) fail("compaction_start_reason_invalid");
+  } else if (frame.type === "compaction_end") {
+    const row = exact(payload, new Set([
+      "reason", "aborted", "will_retry", "error", "summary", "first_kept_entry_id",
+      "tokens_before", "estimated_tokens_after", "usage", "entry_id",
+    ]), new Set(["reason", "aborted", "will_retry"]), "compaction_end_payload_invalid");
+    if (!new Set(["manual", "threshold", "overflow"]).has(row.reason)) fail("compaction_end_reason_invalid");
+    boolean(row.aborted, "compaction_end_aborted_invalid");
+    boolean(row.will_retry, "compaction_end_retry_invalid");
+    optionalString(row.error, "compaction_end_error_invalid", { max: 4096 });
+    optionalString(row.summary, "compaction_end_summary_invalid", { allowEmpty: true, max: 2_000_000 });
+    optionalString(row.first_kept_entry_id, "compaction_end_first_kept_invalid", { max: 160 });
+    optionalString(row.entry_id, "compaction_end_entry_invalid", { max: 160 });
+    for (const key of ["tokens_before", "estimated_tokens_after"]) {
+      if (row[key] !== undefined) finiteNumber(row[key], `compaction_end_${key}_invalid`, { min: 0, integer: true });
+    }
+    if (row.usage !== undefined) jsonValue(row.usage, "compaction_end_usage_invalid");
+    if (!row.aborted && !row.error && (row.summary === undefined
+      || row.first_kept_entry_id === undefined || row.tokens_before === undefined
+      || row.estimated_tokens_after === undefined || row.entry_id === undefined)) {
+      fail("compaction_end_result_invalid");
+    }
   } else if (frame.type === "complete_no_tools_result") {
     const row = exact(payload, new Set(["text", "usage"]), new Set(["text", "usage"]), "complete_no_tools_result_invalid");
     string(row.text, "complete_no_tools_text_invalid", { allowEmpty: true, max: 2_000_000 });
