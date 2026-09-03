@@ -14,8 +14,8 @@
             <FileTextIcon :size="20" />
           </span>
           <span class="item-text">
-            <strong>{{ localMode ? '本机文件' : 'Markdown 文件' }}</strong>
-            <span>{{ localMode ? 'markdown、txt、HTML 等文件' : '.md / .markdown' }}</span>
+            <strong>本机文件</strong>
+            <span>markdown、txt、HTML 等文件</span>
           </span>
         </button>
       </div>
@@ -276,17 +276,12 @@
     </div>
 
     <span v-if="uploading" class="visually-hidden" role="status" aria-live="polite">正在上传附件</span>
-    <input ref="fileInputEl" type="file" accept=".md,.markdown,.txt,.csv,.json,.yaml,.yml,.xml,.html,.htm,text/markdown,text/plain,text/html" multiple hidden @change="onFileChange" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import {
-  admitAttachmentSelection,
-  MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
-  MAX_LOCAL_ATTACHMENT_BYTES,
-} from '../composables/attachmentAdmission'
+import { admitAttachmentSelection } from '../composables/attachmentAdmission'
 import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
 import FileTextIcon from './icons/FileTextIcon.vue'
 
@@ -318,7 +313,6 @@ const props = withDefaults(defineProps<{
   modelValueId?: string
   modelDisabled?: boolean
   uploading?: boolean
-  localMode?: boolean
   localAccountId?: string
   attachmentStorageKey?: string
 }>(), { sending: false, stopping: false, placeholder: '询问任何问题', question: null, customPlaceholder: '或者告诉我该怎么处理…', modelOptions: () => [], modelValueId: '', modelDisabled: false, uploading: false, localAccountId: '', attachmentStorageKey: '' })
@@ -335,7 +329,6 @@ const emit = defineEmits<{
 
 const rootEl = ref<HTMLElement | null>(null)
 const inputEl = ref<InstanceType<typeof ChatMarkdownEditor> | null>(null)
-const fileInputEl = ref<HTMLInputElement | null>(null)
 const attachmentListEl = ref<HTMLElement | null>(null)
 const modelPickerLabelEl = ref<HTMLElement | null>(null)
 const selectedFiles = ref<File[]>([])
@@ -389,13 +382,10 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
   for (let i = a.length - e; i < a.length; i++) out.push({ t: 'ctx', text: a[i] })
   return out
 }
-// Keep the text-only predicate explicit for callers/tests that use the
-// composer as a plain editor; native local-file Goals extend it without
-// making an empty text draft look sendable in local mode.
 const sendDisabled = computed(() => editorValue.value.trim().length === 0)
 const effectiveSendDisabled = computed(() => (
   sendDisabled.value
-  && !(props.localMode && selectedFiles.value.length > 0)
+  && selectedFiles.value.length === 0
 ))
 
 function attachmentDraftKey(): string {
@@ -421,7 +411,7 @@ function persistedAttachment(file: any): PersistedLocalAttachment | null {
 }
 
 function persistAttachmentDraft(): void {
-  if (restoringAttachmentDraft || !props.localMode) return
+  if (restoringAttachmentDraft) return
   const key = attachmentDraftKey()
   if (!key || typeof localStorage === 'undefined') return
   try {
@@ -437,7 +427,7 @@ function persistAttachmentDraft(): void {
 
 function restoreAttachmentDraft(): void {
   const key = attachmentDraftKey()
-  if (!props.localMode || !key || typeof localStorage === 'undefined') return
+  if (!key || typeof localStorage === 'undefined') return
   let parsed: any
   try {
     parsed = JSON.parse(localStorage.getItem(key) || '')
@@ -466,10 +456,7 @@ function restoreAttachmentDraft(): void {
   }).filter((file: any) => !!file.local_file_ref.ref_id)
   restoringAttachmentDraft = true
   try {
-    selectedFiles.value = admitAttachmentSelection([], files, {
-      maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
-      maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
-    }).files
+    selectedFiles.value = admitAttachmentSelection([], files).files
   } finally {
     nextTick(() => { restoringAttachmentDraft = false })
   }
@@ -515,7 +502,7 @@ function onSend(textOverride?: string) {
   if (props.sending) { emit('stop'); return }  // T26：处理中按钮=■，点击=停止本轮
   const text = textOverride ?? inputEl.value?.getMarkdown?.() ?? editorValue.value
   const outgoingFiles = [...selectedFiles.value]
-  if (!text.trim() && !(props.localMode && outgoingFiles.length)) return
+  if (!text.trim() && !outgoingFiles.length) return
   // For a plain send there is no later admission step, so clear the Lexical
   // source before emitting.  Attachment sends may still fail during upload;
   // the parent clears them only after that admission succeeds.
@@ -535,57 +522,47 @@ function onSend(textOverride?: string) {
   // chip until Main accepts the Goal so a preflight/IPC failure does not make
   // the user's selected file disappear before it can be retried. The parent
   // clears it immediately after startLocal is accepted.
-  if (!props.localMode || !outgoingFiles.length) clearAttachments()
+  if (!outgoingFiles.length) clearAttachments()
 }
 
 async function pickMarkdown() {
   if (props.sending || props.uploading) return
   menuOpen.value = false
-  if (props.localMode) {
-    const localFiles = window.electronAPI?.vibeAgent?.localFiles
-    if (!localFiles?.pick) {
-      emitAttachmentNotice('本机文件必须通过 Electron 系统文件选择器打开。')
-      return
-    }
-    if (!props.localAccountId) {
-      emitAttachmentNotice('当前账号身份尚未就绪，请稍后再选择本机文件。')
-      return
-    }
-    try {
-      const result = await localFiles.pick({ accountId: props.localAccountId })
-      if (result?.canceled) return
-      const nativeFiles = Array.isArray(result?.files)
-        ? result.files.map((file: any) => ({
-            // Keep a File-shaped view while Main owns the typed reference and
-            // resolves its absolute path only when starting the local Goal.
-            name: String(file?.name || ''),
-            size: Number(file?.size || 0),
-            lastModified: Number(file?.last_modified || 0),
-            type: String(file?.mime || 'text/markdown'),
-            local_file_ref: { ...file },
-          }))
-        : []
-      if (!nativeFiles.length) return
-      const admission = admitAttachmentSelection(selectedFiles.value, nativeFiles as unknown as File[], {
-        maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
-        maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
-      })
-      selectedFiles.value = admission.files
-      // Native and browser pickers share the same toast owner.
-      const notifyAdmission = emitAttachmentNotice
-      notifyAdmission(admission.error)
-    } catch (error) {
-      emitAttachmentNotice(error instanceof Error ? error.message : String(error))
-    }
+  const localFiles = window.electronAPI?.vibeAgent?.localFiles
+  if (!localFiles?.pick) {
+    emitAttachmentNotice('本机文件必须通过 Electron 系统文件选择器打开。')
     return
   }
-  fileInputEl.value?.click()
+  if (!props.localAccountId) {
+    emitAttachmentNotice('当前账号身份尚未就绪，请稍后再选择本机文件。')
+    return
+  }
+  try {
+    const result = await localFiles.pick({ accountId: props.localAccountId })
+    if (result?.canceled) return
+    const nativeFiles = Array.isArray(result?.files)
+      ? result.files.map((file: any) => ({
+          // Keep a File-shaped view while Main owns the typed reference and
+          // resolves its absolute path only when starting the local Goal.
+          name: String(file?.name || ''),
+          size: Number(file?.size || 0),
+          lastModified: Number(file?.last_modified || 0),
+          type: String(file?.mime || 'text/markdown'),
+          local_file_ref: { ...file },
+        }))
+      : []
+    if (!nativeFiles.length) return
+    const admission = admitAttachmentSelection(selectedFiles.value, nativeFiles as unknown as File[])
+    selectedFiles.value = admission.files
+    emitAttachmentNotice(admission.error)
+  } catch (error) {
+    emitAttachmentNotice(error instanceof Error ? error.message : String(error))
+  }
 }
 function fileKey(f: File) {
   const localRef = String((f as any)?.local_file_ref?.ref_id || '').trim()
   if (localRef) return `local-file:${localRef}`
-  const admissionToken = String((f as any)?.admission_token || (f as any)?.admissionToken || '').trim()
-  return admissionToken ? `admission:${admissionToken}` : `${f.name}-${f.size}-${f.lastModified}`
+  return `${f.name}-${f.size}-${f.lastModified}`
 }
 function fileTypeLabel(file: File): string {
   const name = String(file?.name || '')
@@ -628,20 +605,6 @@ function emitAttachmentNotice(error: string): void {
   if (!title) return
   emit('notice', { title, type: 'error', duration: 5000 })
 }
-function onFileChange() {
-  if (props.sending || props.uploading) {
-    if (fileInputEl.value) fileInputEl.value.value = ''
-    return
-  }
-  const picked = Array.from(fileInputEl.value?.files || [])
-  if (!picked.length) return
-  const admission = admitAttachmentSelection(selectedFiles.value, picked, props.localMode
-    ? { maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES, maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES }
-    : undefined)
-  selectedFiles.value = admission.files
-  emitAttachmentNotice(admission.error)
-  if (fileInputEl.value) fileInputEl.value.value = ''
-}
 function removeFile(i: number, event?: Event) {
   if (props.sending || props.uploading || props.stopping) return
   const target = event?.currentTarget
@@ -667,10 +630,8 @@ watch(selectedFiles, () => {
 }, { deep: true, flush: 'sync' })
 
 watch(
-  [() => props.attachmentStorageKey, () => props.localMode],
-  (nextValues, previousValues) => {
-    const [nextStorageKey, nextLocalMode] = nextValues
-    const previousStorageKey = previousValues?.[0]
+  () => props.attachmentStorageKey,
+  (nextStorageKey, previousStorageKey) => {
     const epoch = ++attachmentRestoreEpoch
     const nextKey = String(nextStorageKey || '').trim()
     const previousKey = String(previousStorageKey || '').trim()
@@ -678,7 +639,7 @@ watch(
     // attachment is already being submitted. Move that draft with the
     // session instead of clearing the chip mid-send. Ordinary session
     // switching happens while `sending` is false and loads the target draft.
-    if (props.sending && props.localMode && nextLocalMode && previousKey && nextKey
+    if (props.sending && previousKey && nextKey
       && previousKey !== nextKey && selectedFiles.value.length) {
       restoringAttachmentDraft = true
       try {
@@ -714,22 +675,15 @@ function clearAttachments() {
   selectedFiles.value = []
   attachmentScrollLeft = 0
   if (attachmentListEl.value) attachmentListEl.value.scrollLeft = 0
-  if (fileInputEl.value) fileInputEl.value.value = ''
   if (key && typeof localStorage !== 'undefined') {
     try { localStorage.removeItem(key) } catch { /* ignore storage failures */ }
   }
 }
 
 function restoreAttachments(files: File[]) {
-  const admission = props.localMode
-    ? admitAttachmentSelection([], files, {
-        maxFileBytes: MAX_LOCAL_ATTACHMENT_BYTES,
-        maxBatchBytes: MAX_LOCAL_ATTACHMENT_BATCH_BYTES,
-      })
-    : admitAttachmentSelection([], files)
+  const admission = admitAttachmentSelection([], files)
   selectedFiles.value = admission.files
   emitAttachmentNotice(admission.error)
-  if (fileInputEl.value) fileInputEl.value.value = ''
 }
 
 function emitAnswer(value: string) {

@@ -580,7 +580,6 @@
             :uploading="preparingSend"
             :placeholder="composerPlaceholder"
             :question="composerQuestion"
-            :local-mode="useLocalPiAgent()"
             :local-account-id="String(currentUser?.id || '')"
             :attachment-storage-key="composerAttachmentStorageKey"
             :model-options="composerModelOptions"
@@ -5439,11 +5438,6 @@ function localPiAgentEnabled(): boolean {
   return !!window.electronAPI?.vibeAgent?.startLocal
 }
 
-function useLocalPiAgent(): boolean {
-  // Vibe conversations are Electron-owned; there is no server Agent fallback.
-  return true
-}
-
 function localKnowledgeBaseUrl(): string {
   const env = String((import.meta as any).env?.VITE_VIBE_KNOWLEDGE_BASE_URL
     || (import.meta as any).env?.VITE_API_URL || '').trim()
@@ -5690,31 +5684,26 @@ async function sendFoundationTurn(overrideText?: string, opts?: SendFoundationTu
   const content = (overrideText ?? draft.value).trim()
   const hasAttachments = Boolean(Array.isArray(opts?.localFiles) && opts.localFiles.length)
   if ((!content && !hasAttachments) || sending.value) return
-  if (useLocalPiAgent()) {
-    // Set the composer preflight flag only after the guard above has admitted
-    // this call. `onComposerSend` may be invoked before Vue flushes the
-    // previous input update; setting it in the caller made `sending` true and
-    // caused this very guard to drop the new request as a no-op.
-    preparingSend.value = true
-    try {
-      return await sendLocalPiTurn(content, opts || {})
-    } catch (error) {
-      const message = localAgentErrorMessage(error)
-      ElMessage.error(message)
-      setDraftByKey(activeDraftKey.value, content)
-      resizeDraft()
-      return {
-        failed: true,
-        unresolved: false,
-        attachmentSelectionReusable: (error as any)?.attachmentSelectionReusable !== false,
-      }
-    } finally {
-      preparingSend.value = false
+  // Set the composer preflight flag only after the guard above has admitted
+  // this call. `onComposerSend` may be invoked before Vue flushes the
+  // previous input update; setting it in the caller made `sending` true and
+  // caused this very guard to drop the new request as a no-op.
+  preparingSend.value = true
+  try {
+    return await sendLocalPiTurn(content, opts || {})
+  } catch (error) {
+    const message = localAgentErrorMessage(error)
+    ElMessage.error(message)
+    setDraftByKey(activeDraftKey.value, content)
+    resizeDraft()
+    return {
+      failed: true,
+      unresolved: false,
+      attachmentSelectionReusable: (error as any)?.attachmentSelectionReusable !== false,
     }
+  } finally {
+    preparingSend.value = false
   }
-  const error = new Error('当前客户端不支持本机运行，请更新客户端')
-  ElMessage.error(localAgentErrorMessage(error))
-  return { failed: true, unresolved: false, attachmentSelectionReusable: true }
 }
 function handleDraftKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
