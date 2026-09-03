@@ -2826,7 +2826,6 @@ interface ElectronAgentRunContext {
   ephemeralText: string
   startedAt: number
   acceptCanonical?: (model: TurnProtocolReadModel) => void
-  local?: boolean
   localUserEventId?: string
   localAssistantEventId?: string
   localDescriptor?: any
@@ -2873,7 +2872,6 @@ function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunCont
     state: String(run.state || 'queued'),
     ephemeralText: '',
     startedAt: Date.now(),
-    local: String((run as any).execution_mode || (run as any).executionMode || '') === 'local',
   }
   electronAgentRuns.set(run.run_id, context)
   return context
@@ -2942,7 +2940,7 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
   }
   electronAgentWaiters.delete(context.run.run_id)
   if (activeSessionId.value === context.run.session_id) {
-    if (waiting && context.local) {
+    if (waiting) {
       stopElapsedTicker()
       streamingProcess.status = 'done'
       streamingProcess.durationMs = Math.max(streamingProcess.durationMs, streamingElapsedMs.value)
@@ -2951,7 +2949,7 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
     }
   }
   if (event.type === 'terminal') {
-    if (context.local) setLocalSessionRuntimeState(context.run.session_id, 'terminal')
+    setLocalSessionRuntimeState(context.run.session_id, 'terminal')
     setSessionRunning(context.run.session_id, false)
     if (activeSessionId.value === context.run.session_id) cancelRequested.value = false
     void finalizeElectronAgentPresentation(context)
@@ -2960,7 +2958,6 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
 }
 
 async function finalizeElectronAgentPresentation(context: ElectronAgentRunContext) {
-  if (!context.local) await refreshElectronAgentRunHistory(context.run.session_id)
   if (
     activeSessionId.value !== context.run.session_id
     || streamingOwnerSessionId.value !== context.run.session_id
@@ -3060,7 +3057,6 @@ function localInteractionPendingId(payload: any): string {
 }
 
 async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payload?: any): Promise<string> {
-  if (!context.local) return ''
   const sessionId = String(context.run.session_id || '')
   const pendingId = localInteractionPendingId(payload)
   const predictedId = localInteractionEventId(context.run.run_id, pendingId)
@@ -3205,7 +3201,7 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   const context = electronAgentRuns.get(event.runId)
   if (!context || event.turnId !== context.run.turn_id || event.sessionId !== context.run.session_id) return
   const previousState = context.state
-  if (context.local && event.type === 'state') {
+  if (event.type === 'state') {
     const nextState = String(event.state || context.state)
     setLocalSessionRuntimeState(context.run.session_id, nextState)
     if (['queued', 'connecting', 'running'].includes(nextState)) {
@@ -3229,7 +3225,7 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   }
   if (event.journalDelta) applyElectronAgentCanonical(context, event.journalDelta)
   if (event.type === 'assistant_delta') showElectronAgentDelta(context, String(event.text || ''))
-  if (event.type === 'session_title' && context.local) {
+  if (event.type === 'session_title') {
     const title = String(event.title || '').trim()
     if (title) applySessionTitle(context.run.session_id, title)
   }
@@ -3239,11 +3235,9 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
     // may the sender promise settle. Otherwise the context can be removed by
     // sendLocalPiTurn before this request arrives, dropping the card entirely.
     showLocalInteraction(context, event.payload)
-    if (context.local) {
-      setLocalSessionRuntimeState(context.run.session_id, 'waiting_user')
-      settleElectronAgentRun(context, { ...event, state: 'waiting_user' })
-      void materializeLocalWaitingRun(context, event.payload)
-    }
+    setLocalSessionRuntimeState(context.run.session_id, 'waiting_user')
+    settleElectronAgentRun(context, { ...event, state: 'waiting_user' })
+    void materializeLocalWaitingRun(context, event.payload)
   }
   if (event.type === 'done') {
     const payload: any = event.payload || {}
@@ -3306,21 +3300,12 @@ function ensureVibeAgentEventListener() {
   offVibeAgentEvent = electronAgentBridge()!.onEvent(handleVibeAgentEvent)
 }
 
-async function refreshElectronAgentRunHistory(sessionId: string) {
-  if (!sessionId || activeSessionId.value !== sessionId) return
-  const epoch = sessionRequestEpoch
-  const fresh = await listVibeEvents(sessionId).catch(() => null)
-  if (!fresh || epoch !== sessionRequestEpoch || activeSessionId.value !== sessionId) return
-  events.value = sortEvents(fresh)
-  restoreClarificationFromEvents()
-}
-
 async function recoverElectronAgentRunUnsafe(sessionId: string) {
   const bridge = electronAgentBridge()
   if (!bridge || !sessionId) return
   ensureVibeAgentEventListener()
   let context = electronRunForTurn('', sessionId)
-  if (context?.local && !context.localCold && bridge.status) {
+  if (context && !context.localCold && bridge.status) {
     const liveStatus = await bridge.status({ runId: context.run.run_id, accountId: localAccountId() }).catch(() => null)
     if (!liveStatus && bridge.recoverableLocal) {
       const recoverable = bridge.recoverableLocal({ accountId: localAccountId() })
@@ -3460,18 +3445,9 @@ async function stopFoundationTurn() {
         // Local Pi has no server-side Turn owner. Sending its identity to the
         // legacy cancel endpoint cannot stop the child and would reintroduce a
         // runtime server dependency; let the user retry once Main is reachable.
-        if (electronRun.local) {
-          cancelRequested.value = false
-          ElMessage.error('本地 Agent 暂时无法连接，请稍后重试停止。')
-          return
-        }
-        const result = await cancelFoundationTurn(
-          electronRun.run.turn_id,
-          electronRun.run.session_id,
-        )
-        if (!result.accepted && result.current_state !== 'cancel_requested') {
-          cancelRequested.value = false
-        }
+        cancelRequested.value = false
+        ElMessage.error('本地 Agent 暂时无法连接，请稍后重试停止。')
+        return
       }
       return
     }
@@ -5721,7 +5697,7 @@ async function respondToLiveGoal(raw: any, payload: {
     await recoverElectronAgentRun(sessionId)
     electronRun = electronRunForTurn(turnId, sessionId)
   }
-  if (electronRun?.local && !electronRun.localCold && electronAgentBridge()?.status) {
+  if (electronRun && !electronRun.localCold && electronAgentBridge()?.status) {
     const liveStatus = await electronAgentBridge()!.status({ runId: electronRun.run.run_id, accountId: localAccountId() }).catch(() => null)
     if (!liveStatus) {
       const recoverable = electronAgentBridge()?.recoverableLocal?.({ accountId: localAccountId() })
@@ -5734,7 +5710,7 @@ async function respondToLiveGoal(raw: any, payload: {
       }
     }
   }
-  if (electronRun?.local) {
+  if (electronRun) {
     const materializedParent = await materializeLocalWaitingRun(electronRun, raw)
     const parentId = materializedParent
       || lastClarificationAssistantId()
@@ -5742,7 +5718,7 @@ async function respondToLiveGoal(raw: any, payload: {
       || localInteractionEventId(electronRun.run.run_id, String(payload.confirmation_id || payload.interaction_id || ''))
     if (parentId) streamingContinuationParentId.value = parentId
   }
-  if (electronRun?.local && electronRun.localCold) {
+  if (electronRun?.localCold) {
     const bridge = electronAgentBridge()
     const pendingId = String(payload.confirmation_id || payload.interaction_id || '')
     if (!bridge?.recoverLocal || !pendingId) {
