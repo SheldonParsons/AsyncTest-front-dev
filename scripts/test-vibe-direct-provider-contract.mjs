@@ -136,7 +136,7 @@ const numericSnapshot = await fetchRuntimeSnapshot({
 assert.equal(numericSnapshot.account_id, "1");
 
 const identity = { run_id: run.run_id, turn_id: run.turn_id, request_id: "request-direct-1" };
-const budgetFrame = makeFrame(identity, "assistant_end", {
+const assistantFrame = makeFrame(identity, "assistant_end", {
   call_id: "call-2",
   purpose: "main_agent",
   text: "完成",
@@ -144,21 +144,8 @@ const budgetFrame = makeFrame(identity, "assistant_end", {
   tool_calls: [],
   stop_reason: "stop",
   usage: { output: 8 },
-  budget: {
-    max_model_calls: 12,
-    max_context_tokens: 275000,
-    max_total_tokens: 300000,
-    output_reserve_tokens: 8192,
-    max_wall_clock_s: 360,
-    step_timeout_s: 180,
-    model_calls: 2,
-    input_tokens: 1200,
-    output_tokens: 24,
-    reserved_output_tokens: 0,
-    compute_elapsed_s: 4.5,
-  },
 });
-assert.equal(parseOutboundLine(budgetFrame.serialized).payload.budget.model_calls, 2);
+assert.equal(parseOutboundLine(assistantFrame.serialized).payload.text, "完成");
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-direct-provider-"));
 try {

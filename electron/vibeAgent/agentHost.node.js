@@ -548,8 +548,6 @@ class HostedRun {
         await this.runStore.phase(this.run.run_id, "running", {
           state: "running",
           last_call: { frame_type: frame.type },
-          ...(frame.payload?.budget && typeof frame.payload.budget === "object"
-            ? { provider_budget: frame.payload.budget } : {}),
         });
       }
     }

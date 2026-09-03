@@ -200,7 +200,7 @@ function validateOptions(value) {
   const row = exact(value, new Set([
     "temperature", "max_tokens", "timeout_ms", "max_retries", "max_retry_delay_ms",
     "sampling_params", "payload_overrides", "payload_capture", "session_id", "tool_choice",
-    "transport", "ipc_timeout_ms", "budget", "generate_session_title", "thinking_level",
+    "transport", "ipc_timeout_ms", "generate_session_title", "thinking_level",
   ]), new Set(), "start_options_invalid");
   if (row.temperature !== undefined) finiteNumber(row.temperature, "start_temperature_invalid", { min: 0, max: 2 });
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_max_tokens_invalid", { min: 1, integer: true });
@@ -219,23 +219,6 @@ function validateOptions(value) {
   if (row.transport !== undefined && !new Set(["sse", "auto"]).has(row.transport)) fail("start_transport_invalid");
   if (row.payload_overrides !== undefined) validateRequestOverrides(row.payload_overrides, "start_payload_overrides_invalid");
   if (row.sampling_params !== undefined) jsonValue(object(row.sampling_params, "start_sampling_params_invalid"), "start_sampling_params_invalid");
-  if (row.budget !== undefined) {
-    const budget = exact(row.budget, new Set([
-      "max_model_calls", "max_context_tokens", "max_total_tokens", "output_reserve_tokens",
-      "max_wall_clock_s", "step_timeout_s", "model_calls", "input_tokens", "output_tokens",
-      "reserved_output_tokens", "compute_elapsed_s",
-    ]), new Set(), "start_budget_invalid");
-    for (const key of ["max_model_calls", "max_context_tokens", "max_total_tokens", "output_reserve_tokens"]) {
-      if (budget[key] !== undefined) finiteNumber(budget[key], `start_budget_${key}_invalid`, { min: 1, integer: true });
-    }
-    for (const key of ["max_wall_clock_s", "step_timeout_s"]) {
-      if (budget[key] !== undefined) finiteNumber(budget[key], `start_budget_${key}_invalid`, { min: 0.01 });
-    }
-    for (const key of ["model_calls", "input_tokens", "output_tokens", "reserved_output_tokens"]) {
-      if (budget[key] !== undefined) finiteNumber(budget[key], `start_budget_${key}_invalid`, { min: 0, integer: true });
-    }
-    if (budget.compute_elapsed_s !== undefined) finiteNumber(budget.compute_elapsed_s, "start_budget_compute_elapsed_invalid", { min: 0 });
-  }
 }
 
 function validateTools(value) {
@@ -512,7 +495,7 @@ function validateOutboundPayload(frame) {
     string(row.text, "assistant_delta_text_invalid", { allowEmpty: true, max: 2_000_000 });
     if (row.public !== undefined) boolean(row.public, "assistant_delta_public_invalid");
   } else if (frame.type === "assistant_end") {
-    const row = exact(payload, new Set(["call_id", "purpose", "text", "has_tool_calls", "tool_calls", "stop_reason", "usage", "budget"]), new Set(["text", "has_tool_calls", "tool_calls", "stop_reason", "usage"]), "assistant_end_payload_invalid");
+    const row = exact(payload, new Set(["call_id", "purpose", "text", "has_tool_calls", "tool_calls", "stop_reason", "usage"]), new Set(["text", "has_tool_calls", "tool_calls", "stop_reason", "usage"]), "assistant_end_payload_invalid");
     optionalString(row.call_id, "assistant_end_call_invalid", { max: 256 });
     optionalString(row.purpose, "assistant_end_purpose_invalid", { max: 64 });
     string(row.text, "assistant_end_text_invalid", { allowEmpty: true, max: 2_000_000 });
@@ -520,7 +503,6 @@ function validateOutboundPayload(frame) {
     jsonValue(array(row.tool_calls, "assistant_end_tools_invalid", 128), "assistant_end_tools_invalid");
     string(row.stop_reason, "assistant_end_stop_invalid", { max: 64 });
     jsonValue(row.usage, "assistant_end_usage_invalid");
-    if (row.budget !== undefined) validateOptions({ budget: row.budget });
   } else if (frame.type === "tool_wave") {
     const row = exact(payload, new Set(["wave_id", "calls"]), new Set(["wave_id", "calls"]), "tool_wave_payload_invalid");
     string(row.wave_id, "tool_wave_id_invalid", { max: 256 });

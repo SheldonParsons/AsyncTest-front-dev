@@ -1047,8 +1047,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const inheritedTitleRequest = candidate?.resume && start?.options?.generate_session_title === true;
     const generateSessionTitle = isDefaultSessionTitle(sessionManifest.title)
       && (inheritedTitleRequest || (!candidate?.resume && Array.isArray(sourceHistory) && sourceHistory.length === 0));
-    const restoredBudget = priorDescriptor?.provider_budget && typeof priorDescriptor.provider_budget === "object"
-      ? priorDescriptor.provider_budget : {};
     const frozenStart = priorDescriptor?.start_payload && typeof priorDescriptor.start_payload === "object"
       ? priorDescriptor.start_payload : null;
     if (candidate?.resume && (!frozenStart
@@ -1090,6 +1088,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       ? structuredClone(frozenStart.tools) : snapshot.tools;
     const baseOptions = candidate?.resume && frozenStart?.options && typeof frozenStart.options === "object"
       ? structuredClone(frozenStart.options) : structuredClone(snapshot.options);
+    delete baseOptions.budget;
     const frozenSkill = candidate?.resume ? frozenStart.skill : snapshot.skill;
     const skill = frozenSkill ? await skillCache.put(frozenSkill) : null;
     if (!candidate?.resume && !skill) throw new Error("vibe_agent_skill_required");
@@ -1112,7 +1111,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       mode: "direct",
       provider_id: snapshot.provider.id,
       model: snapshot.provider.model,
-      budget: snapshot.options?.budget,
       ...(skill ? {
         skill_name: skill.name,
         skill_version: skill.version,
@@ -1136,12 +1134,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           payload_capture: localTracePayloadCapture,
           max_retries: 0,
           generate_session_title: generateSessionTitle,
-          budget: {
-            ...(baseOptions?.budget || {}),
-            ...Object.fromEntries([
-              "model_calls", "input_tokens", "output_tokens", "reserved_output_tokens", "compute_elapsed_s",
-            ].filter((key) => restoredBudget[key] !== undefined).map((key) => [key, restoredBudget[key]])),
-          },
         },
       },
     };

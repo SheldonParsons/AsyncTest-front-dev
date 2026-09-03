@@ -56,20 +56,6 @@ const ACTIVE_PHASES = new Set([
 ]);
 const RECOVERABLE_PHASES = new Set(["waiting_user", "resume_ready"]);
 const TERMINAL_STATES = new Set(["completed", "failed", "aborted", "cancelled", "closed"]);
-const DEFAULT_PROVIDER_BUDGET = Object.freeze({
-  model_calls: 0,
-  input_tokens: 0,
-  output_tokens: 0,
-  reserved_output_tokens: 0,
-  max_model_calls: 12,
-  max_context_tokens: 275_000,
-  max_total_tokens: 300_000,
-  output_reserve_tokens: 8_192,
-  max_wall_clock_s: 360,
-  step_timeout_s: 180,
-  compute_elapsed_s: 0,
-});
-
 function runId(value) {
   const id = String(value ?? "").trim();
   if (!ID_PATTERN.test(id)) throw new Error("vibe_agent_run_descriptor_id_invalid");
@@ -187,13 +173,13 @@ function normalize(raw, expectedId = "") {
     ...(typeof storedContext.request_text === "string"
       ? { request_text: storedContext.request_text } : {}),
   };
+  delete cleanRaw.provider_budget;
   return {
     ...cleanRaw,
     schema: SCHEMA,
     run_id: id,
     state,
     phase,
-    provider_budget: normalizeProviderBudget(cleanRaw.provider_budget),
     pending,
     run: cleanRaw.run,
     start_payload: cleanRaw.start_payload,
@@ -205,24 +191,6 @@ function phaseFailure(phase) {
   if (phase === "provider_in_flight" || phase === "response_in_flight") return "provider_outcome_unknown";
   if (phase === "tool_in_flight") return "tool_outcome_unknown";
   return "runner_interrupted";
-}
-
-function normalizeProviderBudget(value) {
-  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const nonNegative = (key, maximum) => {
-    const parsed = Number(source[key]);
-    return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : 0;
-  };
-  const elapsed = Number(source.compute_elapsed_s);
-  return {
-    ...DEFAULT_PROVIDER_BUDGET,
-    model_calls: nonNegative("model_calls", DEFAULT_PROVIDER_BUDGET.max_model_calls),
-    input_tokens: nonNegative("input_tokens", DEFAULT_PROVIDER_BUDGET.max_total_tokens),
-    output_tokens: nonNegative("output_tokens", DEFAULT_PROVIDER_BUDGET.max_total_tokens),
-    reserved_output_tokens: nonNegative("reserved_output_tokens", DEFAULT_PROVIDER_BUDGET.max_total_tokens),
-    compute_elapsed_s: Number.isFinite(elapsed) && elapsed >= 0 && elapsed <= DEFAULT_PROVIDER_BUDGET.max_wall_clock_s
-      ? elapsed : 0,
-  };
 }
 
 /**
@@ -296,7 +264,6 @@ export class LocalRunStore {
         protocol_version: run.protocol_version ?? run.protocolVersion ?? 2,
       }),
       start_payload: payload,
-      provider_budget: { ...DEFAULT_PROVIDER_BUDGET },
       local_context: cloneWithoutCredentials({
         account_id: owner,
         knowledge_base_url: localContext.knowledge_base_url ?? localContext.knowledgeBaseUrl ?? "",
@@ -333,9 +300,6 @@ export class LocalRunStore {
           descriptor.pending = cloneWithoutCredentials(existing.pending);
           if (existing.response !== undefined) descriptor.response = cloneWithoutCredentials(existing.response);
           if (existing.resolved_result !== undefined) descriptor.resolved_result = cloneWithoutCredentials(existing.resolved_result);
-        }
-        if (existing.provider_budget && typeof existing.provider_budget === "object") {
-          descriptor.provider_budget = cloneWithoutCredentials(existing.provider_budget);
         }
       }
       return this.write(descriptor);
@@ -388,10 +352,6 @@ export class LocalRunStore {
     if (!value || value.length > 64 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("vibe_agent_run_descriptor_phase_invalid");
     const state = fields.state ?? (value === "waiting_user" || value === "resume_ready" ? "waiting_user" : TERMINAL_STATES.has(value) ? value : "running");
     return this.update(rawId, { ...fields, phase: value, state });
-  }
-
-  async updateBudget(rawId, budget) {
-    return this.update(rawId, { provider_budget: normalizeProviderBudget(budget) });
   }
 
   async markWaiting(rawId, pending, extra = {}) {

@@ -33,7 +33,6 @@ async function fakeRun(title) {
     options: {
       max_retries: 0,
       generate_session_title: true,
-      budget: { max_model_calls: 12 },
     },
     prompt: "请规划知识库迁移。",
     fake: {
@@ -90,7 +89,6 @@ assert.equal(valid.filter((frame) => frame.type === "candidate_final").length, 1
 assert.equal(valid.at(-1)?.type, "done");
 assert.equal(valid.at(-1)?.payload.status, "completed");
 assert.equal(valid.find((frame) => frame.type === "assistant_end" && frame.payload.purpose === "session_title")?.payload.has_tool_calls, false);
-assert.equal(valid.find((frame) => frame.type === "assistant_end" && frame.payload.purpose === "session_title")?.payload.budget.model_calls, 2);
 
 const invalid = await fakeRun("这是一个明显超过十二个字符限制的标题");
 assert.equal(invalid.some((frame) => frame.type === "session_title"), false);
