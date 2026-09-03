@@ -86,12 +86,6 @@
           <h1>{{ currentUserName }}</h1>
           <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
         </div>
-        <div class="profile-stats">
-          <div><strong>{{ formatUsageNumber(usageSummary.total_tokens) }}</strong><span>累计 Token 数</span></div>
-          <div><strong>{{ formatUsageNumber(usageSummary.peak_tokens) }}</strong><span>峰值 Token 数</span></div>
-          <div><strong>{{ formatUsageDuration(usageSummary.max_elapsed_ms) }}</strong><span>最长任务时长</span></div>
-          <div><strong>{{ formatUsageNumber(usageSummary.dialogue_turns) }}</strong><span>总对话次数</span></div>
-        </div>
       </section>
 
       <section v-else-if="activeKey === 'model'" class="model-panel">
@@ -606,7 +600,7 @@ import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
-import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, getVibeUsageSummary, importVibeAdminConfig, importVibeSystemKnowledge, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload, type VibeUsageSummary } from '../api'
+import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, importVibeAdminConfig, importVibeSystemKnowledge, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -625,13 +619,6 @@ const winMaximized = ref(false)
 let offMaximizeState: (() => void) | null = null
 const capabilities = ref<Record<string, boolean>>({})
 const currentUser = ref<VibeCapabilityUser | null>(null)
-const usageSummary = ref<VibeUsageSummary>({
-  total_tokens: 0,
-  peak_tokens: 0,
-  max_elapsed_ms: 0,
-  dialogue_turns: 0,
-  latest_sent_at: null,
-})
 const traceRuns = ref<VibeDialogueTraceRun[]>([])
 const selectedTraceId = ref('')
 const selectedTrace = ref<VibeDialogueTraceDetail | null>(null)
@@ -772,30 +759,6 @@ async function loadCapabilities() {
     currentUser.value = null
   }
 }
-
-async function loadUsageSummary() {
-  try {
-    const res = await getVibeUsageSummary()
-    usageSummary.value = {
-      total_tokens: Number(res?.total_tokens || 0),
-      peak_tokens: Number(res?.peak_tokens || 0),
-      max_elapsed_ms: Number(res?.max_elapsed_ms || 0),
-      dialogue_turns: Number(res?.dialogue_turns || 0),
-      latest_sent_at: res?.latest_sent_at || null,
-      scope: res?.scope,
-      rule: res?.rule,
-    }
-  } catch {
-    usageSummary.value = {
-      total_tokens: 0,
-      peak_tokens: 0,
-      max_elapsed_ms: 0,
-      dialogue_turns: 0,
-      latest_sent_at: null,
-    }
-  }
-}
-
 
 async function loadAdminModelDefaults() {
   if (!canViewTraceAudit.value || adminModelLoading.value) return
@@ -2160,25 +2123,6 @@ function formatDuration(ms?: number | null) {
   return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}s`
 }
 
-function formatUsageNumber(value?: number | null) {
-  const n = Number(value || 0)
-  if (!Number.isFinite(n) || n <= 0) return '0'
-  if (n >= 100000000) return `${(n / 100000000).toFixed(n >= 1000000000 ? 1 : 2)}亿`
-  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 1 : 2)}万`
-  return String(Math.round(n))
-}
-
-function formatUsageDuration(ms?: number | null) {
-  const n = Number(ms || 0)
-  if (!Number.isFinite(n) || n <= 0) return '0s'
-  if (n < 1000) return `${Math.round(n)}ms`
-  const seconds = n / 1000
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = Math.round(seconds % 60)
-  return rest ? `${minutes}分${rest}秒` : `${minutes}分`
-}
-
 function formatTime(value?: string | null) {
   if (!value) return '-'
   const d = new Date(value)
@@ -2294,7 +2238,6 @@ watch(canViewTraceAudit, (allowed) => {
 })
 
 watch(activeKey, (key) => {
-  if (key === 'profile') loadUsageSummary()
   if (key === 'trace' && (canViewTraceAudit.value || canViewElectronTrace.value)) {
     resumeElectronTraceUploads()
     if (!traceRuns.value.length) loadTraceRuns(true)
@@ -2311,7 +2254,6 @@ onMounted(async () => {
   const profileRequest = readLocalAuthToken() ? fetchProfile() : Promise.resolve(null)
   await Promise.all([
     loadCapabilities(),
-    loadUsageSummary(),
     profileRequest,
   ])
   if (!canViewTraceAudit.value && !canViewElectronTrace.value && activeKey.value === 'trace') activeKey.value = 'profile'
@@ -2563,30 +2505,6 @@ onBeforeUnmount(() => {
   font-style: normal;
   color: var(--ink-3);
 }
-
-.profile-stats {
-  margin: 56px auto 0;
-  max-width: 720px;
-  min-height: 72px;
-  border: 1px solid var(--line);
-  border-radius: 17px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
-}
-
-.profile-stats div {
-  padding: 13px 10px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  justify-content: center;
-}
-
-.profile-stats div + div { border-left: 1px solid var(--line); }
-.profile-stats strong { font-size: 16px; font-weight: 620; }
-.profile-stats span { color: var(--ink-3); font-size: 12px; }
 
 .model-panel {
   max-width: none;

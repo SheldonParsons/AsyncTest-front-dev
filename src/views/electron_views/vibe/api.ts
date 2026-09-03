@@ -199,20 +199,6 @@ export function updateVibeKnowledgeApiModelConfig(
   return request('PATCH', `/vibe/admin/knowledge-model-configs/${role}`, payload)
 }
 
-export interface VibeUsageSummary {
-  total_tokens: number
-  peak_tokens: number
-  max_elapsed_ms: number
-  dialogue_turns: number
-  latest_sent_at?: string | null
-  scope?: string
-  rule?: Record<string, number>
-}
-
-export function getVibeUsageSummary(): Promise<VibeUsageSummary> {
-  return request('GET', '/vibe/usage/summary')
-}
-
 export interface VibeSystemKnowledgeItem {
   id: number
   slug?: string
