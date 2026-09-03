@@ -6,6 +6,7 @@ AsyncTest 的 Electron AgentHost 使用以下未修改的官方发行包：
 
 - `@earendil-works/pi-agent-core` 0.84.4
 - `@earendil-works/pi-ai` 0.84.4
+- `@earendil-works/pi-coding-agent` 0.84.4
 
 Source: https://github.com/earendil-works/pi
 

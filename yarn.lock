@@ -360,7 +360,7 @@
     ajv "^6.12.0"
     ajv-keywords "^3.4.1"
 
-"@earendil-works/pi-agent-core@0.84.4":
+"@earendil-works/pi-agent-core@0.84.4", "@earendil-works/pi-agent-core@^0.84.4":
   version "0.84.4"
   resolved "https://registry.yarnpkg.com/@earendil-works/pi-agent-core/-/pi-agent-core-0.84.4.tgz#451e9e76b6c7fecd2a49ed5bf905f8dd6c7ce876"
   integrity sha512-HyUnjaOXj6oN/6SNcr8A1J/ElRQA50FtIE0XUTSKAQVqmdlb9qdojOyUQwF/jULE5+yOEtGuVgi/N1RnBiNG+g==
@@ -388,10 +388,60 @@
     partial-json "0.1.7"
     typebox "1.3.7"
 
+"@earendil-works/pi-client@^0.84.4":
+  version "0.84.4"
+  resolved "https://registry.yarnpkg.com/@earendil-works/pi-client/-/pi-client-0.84.4.tgz#88523ba121aea1f57bae5d67656f09af7c6fcf02"
+  integrity sha512-q398WY/3ZQHTizk7IKxApzqFV0xt4yM9LkSkwyqeLK5Bj5RwRjOWxESt26z4LgNp4O+8hqhqFPf/8fj4H5rE4A==
+  dependencies:
+    "@earendil-works/pi-protocol" "^0.84.4"
+
+"@earendil-works/pi-coding-agent@0.84.4":
+  version "0.84.4"
+  resolved "https://registry.yarnpkg.com/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.84.4.tgz#3a2f04bfc5e463b4cfa36b174a586d11a0bdf9ad"
+  integrity sha512-jmOlrqUmvhh/siNWFRXjYLJzhKFIHNsAQaysRwzQPQFnPAaV/vhqHsLH/MBsIISA1Rjj7WTUFR3nJrpXoLx39w==
+  dependencies:
+    "@earendil-works/pi-agent-core" "^0.84.4"
+    "@earendil-works/pi-ai" "^0.84.4"
+    "@earendil-works/pi-client" "^0.84.4"
+    "@earendil-works/pi-protocol" "^0.84.4"
+    "@earendil-works/pi-tui" "^0.84.4"
+    "@silvia-odwyer/photon-node" "0.3.4"
+    chalk "5.6.2"
+    cross-spawn "7.0.6"
+    diff "8.0.4"
+    grok-mermaid "0.2.2"
+    highlight.js "10.7.3"
+    hosted-git-info "9.0.3"
+    ignore "7.0.5"
+    jiti "2.7.0"
+    minimatch "10.2.5"
+    proper-lockfile "4.1.2"
+    semver "7.8.0"
+    typebox "1.3.7"
+    undici "8.9.0"
+    yaml "2.9.0"
+  optionalDependencies:
+    "@mariozechner/clipboard" "0.3.9"
+
+"@earendil-works/pi-protocol@^0.84.4":
+  version "0.84.4"
+  resolved "https://registry.yarnpkg.com/@earendil-works/pi-protocol/-/pi-protocol-0.84.4.tgz#aee0630eb3ce6844d3f68323a4a1fffc988fb0c0"
+  integrity sha512-acyE9ozxkMiWiz/xyWpU0O9vwnYv0hyG889Vniv6Sg9c9zfsX+8MePnDNphBacY2Fvm1rxdsGmiVDSZl9yuDFA==
+  dependencies:
+    typebox "1.3.7"
+
 "@earendil-works/pi-telemetry@^0.84.4":
   version "0.84.4"
   resolved "https://registry.yarnpkg.com/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.4.tgz#0eefd361fab1db773496384c87bfd91be2772790"
   integrity sha512-8e2CuxM+ht+hedQXTZmi5JVl6/xDK9RpSDL2+MbITevKYQhMZ/z6lJOTFgox3HQyGxO8mOZEtYGVeQNaD4OzqA==
+
+"@earendil-works/pi-tui@^0.84.4":
+  version "0.84.4"
+  resolved "https://registry.yarnpkg.com/@earendil-works/pi-tui/-/pi-tui-0.84.4.tgz#1b5bee5f22ba90539beaddac4e4ee7ad81c8a279"
+  integrity sha512-nPUnwDkLtupPXnZQYrCwPFcuTydCDqTY6ZbFqhsL4S4kVq0AT418kPa/6uXwtaCD+MjBNBltb7ScTYX65yeE1w==
+  dependencies:
+    get-east-asian-width "1.6.0"
+    marked "18.0.5"
 
 "@electron/asar@3.4.1", "@electron/asar@^3.3.1":
   version "3.4.1"
@@ -1084,6 +1134,72 @@
     fs-extra "^9.0.0"
     lodash "^4.17.15"
     tmp-promise "^3.0.2"
+
+"@mariozechner/clipboard-darwin-arm64@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-darwin-arm64/-/clipboard-darwin-arm64-0.3.9.tgz#720422a05672b08d573866b443b41681b2f07342"
+  integrity sha512-BfgV7vCEWZwJwZJw03r6bP5+tf0iI/ANuQYCxi9RNn7FrWB3yzGuMKCrNLRl6V761vXRdL8+OqZ0wd4TqlsNOQ==
+
+"@mariozechner/clipboard-darwin-universal@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-darwin-universal/-/clipboard-darwin-universal-0.3.9.tgz#a52b60919edbad1e95794cb315e9762a2f89ca60"
+  integrity sha512-BGGR4iA9Z2shAjI65eI5xtyb3LYNlDW9X3gxKxDbqtbnREohsrqznov6zpKoIrsRWpzlYVEdKphS7ksJ0/ndSQ==
+
+"@mariozechner/clipboard-darwin-x64@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-darwin-x64/-/clipboard-darwin-x64-0.3.9.tgz#8221fe466c0b075a882fe62fe90155131d76f932"
+  integrity sha512-4kURmCbS6nt8uYhtmWpUcJWyPHfmAr5dTpXD1nO3pIfa+TSQ9DbrGOYCKH+aEFW47XhQ4Vp8ZTszie+wfFvDKg==
+
+"@mariozechner/clipboard-linux-arm64-gnu@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-linux-arm64-gnu/-/clipboard-linux-arm64-gnu-0.3.9.tgz#83d63a7f770db9f2de8c851b3e7347642a01f98b"
+  integrity sha512-g59OkUGP2DDfCOIKypHeYgv2M55u/cKvXa5dSxFbEJ34XvIQMdcVmpKCkGUro3ZgefXiGVdwguvTMQGpHWzIXw==
+
+"@mariozechner/clipboard-linux-arm64-musl@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-linux-arm64-musl/-/clipboard-linux-arm64-musl-0.3.9.tgz#d3ffb431aeb5f32b32b4f8c06a172d37a89d8cee"
+  integrity sha512-AGuJdgKsmJdm4Pych7kv3sqe591ERRaAHW3xjLooiFzn8J+PxUyof++7YZrB5Y5tpnTO+K18Og3taj2NpluCRQ==
+
+"@mariozechner/clipboard-linux-riscv64-gnu@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-linux-riscv64-gnu/-/clipboard-linux-riscv64-gnu-0.3.9.tgz#6f8b686f551c97a86d084fe7af9308c27fafbfb1"
+  integrity sha512-DXBEAiuMpk7dhS1a9NzNxVAFi1vaKoPu7rQNgY8LIDLGrK3lnIp3nT10DUum+PKVJoJppIP+NAA8IZe4DMNDPw==
+
+"@mariozechner/clipboard-linux-x64-gnu@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-linux-x64-gnu/-/clipboard-linux-x64-gnu-0.3.9.tgz#b130f800af4b2e6bfb0f06496b1bc5f88b922283"
+  integrity sha512-WORrMLd6EpElEME7JRKfSaY34nW1P5LbdgK5YNCS1ncG2LqmITsSMEJ8nh2mpvxb3TxqbOOKgY7k9eMJYlW9Mw==
+
+"@mariozechner/clipboard-linux-x64-musl@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-linux-x64-musl/-/clipboard-linux-x64-musl-0.3.9.tgz#302d2f0df77e4691941bd2675fd84fb188dbc1f1"
+  integrity sha512-/DHn+1DrfL6oRaPPWXaOKvonFFrni666fxd+zFqiQEfvBH0tsHVWjq9iqBk0oDp0qaPA72lIMy5BptxISBEhZQ==
+
+"@mariozechner/clipboard-win32-arm64-msvc@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-win32-arm64-msvc/-/clipboard-win32-arm64-msvc-0.3.9.tgz#7ec8c675e1499cfec369976069818b63314ffebe"
+  integrity sha512-O5FHD3ErkMwMhNzAfu3ggy0ug4z7btZuoQgwwxlzPrwV2bxlD6WDpqBY4NCgICAgZdDKdp+loUEKVAVt8aYnhQ==
+
+"@mariozechner/clipboard-win32-x64-msvc@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard-win32-x64-msvc/-/clipboard-win32-x64-msvc-0.3.9.tgz#d764843eaa75451ffb4e93fb16eb78f5cd390874"
+  integrity sha512-ihQC3EufqEY81vhXBgVBtK4prL+wc62zJsSvxrgz7K1hsdt6OObz6v9p3Rn1OG3GJksTTKMJF0u/guMISHPhSA==
+
+"@mariozechner/clipboard@0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@mariozechner/clipboard/-/clipboard-0.3.9.tgz#2f5de00ca5f4bb684354bacb01c20fbbf5b8defb"
+  integrity sha512-ABnA53mdfkGZwOFUdZNv2S0CWGO/EIuPj8Vv9xmBFmSYg/qFc7ihO6q5FcQjvoE67kZpWkEc4AhD6B/os04yuA==
+  optionalDependencies:
+    "@mariozechner/clipboard-darwin-arm64" "0.3.9"
+    "@mariozechner/clipboard-darwin-universal" "0.3.9"
+    "@mariozechner/clipboard-darwin-x64" "0.3.9"
+    "@mariozechner/clipboard-linux-arm64-gnu" "0.3.9"
+    "@mariozechner/clipboard-linux-arm64-musl" "0.3.9"
+    "@mariozechner/clipboard-linux-riscv64-gnu" "0.3.9"
+    "@mariozechner/clipboard-linux-x64-gnu" "0.3.9"
+    "@mariozechner/clipboard-linux-x64-musl" "0.3.9"
+    "@mariozechner/clipboard-win32-arm64-msvc" "0.3.9"
+    "@mariozechner/clipboard-win32-x64-msvc" "0.3.9"
 
 "@napi-rs/canvas-android-arm64@1.0.8":
   version "1.0.8"
@@ -1930,6 +2046,11 @@
   version "1.1.0"
   resolved "https://registry.npmjs.org/@rtsao/scc/-/scc-1.1.0.tgz"
   integrity sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==
+
+"@silvia-odwyer/photon-node@0.3.4":
+  version "0.3.4"
+  resolved "https://registry.yarnpkg.com/@silvia-odwyer/photon-node/-/photon-node-0.3.4.tgz#ffccfd794abb203b24a793db94bca72748326726"
+  integrity sha512-bnly4BKB3KDTFxrUIcgCLbaeVVS8lrAkri1pEzskpmxu9MdfGQTy8b8EgcD83ywD3RPMsIulY8xJH5Awa+t9fA==
 
 "@sindresorhus/is@^4.0.0":
   version "4.6.0"
@@ -3010,6 +3131,13 @@ brace-expansion@^5.0.2:
   dependencies:
     balanced-match "^4.0.2"
 
+brace-expansion@^5.0.5:
+  version "5.0.9"
+  resolved "https://registry.yarnpkg.com/brace-expansion/-/brace-expansion-5.0.9.tgz#7c72438809b5fa5babf54199a1f1c281a6984fcf"
+  integrity sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==
+  dependencies:
+    balanced-match "^4.0.2"
+
 braces@^3.0.3:
   version "3.0.3"
   resolved "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz"
@@ -3164,6 +3292,11 @@ chalk@4.1.2, chalk@^4.0.0, chalk@^4.1.0, chalk@^4.1.1, chalk@^4.1.2:
   dependencies:
     ansi-styles "^4.1.0"
     supports-color "^7.1.0"
+
+chalk@5.6.2:
+  version "5.6.2"
+  resolved "https://registry.yarnpkg.com/chalk/-/chalk-5.6.2.tgz#b1238b6e23ea337af71c7f8a295db5af0c158aea"
+  integrity sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==
 
 chardet@^2.1.1:
   version "2.1.1"
@@ -3381,7 +3514,7 @@ cross-env@^7.0.3:
   dependencies:
     cross-spawn "^7.0.1"
 
-cross-spawn@^7.0.1, cross-spawn@^7.0.2, cross-spawn@^7.0.6:
+cross-spawn@7.0.6, cross-spawn@^7.0.1, cross-spawn@^7.0.2, cross-spawn@^7.0.6:
   version "7.0.6"
   resolved "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz"
   integrity sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==
@@ -4641,6 +4774,11 @@ get-caller-file@^2.0.5:
   resolved "https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz"
   integrity sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==
 
+get-east-asian-width@1.6.0:
+  version "1.6.0"
+  resolved "https://registry.yarnpkg.com/get-east-asian-width/-/get-east-asian-width-1.6.0.tgz#216900f91df11a8b2c198c3e1d93d6c035a776b9"
+  integrity sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA==
+
 get-intrinsic@^1.2.4, get-intrinsic@^1.2.5, get-intrinsic@^1.2.6, get-intrinsic@^1.2.7, get-intrinsic@^1.3.0:
   version "1.3.0"
   resolved "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz"
@@ -4819,6 +4957,11 @@ graphemer@^1.4.0:
   resolved "https://registry.npmjs.org/graphemer/-/graphemer-1.4.0.tgz"
   integrity sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==
 
+grok-mermaid@0.2.2:
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/grok-mermaid/-/grok-mermaid-0.2.2.tgz#a3722186403839de617df378f750674c3eb04ce4"
+  integrity sha512-XcJEP5dDC8liHBh52mlLjU18fNvu1ckFsu0QpIG3+APZ270fsj9wxpiA6cOURmbUEuoMVgjbC2+UYgTdCqqgzA==
+
 gsap@^3.12.2:
   version "3.15.0"
   resolved "https://registry.yarnpkg.com/gsap/-/gsap-3.15.0.tgz#7851baaffc77642f2db3b1749d3634f9b5a19d14"
@@ -4877,6 +5020,11 @@ hey-listen@^1.0.8:
   resolved "https://registry.npmjs.org/hey-listen/-/hey-listen-1.0.8.tgz"
   integrity sha512-COpmrF2NOg4TBWUJ5UVyaCU2A88wEMkUPK4hNqyCkqHbxT92BbvfjoSozkAIIm6XhicGlJHhFdullInrdhwU8Q==
 
+highlight.js@10.7.3:
+  version "10.7.3"
+  resolved "https://registry.yarnpkg.com/highlight.js/-/highlight.js-10.7.3.tgz#697272e3991356e40c3cac566a74eef681756531"
+  integrity sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==
+
 highlight.js@^11.10.0:
   version "11.11.1"
   resolved "https://registry.npmjs.org/highlight.js/-/highlight.js-11.11.1.tgz"
@@ -4886,6 +5034,13 @@ highlightjs-copy@^1.0.6:
   version "1.0.6"
   resolved "https://registry.npmjs.org/highlightjs-copy/-/highlightjs-copy-1.0.6.tgz"
   integrity sha512-UaHIlJ4rkk5R4OVDnpgxevIuYdHggN5sPgs3E/2FKLxypvzAQVTOZl66hm8cEnhrEoLHTGkQymLtfJ/efyv24Q==
+
+hosted-git-info@9.0.3:
+  version "9.0.3"
+  resolved "https://registry.yarnpkg.com/hosted-git-info/-/hosted-git-info-9.0.3.tgz#637b511ce62a28e4261a92b8da0a4d6be3522cd4"
+  integrity sha512-Hc+ghLoSt6QaYZUv0WBiIvmMDZuZZ7oaDvdH8MbfOO4lOsxdXLEvuC6ePoGs9H1X9oCLyq6+NVN0MKqD+ydxyg==
+  dependencies:
+    lru-cache "^11.1.0"
 
 hosted-git-info@^4.1.0:
   version "4.1.0"
@@ -5289,6 +5444,11 @@ jake@^10.8.5:
     filelist "^1.0.4"
     picocolors "^1.1.1"
 
+jiti@2.7.0:
+  version "2.7.0"
+  resolved "https://registry.yarnpkg.com/jiti/-/jiti-2.7.0.tgz#974228f2f4ca2bc21885a1797b45fea68e950c64"
+  integrity sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==
+
 jiti@^2.4.2:
   version "2.6.1"
   resolved "https://registry.npmjs.org/jiti/-/jiti-2.6.1.tgz"
@@ -5526,6 +5686,11 @@ lru-cache@^10.0.1, lru-cache@^10.2.0:
   resolved "https://registry.npmjs.org/lru-cache/-/lru-cache-10.4.3.tgz"
   integrity sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==
 
+lru-cache@^11.1.0:
+  version "11.5.2"
+  resolved "https://registry.yarnpkg.com/lru-cache/-/lru-cache-11.5.2.tgz#00e16665c90c620fba14a3c368732a976493f760"
+  integrity sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==
+
 lru-cache@^6.0.0:
   version "6.0.0"
   resolved "https://registry.npmjs.org/lru-cache/-/lru-cache-6.0.0.tgz"
@@ -5561,6 +5726,11 @@ marked-highlight@^2.2.1:
   version "2.2.3"
   resolved "https://registry.npmjs.org/marked-highlight/-/marked-highlight-2.2.3.tgz"
   integrity sha512-FCfZRxW/msZAiasCML4isYpxyQWKEEx44vOgdn5Kloae+Qc3q4XR7WjpKKf8oMLk7JP9ZCRd2vhtclJFdwxlWQ==
+
+marked@18.0.5:
+  version "18.0.5"
+  resolved "https://registry.yarnpkg.com/marked/-/marked-18.0.5.tgz#c229c0ac6ad1e275ae8e5037c6168f76d2f42e61"
+  integrity sha512-S6GcvALHg6K4ohtu4E7x0a1AqhAjp6cV8KhLSyN9qVapnzJkusVBxZRcIU9AeYsbe6P1hKDusSbEOzGyyuce6w==
 
 marked@^15.0.8:
   version "15.0.12"
@@ -5648,6 +5818,13 @@ mimic-response@^3.1.0:
   version "3.1.0"
   resolved "https://registry.npmjs.org/mimic-response/-/mimic-response-3.1.0.tgz"
   integrity sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ==
+
+minimatch@10.2.5:
+  version "10.2.5"
+  resolved "https://registry.yarnpkg.com/minimatch/-/minimatch-10.2.5.tgz#bd48687a0be38ed2961399105600f832095861d1"
+  integrity sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==
+  dependencies:
+    brace-expansion "^5.0.5"
 
 minimatch@^10.0.3:
   version "10.2.4"
@@ -6296,7 +6473,7 @@ promise-retry@^2.0.1:
     err-code "^2.0.2"
     retry "^0.12.0"
 
-proper-lockfile@^4.1.2:
+proper-lockfile@4.1.2, proper-lockfile@^4.1.2:
   version "4.1.2"
   resolved "https://registry.npmjs.org/proper-lockfile/-/proper-lockfile-4.1.2.tgz"
   integrity sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==
@@ -6686,6 +6863,11 @@ semver-compare@^1.0.0:
   version "1.0.0"
   resolved "https://registry.npmjs.org/semver-compare/-/semver-compare-1.0.0.tgz"
   integrity sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow==
+
+semver@7.8.0:
+  version "7.8.0"
+  resolved "https://registry.yarnpkg.com/semver/-/semver-7.8.0.tgz#ed0661039fcbcda2ce71f01fa6adbefaa77040df"
+  integrity sha512-AcM7dV/5ul4EekoQ29Agm5vri8JNqRyj39o0qpX6vDF2GZrtutZl5RwgD1XnZjiTAfncsJhMI48QQH3sN87YNA==
 
 semver@^5.5.0:
   version "5.7.2"

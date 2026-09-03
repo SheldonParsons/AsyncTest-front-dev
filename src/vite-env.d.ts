@@ -134,6 +134,7 @@ export interface ElectronPiReadinessReport {
   protocol_version: number;
   agent_core_version: string | null;
   pi_ai_version: string | null;
+  pi_coding_agent_version: string | null;
   undici_version: string | null;
   runner_spawn: boolean;
   dependencies_loaded: boolean;
@@ -316,6 +317,7 @@ export interface ElectronAgentStatus {
   agentCoreVersion: string;
   piAgentCoreVersion: string;
   piAiVersion: string;
+  piCodingAgentVersion: string;
   executionMode?: 'local';
   startedAt?: number;
   assistantPartialText?: string;

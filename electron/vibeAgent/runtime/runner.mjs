@@ -54,6 +54,7 @@ if (Number.isSafeInteger(parentPid) && parentPid > 1 && parentPid !== process.pi
 
 const EXPECTED_AGENT_VERSION = "0.84.4";
 const EXPECTED_AI_VERSION = "0.84.4";
+const EXPECTED_CODING_AGENT_VERSION = "0.84.4";
 const EXPECTED_UNDICI_VERSION = "8.9.0";
 const MIN_NODE = [22, 19, 0];
 const DEFAULT_LOCAL_BUDGET = Object.freeze({
@@ -218,6 +219,7 @@ function installedVersions() {
   return {
     agent: installedPackageVersion("@earendil-works/pi-agent-core"),
     ai: installedPackageVersion("@earendil-works/pi-ai"),
+    codingAgent: installedPackageVersion("@earendil-works/pi-coding-agent"),
     undici: installedPackageVersion("undici"),
   };
 }
@@ -492,6 +494,7 @@ class BridgeSession {
       if (
         versions.agent !== EXPECTED_AGENT_VERSION
         || versions.ai !== EXPECTED_AI_VERSION
+        || versions.codingAgent !== EXPECTED_CODING_AGENT_VERSION
         || versions.undici !== EXPECTED_UNDICI_VERSION
       ) throw new ProtocolError("pi_dependency_version_mismatch");
       this.runtime = await this.loadRuntime();
@@ -505,12 +508,16 @@ class BridgeSession {
         if (["loadSkills", "formatSkillInvocation", "formatSkillsForSystemPrompt"].some(
           (name) => typeof this.runtime.core[name] !== "function",
         )) throw new ProtocolError("pi_skill_exports_unavailable");
+        if (["createAgentSession", "AgentSession", "SessionManager"].some(
+          (name) => typeof this.runtime.codingAgent[name] !== "function",
+        )) throw new ProtocolError("pi_coding_agent_sdk_exports_unavailable");
         try { await localRuntime.env.cleanup(); }
         finally { await localRuntime.cleanup?.(); }
       }
       await this.emit("ready", {
         agent_core_version: versions.agent,
         pi_ai_version: versions.ai,
+        pi_coding_agent_version: versions.codingAgent,
         undici_version: versions.undici,
         bridge_protocol_version: PROTOCOL_VERSION,
         node_version: process.versions.node,
@@ -557,11 +564,12 @@ class BridgeSession {
 
   async loadRuntime() {
     const importPackage = (specifier) => import(pathToFileURL(resolvePackageFile(specifier)).href);
-    const [core, node, ai, openAI, undici] = await Promise.all([
+    const [core, node, ai, openAI, codingAgent, undici] = await Promise.all([
       importPackage("@earendil-works/pi-agent-core"),
       importPackage("@earendil-works/pi-agent-core/node"),
       importPackage("@earendil-works/pi-ai"),
       importPackage("@earendil-works/pi-ai/api/openai-completions"),
+      importPackage("@earendil-works/pi-coding-agent"),
       importPackage("undici"),
     ]);
     const [xlsx, jszip, pdfjs] = await Promise.all([
@@ -580,6 +588,7 @@ class BridgeSession {
       NodeExecutionEnv: node.NodeExecutionEnv,
       ai,
       openAI,
+      codingAgent,
       undici,
       documentParsers,
     };

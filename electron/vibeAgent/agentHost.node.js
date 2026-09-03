@@ -17,6 +17,7 @@ import { localRunConstants } from "./run/localRunStore.node.js";
 
 const AGENT_CORE_VERSION = "0.84.4";
 const PI_AI_VERSION = "0.84.4";
+const PI_CODING_AGENT_VERSION = "0.84.4";
 const RUN_SCHEMA = "electron_agent_run.v1";
 const EVENT_SCHEMA = "vibe_agent_event.v1";
 const MAX_ACTIVE_RUNS = 5;
@@ -480,6 +481,7 @@ class HostedRun {
       if (
         frame.payload.agent_core_version !== AGENT_CORE_VERSION
         || frame.payload.pi_ai_version !== PI_AI_VERSION
+        || frame.payload.pi_coding_agent_version !== PI_CODING_AGENT_VERSION
         || frame.payload.bridge_protocol_version !== PROTOCOL_VERSION
         || frame.payload.execution_mode !== "local"
       ) throw new Error("vibe_agent_runner_version_mismatch");
@@ -848,6 +850,7 @@ class HostedRun {
       agentCoreVersion: AGENT_CORE_VERSION,
       piAgentCoreVersion: AGENT_CORE_VERSION,
       piAiVersion: PI_AI_VERSION,
+      piCodingAgentVersion: PI_CODING_AGENT_VERSION,
       executionMode: "local",
       startedAt: this.startedAt,
       assistantPartialText: this.assistantPartialText,
@@ -999,6 +1002,7 @@ export class VibeAgentHost {
       agentCoreVersion: AGENT_CORE_VERSION,
       piAgentCoreVersion: AGENT_CORE_VERSION,
       piAiVersion: PI_AI_VERSION,
+      piCodingAgentVersion: PI_CODING_AGENT_VERSION,
       executionModes: ["local"],
       clientInstanceId,
       clientInstanceHash: createHash("sha256").update(clientInstanceId).digest("hex"),
@@ -1032,6 +1036,7 @@ export class VibeAgentHost {
       agentCoreVersion: AGENT_CORE_VERSION,
       piAgentCoreVersion: AGENT_CORE_VERSION,
       piAiVersion: PI_AI_VERSION,
+      piCodingAgentVersion: PI_CODING_AGENT_VERSION,
     };
   }
 
@@ -1286,6 +1291,7 @@ export class VibeAgentHost {
         agentCoreVersion: AGENT_CORE_VERSION,
         piAgentCoreVersion: AGENT_CORE_VERSION,
         piAiVersion: PI_AI_VERSION,
+        piCodingAgentVersion: PI_CODING_AGENT_VERSION,
         ...(descriptor.pending ? {
           pendingInteraction: descriptor.pending,
           pending_interaction: descriptor.pending,

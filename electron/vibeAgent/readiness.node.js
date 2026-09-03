@@ -11,6 +11,7 @@ import {
 
 const AGENT_CORE_VERSION = "0.84.4";
 const PI_AI_VERSION = "0.84.4";
+const PI_CODING_AGENT_VERSION = "0.84.4";
 const UNDICI_VERSION = "8.9.0";
 
 function reportBase({ appVersion, platform, arch, timestamp }) {
@@ -24,6 +25,7 @@ function reportBase({ appVersion, platform, arch, timestamp }) {
     protocol_version: PROTOCOL_VERSION,
     agent_core_version: null,
     pi_ai_version: null,
+    pi_coding_agent_version: null,
     undici_version: null,
     runner_spawn: false,
     dependencies_loaded: false,
@@ -88,6 +90,7 @@ export class ElectronPiReadiness {
         const versionsExact = ready
           && ready.agent_core_version === AGENT_CORE_VERSION
           && ready.pi_ai_version === PI_AI_VERSION
+          && ready.pi_coding_agent_version === PI_CODING_AGENT_VERSION
           && ready.undici_version === UNDICI_VERSION
           && ready.bridge_protocol_version === PROTOCOL_VERSION;
         const ok = Boolean(spawned && completed && versionsExact && exitCode === 0 && !errorCode);
@@ -98,6 +101,7 @@ export class ElectronPiReadiness {
           protocol_version: Number(ready?.bridge_protocol_version ?? PROTOCOL_VERSION),
           agent_core_version: ready?.agent_core_version ?? null,
           pi_ai_version: ready?.pi_ai_version ?? null,
+          pi_coding_agent_version: ready?.pi_coding_agent_version ?? null,
           undici_version: ready?.undici_version ?? null,
           runner_spawn: spawned,
           dependencies_loaded: Boolean(ready),
@@ -140,6 +144,7 @@ export class ElectronPiReadiness {
 export const readinessConstants = Object.freeze({
   AGENT_CORE_VERSION,
   PI_AI_VERSION,
+  PI_CODING_AGENT_VERSION,
   UNDICI_VERSION,
   PROTOCOL_VERSION,
 });

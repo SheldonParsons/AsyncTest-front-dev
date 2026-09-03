@@ -25,8 +25,8 @@ Provider preflight、permit、heartbeat 或代理请求。凭据只存在于 Mai
 ## Electron Pi 启动自检
 
 应用启动时 Main 会在本机执行一次 `electron_pi_readiness.v1` 自检并缓存结果。自检只
-拉起 runner、加载 Pi Core、Pi AI、Undici、NodeExecutionEnv、四个官方本机工具和 Skill
-公共 API，核对 Node/协议/依赖版本；不读取 Provider、不请求模型、也不访问服务端。Preload 只提供 `vibeAgent.readiness.check()` 查看结果和
+拉起 runner、加载 Pi Core、Pi AI、Pi Coding Agent SDK、Undici、NodeExecutionEnv、四个官方本机工具和 Skill
+公共 API，并确认 `createAgentSession`、`AgentSession`、`SessionManager` 可用；不读取 Provider、不请求模型、也不访问服务端。Preload 只提供 `vibeAgent.readiness.check()` 查看结果和
 `vibeAgent.readiness.export()` 通过原生保存框导出 JSON，正常 Goal 不依赖该报告。
 
 ## 普通本机文件边界

@@ -467,8 +467,8 @@ export function parseInboundLine(line, session = undefined) {
 function validateOutboundPayload(frame) {
   const payload = object(frame.payload, "outbound_payload_invalid");
   if (frame.type === "ready") {
-    const row = exact(payload, new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), new Set(["agent_core_version", "pi_ai_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), "ready_payload_invalid");
-    for (const key of ["agent_core_version", "pi_ai_version", "undici_version", "node_version"]) string(row[key], `ready_${key}_invalid`, { max: 64 });
+    const row = exact(payload, new Set(["agent_core_version", "pi_ai_version", "pi_coding_agent_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), new Set(["agent_core_version", "pi_ai_version", "pi_coding_agent_version", "undici_version", "bridge_protocol_version", "node_version", "execution_mode"]), "ready_payload_invalid");
+    for (const key of ["agent_core_version", "pi_ai_version", "pi_coding_agent_version", "undici_version", "node_version"]) string(row[key], `ready_${key}_invalid`, { max: 64 });
     finiteNumber(row.bridge_protocol_version, "ready_protocol_invalid", { min: 1, integer: true });
     if (!EXECUTION_MODES.includes(row.execution_mode)) fail("ready_execution_mode_invalid");
   } else if (frame.type === "provider_preflight_request") {

@@ -33,6 +33,7 @@ assert.deepEqual({
   protocol_version: first.protocol_version,
   agent_core_version: first.agent_core_version,
   pi_ai_version: first.pi_ai_version,
+  pi_coding_agent_version: first.pi_coding_agent_version,
   undici_version: first.undici_version,
 }, {
   schema: "electron_pi_readiness.v1",
@@ -42,6 +43,7 @@ assert.deepEqual({
   protocol_version: 2,
   agent_core_version: "0.84.4",
   pi_ai_version: "0.84.4",
+  pi_coding_agent_version: "0.84.4",
   undici_version: "8.9.0",
 });
 assert.match(first.timestamp, /^\d{4}-\d{2}-\d{2}T/);
