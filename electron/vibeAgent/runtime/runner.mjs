@@ -1082,9 +1082,8 @@ class BridgeSession {
         if (delta) await this.emit("assistant_delta", { text: delta, public: false });
       } else if (event.type === "message_end" && event.message.role === "assistant") {
         const calls = extractToolCalls(event.message);
-        const invalid = calls.length && (event.message.stopReason === "length" || calls.some((call) => !this.providerTools.has(call.name)));
-        if (invalid) {
-          this.fatalProtocolError = new ProtocolError(event.message.stopReason === "length" ? "truncated_tool_call_rejected" : "unknown_tool_rejected");
+        if (calls.some((call) => !this.providerTools.has(call.name))) {
+          this.fatalProtocolError = new ProtocolError("unknown_tool_rejected");
           agent.abort();
           throw this.fatalProtocolError;
         }
