@@ -582,7 +582,7 @@
             v-model="composerDraft"
             :sending="sending"
             :stopping="cancelRequested"
-            :uploading="preparingSend"
+            :uploading="composerStartPending"
             :placeholder="composerPlaceholder"
             :question="composerQuestion"
             :local-account-id="String(currentUser?.id || '')"
@@ -2728,6 +2728,8 @@ interface ElectronAgentRunContext {
   localDescriptor?: any
   localCold?: boolean
   localInteractionEventId?: string
+  localStartAccepted: boolean
+  cancelRequested: boolean
 }
 const electronAgentRuns = new Map<string, ElectronAgentRunContext>()
 const electronAgentWaiters = new Map<string, {
@@ -2779,6 +2781,8 @@ function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunCont
     processEphemeralSteps: [],
     providerCallSequence: 0,
     startedAt: Date.now(),
+    localStartAccepted: false,
+    cancelRequested: false,
   }
   electronAgentRuns.set(run.run_id, context)
   return context
@@ -3579,8 +3583,13 @@ async function stopFoundationTurn() {
   const visibleRun = electronRunForTurn('', activeSessionId.value)
   const targetTurnId = visibleRun?.run.turn_id
     || (activeTurnSessionId.value === activeSessionId.value ? activeTurnId.value : '')
-  if (!targetTurnId || cancelRequested.value) return
+  if (!targetTurnId || !visibleRun || cancelRequested.value) return
   cancelRequested.value = true
+  visibleRun.cancelRequested = true
+  // Renderer creates the Run identity before the authenticated bootstrap and
+  // child handshake finish. Keep this user intent locally until Main has
+  // accepted the Run instead of firing an IPC that can only report not-found.
+  if (!visibleRun.localStartAccepted) return
   try {
     const electronRun = electronRunForTurn(
       targetTurnId,
@@ -3604,6 +3613,7 @@ async function stopFoundationTurn() {
         // legacy cancel endpoint cannot stop the child and would reintroduce a
         // runtime server dependency; let the user retry once Main is reachable.
         cancelRequested.value = false
+        visibleRun.cancelRequested = false
         ElMessage.error('本地 Agent 暂时无法连接，请稍后重试停止。')
         return
       }
@@ -3613,6 +3623,7 @@ async function stopFoundationTurn() {
     // between the button press and this check, keep the identity unconfirmed
     // instead of sending it to the retired server cancel endpoint.
     cancelRequested.value = false
+    visibleRun.cancelRequested = false
     ElMessage.error('本地 Agent 状态暂时不可用，请稍后重试停止。')
   } catch { cancelRequested.value = false /* 失败允许再点 */ }
 }
@@ -3779,6 +3790,14 @@ const sending = computed(() =>
   || sendingSessionIds.value.length > 0
   || activeSessionSending.value,
 )
+// `preparingSend` spans the complete async send call, including the Provider
+// response. It is only an uncancellable preparation state before a Run owns
+// the composer; afterwards the same button must become the live stop button.
+const composerStartPending = computed(() => preparingSend.value && !(
+  activeTurnId.value
+  && activeTurnSessionId.value === activeSessionId.value
+  && electronRunForTurn(activeTurnId.value, activeSessionId.value)
+))
 const composerPlaceholder = computed(() => '随心输入')
 // 询问模式（Codex 反问）：后端 ask_clarification（录入纪律"这段要不要记进知识库"拿不准时）→ 输入框变选项
 // pending = 后端反问挂起时的"思考草稿"；用户回答时原样回传 → 续跑同一思考（不另起新轮）。
@@ -5711,6 +5730,22 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
       },
     })
     localStartAccepted = true
+    context.localStartAccepted = true
+    if (context.cancelRequested) {
+      try {
+        const cancelResult: any = await bridge.cancel({
+          runId: context.run.run_id,
+          accountId: localAccountId(),
+          turnId: context.run.turn_id,
+          sessionId: context.run.session_id,
+        })
+        if (!cancelResult?.accepted) throw new Error('Electron Agent 未接受取消请求')
+      } catch {
+        context.cancelRequested = false
+        cancelRequested.value = false
+        ElMessage.error('本地 Agent 暂时无法连接，请稍后重试停止。')
+      }
+    }
     // The native reference is now owned by the accepted Run. Clear the
     // composer chip only at this boundary; failed preflight/admission keeps
     // the original selection available for an immediate retry.
@@ -5737,6 +5772,10 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
     failure.attachmentSelectionReusable = true
     throw failure
   } finally {
+    if (!localStartAccepted && context.cancelRequested) {
+      context.cancelRequested = false
+      if (electronPresentationOwnedBy(context)) cancelRequested.value = false
+    }
     const waiting = context.state === 'waiting_user' || String(settledEvent?.state || '') === 'waiting_user'
     electronAgentWaiters.delete(runId)
     if (!waiting) {

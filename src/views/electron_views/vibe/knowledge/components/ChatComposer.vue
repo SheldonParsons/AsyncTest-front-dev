@@ -250,7 +250,7 @@
 
           <button
             class="icon-button send-button"
-            :class="{ 'is-sending': sending, 'is-stopping': stopping }"
+            :class="{ 'is-sending': sending && !uploading, 'is-stopping': stopping }"
             type="button"
             :aria-label="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"
             :title="uploading ? '正在上传附件' : stopping ? '正在停止' : sending ? '停止本轮' : '发送'"

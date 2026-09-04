@@ -44,5 +44,10 @@ assert.match(
   /watch\(cancelRequested, \(stopping, wasStopping\) => \{[\s\S]*if \(!stopping \|\| wasStopping\) return[\s\S]*title: '正在停止本轮…'[\s\S]*type: 'info'/,
 )
 assert.match(composerSource, /stopping \? '正在停止' : sending \? '停止本轮'/)
+assert.match(composerSource, /'is-sending': sending && !uploading/)
+assert.match(viewSource, /:uploading="composerStartPending"/)
+assert.match(viewSource, /const composerStartPending = computed\(\(\) => preparingSend\.value/)
+assert.match(viewSource, /visibleRun\.cancelRequested = true[\s\S]*if \(!visibleRun\.localStartAccepted\) return/)
+assert.match(viewSource, /await bridge\.startLocal\([\s\S]*context\.localStartAccepted = true[\s\S]*if \(context\.cancelRequested\)[\s\S]*await bridge\.cancel/)
 
 console.log('vibe composer notice contract: PASS')
