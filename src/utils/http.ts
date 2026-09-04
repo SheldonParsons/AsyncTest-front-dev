@@ -16,7 +16,7 @@ const getBaseURL = () => {
   // 不管是 Web 还是 Electron，都直接连你本地的 6001
   if (import.meta.env.DEV) {
     if (isElectron) {
-      return "http://localhost:6001";
+      return import.meta.env.VITE_API_URL || "http://localhost:6001";
     }
     // 普通浏览器开发，走 Vite 代理防止跨域
     return "/api";

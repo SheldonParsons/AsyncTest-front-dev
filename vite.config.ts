@@ -10,6 +10,8 @@ import topLevelAwait from "vite-plugin-top-level-await";
 console.log('--- 当前编译变量 VITE_IS_ELECTRON:', process.env.VITE_IS_ELECTRON);
 console.log(process.env.VITE_IS_ELECTRON === 'true');
 const isElectron = process.env.VITE_IS_ELECTRON === 'true';
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || config.server;
+const hmrPort = Number(process.env.VITE_HMR_PORT || 24678);
 
 export default defineConfig({
   base: process.env.VITE_IS_ELECTRON === 'true' ? './' : '/',
@@ -27,7 +29,7 @@ export default defineConfig({
     port: 3333,
     hmr: {
       //host: '0.0.0.0',
-      port: 24678,
+      port: hmrPort,
       protocol: "ws",
       // protocol: "wss", // 服务器开启
       // clientPort: 443, // 服务器开启
@@ -35,7 +37,7 @@ export default defineConfig({
     },
     proxy: {
       "/api/mock": {
-        target: "http://120.78.204.43:6001",
+        target: apiProxyTarget,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/api/server": {
@@ -43,11 +45,11 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/server/, ""),
       },
       "/api": {
-        target: config.server,
+        target: apiProxyTarget,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/sse": {
-        target: config.server,
+        target: apiProxyTarget,
         rewrite: (path) => path.replace(/^\/sse/, ""),
       },
     },
