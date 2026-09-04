@@ -2988,12 +2988,13 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
   const userCancelled = event.type === 'terminal'
     && (terminalState === 'cancelled' || terminalState === 'aborted')
     && (terminalState === 'cancelled' || cancelRequested.value)
+  const cancelledProcess = userCancelled ? cancellationProcessMeta(context) : []
+  const partialText = userCancelled ? String(context.liveAnswerText || '').trim() : ''
   if (userCancelled && electronPresentationOwnedBy(context)) {
     // Main has already persisted assistant_end, but the Renderer does not
     // reload local history between that frame and terminal settlement. Keep
     // the exact partial answer visible now; the persisted row takes over on
     // the next reload/session switch.
-    const partialText = String(context.liveAnswerText || '').trim()
     if (partialText) {
       // `done(aborted)` can arrive a few milliseconds before Host terminal
       // and optimistically add the receipt. Remove that local projection so
@@ -3005,13 +3006,18 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
         partial: true,
         stop_reason: 'aborted',
         committed: false,
+        ...(cancelledProcess.length ? { process: cancelledProcess } : {}),
       })
       context.localAssistantEventId = partial.id
       upsertEvent(partial)
     }
   }
   if (userCancelled) {
-    const receipt = localCancellationEvent(context, String(event.code || 'user_cancelled'))
+    const receipt = localCancellationEvent(
+      context,
+      String(event.code || 'user_cancelled'),
+      partialText ? [] : cancelledProcess,
+    )
     if (receipt && electronPresentationOwnedBy(context)) upsertEvent(receipt)
   }
   if (!waiting) {
@@ -3126,7 +3132,33 @@ function localEventId(context: ElectronAgentRunContext, role: string): string {
 // 独立 identity/key，Renderer 可以先即时展示，随后由持久化历史无缝接管。
 const LOCAL_CANCELLATION_RECEIPT = '已停止本轮处理，本轮未产生任何录入或改动。'
 
-function localCancellationEvent(context: ElectronAgentRunContext, reason = 'user_cancelled'): VibeEvent {
+function cancellationProcessMeta(context: ElectronAgentRunContext): Record<string, any>[] {
+  const steps: ProcessStep[] = [...mergeElectronProcessSteps(context)]
+  if (context.assistantStreamMode === 'process' && context.ephemeralText) {
+    steps.push({
+      kind: 'message',
+      key: `electron-agent-cancelled-delta:${context.run.run_id}`,
+      text: context.ephemeralText,
+      phase: 'commentary',
+      source: 'model',
+      authority: 'ephemeral',
+      streaming: false,
+    })
+  }
+  return steps.map((step: any) => ({
+    ...step,
+    step_id: String(step.key || ''),
+    ...(step.actionId ? { action_id: step.actionId } : {}),
+    ...(step.actionType ? { action_type: step.actionType } : {}),
+    ...(step.durationMs !== undefined ? { duration_ms: step.durationMs } : {}),
+  }))
+}
+
+function localCancellationEvent(
+  context: ElectronAgentRunContext,
+  reason = 'user_cancelled',
+  process: Record<string, any>[] = [],
+): VibeEvent {
   return localDisplayEvent(context, 'assistant', LOCAL_CANCELLATION_RECEIPT, {
     // This row is a receipt for the lifecycle outcome, not an answer that
     // should be sent back to Pi as conversational history.
@@ -3135,6 +3167,7 @@ function localCancellationEvent(context: ElectronAgentRunContext, reason = 'user
     stop_reason: String(reason || 'user_cancelled'),
     committed: false,
     local_event_key: `${context.run.run_id}:cancelled`,
+    ...(process.length ? { process } : {}),
   }, [], 'cancelled')
 }
 
