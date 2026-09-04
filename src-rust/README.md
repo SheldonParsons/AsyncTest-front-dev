@@ -23,13 +23,9 @@ yarn add @napi-rs/package-template
 
 After `yarn build/npm run build` command, you can see `package-template.[darwin|win32|linux].node` file in project root. This is the native addon built from [lib.rs](./src/lib.rs).
 
-### Test
+### Verification
 
-With [ava](https://github.com/avajs/ava), run `yarn test/npm run test` to testing native addon. You can also switch to another testing framework if you want.
-
-### CI
-
-With GitHub Actions, each commit and pull request will be built and tested automatically in [`node@20`, `@node22`] x [`macOS`, `Linux`, `Windows`] matrix. You will never be afraid of the native addon broken in these platforms.
+Native-addon tests and benchmarks are owned by the external `ast-testing-core` repository.
 
 ### Release
 
@@ -48,25 +44,6 @@ In this package, we choose a better way to solve this problem. We release differ
 - Install the latest `Rust`
 - Install `Node.js@10+` which fully supported `Node-API`
 - Install `yarn@1.x`
-
-## Test in local
-
-- yarn
-- yarn build
-- yarn test
-
-And you will see:
-
-```bash
-$ ava --verbose
-
-  ✔ sync function from native code
-  ✔ sleep function from native code (201ms)
-  ─
-
-  2 tests passed
-✨  Done in 1.12s.
-```
 
 ## Release package
 

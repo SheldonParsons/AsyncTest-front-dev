@@ -48,15 +48,31 @@ const rustEngine = require('../src-rust/index.cjs');
 const isDevelopmentRuntime = !app.isPackaged;
 const defaultUserDataPath = app.getPath('userData');
 const recentFallbackUserDataPaths = [];
+const configuredRuntimeDataRoot = String(process.env.ASYNCTEST_RUNTIME_DATA_ROOT || '').trim();
+
+if (configuredRuntimeDataRoot) {
+  if (!path.isAbsolute(configuredRuntimeDataRoot)) {
+    throw new Error('ASYNCTEST_RUNTIME_DATA_ROOT must be an absolute path');
+  }
+  const runtimeUserDataPath = path.join(configuredRuntimeDataRoot, 'user-data');
+  const runtimeSessionDataPath = path.join(configuredRuntimeDataRoot, 'session-data');
+  fs.mkdirSync(runtimeUserDataPath, { recursive: true });
+  fs.mkdirSync(runtimeSessionDataPath, { recursive: true });
+  recentFallbackUserDataPaths.push(defaultUserDataPath);
+  app.setPath('userData', runtimeUserDataPath);
+  app.setPath('sessionData', runtimeSessionDataPath);
+}
 
 // 开发版必须拥有独立的本地身份。否则它会与正式版共享 userData 和单实例锁，
 // 导致后启动的应用立即退出，并让 Cookie、IndexedDB、MCP 状态等互相污染。
 if (isDevelopmentRuntime) {
-  recentFallbackUserDataPaths.push(defaultUserDataPath);
-  const developmentUserDataPath = path.join(app.getPath('appData'), 'async-test-dev');
-  fs.mkdirSync(developmentUserDataPath, { recursive: true });
   app.setName('AsyncTest Dev');
-  app.setPath('userData', developmentUserDataPath);
+  if (!configuredRuntimeDataRoot) {
+    recentFallbackUserDataPaths.push(defaultUserDataPath);
+    const developmentUserDataPath = path.join(app.getPath('appData'), 'async-test-dev');
+    fs.mkdirSync(developmentUserDataPath, { recursive: true });
+    app.setPath('userData', developmentUserDataPath);
+  }
 }
 
 if (process.argv.includes('--asynctest-mind-mcp')) {
@@ -170,10 +186,14 @@ app.on('second-instance', async (event, argv) => {
 
 // ===== 创建主窗口 =====
 async function createMainWindow() {
+  const configuredDevServerURL = String(process.env.ASYNCTEST_DEV_SERVER_URL || '').trim();
+  if (configuredDevServerURL && !/^https?:\/\//i.test(configuredDevServerURL)) {
+    throw new Error('ASYNCTEST_DEV_SERVER_URL must use http or https');
+  }
   windowManager = new WindowManager({
     preloadPath: path.join(__dirname, 'preload.js'),
     isDev: isDevelopmentRuntime,
-    devBaseURL: 'http://localhost:3333',
+    devBaseURL: configuredDevServerURL || 'http://localhost:3333',
     prodIndexHTML: path.join(__dirname, '../dist/index.html'),
   });
 

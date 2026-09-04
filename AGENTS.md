@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **测试所有权（2026-09-05）**：本仓库不保存测试框架、fixture 或运行证据。统一由
+> `/Users/sheldon/Documents/AsyncTest/ast-testing-core` 驱动；测试数据只允许写入
+> `/Users/sheldon/Documents/AsyncTest/ast-testing-core-data`。产品侧只保留通用运行隔离接口。
+
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## 项目概述
