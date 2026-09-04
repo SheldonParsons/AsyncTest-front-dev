@@ -583,7 +583,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }).catch(() => undefined);
     }
   }).catch(() => undefined);
-  const routerFor = (run, context, { refresh = false, userAuthorityTexts = [] } = {}) => {
+  const routerFor = (run, context, { refresh = false } = {}) => {
     const key = String(run?.run_id || run?.runId || "");
     if (refresh) routers.delete(key);
     if (routers.has(key)) return routers.get(key);
@@ -602,7 +602,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       knowledgeCache,
       run,
       defaultQuery: normalized.requestText,
-      userAuthorityTexts,
       onTrace: ({ name, payload, status }) => appendTrace(run, name, payload, status),
     });
     routers.set(key, router);
@@ -1311,7 +1310,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (descriptor.response && responseSignature(descriptor.response) !== responseSignature(response)) {
       throw new Error("vibe_agent_response_replay_mismatch");
     }
-    const responseText = localResponseText(pending, response);
     const run = descriptor.run;
     const basePayload = descriptor.start_payload && typeof descriptor.start_payload === "object"
       ? descriptor.start_payload : {};
@@ -1329,24 +1327,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     // authenticated context.  Even a resume_ready checkpoint may continue
     // with another read after the child restarts; reusing a router that held
     // an expired token would otherwise route that call through stale state.
-    const priorAuthorityTexts = (await sessionStore.events(run.session_id, {
-      accountId: descriptorAccount,
-      limit: 100_000,
-    }).catch(() => []))
-      .filter((item) => (
-        item?.role === "user"
-        && String(item?.meta?.run_id || "") === runId
-        && item?.meta?.interaction_response?.clarification_response
-      ))
-      .map((item) => String(item.content || "").trim())
-      .filter(Boolean);
-    const recoveryRouter = routerFor(run, context, {
-      refresh: true,
-      userAuthorityTexts: priorAuthorityTexts,
-    });
-    if (String(pending.kind || "") === "clarification" && responseText) {
-      recoveryRouter.recordUserAuthority(responseText);
-    }
+    const recoveryRouter = routerFor(run, context, { refresh: true });
     if (!outcome) {
       await runStore.markResponseInFlight(runId, response);
       recoveryRouter.restorePending(pending, {
@@ -1382,6 +1363,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         },
       );
     }
+    const responseText = localResponseText(pending, response);
     if (responseText) {
       await appendLocalSessionEvent(run, "user", responseText, {
         local_event_key: localResponseEventKey(expectedPendingId, response),

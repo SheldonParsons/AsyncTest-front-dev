@@ -26,10 +26,10 @@ const HIDDEN_TOOLS = new Set(["apply_confirmation", "cancel_confirmation", "read
 const READ_WAVE_TOOLS = new Set([
   "search_knowledge", "search_vibe_platform_docs", "get_knowledge_overview", "read_knowledge",
 ]);
+const NATURAL_TARGET_WRITE_TOOLS = new Set([
+  "edit_knowledge", "delete_knowledge", "move_knowledge_section",
+]);
 const INLINE_READ_BYTES = 256 * 1024;
-const MAX_USER_AUTHORITY_CHARS = 20_000;
-const MAX_USER_AUTHORITY_REPLIES = 16;
-const MAX_USER_AUTHORITY_REPLY_CHARS = 4_000;
 
 function jsonText(value) {
   if (typeof value === "string") return value;
@@ -40,7 +40,7 @@ function stableErrorCode(error, fallback = "vibe_agent_tool_failed") {
   const candidate = String(error?.code || error?.message || "").trim();
   // Node filesystem errors can include the absolute local attachment path in
   // `message`. Keep Trace/provider tool results to a fixed code vocabulary.
-  const safe = /^(?:vibe_agent|knowledge|provider|pi|electron|attachment|invalid|project|account|resource|receipt|interaction|run|trace|client|model|context|total|wall|candidate|unsupported|missing|document|source|permission|unauthenticated|not_found|upload|chunk|bundle|credential|operation|response|tool|local)(?:[A-Za-z0-9_.:-]*)$/u;
+  const safe = /^(?:vibe_agent|knowledge|natural|provider|pi|electron|attachment|invalid|project|account|resource|receipt|interaction|run|trace|client|model|context|total|wall|candidate|unsupported|missing|document|source|permission|unauthenticated|not_found|upload|chunk|bundle|credential|operation|response|tool|local)(?:[A-Za-z0-9_.:-]*)$/u;
   return safe.test(candidate) ? candidate : fallback;
 }
 
@@ -54,6 +54,42 @@ function canonicalJson(value) {
 
 function digest(value) {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+function traceableKnowledgePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)
+    || !String(payload.target_binding || "").trim()) return payload;
+  const safe = { ...payload };
+  safe.target_binding_sha256 = digest(String(safe.target_binding));
+  delete safe.target_binding;
+  return safe;
+}
+
+function naturalWriteTargets(name, payload) {
+  if (!NATURAL_TARGET_WRITE_TOOLS.has(name)) return [];
+  const raw = [];
+  if (payload?.document?.target) raw.push(payload.document.target);
+  for (const change of Array.isArray(payload?.changes) ? payload.changes : []) {
+    if (change?.target) raw.push(change.target);
+  }
+  const seen = new Set();
+  return raw.filter((target) => {
+    if (!target || typeof target !== "object" || Array.isArray(target)) return false;
+    const key = canonicalJson(target);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function withoutTargetBinding(outcome) {
+  if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) return outcome;
+  const projected = { ...outcome };
+  if (projected.result && typeof projected.result === "object" && !Array.isArray(projected.result)) {
+    projected.result = { ...projected.result };
+    delete projected.result.binding;
+  }
+  return projected;
 }
 
 function responseSignature(value) {
@@ -187,15 +223,11 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", userAuthorityTexts = [], onTrace } = {}) {
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
     this.defaultQuery = String(defaultQuery || "").trim();
-    this.userAuthorityTexts = [];
-    for (const text of Array.isArray(userAuthorityTexts) ? userAuthorityTexts : []) {
-      this.recordUserAuthority(text);
-    }
     this.onTrace = typeof onTrace === "function" ? onTrace : () => {};
     this.pending = new Map();
     this.interactionSequence = 0;
@@ -226,24 +258,6 @@ export class LocalToolRouter {
 
   async trace(name, payload, status = "ok") {
     try { await this.onTrace({ name, payload, status }); } catch { /* trace is observational */ }
-  }
-
-  recordUserAuthority(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return;
-    const half = MAX_USER_AUTHORITY_REPLY_CHARS / 2;
-    const text = raw.length <= MAX_USER_AUTHORITY_REPLY_CHARS
-      ? raw : `${raw.slice(0, half)}\n${raw.slice(-half)}`;
-    if (this.userAuthorityTexts.includes(text)) return;
-    this.userAuthorityTexts.push(text);
-    if (this.userAuthorityTexts.length > MAX_USER_AUTHORITY_REPLIES) this.userAuthorityTexts.shift();
-  }
-
-  userAuthorityText() {
-    const replies = this.userAuthorityTexts.join("\n").slice(-8_000);
-    if (!replies) return this.defaultQuery.slice(0, MAX_USER_AUTHORITY_CHARS);
-    const base = this.defaultQuery.slice(0, Math.max(0, MAX_USER_AUTHORITY_CHARS - replies.length - 1));
-    return [base, replies].filter(Boolean).join("\n");
   }
 
   async executeWave({ calls = [], signal } = {}) {
@@ -522,13 +536,22 @@ export class LocalToolRouter {
     const operation = KNOWLEDGE_TOOLS.get(name);
     if (!operation) throw new Error("vibe_agent_unknown_tool");
     if (!this.knowledgeClient) throw new Error("vibe_agent_knowledge_client_unconfigured");
-    const payload = await this.knowledgePayload(name, operation, args);
+    let payload = await this.knowledgePayload(name, operation, args);
+    const bound = await this.bindNaturalWriteTargets(name, payload, toolCallId, signal);
+    if (bound.outcome) {
+      return this.interactionFromOutcome(
+        publicKnowledgeOutcome(withoutTargetBinding(bound.outcome)),
+        toolCallId,
+        name,
+      );
+    }
+    payload = bound.payload;
     // Trace the exact post-materialization request. For a large authored
     // document this is the chunks/hash payload, never a local source path.
     await this.trace("knowledge.request", {
       tool_call_id: toolCallId,
       tool: name,
-      payload,
+      payload: traceableKnowledgePayload(payload),
     });
     let outcome = await this.knowledgeClient.call({
       operation,
@@ -545,6 +568,37 @@ export class LocalToolRouter {
     if (name === "read_knowledge") outcome = await this.materializeReadOutcome(outcome, toolCallId, signal);
     await this.trace("knowledge.result", { tool_call_id: toolCallId, tool: name, outcome });
     return this.interactionFromOutcome(publicKnowledgeOutcome(outcome), toolCallId, name);
+  }
+
+  async bindNaturalWriteTargets(name, payload, toolCallId, signal) {
+    const targets = naturalWriteTargets(name, payload);
+    if (!targets.length) return { payload };
+    const outcome = await this.knowledgeClient.call({
+      operation: "bind_targets",
+      projectId: this.run.project_id ?? this.run.projectId ?? this.run.project,
+      sessionId: this.run.session_id ?? this.run.sessionId,
+      turnId: this.run.turn_id ?? this.run.turnId,
+      goalId: this.run.goal_id ?? this.run.goalId,
+      toolCallId: `${toolCallId}:target-binding`,
+      payload: { targets },
+      traceId: this.run.trace_id ?? this.run.traceId ?? this.run.run_id,
+      signal,
+    });
+    const binding = String(outcome?.result?.binding || "").trim();
+    const outcomeStatus = String(outcome?.status || "unresolved");
+    await this.trace("knowledge.target_binding", {
+      tool_call_id: toolCallId,
+      tool: name,
+      target_count: targets.length,
+      status: binding ? "resolved" : outcomeStatus,
+      ...(binding ? { binding_sha256: digest(binding) } : {}),
+      ...(!binding && outcome?.result?.error?.code
+        ? { error_code: stableErrorCode(outcome.result.error, "knowledge_target_binding_failed") }
+        : {}),
+    }, new Set(["retryable_failure", "non_retryable_failure"]).has(outcomeStatus) ? "error" : "ok");
+    return binding
+      ? { payload: { ...payload, target_binding: binding } }
+      : { payload, outcome: withoutTargetBinding(outcome) };
   }
 
   async materializeReadOutcome(outcome, toolCallId, signal) {
@@ -653,16 +707,11 @@ export class LocalToolRouter {
     }
     if (name === "search_vibe_platform_docs") payload.scope = "system";
     if (operation === "prepare_change") {
-      // Target authority comes from user-authored input, never from model
-      // arguments. Validated clarification replies extend the root request so
-      // a user-selected filename remains authoritative on the next tool call.
+      // User text remains separate from the Main-only signed target binding.
+      // Model arguments can provide natural locators but never authority.
       if (this.defaultQuery) {
         payload.request_text = this.defaultQuery;
-      }
-      const authorityText = this.userAuthorityText();
-      if (authorityText) {
-        if (!payload.request_text) payload.request_text = authorityText;
-        payload.original_request_text = authorityText;
+        payload.original_request_text = this.defaultQuery;
       }
       payload.operation = name === "add_knowledge" ? "insert"
         : name === "edit_knowledge" ? "update"
@@ -879,7 +928,6 @@ export class LocalToolRouter {
       && !clarificationOptionAllowed(pending.options, clarification.option_id)) {
       throw new Error("vibe_agent_clarification_option_invalid");
     }
-    this.recordUserAuthority(userMessage);
     const resolved = {
       status: "resolved",
       result: toolResult({ acknowledged: true }),

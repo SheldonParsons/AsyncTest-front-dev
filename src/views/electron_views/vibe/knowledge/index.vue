@@ -309,7 +309,7 @@
                 :running="threadRunning(event)"
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
-                :render-markdown="renderMarkdown"
+                :render-markdown="renderStreamingMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <!-- 候选答案始终在思考竖线之外流式展示；工具调用旁白仍由
@@ -349,7 +349,7 @@
                 :running="false"
                 :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
-                :render-markdown="renderMarkdown"
+                :render-markdown="renderStreamingMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
@@ -467,7 +467,7 @@
                     v-if="eventProcessSteps(responseEvent).length"
                     :steps="eventProcessSteps(responseEvent)"
                     :duration-ms="eventProcessDuration(responseEvent)"
-                    :render-markdown="renderMarkdown"
+                    :render-markdown="renderStreamingMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
@@ -487,7 +487,7 @@
                     :steps="streamingProcess.steps"
                     :running="procRunning"
                     :duration-ms="procDurationMs"
-                    :render-markdown="renderMarkdown"
+                    :render-markdown="renderStreamingMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -543,7 +543,7 @@
               :steps="streamingProcess.steps"
               :running="procRunning"
               :duration-ms="procDurationMs"
-              :render-markdown="renderMarkdown"
+              :render-markdown="renderStreamingMarkdown"
               @layout-change="syncTimelineNavigationAfterLayout"
             />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -2676,6 +2676,9 @@ const streamingAnswerHtml = ref('')
 const streamingAnswerHtmlSource = ref('')
 let streamingAnswerRenderTimer: ReturnType<typeof setTimeout> | null = null
 let streamingAnswerRenderEpoch = 0
+let electronDeltaProjectionTimer: ReturnType<typeof setTimeout> | null = null
+let electronDeltaProjectionContext: ElectronAgentRunContext | null = null
+const ELECTRON_DELTA_PROJECTION_DELAY_MS = 50
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
 let runningTurnPollInFlight = false
 const RUNNING_POLL_ACTIVE_MS = 1500
@@ -2784,6 +2787,7 @@ function registerElectronAgentRun(run: FoundationAgentRun): ElectronAgentRunCont
 function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: any) {
   const rows = canonicalDeltaEvents(delta)
   if (!rows.length) return
+  cancelElectronDeltaProjection(context)
   context.ephemeralText = ''
   const previousState = context.state
   const model = applyTurnProtocolEvents(context.protocolState, rows)
@@ -2847,6 +2851,31 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
   else if (streamingAnswerHtmlSource.value !== streamingLiveAnswerContent.value) scheduleStreamingAnswerRender()
 }
 
+function cancelElectronDeltaProjection(context?: ElectronAgentRunContext): void {
+  if (context && electronDeltaProjectionContext && electronDeltaProjectionContext !== context) return
+  if (electronDeltaProjectionTimer) clearTimeout(electronDeltaProjectionTimer)
+  electronDeltaProjectionTimer = null
+  electronDeltaProjectionContext = null
+}
+
+function flushElectronDeltaProjection(): void {
+  const context = electronDeltaProjectionContext
+  electronDeltaProjectionTimer = null
+  electronDeltaProjectionContext = null
+  if (!context || !electronAgentRuns.has(context.run.run_id)) return
+  projectElectronAgentProgress(context)
+  if (electronPresentationOwnedBy(context)) void scrollBottomIfFollowing()
+}
+
+function scheduleElectronDeltaProjection(context: ElectronAgentRunContext): void {
+  electronDeltaProjectionContext = context
+  if (electronDeltaProjectionTimer) return
+  electronDeltaProjectionTimer = setTimeout(
+    flushElectronDeltaProjection,
+    ELECTRON_DELTA_PROJECTION_DELAY_MS,
+  )
+}
+
 function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) {
   if (!text) return
   // Keep the partial while another session is open, then re-project it when
@@ -2856,14 +2885,14 @@ function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) 
     && ['candidate', 'answer'].includes(context.assistantStreamMode)) {
     context.liveAnswerText = context.ephemeralText
   }
-  projectElectronAgentProgress(context)
-  void scrollBottomIfFollowing()
+  if (electronPresentationOwnedBy(context)) scheduleElectronDeltaProjection(context)
 }
 
 function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: VibeAgentEvent): void {
   const frameType = String(event.frameType || '').trim()
   const payload = event.payload && typeof event.payload === 'object' ? event.payload as Record<string, any> : {}
   if (frameType === 'provider_payload') {
+    cancelElectronDeltaProjection(context)
     context.providerCallSequence += 1
     const purpose = String(payload.purpose || 'main_agent')
     // Official context compaction is an internal continuation of the same
@@ -2885,6 +2914,7 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     return
   }
   if (frameType === 'assistant_end') {
+    cancelElectronDeltaProjection(context)
     const purpose = String(payload.purpose || context.assistantStreamPurpose || 'main_agent')
     const text = String(payload.text ?? context.ephemeralText ?? '')
     const hasToolCalls = payload.has_tool_calls === true
@@ -2934,6 +2964,7 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     return
   }
   if (frameType === 'candidate_final') {
+    cancelElectronDeltaProjection(context)
     const text = String(payload.text ?? '')
     context.assistantStreamPurpose = String(payload.purpose || 'main_agent')
     context.assistantStreamMode = context.assistantStreamPurpose === 'main_agent' ? 'answer' : 'private'
@@ -2947,6 +2978,7 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
 }
 
 function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAgentEvent) {
+  cancelElectronDeltaProjection(context)
   const waiting = String(event.state || context.state) === 'waiting_user'
   const terminalState = String(event.state || context.state)
   if (event.type === 'terminal'

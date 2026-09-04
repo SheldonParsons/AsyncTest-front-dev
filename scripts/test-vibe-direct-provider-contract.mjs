@@ -82,7 +82,12 @@ const fetchImpl = async (url, init) => {
     agent_binding: agentBinding(),
     skill,
     hidden_tools: [],
-    options: { max_retries: 0, payload_overrides: { enable_thinking: false } },
+    options: {
+      max_retries: 0,
+      max_model_calls: 12,
+      max_wall_clock_ms: 360000,
+      payload_overrides: { enable_thinking: false },
+    },
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 };
 
@@ -107,6 +112,8 @@ assert.equal(snapshot.provider.mode, "direct");
 assert.equal(snapshot.provider.api_key, "provider-secret");
 assert.equal(snapshot.provider.model, "strong-model");
 assert.equal(snapshot.account_id, run.account_id);
+assert.equal(snapshot.options.max_model_calls, 12);
+assert.equal(snapshot.options.max_wall_clock_ms, 360000);
 
 // Older deployments returned the authenticated account as a JSON number.
 // The client accepts that compatible representation but exposes one canonical
@@ -173,6 +180,7 @@ try {
 const preload = await fs.readFile(new URL("../electron/preload.js", import.meta.url), "utf8");
 const renderer = await fs.readFile(new URL("../src/views/electron_views/vibe/knowledge/index.vue", import.meta.url), "utf8");
 const hostSource = await fs.readFile(new URL("../electron/vibeAgent/agentHost.node.js", import.meta.url), "utf8");
+const runnerSource = await fs.readFile(new URL("../electron/vibeAgent/runtime/runner.mjs", import.meta.url), "utf8");
 const ipcSource = await fs.readFile(new URL("../electron/vibeAgent/ipcMain.node.js", import.meta.url), "utf8");
 assert.equal(preload.includes("vibeAgent:providerGet"), false);
 assert.equal(preload.includes("vibeAgent:providerSet"), false);
@@ -186,6 +194,8 @@ assert.match(hostSource, /sameSessionOwner[\s\S]*vibe_agent_session_busy/);
 assert.match(hostSource, /localTerminalState[\s\S]*effectiveState/);
 assert.match(hostSource, /liveSessionOwners[\s\S]*localTerminalState/);
 assert.match(hostSource, /stale waiting descriptor[\s\S]*hosted\?\.localTerminalState/);
+assert.match(runnerSource, /this\.budgetedModelCalls >= maxModelCalls[\s\S]*model_call_budget_exhausted/);
+assert.match(runnerSource, /Date\.now\(\) - this\.runStartedAt - this\.userWaitMs[\s\S]*wall_clock_exhausted/);
 const localStartBlock = ipcSource.slice(ipcSource.indexOf('register("vibeAgent:startLocal"'));
 assert.ok(localStartBlock.indexOf("host.reserveLocal") < localStartBlock.indexOf("injectLocalStartPayload"));
 assert.match(localStartBlock, /bindLocalReservation[\s\S]*host\.startLocal/);

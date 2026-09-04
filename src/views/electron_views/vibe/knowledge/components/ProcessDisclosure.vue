@@ -34,7 +34,7 @@
             streaming: step.streaming,
             'runtime-progress': step.phase === 'runtime_progress',
           }"
-          v-html="renderMarkdown(step.text)"
+          v-html="messageHtml(step)"
         />
         <div v-else-if="step.kind === 'diff'" class="proc-diff">
           <div v-for="(ln, j) in step.lines" :key="j" class="proc-diff-line" :class="'pd-' + ln.t">{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { formatDuration, type ProcessActionStep, type ProcessStep } from '../composables/useProcessTurn'
 import { compactProcessActionMeta } from '../processDisclosurePolicy'
 import { continuousAnimationDelay } from '../motionContinuity'
@@ -93,6 +93,10 @@ const props = withDefaults(defineProps<{
 // 运行与等待用户时展开；完成后默认收起，仍可由用户手动查看。
 const open = ref<boolean | undefined>()
 const shimmerStyle = { '--vibe-shimmer-delay': continuousAnimationDelay() }
+const renderedMessages = shallowRef<Record<string, string>>({})
+const messageCache = new Map<string, { text: string; html: string }>()
+let messageRenderTimer: ReturnType<typeof setTimeout> | null = null
+const STREAMING_PROCESS_RENDER_DELAY_MS = 100
 
 const bodyVisible = computed(() => (
   props.running || (open.value ?? props.awaiting)
@@ -103,14 +107,53 @@ watch(() => props.running, (running, wasRunning) => {
   if (wasRunning && !running && !props.awaiting) open.value = false
 })
 
-watch(
-  [bodyVisible, () => props.steps],
-  async () => {
-    await nextTick()
-    emit('layout-change')
-  },
-  { deep: true, flush: 'post' },
-)
+function renderMessages() {
+  if (messageRenderTimer) clearTimeout(messageRenderTimer)
+  messageRenderTimer = null
+  if (!bodyVisible.value) {
+    renderedMessages.value = {}
+    void nextTick(() => emit('layout-change'))
+    return
+  }
+  const activeKeys = new Set<string>()
+  const next: Record<string, string> = {}
+  for (const step of props.steps) {
+    if (step.kind !== 'message') continue
+    const key = String(step.key || '')
+    const text = String(step.text || '')
+    activeKeys.add(key)
+    const cached = messageCache.get(key)
+    const html = cached?.text === text ? cached.html : props.renderMarkdown(text)
+    messageCache.set(key, { text, html })
+    next[key] = html
+  }
+  for (const key of messageCache.keys()) {
+    if (!activeKeys.has(key)) messageCache.delete(key)
+  }
+  renderedMessages.value = next
+  void nextTick(() => emit('layout-change'))
+}
+
+function scheduleMessageRender() {
+  const streaming = props.steps.some(step => step.kind === 'message' && step.streaming)
+  if (!streaming) {
+    renderMessages()
+    return
+  }
+  if (messageRenderTimer) return
+  messageRenderTimer = setTimeout(renderMessages, STREAMING_PROCESS_RENDER_DELAY_MS)
+}
+
+watch(bodyVisible, scheduleMessageRender, { flush: 'post' })
+watch(() => props.steps, scheduleMessageRender, { immediate: true, flush: 'post' })
+
+onBeforeUnmount(() => {
+  if (messageRenderTimer) clearTimeout(messageRenderTimer)
+})
+
+function messageHtml(step: ProcessStep): string {
+  return renderedMessages.value[String(step.key || '')] || ''
+}
 
 function toggle() {
   if (props.running) return

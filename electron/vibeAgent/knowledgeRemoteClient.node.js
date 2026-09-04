@@ -252,7 +252,7 @@ function knowledgeRequestBody({
   traceId = "",
 } = {}) {
   const op = String(operation ?? "").trim().toLowerCase();
-  if (!new Set(["search", "overview", "read_source", "prepare_change", "resolve_confirmation", "get_receipt"]).has(op)) {
+  if (!new Set(["search", "overview", "read_source", "bind_targets", "prepare_change", "resolve_confirmation", "get_receipt"]).has(op)) {
     throw new Error("vibe_agent_knowledge_operation_invalid");
   }
   const bodyPayload = payload === undefined || payload === null
@@ -310,7 +310,7 @@ export class KnowledgeRemoteError extends Error {
   }
 }
 
-const PUBLIC_ERROR_CODE = /^(?:knowledge|invalid|missing|payload|project|cross|resource|receipt|attachment|candidate|unsupported|unauthenticated|mixed|document|source|confirmation|provider|interaction|request|upload|chunk|bundle|trace|system|operation|permission|account|vibe_agent)(?:[A-Za-z0-9_.:-]*)$/u;
+const PUBLIC_ERROR_CODE = /^(?:knowledge|natural|invalid|missing|payload|project|cross|resource|receipt|attachment|candidate|unsupported|unauthenticated|mixed|document|source|confirmation|provider|interaction|request|upload|chunk|bundle|trace|system|operation|permission|account|vibe_agent)(?:[A-Za-z0-9_.:-]*)$/u;
 
 function publicRemoteErrorCode(value, status = 0) {
   const candidate = String(value || "").trim();

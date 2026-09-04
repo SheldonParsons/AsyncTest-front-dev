@@ -446,6 +446,9 @@ class BridgeSession {
     this.seenToolCallIds = new Set();
     this.admittedAssistantWaves = new WeakSet();
     this.callNumber = 0;
+    this.budgetedModelCalls = 0;
+    this.runStartedAt = Date.now();
+    this.userWaitMs = 0;
     this.seenProviderCallIds = new Set();
     this.seenInteractionIds = new Set();
     this.interactionSequence = 0;
@@ -684,6 +687,20 @@ class BridgeSession {
       const callId = requestedCallId || `call-${++this.callNumber}`;
       if (this.seenProviderCallIds.has(callId)) throw new ProtocolError("provider_call_id_duplicate");
       this.seenProviderCallIds.add(callId);
+      // Official Pi owns context and compaction. The host only enforces a
+      // finite safety envelope so a bad tool/result contract cannot spin for
+      // dozens of model calls. Session-title generation is best-effort and
+      // happens after the user-visible run, so it does not consume this cap.
+      if (purpose !== "session_title") {
+        const maxWallClockMs = Number(this.options.max_wall_clock_ms ?? 360_000);
+        const elapsedMs = Math.max(0, Date.now() - this.runStartedAt - this.userWaitMs);
+        if (elapsedMs >= maxWallClockMs) throw new ProtocolError("wall_clock_exhausted");
+        const maxModelCalls = Number(this.options.max_model_calls ?? 12);
+        if (this.budgetedModelCalls >= maxModelCalls) {
+          throw new ProtocolError("model_call_budget_exhausted");
+        }
+        this.budgetedModelCalls += 1;
+      }
       const strictTools = (context.tools ?? []).map((tool) => this.providerTools.get(tool.name) ?? tool);
       const providerContext = { ...context, tools: strictTools };
       const startOverrides = this.options.payload_overrides ?? {};
@@ -866,6 +883,7 @@ class BridgeSession {
     this.activeInteraction = expected;
     this.seenInteractionIds.add(expected.interaction_id);
     this.interactionSequence = expected.sequence;
+    const userWaitStartedAt = Date.now();
     try {
       const response = await this.request("interaction_request", {
         interaction_id: expected.interaction_id,
@@ -907,6 +925,7 @@ class BridgeSession {
       }
       throw error;
     } finally {
+      this.userWaitMs += Math.max(0, Date.now() - userWaitStartedAt);
       this.activeInteraction = undefined;
     }
   }
