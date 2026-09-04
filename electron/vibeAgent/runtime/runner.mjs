@@ -1220,12 +1220,15 @@ class BridgeSession {
       await this.emit("done", { status: "aborted", code: "user_stop_all" });
       return;
     }
-    if (!final || final.stopReason === "error") throw new ProtocolError("agent_provider_failed");
-    if (final.stopReason === "aborted" || this.abortReason) {
+    if (final?.stopReason === "aborted" || this.abortReason) {
       await this.emitSessionCheckpoint("aborted");
-      await this.emit("done", { status: "aborted" });
+      await this.emit("done", {
+        status: "aborted",
+        ...(this.abortReason ? { code: this.abortReason } : {}),
+      });
       return;
     }
+    if (!final || final.stopReason === "error") throw new ProtocolError("agent_provider_failed");
     if (extractToolCalls(final).length) throw new ProtocolError("agent_final_tool_calls_unresolved");
     await this.finishCandidate(extractAssistantText(final), final.usage, final.stopReason);
   }
@@ -1356,7 +1359,17 @@ class BridgeSession {
       this.pending.clear();
       this.finished = true;
       try { this.closeInput(); } catch { /* stdin may already be closed */ }
-      if (!gracefulAbort) {
+      if (gracefulAbort) {
+        try {
+          await this.emitSessionCheckpoint("aborted").catch(() => undefined);
+          await this.emit("done", {
+            status: "aborted",
+            code: this.abortReason || "user_cancelled",
+          });
+        } catch {
+          // Host child-close handling remains the final fail-closed boundary.
+        }
+      } else {
         const correlation = this.runtime ? {} : { reply_to: this.startFrame.message_id };
         try {
           await this.emitSessionCheckpoint("failed").catch(() => undefined);
@@ -1391,9 +1404,11 @@ async function main() {
     await runPromise;
   } catch (error) {
     const code = errorCode(error);
+    const gracefulAbort = Boolean(session?.abortReason)
+      && new Set(["operation_aborted", "pi_cancelled"]).has(code);
     if (session) await session.fail(error);
     else process.stderr.write(`PI_BRIDGE_ERROR:${code}\n`);
-    process.exitCode = 1;
+    process.exitCode = gracefulAbort ? 0 : 1;
   }
 }
 

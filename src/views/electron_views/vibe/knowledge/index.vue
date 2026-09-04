@@ -2657,6 +2657,40 @@ function clearSessionDraft(sessionId: string) {
   if (sessionId) delete sessionDrafts[sessionDraftKey(sessionId)]
 }
 const activeDraftKey = computed(() => sessionDraftKey())
+const WORKSPACE_DRAFT_STORAGE_PREFIX = 'vibe_composer_workspace_draft.v1:'
+function workspaceDraftStorageKey(projectId = workspaceProjectContextId()): string {
+  const account = String(currentUser.value?.id || 'anonymous').trim() || 'anonymous'
+  const project = String(projectId || '').trim() || 'pending'
+  return `${WORKSPACE_DRAFT_STORAGE_PREFIX}${encodeURIComponent(account)}:${encodeURIComponent(project)}`
+}
+function restoreWorkspaceDraft(projectId = workspaceProjectContextId()): void {
+  const project = String(projectId || '').trim()
+  if (!project) return
+  let value = ''
+  try { value = String(localStorage.getItem(workspaceDraftStorageKey(project)) || '') } catch { /* unavailable storage */ }
+  setDraftByKey(`new:${project}`, value)
+}
+function persistWorkspaceDraft(projectId: string, value: string): void {
+  if (!projectId) return
+  try {
+    const key = workspaceDraftStorageKey(projectId)
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
+  } catch { /* quota/private-mode failures must not break typing */ }
+}
+function clearWorkspaceDraft(projectId: string): void {
+  persistWorkspaceDraft(projectId, '')
+}
+function hasWorkspaceComposerDraft(projectId: string): boolean {
+  let text = ''
+  let attachments = ''
+  try {
+    text = String(localStorage.getItem(workspaceDraftStorageKey(projectId)) || '')
+    const attachmentKey = `vibe_agent_composer_attachments:${composerAttachmentStorageKeyFor('', projectId)}`
+    attachments = String(localStorage.getItem(attachmentKey) || '')
+  } catch { /* unavailable storage */ }
+  return Boolean(text || attachments)
+}
 const draft = computed<string>({
   get: () => sessionDrafts[activeDraftKey.value] || '',
   set: (value) => { setDraftByKey(activeDraftKey.value, value) },
@@ -3785,9 +3819,12 @@ function composerAttachmentStorageKeyFor(sessionId = activeSessionId.value, proj
 }
 const composerAttachmentStorageKey = computed(() => composerAttachmentStorageKeyFor())
 const localDraftPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
-watch([composerDraft, activeSessionId], ([value, sessionId]) => {
+watch([composerDraft, activeSessionId, selectedProjectId], ([value, sessionId, projectId]) => {
   const key = String(sessionId || '')
-  if (!key) return
+  if (!key) {
+    persistWorkspaceDraft(String(projectId || ''), value)
+    return
+  }
   const current = localDraftPersistTimers.get(key)
   if (current) clearTimeout(current)
   const accountId = localAccountId()
@@ -4737,7 +4774,10 @@ async function selectProject(project: any, options: { refreshStats?: boolean } =
   const epoch = ++projectContextEpoch
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
-  if (!activeSessionId.value) activateWorkspaceConversation(project.id, '')
+  if (!activeSessionId.value) {
+    restoreWorkspaceDraft(project.id)
+    activateWorkspaceConversation(project.id, '')
+  }
   void startKnowledgeActivity(project.id)
   if (options.refreshStats !== false) void loadCurrentKbStats(project.id)
   packageStatusOverrides.value = {}
@@ -4817,7 +4857,8 @@ async function refreshState(
   const loadedSessions = await localSessionsForProject(projectId)
   if (contextEpoch !== projectContextEpoch || workspaceProjectContextId() !== projectId) return
   sessions.value = loadedSessions
-  if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length) {
+  if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length
+    && !hasWorkspaceComposerDraft(projectId)) {
     await openSession(sessions.value[0].id)
     return
   }
@@ -4981,6 +5022,7 @@ function newConversation() {
   resetTimelineNavigation()
   const leavingSession = activeSessionId.value
   activeSessionId.value = ''
+  restoreWorkspaceDraft(workspaceProjectContextId())
   if (leavingSession) activateWorkspaceConversation(workspaceProjectContextId(), '')
   events.value = []
   sessionFilesLoading.value = false
@@ -5123,6 +5165,7 @@ async function ensureLocalSession(): Promise<string> {
     updated_at: created.updated_at,
   }
   sessions.value.unshift(projected)
+  clearWorkspaceDraft(projectId)
   adoptWorkspaceDraftForSession(projectId, sessionId)
   activeSessionId.value = sessionId
   activateWorkspaceConversation(projectId, sessionId)
