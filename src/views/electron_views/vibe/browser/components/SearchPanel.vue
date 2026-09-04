@@ -12,7 +12,7 @@
           v-model="inputQuery"
           type="search"
           autocomplete="off"
-          placeholder="搜索文档标题、文件名或正文…"
+          placeholder="搜索知识名称或正文…"
           @keydown.esc.prevent="clearSearch"
           @search="handleNativeSearch"
         />
@@ -75,8 +75,8 @@
       </div>
       <div v-else-if="!hasVisibleResults" class="empty">
         <strong>{{ submittedQuery ? '没有匹配内容' : '还没有知识项' }}</strong>
-        <span>{{ submittedQuery ? '试试更短的原文片段、编号或文件名。' : '确认录入后的正文会出现在这里。' }}</span>
-        <button v-if="submittedQuery" type="button" @click="clearSearch">查看全部文档</button>
+        <span>{{ submittedQuery ? '试试更短的原文片段、编号或知识名称。' : '确认录入后的正文会出现在这里。' }}</span>
+        <button v-if="submittedQuery" type="button" @click="clearSearch">查看全部知识</button>
       </div>
       <p v-else-if="loading" class="state" aria-live="polite">继续读取…</p>
       <p v-else-if="cursor === null" class="state">已显示全部结果。</p>

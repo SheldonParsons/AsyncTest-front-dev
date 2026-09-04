@@ -9,7 +9,7 @@
         </button>
         <p v-if="documentLoading" class="muted">读取知识项…</p>
       </div>
-      <div class="aside-head structure-head"><strong>{{ detailMode === 'source' ? '来源结构' : '文档结构' }}</strong><span>{{ outline.length }} 标题</span></div>
+      <div class="aside-head structure-head"><strong>{{ detailMode === 'source' ? '来源结构' : '知识结构' }}</strong><span>{{ outline.length }} 标题</span></div>
       <div class="outline-list">
         <button v-for="item in outline" :key="item.key" type="button" @click="jumpToOutline(item)">
           <i :style="{ marginLeft: `${Math.max(0, item.level - 1) * 12}px` }" />
@@ -34,7 +34,7 @@
         <p v-else-if="readerError" class="empty error-text">{{ readerError }}</p>
         <article v-else-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
         <article v-else-if="detail" class="plain-body">{{ detail.content }}</article>
-        <p v-else-if="documentLoading" class="empty">正在读取文档列表…</p>
+        <p v-else-if="documentLoading" class="empty">正在读取知识列表…</p>
         <p v-else class="empty">尚无知识项。确认录入后的知识会显示在这里。</p>
       </div>
 
