@@ -147,6 +147,74 @@ export function getVibeCapabilities(): Promise<VibeCapabilities> {
   return request('GET', '/vibe/capabilities')
 }
 
+export type VibeMcpScope = 'knowledge:read' | 'knowledge:write' | 'knowledge:audit:read'
+
+export interface VibeMcpProjectAccess {
+  id: string
+  name: string
+  role: number
+}
+
+export interface VibeMcpCredential {
+  id: number
+  name: string
+  token_prefix: string
+  scopes: VibeMcpScope[]
+  permanent: boolean
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+  last_used_at: string | null
+  last_client_name: string
+  last_client_version: string
+  call_count: number
+}
+
+export interface VibeMcpService {
+  enabled: boolean
+  status: 'enabled' | 'disabled' | 'misconfigured' | string
+  server_name: string
+  public_url: string
+  protocol_versions: string[]
+  token_env_var: string
+}
+
+export interface VibeMcpAccess {
+  ok: boolean
+  schema: 'vibe_mcp_access.v1'
+  service: VibeMcpService
+  project_scope: 'current_memberships'
+  projects: VibeMcpProjectAccess[]
+  scope_options: VibeMcpScope[]
+  default_scopes: VibeMcpScope[]
+  default_expires_in_days: number
+  credentials: VibeMcpCredential[]
+}
+
+export interface VibeMcpCredentialCreated {
+  ok: boolean
+  schema: 'vibe_mcp_credential_created.v1'
+  credential: VibeMcpCredential
+  token: string
+  service: VibeMcpService
+}
+
+export function getVibeMcpAccess(): Promise<VibeMcpAccess> {
+  return request('GET', '/vibe/mcp/access')
+}
+
+export function createVibeMcpCredential(payload: {
+  name: string
+  scopes: VibeMcpScope[]
+  expires_in_days: 0 | 30 | 90 | 365
+}): Promise<VibeMcpCredentialCreated> {
+  return request('POST', '/vibe/mcp/credentials', payload)
+}
+
+export function revokeVibeMcpCredential(credentialId: number): Promise<void> {
+  return request('DELETE', `/vibe/mcp/credentials/${credentialId}`)
+}
+
 export function getVibeConversationControl(): Promise<{ item: VibeConversationControl }> {
   return request('GET', '/vibe/admin/conversation-control')
 }

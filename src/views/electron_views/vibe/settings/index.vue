@@ -27,6 +27,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.8 6.8l2.1 2.1"/><path d="M17.1 17.1l2.1 2.1"/><path d="M3 12h3"/><path d="M18 12h3"/><circle cx="12" cy="12" r="3.4"/></svg>
             模型
           </button>
+          <button class="nav-row" type="button" :class="{ active: activeKey === 'mcp' }" @click="activeKey = 'mcp'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h8"/><path d="M12 8v8"/><rect x="3" y="5" width="6" height="14" rx="2"/><rect x="15" y="5" width="6" height="14" rx="2"/></svg>
+            知识库 MCP
+          </button>
         </section>
 
         <section v-if="canViewAdminSettings" class="nav-section">
@@ -90,6 +94,10 @@
 
       <section v-else-if="activeKey === 'model'" class="model-panel">
         <VibeModelSettings embedded />
+      </section>
+
+      <section v-else-if="activeKey === 'mcp'" class="mcp-panel">
+        <VibeMcpSettings />
       </section>
 
       <section v-else-if="activeKey === 'admin-global' && canViewAdminSettings" class="global-control-panel">
@@ -596,6 +604,7 @@ import { readLocalAuthToken } from '@/utils/authNavigation'
 import VibeModelSettings from '../VibeModelSettings.vue'
 import VibeGlobalControlSettings from './VibeGlobalControlSettings.vue'
 import VibeKnowledgeApiModelSettings from './VibeKnowledgeApiModelSettings.vue'
+import VibeMcpSettings from './VibeMcpSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
@@ -612,7 +621,7 @@ const {
   fetchProfile,
   ensureProfileSync,
 } = useCurrentUserProfile()
-const activeKey = ref<'profile' | 'model' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-rerank-api' | 'admin-embedding-api' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
+const activeKey = ref<'profile' | 'model' | 'mcp' | 'admin-global' | 'admin-model' | 'admin-scenes' | 'admin-rerank-api' | 'admin-embedding-api' | 'admin-config' | 'admin-system-knowledge' | 'trace'>('profile')
 const showWinControls = computed(() => !!window.electronAPI)
 const winKey = computed(() => (route.query.windowKey as string) || 'vibe-workbench')
 const winMaximized = ref(false)
@@ -718,7 +727,7 @@ const userInitials = computed(() => {
   const letters = Array.from(text).slice(0, 2).join('')
   return /^[a-z0-9]+$/i.test(letters) ? letters.toUpperCase() : letters
 })
-const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-rerank-api': 'ReRank API 模型配置', 'admin-embedding-api': 'Embedding API 模型配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
+const activeTitle = computed(() => ({ profile: '个人资料', model: '模型', mcp: '知识库 MCP', 'admin-global': '全局控制', 'admin-model': '默认模型', 'admin-scenes': '模型场景配置', 'admin-rerank-api': 'ReRank API 模型配置', 'admin-embedding-api': 'Embedding API 模型配置', 'admin-config': '配置导入/导出', 'admin-system-knowledge': '系统知识', trace: '对话链路审计' }[activeKey.value]))
 const allVisibleTraceSelected = computed(() => {
   const ids = traceRuns.value.map(traceRunReference).filter(Boolean)
   return !!ids.length && ids.every((id) => selectedTraceIds.value.has(id))
