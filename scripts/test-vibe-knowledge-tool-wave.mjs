@@ -15,7 +15,10 @@ const client = new KnowledgeRemoteClient({
     const request = JSON.parse(init.body);
     assert.equal(init.headers["X-Vibe-Agent-Run-Binding"], "binding-test");
     assert.equal(request.schema, "knowledge_tool_wave_request.v1");
-    assert.deepEqual(request.calls.map((item) => item.tool_call_id), ["search-1", "read-1"]);
+    assert.deepEqual(
+      request.calls.map((item) => item.tool_call_id),
+      httpCalls === 1 ? ["search-1", "read-1"] : ["search-single"],
+    );
     return new Response(JSON.stringify({
       schema: "knowledge_tool_wave_response.v1",
       results: request.calls.map((item, index) => ({
@@ -52,6 +55,13 @@ assert.equal(httpCalls, 1);
 assert.deepEqual(outcome.results.map((item) => item.tool_call_id), ["search-1", "read-1"]);
 assert.deepEqual(outcome.results.map((item) => JSON.parse(item.content[0].text).index), [0, 1]);
 console.log("PASS: one Pi read wave becomes one ordered Knowledge HTTP wave");
+
+const single = await router.executeWave({ calls: [
+  { id: "search-single", name: "search_knowledge", arguments: { query: "single" } },
+] });
+assert.equal(httpCalls, 2);
+assert.equal(single.results[0].tool_call_id, "search-single");
+console.log("PASS: a single Pi search uses the same Knowledge HTTP wave owner");
 
 let waveCalls = 0;
 let singleCalls = 0;

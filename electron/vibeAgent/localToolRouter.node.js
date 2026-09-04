@@ -268,7 +268,7 @@ export class LocalToolRouter {
       if (!toolCallId || ids.has(toolCallId)) throw new Error("vibe_agent_tool_call_id_invalid");
       ids.add(toolCallId);
     }
-    if (calls.length > 1 && calls.every((call) => READ_WAVE_TOOLS.has(String(call?.name || "")))) {
+    if (calls.every((call) => READ_WAVE_TOOLS.has(String(call?.name || "")))) {
       return { results: await this.executeKnowledgeWave(calls, signal) };
     }
     ids.clear();
