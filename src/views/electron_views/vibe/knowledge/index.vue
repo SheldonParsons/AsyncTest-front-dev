@@ -2985,9 +2985,32 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
   cancelElectronDeltaProjection(context)
   const waiting = String(event.state || context.state) === 'waiting_user'
   const terminalState = String(event.state || context.state)
-  if (event.type === 'terminal'
+  const userCancelled = event.type === 'terminal'
     && (terminalState === 'cancelled' || terminalState === 'aborted')
-    && (terminalState === 'cancelled' || cancelRequested.value)) {
+    && (terminalState === 'cancelled' || cancelRequested.value)
+  if (userCancelled && electronPresentationOwnedBy(context)) {
+    // Main has already persisted assistant_end, but the Renderer does not
+    // reload local history between that frame and terminal settlement. Keep
+    // the exact partial answer visible now; the persisted row takes over on
+    // the next reload/session switch.
+    const partialText = String(context.liveAnswerText || '').trim()
+    if (partialText) {
+      // `done(aborted)` can arrive a few milliseconds before Host terminal
+      // and optimistically add the receipt. Remove that local projection so
+      // the retained partial stays above the terminal notice.
+      const receiptId = localEventId(context, 'cancelled')
+      events.value = events.value.filter(item => item.id !== receiptId)
+      const partial = localDisplayEvent(context, 'assistant', partialText, {
+        message_kind: 'partial',
+        partial: true,
+        stop_reason: 'aborted',
+        committed: false,
+      })
+      context.localAssistantEventId = partial.id
+      upsertEvent(partial)
+    }
+  }
+  if (userCancelled) {
     const receipt = localCancellationEvent(context, String(event.code || 'user_cancelled'))
     if (receipt && electronPresentationOwnedBy(context)) upsertEvent(receipt)
   }

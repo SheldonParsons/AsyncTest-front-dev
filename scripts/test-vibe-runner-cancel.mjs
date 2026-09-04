@@ -35,6 +35,13 @@ const server = http.createServer((_request, response) => {
     model: 'cancel-model',
     choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
   })}\n\n`)
+  response.write(`data: ${JSON.stringify({
+    id: 'cancel-stream',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'cancel-model',
+    choices: [{ index: 0, delta: { content: '已输出的部分回答' }, finish_reason: null }],
+  })}\n\n`)
   response.on('close', () => { requestClosed = true })
   setTimeout(() => {
     if (!child?.stdin?.writable || abortSent) return
@@ -125,6 +132,9 @@ try {
   assert.equal(abortSent, true)
   assert.equal(requestClosed, true)
   assert.equal(frames.some(frame => frame.type === 'aborted'), true)
+  const assistantEnd = frames.find(frame => frame.type === 'assistant_end')
+  assert.equal(assistantEnd?.payload?.text, '已输出的部分回答')
+  assert.equal(assistantEnd?.payload?.stop_reason, 'aborted')
   assert.equal(frames.find(frame => frame.type === 'session_checkpoint')?.payload.phase, 'aborted')
   assert.equal(frames.find(frame => frame.type === 'done')?.payload.status, 'aborted')
   assert.equal(frames.some(frame => frame.type === 'candidate_final'), false)
