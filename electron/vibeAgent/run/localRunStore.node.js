@@ -68,6 +68,12 @@ function accountId(value) {
   return result;
 }
 
+function sessionId(value) {
+  const result = String(value ?? "").trim();
+  if (!ID_PATTERN.test(result)) throw new Error("vibe_agent_run_descriptor_session_invalid");
+  return result;
+}
+
 function cloneWithoutCredentials(value, depth = 0) {
   if (depth > 64) throw new Error("vibe_agent_run_descriptor_depth_invalid");
   if (value === null || typeof value !== "object") return value;
@@ -425,6 +431,49 @@ export class LocalRunStore {
     }
     values.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
     return values.slice(0, count).map((item) => cloneWithoutCredentials(item));
+  }
+
+  async listSession(rawSessionId, { accountId: rawAccountId } = {}) {
+    const owner = accountId(rawAccountId);
+    const session = sessionId(rawSessionId);
+    let entries = [];
+    try { entries = await fs.readdir(this.rootPath, { withFileTypes: true }); } catch { return []; }
+    const values = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const raw = await readJson(path.join(this.rootPath, entry.name, "descriptor.json"));
+      if (!raw) continue;
+      if (String(raw?.run?.account_id || "") !== owner
+        || String(raw?.run?.session_id || "") !== session) continue;
+      const value = normalize(raw);
+      values.push(value);
+    }
+    values.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    return values.map((item) => cloneWithoutCredentials(item));
+  }
+
+  async remove(rawId, { accountId: rawAccountId } = {}) {
+    const id = runId(rawId);
+    const owner = accountId(rawAccountId);
+    const result = await this.enqueue(id, async () => {
+      const current = await this.get(id, { accountId: owner });
+      if (!current) return { run_id: id, removed: false };
+      await fs.rm(descriptorDir(this.rootPath, id), { recursive: true, force: true });
+      this.cache.delete(id);
+      return { run_id: id, removed: true };
+    });
+    this.chains.delete(id);
+    return result;
+  }
+
+  async removeSession(rawSessionId, { accountId: rawAccountId } = {}) {
+    const owner = accountId(rawAccountId);
+    const session = sessionId(rawSessionId);
+    const descriptors = await this.listSession(session, { accountId: owner });
+    for (const descriptor of descriptors) {
+      await this.remove(descriptor.run_id, { accountId: owner });
+    }
+    return { session_id: session, run_ids: descriptors.map((item) => item.run_id), removed: descriptors.length };
   }
 
   /**

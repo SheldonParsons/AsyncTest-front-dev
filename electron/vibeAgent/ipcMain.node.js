@@ -491,6 +491,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const traceId = await ensureTrace(run);
     if (!traceId) return;
     const resolvedStatus = String(status || "ok");
+    const runAccountId = run.account_id ?? run.accountId;
+    const runSessionId = String(run.session_id ?? run.sessionId ?? "").trim();
     if (resolvedStatus !== "waiting_user") {
       const current = await traceStore.ensure(traceId, {
         accountId: run.account_id ?? run.accountId,
@@ -534,7 +536,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }).catch(() => undefined);
     const normalized = validContext(context);
     if (normalized.authToken && normalized.traceUploadBaseUrl
-      && !accountBinding.isReleasing(run.account_id ?? run.accountId)) {
+      && !accountBinding.isReleasing(runAccountId)
+      && (!runSessionId || !host?.isSessionTerminating(runAccountId, runSessionId))) {
       void traceUploadQueue.enqueue(traceId, {
         accountId: run.account_id ?? run.accountId,
         baseUrl: normalized.traceUploadBaseUrl,
@@ -1482,6 +1485,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     });
   };
   const localStartInFlight = new Map();
+  const sessionRemovalInFlight = new Map();
   let accountLogoutInFlight = null;
   register("vibeAgent:logout", async (payload) => {
     const supplied = payload?.accountId ?? payload?.account_id;
@@ -1512,6 +1516,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     accountBinding.beginRelease(accountId);
     accountContextEpoch += 1;
     const task = (async () => {
+      await Promise.allSettled([...sessionRemovalInFlight.values()]);
       const before = await runStore.list({ accountId, includeTerminal: false }).catch(() => []);
       for (const request of runtimeSnapshotRequests.values()) {
         if (request.accountId === accountId) request.controller.abort();
@@ -1933,12 +1938,90 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   });
   register("vibeAgent:sessionRemove", async (payload) => {
     const bound = accountBoundPayload(payload);
-    return sessionStore.remove(payload?.sessionId ?? payload?.session_id, bound);
+    const sessionId = String(payload?.sessionId ?? payload?.session_id ?? "").trim();
+    const accountId = String(bound.accountId || "").trim();
+    const removalKey = JSON.stringify([accountId, sessionId]);
+    const activeRemoval = sessionRemovalInFlight.get(removalKey);
+    if (activeRemoval) return activeRemoval;
+    // Prove ownership before cancelling anything. The session manifest is the
+    // local authority that binds this account to this session directory.
+    await sessionStore.manifest(sessionId, { accountId });
+
+    let operation;
+    operation = (async () => {
+      const before = await runStore.listSession(sessionId, { accountId });
+      const runIds = new Set(before.map((item) => String(item.run_id || "")).filter(Boolean));
+      const first = await host.terminateSession(accountId, sessionId, { reason: "session_deleted" });
+      for (const runId of [...(first.runIds || []), ...(first.reservationRunIds || [])]) runIds.add(String(runId));
+      for (const runId of runIds) runtimeSnapshotRequests.get(runId)?.controller?.abort();
+      const pendingTasks = [...runIds].flatMap((runId) => [
+        localStartInFlight.get(runId)?.promise,
+        recoveryInFlight.get(runId)?.promise,
+      ]).filter(Boolean);
+      await Promise.allSettled(pendingTasks);
+      const second = await host.terminateSession(accountId, sessionId, { reason: "session_deleted" });
+      for (const runId of [...(second.runIds || []), ...(second.reservationRunIds || [])]) runIds.add(String(runId));
+
+      const after = await runStore.listSession(sessionId, { accountId });
+      const descriptors = new Map(
+        [...before, ...after]
+          .filter((item) => item?.run_id)
+          .map((item) => [String(item.run_id), item]),
+      );
+      for (const descriptor of descriptors.values()) {
+        runIds.add(String(descriptor.run_id));
+        if (!new Set(["completed", "failed", "aborted", "cancelled", "closed"])
+          .has(String(descriptor.state || ""))) {
+          await runStore.markTerminal(descriptor.run_id, "aborted", "session_deleted").catch(() => undefined);
+        }
+        await finishTrace(
+          descriptor.run,
+          descriptor.local_context || { account_id: accountId },
+          "aborted",
+          { code: "session_deleted" },
+        ).catch(() => undefined);
+      }
+
+      const traceManifests = await traceStore.listSession(sessionId, { accountId });
+      await Promise.allSettled(traceManifests.map((item) => traceUploadQueue.wait(item.trace_id)));
+      const traceRemoval = await traceStore.removeSession(sessionId, { accountId });
+      const runRemoval = await runStore.removeSession(sessionId, { accountId });
+      for (const runId of runIds) {
+        routers.delete(runId);
+        runBindings.delete(runId);
+        localUserCancelRequests.delete(runId);
+        recoveryInFlight.delete(runId);
+        localStartInFlight.delete(runId);
+        runtimeSnapshotRequests.delete(runId);
+      }
+      for (const traceId of traceRemoval.trace_ids || []) {
+        traces.delete(traceId);
+        assistantStreams.delete(traceId);
+      }
+      await sessionStore.remove(sessionId, { accountId });
+      return {
+        schema: "vibe_agent_session_removal.v1",
+        session_id: sessionId,
+        cancelled_runs: new Set([...(first.runIds || []), ...(second.runIds || [])]).size,
+        released_reservations: new Set([
+          ...(first.reservationRunIds || []), ...(second.reservationRunIds || []),
+        ]).size,
+        removed_runs: Number(runRemoval.removed || 0),
+        removed_traces: Number(traceRemoval.removed || 0),
+        removed: true,
+      };
+    })().finally(() => {
+      host.finishSessionTermination(accountId, sessionId);
+      if (sessionRemovalInFlight.get(removalKey) === operation) sessionRemovalInFlight.delete(removalKey);
+    });
+    sessionRemovalInFlight.set(removalKey, operation);
+    return operation;
   });
   return {
     host,
     async cleanup() {
       await accountLogoutInFlight?.promise?.catch(() => undefined);
+      await Promise.allSettled([...sessionRemovalInFlight.values()]);
       await host.cleanup();
       // Runs whose child already parked at a waiting interaction are no
       // longer present in Host's in-memory map. An intentional app exit still
@@ -1979,6 +2062,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       await traceStore.close();
       recoveryInFlight.clear();
       localStartInFlight.clear();
+      sessionRemovalInFlight.clear();
       localUserCancelRequests.clear();
       await runStore.close();
       traceSubscribers.clear();

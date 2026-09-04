@@ -76,6 +76,11 @@ function sameSessionOwner(left, right) {
   return !left.accountId || !right.accountId || left.accountId === right.accountId;
 }
 
+function sessionOwnerKey(accountId, sessionId) {
+  const owner = sessionOwner(accountId, sessionId);
+  return JSON.stringify([owner.accountId, owner.sessionId]);
+}
+
 function lifecycleState(state) {
   const value = String(state || "");
   if (value === "queued" || value === "connecting") return "queued";
@@ -294,6 +299,9 @@ class HostedRun {
     if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || ""))) {
       throw new Error("vibe_agent_account_releasing");
     }
+    if (this.host.isSessionTerminating(this.run.account_id, this.run.session_id)) {
+      throw new Error("vibe_agent_session_releasing");
+    }
     this.ready = new Promise((resolve, reject) => {
       this.readyResolve = resolve;
       this.readyReject = reject;
@@ -327,6 +335,9 @@ class HostedRun {
     if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || ""))) {
       throw new Error("vibe_agent_account_releasing");
     }
+    if (this.host.isSessionTerminating(this.run.account_id, this.run.session_id)) {
+      throw new Error("vibe_agent_session_releasing");
+    }
     // Persist the secret-free descriptor before the child can issue a
     // Provider request. A crash between this write and `ready` is therefore
     // classified as interrupted instead of being silently replayed.
@@ -336,13 +347,14 @@ class HostedRun {
       localContext: this.localContext,
       replace: this.resume,
     });
-    if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || ""))) {
+    const sessionTerminating = this.host.isSessionTerminating(this.run.account_id, this.run.session_id);
+    if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || "")) || sessionTerminating) {
       await this.runStore?.markTerminal(
         this.run.run_id,
         "aborted",
-        this.closeReason || "account_logout",
+        this.closeReason || (sessionTerminating ? "session_deleted" : "account_logout"),
       ).catch(() => undefined);
-      throw new Error("vibe_agent_account_releasing");
+      throw new Error(sessionTerminating ? "vibe_agent_session_releasing" : "vibe_agent_account_releasing");
     }
     this.spawnChild();
     await this.writeChildFrame(makeFrame(this.protocolIdentity, "start", this.startPayload).serialized);
@@ -1028,6 +1040,7 @@ export class VibeAgentHost {
     this.runs = new Map();
     this.localReservations = new Map();
     this.terminatingAccounts = new Set();
+    this.terminatingSessions = new Set();
     this.activeSlots = 0;
     this.reservationChain = Promise.resolve();
     const clientInstanceId = stableClientIdentity();
@@ -1046,6 +1059,10 @@ export class VibeAgentHost {
 
   identity() {
     return { ...this.identityFacts };
+  }
+
+  isSessionTerminating(accountId, sessionId) {
+    return this.terminatingSessions.has(sessionOwnerKey(accountId, sessionId));
   }
 
   emitTo(sender, event) {
@@ -1105,6 +1122,9 @@ export class VibeAgentHost {
       if (owner.accountId && this.terminatingAccounts.has(owner.accountId)) {
         throw new Error("vibe_agent_account_releasing");
       }
+      if (this.terminatingSessions.has(sessionOwnerKey(owner.accountId, owner.sessionId))) {
+        throw new Error("vibe_agent_session_releasing");
+      }
       if (this.runs.has(id) || this.localReservations.has(id)) throw new Error("vibe_agent_run_conflict");
       if (this.liveSessionOwners(id).some((item) => sameSessionOwner(item, owner))) {
         throw new Error("vibe_agent_session_busy");
@@ -1157,6 +1177,9 @@ export class VibeAgentHost {
       if (authoritative.accountId && this.terminatingAccounts.has(authoritative.accountId)) {
         throw new Error("vibe_agent_account_releasing");
       }
+      if (this.terminatingSessions.has(sessionOwnerKey(authoritative.accountId, authoritative.sessionId))) {
+        throw new Error("vibe_agent_session_releasing");
+      }
       const reservation = this.localReservations.get(id);
       if (!reservation || reservation.reservationId !== reservationId) {
         throw new Error("vibe_agent_local_reservation_missing");
@@ -1196,6 +1219,10 @@ export class VibeAgentHost {
 
   async startLocal(input, sender, { reservationId = "" } = {}) {
     const { run, payload } = validateLocalRun(input);
+    if (this.isSessionTerminating(run.account_id, run.session_id)) {
+      this.releaseLocalReservation(run.run_id, reservationId);
+      throw new Error("vibe_agent_session_releasing");
+    }
     const localContext = input?.local_context ?? input?.localContext ?? {};
     if (!localContext || typeof localContext !== "object" || Array.isArray(localContext)) {
       throw new Error("vibe_agent_local_context_invalid");
@@ -1393,6 +1420,44 @@ export class VibeAgentHost {
     this.terminatingAccounts.delete(String(accountId || "").trim());
   }
 
+  async terminateSession(accountId, sessionId, { reason = "session_deleted" } = {}) {
+    const owner = sessionOwner(accountId, sessionId);
+    const key = sessionOwnerKey(owner.accountId, owner.sessionId);
+    this.terminatingSessions.add(key);
+    const reservationRunIds = await this.withReservationLock(async () => {
+      const ids = [];
+      for (const reservation of [...this.localReservations.values()]) {
+        if (!sameSessionOwner(sessionOwner(reservation.accountId, reservation.sessionId), owner)) continue;
+        ids.push(reservation.runId);
+        this.releaseLocalReservation(reservation.runId, reservation.reservationId);
+      }
+      return ids;
+    });
+    const runs = [...this.runs.values()].filter((run) => (
+      sameSessionOwner(sessionOwner(run.run.account_id, run.run.session_id), owner)
+    ));
+    const terminatedRuns = runs.filter((run) => (
+      !run.localTerminalState || run.localTerminalState === "waiting_user"
+    ));
+    await Promise.allSettled(runs.map((run) => {
+      const terminalState = run.localTerminalState && run.localTerminalState !== "waiting_user"
+        ? String(run.localTerminalState) : "aborted";
+      return run.close({
+        state: terminalState,
+        reason: terminalState === "aborted" ? reason : terminalState,
+      });
+    }));
+    return {
+      runs: terminatedRuns.map((run) => ({ ...run.run })),
+      runIds: terminatedRuns.map((run) => String(run.run.run_id || "")).filter(Boolean),
+      reservationRunIds,
+    };
+  }
+
+  finishSessionTermination(accountId, sessionId) {
+    this.terminatingSessions.delete(sessionOwnerKey(accountId, sessionId));
+  }
+
   async cleanup() {
     const runs = [...this.runs.values()];
     await Promise.allSettled(runs.map((run) => run.close({ state: "aborted" })));
@@ -1400,6 +1465,7 @@ export class VibeAgentHost {
       this.releaseLocalReservation(reservation.runId, reservation.reservationId);
     }
     this.terminatingAccounts.clear();
+    this.terminatingSessions.clear();
   }
 }
 

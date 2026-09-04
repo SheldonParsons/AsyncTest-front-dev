@@ -670,14 +670,22 @@ watch(
   { immediate: true },
 )
 
-function clearAttachments() {
-  const key = attachmentDraftKey()
-  selectedFiles.value = []
-  attachmentScrollLeft = 0
-  if (attachmentListEl.value) attachmentListEl.value.scrollLeft = 0
+function clearAttachmentDraft(storageKey = String(props.attachmentStorageKey || '')) {
+  const normalized = String(storageKey || '').trim()
+  if (!normalized) return
+  const key = `${ATTACHMENT_DRAFT_PREFIX}${normalized}`
+  if (key === attachmentDraftKey()) {
+    selectedFiles.value = []
+    attachmentScrollLeft = 0
+    if (attachmentListEl.value) attachmentListEl.value.scrollLeft = 0
+  }
   if (key && typeof localStorage !== 'undefined') {
     try { localStorage.removeItem(key) } catch { /* ignore storage failures */ }
   }
+}
+
+function clearAttachments() {
+  clearAttachmentDraft()
 }
 
 function restoreAttachments(files: File[]) {
@@ -788,7 +796,7 @@ function focusInput() {
   })
 }
 
-defineExpose({ clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(), restoreAttachments, focusInput })
+defineExpose({ clearAttachmentDraft, clearAttachments, clearInput: () => inputEl.value?.clearEditor?.(), restoreAttachments, focusInput })
 </script>
 
 <style scoped>

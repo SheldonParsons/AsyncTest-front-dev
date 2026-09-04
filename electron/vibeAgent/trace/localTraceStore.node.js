@@ -44,6 +44,14 @@ function id(value, label = "trace_id") {
   return text;
 }
 
+function sessionId(value) {
+  const text = String(value ?? "").trim();
+  if (!text || text.length > 256 || !/^[A-Za-z0-9._:-]+$/.test(text)) {
+    throw new Error("vibe_agent_trace_session_id_invalid");
+  }
+  return text;
+}
+
 function rootChild(root, child) {
   const resolvedRoot = path.resolve(root);
   const target = path.resolve(root, child);
@@ -483,6 +491,25 @@ export class LocalTraceStore {
     return manifests.slice(0, count).map((item) => ({ ...item }));
   }
 
+  async listSession(rawSessionId, { accountId: rawAccountId } = {}) {
+    const owner = accountId(rawAccountId);
+    const session = sessionId(rawSessionId);
+    let entries = [];
+    try { entries = await fs.readdir(this.rootPath, { withFileTypes: true }); } catch { return []; }
+    const manifests = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifest = await readJson(path.join(this.rootPath, entry.name, MANIFEST_FILE));
+      if (!manifest) continue;
+      if (String(manifest.account_id || "") !== owner
+        || String(manifest.session_id || "") !== session) continue;
+      const normalized = normalizeManifest(manifest, id(manifest.trace_id));
+      manifests.push(normalized);
+    }
+    manifests.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    return manifests.map((item) => ({ ...item }));
+  }
+
   async detail(traceId, { accountId: rawAccountId, projectId: expectedProjectId, includePayload = true, afterSequence = 0, limit = 2_000 } = {}) {
     const resolvedId = id(traceId);
     const manifest = await this.ensure(resolvedId, {
@@ -598,7 +625,27 @@ export class LocalTraceStore {
       this.manifests.delete(resolvedId);
       this.sequenceProjections.delete(resolvedId);
     });
+    this.chains.delete(resolvedId);
     return { trace_id: resolvedId, removed: true };
+  }
+
+  async removeSession(rawSessionId, { accountId: rawAccountId } = {}) {
+    const owner = accountId(rawAccountId);
+    const session = sessionId(rawSessionId);
+    const manifests = await this.listSession(session, { accountId: owner });
+    for (const manifest of manifests) {
+      const traceId = id(manifest.trace_id);
+      await this.enqueue(traceId, async () => {
+        // Ownership was established from the manifest above. Delete the whole
+        // directory directly so a corrupt/truncated event journal cannot make
+        // an explicitly deleted session impossible to remove.
+        await fs.rm(this.tracePath(traceId), { recursive: true, force: true });
+        this.manifests.delete(traceId);
+        this.sequenceProjections.delete(traceId);
+      });
+      this.chains.delete(traceId);
+    }
+    return { session_id: session, trace_ids: manifests.map((item) => item.trace_id), removed: manifests.length };
   }
 
   async close() {

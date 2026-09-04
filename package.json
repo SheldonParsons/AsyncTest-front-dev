@@ -141,6 +141,7 @@
     "test:vibe-local-document-parsers": "node scripts/test-vibe-local-document-parsers.mjs",
     "test:vibe-local-session-title": "node scripts/test-vibe-local-session-title-contract.mjs",
     "test:vibe-pi-persistent-session": "node scripts/test-vibe-pi-persistent-session.mjs",
+    "test:vibe-session-removal": "node scripts/test-vibe-session-removal.mjs",
     "test:vibe-pi-native-compaction": "node scripts/test-vibe-pi-native-compaction.mjs",
     "test:vibe-electron-trace-viewer": "node scripts/test-vibe-electron-trace-viewer-contract.mjs",
     "test:vibe-trace-compaction": "node scripts/test-vibe-trace-compaction.mjs",

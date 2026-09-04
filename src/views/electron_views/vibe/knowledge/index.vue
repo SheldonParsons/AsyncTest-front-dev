@@ -83,10 +83,10 @@
               class="session-delete"
               type="button"
               title="删除"
-              :disabled="sending || !!sessionRuntimeState(item.id) || deletingSessionId === item.id"
-              @click="deleteSession(item.id)"
+              :disabled="!!deletingSessionId"
+              @click.stop="deleteSession(item.id)"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
             </button>
           </div>
           <p v-if="!sessions.length" class="muted">开始第一轮录入后，这里会出现对话记录。</p>
@@ -3211,6 +3211,7 @@ function localAgentErrorMessage(error: unknown): string {
   const messages: Record<string, string> = {
     vibe_agent_host_busy: '本机当前已有 5 个任务在运行，请等待其中一个结束后再试。',
     vibe_agent_session_busy: '这个会话已有一个任务正在运行或等你选择，请先完成或取消它。',
+    vibe_agent_session_releasing: '这个会话正在关闭。',
     vibe_agent_runtime_snapshot_invalid: '服务端返回的模型运行配置无效，请检查配置。',
     vibe_agent_runtime_snapshot_contract_invalid: '服务端返回的模型运行配置不完整，请稍后重试。',
     vibe_agent_runtime_snapshot_manifest_invalid: '服务端工具配置版本不匹配，请更新客户端。',
@@ -3669,14 +3670,15 @@ const composerDraft = computed({
   get: () => draft.value,
   set: (value: string) => { draft.value = value },
 })
-const composerAttachmentStorageKey = computed(() => {
+function composerAttachmentStorageKeyFor(sessionId = activeSessionId.value, projectId = workspaceProjectContextId()) {
   const account = String(currentUser.value?.id || 'anonymous').trim() || 'anonymous'
-  const project = workspaceProjectContextId() || 'pending'
-  const session = String(activeSessionId.value || '').trim() || `new:${project}`
+  const project = String(projectId || '').trim() || 'pending'
+  const session = String(sessionId || '').trim() || `new:${project}`
   // Keep account/project/session boundaries explicit while making the value
   // safe to use as a localStorage key in every deployment.
   return [account, project, session].map(value => encodeURIComponent(value)).join(':')
-})
+}
+const composerAttachmentStorageKey = computed(() => composerAttachmentStorageKeyFor())
 const localDraftPersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
 watch([composerDraft, activeSessionId], ([value, sessionId]) => {
   const key = String(sessionId || '')
@@ -4874,13 +4876,16 @@ function newConversation() {
 }
 
 async function deleteSession(sessionId: string) {
-  if (!sessionId || deletingSessionId.value || sending.value || sessionRuntimeState(sessionId)) return
+  if (!sessionId || deletingSessionId.value) return
   const targetSession = sessions.value.find(item => item.id === sessionId)
   const targetTitle = targetSession ? sessionDisplayTitle(targetSession) : '这个会话'
+  const targetRuntime = sessionRuntimeState(sessionId)
   try {
     await ElMessageBox.confirm(h('div', { class: 'vibe-delete-dialog-copy' }, [
       h('p', { class: 'vibe-delete-dialog-session', title: targetTitle }, targetTitle),
-      h('p', { class: 'vibe-delete-dialog-hint' }, '删除后将从会话列表中移除，且无法恢复。'),
+      h('p', { class: 'vibe-delete-dialog-hint' }, targetRuntime
+        ? '该会话的当前任务会先自动取消，然后删除全部本机数据；已经完成的知识变更不会回滚。'
+        : '删除后会清空该会话的全部本机数据，且无法恢复。'),
     ]), '删除这个会话？', {
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
@@ -4897,11 +4902,37 @@ async function deleteSession(sessionId: string) {
   }
   deletingSessionId.value = sessionId
   const deletionProjectId = workspaceProjectContextId()
+  const attachmentStorageKey = composerAttachmentStorageKeyFor(sessionId, deletionProjectId)
   try {
     const localRemove = electronAgentBridge()?.sessions?.remove
     if (!localRemove) throw new Error('本地会话存储不可用')
     await localRemove({ sessionId, accountId: localAccountId() })
+    const draftTimer = localDraftPersistTimers.get(sessionId)
+    if (draftTimer) clearTimeout(draftTimer)
+    localDraftPersistTimers.delete(sessionId)
     clearSessionDraft(sessionId)
+    composerRef.value?.clearAttachmentDraft?.(attachmentStorageKey)
+    setLocalSessionRuntimeState(sessionId, 'terminal')
+    sendingSessionIds.value = sendingSessionIds.value.filter(id => id !== sessionId)
+    runningSessionIds.value = runningSessionIds.value.filter(id => id !== sessionId)
+    const nextSubmissions = { ...clarificationSubmittingBySession.value }
+    delete nextSubmissions[sessionId]
+    clarificationSubmittingBySession.value = nextSubmissions
+    clarificationSubmissionSerialBySession.delete(sessionId)
+    const nextTitles = { ...sessionTitleOverrides.value }
+    delete nextTitles[sessionId]
+    sessionTitleOverrides.value = nextTitles
+    electronRecoveryInFlight.delete(sessionId)
+    for (const [runId, context] of electronAgentRuns) {
+      if (String(context.run.session_id || '') !== sessionId) continue
+      electronAgentWaiters.delete(runId)
+      electronAgentRuns.delete(runId)
+    }
+    for (const key of [...sessionEventsRequests.keys()]) {
+      if (key.startsWith(`${sessionId}:`)) sessionEventsRequests.delete(key)
+    }
+    workspaceSessionFileSnapshots.delete(workspaceFileListCacheKey(sessionId, deletionProjectId))
+    sessions.value = sessions.value.filter(item => item.id !== sessionId)
     const currentDeletionProjectId = workspaceProjectContextId()
     const deletingCurrentProject = currentDeletionProjectId === deletionProjectId
     const deletingCurrentSession = deletedConversationIsStillActive(
@@ -4918,8 +4949,13 @@ async function deleteSession(sessionId: string) {
       sessionFilesLoading.value = false
       sessionFilesError.value = ''
       processExpanded.value = false
+      clarificationActive.value = null
       stopElapsedTicker()
       streamingOwnerSessionId.value = ''
+      activeTurnId.value = ''
+      activeTurnSessionId.value = ''
+      cancelRequested.value = false
+      clearPendingUserSubmission()
       clearStreamingAssistant()
       resetProcessState(streamingProcess)
       currentView.value = 'conversation'
@@ -4929,6 +4965,8 @@ async function deleteSession(sessionId: string) {
     if (!deletingCurrentProject) return
     const refreshContextEpoch = projectContextEpoch
     await refreshState({ autoOpenLatest: deletingCurrentSession }, refreshContextEpoch)
+  } catch (reason) {
+    ElMessage.error(`删除会话失败：${localAgentErrorMessage(reason)}`)
   } finally {
     deletingSessionId.value = ''
   }
