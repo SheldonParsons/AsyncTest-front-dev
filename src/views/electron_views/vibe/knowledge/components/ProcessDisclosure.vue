@@ -27,14 +27,15 @@
 
     <div v-show="bodyVisible" class="proc-body">
       <template v-for="step in steps" :key="step.key">
-        <p
+        <div
           v-if="step.kind === 'message'"
           class="proc-narration"
           :class="{
             streaming: step.streaming,
             'runtime-progress': step.phase === 'runtime_progress',
           }"
-        >{{ step.text }}</p>
+          v-html="renderMarkdown(step.text)"
+        />
         <div v-else-if="step.kind === 'diff'" class="proc-diff">
           <div v-for="(ln, j) in step.lines" :key="j" class="proc-diff-line" :class="'pd-' + ln.t">{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
         </div>
@@ -82,6 +83,7 @@ const props = withDefaults(defineProps<{
   running?: boolean
   durationMs?: number
   awaiting?: boolean   // 0703:轮次以反问/勾选收尾、等用户决定(第三态,与"正在思考"区分)
+  renderMarkdown: (content: string) => string
 }>(), {
   running: false,
   durationMs: 0,
@@ -210,7 +212,41 @@ function fmt(ms?: number): string {
   font-size: 14px;
   font-weight: 450;
   line-height: 1.55;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  :deep(p) { margin: 0 0 6px; }
+  :deep(p:last-child) { margin-bottom: 0; }
+  :deep(ul),
+  :deep(ol) { margin: 5px 0 6px 18px; padding: 0; }
+  :deep(li) { margin: 2px 0; }
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) { margin: 6px 0 4px; color: #171717; font-size: 1em; font-weight: 650; }
+  :deep(code) {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(15, 15, 15, 0.07);
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  :deep(pre) {
+    max-width: 100%;
+    margin: 6px 0;
+    padding: 8px 10px;
+    overflow: auto;
+    border-radius: 8px;
+    background: #ececec;
+  }
+  :deep(pre code) { padding: 0; background: transparent; white-space: pre-wrap; }
+  :deep(blockquote) {
+    margin: 6px 0;
+    padding-left: 9px;
+    border-left: 2px solid rgba(15, 15, 15, 0.16);
+    color: rgba(15, 15, 15, 0.62);
+  }
 }
 
 .proc-narration.runtime-progress {

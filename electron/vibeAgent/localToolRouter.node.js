@@ -27,6 +27,9 @@ const READ_WAVE_TOOLS = new Set([
   "search_knowledge", "search_vibe_platform_docs", "get_knowledge_overview", "read_knowledge",
 ]);
 const INLINE_READ_BYTES = 256 * 1024;
+const MAX_USER_AUTHORITY_CHARS = 20_000;
+const MAX_USER_AUTHORITY_REPLIES = 16;
+const MAX_USER_AUTHORITY_REPLY_CHARS = 4_000;
 
 function jsonText(value) {
   if (typeof value === "string") return value;
@@ -184,11 +187,15 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", userAuthorityTexts = [], onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
     this.defaultQuery = String(defaultQuery || "").trim();
+    this.userAuthorityTexts = [];
+    for (const text of Array.isArray(userAuthorityTexts) ? userAuthorityTexts : []) {
+      this.recordUserAuthority(text);
+    }
     this.onTrace = typeof onTrace === "function" ? onTrace : () => {};
     this.pending = new Map();
     this.interactionSequence = 0;
@@ -219,6 +226,24 @@ export class LocalToolRouter {
 
   async trace(name, payload, status = "ok") {
     try { await this.onTrace({ name, payload, status }); } catch { /* trace is observational */ }
+  }
+
+  recordUserAuthority(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return;
+    const half = MAX_USER_AUTHORITY_REPLY_CHARS / 2;
+    const text = raw.length <= MAX_USER_AUTHORITY_REPLY_CHARS
+      ? raw : `${raw.slice(0, half)}\n${raw.slice(-half)}`;
+    if (this.userAuthorityTexts.includes(text)) return;
+    this.userAuthorityTexts.push(text);
+    if (this.userAuthorityTexts.length > MAX_USER_AUTHORITY_REPLIES) this.userAuthorityTexts.shift();
+  }
+
+  userAuthorityText() {
+    const replies = this.userAuthorityTexts.join("\n").slice(-8_000);
+    if (!replies) return this.defaultQuery.slice(0, MAX_USER_AUTHORITY_CHARS);
+    const base = this.defaultQuery.slice(0, Math.max(0, MAX_USER_AUTHORITY_CHARS - replies.length - 1));
+    return [base, replies].filter(Boolean).join("\n");
   }
 
   async executeWave({ calls = [], signal } = {}) {
@@ -628,12 +653,16 @@ export class LocalToolRouter {
     }
     if (name === "search_vibe_platform_docs") payload.scope = "system";
     if (operation === "prepare_change") {
-      // Target authority comes from the user-authored root request, never from
-      // model arguments. The server freezes this text separately from Pi's
-      // natural filename/section locator.
+      // Target authority comes from user-authored input, never from model
+      // arguments. Validated clarification replies extend the root request so
+      // a user-selected filename remains authoritative on the next tool call.
       if (this.defaultQuery) {
         payload.request_text = this.defaultQuery;
-        payload.original_request_text = this.defaultQuery;
+      }
+      const authorityText = this.userAuthorityText();
+      if (authorityText) {
+        if (!payload.request_text) payload.request_text = authorityText;
+        payload.original_request_text = authorityText;
       }
       payload.operation = name === "add_knowledge" ? "insert"
         : name === "edit_knowledge" ? "update"
@@ -850,6 +879,7 @@ export class LocalToolRouter {
       && !clarificationOptionAllowed(pending.options, clarification.option_id)) {
       throw new Error("vibe_agent_clarification_option_invalid");
     }
+    this.recordUserAuthority(userMessage);
     const resolved = {
       status: "resolved",
       result: toolResult({ acknowledged: true }),

@@ -313,6 +313,14 @@ assert.match(viewSource, /await materializeLocalWaitingRun\(context, terminal\.p
 assert.equal((viewSource.match(/<template v-if="procRunning && streamingAssistantContent">/g) || []).length, 0)
 assert.match(viewSource, /isStreamingUnderEvent\(event\) && streamingAnswerPreview/)
 assert.match(viewSource, /streamingAnswerPreview/)
+assert.match(viewSource, /const streamingAnswerHtml = ref\(''\)/)
+assert.match(viewSource, /const streamingAnswerHtmlSource = ref\(''\)/)
+assert.doesNotMatch(viewSource, /streamingLiveAnswerHtml/)
+assert.match(viewSource, /STREAMING_MARKDOWN_RENDER_DELAY_MS = 80/)
+assert.match(viewSource, /streamingAnswerHtml\.value = renderStreamingMarkdown\(current\)/)
+assert.equal((viewSource.match(/:render-markdown="renderMarkdown"/g) || []).length, 5)
+assert.match(disclosureSource, /v-html="renderMarkdown\(step\.text\)"/)
+assert.doesNotMatch(disclosureSource, />\{\{ step\.text \}\}<\/p>/)
 assert.match(viewSource, /handleElectronAgentPiFrame/)
 assert.match(viewSource, /function threadOutsideAnswer\(root: any\)/)
 assert.match(viewSource, /function clearStreamingAssistant\(\)[\s\S]*streamingAssistantEventId\.value = ''/)
@@ -321,7 +329,7 @@ assert.match(viewSource, /context\.ephemeralText = \(context\.ephemeralText \+ t
 assert.match(viewSource, /\['queued', 'connecting', 'running', 'cancelling'\]\.includes\(state \|\| context\.state\)[\s\S]*projectElectronAgentProgress\(context\)/)
 assert.match(viewSource, /showElectronAgentDelta[\s\S]*streamingProcess\.steps =/)
 assert.doesNotMatch(
-  viewSource.slice(viewSource.indexOf('function showElectronAgentDelta'), viewSource.indexOf('function settleElectronAgentRun')),
+  viewSource.slice(viewSource.indexOf('function showElectronAgentDelta'), viewSource.indexOf('function handleElectronAgentPiFrame')),
   /streamingAssistantContent\.value\s*=/,
 )
 const localDoneStart = viewSource.indexOf("if (payload.text && payload.status === 'completed')")

@@ -309,6 +309,7 @@
                 :running="threadRunning(event)"
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
+                :render-markdown="renderMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <!-- 候选答案始终在思考竖线之外流式展示；工具调用旁白仍由
@@ -348,6 +349,7 @@
                 :running="false"
                 :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
+                :render-markdown="renderMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
@@ -465,6 +467,7 @@
                     v-if="eventProcessSteps(responseEvent).length"
                     :steps="eventProcessSteps(responseEvent)"
                     :duration-ms="eventProcessDuration(responseEvent)"
+                    :render-markdown="renderMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
@@ -484,6 +487,7 @@
                     :steps="streamingProcess.steps"
                     :running="procRunning"
                     :duration-ms="procDurationMs"
+                    :render-markdown="renderMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -539,6 +543,7 @@
               :steps="streamingProcess.steps"
               :running="procRunning"
               :duration-ms="procDurationMs"
+              :render-markdown="renderMarkdown"
               @layout-change="syncTimelineNavigationAfterLayout"
             />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -1217,6 +1222,7 @@ function acceptKnowledgeActivity(event: KnowledgeActivityEvent, projectId: strin
   if (!advanced.changed) return false
   knowledgeActivityCursor = advanced.cursor
   void loadRecentKnowledgeChanges(projectId, epoch)
+  void loadCurrentKbStats(projectId)
   return true
 }
 
@@ -2666,8 +2672,8 @@ const pendingUserSubmissionText = ref('')
 // Canonical answer. It can stream outside the process rail, then be replaced
 // atomically by the saved assistant event when the Goal completes.
 const streamingLiveAnswerContent = ref('')
-const streamingLiveAnswerHtml = ref('')
-const streamingLiveAnswerHtmlSource = ref('')
+const streamingAnswerHtml = ref('')
+const streamingAnswerHtmlSource = ref('')
 let streamingAnswerRenderTimer: ReturnType<typeof setTimeout> | null = null
 let streamingAnswerRenderEpoch = 0
 let runningTurnPollTimer: ReturnType<typeof setTimeout> | null = null
@@ -5873,8 +5879,8 @@ function cancelStreamingAnswerRender(): void {
 
 function clearStreamingAnswerHtml(): void {
   cancelStreamingAnswerRender()
-  streamingLiveAnswerHtml.value = ''
-  streamingLiveAnswerHtmlSource.value = ''
+  streamingAnswerHtml.value = ''
+  streamingAnswerHtmlSource.value = ''
 }
 
 function renderStreamingMarkdown(content: string): string {
@@ -5889,8 +5895,8 @@ function scheduleStreamingAnswerRender(): void {
   const source = streamingLiveAnswerContent.value || streamingAssistantContent.value
   if (!source || source.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
     if (streamingAnswerRenderTimer) cancelStreamingAnswerRender()
-    streamingLiveAnswerHtml.value = ''
-    streamingLiveAnswerHtmlSource.value = ''
+    streamingAnswerHtml.value = ''
+    streamingAnswerHtmlSource.value = ''
     return
   }
   if (streamingAnswerRenderTimer) return
@@ -5900,12 +5906,12 @@ function scheduleStreamingAnswerRender(): void {
     if (epoch !== streamingAnswerRenderEpoch) return
     const current = streamingLiveAnswerContent.value || streamingAssistantContent.value
     if (!current || current.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
-      streamingLiveAnswerHtml.value = ''
-      streamingLiveAnswerHtmlSource.value = ''
+      streamingAnswerHtml.value = ''
+      streamingAnswerHtmlSource.value = ''
       return
     }
-    streamingLiveAnswerHtml.value = renderStreamingMarkdown(current)
-    streamingLiveAnswerHtmlSource.value = current
+    streamingAnswerHtml.value = renderStreamingMarkdown(current)
+    streamingAnswerHtmlSource.value = current
   }, STREAMING_MARKDOWN_RENDER_DELAY_MS)
 }
 
@@ -5916,10 +5922,10 @@ function commitStreamingAnswerHtml(content: string, complete = false): void {
     return
   }
   cancelStreamingAnswerRender()
-  streamingLiveAnswerHtml.value = complete
+  streamingAnswerHtml.value = complete
     ? renderMarkdown(source)
     : renderStreamingMarkdown(source)
-  streamingLiveAnswerHtmlSource.value = source
+  streamingAnswerHtmlSource.value = source
 }
 
 function renderMarkdown(content: string) {
