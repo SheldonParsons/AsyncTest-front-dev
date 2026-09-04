@@ -20,14 +20,13 @@ const KNOWLEDGE_TOOLS = new Map([
   ["add_knowledge", "prepare_change"],
   ["edit_knowledge", "prepare_change"],
   ["delete_knowledge", "prepare_change"],
-  ["move_knowledge_section", "prepare_change"],
 ]);
 const HIDDEN_TOOLS = new Set(["apply_confirmation", "cancel_confirmation", "read", "bash", "edit", "write"]);
 const READ_WAVE_TOOLS = new Set([
   "search_knowledge", "search_vibe_platform_docs", "get_knowledge_overview", "read_knowledge",
 ]);
 const NATURAL_TARGET_WRITE_TOOLS = new Set([
-  "edit_knowledge", "delete_knowledge", "move_knowledge_section",
+  "edit_knowledge", "delete_knowledge",
 ]);
 const INLINE_READ_BYTES = 256 * 1024;
 
@@ -68,7 +67,8 @@ function traceableKnowledgePayload(payload) {
 function naturalWriteTargets(name, payload) {
   if (!NATURAL_TARGET_WRITE_TOOLS.has(name)) return [];
   const raw = [];
-  if (payload?.document?.target) raw.push(payload.document.target);
+  if (payload?.replacement?.target) raw.push(payload.replacement.target);
+  for (const target of Array.isArray(payload?.targets) ? payload.targets : []) raw.push(target);
   for (const change of Array.isArray(payload?.changes) ? payload.changes : []) {
     if (change?.target) raw.push(change.target);
   }
@@ -90,6 +90,27 @@ function withoutTargetBinding(outcome) {
     delete projected.result.binding;
   }
   return projected;
+}
+
+function publicKnowledgeLabel(value) {
+  let text = String(value || "").trim().replaceAll("\\", "/").split("/").at(-1) || "";
+  text = text.replace(/\.(?:md|markdown|txt)$/iu, "").trim();
+  return text.slice(0, 120);
+}
+
+function knowledgeTarget(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("vibe_agent_knowledge_target_invalid");
+  }
+  const knowledgeRef = String(value.knowledge_ref || "").trim();
+  const label = String(value.label || value.source_name || "").trim();
+  if (!knowledgeRef && !label) throw new Error("vibe_agent_knowledge_target_invalid");
+  return {
+    ...(knowledgeRef ? { knowledge_ref: knowledgeRef } : { label }),
+    ...(Array.isArray(value.section_path)
+      ? { section_path: value.section_path.map((item) => String(item)) }
+      : {}),
+  };
 }
 
 function responseSignature(value) {
@@ -164,19 +185,22 @@ function knowledgeReceipt(outcome, action) {
     ? row.verification : {};
   const expected = row.metadata?.expected_effects && typeof row.metadata.expected_effects === "object"
     ? row.metadata.expected_effects : {};
-  const documents = (Array.isArray(verification.documents) ? verification.documents : expected.documents || [])
-    .map((document) => ({
-      ...(safeReceiptText(document?.filename, 240) ? { filename: safeReceiptText(document.filename, 240) } : {}),
-      ...(safeReceiptText(document?.title, 240) ? { title: safeReceiptText(document.title, 240) } : {}),
-      ...(typeof document?.active === "boolean" ? { active: document.active } : {}),
+  const items = (Array.isArray(verification.documents) ? verification.documents : expected.documents || [])
+    .map((item) => ({
+      ...(publicKnowledgeLabel(item?.title || item?.filename)
+        ? { label: publicKnowledgeLabel(item.title || item.filename) } : {}),
+      ...(typeof item?.active === "boolean" ? { active: item.active } : {}),
     }))
-    .filter((document) => Object.keys(document).length);
+    .filter((item) => Object.keys(item).length);
   const operation = safeReceiptText(
     row.operation || verification.operation || expected.operation,
     64,
   );
-  const summary = safeReceiptText(row.summary, 1_000);
-  const userReceipt = safeReceiptText(row.user_receipt, 1_000);
+  const labels = items.map((item) => item.label).filter(Boolean).join("、");
+  const verb = { insert: "新增", update: "修改", delete: "删除", move: "调整" }[operation] || "处理";
+  const contentSummary = operation && items.length ? `${verb}知识${labels ? `：${labels}` : ""}` : "";
+  const summary = contentSummary || safeReceiptText(row.summary, 1_000);
+  const userReceipt = contentSummary || safeReceiptText(row.user_receipt, 1_000);
   return {
     schema: "knowledge_change_receipt.v1",
     action: ["apply", "cancel", "stop_all"].includes(action) ? action : "cancel",
@@ -185,7 +209,7 @@ function knowledgeReceipt(outcome, action) {
     ...(summary ? { summary } : {}),
     ...(userReceipt ? { user_receipt: userReceipt } : {}),
     ...(typeof verification.ok === "boolean" ? { verified: verification.ok } : {}),
-    ...(documents.length ? { documents } : {}),
+    ...(items.length ? { items } : {}),
     ...(outcome?.error ? { error: stableErrorCode(outcome.error, "knowledge_change_failed") } : {}),
   };
 }
@@ -652,52 +676,18 @@ export class LocalToolRouter {
     return { ...outcome, result: { ...hideHandle(readResult), local_path: localPath } };
   }
 
-  async authoredDocument(document) {
-    if (!document || typeof document !== "object" || Array.isArray(document)) {
-      throw new Error("vibe_agent_authored_document_invalid");
+  async authoredContent(content) {
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("vibe_agent_authored_content_invalid");
     }
-    const rawFilename = document.filename ?? document.name;
-    if (rawFilename !== undefined && rawFilename !== null && typeof rawFilename !== "string") {
-      throw new Error("vibe_agent_authored_document_filename_invalid");
-    }
-    const filename = String(rawFilename ?? "");
-    // The ordinary branch is Pi-authored text.  Do not forward its internal
-    // source marker: the remote service should see only model_authored data.
-    if (Array.isArray(document.chunks)) {
-      if (document.chunks.some((chunk) => (
-        !chunk || typeof chunk !== "object" || Array.isArray(chunk)
-      ))) throw new Error("vibe_agent_authored_document_chunks_invalid");
-      if (document.content_hash !== undefined
-        && (typeof document.content_hash !== "string" || !document.content_hash.trim())) {
-        throw new Error("vibe_agent_authored_document_hash_invalid");
-      }
+    if (codePointLength(content) > DEFAULT_MARKDOWN_CHUNK_CHARS) {
+      const materialized = authoredMarkdownChunks(content);
       return {
-        filename,
-        origin_kind: "model_authored",
-        chunks: document.chunks.map((chunk) => ({ ...chunk })),
-        ...(document.content_hash !== undefined ? { content_hash: String(document.content_hash) } : {}),
+        chunks: materialized.chunks,
+        content_hash: materialized.content_hash,
       };
     }
-    const body = document.body ?? document.content;
-    if (body !== undefined) {
-      if (typeof body !== "string") throw new Error("vibe_agent_authored_document_body_invalid");
-      const text = body;
-      if (codePointLength(text) > DEFAULT_MARKDOWN_CHUNK_CHARS) {
-        const materialized = authoredMarkdownChunks(text);
-        return {
-          filename,
-          origin_kind: "model_authored",
-          chunks: materialized.chunks,
-          content_hash: materialized.content_hash,
-        };
-      }
-      return {
-        filename,
-        origin_kind: "model_authored",
-        content: text,
-      };
-    }
-    throw new Error("vibe_agent_authored_document_source_invalid");
+    return { content };
   }
 
   async knowledgePayload(name, operation, args) {
@@ -706,6 +696,7 @@ export class LocalToolRouter {
       payload.query = this.defaultQuery;
     }
     if (name === "search_vibe_platform_docs") payload.scope = "system";
+    if (name === "read_knowledge") payload.target = knowledgeTarget(payload.target);
     if (operation === "prepare_change") {
       // User text remains separate from the Main-only signed target binding.
       // Model arguments can provide natural locators but never authority.
@@ -714,40 +705,47 @@ export class LocalToolRouter {
         payload.original_request_text = this.defaultQuery;
       }
       payload.operation = name === "add_knowledge" ? "insert"
-        : name === "edit_knowledge" ? "update"
-          : name === "delete_knowledge" ? "delete" : "move";
-      if (name === "move_knowledge_section") {
-        payload.changes = [{
-          target: payload.target,
-          source_path: payload.source_path,
-          target_path: payload.target_path,
-        }];
-        delete payload.target;
-        delete payload.source_path;
-        delete payload.target_path;
-      }
-      // Only Pi-authored, user-confirmed Markdown crosses the Knowledge API;
-      // local source paths never cross this boundary.
-      if (Array.isArray(payload.documents)) {
-        const documents = [];
-        for (const doc of payload.documents) documents.push(await this.authoredDocument(doc));
-        payload.documents = documents;
-      }
-      const document = payload.document;
-      if (document && typeof document === "object" && !Array.isArray(document)) {
-        if (document.body !== undefined) {
-          const materialized = await this.authoredDocument({
-            filename: document.filename || document.target?.source_name || "document.md",
-            body: document.body,
-          });
-          payload.document = {
-            target: document.target,
-            ...(materialized.chunks
-              ? { chunks: materialized.chunks, content_hash: materialized.content_hash }
-              : { body: materialized.content }),
-          };
+        : name === "edit_knowledge" ? "update" : "delete";
+      if (name === "add_knowledge") {
+        if (!Array.isArray(payload.items) || !payload.items.length) {
+          throw new Error("vibe_agent_knowledge_items_invalid");
         }
+        const items = [];
+        for (const item of payload.items) {
+          if (!item || typeof item !== "object" || Array.isArray(item)
+            || typeof item.content !== "string" || !item.content.trim()
+            || (item.content_type !== undefined
+              && !new Set(["text/markdown", "text/plain"]).has(String(item.content_type)))) {
+            throw new Error("vibe_agent_knowledge_item_invalid");
+          }
+          items.push({
+            ...(item.label ? { label: publicKnowledgeLabel(item.label) } : {}),
+            content_type: String(item.content_type || "text/markdown"),
+            ...await this.authoredContent(item.content),
+          });
+        }
+        payload.items = items;
       }
+      if (name === "edit_knowledge" && Array.isArray(payload.changes)) {
+        payload.changes = payload.changes.map((change) => ({
+          ...change,
+          target: knowledgeTarget(change?.target),
+        }));
+      }
+      if (name === "delete_knowledge") {
+        if (!Array.isArray(payload.targets) || !payload.targets.length) {
+          throw new Error("vibe_agent_knowledge_targets_invalid");
+        }
+        payload.targets = payload.targets.map(knowledgeTarget);
+      }
+      if (name === "edit_knowledge" && payload.replacement !== undefined) {
+        payload.replacement = {
+          target: knowledgeTarget(payload.replacement?.target),
+          ...await this.authoredContent(payload.replacement?.content),
+        };
+      }
+      // Only Pi-authored, user-confirmed content crosses the Knowledge API;
+      // local source paths never cross this boundary.
       delete payload.attachments;
       delete payload.attachment_resources;
     }

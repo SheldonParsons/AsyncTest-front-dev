@@ -5,16 +5,16 @@ import { PROTOCOL_VERSION } from "./runtime/protocol.mjs";
 const REQUEST_SCHEMA = "electron_pi_runtime_snapshot_request.v1";
 const RESPONSE_SCHEMA = "electron_pi_runtime_snapshot.v1";
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
-const EXPECTED_TOOL_MANIFEST_SCHEMA = "knowledge_tool_manifest.v2";
-const EXPECTED_TOOL_MANIFEST_VERSION = 2;
+const EXPECTED_TOOL_MANIFEST_SCHEMA = "knowledge_tool_manifest.v3";
+const EXPECTED_TOOL_MANIFEST_VERSION = 3;
 const EXPECTED_PUBLIC_TOOLS = [
   "get_knowledge_overview", "search_knowledge", "read_knowledge",
   "add_knowledge", "edit_knowledge", "delete_knowledge",
-  "move_knowledge_section", "search_vibe_platform_docs", "ask_clarification",
+  "search_vibe_platform_docs", "ask_clarification",
 ];
 const EXPECTED_TOOL_MODES = [
   "parallel", "parallel", "parallel",
-  "sequential", "sequential", "sequential", "sequential",
+  "sequential", "sequential", "sequential",
   "parallel", "sequential",
 ];
 

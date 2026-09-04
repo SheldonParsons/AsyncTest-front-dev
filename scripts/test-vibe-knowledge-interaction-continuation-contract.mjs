@@ -43,10 +43,10 @@ assert.deepEqual(receipt, {
   action: 'apply',
   status: 'completed',
   operation: 'insert',
-  summary: '新增 示例.md',
-  user_receipt: '已录入 1 份知识文档：示例.md。',
+  summary: '新增知识：示例',
+  user_receipt: '新增知识：示例',
   verified: true,
-  documents: [{ filename: '示例.md', title: '示例', active: true }],
+  items: [{ label: '示例', active: true }],
 })
 assert.equal(outcome.result.is_error, false)
 assert.equal(outcome.result.terminate, undefined)
@@ -82,7 +82,7 @@ const authorityRouter = new LocalToolRouter({
 const payload = await authorityRouter.knowledgePayload('edit_knowledge', 'prepare_change', {
   request_text: '模型伪造的请求',
   original_request_text: '模型伪造的原始请求',
-  changes: [{ target: { source_name: '示例.md' }, new_content: '新状态' }],
+  changes: [{ target: { label: '示例' }, new_content: '新状态' }],
 })
 assert.equal(payload.request_text, '请修改 示例.md 的状态。')
 assert.equal(payload.original_request_text, '请修改 示例.md 的状态。')
@@ -91,12 +91,12 @@ await authorityRouter.executeOne({
   toolCallId: 'tool-edit-1',
   name: 'edit_knowledge',
   args: {
-  changes: [{ target: { source_name: 'Pi 链路自测.md' }, before_text: '已复核', new_content: '测试中' }],
+  changes: [{ target: { label: 'Pi 链路自测' }, before_text: '已复核', new_content: '测试中' }],
   },
 })
 assert.equal(authorityCalls.length, 2)
 assert.equal(authorityCalls[0].operation, 'bind_targets')
-assert.deepEqual(authorityCalls[0].payload.targets, [{ source_name: 'Pi 链路自测.md' }])
+assert.deepEqual(authorityCalls[0].payload.targets, [{ label: 'Pi 链路自测' }])
 assert.equal(authorityCalls[1].operation, 'prepare_change')
 assert.equal(authorityCalls[1].payload.request_text, '请修改 示例.md 的状态。')
 assert.equal(authorityCalls[1].payload.original_request_text, '请修改 示例.md 的状态。')
@@ -126,7 +126,7 @@ const ambiguousRouter = new LocalToolRouter({
 const ambiguousResult = await ambiguousRouter.executeOne({
   toolCallId: 'tool-edit-2',
   name: 'edit_knowledge',
-  args: { changes: [{ target: { source_name: 'Pi 链路自测.md' }, new_content: '状态：测试中' }] },
+  args: { changes: [{ target: { label: 'Pi 链路自测' }, new_content: '状态：测试中' }] },
 })
 assert.equal(ambiguousCalls.length, 1)
 assert.equal(ambiguousCalls[0].operation, 'bind_targets')

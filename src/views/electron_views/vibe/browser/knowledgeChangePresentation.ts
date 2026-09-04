@@ -16,6 +16,8 @@ const KIND_LABELS: Record<string, string> = {
 
 export function knowledgeChangeTitle(item: KnowledgeChangeLike): string {
   return String(item.reason || item.request_text || `提交 #${Number(item.seq || 0)}`)
+    .replace(/\.(?:md|markdown|txt)(?=$|[\s，。；：:（）()])/giu, '')
+    .replace(/知识文档/gu, '知识')
 }
 
 export function knowledgeChangeKindLabel(value: string): string {

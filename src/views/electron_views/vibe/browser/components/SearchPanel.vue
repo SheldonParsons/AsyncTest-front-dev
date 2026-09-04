@@ -6,7 +6,7 @@
           <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" />
           <path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
         </svg>
-        <label class="sr-only" for="knowledge-search-input">搜索现行文档</label>
+        <label class="sr-only" for="knowledge-search-input">搜索知识内容</label>
         <input
           id="knowledge-search-input"
           v-model="inputQuery"
@@ -20,7 +20,7 @@
       </form>
       <p class="search-summary" aria-live="polite">
         <template v-if="submittedQuery">“{{ submittedQuery }}” · {{ hitCount }} 处命中</template>
-        <template v-else>{{ documents.length || documentCount }} 份现行文档</template>
+        <template v-else>{{ documents.length || documentCount }} 个知识项</template>
       </p>
     </div>
 
@@ -74,7 +74,7 @@
         <button type="button" @click="runSearch(true)">重试</button>
       </div>
       <div v-else-if="!hasVisibleResults" class="empty">
-        <strong>{{ submittedQuery ? '没有匹配内容' : '还没有现行文档' }}</strong>
+        <strong>{{ submittedQuery ? '没有匹配内容' : '还没有知识项' }}</strong>
         <span>{{ submittedQuery ? '试试更短的原文片段、编号或文件名。' : '确认录入后的正文会出现在这里。' }}</span>
         <button v-if="submittedQuery" type="button" @click="clearSearch">查看全部文档</button>
       </div>

@@ -47,7 +47,7 @@
           </span>
           <span class="proj-main">
             <span class="proj-name">{{ selectedProjectLabel || '选择项目' }}</span>
-            <span class="proj-kb">{{ kbStats.documents }} 份文档</span>
+            <span class="proj-kb">{{ kbStats.documents }} 个知识项</span>
           </span>
         </button>
       </section>
@@ -3752,8 +3752,8 @@ const projectOptions = computed(() => projects.value.map(project => {
   return {
     value: String(project.id),
     label: project.name || project.project_name || `项目 ${project.id}`,
-    // 项目入口只展示权威现行文档数，不再泄漏已经退役的章节/模块投影。
-    hint: st ? `${st.documents} 份文档` : (project.description || project.owner_name || project.creator_name || ''),
+    // 项目入口只展示权威现行知识项数，不再泄漏已经退役的内部投影。
+    hint: st ? `${st.documents} 个知识项` : (project.description || project.owner_name || project.creator_name || ''),
   }
 }))
 const selectedProjectLabel = computed(() => {
@@ -3898,8 +3898,8 @@ const composerQuestion = computed(() => {
       && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
     return {
       title: String(raw.title),
-      description: String(raw.description),
-      ...(hasDiff ? { diff: { breadcrumb: '现行知识文档', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
+      description: contentCentricDisplayText(raw.description),
+      ...(hasDiff ? { diff: { breadcrumb: '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         ...options.map((item: any) => ({
           type: 'choice' as const,
@@ -3924,10 +3924,10 @@ const composerQuestion = computed(() => {
       && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
     return {
       title: c.question,
-      description: raw.summary || (raw.preview_truncated
-        ? '变更范围较大，已完成服务端校验；确认后生成新的现行文档版本。'
-        : '查看整体文档变更，确认后生成新的现行文档版本。'),
-      ...(hasDiff ? { diff: { breadcrumb: '现行知识文档', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
+      description: contentCentricDisplayText(raw.summary) || (raw.preview_truncated
+        ? '变更范围较大，已完成服务端校验；确认后生成新的现行知识版本。'
+        : '查看整体内容变更，确认后生成新的现行知识版本。'),
+      ...(hasDiff ? { diff: { breadcrumb: '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         { type: 'choice' as const, label: '就这么改', value: '__APPLY_EDIT__' },
         { type: 'choice' as const, label: '先不改', value: '__CANCEL_EDIT__' },
@@ -3984,6 +3984,13 @@ const composerQuestion = computed(() => {
     ],
   }
 })
+
+function contentCentricDisplayText(value: unknown): string {
+  return String(value || '')
+    .replace(/\.(?:md|markdown|txt)(?=$|[\s，。；：:（）()])/giu, '')
+    .replace(/知识文档/gu, '知识')
+    .replace(/现行文档/gu, '现行知识')
+}
 // #4 反问【持久化】：未回答的反问，下次进会话、甚至关 app 重开都还原选项框。
 // 判据：会话最后一条是 assistant 反问（后面没有用户回答）→ 还原；否则清掉。
 // 依赖后端把 clarification 存进 assistant 事件 meta（已加）。
@@ -6258,12 +6265,11 @@ function isBlockingClarificationEvent(event: any): boolean {
 const LOCAL_TOOL_ACTION_TITLES: Record<string, string> = {
   search_knowledge: '检索知识库',
   search_vibe_platform_docs: '检索平台资料',
-  read_knowledge: '读取知识文档',
+  read_knowledge: '读取知识内容',
   get_knowledge_overview: '盘点知识库',
   add_knowledge: '准备新增知识预览',
   edit_knowledge: '准备修改知识预览',
   delete_knowledge: '准备删除知识预览',
-  move_knowledge_section: '准备移动知识章节预览',
   ask_clarification: '准备补充信息',
 }
 

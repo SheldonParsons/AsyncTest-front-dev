@@ -15,13 +15,13 @@ const commitDiff = read('src/views/electron_views/vibe/browser/components/Commit
 const api = read('src/views/electron_views/vibe/api.ts')
 
 // 总览只描述现行投影；来源账本保留为审计信息，不再把旧模块当成现状。
-assert.match(overview, /现行文档/)
+assert.match(overview, /知识项/)
 assert.match(overview, /getKnowledgeDocuments\(projectId/)
 assert.match(overview, /source_kind\s*!==\s*'synthetic'/)
 assert.doesNotMatch(overview, /模块分布|top_modules|open-module/)
 assert.doesNotMatch(browser, /summary\.span_count|>跨度</)
 
-// 空查询列出现行文档，非空查询检索正文；输入态与已提交查询必须分开。
+// 空查询列出知识项，非空查询检索正文；输入态与已提交查询必须分开。
 assert.match(search, /const inputQuery = ref/)
 assert.match(search, /const submittedQuery = ref/)
 assert.match(search, /getKnowledgeDocuments\(projectId/)

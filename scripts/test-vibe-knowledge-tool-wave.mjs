@@ -48,7 +48,7 @@ const router = new LocalToolRouter({
 });
 const outcome = await router.executeWave({ calls: [
   { id: "search-1", name: "search_knowledge", arguments: { query: "alpha" } },
-  { id: "read-1", name: "read_knowledge", arguments: { target: { source_name: "one.md" } } },
+  { id: "read-1", name: "read_knowledge", arguments: { target: { label: "one" } } },
 ] });
 
 assert.equal(httpCalls, 1);
@@ -74,8 +74,8 @@ const writeRouter = new LocalToolRouter({
   run: { run_id: "run-write", turn_id: "turn-write", goal_id: "goal-write", project_id: "1137", session_id: "session-write" },
 });
 const writes = await writeRouter.executeWave({ calls: [
-  { id: "write-1", name: "add_knowledge", arguments: { documents: [{ filename: "a.md", body: "# A" }] } },
-  { id: "write-2", name: "add_knowledge", arguments: { documents: [{ filename: "b.md", body: "# B" }] } },
+  { id: "write-1", name: "add_knowledge", arguments: { items: [{ label: "a", content: "# A" }] } },
+  { id: "write-2", name: "add_knowledge", arguments: { items: [{ label: "b", content: "# B" }] } },
 ] });
 assert.equal(waveCalls, 0);
 assert.equal(singleCalls, 1);
@@ -83,9 +83,27 @@ assert.equal(writes.results[1].is_error, true);
 console.log("PASS: knowledge writes remain serial and stop after one pending interaction");
 
 const largeRouter = new LocalToolRouter();
+const contentPayload = await largeRouter.knowledgePayload("add_knowledge", "prepare_change", {
+  items: [{ content: "纯文本知识", content_type: "text/plain" }],
+});
+assert.equal(contentPayload.documents, undefined);
+assert.equal(contentPayload.items[0].label, undefined);
+assert.equal(contentPayload.items[0].content_type, "text/plain");
+assert.equal(contentPayload.items[0].content, "纯文本知识");
+const ref = `ntc_${"a".repeat(24)}.${"b".repeat(43)}`;
+const readPayload = await largeRouter.knowledgePayload("read_knowledge", "read_source", {
+  target: { knowledge_ref: ref },
+});
+assert.deepEqual(readPayload.target, { knowledge_ref: ref });
+const deletePayload = await largeRouter.knowledgePayload("delete_knowledge", "prepare_change", {
+  targets: [{ knowledge_ref: ref }],
+});
+assert.deepEqual(deletePayload.targets, [{ knowledge_ref: ref }]);
+console.log("PASS: public content and knowledge refs map once to the existing transaction ABI");
+
 const largeBody = "# 大文档\n\n" + "内容。".repeat(130_000);
-const largeDocument = await largeRouter.authoredDocument({ filename: "large.md", body: largeBody });
-assert.ok(Array.isArray(largeDocument.chunks));
-assert.equal(largeDocument.content, undefined);
-assert.equal(largeDocument.content_hash.length, 64);
+const largeContent = await largeRouter.authoredContent(largeBody);
+assert.ok(Array.isArray(largeContent.chunks));
+assert.equal(largeContent.content, undefined);
+assert.equal(largeContent.content_hash.length, 64);
 console.log("PASS: Main automatically chunks large authored Markdown without exposing chunk schema to the model");

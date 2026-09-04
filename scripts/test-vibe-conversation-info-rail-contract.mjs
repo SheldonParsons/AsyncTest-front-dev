@@ -82,6 +82,7 @@ assert.equal(policy.advanceKnowledgeChangeCursor(4, '19', {
 }).changed, false)
 
 assert.equal(presentation.knowledgeChangeTitle({ seq: 4, reason: '调整规则' }), '调整规则')
+assert.equal(presentation.knowledgeChangeTitle({ seq: 4, reason: '新增 退款规则.md' }), '新增 退款规则')
 assert.equal(presentation.knowledgeChangeTitle({ seq: 4, request_text: '录入规则' }), '录入规则')
 assert.equal(presentation.knowledgeChangeTitle({ seq: 4 }), '提交 #4')
 assert.equal(presentation.knowledgeChangeKindLabel('modify'), '修改')

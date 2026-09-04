@@ -1,13 +1,13 @@
 <template>
   <div class="source-reader">
     <aside>
-      <div class="aside-head"><strong>现行文档</strong><span>{{ documentItems.length }}</span></div>
+      <div class="aside-head"><strong>知识项</strong><span>{{ documentItems.length }}</span></div>
       <div class="source-list" @scroll.passive="loadMoreOnScroll">
         <button v-for="item in documentItems" :key="item.id" type="button" :class="{ active: detailMode === 'document' && detail?.id === item.id }" @click="selectDocument(item.id)">
           <strong>{{ item.display_name || item.filename }}</strong>
           <small>第 {{ item.generation_no }} 代 · 提交 #{{ item.commit_seq }} · {{ formatBytes(item.bytes) }}</small>
         </button>
-        <p v-if="documentLoading" class="muted">读取现行文档…</p>
+        <p v-if="documentLoading" class="muted">读取知识项…</p>
       </div>
       <div class="aside-head structure-head"><strong>{{ detailMode === 'source' ? '来源结构' : '文档结构' }}</strong><span>{{ outline.length }} 标题</span></div>
       <div class="outline-list">
@@ -35,7 +35,7 @@
         <article v-else-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
         <article v-else-if="detail" class="plain-body">{{ detail.content }}</article>
         <p v-else-if="documentLoading" class="empty">正在读取文档列表…</p>
-        <p v-else class="empty">尚无现行文档。确认录入后的知识会显示在这里。</p>
+        <p v-else class="empty">尚无知识项。确认录入后的知识会显示在这里。</p>
       </div>
 
       <nav v-if="minimap.length" class="minimap" aria-label="原文位置预览" @mouseleave="hoverIndex = null">
@@ -427,7 +427,7 @@ function downloadSource() {
   anchor.href = url
   if (detailMode.value === 'document') {
     const extension = isMarkdown.value ? '.md' : '.txt'
-    const filename = detail.value.display_name || '现行文档'
+    const filename = detail.value.display_name || '知识项'
     anchor.download = filename.toLowerCase().endsWith(extension) ? filename : `${filename}${extension}`
   } else {
     anchor.download = detail.value.source_kind === 'text'

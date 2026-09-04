@@ -3,7 +3,7 @@
     <section class="scroll-section documents-section" aria-labelledby="current-documents-title">
       <header>
         <div>
-          <h2 id="current-documents-title">现行文档</h2>
+          <h2 id="current-documents-title">知识项</h2>
           <p>知识库当前真正生效的正文</p>
         </div>
         <span>{{ status.summary.document_count }} 份</span>
@@ -28,13 +28,13 @@
           </div>
           <code>{{ item.content_hash.slice(0, 8) }}</code>
         </button>
-        <p v-if="loading && !documents.length" class="state">正在读取现行文档…</p>
+        <p v-if="loading && !documents.length" class="state">正在读取知识项…</p>
         <div v-else-if="documentError" class="inline-state error" role="alert">
           <span>{{ documentError }}</span>
           <button type="button" @click="load">重试</button>
         </div>
         <div v-else-if="!documents.length" class="inline-state">
-          <strong>还没有现行文档</strong>
+          <strong>还没有知识项</strong>
           <span>确认录入后的正文会显示在这里。</span>
         </div>
       </div>
@@ -164,7 +164,7 @@ async function load() {
   ])
   if (epoch !== requestEpoch || projectId !== props.projectId) return
   if (documentResult.status === 'fulfilled') documents.value = documentResult.value.items
-  else documentError.value = messageOf(documentResult.reason, '现行文档读取失败')
+  else documentError.value = messageOf(documentResult.reason, '知识项读取失败')
   if (sourceResult.status === 'fulfilled') sources.value = sourceResult.value.items
   else sourceError.value = messageOf(sourceResult.reason, '来源记录读取失败')
   loading.value = false

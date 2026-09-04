@@ -71,14 +71,14 @@ const fetchImpl = async (url, init) => {
     tools: [
       "get_knowledge_overview", "search_knowledge", "read_knowledge",
       "add_knowledge", "edit_knowledge", "delete_knowledge",
-      "move_knowledge_section", "search_vibe_platform_docs", "ask_clarification",
+      "search_vibe_platform_docs", "ask_clarification",
     ].map((name, index) => ({
       name,
       description: "",
-      execution_mode: index < 3 || index === 7 ? "parallel" : "sequential",
+      execution_mode: index < 3 || index === 6 ? "parallel" : "sequential",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     })),
-    tool_manifest: { schema: "knowledge_tool_manifest.v2", version: 2 },
+    tool_manifest: { schema: "knowledge_tool_manifest.v3", version: 3 },
     agent_binding: agentBinding(),
     skill,
     hidden_tools: [],

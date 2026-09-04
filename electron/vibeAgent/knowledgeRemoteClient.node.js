@@ -3,8 +3,8 @@
  *
  * 这个模块不认识会话编排、不执行本地文件，也不保存响应；它只把一枚
  * 已认证的用户 token 和一个严格的 knowledge_tool_request.v1 发给后端。
- * 原始附件绝不会进入这里，附件经过 Pi 选择后的正文才可以作为 model_authored
- * documents 发送给 Knowledge Capability。
+ * 原始附件绝不会进入这里；Pi 只把整理后的内容字符串作为 knowledge items
+ * 发送给 Knowledge Capability。
  */
 import { createHash, randomUUID } from "node:crypto";
 
@@ -262,7 +262,7 @@ function knowledgeRequestBody({
       : (() => { throw new Error("vibe_agent_knowledge_payload_invalid"); })();
   rejectCredentials(bodyPayload);
   if (op === "prepare_change") {
-    const attachmentKeys = ["attachments", "attachment_resources", "attachment_selection", "replacement"];
+    const attachmentKeys = ["attachments", "attachment_resources", "attachment_selection"];
     if (attachmentKeys.some((key) => {
       const value = bodyPayload[key];
       return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0)
@@ -270,7 +270,7 @@ function knowledgeRequestBody({
     })) {
       throw new KnowledgeRemoteError(
         "attachment_not_supported",
-        "原始附件只能在本机读取；Knowledge Tool 只接收确认前的 model_authored 正文",
+        "原始附件只能在本机读取；Knowledge Tool 只接收确认前的内容字符串",
       );
     }
     if (Array.isArray(bodyPayload.documents)) {
@@ -278,7 +278,18 @@ function knowledgeRequestBody({
         if (!document || typeof document !== "object" || String(document.origin_kind || "model_authored") !== "model_authored") {
           throw new KnowledgeRemoteError(
             "attachment_not_supported",
-            "Knowledge Tool 只接收本机整理后的 model_authored 正文",
+            "Knowledge Tool 只接收本机整理后的内容字符串",
+          );
+        }
+      }
+    }
+    if (Array.isArray(bodyPayload.items)) {
+      for (const item of bodyPayload.items) {
+        if (!item || typeof item !== "object" || Array.isArray(item)
+          || (typeof item.content !== "string" && !Array.isArray(item.chunks))) {
+          throw new KnowledgeRemoteError(
+            "invalid_payload",
+            "Knowledge Tool 只接收本机整理后的内容字符串",
           );
         }
       }

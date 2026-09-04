@@ -10,7 +10,7 @@
       </div>
 
       <div v-if="status" class="metrics" aria-label="知识库概况">
-        <button type="button" aria-label="查看现行文档" @click="selectTab('document')"><b>{{ status.summary.document_count }}</b><span>现行文档</span></button>
+        <button type="button" aria-label="查看现行知识项" @click="selectTab('document')"><b>{{ status.summary.document_count }}</b><span>知识项</span></button>
         <button type="button" aria-label="查看来源记录" @click="selectTab('overview')"><b>{{ status.summary.source_count }}</b><span>来源记录</span></button>
         <button type="button" aria-label="查看变更历史" @click="selectTab('history')"><b>{{ status.summary.commit_count }}</b><span>变更</span></button>
         <button type="button" aria-label="查看删除记录" @click="selectTab('history')"><b>{{ status.summary.tombstone_count }}</b><span>删除</span></button>

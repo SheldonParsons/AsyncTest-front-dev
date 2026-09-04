@@ -62,17 +62,17 @@ Provider 明确配置；未配置时按 Provider family + 精确 model id 使用
 无工具的私有标题总结；标题最多 12 个字符，只写入 LocalSessionStore，不进入聊天正文。
 该调用单独记录 Provider usage，失败或结果不合格时保留默认标题。
 
-只有 Pi 整理出的最终 Markdown、并经过用户确认的 `model_authored` 文档，才会通过
+只有 Pi 从任意输入资源整理出的最终内容字符串、并经过用户确认的知识项，才会通过
 `POST /vibe/foundation/knowledge/tool` 进入知识库；不会把原始文件路径、文件引用或
-附件资源身份当作写入内容。大 Markdown 的 chunks/hash 是 Main→server 的隐藏传输细节，
+附件资源身份当作知识内容。大字符串的 chunks/hash 是 Main→server 的隐藏传输细节，
 不出现在公开模型 schema；当前单份正文上限为 4,000,000 个 Unicode 字符。知识库中的
 已确认内容是唯一业务权威。
 
-## Knowledge Tool v2 与 Skill
+## Knowledge Tool v3 与 Skill
 
-新 Electron Goal 只看 `knowledge_tool_manifest.v2`：`get_knowledge_overview`、
+新 Electron Goal 只看 `knowledge_tool_manifest.v3`：`get_knowledge_overview`、
 `search_knowledge`、`read_knowledge`、`add_knowledge`、`edit_knowledge`、
-`delete_knowledge`、`move_knowledge_section`、`search_vibe_platform_docs` 和
+`delete_knowledge`、`search_vibe_platform_docs` 和
 `ask_clarification`。`list_knowledge_structure`、所有 attachment reader 以及
 `read_many/*_batch` 不在公共面；`apply_confirmation`/`cancel_confirmation` 只作为
 隐藏交互动作。一个 assistant message 中的多个只读调用可组成一个 1–20 项 read wave，
