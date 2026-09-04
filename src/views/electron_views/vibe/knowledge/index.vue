@@ -3745,6 +3745,16 @@ const composerPlaceholder = computed(() => '随心输入')
 const clarificationActive = ref<{ question: string; raw?: any; pending?: any[] } | null>(null)
 const clarificationSubmissionSerialBySession = new Map<string, number>()
 
+function clarificationOptionIdentity(item: any): string {
+  if (typeof item === 'string') return item.trim()
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return ''
+  for (const key of ['id', 'option_id', 'value', 'label']) {
+    const value = String(item[key] ?? '').trim()
+    if (value) return value
+  }
+  return ''
+}
+
 function clarificationSubmissionMatches(
   sessionId: string,
   turnId = '',
@@ -3836,7 +3846,7 @@ const composerQuestion = computed(() => {
           type: 'choice' as const,
           label: String(item.label),
           description: String(item.description || (raw.decision_type === 'confirmation' ? item.effect || '' : '')),
-          value: `__CLARIFICATION_OPTION__:${String(item.id)}`,
+          value: `__CLARIFICATION_OPTION__:${clarificationOptionIdentity(item)}`,
         })),
         ...(input.enabled ? [{
           type: 'input' as const,
@@ -5216,7 +5226,7 @@ async function onComposerAnswer(value: string) {
     if (value.startsWith(optionPrefix)) {
       const optionId = value.slice(optionPrefix.length)
       const selected = (Array.isArray(raw.options) ? raw.options : [])
-        .find((item: any) => String(item?.id || '') === optionId)
+        .find((item: any) => clarificationOptionIdentity(item) === optionId)
       if (!selected) return
       const selectedAction = selected.is_cancel
         ? 'cancel'

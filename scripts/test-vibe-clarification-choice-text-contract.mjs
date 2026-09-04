@@ -25,14 +25,20 @@ const script = ts.createSourceFile(
 const initializer = script.statements.filter(ts.isVariableStatement)
   .flatMap(statement => [...statement.declarationList.declarations])
   .find(declaration => declaration.name.getText(script) === 'composerQuestion')?.initializer
+const identity = script.statements.find(statement => (
+  ts.isFunctionDeclaration(statement)
+  && statement.name?.getText(script) === 'clarificationOptionIdentity'
+))
 assert.ok(initializer)
-const compiled = ts.transpileModule('const question = ' + initializer.getText(script), {
+assert.ok(identity)
+const compiled = ts.transpileModule(identity.getText(script) + '\nconst question = ' + initializer.getText(script), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
   reportDiagnostics: true,
 })
 assert.deepEqual(compiled.diagnostics, [])
-const project = new Function('clarificationActive', 'computed', compiled.outputText + '\nreturn question')
-const question = raw => project({ value: { question: raw.title, raw } }, callback => callback())
+const project = new Function('clarificationActive', 'computed', compiled.outputText + '\nreturn { question, clarificationOptionIdentity }')
+const projection = raw => project({ value: { question: raw.title, raw } }, callback => callback())
+const question = raw => projection(raw).question
 const raw = {
   schema: 'clarification.v2',
   title: '请选择处理范围',
@@ -53,6 +59,13 @@ assert.equal(question({
   ...raw, decision_type: 'missing_information',
   options: [{ ...raw.options[0], description: '规则甲的适用范围。' }],
 }).items[0].description, '规则甲的适用范围。')
+
+const valueOnly = { label: '按照当前内容录入', value: 'use_current' }
+assert.equal(projection(raw).clarificationOptionIdentity(valueOnly), 'use_current')
+assert.equal(question({
+  ...raw,
+  options: [valueOnly],
+}).items[0].value, '__CLARIFICATION_OPTION__:use_current')
 
 // 具体预览确认仍显示效果说明。
 assert.deepEqual(question({
