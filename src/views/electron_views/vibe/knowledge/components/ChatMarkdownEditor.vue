@@ -369,6 +369,19 @@ function isHeadingAtEnd(): boolean {
   return selection.anchor.key === block.getKey() && selection.anchor.offset === block.getChildrenSize()
 }
 
+function insertComposerLineBreak(): boolean {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection)) return false
+  const block = selection.anchor.getNode().getTopLevelElement()
+  // 普通文字换行必须形成新的段落，否则下一行的 #、列表等标记不在块首，
+  // Markdown 快捷转换不会触发。序列化仍保留单个换行，不额外插入空白行。
+  if (block?.getType() === 'paragraph') {
+    return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
+  }
+  // 列表内的 Shift+Enter、引用和代码块保留原有段内换行。
+  return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
+}
+
 function onBusyEnter(event: KeyboardEvent | null): boolean {
   if (!event) return false
   if (event.isComposing || composing.value || editor?.isComposing()) return true
@@ -415,7 +428,7 @@ function onEnter(event: KeyboardEvent | null): boolean {
     if (isHeadingAtEnd()) {
       return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
     }
-    return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
+    return insertComposerLineBreak()
   }
   if (event.ctrlKey || event.metaKey) {
     if (isInsideCodeBlock()) return false
@@ -426,7 +439,7 @@ function onEnter(event: KeyboardEvent | null): boolean {
     if (isHeadingAtEnd()) {
       return editor?.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined) ?? false
     }
-    return editor?.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false) ?? false
+    return insertComposerLineBreak()
   }
   if (isInsideCodeBlock() && !props.sending && !props.stopping && !props.uploading) return false
 
