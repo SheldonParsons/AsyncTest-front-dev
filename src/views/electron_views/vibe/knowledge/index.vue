@@ -289,10 +289,9 @@
             </div>
           </div>
           <article
-            v-for="event in events"
+            v-for="event in visibleTimelineEvents"
             :id="`timeline-event-${event.id}`"
             :key="event.id"
-            v-show="shouldRenderEvent(event)"
             :class="[
               event.role === 'assistant' ? 'assistant-message' : 'event user-event',
               {
@@ -327,7 +326,7 @@
               </template>
               <TurnOutcomeNotice v-if="threadOutcomeNotice(event)" v-bind="threadOutcomeNotice(event)!" />
               <template v-if="threadOutsideAnswer(event)">
-                <div class="message-md" v-html="renderMarkdown(threadOutsideAnswer(event))" />
+                <ConversationMarkdown class="message-md" :content="threadOutsideAnswer(event)" :render-markdown="renderMarkdown" />
                 <div
                   v-if="threadSources(event).length"
                   class="answer-trust"
@@ -403,11 +402,12 @@
                   </button>
                 </div>
                 <div class="user-message-bubble">
-                  <div
+                  <ConversationMarkdown
                     :id="userMessageContentId(event.id)"
                     v-user-message-overflow="event.id"
                     class="user-message-content user-message-markdown"
-                    v-html="renderMarkdown(userMessageText(event))"
+                    :content="userMessageText(event)"
+                    :render-markdown="renderMarkdown"
                   />
                   <button
                     v-if="shouldCollapseUserMessage(event)"
@@ -451,7 +451,7 @@
               </div>
               <!-- 纯反问不显示正文；复合目标已经完成的只读答案必须在确认写入前正常显示。 -->
               <template v-else-if="shouldRenderStandaloneAssistantAnswer(event)">
-                <div class="message-md" v-html="renderMarkdown(eventDisplayContent(event))" />
+                <ConversationMarkdown class="message-md" :content="eventDisplayContent(event)" :render-markdown="renderMarkdown" />
                 <div v-if="eventSources(event).length" class="answer-trust">
                   <SourceChips :items="eventSources(event)" @open-source="openConversationSource" />
                 </div>
@@ -472,7 +472,7 @@
                   />
                   <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
                   <template v-if="eventHasAnswerContent(responseEvent)">
-                    <div class="message-md" v-html="renderMarkdown(eventDisplayContent(responseEvent))" />
+                    <ConversationMarkdown class="message-md" :content="eventDisplayContent(responseEvent)" :render-markdown="renderMarkdown" />
                     <div v-if="eventSources(responseEvent).length" class="answer-trust">
                       <SourceChips :items="eventSources(responseEvent)" @open-source="openConversationSource" />
                     </div>
@@ -692,6 +692,7 @@ import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
+import ConversationMarkdown from './components/ConversationMarkdown.vue'
 import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
 import ProjectSwitchDialog from './components/ProjectSwitchDialog.vue'
 import {
@@ -708,14 +709,9 @@ import {
   type ProjectSwitchRequest,
 } from './projectSwitchDialogPolicy'
 import {
-  continuationParentEventId,
-  eventThreadRootId as resolveEventThreadRootId,
-  interactionReplyParentEventId,
-  isResolvedInteractionThreadRoot,
-  parentContinuationResponses as resolveParentContinuationResponses,
+  createConversationThreadIndex,
   resolvedInteractionRootAnswerText,
   shouldRenderStandaloneAssistantBody,
-  shouldRenderThreadEvent,
   threadFinalAnswerText,
 } from './conversationThreadPolicy'
 import { nextTimelineFollow, timelineLayoutAction } from './timelineFollowPolicy'
@@ -873,6 +869,8 @@ const projectListRefreshError = ref('')
 let projectListRefreshEpoch = 0
 const sessions = ref<VibeSession[]>([])
 const events = ref<VibeEvent[]>([])
+const conversationThreadIndex = computed(() => createConversationThreadIndex(events.value))
+const visibleTimelineEvents = computed(() => events.value.filter(event => conversationThreadIndex.value.shouldRenderThreadEvent(event)))
 
 // 最后一条 assistant 回复的 id（其操作按钮常驻显示）
 const lastAssistantId = computed(() => {
@@ -6907,10 +6905,23 @@ function toDate(value?: string): Date {
 }
 
 // 上海时区下该时刻所在"日"的序号（自 epoch 起的天数），用于判断当天/本周。
+// formatter 创建成本明显高于格式化本身；同一页面复用，不缓存会随日期改变的结果。
+const shanghaiDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+})
+const messageTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit',
+  minute: '2-digit', weekday: 'long', hour12: false,
+})
+const hoverTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', weekday: 'long', year: 'numeric', month: '2-digit',
+  day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+})
+const hoverDayFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+})
 function shanghaiDayIndex(date: Date): number {
-  const p = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date)
+  const p = shanghaiDayFormatter.formatToParts(date)
   const v = (t: string) => Number(p.find(x => x.type === t)?.value || 0)
   return Math.floor(Date.UTC(v('year'), v('month') - 1, v('day')) / 86400000)
 }
@@ -6923,11 +6934,7 @@ function formatTime(value?: string) {
   if (!value) return ''
   const date = toDate(value)
   if (isNaN(date.getTime())) return ''
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-    weekday: 'long', hour12: false,
-  }).formatToParts(date)
+  const parts = messageTimeFormatter.formatToParts(date)
   const get = (type: string) => parts.find(part => part.type === type)?.value || ''
   const time = `${get('hour')}:${get('minute')}`
 
@@ -6945,23 +6952,8 @@ function formatTime(value?: string) {
 function formatHoverTime(value?: string) {
   if (!value) return ''
   const date = toDate(value)
-  const formatter = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    weekday: 'long',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  const nowParts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())
-  const parts = formatter.formatToParts(date)
+  const nowParts = hoverDayFormatter.formatToParts(new Date())
+  const parts = hoverTimeFormatter.formatToParts(date)
   const get = (type: string) => parts.find(part => part.type === type)?.value || ''
   const getNow = (type: string) => nowParts.find(part => part.type === type)?.value || ''
   const time = `${get('hour')}:${get('minute')}`
@@ -7004,19 +6996,18 @@ function eventPackageActionDetail(event: any) {
 }
 
 function shouldRenderEvent(event: any) {
-  return shouldRenderThreadEvent(events.value, event)
+  return conversationThreadIndex.value.shouldRenderThreadEvent(event)
 }
 
 function parentContinuationResponses(event: any): VibeEvent[] {
-  return resolveParentContinuationResponses(events.value, event) as VibeEvent[]
+  return conversationThreadIndex.value.parentContinuationResponses(event) as VibeEvent[]
 }
 
 // 取挂在这条反问下的"选择回复"内容（confirmation_reply 的 user 事件），插进思考里作"你的选择"那一环。
 function clarificationReplyContent(event: any): string {
   const id = String(event?.id || '')
   if (!id) return ''
-  const reply = (events.value as any[]).find(e =>
-    e?.role === 'user' && interactionReplyParentEventId(events.value, e) === id)
+  const reply = conversationThreadIndex.value.firstInteractionReply(event)
   return reply ? String(reply.content || '').trim() : ''
 }
 
@@ -7036,11 +7027,11 @@ function isPendingClarification(event: any): boolean {
 function isInteractionThreadRoot(event: any): boolean {
   const hasContinuation = parentContinuationResponses(event).length > 0 || isStreamingUnderEvent(event)
   return event?.role === 'assistant'
-    && !continuationParentEventId(events.value, event)
+    && !conversationThreadIndex.value.continuationParentEventId(event)
     && hasContinuation
     && (
       isBlockingClarificationEvent(event)
-      || isResolvedInteractionThreadRoot(events.value, event)
+      || conversationThreadIndex.value.isResolvedInteractionThreadRoot(event)
     )
 }
 
@@ -7107,7 +7098,7 @@ function threadDurationMs(root: any): number {
 
 function threadNodeDisplayContent(root: any, node: any): string {
   if (String(node?.id || '') === String(root?.id || '')
-    && isResolvedInteractionThreadRoot(events.value, root)) {
+    && conversationThreadIndex.value.isResolvedInteractionThreadRoot(root)) {
     return eventFormalIndependentAnswerText(node)
   }
   return eventHasAnswerContent(node) ? eventDisplayContent(node).trim() : ''
@@ -7128,6 +7119,7 @@ function threadPersistedAnswer(root: any): string {
     events.value,
     root,
     (node: any) => threadNodeDisplayContent(root, node),
+    conversationThreadIndex.value,
   )
 }
 
@@ -7173,7 +7165,7 @@ function hasEvent(eventId: string) {
 }
 
 function eventThreadRootId(event: any) {
-  return resolveEventThreadRootId(events.value, event)
+  return conversationThreadIndex.value.eventThreadRootId(event)
 }
 
 function isStreamingUnderEvent(event: any) {
