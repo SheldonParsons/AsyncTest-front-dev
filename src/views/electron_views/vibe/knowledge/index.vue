@@ -3998,10 +3998,10 @@ const composerQuestion = computed(() => {
         })),
         ...(input.enabled ? [{
           type: 'input' as const,
-          placeholder: String(input.placeholder),
+          placeholder: String(input.placeholder ?? ''),
           required: Boolean(input.required),
           showSkip: false,
-          submitLabel: String(input.submit_label),
+          submitLabel: String(input.submit_label || '提交'),
         }] : []),
       ],
     }
