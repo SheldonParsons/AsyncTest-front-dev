@@ -633,6 +633,11 @@ export class LocalToolRouter {
       delete safe.resource_handle;
       return safe;
     };
+    const runProject = String(this.run.project_id ?? this.run.projectId ?? this.run.project ?? "");
+    if (readResult.project !== undefined && (typeof readResult.project !== "string" || !readResult.project.trim())) {
+      throw new Error("knowledge_read_project_invalid");
+    }
+    const readProject = readResult.project ?? runProject;
     if (readResult.complete === true) return { ...outcome, result: hideHandle(readResult) };
     const handle = readResult.resource_handle;
     if (!handle) throw new Error("knowledge_resource_handle_missing");
@@ -647,11 +652,13 @@ export class LocalToolRouter {
       || !Number.isSafeInteger(byteSize) || byteSize < 0
       || !String(handle.resource_id || "").trim()
       || String(handle.actor_id) !== String(this.run.account_id ?? this.run.accountId ?? "")
-      || String(handle.project_id) !== String(this.run.project_id ?? this.run.projectId ?? this.run.project ?? "")
+      || String(handle.project_id) !== readProject
       || String(handle.session_id) !== String(this.run.session_id ?? this.run.sessionId ?? "")
       || !Array.isArray(handle.allowed_capabilities)
       || !handle.allowed_capabilities.includes("knowledge.download_source")
     ) throw new Error("knowledge_resource_handle_invalid");
+    // 跨项目已由服务器逐页鉴权；不扩大当前会话下载端点和本机完整副本缓存的权限。
+    if (readProject !== runProject) return { ...outcome, result: hideHandle(readResult) };
     // Resource handles are Main-only capabilities.  Never leave the
     // backend's source/session identity in the model-visible tool result;
     // the local path (for large pages) and the ordinary cursor are sufficient
