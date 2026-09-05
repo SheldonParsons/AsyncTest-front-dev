@@ -1,7 +1,20 @@
-import { marked, type Token } from 'marked'
+import { marked, type Token, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 
-export type MarkdownBlock = { raw: string; html: string }
+type MarkdownRow = { source: string; cells: string[] }
+export type MarkdownBlock = {
+  raw: string
+  html: string
+  table?: { header: MarkdownRow; rows: MarkdownRow[]; align: Tokens.Table['align'] }
+}
+
+function renderTableRow(cells: Tokens.TableCell[], cached?: MarkdownRow): MarkdownRow {
+  const source = JSON.stringify(cells.map(cell => cell.text))
+  return cached?.source === source ? cached : {
+    source,
+    cells: cells.map(cell => sanitizeMarkdownHtml(marked.Parser.parseInline(cell.tokens))),
+  }
+}
 
 export function normalizeCopyableMarkdownFence(content: string) {
   const raw = String(content || '')
@@ -58,9 +71,23 @@ export function createStreamingMarkdownRenderer() {
     } else {
       let group: Token[] = [], raw = ''
       for (const token of tokens) {
+        if (token.type === 'table' && token.raw.length >= 4096) {
+          if (group.length) { append(raw, group); group = []; raw = '' }
+          const cached = previous[next.length]
+          next.push(cached?.raw === token.raw ? cached : {
+            raw: token.raw,
+            html: '',
+            table: {
+              header: renderTableRow(token.header, cached?.table?.header),
+              rows: token.rows.map((row, index) => renderTableRow(row, cached?.table?.rows[index])),
+              align: token.align,
+            },
+          })
+          continue
+        }
         group.push(token)
         raw += token.raw
-        // 按顶层语法块分组而非截断字符；单个大代码块/表格保持完整。
+        // 按顶层语法块分组而非截断字符；代码围栏保持完整。
         if (raw.length >= 4096) { append(raw, group); group = []; raw = '' }
       }
       if (group.length) append(raw, group)
