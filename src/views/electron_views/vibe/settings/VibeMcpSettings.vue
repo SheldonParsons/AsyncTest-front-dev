@@ -109,19 +109,6 @@
           <code>{{ created.token }}</code>
           <button type="button" @click="copy(created.token, 'Token')">复制 Token</button>
         </div>
-        <div class="config-grid">
-          <div class="config-tabs" role="tablist" aria-label="客户端配置">
-            <button v-for="config in configs" :id="`mcp-tab-${config.key}`" :key="config.key" type="button" role="tab" :aria-selected="activeConfig === config.key" :aria-controls="`mcp-config-${config.key}`" :tabindex="activeConfig === config.key ? 0 : -1" @click="activeConfig = config.key" @keydown="navigateConfig($event, config.key)">{{ config.label }}</button>
-          </div>
-          <article v-for="config in configs" v-show="activeConfig === config.key" :id="`mcp-config-${config.key}`" :key="config.key" class="config-card" role="tabpanel" :aria-labelledby="`mcp-tab-${config.key}`" tabindex="0">
-            <header><strong>{{ config.label }}</strong><span>{{ config.hint }}</span></header>
-            <pre>{{ config.safe }}</pre>
-            <footer>
-              <button type="button" @click="copy(config.safe, `${config.label}安全配置`)">复制安全配置</button>
-              <button type="button" class="danger-copy" @click="copyFull(config.label, config.full)">复制完整配置</button>
-            </footer>
-          </article>
-        </div>
         <p v-if="createError" class="inline-error" role="alert">{{ createError }}</p>
         <div class="create-actions"><button type="button" class="primary-button" :disabled="creating" @click="createDialogOpen = false">我已保存</button></div>
       </section>
@@ -167,6 +154,29 @@
         </div>
         <p v-else class="empty">尚未创建 MCP 凭证。</p>
         <p class="credentials-note">仅显示凭证前缀。完整 Token 仅在创建时可见。</p>
+      </section>
+      <section class="panel connection-panel" aria-label="客户端连接配置">
+        <header class="panel-head">
+          <div>
+            <h2>客户端连接配置</h2>
+            <p>配置模板可随时复制。请将已保存的 Token 设置到对应环境变量中。</p>
+          </div>
+        </header>
+        <p v-if="!access.service.public_url" class="form-note">服务地址尚未配置，配置模板暂不可用。</p>
+        <template v-else>
+        <div class="config-grid">
+          <div class="config-tabs" role="tablist" aria-label="客户端配置">
+            <button v-for="config in configs" :id="`mcp-tab-${config.key}`" :key="config.key" type="button" role="tab" :aria-selected="activeConfig === config.key" :aria-controls="`mcp-config-${config.key}`" :tabindex="activeConfig === config.key ? 0 : -1" @click="activeConfig = config.key" @keydown="navigateConfig($event, config.key)">{{ config.label }}</button>
+          </div>
+          <article v-for="config in configs" v-show="activeConfig === config.key" :id="`mcp-config-${config.key}`" :key="config.key" class="config-card" role="tabpanel" :aria-labelledby="`mcp-tab-${config.key}`" tabindex="0">
+            <header><strong>{{ config.label }}</strong><span>{{ config.hint }}</span></header>
+            <pre>{{ config.safe }}</pre>
+            <footer>
+              <button type="button" @click="copy(config.safe, `${config.label}安全配置`)">复制安全配置</button>
+            </footer>
+          </article>
+        </div>
+        </template>
       </section>
     </template>
 
@@ -237,7 +247,6 @@ function openCreateDialog() {
 function resetCreateDialog() {
   created.value = null
   createError.value = ''
-  activeConfig.value = 'codex'
   draft.name = ''
   draft.expiresInDays = 0
   draft.scopes = scopeOptions.map(option => option.value)
@@ -262,14 +271,12 @@ function tomlString(value: string) {
 }
 
 const configs = computed(() => {
-  if (!created.value) return []
-  const service = created.value.service
+  const service = access.value?.service
+  if (!service?.public_url) return []
   const url = service.public_url
-  const token = created.value.token
   const serverName = service.server_name
   const env = service.token_env_var || 'ASYNCTEST_MCP_TOKEN'
   const codexSafe = `[mcp_servers.${serverName}]\nurl = ${tomlString(url)}\nbearer_token_env_var = ${tomlString(env)}\ndefault_tools_approval_mode = "writes"\ntool_timeout_sec = 300`
-  const codexFull = `[mcp_servers.${serverName}]\nurl = ${tomlString(url)}\nhttp_headers = { Authorization = ${tomlString(`Bearer ${token}`)} }\ndefault_tools_approval_mode = "writes"\ntool_timeout_sec = 300`
   const claudeSafe = JSON.stringify({
     mcpServers: {
       [serverName]: {
@@ -279,21 +286,11 @@ const configs = computed(() => {
       },
     },
   }, null, 2)
-  const claudeFull = JSON.stringify({
-    mcpServers: {
-      [serverName]: {
-        type: 'http',
-        url,
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    },
-  }, null, 2)
   const genericSafe = `URL: ${url}\nAuthorization: Bearer \${${env}}\nTransport: Streamable HTTP`
-  const genericFull = `URL: ${url}\nAuthorization: Bearer ${token}\nTransport: Streamable HTTP`
   return [
-    { key: 'codex', label: 'Codex config.toml', hint: '推荐：环境变量', safe: codexSafe, full: codexFull },
-    { key: 'claude', label: 'Claude .mcp.json', hint: 'HTTP MCP', safe: claudeSafe, full: claudeFull },
-    { key: 'generic', label: '通用配置', hint: 'Streamable HTTP', safe: genericSafe, full: genericFull },
+    { key: 'codex', label: 'Codex config.toml', hint: '推荐：环境变量', safe: codexSafe },
+    { key: 'claude', label: 'Claude .mcp.json', hint: 'HTTP MCP', safe: claudeSafe },
+    { key: 'generic', label: '通用配置', hint: 'Streamable HTTP', safe: genericSafe },
   ]
 })
 
@@ -357,13 +354,6 @@ async function copy(value: string, label: string) {
     if (createDialogOpen.value) createError.value = '复制失败，请手动选择文本复制'
     else error.value = '复制失败，请手动选择文本复制'
   }
-}
-
-async function copyFull(label: string, value: string) {
-  try {
-    await ElMessageBox.confirm('完整配置包含明文 Token，请仅保存在受信任设备的本地配置文件中。', '复制完整配置', { confirmButtonText: '复制', cancelButtonText: '取消', customClass: 'mcp-confirm-dialog' })
-  } catch { return }
-  await copy(value, `${label}完整配置`)
 }
 
 function scopeLabel(scope: VibeMcpScope) {
@@ -530,6 +520,10 @@ fieldset { display: grid; gap: 8px; margin: 20px 0 0; padding: 0; border: 0; min
 .token-row code { min-width: 0; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; }
 .token-row button { flex: none; border: 0; padding: 5px 7px; border-radius: 6px; color: #fff; background: #242426; cursor: pointer; font-size: 11px; }
 .config-grid { margin-top: 20px; }
+.connection-panel .config-grid { margin-top: 14px; }
+.connection-panel h2 { margin-bottom: 5px; }
+.connection-panel .config-tabs { width: fit-content; max-width: 100%; }
+.connection-panel .config-tabs button { padding-inline: 14px; }
 .config-tabs { display: flex; gap: 3px; padding: 4px; border-radius: 10px; background: #eeeef1; }
 .config-tabs button { flex: 1; min-width: 0; padding: 8px 5px; border: 0; border-radius: 7px; color: #73737a; background: transparent; cursor: pointer; font-size: 11px; }
 .config-tabs button[aria-selected="true"] { background: #fff; color: #242426; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
