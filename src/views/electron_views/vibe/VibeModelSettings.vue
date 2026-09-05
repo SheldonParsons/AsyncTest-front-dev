@@ -53,10 +53,6 @@
 
             <p v-if="!providers.length" class="vms-empty-line">新增自己的模型，或等待管理员配置系统默认模型。</p>
           </section>
-          <div v-if="localAgentAvailable" class="vms-local-agent-toggle" role="status">
-            <span>本机运行</span>
-            <small>对话由桌面客户端处理，附件留在本机</small>
-          </div>
 
           <footer v-if="statusText" class="vms-list-foot">
             <span :class="['vms-status', { ok: statusKind === 'ok', error: statusKind === 'error' }]">{{ statusText }}</span>
@@ -165,7 +161,6 @@ const providers = ref<VibeLLMProviderConfig[]>([])
 const editingProvider = ref<VibeLLMProviderConfig | null>(null)
 const statusText = ref('')
 const statusKind = ref<'idle' | 'ok' | 'error'>('idle')
-const localAgentAvailable = computed(() => typeof window !== 'undefined' && !!window.electronAPI?.vibeAgent?.startLocal)
 let loadConfigRequest: Promise<void> | null = null
 
 const draft = reactive<VibeLLMProviderPayload>({
@@ -649,29 +644,6 @@ async function runProviderTest(provider: VibeLLMProviderConfig) {
   font-size: 13px;
 }
 
-.vms-local-agent-toggle {
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  column-gap: 8px;
-  row-gap: 2px;
-  align-items: center;
-  margin-top: 16px;
-  padding: 11px 12px;
-  border: 1px solid rgba(22, 96, 74, 0.18);
-  border-radius: 12px;
-  background: rgba(235, 248, 242, 0.72);
-  color: rgba(29, 29, 31, 0.82);
-  font-size: 13px;
-  cursor: pointer;
-
-  input { accent-color: #16805c; }
-  small {
-    grid-column: 2;
-    color: rgba(29, 29, 31, 0.52);
-    font-size: 11px;
-  }
-}
-
 .vms-empty-state {
   min-height: 260px;
   display: flex;
@@ -780,19 +752,24 @@ async function runProviderTest(provider: VibeLLMProviderConfig) {
 
   input {
     width: 100%;
-    height: 38px;
+    height: 40px;
     box-sizing: border-box;
-    border: 1px solid rgba(15, 15, 15, 0.1);
-    border-radius: 10px;
-    background: #fff;
+    border: 1px solid #dcdce1;
+    border-radius: 9px;
+    background: #f9f9fb;
     color: #1d1d1f;
     padding: 0 11px;
     font-size: 13px;
     outline: none;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+
+    &::placeholder { color: #9898a0; }
+    &:hover { border-color: #bdbdc6; }
 
     &:focus {
-      border-color: rgba(29, 29, 31, 0.34);
-      box-shadow: 0 0 0 3px rgba(15, 15, 15, 0.06);
+      border-color: #85858f;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(60, 60, 70, 0.08);
     }
 
     &[readonly] {
