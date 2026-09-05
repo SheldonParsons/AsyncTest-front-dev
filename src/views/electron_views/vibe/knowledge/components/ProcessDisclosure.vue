@@ -27,14 +27,14 @@
 
     <div v-show="bodyVisible" class="proc-body">
       <template v-for="step in steps" :key="step.key">
-        <div
+        <StreamingMarkdown
           v-if="step.kind === 'message'"
           class="proc-narration"
           :class="{
             streaming: step.streaming,
             'runtime-progress': step.phase === 'runtime_progress',
           }"
-          v-html="messageHtml(step)"
+          :blocks="renderedMessages[String(step.key || '')] || []"
         />
         <div v-else-if="step.kind === 'diff'" class="proc-diff">
           <div v-for="(ln, j) in step.lines" :key="j" class="proc-diff-line" :class="'pd-' + ln.t">{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
@@ -73,6 +73,8 @@ import { compactProcessActionMeta } from '../processDisclosurePolicy'
 import { continuousAnimationDelay } from '../motionContinuity'
 import RunningDots from './icons/RunningDots.vue'
 import CheckComplete from './icons/CheckComplete.vue'
+import StreamingMarkdown from './StreamingMarkdown.vue'
+import { createStreamingMarkdownRenderer, type MarkdownBlock } from '../streamingMarkdown'
 
 const emit = defineEmits<{
   (event: 'layout-change'): void
@@ -83,7 +85,6 @@ const props = withDefaults(defineProps<{
   running?: boolean
   durationMs?: number
   awaiting?: boolean   // 0703:轮次以反问/勾选收尾、等用户决定(第三态,与"正在思考"区分)
-  renderMarkdown: (content: string) => string
 }>(), {
   running: false,
   durationMs: 0,
@@ -93,8 +94,12 @@ const props = withDefaults(defineProps<{
 // 运行与等待用户时展开；完成后默认收起，仍可由用户手动查看。
 const open = ref<boolean | undefined>()
 const shimmerStyle = { '--vibe-shimmer-delay': continuousAnimationDelay() }
-const renderedMessages = shallowRef<Record<string, string>>({})
-const messageCache = new Map<string, { text: string; html: string }>()
+const renderedMessages = shallowRef<Record<string, MarkdownBlock[]>>({})
+const messageCache = new Map<string, {
+  text: string
+  blocks: MarkdownBlock[]
+  render: ReturnType<typeof createStreamingMarkdownRenderer>
+}>()
 let messageRenderTimer: ReturnType<typeof setTimeout> | null = null
 const STREAMING_PROCESS_RENDER_DELAY_MS = 100
 
@@ -111,21 +116,25 @@ function renderMessages() {
   if (messageRenderTimer) clearTimeout(messageRenderTimer)
   messageRenderTimer = null
   if (!bodyVisible.value) {
-    renderedMessages.value = {}
-    void nextTick(() => emit('layout-change'))
+    if (Object.keys(renderedMessages.value).length) {
+      renderedMessages.value = {}
+      messageCache.clear()
+      void nextTick(() => emit('layout-change'))
+    }
     return
   }
   const activeKeys = new Set<string>()
-  const next: Record<string, string> = {}
+  const next: Record<string, MarkdownBlock[]> = {}
   for (const step of props.steps) {
     if (step.kind !== 'message') continue
     const key = String(step.key || '')
     const text = String(step.text || '')
     activeKeys.add(key)
     const cached = messageCache.get(key)
-    const html = cached?.text === text ? cached.html : props.renderMarkdown(text)
-    messageCache.set(key, { text, html })
-    next[key] = html
+    const render = cached?.render || createStreamingMarkdownRenderer()
+    const blocks = cached?.text === text ? cached.blocks : render(text)
+    messageCache.set(key, { text, blocks, render })
+    next[key] = blocks
   }
   for (const key of messageCache.keys()) {
     if (!activeKeys.has(key)) messageCache.delete(key)
@@ -144,16 +153,16 @@ function scheduleMessageRender() {
   messageRenderTimer = setTimeout(renderMessages, STREAMING_PROCESS_RENDER_DELAY_MS)
 }
 
-watch(bodyVisible, scheduleMessageRender, { flush: 'post' })
+watch(bodyVisible, () => {
+  scheduleMessageRender()
+  // 即使只有动作/反问、没有旁白，展开和收起也会改变时间线高度。
+  void nextTick(() => emit('layout-change'))
+}, { flush: 'post' })
 watch(() => props.steps, scheduleMessageRender, { immediate: true, flush: 'post' })
 
 onBeforeUnmount(() => {
   if (messageRenderTimer) clearTimeout(messageRenderTimer)
 })
-
-function messageHtml(step: ProcessStep): string {
-  return renderedMessages.value[String(step.key || '')] || ''
-}
 
 function toggle() {
   if (props.running) return
@@ -247,6 +256,8 @@ function fmt(ms?: number): string {
   display: flex;
   flex-direction: column;
   gap: 6px;
+
+  > * { flex: 0 0 auto; }
 }
 
 .proc-narration {

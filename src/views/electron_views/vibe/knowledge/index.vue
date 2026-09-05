@@ -308,16 +308,15 @@
                 :running="threadRunning(event)"
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
-                :render-markdown="renderStreamingMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <!-- 候选答案始终在思考竖线之外流式展示；工具调用旁白仍由
                    ProcessDisclosure 承载，assistant_end 会负责两者之间的归类。 -->
               <template v-if="isStreamingUnderEvent(event) && streamingAnswerPreview">
-                <div
-                  v-if="streamingAnswerHtml"
+                <StreamingMarkdown
+                  v-if="streamingAnswerBlocks.length"
                   class="message-md streaming-answer"
-                  v-html="streamingAnswerHtml"
+                  :blocks="streamingAnswerBlocks"
                 />
                 <div v-else class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
                 <div v-if="streamingSources.length" class="answer-trust">
@@ -348,7 +347,6 @@
                 :running="false"
                 :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
-                :render-markdown="renderStreamingMarkdown"
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
@@ -404,7 +402,7 @@
                 <div class="user-message-bubble">
                   <ConversationMarkdown
                     :id="userMessageContentId(event.id)"
-                    v-user-message-overflow="event.id"
+                    v-user-message-overflow="{ id: event.id, content: userMessageText(event) }"
                     class="user-message-content user-message-markdown"
                     :content="userMessageText(event)"
                     :render-markdown="renderMarkdown"
@@ -467,7 +465,6 @@
                     v-if="eventProcessSteps(responseEvent).length"
                     :steps="eventProcessSteps(responseEvent)"
                     :duration-ms="eventProcessDuration(responseEvent)"
-                    :render-markdown="renderStreamingMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
@@ -487,14 +484,13 @@
                     :steps="streamingProcess.steps"
                     :running="procRunning"
                     :duration-ms="procDurationMs"
-                    :render-markdown="renderStreamingMarkdown"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-                  <div
-                    v-if="streamingAnswerPreview && streamingAnswerHtml"
+                  <StreamingMarkdown
+                    v-if="streamingAnswerPreview && streamingAnswerBlocks.length"
                     class="message-md streaming-answer"
-                    v-html="streamingAnswerHtml"
+                    :blocks="streamingAnswerBlocks"
                   />
                   <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
                   <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
@@ -520,7 +516,7 @@
               <div class="user-message-bubble">
                 <div
                   :id="userMessageContentId(PENDING_USER_MESSAGE_ID)"
-                  v-user-message-overflow="PENDING_USER_MESSAGE_ID"
+                  v-user-message-overflow="{ id: PENDING_USER_MESSAGE_ID, content: pendingUserSubmissionText }"
                   class="user-message-content user-message-markdown"
                   v-html="renderMarkdown(pendingUserSubmissionText)"
                 />
@@ -543,14 +539,13 @@
               :steps="streamingProcess.steps"
               :running="procRunning"
               :duration-ms="procDurationMs"
-              :render-markdown="renderStreamingMarkdown"
               @layout-change="syncTimelineNavigationAfterLayout"
             />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
-            <div
-              v-if="streamingAnswerPreview && streamingAnswerHtml"
+            <StreamingMarkdown
+              v-if="streamingAnswerPreview && streamingAnswerBlocks.length"
               class="message-md streaming-answer"
-              v-html="streamingAnswerHtml"
+              :blocks="streamingAnswerBlocks"
             />
             <div v-else-if="streamingAnswerPreview" class="message-md streaming-answer streaming-answer-plain">{{ streamingAnswerPreview }}</div>
             <div v-if="streamingAnswerPreview && streamingSources.length" class="answer-trust">
@@ -682,17 +677,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Directive } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { readLocalAuthToken } from '@/utils/authNavigation'
 import whaleIntroUrl from './assets/whale-intro.webm'
 import VibeWindowControls from './components/VibeWindowControls.vue'
 import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiGetJoinProjects } from '@/api/project/index'
 import ProcessDisclosure from './components/ProcessDisclosure.vue'
 import ConversationMarkdown from './components/ConversationMarkdown.vue'
+import StreamingMarkdown from './components/StreamingMarkdown.vue'
+import { createStreamingMarkdownRenderer, normalizeCopyableMarkdownFence, sanitizeMarkdownHtml, type MarkdownBlock } from './streamingMarkdown'
 import ThinkingOrbStatus from './components/ThinkingOrbStatus.vue'
 import ProjectSwitchDialog from './components/ProjectSwitchDialog.vue'
 import {
@@ -2704,7 +2700,8 @@ const pendingUserSubmissionText = ref('')
 // Canonical answer. It can stream outside the process rail, then be replaced
 // atomically by the saved assistant event when the Goal completes.
 const streamingLiveAnswerContent = ref('')
-const streamingAnswerHtml = ref('')
+const streamingAnswerBlocks = shallowRef<MarkdownBlock[]>([])
+const renderLiveAnswer = createStreamingMarkdownRenderer()
 const streamingAnswerHtmlSource = ref('')
 let streamingAnswerRenderTimer: ReturnType<typeof setTimeout> | null = null
 let streamingAnswerRenderEpoch = 0
@@ -3752,20 +3749,21 @@ const overflowingUserMessageIds = ref<string[]>([])
 const measuredUserMessageIds = ref<string[]>([])
 const PENDING_USER_MESSAGE_ID = 'pending-user-submission'
 const userMessageOverflowElements = new Map<HTMLElement, string>()
+const pendingOverflowElements = new Set<HTMLElement>()
 let userMessageOverflowObserver: ResizeObserver | null = null
 let userMessageOverflowRaf = 0
 let userMessageOverflowWindowResizeRegistered = false
-const vUserMessageOverflow: Directive<HTMLElement, string | undefined> = {
+const vUserMessageOverflow: Directive<HTMLElement, { id?: string; content: string }> = {
   mounted(element, binding) {
-    bindUserMessageOverflowElement(element, binding.value)
+    bindUserMessageOverflowElement(element, binding.value.id)
   },
   updated(element, binding) {
-    if (binding.value !== binding.oldValue) {
+    if (binding.value.id !== binding.oldValue?.id) {
       unbindUserMessageOverflowElement(element)
-      bindUserMessageOverflowElement(element, binding.value)
+      bindUserMessageOverflowElement(element, binding.value.id)
       return
     }
-    scheduleUserMessageOverflowMeasurements()
+    if (binding.value.content !== binding.oldValue?.content) scheduleUserMessageOverflowMeasurements(element)
   },
   beforeUnmount(element) {
     unbindUserMessageOverflowElement(element)
@@ -4232,6 +4230,7 @@ onBeforeUnmount(() => {
   workspaceSessionFileSnapshots.clear()
   stopElapsedTicker()
   clearStreamingAnswerHtml()
+  cancelTimelineLayout()
   stopRunningTurnPolling()
   runningTurnPollInFlight = false
   if (conversationRailRaf) cancelAnimationFrame(conversationRailRaf)
@@ -6042,7 +6041,6 @@ let markdownRenderCacheChars = 0
 // to the final render. This keeps incremental output formatted without
 // putting DOM work on every token or keyboard event.
 const STREAMING_MARKDOWN_RENDER_DELAY_MS = 80
-const STREAMING_MARKDOWN_RENDER_MAX_CHARS = 128 * 1024
 
 function cancelStreamingAnswerRender(): void {
   if (streamingAnswerRenderTimer) {
@@ -6054,24 +6052,14 @@ function cancelStreamingAnswerRender(): void {
 
 function clearStreamingAnswerHtml(): void {
   cancelStreamingAnswerRender()
-  streamingAnswerHtml.value = ''
+  streamingAnswerBlocks.value = renderLiveAnswer('')
   streamingAnswerHtmlSource.value = ''
-}
-
-function renderStreamingMarkdown(content: string): string {
-  const html = marked.parse(normalizeCopyableMarkdownFence(String(content || ''))) as string
-  return DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    ADD_ATTR: ['target', 'rel'],
-  })
 }
 
 function scheduleStreamingAnswerRender(): void {
   const source = streamingLiveAnswerContent.value || streamingAssistantContent.value
-  if (!source || source.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
-    if (streamingAnswerRenderTimer) cancelStreamingAnswerRender()
-    streamingAnswerHtml.value = ''
-    streamingAnswerHtmlSource.value = ''
+  if (!source) {
+    clearStreamingAnswerHtml()
     return
   }
   if (streamingAnswerRenderTimer) return
@@ -6080,13 +6068,13 @@ function scheduleStreamingAnswerRender(): void {
     streamingAnswerRenderTimer = null
     if (epoch !== streamingAnswerRenderEpoch) return
     const current = streamingLiveAnswerContent.value || streamingAssistantContent.value
-    if (!current || current.length > STREAMING_MARKDOWN_RENDER_MAX_CHARS) {
-      streamingAnswerHtml.value = ''
-      streamingAnswerHtmlSource.value = ''
+    if (!current) {
+      clearStreamingAnswerHtml()
       return
     }
-    streamingAnswerHtml.value = renderStreamingMarkdown(current)
+    streamingAnswerBlocks.value = renderLiveAnswer(current)
     streamingAnswerHtmlSource.value = current
+    void syncTimelineNavigationAfterLayout()
   }, STREAMING_MARKDOWN_RENDER_DELAY_MS)
 }
 
@@ -6097,9 +6085,9 @@ function commitStreamingAnswerHtml(content: string, complete = false): void {
     return
   }
   cancelStreamingAnswerRender()
-  streamingAnswerHtml.value = complete
-    ? renderMarkdown(source)
-    : renderStreamingMarkdown(source)
+  streamingAnswerBlocks.value = complete
+    ? [{ raw: source, html: renderMarkdown(source) }]
+    : renderLiveAnswer(source)
   streamingAnswerHtmlSource.value = source
 }
 
@@ -6113,10 +6101,7 @@ function renderMarkdown(content: string) {
     return cached.html
   }
   const html = marked.parse(normalizeCopyableMarkdownFence(source)) as string
-  const sanitized = DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    ADD_ATTR: ['target', 'rel'],
-  })
+  const sanitized = sanitizeMarkdownHtml(html)
   const result = enhanceCopyableCodeBlocks(sanitized)
   const chars = source.length + result.length
   // Do not retain a single giant answer or unboundedly grow memory. Such
@@ -6134,23 +6119,6 @@ function renderMarkdown(content: string) {
     }
   }
   return result
-}
-
-function normalizeCopyableMarkdownFence(content: string) {
-  const raw = String(content || '')
-  const stripped = raw.trim()
-  if (!stripped.startsWith('```') || !stripped.endsWith('```')) return raw
-  const firstNewline = stripped.indexOf('\n')
-  if (firstNewline <= 0) return raw
-  const opener = stripped.slice(0, firstNewline)
-  const body = stripped.slice(firstNewline + 1, -3)
-  if (!body.includes('```')) return raw
-  const runs = body.match(/`{3,}/g) || ['```']
-  const maxRun = Math.max(...runs.map((item) => item.length))
-  const fence = '`'.repeat(maxRun + 1)
-  const lang = opener.slice(3).trim()
-  const normalized = `${fence}${lang}\n${body}${fence}`
-  return `${raw.slice(0, raw.length - raw.trimStart().length)}${normalized}${raw.slice(raw.trimEnd().length)}`
 }
 
 function codeBlockLanguage(code: Element | null) {
@@ -6521,11 +6489,7 @@ function uniqueTextList(items: string[]) {
 
 async function scrollBottom() {
   timelineFollow.value = true
-  await nextTick()
-  const el = timelineEl.value
-  if (el) el.scrollTop = el.scrollHeight
-  isAtBottom.value = true
-  updateActiveConversationRail()
+  await syncTimelineNavigationAfterLayout()
 }
 
 // 是否已滚动到底部（用于控制"回到底部"悬浮按钮的显隐）
@@ -6533,6 +6497,7 @@ const isAtBottom = ref(true)
 const timelineFollow = ref(true)
 
 function resetTimelineNavigation() {
+  cancelTimelineLayout()
   isAtBottom.value = true
   timelineFollow.value = true
   activeConversationEventId.value = ''
@@ -6545,12 +6510,7 @@ function resetTimelineNavigation() {
 
 async function scrollBottomIfFollowing() {
   if (!timelineFollow.value) return
-  await nextTick()
-  if (!timelineFollow.value) return
-  const el = timelineEl.value
-  if (el) el.scrollTop = el.scrollHeight
-  isAtBottom.value = true
-  updateActiveConversationRail()
+  await syncTimelineNavigationAfterLayout()
 }
 
 function isTimelineNearBottom(el: HTMLElement, threshold = 56) {
@@ -6578,18 +6538,42 @@ function noteTimelineUserScrollIntent() {
   timelineUserScrollIntentUntil = Date.now() + 1000
 }
 
-async function syncTimelineNavigationAfterLayout() {
-  const action = timelineLayoutAction(timelineFollow.value)
-  await nextTick()
-  const el = timelineEl.value
-  if (!el) return
-  if (action === 'scroll-bottom') {
-    el.scrollTop = el.scrollHeight
-    isAtBottom.value = true
-  } else {
-    isAtBottom.value = isTimelineNearBottom(el)
-  }
-  updateActiveConversationRail()
+let timelineLayoutFrame = 0
+let timelineLayoutPromise: Promise<void> | null = null
+let timelineLayoutResolve: (() => void) | null = null
+
+function cancelTimelineLayout() {
+  if (timelineLayoutFrame) cancelAnimationFrame(timelineLayoutFrame)
+  timelineLayoutFrame = 0
+  timelineLayoutPromise = null
+  timelineLayoutResolve?.()
+  timelineLayoutResolve = null
+}
+
+function syncTimelineNavigationAfterLayout(): Promise<void> {
+  if (timelineLayoutPromise) return timelineLayoutPromise
+  // 一帧内的答案、思考和投影更新只测量一次。执行时读取最新跟随状态，尊重用户向上滚动。
+  timelineLayoutPromise = new Promise(resolve => {
+    timelineLayoutResolve = resolve
+    timelineLayoutFrame = requestAnimationFrame(() => {
+      timelineLayoutFrame = 0
+      timelineLayoutPromise = null
+      timelineLayoutResolve = null
+      const el = timelineEl.value
+      if (el) {
+        const action = timelineLayoutAction(timelineFollow.value)
+        if (action === 'scroll-bottom') {
+          el.scrollTop = el.scrollHeight
+          isAtBottom.value = true
+        } else {
+          isAtBottom.value = isTimelineNearBottom(el)
+        }
+        updateActiveConversationRail()
+      }
+      resolve()
+    })
+  })
+  return timelineLayoutPromise
 }
 
 function updateActiveConversationRail() {
@@ -6765,20 +6749,24 @@ function measureUserMessageOverflow(element: HTMLElement, eventId: string): void
   }))
 }
 
-function scheduleUserMessageOverflowMeasurements(): void {
+function scheduleUserMessageOverflowMeasurements(element?: HTMLElement | Event): void {
+  if (element instanceof HTMLElement) pendingOverflowElements.add(element)
+  else userMessageOverflowElements.forEach((_id, node) => pendingOverflowElements.add(node))
   if (userMessageOverflowRaf) return
   userMessageOverflowRaf = requestAnimationFrame(() => {
     userMessageOverflowRaf = 0
-    userMessageOverflowElements.forEach((eventId, element) => {
-      measureUserMessageOverflow(element, eventId)
+    pendingOverflowElements.forEach(element => {
+      const eventId = userMessageOverflowElements.get(element)
+      if (eventId) measureUserMessageOverflow(element, eventId)
     })
+    pendingOverflowElements.clear()
   })
 }
 
 function ensureUserMessageOverflowObservation(): void {
   if (!userMessageOverflowObserver && typeof ResizeObserver !== 'undefined') {
-    userMessageOverflowObserver = new ResizeObserver(() => {
-      scheduleUserMessageOverflowMeasurements()
+    userMessageOverflowObserver = new ResizeObserver(entries => {
+      for (const entry of entries) scheduleUserMessageOverflowMeasurements(entry.target as HTMLElement)
     })
   }
   if (userMessageOverflowWindowResizeRegistered) return
@@ -6791,13 +6779,14 @@ function bindUserMessageOverflowElement(element: HTMLElement, eventId?: string):
   userMessageOverflowElements.set(element, eventId)
   ensureUserMessageOverflowObservation()
   userMessageOverflowObserver?.observe(element)
-  measureUserMessageOverflow(element, eventId)
+  scheduleUserMessageOverflowMeasurements(element)
 }
 
 function unbindUserMessageOverflowElement(element: HTMLElement): void {
   const eventId = userMessageOverflowElements.get(element)
   userMessageOverflowObserver?.unobserve(element)
   userMessageOverflowElements.delete(element)
+  pendingOverflowElements.delete(element)
   if (eventId) clearUserMessageOverflowMeasurement(eventId)
 }
 
@@ -6805,6 +6794,7 @@ function stopUserMessageOverflowObservation(): void {
   userMessageOverflowObserver?.disconnect()
   userMessageOverflowObserver = null
   userMessageOverflowElements.clear()
+  pendingOverflowElements.clear()
   if (userMessageOverflowRaf) cancelAnimationFrame(userMessageOverflowRaf)
   userMessageOverflowRaf = 0
   if (!userMessageOverflowWindowResizeRegistered) return
@@ -8593,6 +8583,9 @@ function isStreamingUnderEvent(event: any) {
   flex-direction: column;
   gap: 12px;
   background-color: var(--vibe-conversation-bg);
+
+  // 消息按内容高度进入滚动区，不参与整条长历史的 flex 压缩测量。
+  > article { flex: 0 0 auto; }
 }
 
 .empty {
