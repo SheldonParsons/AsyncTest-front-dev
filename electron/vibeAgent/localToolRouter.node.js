@@ -638,6 +638,10 @@ export class LocalToolRouter {
       throw new Error("knowledge_read_project_invalid");
     }
     const readProject = readResult.project ?? runProject;
+    // 未就绪/失败读取没有可下载正文。保留原错误原因，不用“缺少句柄”覆盖它。
+    if (["empty", "unavailable", "index_not_ready"].includes(readResult.status)) {
+      return { ...outcome, result: { ...hideHandle(readResult), content: "", next_cursor: "", complete: false } };
+    }
     if (readResult.complete === true) return { ...outcome, result: hideHandle(readResult) };
     const handle = readResult.resource_handle;
     if (!handle) throw new Error("knowledge_resource_handle_missing");
