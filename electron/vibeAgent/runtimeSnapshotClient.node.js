@@ -292,6 +292,7 @@ export async function fetchRuntimeSnapshot({
         "Content-Type": "application/json",
         Accept: "application/json",
         Authorization: `token=${token}`,
+        "X-Vibe-Content-File": "1",
       },
       body: JSON.stringify({
         schema: REQUEST_SCHEMA,

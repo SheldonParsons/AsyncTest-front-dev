@@ -28,6 +28,7 @@ import {
   publicDelta,
 } from "./message_adapter.mjs";
 import { createLocalFileTools, LOCAL_FILE_TOOL_NAMES } from "./localFileTools.mjs";
+import { materializeKnowledgeContent } from "./knowledgeContentSource.mjs";
 
 for (const method of ["log", "info", "warn", "error", "debug"]) console[method] = () => {};
 process.removeAllListeners("warning");
@@ -818,7 +819,13 @@ class BridgeSession {
     if (!this.wavePromises.has(signature)) {
       const waveId = `wave-${this.wavePromises.size + 1}`;
       const wave = (async () => {
-        const response = await this.request("tool_wave", { wave_id: waveId, calls }, ["tool_wave_result"]);
+        const submittedCalls = [];
+        for (const call of calls) {
+          if (this.abortReason) throw new ProtocolError("operation_aborted");
+          submittedCalls.push(await materializeKnowledgeContent(call));
+        }
+        if (this.abortReason) throw new ProtocolError("operation_aborted");
+        const response = await this.request("tool_wave", { wave_id: waveId, calls: submittedCalls }, ["tool_wave_result"]);
         if (response.payload.wave_id !== waveId) throw new ProtocolError("tool_wave_id_mismatch");
         const expected = new Set(calls.map((call) => call.id));
         if (response.payload.stop_after_wave) this.stoppedAfterWave = true;

@@ -248,12 +248,11 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", contentProvider = null, resolveOriginalContent = null, onTrace } = {}) {
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", resolveOriginalContent = null, onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
     this.defaultQuery = String(defaultQuery || "").trim();
-    this.contentProvider = contentProvider;
     this.resolveOriginalContent = resolveOriginalContent;
     // 仅检查用户本轮消息，不检查工具结果或附件正文；明确的原样要求不能被后续工具参数覆盖。
     this.preserveContent = /(?:不要|无需|不用|不需要)(?:进行)?(?:美化|润色|改写)|(?:原样|逐字)(?:录入|保存|保留)|不要改(?:动)?(?:任何)?(?:内容|文字)/u.test(this.defaultQuery);
@@ -715,10 +714,11 @@ export class LocalToolRouter {
     if (name === "read_knowledge") payload.target = knowledgeTarget(payload.target);
     if (operation === "prepare_change") {
       if (name === "add_knowledge" || name === "edit_knowledge") {
-        payload.content_mode = this.preserveContent ? "preserve" : "polish";
         payload.content_preview_version = 1;
-        if (this.contentProvider?.id) payload.content_provider_id = this.contentProvider.id;
-        if (this.contentProvider?.model) payload.content_model = this.contentProvider.model;
+        // 整理由 Agent 完成；不向后端透传旧版自动美化或模型选择参数。
+        delete payload.content_mode;
+        delete payload.content_provider_id;
+        delete payload.content_model;
       }
       // User text remains separate from the Main-only signed target binding.
       // Model arguments can provide natural locators but never authority.

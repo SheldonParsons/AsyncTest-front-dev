@@ -603,7 +603,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       knowledgeCache,
       run,
       defaultQuery: normalized.requestText,
-      contentProvider: runBindings.get(key)?.contentProvider,
       resolveOriginalContent: async (proposed) => {
         const files = runBindings.get(key)?.localFiles || [];
         const supported = files.filter(file => /\.(?:md|markdown|txt)$/i.test(file.name));
@@ -1050,7 +1049,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       const bindingToken = String(binding?.token || "").trim();
       if (!bindingToken) throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
       // The bearer remains in Main memory and is never sent to the child.
-      runBindings.set(runId, { ...structuredClone(binding), contentProvider: { id: snapshot.provider.id, model: snapshot.provider.model } });
+      runBindings.set(runId, structuredClone(binding));
       return snapshot;
     } finally {
       if (runtimeSnapshotRequests.get(runId) === request) runtimeSnapshotRequests.delete(runId);
@@ -1179,7 +1178,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (knownBinding && String(knownBinding.token || "") !== String(binding.token || "")) {
       throw new Error("vibe_agent_runtime_snapshot_binding_drift");
     }
-    runBindings.set(bindingRunId, { ...(knownBinding || structuredClone(binding)), contentProvider: { id: snapshot.provider.id, model: snapshot.provider.model }, localFiles: structuredClone(localFiles) });
+    runBindings.set(bindingRunId, { ...(knownBinding || structuredClone(binding)), localFiles: structuredClone(localFiles) });
     run.account_id = snapshot.account_id;
     run.provider_mode = "direct";
     await appendTrace(run, "provider.snapshot.acquired", {

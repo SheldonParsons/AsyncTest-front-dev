@@ -30,7 +30,7 @@
         <div v-if="question?.preview" class="prepared-preview" aria-label="待确认的完整正文">
           <strong>最终正文</strong>
           <ConversationMarkdown class="message-md" :content="question.preview.content" :render-markdown="question.preview.renderMarkdown" />
-          <details>
+          <details v-if="question.preview.original">
             <summary>查看提交原文</summary>
             <pre class="prepared-original">{{ question.preview.original }}</pre>
           </details>

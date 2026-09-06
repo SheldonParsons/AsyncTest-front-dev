@@ -4011,8 +4011,8 @@ const composerQuestion = computed(() => {
     return {
       title: String(raw.title),
       description: contentCentricDisplayText(raw.description),
-      ...(preparation ? { preview: { content: String(raw.new_body || ''),
-        original: (preparation.items || []).map((item: any) => String(item.original || '')).join('\n\n'), renderMarkdown } } : {}),
+      ...(preparation || (raw.content_preview_version ?? raw.preview?.content_preview_version) === 1 ? { preview: { content: String(raw.new_body || ''),
+        original: (preparation?.items || []).map((item: any) => String(item.original || '')).join('\n\n'), renderMarkdown } } : {}),
       ...(hasDiff ? { diff: { breadcrumb: preparation ? '录入前后对照' : '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         ...options.map((item: any) => ({
