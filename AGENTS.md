@@ -22,8 +22,11 @@ yarn electron:dev
 # 仅启动 Renderer，供页面调试使用；Vibe Agent 入口只在 Electron 中可用
 yarn dev
 
-# 构建项目（包含类型检查）
+# 构建项目（不包含全量类型检查）
 yarn build
+
+# 单独执行类型检查；不能把构建通过当作类型检查通过
+yarn vue-tsc --noEmit
 
 # 打包 Electron
 yarn build:mac:prod
@@ -34,7 +37,7 @@ yarn build:win:prod
 
 ### 核心技术栈
 - **框架**: Vue 3.5 (Composition API + `<script setup>`)
-- **构建工具**: Vite 5.2
+- **构建工具**: Vite 5.x（具体安装版本以锁文件为准）
 - **UI 组件库**: Element Plus 2.9
 - **状态管理**: Vuex 4.1
 - **路由**: Vue Router 4.0
@@ -71,7 +74,7 @@ src/
 - 开发环境通过 Vite 代理转发请求（`/api` → 后端）
 - HTTP 封装在 `/src/utils/http.ts`，提供 `httpGet`、`httpPost`、`httpPut`、`httpDelete` 方法
 - 请求拦截器自动附加 Authorization token（从 cookie 获取）
-- 403 响应自动跳转登录页
+- 认证失效的 403 且业务 code=302 响应会触发登录处理；不要把普通权限不足当作登录失效。
 
 ### 本地存储架构
 - 使用 IndexedDB 进行本地数据存储（`/src/db/`）
