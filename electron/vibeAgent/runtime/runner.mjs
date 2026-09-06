@@ -884,6 +884,7 @@ class BridgeSession {
     this.seenInteractionIds.add(expected.interaction_id);
     this.interactionSequence = expected.sequence;
     const userWaitStartedAt = Date.now();
+    let nextInteraction;
     try {
       const response = await this.request("interaction_request", {
         interaction_id: expected.interaction_id,
@@ -913,11 +914,15 @@ class BridgeSession {
         ? new Set(["applied", "replayed", "cancelled", "stale", "failed", "stopped"])
         : new Set(["resolved", "cancelled", "failed", "stopped"]);
       if (!allowed.has(payload.status)) throw new ProtocolError("interaction_response_status_mismatch");
-      if (payload.user_message) {
+      nextInteraction = payload.result?.details?.next_interaction;
+      if (nextInteraction && (expected.kind !== "knowledge_confirmation" || payload.status !== "cancelled")) {
+        throw new ProtocolError("interaction_replacement_invalid");
+      }
+      if (payload.user_message && !nextInteraction) {
         if (!this.agentSession) throw new ProtocolError("interaction_agent_missing");
         await this.agentSession.steer(payload.user_message);
       }
-      return { ...payload.result, terminate: Boolean(payload.result.terminate) };
+      if (!nextInteraction) return { ...payload.result, terminate: Boolean(payload.result.terminate) };
     } catch (error) {
       if (error instanceof ProtocolError && error.code !== "operation_aborted") {
         this.fatalProtocolError = error;
@@ -928,6 +933,7 @@ class BridgeSession {
       this.userWaitMs += Math.max(0, Date.now() - userWaitStartedAt);
       this.activeInteraction = undefined;
     }
+    return this.awaitInteraction({ interaction: nextInteraction, wave_id: expected.wave_id }, toolCallId, toolName);
   }
 
   frozenSkill(payload) {

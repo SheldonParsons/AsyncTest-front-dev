@@ -304,9 +304,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     return `response:${String(pendingId || "")}:${(hash >>> 0).toString(16)}`;
   };
   const localResponseText = (request, response) => {
-    if (response?.action === "apply") return "确认执行";
+    if (response?.action === "apply") return request?.preview?.content_preparation?.mode === "preserve" ? "确认按原文录入" : "确认执行";
     if (response?.action === "cancel") return "先不处理";
     if (response?.action === "stop_all") return "停止本轮";
+    if (response?.action === "preserve") return "改用原文预览";
     const clarification = response?.clarification_response;
     if (clarification?.type === "option") {
       const option = Array.isArray(request?.options)
@@ -602,10 +603,77 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       knowledgeCache,
       run,
       defaultQuery: normalized.requestText,
+      contentProvider: runBindings.get(key)?.contentProvider,
+      resolveOriginalContent: async (proposed) => {
+        const files = runBindings.get(key)?.localFiles || [];
+        const supported = files.filter(file => /\.(?:md|markdown|txt)$/i.test(file.name));
+        if (!supported.length) return proposed;
+        const fullMatches = []; let exactExcerpt = false;
+        for (const file of supported) {
+          if (file.size > 4_000_000) throw new Error("vibe_agent_original_text_too_large");
+          const handle = await fs.open(file.absolute_path, "r");
+          try {
+            const unchanged = stat => stat.isFile() && Number(stat.dev) === file.dev && Number(stat.ino) === file.ino
+              && Number(stat.size) === file.size && Math.trunc(stat.mtimeMs) === file.last_modified;
+            if (!unchanged(await handle.stat())) throw new Error("vibe_agent_local_file_changed");
+            const bytes = await handle.readFile();
+            if (!unchanged(await handle.stat())) throw new Error("vibe_agent_local_file_changed");
+            const original = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+            if (original.trim() === proposed.trim()) fullMatches.push(original);
+            if (original.includes(proposed)) exactExcerpt = true;
+          } finally { await handle.close(); }
+        }
+        const originals = [...new Set(fullMatches)];
+        if (originals.length === 1) return originals[0];
+        if (originals.length > 1) throw new Error("vibe_agent_original_text_ambiguous");
+        if (exactExcerpt || normalized.requestText.includes(proposed) || supported.length !== files.length) return proposed;
+        throw new Error("vibe_agent_original_text_mismatch");
+      },
       onTrace: ({ name, payload, status }) => appendTrace(run, name, payload, status),
     });
     routers.set(key, router);
     return router;
+  };
+  const persistLocalInteraction = async (run, interaction = {}) => {
+    const interactionId = String(interaction.confirmation_id || interaction.interaction_id || "").trim();
+    const question = String(
+      interaction.question_to_user
+      || interaction.description
+      || (interaction.kind === "knowledge_confirmation" ? "请确认是否执行这项知识变更。" : "请补充这项操作所需的信息。"),
+    ).trim();
+    if (interactionId && question) {
+      const confirmation = String(interaction.kind || "") === "knowledge_confirmation";
+      const preview = interaction.preview && typeof interaction.preview === "object" ? interaction.preview : {};
+      const raw = {
+        schema: "clarification.v2",
+        kind: confirmation ? "confirm" : "ask",
+        run_id: String(run?.run_id || run?.runId || ""),
+        turn_id: String(run?.turn_id || run?.turnId || ""),
+        goal_turn_id: String(run?.turn_id || run?.turnId || ""),
+        ...(confirmation ? { decision_type: "confirmation", confirmation_id: interactionId } : { interaction_id: interactionId }),
+        title: question,
+        question,
+        description: String(interaction.description || ""),
+        options: Array.isArray(interaction.options) && interaction.options.length
+          ? interaction.options
+          : confirmation
+            ? [
+                { id: "apply", label: "确认执行", action: "apply" },
+                { id: "cancel", label: "先不处理", action: "cancel", is_cancel: true },
+              ]
+            : [],
+        ...(interaction.input && typeof interaction.input === "object" ? { input: interaction.input } : {}),
+        ...(preview.old_body !== undefined ? { old_body: String(preview.old_body || "") } : {}),
+        ...(preview.new_body !== undefined ? { new_body: String(preview.new_body || "") } : {}),
+        ...(preview.preview_truncated !== undefined ? { preview_truncated: Boolean(preview.preview_truncated) } : {}),
+        ...(preview.preview_excerpt !== undefined ? { preview_excerpt: String(preview.preview_excerpt || "") } : {}),
+        ...(Object.keys(preview).length ? { preview } : {}),
+      };
+      await appendLocalSessionEvent(run, "assistant", question, {
+        local_event_key: `interaction:${interactionId}`,
+        clarification: { question, raw, pending: [] },
+      });
+    }
   };
   const builtInLocalHandlers = {
     onStart: async ({ run, payload, context }) => {
@@ -754,48 +822,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         routers.delete(String(run?.run_id || run?.runId || ""));
         return result;
       }
-      if (frame?.type === "interaction_request") {
-        const interaction = frame.payload || {};
-        const interactionId = String(interaction.confirmation_id || interaction.interaction_id || "").trim();
-        const question = String(
-          interaction.question_to_user
-          || interaction.description
-          || (interaction.kind === "knowledge_confirmation" ? "请确认是否执行这项知识变更。" : "请补充这项操作所需的信息。"),
-        ).trim();
-        if (interactionId && question) {
-          const confirmation = String(interaction.kind || "") === "knowledge_confirmation";
-          const preview = interaction.preview && typeof interaction.preview === "object" ? interaction.preview : {};
-          const raw = {
-            schema: "clarification.v2",
-            kind: confirmation ? "confirm" : "ask",
-            run_id: String(run?.run_id || run?.runId || ""),
-            turn_id: String(run?.turn_id || run?.turnId || ""),
-            goal_turn_id: String(run?.turn_id || run?.turnId || ""),
-            ...(confirmation ? { decision_type: "confirmation", confirmation_id: interactionId } : { interaction_id: interactionId }),
-            title: question,
-            question,
-            description: String(interaction.description || ""),
-            options: Array.isArray(interaction.options) && interaction.options.length
-              ? interaction.options
-              : confirmation
-                ? [
-                    { id: "apply", label: "确认执行", action: "apply" },
-                    { id: "cancel", label: "先不处理", action: "cancel", is_cancel: true },
-                  ]
-                : [],
-            ...(interaction.input && typeof interaction.input === "object" ? { input: interaction.input } : {}),
-            ...(preview.old_body !== undefined ? { old_body: String(preview.old_body || "") } : {}),
-            ...(preview.new_body !== undefined ? { new_body: String(preview.new_body || "") } : {}),
-            ...(preview.preview_truncated !== undefined ? { preview_truncated: Boolean(preview.preview_truncated) } : {}),
-            ...(preview.preview_excerpt !== undefined ? { preview_excerpt: String(preview.preview_excerpt || "") } : {}),
-            ...(Object.keys(preview).length ? { preview } : {}),
-          };
-          await appendLocalSessionEvent(run, "assistant", question, {
-            local_event_key: `interaction:${interactionId}`,
-            clarification: { question, raw, pending: [] },
-          });
-        }
-      }
+      if (frame?.type === "interaction_request") await persistLocalInteraction(run, frame.payload);
       if (frame?.type === "assistant_end") {
         const messageId = String(frame.message_id || "").trim();
         const purpose = String(frame.payload?.purpose || "main_agent");
@@ -935,7 +962,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         response,
       );
       const resolvedToolCallId = String(request.tool_call_id || "").trim();
-      if (resolvedToolCallId) {
+      if (resolvedToolCallId && !outcome?.result?.details?.next_interaction) {
         await appendLocalSessionEvent(
           run,
           "tool",
@@ -1023,7 +1050,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       const bindingToken = String(binding?.token || "").trim();
       if (!bindingToken) throw new Error("vibe_agent_runtime_snapshot_binding_invalid");
       // The bearer remains in Main memory and is never sent to the child.
-      runBindings.set(runId, structuredClone(binding));
+      runBindings.set(runId, { ...structuredClone(binding), contentProvider: { id: snapshot.provider.id, model: snapshot.provider.model } });
       return snapshot;
     } finally {
       if (runtimeSnapshotRequests.get(runId) === request) runtimeSnapshotRequests.delete(runId);
@@ -1152,7 +1179,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (knownBinding && String(knownBinding.token || "") !== String(binding.token || "")) {
       throw new Error("vibe_agent_runtime_snapshot_binding_drift");
     }
-    if (!knownBinding) runBindings.set(bindingRunId, structuredClone(binding));
+    runBindings.set(bindingRunId, { ...(knownBinding || structuredClone(binding)), contentProvider: { id: snapshot.provider.id, model: snapshot.provider.model }, localFiles: structuredClone(localFiles) });
     run.account_id = snapshot.account_id;
     run.provider_mode = "direct";
     await appendTrace(run, "provider.snapshot.acquired", {
@@ -1215,7 +1242,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const action = String(value.action || "").trim();
     if (action) {
       if (value.clarification_response !== undefined) throw new Error("vibe_agent_response_ambiguous");
-      if (!new Set(["apply", "cancel", "stop_all"]).has(action)) throw new Error("vibe_agent_response_action_invalid");
+      if (!new Set(["apply", "cancel", "stop_all", "preserve"]).has(action)) throw new Error("vibe_agent_response_action_invalid");
       return { action };
     }
     const clarification = value.clarification_response;
@@ -1348,6 +1375,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     // the business response was known but before one of the local append
     // operations reached disk; it never invokes the Knowledge operation again.
     const resolvedCallId = String(pending.tool_call_id || "").trim();
+    if (outcome?.result?.details?.next_interaction) {
+      const next = { ...outcome.result.details.next_interaction, wave_id: pending.wave_id,
+        tool_call_id: pending.tool_call_id, tool_name: pending.tool_name };
+      await runStore.markWaiting(runId, next, { runtime_lost: true });
+      await persistLocalInteraction(run, next);
+      await appendTrace(run, "interaction.original_preview_parked", { confirmation_id: next.confirmation_id, written: false });
+      await effectiveLocalHandlers.onInteraction?.({ run, request: next, pendingId: next.interaction_id, context });
+      host.emitTo(sender, { schema: "vibe_agent_event.v1", runId, turnId: run.turn_id,
+        sessionId: run.session_id, type: "interaction_request", state: "waiting_user", payload: next });
+      return { accepted: true, waitingUser: true, cold: true, state: "waiting_user", pendingInteraction: next, runId };
+    }
     if (resolvedCallId) {
       await appendLocalSessionEvent(
         run,

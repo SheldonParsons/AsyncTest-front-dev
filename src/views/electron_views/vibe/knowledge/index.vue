@@ -4007,10 +4007,13 @@ const composerQuestion = computed(() => {
     const input = raw.input && typeof raw.input === 'object' ? raw.input : {}
     const hasDiff = raw.old_body != null && raw.new_body != null
       && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
+    const preparation = raw.content_preparation || raw.preview?.content_preparation
     return {
       title: String(raw.title),
       description: contentCentricDisplayText(raw.description),
-      ...(hasDiff ? { diff: { breadcrumb: '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
+      ...(preparation ? { preview: { content: String(raw.new_body || ''),
+        original: (preparation.items || []).map((item: any) => String(item.original || '')).join('\n\n'), renderMarkdown } } : {}),
+      ...(hasDiff ? { diff: { breadcrumb: preparation ? '录入前后对照' : '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         ...options.map((item: any) => ({
           type: 'choice' as const,
@@ -5244,7 +5247,7 @@ async function onComposerSend({ text, files }: { text: string; files: File[] }) 
 async function respondToLiveGoal(raw: any, payload: {
   interaction_id?: string
   confirmation_id?: string
-  action?: 'apply' | 'cancel' | 'stop_all'
+  action?: 'apply' | 'cancel' | 'stop_all' | 'preserve'
   clarification_response?: { type: 'option' | 'input'; option_id?: string; text?: string }
 }) {
   // Hide the submitted card before any recovery/status request.  The response
@@ -5357,7 +5360,7 @@ async function respondToLiveGoal(raw: any, payload: {
       // the continuation immediately asks a new question, its event handler
       // installs that newer card and the guarded cleanup leaves it visible.
       hideSubmittedCard()
-      await bridge.recoverLocal({
+      const recovery = await bridge.recoverLocal({
         runId: electronRun.run.run_id,
         accountId: localAccountId(),
         projectId: String(electronRun.run.project_id || electronRun.run.project || ''),
@@ -5371,7 +5374,11 @@ async function respondToLiveGoal(raw: any, payload: {
           trace_upload_base_url: localKnowledgeBaseUrl(),
         },
       })
-      electronRun.localCold = false
+      electronRun.localCold = Boolean(recovery?.cold)
+      if (recovery?.cold && recovery.pendingInteraction) {
+        electronRun.localDescriptor = { ...electronRun.localDescriptor, pending: recovery.pendingInteraction }
+        showLocalInteraction(electronRun, recovery.pendingInteraction)
+      }
       const currentPendingId = String((clarificationActive.value as any)?.raw?.confirmation_id
         || (clarificationActive.value as any)?.raw?.interaction_id || '')
       if (!currentPendingId || currentPendingId === pendingId) clarificationActive.value = null
@@ -5454,6 +5461,10 @@ async function onComposerAnswer(value: string) {
       const selectedAction = selected.is_cancel
         ? 'cancel'
         : String(selected.action || '')
+      if (raw.confirmation_id && !['apply', 'apply_confirmation', 'cancel', 'stop_all', 'preserve_content'].includes(selectedAction)) {
+        ElMessage.warning('当前客户端不支持这项确认操作，请更新后重试')
+        return
+      }
       const liveHandled = raw.confirmation_id
         ? await respondToLiveGoal(raw, {
             confirmation_id: String(raw.confirmation_id),
@@ -5461,6 +5472,8 @@ async function onComposerAnswer(value: string) {
               ? 'stop_all'
               : selectedAction === 'cancel'
                 ? 'cancel'
+                : selectedAction === 'preserve_content'
+                  ? 'preserve'
                 : 'apply',
           })
         : await respondToLiveGoal(raw, {

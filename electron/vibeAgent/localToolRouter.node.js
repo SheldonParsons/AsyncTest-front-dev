@@ -3,7 +3,8 @@
  *
  * Pi remains the decision maker. This adapter only dispatches an already
  * selected tool call to the remote Knowledge Capability. Native file tools are
- * owned directly by Pi's child runtime; this adapter never proxies attachments.
+ * owned directly by Pi's child runtime; preserve-mode text can additionally
+ * be bound to an already-authorized input without adding a file-reading tool.
  */
 import { createHash } from "node:crypto";
 import {
@@ -247,11 +248,15 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", contentProvider = null, resolveOriginalContent = null, onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
     this.defaultQuery = String(defaultQuery || "").trim();
+    this.contentProvider = contentProvider;
+    this.resolveOriginalContent = resolveOriginalContent;
+    // 仅检查用户本轮消息，不检查工具结果或附件正文；明确的原样要求不能被后续工具参数覆盖。
+    this.preserveContent = /(?:不要|无需|不用|不需要)(?:进行)?(?:美化|润色|改写)|(?:原样|逐字)(?:录入|保存|保留)|不要改(?:动)?(?:任何)?(?:内容|文字)/u.test(this.defaultQuery);
     this.onTrace = typeof onTrace === "function" ? onTrace : () => {};
     this.pending = new Map();
     this.interactionSequence = 0;
@@ -709,6 +714,12 @@ export class LocalToolRouter {
     if (name === "search_vibe_platform_docs") payload.scope = "system";
     if (name === "read_knowledge") payload.target = knowledgeTarget(payload.target);
     if (operation === "prepare_change") {
+      if (name === "add_knowledge" || name === "edit_knowledge") {
+        payload.content_mode = this.preserveContent ? "preserve" : "polish";
+        payload.content_preview_version = 1;
+        if (this.contentProvider?.id) payload.content_provider_id = this.contentProvider.id;
+        if (this.contentProvider?.model) payload.content_model = this.contentProvider.model;
+      }
       // User text remains separate from the Main-only signed target binding.
       // Model arguments can provide natural locators but never authority.
       if (this.defaultQuery) {
@@ -729,10 +740,12 @@ export class LocalToolRouter {
               && !new Set(["text/markdown", "text/plain"]).has(String(item.content_type)))) {
             throw new Error("vibe_agent_knowledge_item_invalid");
           }
+          const originalContent = this.preserveContent && this.resolveOriginalContent
+            ? await this.resolveOriginalContent(item.content) : item.content;
           items.push({
             ...(item.label ? { label: publicKnowledgeLabel(item.label) } : {}),
             content_type: String(item.content_type || "text/markdown"),
-            ...await this.authoredContent(item.content),
+            ...await this.authoredContent(originalContent),
           });
         }
         payload.items = items;
@@ -853,7 +866,7 @@ export class LocalToolRouter {
     }
     const action = String(response?.action || "").trim();
     if (pending.kind === "knowledge_confirmation") {
-      if (!new Set(["apply", "cancel", "stop_all"]).has(action)) throw new Error("vibe_agent_confirmation_action_invalid");
+      if (!new Set(["apply", "cancel", "stop_all", "preserve"]).has(action)) throw new Error("vibe_agent_confirmation_action_invalid");
       if (!this.knowledgeClient) throw new Error("vibe_agent_knowledge_client_unconfigured");
       const confirmationId = String(pending.confirmation_id || id);
       const outcome = action === "stop_all" ? { status: "stopped", result: { stopped: true } } : await this.knowledgeClient.call({
@@ -870,6 +883,17 @@ export class LocalToolRouter {
         throw new Error("knowledge_confirmation_result_invalid");
       }
       const outcomeStatus = String(outcome?.status || "").toLowerCase();
+      if (action === "preserve") {
+        const next = this.interactionFromOutcome(outcome, pending.toolCallId, pending.toolName);
+        if (!next?.interaction?.confirmation_id) throw new Error("knowledge_original_preview_missing");
+        this.restorePending(next.interaction, { toolCallId: pending.toolCallId, toolName: pending.toolName, result: next.result });
+        const resolved = { status: "cancelled", result: toolResult({ status: "preview_replaced", written: false }, {
+          details: { next_interaction: next.interaction },
+        }) };
+        pending.resolved = resolved; pending.resolvedResponse = structuredClone(response);
+        await this.trace("interaction.preview_replaced", { confirmation_id: confirmationId, next_confirmation_id: next.interaction.confirmation_id, written: false });
+        return resolved;
+      }
       if (action !== "stop_all" && !new Set([
         "completed", "applied", "replayed", "cancelled", "stale", "failed", "retryable_failure",
         "non_retryable_failure", "waiting_user", "needs_follow_up",
@@ -889,7 +913,9 @@ export class LocalToolRouter {
           : outcomeFailed && action === "apply"
             ? "failed"
             : action === "apply" ? "applied" : action === "cancel" ? "cancelled" : "stopped",
-        result: toolResult(knowledgeReceipt(outcome, action), {
+        result: toolResult({ ...knowledgeReceipt(outcome, action),
+          ...(pending.preview?.content_preparation?.mode ? { content_mode: pending.preview.content_preparation.mode } : {}),
+        }, {
           isError: outcomeFailed,
           terminate: action === "stop_all",
         }),

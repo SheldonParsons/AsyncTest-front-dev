@@ -104,7 +104,7 @@ function validatedInteractionResponse(pendingId, value) {
   if (confirmationId) {
     if (typeof value.action !== "string") throw new Error("vibe_agent_response_action_invalid");
     const action = value.action.trim();
-    if (!new Set(["apply", "cancel", "stop_all"]).has(action)) throw new Error("vibe_agent_response_action_invalid");
+    if (!new Set(["apply", "cancel", "stop_all", "preserve"]).has(action)) throw new Error("vibe_agent_response_action_invalid");
     return { confirmation_id: confirmationId, action };
   }
   const reply = value.clarification_response;

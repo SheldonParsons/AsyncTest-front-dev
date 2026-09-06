@@ -321,6 +321,7 @@ export interface ElectronAgentRun {
 }
 
 export interface ElectronAgentStatus {
+  cold?: boolean;
   execution_host: 'electron';
   run_id: string;
   turn_id: string;

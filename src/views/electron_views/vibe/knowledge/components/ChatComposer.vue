@@ -27,10 +27,19 @@
       <div v-if="isQuestion" class="question-view" aria-label="提问和选项列表">
         <h1 class="question-title">{{ question?.title }}</h1>
         <div v-if="question?.description" class="question-description">{{ question?.description }}</div>
+        <div v-if="question?.preview" class="prepared-preview" aria-label="待确认的完整正文">
+          <strong>最终正文</strong>
+          <ConversationMarkdown class="message-md" :content="question.preview.content" :render-markdown="question.preview.renderMarkdown" />
+          <details>
+            <summary>查看提交原文</summary>
+            <pre class="prepared-original">{{ question.preview.original }}</pre>
+          </details>
+        </div>
         <!-- 改原文·diff 预览：确认前看清红删绿增 -->
-        <div v-if="question?.diff" class="edit-diff">
+        <details v-if="question?.diff" class="edit-diff" :open="!question?.preview" @toggle="diffOpen = ($event.target as HTMLDetailsElement).open">
+          <summary>查看改动</summary>
           <div v-if="question.diff.breadcrumb" class="edit-diff-bc">{{ question.diff.breadcrumb }}</div>
-          <div class="edit-diff-body">
+          <div v-if="diffOpen || !question?.preview" class="edit-diff-body">
             <div
               v-for="(ln, i) in diffLines(question.diff.oldBody, question.diff.newBody)"
               :key="i"
@@ -38,7 +47,7 @@
               :class="'d-' + ln.t"
             >{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
           </div>
-        </div>
+        </details>
         <!-- 连锁·多处 diff：逐项勾选要不要一起改 -->
         <div v-if="cascadeRows.length" class="cascade-list" aria-label="连锁影响的多处原文">
           <label
@@ -284,6 +293,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { admitAttachmentSelection } from '../composables/attachmentAdmission'
 import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
 import FileTextIcon from './icons/FileTextIcon.vue'
+import ConversationMarkdown from './ConversationMarkdown.vue'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
@@ -291,7 +301,8 @@ interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
 interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBody?: string; reason?: string; mode?: string; checked?: boolean }
 interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyPreview?: string }
 interface ModelOption { value: string; label: string; hint?: string }
-interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
+interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; preview?: { content: string; original: string; renderMarkdown: (text: string) => string }; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
+const diffOpen = ref(false)
 interface ComposerNotice { title: string; type: 'error' | 'info'; duration?: number }
 interface PersistedLocalAttachment {
   schema: 'local_file_ref.v1'
@@ -463,6 +474,7 @@ function restoreAttachmentDraft(): void {
 }
 
 watch(() => props.question, () => {
+  diffOpen.value = !props.question?.preview
   activeIndex.value = 0
   menuOpen.value = false
   modelMenuOpen.value = false
@@ -817,6 +829,12 @@ defineExpose({ clearAttachmentDraft, clearAttachments, clearInput: () => inputEl
 .question-view { display: grid; gap: 14px; }
 .question-title { margin: 0; color: #20242b; font-size: 15px; font-weight: 600; line-height: 1.45; }
 .question-description { color: #8d929a; font-size: 13px; line-height: 1.4; }
+.prepared-preview { max-height: 32vh; overflow: auto; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; line-height: 1.6; }
+.prepared-preview :deep(h1), .prepared-preview :deep(h2), .prepared-preview :deep(h3) { font-size: 1.1em; margin: .7em 0 .35em; }
+.prepared-preview :deep(table) { border-collapse: collapse; }
+.prepared-preview :deep(th), .prepared-preview :deep(td) { border: 1px solid #e5e7eb; padding: 4px 8px; }
+.prepared-original { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.prepared-preview summary, .edit-diff summary { cursor: pointer; padding: 6px 0; }
 
 /* 改原文 diff 预览 */
 .edit-diff { border: 1px solid #e4e6ea; border-radius: 10px; overflow: hidden; background: #fcfcfd; }
