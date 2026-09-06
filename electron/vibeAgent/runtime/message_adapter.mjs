@@ -256,3 +256,15 @@ export function normalizeToolContent(content) {
 export function publicDelta(event) {
   return event?.type === "text_delta" && typeof event.delta === "string" ? event.delta : "";
 }
+
+// 工具参数生成也是运行阶段，但不是工具执行。每个工具只发一次，不传正文或思考内容。
+export function toolPreparationStart(event, seen, knownTools) {
+  if (!["toolcall_start", "toolcall_delta"].includes(event?.type)) return null;
+  const index = event.contentIndex;
+  const tool = event.partial?.content?.[index];
+  if (!Number.isInteger(index) || index < 0 || seen.has(index)
+    || tool?.type !== "toolCall" || typeof tool.name !== "string" || !tool.name || tool.name.length > 128
+    || (knownTools && !knownTools.has(tool.name))) return null;
+  seen.add(index);
+  return { tool_name: tool.name, content_index: index };
+}

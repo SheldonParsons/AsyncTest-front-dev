@@ -26,6 +26,7 @@ import {
   normalizeToolContent,
   localFilesContext,
   publicDelta,
+  toolPreparationStart,
 } from "./message_adapter.mjs";
 import { createLocalFileTools, LOCAL_FILE_TOOL_NAMES } from "./localFileTools.mjs";
 import { materializeKnowledgeContent } from "./knowledgeContentSource.mjs";
@@ -1140,6 +1141,7 @@ class BridgeSession {
         });
       }
     });
+    const preparingTools = new Set();
     agent.subscribe(async (event) => {
       if (event.type === "tool_execution_start" && LOCAL_FILE_TOOL_NAMES.includes(event.toolName)) {
         await this.emit("local_tool_start", {
@@ -1176,7 +1178,13 @@ class BridgeSession {
       } else if (event.type === "message_update") {
         const delta = publicDelta(event.assistantMessageEvent);
         if (delta) await this.emit("assistant_delta", { text: delta, public: false });
+        const preparation = toolPreparationStart(event.assistantMessageEvent, preparingTools, this.providerTools);
+        if (preparation && this.activeProviderCall?.purpose === "main_agent"
+          && this.providerTools.has(preparation.tool_name)) {
+          await this.emit("tool_preparation", { ...this.activeProviderCall, ...preparation });
+        }
       } else if (event.type === "message_end" && event.message.role === "assistant") {
+        preparingTools.clear();
         const calls = extractToolCalls(event.message);
         if (calls.some((call) => !this.providerTools.has(call.name))) {
           this.fatalProtocolError = new ProtocolError("unknown_tool_rejected");

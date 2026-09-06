@@ -2743,13 +2743,14 @@ interface ElectronAgentRunContext {
   ephemeralText: string
   // The current Provider message starts life as a candidate.  Until Pi tells
   // us whether it contains tool calls we show it as a live answer preview;
-  // a tool-bearing message is moved back into the process rail at
-  // assistant_end.  This keeps the UI responsive without guessing from prose.
+  // a tool-bearing message moves into the process rail as soon as the
+  // runtime announces tool preparation, or at assistant_end as a fallback.
   liveAnswerText: string
   assistantStreamMode: 'candidate' | 'process' | 'answer' | 'private'
   assistantStreamPurpose: string
   processEphemeralSteps: ProcessStep[]
   providerCallSequence: number
+  preparingTool?: { callId: string; name: string; index: number }
   startedAt: number
   acceptCanonical?: (model: TurnProtocolReadModel) => void
   localUserEventId?: string
@@ -2874,6 +2875,23 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
   streamingProcess.steps = [
     ...mergeElectronProcessSteps(context),
     ...partial,
+    ...(context.preparingTool && !context.cancelRequested ? [{
+      kind: 'action' as const,
+      key: `electron-tool-preparation:${context.run.run_id}:${context.preparingTool.callId}:${context.preparingTool.index}`,
+      actionType: 'tool_preparation',
+      actionId: `preparing:${context.preparingTool.callId}:${context.preparingTool.index}`,
+      summary: '',
+      title: ({
+        add_knowledge: '正在准备录入预览（尚未提交）',
+        edit_knowledge: '正在准备修改预览（尚未提交）',
+        delete_knowledge: '正在准备删除预览（尚未提交）',
+        write: '正在准备文件内容（尚未写入）',
+        edit: '正在准备文件修改（尚未执行）',
+        bash: '正在准备执行步骤（尚未执行）',
+      } as Record<string, string>)[context.preparingTool.name] || '正在准备下一步操作',
+      status: 'running' as const,
+      phase: 'runtime_progress', source: 'runtime', authority: 'ephemeral',
+    }] : []),
   ]
   streamingLiveAnswerContent.value = (context.assistantStreamPurpose === 'main_agent'
     && ['candidate', 'answer'].includes(context.assistantStreamMode))
@@ -2925,6 +2943,7 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
   const frameType = String(event.frameType || '').trim()
   const payload = event.payload && typeof event.payload === 'object' ? event.payload as Record<string, any> : {}
   if (frameType === 'provider_payload') {
+    context.preparingTool = undefined
     cancelElectronDeltaProjection(context)
     context.providerCallSequence += 1
     const purpose = String(payload.purpose || 'main_agent')
@@ -2946,7 +2965,19 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     projectElectronAgentProgress(context)
     return
   }
+  if (frameType === 'tool_preparation') {
+    if (payload.purpose !== 'main_agent' || context.cancelRequested
+      || ['completed', 'cancelled', 'aborted', 'failed', 'waiting_user'].includes(context.state)) return
+    cancelElectronDeltaProjection(context)
+    context.preparingTool = { callId: String(payload.call_id), name: String(payload.tool_name), index: Number(payload.content_index) }
+    // 已明确出现工具调用，前面的文字现在是过程说明，而非最终答案。
+    context.assistantStreamMode = 'process'
+    context.liveAnswerText = ''
+    projectElectronAgentProgress(context)
+    return
+  }
   if (frameType === 'assistant_end') {
+    context.preparingTool = undefined
     cancelElectronDeltaProjection(context)
     const purpose = String(payload.purpose || context.assistantStreamPurpose || 'main_agent')
     const text = String(payload.text ?? context.ephemeralText ?? '')
@@ -3011,6 +3042,7 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
 }
 
 function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAgentEvent) {
+  context.preparingTool = undefined
   cancelElectronDeltaProjection(context)
   const waiting = String(event.state || context.state) === 'waiting_user'
   const terminalState = String(event.state || context.state)
@@ -3296,6 +3328,7 @@ async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payl
 }
 
 function showLocalInteraction(context: ElectronAgentRunContext, payload: any) {
+  context.preparingTool = undefined
   context.state = 'waiting_user'
   if (activeSessionId.value !== context.run.session_id) return
   const source = payload?.payload && typeof payload.payload === 'object' && !payload.kind

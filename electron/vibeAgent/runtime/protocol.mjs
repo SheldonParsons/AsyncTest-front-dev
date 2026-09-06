@@ -15,7 +15,7 @@ const RESPONSE_TYPES = new Set([
 ]);
 const OUTBOUND_TYPES = new Set([
   "ready", "session_open", "session_checkpoint", "provider_payload", "assistant_delta",
-  "assistant_end", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
+  "assistant_end", "tool_preparation", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
   "interaction_request", "candidate_final", "compaction_start", "compaction_end",
   "complete_no_tools_result", "session_title", "done", "error", "aborted",
 ]);
@@ -522,6 +522,12 @@ function validateOutboundPayload(frame) {
     const row = exact(payload, new Set(["text", "public"]), new Set(["text"]), "assistant_delta_payload_invalid");
     string(row.text, "assistant_delta_text_invalid", { allowEmpty: true, max: 2_000_000 });
     if (row.public !== undefined) boolean(row.public, "assistant_delta_public_invalid");
+  } else if (frame.type === "tool_preparation") {
+    const row = exact(payload, new Set(["call_id", "purpose", "tool_name", "content_index"]), new Set(["call_id", "purpose", "tool_name", "content_index"]), "tool_preparation_payload_invalid");
+    string(row.call_id, "tool_preparation_call_invalid", { max: 256 });
+    if (row.purpose !== "main_agent") fail("tool_preparation_purpose_invalid");
+    string(row.tool_name, "tool_preparation_name_invalid", { max: 128 });
+    finiteNumber(row.content_index, "tool_preparation_index_invalid", { min: 0, integer: true });
   } else if (frame.type === "assistant_end") {
     const row = exact(payload, new Set(["call_id", "purpose", "text", "has_tool_calls", "tool_calls", "stop_reason", "usage"]), new Set(["text", "has_tool_calls", "tool_calls", "stop_reason", "usage"]), "assistant_end_payload_invalid");
     optionalString(row.call_id, "assistant_end_call_invalid", { max: 256 });
