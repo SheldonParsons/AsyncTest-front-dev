@@ -1908,12 +1908,12 @@ function workspaceFileListCacheKey(sessionId: string, projectId = workspaceProje
 
 /** Share an in-flight local journal request between the conversation loader
  * and the file-list tab so opening "查看全部" cannot duplicate it. */
-function requestSessionEvents(sessionId: string, options: { includePrivate?: boolean } = {}): Promise<VibeEvent[]> {
+function requestSessionEvents(sessionId: string, options: { includePrivate?: boolean; fresh?: boolean } = {}): Promise<VibeEvent[]> {
   const normalizedSessionId = String(sessionId || '').trim()
   if (!normalizedSessionId) return Promise.resolve([])
   const cacheKey = `${normalizedSessionId}:${options.includePrivate ? 'private' : 'public'}`
   const existing = sessionEventsRequests.get(cacheKey)
-  if (existing) return existing
+  if (existing && !options.fresh) return existing
   const request = (async () => {
     const eventsApi = electronAgentBridge()?.sessions?.events
     if (!eventsApi) throw new Error('本地会话存储不可用')
@@ -3017,7 +3017,7 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
   const userCancelled = event.type === 'terminal'
     && (terminalState === 'cancelled' || terminalState === 'aborted')
     && (terminalState === 'cancelled' || cancelRequested.value)
-  const cancelledProcess = userCancelled ? cancellationProcessMeta(context) : []
+  const cancelledProcess = userCancelled ? localProcessMeta(context, true) : []
   const partialText = userCancelled ? String(context.liveAnswerText || '').trim() : ''
   if (userCancelled && electronPresentationOwnedBy(context)) {
     // Main has already persisted assistant_end, but the Renderer does not
@@ -3096,6 +3096,9 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
 async function finalizeElectronAgentPresentation(context: ElectronAgentRunContext) {
   if (!electronPresentationOwnedBy(context)
     || streamingOwnerSessionId.value !== context.run.session_id) return
+  // 终态历史比先前打开会话时的读取更新；一并使那些旧读取失效。
+  const sessionEpoch = ++sessionRequestEpoch
+  const contextEpoch = projectContextEpoch
   stopElapsedTicker()
   foundationBusy.value = false
   if (activeTurnId.value === context.run.turn_id) activeTurnId.value = ''
@@ -3103,6 +3106,21 @@ async function finalizeElectronAgentPresentation(context: ElectronAgentRunContex
   streamingOwnerSessionId.value = ''
   clearStreamingAssistant()
   resetProcessState(streamingProcess)
+  // 完成事件的本地快照先保持可见，再由唯一的持久化历史投影接管。
+  // 不复用终态之前的在途读取，也不能覆盖用户刚新建、切换或发送后的视图。
+  try {
+    const fresh = await requestSessionEvents(context.run.session_id, { fresh: true })
+    if (sessionEpoch !== sessionRequestEpoch || contextEpoch !== projectContextEpoch
+      || !electronPresentationOwnedBy(context)) return
+    if (!fresh.length) return
+    events.value = sortEvents(fresh)
+    await scrollBottomIfFollowing()
+  } catch (error) {
+    console.warn('本地会话历史暂未接管，保留当前过程与答案快照', error)
+  } finally {
+    if (sessionEpoch === sessionRequestEpoch && contextEpoch === projectContextEpoch
+      && electronPresentationOwnedBy(context)) sessionFilesLoading.value = false
+  }
 }
 
 function electronAgentStateIsTerminal(state: unknown): boolean {
@@ -3161,9 +3179,9 @@ function localEventId(context: ElectronAgentRunContext, role: string): string {
 // 独立 identity/key，Renderer 可以先即时展示，随后由持久化历史无缝接管。
 const LOCAL_CANCELLATION_RECEIPT = '已停止本轮处理，本轮未产生任何录入或改动。'
 
-function cancellationProcessMeta(context: ElectronAgentRunContext): Record<string, any>[] {
+function localProcessMeta(context: ElectronAgentRunContext, includePartialNarration = false): Record<string, any>[] {
   const steps: ProcessStep[] = [...mergeElectronProcessSteps(context)]
-  if (context.assistantStreamMode === 'process' && context.ephemeralText) {
+  if (includePartialNarration && context.assistantStreamMode === 'process' && context.ephemeralText) {
     steps.push({
       kind: 'message',
       key: `electron-agent-cancelled-delta:${context.run.run_id}`,
@@ -3485,7 +3503,11 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
       endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
     }
     if (payload.text && payload.status === 'completed') {
-      const assistant = localDisplayEvent(context, 'assistant', String(payload.text), { stop_reason: 'stop' })
+      const assistant = localDisplayEvent(context, 'assistant', String(payload.text), {
+        stop_reason: 'stop',
+        process: localProcessMeta(context),
+        process_summary: { duration_ms: Math.max(streamingProcess.durationMs, streamingElapsedMs.value) },
+      })
       context.localAssistantEventId = assistant.id
       if (electronPresentationOwnedBy(context)) {
         // `done(completed)` is the final durable handoff. Candidate text may
@@ -4769,6 +4791,7 @@ function retryProjectSwitch() {
 
 async function selectProject(project: any, options: { refreshStats?: boolean } = {}) {
   const epoch = ++projectContextEpoch
+  const restoreSessionEpoch = sessionRequestEpoch
   selectedProject.value = project
   selectedProjectId.value = String(project.id)
   if (!activeSessionId.value) {
@@ -4790,7 +4813,7 @@ async function selectProject(project: any, options: { refreshStats?: boolean } =
   if (epoch !== projectContextEpoch) return
   vibeProject.value = resolvedProject
   syncBaselineDraft()
-  await refreshState({ autoOpenLatest: true }, epoch)
+  await refreshState({ autoOpenLatest: true, sessionEpoch: restoreSessionEpoch }, epoch)
 }
 
 async function handleProjectChange(value: string | number) {
@@ -4846,15 +4869,17 @@ function removeBaselineGoal(idx: number) {
 }
 
 async function refreshState(
-  options: { autoOpenLatest?: boolean } = {},
+  options: { autoOpenLatest?: boolean; sessionEpoch?: number } = {},
   contextEpoch = projectContextEpoch,
 ) {
   const projectId = workspaceProjectContextId()
+  const restoreSessionEpoch = options.sessionEpoch ?? sessionRequestEpoch
   if (!projectId || !vibeProject.value?.id) return
   const loadedSessions = await localSessionsForProject(projectId)
   if (contextEpoch !== projectContextEpoch || workspaceProjectContextId() !== projectId) return
   sessions.value = loadedSessions
-  if (options.autoOpenLatest && !activeSessionId.value && sessions.value.length
+  if (options.autoOpenLatest && restoreSessionEpoch === sessionRequestEpoch
+    && !activeSessionId.value && sessions.value.length
     && !hasWorkspaceComposerDraft(projectId)) {
     await openSession(sessions.value[0].id)
     return
@@ -5704,6 +5729,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
     || localFileRefs.length !== localFiles.length) {
     throw new Error('vibe_agent_local_file_ref_invalid')
   }
+  sessionRequestEpoch += 1
   clarificationActive.value = null
   processExpanded.value = true
   clearStreamingAssistant()
@@ -6401,6 +6427,10 @@ function localRunProcessSteps(event: any): ProcessStep[] {
 }
 
 function eventProcessSteps(event: any): ProcessStep[] {
+  // 同一轮已有部分/最终答案承载过程时，取消回执不再重复显示整条过程。
+  if (event?.meta?.outcome === 'cancelled' && localRunProcessRows(event).some((row: any) =>
+    row.id !== event.id && row.role === 'assistant' && row.meta?.message_kind !== 'status'
+    && !row.meta?.tool_calls?.length && String(row.content || '').trim())) return []
   const canonical = eventTurnProtocol(event)
   if (canonical) return canonical.process
   const persisted = stepsFromMeta(event?.meta)
