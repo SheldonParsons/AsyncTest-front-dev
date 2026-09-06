@@ -30,6 +30,7 @@ import {
 } from "./message_adapter.mjs";
 import { createLocalFileTools, LOCAL_FILE_TOOL_NAMES } from "./localFileTools.mjs";
 import { materializeKnowledgeContent } from "./knowledgeContentSource.mjs";
+import { providerDeadline } from "./providerDeadline.mjs";
 
 for (const method of ["log", "info", "warn", "error", "debug"]) console[method] = () => {};
 process.removeAllListeners("warning");
@@ -740,43 +741,61 @@ class BridgeSession {
         models: [callModel],
         api: this.runtime.openAI,
       });
-      const stream = callProvider.stream(callModel, providerContext, {
-        ...options,
-        apiKey: directKey,
+      const remainingMs = purpose === "session_title" ? Infinity : Math.max(1,
+        Number(this.options.max_wall_clock_ms ?? 360_000) - (Date.now() - this.runStartedAt - this.userWaitMs));
+      const requestMs = Number(this.options.timeout_ms ?? 600_000);
+      const deadline = providerDeadline({
         signal: options.signal,
-        fetch: (input, init = {}) => this.runtime.undici.fetch(
-          input,
-          directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init,
-        ),
-        temperature: this.options.temperature,
-        maxTokens: requestedMaxTokens ?? (useRunMaxTokens ? this.options.max_tokens : undefined) ?? model.maxTokens,
-        timeoutMs: this.options.timeout_ms,
-        maxRetries: 0,
-        maxRetryDelayMs: this.options.max_retry_delay_ms ?? 0,
-        samplingParams: this.options.sampling_params,
-        sessionId: this.options.session_id,
-        transport: this.options.transport ?? "sse",
-        toolChoice: this.options.tool_choice ?? "auto",
-        onPayload: async (body) => {
-          const merged = { ...body, ...startOverrides };
-          const serialized = canonicalJson(merged);
-          const digest = createHash("sha256").update(serialized).digest("hex");
-          await this.emit("provider_payload", {
-            call_id: callId,
-            purpose,
-            sha256: digest,
-            characters: serialized.length,
-            tool_names: (providerContext.tools ?? []).map((tool) => tool.name),
-            ...(capturePayload ? { body: merged } : {}),
-          });
-          return merged;
+        timeoutMs: Math.min(requestMs, remainingMs),
+        onTimeout: () => {
+          if (!this.abortReason && purpose !== "session_title") {
+            this.fatalProtocolError = new ProtocolError(remainingMs <= requestMs ? "wall_clock_exhausted" : "provider_timeout");
+          }
         },
       });
-      if (directProxyAgent && typeof stream.result === "function") {
-        // The dispatcher is per call; close it when Pi's event stream reaches
-        // either a normal or error terminal event.
-        void stream.result().finally(() => directProxyAgent.close()).catch(() => undefined);
+      let stream;
+      try {
+        stream = callProvider.stream(callModel, providerContext, {
+          ...options,
+          apiKey: directKey,
+          signal: deadline.signal,
+          fetch: (input, init = {}) => this.runtime.undici.fetch(
+            input,
+            directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init,
+          ),
+          temperature: this.options.temperature,
+          maxTokens: requestedMaxTokens ?? (useRunMaxTokens ? this.options.max_tokens : undefined) ?? model.maxTokens,
+          timeoutMs: this.options.timeout_ms,
+          maxRetries: 0,
+          maxRetryDelayMs: this.options.max_retry_delay_ms ?? 0,
+          samplingParams: this.options.sampling_params,
+          sessionId: this.options.session_id,
+          transport: this.options.transport ?? "sse",
+          toolChoice: this.options.tool_choice ?? "auto",
+          onPayload: async (body) => {
+            const merged = { ...body, ...startOverrides };
+            const serialized = canonicalJson(merged);
+            const digest = createHash("sha256").update(serialized).digest("hex");
+            await this.emit("provider_payload", {
+              call_id: callId,
+              purpose,
+              sha256: digest,
+              characters: serialized.length,
+              tool_names: (providerContext.tools ?? []).map((tool) => tool.name),
+              ...(capturePayload ? { body: merged } : {}),
+            });
+            return merged;
+          },
+        });
+      } catch (error) {
+        deadline.dispose();
+        await directProxyAgent?.close();
+        throw error;
       }
+      void stream.result().finally(async () => {
+        deadline.dispose();
+        await directProxyAgent?.close();
+      }).catch(() => undefined);
       return stream;
     };
     this.modelRuntime.registerProvider(this.model.provider, {
@@ -1322,6 +1341,7 @@ class BridgeSession {
     try {
       await agent.prompt(payload.prompt);
       const final = [...agent.state.messages].reverse().find((message) => message.role === "assistant");
+      if (this.fatalProtocolError) throw this.fatalProtocolError;
       if (this.abortReason) throw new ProtocolError("operation_aborted");
       if (!final || final.stopReason !== "stop" || extractToolCalls(final).length) throw new ProtocolError("private_completion_failed");
       const text = extractAssistantText(final);

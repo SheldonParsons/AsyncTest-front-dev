@@ -3423,6 +3423,7 @@ function localAgentErrorMessage(error: unknown): string {
     context_budget_exhausted: '本轮上下文已达到安全上限。',
     total_token_budget_exhausted: '本轮模型用量已达到安全上限。',
     wall_clock_exhausted: '本轮计算时间已达到安全上限。',
+    provider_timeout: '模型响应超过设定时限，本轮已结束。已完成的知识变更以回执为准。',
     step_timeout: '模型服务等待超时，本轮未产生结果。',
     provider_outcome_unknown: '模型请求结果无法确认，请查看 Trace 后再决定是否重试。',
     tool_outcome_unknown: '工具执行结果无法确认，请查看 Trace 后再决定是否重试。',
