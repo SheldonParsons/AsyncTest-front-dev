@@ -7,6 +7,7 @@
  * be bound to an already-authorized input without adding a file-reading tool.
  */
 import { createHash } from "node:crypto";
+import { projectKnowledgeSearchResult } from "./knowledgeSearchProjection.node.js";
 import {
   authoredMarkdownChunks,
   codePointLength,
@@ -780,7 +781,10 @@ export class LocalToolRouter {
     // the persisted `{ clarification: ... }` preview.  Treat that payload as
     // an interaction too; waiting_user is a transport hint, not the sole
     // authority for whether a confirmation card exists.
-    if (status !== "waiting_user" && !resultValue?.knowledge_change_decision && !resultValue?.clarification) return resultValue;
+    if (status !== "waiting_user" && !resultValue?.knowledge_change_decision && !resultValue?.clarification) {
+      return status === "completed" && toolName === "search_knowledge"
+        ? projectKnowledgeSearchResult(resultValue) : resultValue;
+    }
     const clarification = resultValue?.clarification && typeof resultValue.clarification === "object"
       && !Array.isArray(resultValue.clarification) ? resultValue.clarification : null;
     const clarificationRaw = clarification?.raw && typeof clarification.raw === "object"
