@@ -1387,6 +1387,8 @@ async function loadTraceRuns(reset = false) {
           project_id: String(item.project_id || ''),
           project_name: String(item.project_name || ''),
           user_id: item.user_id == null ? undefined : Number(item.user_id),
+          username: String(item.username || ''),
+          user_display_name: String(item.user_display_name || ''),
           input_text: String(item.input_text || ''),
           final_status: String(item.status || 'running'),
           summary: '本机任务 Trace',
@@ -1538,6 +1540,8 @@ function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceI
     project_id: String(remote?.project_id || metadata.project_id || selected.project_id || ''),
     project_name: String(remote?.project_name || metadata.project_name || selected.project_name || ''),
     user_id: remote?.user_id == null ? selected.user_id : Number(remote.user_id),
+    username: String(remote?.username || selected.username || ''),
+    user_display_name: String(remote?.user_display_name || selected.user_display_name || ''),
     input_text: String(remote?.input_text || metadata.request_text || startPayload.prompt || startPayload.user_text || providerUserContent || ''),
     final_status: String(remote?.status || manifest.status || selected.final_status || ''),
     started_at: startedAt,
@@ -1594,6 +1598,8 @@ async function selectTrace(traceId: string) {
         ? {
             ...item,
             user_id: detail.user_id,
+            username: detail.username,
+            user_display_name: detail.user_display_name,
             project_id: detail.project_id,
             project_name: detail.project_name,
             turn_id: detail.turn_id,
@@ -2179,6 +2185,12 @@ function traceActorLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
   if (!trace) return '未知用户'
   const name = String(trace.user_display_name || trace.username || trace.account || '').trim()
   if (name) return name
+  const accountId = String(sharedProfile.value?.id || currentUser.value?.id || '').trim()
+  if (accountId && String(trace.user_id ?? '') === accountId) {
+    const currentName = String(sharedProfile.value?.nick_name || sharedProfile.value?.username
+      || currentUser.value?.display_name || currentUser.value?.nick_name || currentUser.value?.username || '').trim()
+    if (currentName) return currentName
+  }
   return trace.user_id !== undefined && trace.user_id !== null ? `用户 ${trace.user_id}` : '未知用户'
 }
 
