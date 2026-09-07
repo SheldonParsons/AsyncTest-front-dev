@@ -680,6 +680,7 @@
 import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type Directive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { readLocalAuthToken } from '@/utils/authNavigation'
+import { MAX_ATTACHMENT_COUNT } from './composables/attachmentAdmission'
 import whaleIntroUrl from './assets/whale-intro.webm'
 import VibeWindowControls from './components/VibeWindowControls.vue'
 import { marked } from 'marked'
@@ -3437,7 +3438,7 @@ function localAgentErrorMessage(error: unknown): string {
     vibe_agent_local_file_name_invalid: '本机文件名不可用，请重新选择文件。',
     vibe_agent_local_file_changed: '本机文件在发送前发生了变化，请重新选择文件。',
     vibe_agent_local_file_owner_invalid: '本机文件选择状态已失效，请重新选择文件。',
-    vibe_agent_local_file_count_invalid: '本轮最多选择 10 个本机文件。',
+    vibe_agent_local_file_count_invalid: `每轮最多选择 ${MAX_ATTACHMENT_COUNT} 个文件，请减少后重新选择。本次没有添加任何文件。`,
     vibe_agent_local_start_payload_invalid: '本轮输入准备失败，请重新发送。',
     vibe_agent_local_start_payload_missing: '本轮输入准备失败，请重新发送。',
     vibe_agent_local_start_renderer_field_forbidden: '本轮输入包含不支持的字段，请重新发送。',
@@ -3458,6 +3459,9 @@ function localAgentErrorMessage(error: unknown): string {
     .sort((left, right) => right.length - left.length)
     .find(code => raw.includes(code))
   if (wrappedCode) return messages[wrappedCode]
+  if (raw.includes('vibeAgent:localFilePick')) {
+    return '无法选择本机文件，请确认文件仍存在且有读取权限后重试。'
+  }
   if (/(?:failed to fetch|fetch failed|networkerror|network request failed|econnrefused)/i.test(raw)) {
     return '暂时无法连接服务，请确认服务已启动后重试。'
   }
@@ -3704,11 +3708,14 @@ type ComposerToastNotice = {
 }
 
 function showComposerToast(notice: ComposerToastNotice): void {
-  const title = String(notice?.title || '').trim()
-  if (!title || typeof window.$toast !== 'function') return
+  const rawTitle = String(notice?.title || '').trim()
+  if (!rawTitle || typeof window.$toast !== 'function') return
+  const title = notice.type === 'error' ? localAgentErrorMessage(rawTitle) : rawTitle
+  const selectionLimit = rawTitle.includes('vibe_agent_local_file_count_invalid')
+    || rawTitle.startsWith(`每轮最多选择 ${MAX_ATTACHMENT_COUNT} 个文件`)
   window.$toast({
     title,
-    type: notice.type || 'info',
+    type: selectionLimit ? 'info' : notice.type || 'info',
     position: 'bottom-right',
     duration: notice.duration ?? 3000,
     actionText: '关闭',
@@ -5752,6 +5759,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   const project = knowledgeStatsProjectId(selectedProjectId.value)
   if (!project) throw new Error('当前项目身份无效，请重新选择项目')
   const localFiles = [...(opts.localFiles || [])]
+  if (localFiles.length > MAX_ATTACHMENT_COUNT) throw new Error('vibe_agent_local_file_count_invalid')
   // Validate the opaque native references before creating a session or
   // clearing any composer state. A stale/partial chip must fail locally with
   // an actionable message and remain retryable.
