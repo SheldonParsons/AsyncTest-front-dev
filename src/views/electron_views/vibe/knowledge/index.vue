@@ -4037,11 +4037,13 @@ const composerQuestion = computed(() => {
   const raw: any = c.raw
   const kind = raw && typeof raw === 'object' ? raw.kind : null
 
-  // clarification.v2 的所有交互语义均由后端提供。前端只按顺序渲染，
-  // 并回传 option_id 或补充文本；禁止在这里补标题、说明、取消或 placeholder。
+  // 按调用方提供的问题与选项渲染，只回传 option_id 或补充文本。
+  // 开放式反问可以只有问题；没有选项时仍须提供回复入口，兼容实时及历史恢复。
+  // 不为确认卡补输入，也不替主脑添加选项、取消动作或后续路由。
   if (raw?.schema === 'clarification.v2') {
     const options = Array.isArray(raw.options) ? raw.options : []
     const input = raw.input && typeof raw.input === 'object' ? raw.input : {}
+    const openQuestion = kind === 'ask' && options.length === 0 && !input.enabled
     const hasDiff = raw.old_body != null && raw.new_body != null
       && (String(raw.old_body).length > 0 || String(raw.new_body).length > 0)
     const preparation = raw.content_preparation || raw.preview?.content_preparation
@@ -4058,10 +4060,10 @@ const composerQuestion = computed(() => {
           description: String(item.description || (raw.decision_type === 'confirmation' ? item.effect || '' : '')),
           value: `__CLARIFICATION_OPTION__:${clarificationOptionIdentity(item)}`,
         })),
-        ...(input.enabled ? [{
+        ...(input.enabled || openQuestion ? [{
           type: 'input' as const,
           placeholder: String(input.placeholder ?? ''),
-          required: Boolean(input.required),
+          required: openQuestion || Boolean(input.required),
           showSkip: false,
           submitLabel: String(input.submit_label || '提交'),
         }] : []),
