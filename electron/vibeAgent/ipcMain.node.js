@@ -603,31 +603,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       knowledgeCache,
       run,
       defaultQuery: normalized.requestText,
-      resolveOriginalContent: async (proposed) => {
-        const files = runBindings.get(key)?.localFiles || [];
-        const supported = files.filter(file => /\.(?:md|markdown|txt)$/i.test(file.name));
-        if (!supported.length) return proposed;
-        const fullMatches = []; let exactExcerpt = false;
-        for (const file of supported) {
-          if (file.size > 4_000_000) throw new Error("vibe_agent_original_text_too_large");
-          const handle = await fs.open(file.absolute_path, "r");
-          try {
-            const unchanged = stat => stat.isFile() && Number(stat.dev) === file.dev && Number(stat.ino) === file.ino
-              && Number(stat.size) === file.size && Math.trunc(stat.mtimeMs) === file.last_modified;
-            if (!unchanged(await handle.stat())) throw new Error("vibe_agent_local_file_changed");
-            const bytes = await handle.readFile();
-            if (!unchanged(await handle.stat())) throw new Error("vibe_agent_local_file_changed");
-            const original = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-            if (original.trim() === proposed.trim()) fullMatches.push(original);
-            if (original.includes(proposed)) exactExcerpt = true;
-          } finally { await handle.close(); }
-        }
-        const originals = [...new Set(fullMatches)];
-        if (originals.length === 1) return originals[0];
-        if (originals.length > 1) throw new Error("vibe_agent_original_text_ambiguous");
-        if (exactExcerpt || normalized.requestText.includes(proposed) || supported.length !== files.length) return proposed;
-        throw new Error("vibe_agent_original_text_mismatch");
-      },
       onTrace: ({ name, payload, status }) => appendTrace(run, name, payload, status),
     });
     routers.set(key, router);

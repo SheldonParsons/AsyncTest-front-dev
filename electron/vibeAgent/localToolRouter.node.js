@@ -210,6 +210,7 @@ function knowledgeReceipt(outcome, action) {
     ...(summary ? { summary } : {}),
     ...(userReceipt ? { user_receipt: userReceipt } : {}),
     ...(typeof verification.ok === "boolean" ? { verified: verification.ok } : {}),
+    ...(typeof verification.ok === "boolean" ? { verification_scope: "confirmed_content_written" } : {}),
     ...(items.length ? { items } : {}),
     ...(outcome?.error ? { error: stableErrorCode(outcome.error, "knowledge_change_failed") } : {}),
   };
@@ -248,14 +249,11 @@ function publicKnowledgeOutcome(outcome) {
 }
 
 export class LocalToolRouter {
-  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", resolveOriginalContent = null, onTrace } = {}) {
+  constructor({ knowledgeClient, knowledgeCache = null, run, defaultQuery = "", onTrace } = {}) {
     this.knowledgeClient = knowledgeClient;
     this.knowledgeCache = knowledgeCache;
     this.run = run || {};
     this.defaultQuery = String(defaultQuery || "").trim();
-    this.resolveOriginalContent = resolveOriginalContent;
-    // 仅检查用户本轮消息，不检查工具结果或附件正文；明确的原样要求不能被后续工具参数覆盖。
-    this.preserveContent = /(?:不要|无需|不用|不需要)(?:进行)?(?:美化|润色|改写)|(?:原样|逐字)(?:录入|保存|保留)|不要改(?:动)?(?:任何)?(?:内容|文字)/u.test(this.defaultQuery);
     this.onTrace = typeof onTrace === "function" ? onTrace : () => {};
     this.pending = new Map();
     this.interactionSequence = 0;
@@ -740,12 +738,10 @@ export class LocalToolRouter {
               && !new Set(["text/markdown", "text/plain"]).has(String(item.content_type)))) {
             throw new Error("vibe_agent_knowledge_item_invalid");
           }
-          const originalContent = this.preserveContent && this.resolveOriginalContent
-            ? await this.resolveOriginalContent(item.content) : item.content;
           items.push({
             ...(item.label ? { label: publicKnowledgeLabel(item.label) } : {}),
             content_type: String(item.content_type || "text/markdown"),
-            ...await this.authoredContent(originalContent),
+            ...await this.authoredContent(item.content),
           });
         }
         payload.items = items;
@@ -768,8 +764,8 @@ export class LocalToolRouter {
           ...await this.authoredContent(payload.replacement?.content),
         };
       }
-      // Only Pi-authored, user-confirmed content crosses the Knowledge API;
-      // local source paths never cross this boundary.
+      // 整理方式由 Agent 根据用户意图决定；这里只传递待确认正文，不解释或改写内容。
+      // 本地来源路径不跨越知识 API 边界。
       delete payload.attachments;
       delete payload.attachment_resources;
     }
@@ -924,7 +920,7 @@ export class LocalToolRouter {
             ? "用户已确认执行，但权威事务回执显示本次知识变更未成功提交。请结合原始请求自主决定下一步。"
             : "用户已确认执行；权威事务回执显示本次知识变更已经提交。请重新对照原始请求，自主决定下一步。"
           : action === "cancel"
-            ? "用户已取消本次知识变更。请重新对照原始请求，自主决定下一步。"
+            ? "用户已取消当前知识变更预览。取消本身不是请求改写或重新录入；其他明确任务仍以用户要求为准。"
             : "用户已停止本次任务。",
       };
       await this.trace("interaction.resolved", {
