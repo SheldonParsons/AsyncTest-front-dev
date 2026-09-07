@@ -5,13 +5,17 @@
         <h1>全局控制</h1>
         <p>控制所有普通用户是否可以发起对话；管理员账号 a80646 始终可用。</p>
       </div>
-      <button type="button" :disabled="loading || saving || !canSave" @click="save">
+      <button v-if="!loaded && !loading" type="button" :disabled="saving" @click="load">
+        重新读取
+      </button>
+      <button v-else type="button" :disabled="loading || saving || !canSave" @click="save">
         {{ saving ? '保存中' : '保存' }}
       </button>
     </header>
 
     <article class="control-card">
-      <label class="control-toggle">
+      <p v-if="!loaded" role="status">{{ loading ? '正在读取对话状态…' : '对话状态未知，请重新读取。' }}</p>
+      <label v-if="loaded" class="control-toggle">
         <input v-model="draft.disabled" type="checkbox" :disabled="loading || saving" />
         <span class="check" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
@@ -22,7 +26,7 @@
         </span>
       </label>
 
-      <label v-if="draft.disabled" class="reply-field">
+      <label v-if="loaded && draft.disabled" class="reply-field">
         <span>返回给用户的内容</span>
         <textarea
           v-model="draft.message"
@@ -44,7 +48,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { getVibeConversationControl, updateVibeConversationControl } from '../api'
 
 const DEFAULT_MESSAGE = '系统维护中，请稍后再试'
-const loading = ref(false)
+const loading = ref(true)
+const loaded = ref(false)
 const saving = ref(false)
 const status = ref('')
 const statusKind = ref<'ok' | 'error'>('ok')
@@ -52,15 +57,28 @@ const draft = reactive({
   disabled: false,
   message: DEFAULT_MESSAGE,
 })
-const canSave = computed(() => !draft.disabled || !!draft.message.trim())
+const canSave = computed(() => loaded.value && (!draft.disabled || !!draft.message.trim()))
+
+// 未知或异常配置不能当作“未禁用”，读取和保存响应使用同一校验。
+function applyConfig(item: unknown) {
+  if (!item || typeof item !== 'object'
+    || !('disabled' in item) || typeof item.disabled !== 'boolean'
+    || !('message' in item) || typeof item.message !== 'string') {
+    throw new Error('服务端返回的对话配置无效')
+  }
+  draft.disabled = item.disabled
+  draft.message = item.message || DEFAULT_MESSAGE
+  loaded.value = true
+}
 
 async function load() {
+  if (saving.value) return
   loading.value = true
+  loaded.value = false
   status.value = ''
   try {
     const response = await getVibeConversationControl()
-    draft.disabled = response.item?.disabled === true
-    draft.message = String(response.item?.message || DEFAULT_MESSAGE)
+    applyConfig(response?.item)
   } catch (error: any) {
     status.value = `加载失败：${error?.message || String(error)}`
     statusKind.value = 'error'
@@ -70,7 +88,7 @@ async function load() {
 }
 
 async function save() {
-  if (saving.value || !canSave.value) return
+  if (loading.value || saving.value || !canSave.value) return
   saving.value = true
   status.value = ''
   try {
@@ -78,12 +96,13 @@ async function save() {
       disabled: draft.disabled,
       message: draft.message.trim() || DEFAULT_MESSAGE,
     })
-    draft.disabled = response.item?.disabled === true
-    draft.message = String(response.item?.message || DEFAULT_MESSAGE)
+    if (response?.ok !== true) throw new Error('服务端未确认保存成功')
+    applyConfig(response.item)
     status.value = '已保存'
     statusKind.value = 'ok'
   } catch (error: any) {
-    status.value = `保存失败：${error?.message || String(error)}`
+    loaded.value = false
+    status.value = `未能确认保存结果，请重新读取：${error?.message || String(error)}`
     statusKind.value = 'error'
   } finally {
     saving.value = false
