@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.3.2",
+  "version": "3.3.3",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest Vibe 知识库\\n\\n### 前端更新内容\\n#### 现在主 AsyncTest Vibe Agent 具备了本地访问的能力，你可以更好的为知识库提供所需的资料\\n#### 知识库 MCP 上线\",\"publishDate\":\"2026-09-05\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest Vibe 知识库\\n\\n### 前端更新内容\\n#### AsyncTest Vibe 知识库 Agent 上线\\n#### 知识库 MCP 上线\",\"publishDate\":\"2026-09-07\"}"
     },
     "publish": [
       {
