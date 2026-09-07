@@ -93,9 +93,9 @@ function withoutTargetBinding(outcome) {
   return projected;
 }
 
-function publicKnowledgeLabel(value) {
-  let text = String(value || "").trim().replaceAll("\\", "/").split("/").at(-1) || "";
-  text = text.replace(/\.(?:md|markdown|txt)$/iu, "").trim();
+function publicKnowledgeLabel(value, { filename = false } = {}) {
+  let text = String(value || "").trim();
+  if (filename) text = (text.replaceAll("\\", "/").split("/").at(-1) || "").replace(/\.(?:md|markdown|txt)$/iu, "").trim();
   return text.slice(0, 120);
 }
 
@@ -188,8 +188,8 @@ function knowledgeReceipt(outcome, action) {
     ? row.metadata.expected_effects : {};
   const items = (Array.isArray(verification.documents) ? verification.documents : expected.documents || [])
     .map((item) => ({
-      ...(publicKnowledgeLabel(item?.title || item?.filename)
-        ? { label: publicKnowledgeLabel(item.title || item.filename) } : {}),
+      ...(publicKnowledgeLabel(item?.title || item?.filename, { filename: !item?.title })
+        ? { label: publicKnowledgeLabel(item.title || item.filename, { filename: !item.title }) } : {}),
       ...(typeof item?.active === "boolean" ? { active: item.active } : {}),
     }))
     .filter((item) => Object.keys(item).length);
