@@ -748,6 +748,7 @@ import {
 import {
   localTurnPresentation,
   preferredProcessDuration,
+  interactionThreadDuration,
   shouldShowMissingTerminalNotice,
 } from './turnPresentationPolicy'
 import {
@@ -2834,7 +2835,7 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
   activeTurnId.value = context.run.turn_id
   activeTurnSessionId.value = context.run.session_id
   setSessionRunning(context.run.session_id, !model.terminal)
-  if (previousState === 'waiting_user' && model.state === 'running') startElapsedTicker(Date.now())
+  if (previousState === 'waiting_user' && model.state === 'running') startElapsedTicker(context.startedAt)
   applyCanonicalReadModel(model)
   // A journal delta can arrive between two Provider frames. Keep any
   // renderer-only commentary that has not reached the journal yet, and keep
@@ -3494,7 +3495,6 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
           streamingLiveAnswerContent.value = ''
           clearStreamingAnswerHtml()
         }
-        context.startedAt = Date.now()
         startElapsedTicker(context.startedAt)
       }
       streamingProcess.status = 'running'
@@ -3776,8 +3776,8 @@ const streamingElapsedMs = ref(0)
 let _elapsedTimer: ReturnType<typeof setInterval> | null = null
 function startElapsedTicker(startedAt: number) {
   stopElapsedTicker()
-  streamingElapsedMs.value = 0
-  _elapsedTimer = setInterval(() => { streamingElapsedMs.value = Date.now() - startedAt }, 500)
+  streamingElapsedMs.value = Math.max(0, Date.now() - startedAt)
+  _elapsedTimer = setInterval(() => { streamingElapsedMs.value = Math.max(0, Date.now() - startedAt) }, 500)
 }
 function stopElapsedTicker() {
   if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null }
@@ -7162,9 +7162,18 @@ function threadAwaiting(root: any): boolean {
 }
 
 function threadDurationMs(root: any): number {
-  const base = interactionThreadNodes(root).reduce((sum: number, n: any) => sum + (eventProcessDuration(n) || 0), 0)
-  // 续跑轮在途:历史各段耗时 + 本轮前端秒表,让"已处理"一直数着(0704)。
-  return threadRunning(root) ? base + streamingElapsedMs.value : base
+  const liveRun = threadRunning(root)
+    ? electronRunForTurn(activeTurnId.value, activeSessionId.value)?.run : null
+  return interactionThreadDuration(interactionThreadNodes(root).map((node: any) => ({
+    sessionId: String(node.session_id || ''),
+    runId: node.meta?.local_agent === true ? String(node.meta.run_id || '') : '',
+    eventId: String(node.id || ''),
+    durationMs: eventProcessDuration(node),
+  })), threadRunning(root) ? {
+    sessionId: String(liveRun?.session_id || activeSessionId.value),
+    runId: String(liveRun?.run_id || ''),
+    durationMs: streamingElapsedMs.value,
+  } : undefined)
 }
 
 function threadNodeDisplayContent(root: any, node: any): string {

@@ -107,6 +107,30 @@ export function preferredProcessDuration(...values: unknown[]): number {
   return 0
 }
 
+export interface ProcessDurationSample {
+  sessionId?: string
+  runId?: string
+  eventId?: string
+  durationMs: unknown
+}
+
+/** 同一本机 Run 的节点是累计时长，不可相加；旧式分段节点仍分别计入。 */
+export function interactionThreadDuration(
+  nodes: readonly ProcessDurationSample[],
+  live?: ProcessDurationSample,
+): number {
+  const durations = new Map<string, number>()
+  const add = (sample: ProcessDurationSample, fallback: string) => {
+    const key = sample.runId
+      ? JSON.stringify(['run', sample.sessionId || '', sample.runId])
+      : JSON.stringify(['event', sample.sessionId || '', sample.eventId || fallback])
+    durations.set(key, Math.max(durations.get(key) || 0, finitePositiveDuration(sample.durationMs)))
+  }
+  nodes.forEach((sample, index) => add(sample, String(index)))
+  if (live) add(live, 'live')
+  return [...durations.values()].reduce((total, duration) => total + duration, 0)
+}
+
 function finitePositiveDuration(value: unknown): number {
   const duration = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(duration) && duration > 0 ? Math.round(duration) : 0
