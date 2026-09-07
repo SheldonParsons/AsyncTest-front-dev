@@ -27,17 +27,18 @@
       <div v-if="isQuestion" class="question-view" aria-label="提问和选项列表">
         <h1 class="question-title">{{ question?.title }}</h1>
         <div v-if="question?.description" class="question-description">{{ question?.description }}</div>
+        <div v-if="question?.preview || showDiff || cascadeRows.length || deleteManyRows.length" class="question-content" tabindex="0" aria-label="确认内容预览">
         <div v-if="question?.preview" class="prepared-preview" aria-label="待确认的完整正文">
           <strong>最终正文</strong>
           <ConversationMarkdown class="message-md" :content="question.preview.content" :render-markdown="question.preview.renderMarkdown" />
           <details v-if="question.preview.original">
-            <summary>查看提交原文</summary>
+            <summary class="preview-disclosure"><span>查看提交原文</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
             <pre class="prepared-original">{{ question.preview.original }}</pre>
           </details>
         </div>
         <!-- 改原文·diff 预览：确认前看清红删绿增 -->
-        <details v-if="question?.diff" class="edit-diff" :open="!question?.preview" @toggle="diffOpen = ($event.target as HTMLDetailsElement).open">
-          <summary>查看改动</summary>
+        <details v-if="showDiff && question?.diff" class="edit-diff" :open="!question?.preview" @toggle="onDiffToggle">
+          <summary class="preview-disclosure"><span>查看改动</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
           <div v-if="question.diff.breadcrumb" class="edit-diff-bc">{{ question.diff.breadcrumb }}</div>
           <div v-if="diffOpen || !question?.preview" class="edit-diff-body">
             <div
@@ -97,6 +98,7 @@
               </span>
             </article>
           </div>
+        </div>
         </div>
         <div class="question-list" role="radiogroup" aria-label="选择回答">
           <template v-for="(item, i) in (question?.items || [])" :key="i">
@@ -303,6 +305,19 @@ interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyP
 interface ModelOption { value: string; label: string; hint?: string }
 interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; preview?: { content: string; original: string; renderMarkdown: (text: string) => string }; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
 const diffOpen = ref(false)
+// 新增内容已有最终正文预览，不再重复展示“空白到全文”的 diff；旧式仅 diff 预览仍保留。
+const showDiff = computed(() => !!props.question?.diff
+  && (!props.question.preview || (props.question.diff.oldBody || '').length > 0))
+function onDiffToggle(event: Event) {
+  const details = event.target as HTMLDetailsElement
+  diffOpen.value = details.open
+  if (details.open && props.question?.preview) void nextTick(() => {
+    const container = details.closest<HTMLElement>('.question-content')
+    if (container && details.isConnected) {
+      container.scrollTop += details.getBoundingClientRect().top - container.getBoundingClientRect().top
+    }
+  })
+}
 interface ComposerNotice { title: string; type: 'error' | 'info'; duration?: number }
 interface PersistedLocalAttachment {
   schema: 'local_file_ref.v1'
@@ -475,6 +490,7 @@ function restoreAttachmentDraft(): void {
 
 watch(() => props.question, () => {
   diffOpen.value = !props.question?.preview
+  void nextTick(() => rootEl.value?.querySelector('.question-content')?.scrollTo({ top: 0 }))
   activeIndex.value = 0
   menuOpen.value = false
   modelMenuOpen.value = false
@@ -754,6 +770,7 @@ function onDocKeydown(e: KeyboardEvent) {
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
   const ae = document.activeElement as HTMLElement | null
   if (ae && ae.classList.contains('custom-input')) return  // 在自定义输入框里时交给它自己处理
+  if (ae?.closest('.question-content')) return  // 预览获得焦点时，方向键用于滚动正文。
   e.preventDefault()
   moveActive(e.key === 'ArrowDown' ? 1 : -1)
 }
@@ -826,20 +843,31 @@ defineExpose({ clearAttachmentDraft, clearAttachments, clearInput: () => inputEl
 }
 .composer-shell.is-question { gap: 14px; padding: 18px 20px 14px; }
 
-.question-view { display: grid; gap: 14px; }
+.question-view { display: flex; flex-direction: column; gap: 14px; max-height: min(76dvh, 760px); min-height: 0; }
+.question-view > .question-title, .question-view > .question-description { flex-shrink: 0; }
+.question-content { min-height: 0; max-height: 40dvh; overflow: auto; overscroll-behavior: contain; display: grid; gap: 12px; scrollbar-gutter: stable; }
+.question-content:focus-visible { outline: 2px solid #9ba3ae; outline-offset: 3px; border-radius: 10px; }
+.question-view > .question-list { flex-shrink: 0; max-height: 24dvh; overflow: auto; overscroll-behavior: contain; border-top: 1px solid #eef0f2; padding-top: 10px; }
 .question-title { margin: 0; color: #20242b; font-size: 15px; font-weight: 600; line-height: 1.45; }
 .question-description { color: #8d929a; font-size: 13px; line-height: 1.4; }
-.prepared-preview { max-height: 32vh; overflow: auto; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; line-height: 1.6; }
+.prepared-preview { min-width: 0; padding: 14px; border: 1px solid #e5e7eb; border-radius: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .prepared-preview :deep(h1), .prepared-preview :deep(h2), .prepared-preview :deep(h3) { font-size: 1.1em; margin: .7em 0 .35em; }
 .prepared-preview :deep(table) { border-collapse: collapse; }
 .prepared-preview :deep(th), .prepared-preview :deep(td) { border: 1px solid #e5e7eb; padding: 4px 8px; }
 .prepared-original { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
-.prepared-preview summary, .edit-diff summary { cursor: pointer; padding: 6px 0; }
+.preview-disclosure { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; cursor: pointer; padding: 10px 12px; color: #555d68; font-size: 13px; font-weight: 500; border-radius: 9px; }
+.preview-disclosure::-webkit-details-marker { display: none; }
+.preview-disclosure::marker { content: ''; }
+.preview-disclosure:hover { color: #20242b; background: #f2f3f5; }
+.preview-disclosure:focus-visible { outline: 2px solid #9ba3ae; outline-offset: -2px; }
+.preview-disclosure svg { width: 16px; height: 16px; flex-shrink: 0; transition: transform 140ms ease; }
+details[open] > .preview-disclosure svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .preview-disclosure svg { transition: none; } }
 
 /* 改原文 diff 预览 */
 .edit-diff { border: 1px solid #e4e6ea; border-radius: 10px; overflow: hidden; background: #fcfcfd; }
 .edit-diff-bc { padding: 6px 11px; font-size: 11.5px; color: #8d929a; background: #f5f6f8; border-bottom: 1px solid #eceef1; word-break: break-all; }
-.edit-diff-body { max-height: 240px; overflow: auto; padding: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; }
+.edit-diff-body { padding: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; }
 .d-line { padding: 0 11px; white-space: pre-wrap; word-break: break-word; }
 .d-ctx { color: #57606a; }
 .d-del { background: #ffe9e7; color: #b3261e; }
