@@ -449,7 +449,6 @@ class BridgeSession {
     this.seenToolCallIds = new Set();
     this.admittedAssistantWaves = new WeakSet();
     this.callNumber = 0;
-    this.budgetedModelCalls = 0;
     this.runStartedAt = Date.now();
     this.userWaitMs = 0;
     this.seenProviderCallIds = new Set();
@@ -690,19 +689,12 @@ class BridgeSession {
       const callId = requestedCallId || `call-${++this.callNumber}`;
       if (this.seenProviderCallIds.has(callId)) throw new ProtocolError("provider_call_id_duplicate");
       this.seenProviderCallIds.add(callId);
-      // Official Pi owns context and compaction. The host only enforces a
-      // finite safety envelope so a bad tool/result contract cannot spin for
-      // dozens of model calls. Session-title generation is best-effort and
-      // happens after the user-visible run, so it does not consume this cap.
+      // 主脑决定调用步数；宿主只保留时间与用户取消边界。
+      // 标题在用户可见任务之后生成，不占用本轮运行时长。
       if (purpose !== "session_title") {
         const maxWallClockMs = Number(this.options.max_wall_clock_ms ?? 360_000);
         const elapsedMs = Math.max(0, Date.now() - this.runStartedAt - this.userWaitMs);
         if (elapsedMs >= maxWallClockMs) throw new ProtocolError("wall_clock_exhausted");
-        const maxModelCalls = Number(this.options.max_model_calls ?? 12);
-        if (this.budgetedModelCalls >= maxModelCalls) {
-          throw new ProtocolError("model_call_budget_exhausted");
-        }
-        this.budgetedModelCalls += 1;
       }
       const strictTools = (context.tools ?? []).map((tool) => this.providerTools.get(tool.name) ?? tool);
       const providerContext = { ...context, tools: strictTools };
@@ -803,12 +795,19 @@ class BridgeSession {
       baseUrl: this.model.baseUrl,
       apiKey: "vibe-run-scoped",
       api: this.model.api,
-      streamSimple: (model, context, options) => this.streamForPurpose(
-        this.compactionReason ? "compaction" : "main_agent",
-        "",
-        undefined,
-        { useRunMaxTokens: false },
-      )(model, context, options),
+      streamSimple: async (model, context, options) => {
+        try {
+          return await this.streamForPurpose(
+            this.compactionReason ? "compaction" : "main_agent", "", undefined,
+            { useRunMaxTokens: false },
+          )(model, context, options);
+        } catch (error) {
+          // SDK 会把流初始化异常转为 error 消息；保留本地结构化原因，
+          // 防止终态把时间/协议错误统一误报为模型服务失败。
+          if (error instanceof ProtocolError) this.fatalProtocolError = error;
+          throw error;
+        }
+      },
       models: [{
         id: this.model.id,
         name: this.model.name,

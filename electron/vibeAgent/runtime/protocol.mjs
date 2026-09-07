@@ -191,7 +191,7 @@ function validateOptions(value) {
     "temperature", "max_tokens", "timeout_ms", "max_retries", "max_retry_delay_ms",
     "sampling_params", "payload_overrides", "payload_capture", "session_id", "tool_choice",
     "transport", "ipc_timeout_ms", "generate_session_title", "thinking_level",
-    "max_model_calls", "max_wall_clock_ms",
+    "max_model_calls", "max_wall_clock_ms", // 旧 max_model_calls 仅兼容读取，不再限制执行。
   ]), new Set(), "start_options_invalid");
   if (row.temperature !== undefined) finiteNumber(row.temperature, "start_temperature_invalid", { min: 0, max: 2 });
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_max_tokens_invalid", { min: 1, integer: true });
@@ -201,9 +201,6 @@ function validateOptions(value) {
   if (row.ipc_timeout_ms !== undefined) finiteNumber(row.ipc_timeout_ms, "start_ipc_timeout_invalid", { min: 1_000, max: 1_200_000, integer: true });
   if (row.payload_capture !== undefined) boolean(row.payload_capture, "start_payload_capture_invalid");
   if (row.generate_session_title !== undefined) boolean(row.generate_session_title, "start_generate_session_title_invalid");
-  if (row.max_model_calls !== undefined) finiteNumber(
-    row.max_model_calls, "start_max_model_calls_invalid", { min: 1, max: 100, integer: true },
-  );
   if (row.max_wall_clock_ms !== undefined) finiteNumber(
     row.max_wall_clock_ms, "start_max_wall_clock_invalid", { min: 1_000, max: 3_600_000, integer: true },
   );

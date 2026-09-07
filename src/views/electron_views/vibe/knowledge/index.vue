@@ -2839,9 +2839,9 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
   // A journal delta can arrive between two Provider frames. Keep any
   // renderer-only commentary that has not reached the journal yet, and keep
   // the candidate answer in its own presentation lane.
-  streamingProcess.steps = mergeElectronProcessSteps(context)
+  streamingProcess.steps = mergeElectronProcessSteps(context, true)
   streamingLiveAnswerContent.value = (context.assistantStreamPurpose === 'main_agent'
-    && ['candidate', 'answer'].includes(context.assistantStreamMode))
+    && context.assistantStreamMode === 'answer')
     || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
     ? context.liveAnswerText
     : ''
@@ -2850,11 +2850,17 @@ function applyElectronAgentCanonical(context: ElectronAgentRunContext, delta: an
   scrollBottomIfFollowing()
 }
 
-function mergeElectronProcessSteps(context: ElectronAgentRunContext): ProcessStep[] {
+function mergeElectronProcessSteps(context: ElectronAgentRunContext, includePartial = false): ProcessStep[] {
   const canonicalSteps = readTurnProtocol(context.protocolState).process
   const canonicalKeys = new Set(canonicalSteps.map(step => String(step.key || '')))
   const pending = context.processEphemeralSteps.filter(step => !canonicalKeys.has(String(step.key || '')))
-  return [...canonicalSteps, ...pending]
+  // 工具调用尚未明确时，公开流式文字先留在过程区；确定终局后再归位。
+  const partial: ProcessStep[] = includePartial && ['candidate', 'process'].includes(context.assistantStreamMode) && context.ephemeralText ? [{
+    kind: 'message', key: `electron-agent-delta:${context.run.run_id}`,
+    text: context.ephemeralText, phase: 'commentary', source: 'model',
+    authority: 'ephemeral', streaming: true,
+  }] : []
+  return [...canonicalSteps, ...pending, ...partial]
 }
 
 function projectElectronAgentProgress(context: ElectronAgentRunContext) {
@@ -2864,18 +2870,8 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
   activeTurnSessionId.value = context.run.session_id
   processExpanded.value = true
   streamingProcess.status = 'running'
-  const partial: ProcessStep[] = context.assistantStreamMode === 'process' && context.ephemeralText ? [{
-    kind: 'message',
-    key: `electron-agent-delta:${context.run.run_id}`,
-    text: context.ephemeralText,
-    phase: 'commentary',
-    source: 'model',
-    authority: 'ephemeral',
-    streaming: true,
-  }] : []
   streamingProcess.steps = [
-    ...mergeElectronProcessSteps(context),
-    ...partial,
+    ...mergeElectronProcessSteps(context, true),
     ...(context.preparingTool && !context.cancelRequested ? [{
       kind: 'action' as const,
       key: `electron-tool-preparation:${context.run.run_id}:${context.preparingTool.callId}:${context.preparingTool.index}`,
@@ -2895,7 +2891,7 @@ function projectElectronAgentProgress(context: ElectronAgentRunContext) {
     }] : []),
   ]
   streamingLiveAnswerContent.value = (context.assistantStreamPurpose === 'main_agent'
-    && ['candidate', 'answer'].includes(context.assistantStreamMode))
+    && context.assistantStreamMode === 'answer')
     || (context.assistantStreamMode === 'private' && !!context.liveAnswerText)
     ? context.liveAnswerText
     : ''
