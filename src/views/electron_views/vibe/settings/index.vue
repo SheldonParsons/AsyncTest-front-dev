@@ -502,7 +502,7 @@
                 </span>
                 <span class="trace-row-meta">
                   <i :class="['trace-status', traceStatusClass(run.final_status)]" />
-                  {{ traceStatusText(run.final_status) }} · {{ traceActorLabel(run) }} · {{ traceProjectLabel(run) }}
+                  {{ traceStatusText(run.final_status, run) }} · {{ traceActorLabel(run) }} · {{ traceProjectLabel(run) }}
                 </span>
                 <span class="trace-row-meta subtle">{{ traceSessionLabel(run) }} · {{ formatDuration(run.elapsed_ms) }} · {{ formatTime(run.started_at) }}</span>
               </button>
@@ -533,7 +533,7 @@
                   <p v-if="selectedTrace.trace_source === 'mcp'">MCP 工具调用记录，不包含外部 Agent 的思考或最终回答。{{ selectedTrace.capture_truncated ? '采集内容已截断，不能视为完整记录。' : '' }}</p>
                   <p v-if="selectedTrace.trace_source === 'mcp' && selectedTrace.trace_upload_status && selectedTrace.trace_upload_status !== 'completed'">审计上传尚未完成，原始取证包可能暂不可读；调用状态不代表上传状态。</p>
                 </div>
-                <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status) }}</span>
+                <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status, selectedTrace) }}</span>
               </div>
 
               <div class="trace-section">
@@ -1405,6 +1405,7 @@ async function loadTraceRuns(reset = false) {
           user_display_name: String(item.user_display_name || ''),
           input_text: String(item.input_text || ''),
           final_status: String(item.runtime_status || 'unknown'),
+          action_label: String(item.action_label || ''),
           summary: item.trace_source === 'mcp' ? 'MCP 工具调用' : '本机任务 Trace',
           started_at: String(item.created_at || ''),
           ended_at: item.completed_at || null,
@@ -1573,6 +1574,7 @@ function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceI
     user_display_name: String(remote?.user_display_name || selected.user_display_name || ''),
     input_text: String(remote?.input_text || metadata.request_text || startPayload.prompt || startPayload.user_text || providerUserContent || ''),
     final_status: String(remote?.runtime_status || manifest.status || selected.final_status || 'unknown'),
+    action_label: String(remote?.action_label || selected.action_label || ''),
     started_at: startedAt,
     ended_at: endedAt,
     elapsed_ms: isMcp ? Number(remote?.elapsed_ms ?? manifest.elapsed_ms ?? 0) : Number.isFinite(startedMs) && Number.isFinite(endedMs) ? Math.max(0, endedMs - startedMs) : null,
@@ -1634,10 +1636,12 @@ async function selectTrace(traceId: string) {
             user_display_name: detail.user_display_name,
             project_id: detail.project_id,
             project_name: detail.project_name,
+            projects: detail.projects,
             turn_id: detail.turn_id,
             session_title: detail.session_title,
             input_text: detail.input_text,
             final_status: detail.final_status,
+            action_label: detail.action_label,
           }
         : item)
     }
@@ -1730,6 +1734,7 @@ function buildTraceAnalysisExport(details: VibeDialogueTraceDetail[]) {
       session: { id: trace.session_id, title: trace.session_title || '' },
       turn_id: trace.turn_id || '',
       status: trace.final_status || '',
+      action_label: trace.action_label || '',
       started_at: trace.started_at || '',
       ended_at: trace.ended_at || '',
       elapsed_ms: trace.elapsed_ms ?? null,
@@ -2247,7 +2252,8 @@ function traceProjectLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
   return id ? `项目 ${id.slice(0, 8)}` : '未知项目'
 }
 
-function traceStatusText(status?: string) {
+function traceStatusText(status?: string, trace?: Partial<VibeDialogueTraceRun>) {
+  if (trace?.trace_source === 'mcp' && trace.action_label) return trace.action_label
   const s = String(status || '')
   if (s === 'completed') return '完成'
   if (s === 'failed') return '失败'

@@ -437,6 +437,7 @@ export interface VibeDialogueTraceRun {
   projects?: Array<{ id: string; name: string }>
   capture_truncated?: boolean
   trace_upload_status?: string
+  action_label?: string
 }
 
 export interface VibeDialogueTraceEvent {
@@ -596,6 +597,7 @@ interface RemoteAgentTraceSummary {
   input_text?: string
   status: string
   runtime_status?: string
+  action_label?: string
   trace_source?: 'electron' | 'mcp'
   elapsed_ms?: number
   projects?: Array<{ id: string; name: string }>
