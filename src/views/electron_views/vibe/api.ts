@@ -434,6 +434,9 @@ export interface VibeDialogueTraceRun {
   elapsed_ms?: number | null
   trace_source?: 'server' | 'electron' | string
   trace_local?: boolean
+  projects?: Array<{ id: string; name: string }>
+  capture_truncated?: boolean
+  trace_upload_status?: string
 }
 
 export interface VibeDialogueTraceEvent {
@@ -592,6 +595,11 @@ interface RemoteAgentTraceSummary {
   project_name?: string
   input_text?: string
   status: string
+  runtime_status?: string
+  trace_source?: 'electron' | 'mcp'
+  elapsed_ms?: number
+  projects?: Array<{ id: string; name: string }>
+  capture_truncated?: boolean
   storage_backend?: string
   total_chunks: number
   total_bytes: number
@@ -601,10 +609,12 @@ interface RemoteAgentTraceSummary {
   completed_at?: string | null
 }
 
-export function listRemoteAgentTraces(params: { limit?: number; cursor?: string } = {}): Promise<{ items: RemoteAgentTraceSummary[]; next_cursor: string }> {
+export function listRemoteAgentTraces(params: { limit?: number; cursor?: string; source?: string; identifier?: string } = {}): Promise<{ items: RemoteAgentTraceSummary[]; next_cursor: string }> {
   const query = new URLSearchParams()
   if (params.limit) query.set('limit', String(params.limit))
   if (params.cursor) query.set('cursor', params.cursor)
+  if (params.source) query.set('source', params.source)
+  if (params.identifier) query.set('identifier', params.identifier)
   const suffix = query.toString() ? `?${query.toString()}` : ''
   return request('GET', `/vibe/foundation/agent-traces${suffix}`)
 }

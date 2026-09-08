@@ -421,12 +421,20 @@
               </div>
             </div>
             <div class="trace-filter-bar">
+              <label class="trace-filter-field trace-source-filter">
+                <span>来源</span>
+                <select v-model="traceSourceFilter" aria-label="Trace 来源" :disabled="traceRunsLoading" @change="loadTraceRuns(true)">
+                  <option value="">全部来源</option>
+                  <option value="electron">桌面对话</option>
+                  <option value="mcp">MCP 工具调用</option>
+                </select>
+              </label>
               <label class="trace-filter-field trace-marker-filter">
                 <span>审计标识</span>
                 <input
                   v-model.trim="traceAuditMarkerFilter"
                   type="text"
-                  placeholder="DTA-XXXXXXXX"
+                  placeholder="DTA-XXXXXXXX / MCP-XXXXXXXX"
                   spellcheck="false"
                   @keydown.enter.prevent="loadTraceRuns(true)"
                 >
@@ -462,7 +470,7 @@
                 >
               </label>
               <button class="trace-filter-apply" type="button" :disabled="traceRunsLoading" @click="loadTraceRuns(true)">过滤</button>
-              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceAuditMarkerFilter && !traceContentFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
+              <button class="trace-filter-clear" type="button" :disabled="traceRunsLoading || (!traceSourceFilter && !traceAuditMarkerFilter && !traceContentFilter && !traceProjectFilter && !traceUserFilter)" @click="clearTraceFilters">清空</button>
               <datalist id="trace-project-options">
                 <option v-for="item in traceFilterOptions.projects" :key="item.project_name" :value="traceProjectOptionValue(item)">{{ traceProjectOptionLabel(item) }}</option>
               </datalist>
@@ -516,18 +524,20 @@
                     <button type="button" @click="copyTraceAuditMarker(selectedTrace)">{{ copiedAuditMarker === traceAuditMarker(selectedTrace) ? '已复制' : '复制' }}</button>
                     <strong>完整取证</strong>
                     <button
-                      v-if="selectedTrace.trace_source === 'electron'"
+                      v-if="['electron', 'mcp'].includes(selectedTrace.trace_source || '')"
                       type="button"
                       :disabled="traceRawDownloading"
                       @click="downloadElectronTraceRaw"
                     >{{ traceRawDownloading ? '下载中' : '下载原始取证包' }}</button>
                   </div>
+                  <p v-if="selectedTrace.trace_source === 'mcp'">MCP 工具调用记录，不包含外部 Agent 的思考或最终回答。{{ selectedTrace.capture_truncated ? '采集内容已截断，不能视为完整记录。' : '' }}</p>
+                  <p v-if="selectedTrace.trace_source === 'mcp' && selectedTrace.trace_upload_status && selectedTrace.trace_upload_status !== 'completed'">审计上传尚未完成，原始取证包可能暂不可读；调用状态不代表上传状态。</p>
                 </div>
                 <span :class="['trace-status-pill', traceStatusClass(selectedTrace.final_status)]">{{ traceStatusText(selectedTrace.final_status) }}</span>
               </div>
 
               <div class="trace-section">
-                <div class="trace-section-title">用户输入</div>
+                <div class="trace-section-title">{{ selectedTrace.trace_source === 'mcp' ? '工具请求' : '用户输入' }}</div>
                 <div class="trace-markdown" v-html="renderMarkdown(selectedTrace.input_text || '')" />
                 <div v-if="traceAttachments(selectedTrace).length" class="trace-attachment-list" aria-label="本轮使用文件">
                   <button
@@ -552,7 +562,7 @@
               </div>
 
               <div v-if="traceFinalAnswer(selectedTrace)" class="trace-section">
-                <div class="trace-section-title">最终结果</div>
+                <div class="trace-section-title">{{ selectedTrace.trace_source === 'mcp' ? '返回摘要（完整返回见时间线）' : '最终结果' }}</div>
                 <div class="trace-markdown" v-html="renderMarkdown(traceFinalAnswer(selectedTrace))" />
               </div>
 
@@ -560,7 +570,7 @@
                 <div class="trace-kv"><span>审计标识</span><code>{{ traceAuditMarker(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>发起用户</span><code>{{ traceActorLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>所属项目</span><code>{{ traceProjectLabel(selectedTrace) }}</code></div>
-                <div class="trace-kv"><span>对话会话</span><code>{{ traceSessionLabel(selectedTrace) }}</code></div>
+                <div class="trace-kv"><span>{{ selectedTrace.trace_source === 'mcp' ? '调用范围' : '对话会话' }}</span><code>{{ traceSessionLabel(selectedTrace) }}</code></div>
                 <div class="trace-kv"><span>Trace ID</span><code>{{ selectedTrace.trace_id }}</code></div>
                 <div class="trace-kv"><span>Turn ID</span><code>{{ selectedTrace.turn_id || '-' }}</code></div>
                 <div class="trace-kv"><span>动作</span><code>{{ routeActionLabel(selectedTrace.route_action || '') }}</code></div>
@@ -643,6 +653,7 @@ const traceRawDownloading = ref(false)
 const copiedAuditMarker = ref('')
 const copiedAuditMarkerBatch = ref(false)
 const traceAuditMarkerFilter = ref('')
+const traceSourceFilter = ref('')
 const traceContentFilter = ref('')
 const traceProjectFilter = ref('')
 const traceUserFilter = ref('')
@@ -1378,9 +1389,9 @@ async function loadTraceRuns(reset = false) {
     }
     // Electron-owned runs use the passive Trace ingest store. Merge them into
     // the existing audit list so the operator does not need a second viewer.
-    if (typeof window !== 'undefined' && window.electronAPI?.vibeAgent) {
+    if (canViewTraceAudit.value || canViewElectronTrace) {
       try {
-        const remote = await listRemoteAgentTraces({ limit: 100 })
+        const remote = await listRemoteAgentTraces({ limit: 100, source: traceSourceFilter.value, identifier: traceAuditMarkerFilter.value })
         electronItems = (remote?.items || []).map((item: any) => ({
           trace_id: String(item.trace_id || ''),
           audit_marker: String(item.audit_marker || ''),
@@ -1393,14 +1404,26 @@ async function loadTraceRuns(reset = false) {
           username: String(item.username || ''),
           user_display_name: String(item.user_display_name || ''),
           input_text: String(item.input_text || ''),
-          final_status: String(item.status || 'running'),
-          summary: '本机任务 Trace',
+          final_status: String(item.runtime_status || 'unknown'),
+          summary: item.trace_source === 'mcp' ? 'MCP 工具调用' : '本机任务 Trace',
           started_at: String(item.created_at || ''),
           ended_at: item.completed_at || null,
-          elapsed_ms: null,
-          trace_source: 'electron',
+          elapsed_ms: item.elapsed_ms ?? null,
+          trace_source: item.trace_source === 'mcp' ? 'mcp' : 'electron',
+          projects: item.projects || [],
+          capture_truncated: !!item.capture_truncated,
+          trace_upload_status: String(item.status || ''),
         }))
-      } catch { /* local Trace remains usable when remote ingest is unavailable */ }
+      } catch (error: any) {
+        const localMatch = localItems.some(item => [item.trace_id, item.audit_marker]
+          .some(value => String(value || '').toLowerCase().includes(traceAuditMarkerFilter.value.toLowerCase())))
+        if (traceSourceFilter.value === 'mcp' || (traceAuditMarkerFilter.value && !localMatch)) {
+          traceRuns.value = []
+          selectedTrace.value = null
+          traceDetailError.value = String(error?.message || '远端 Trace 查询失败，请重试；不能据此判断记录不存在。')
+          return
+        }
+      }
     }
     if (reset) {
       selectedTraceId.value = ''
@@ -1412,11 +1435,12 @@ async function loadTraceRuns(reset = false) {
       .filter((item, index, all) => {
         const key = traceRunReference(item)
         if (!key || all.findIndex(candidate => traceRunReference(candidate) === key) !== index) return false
+        if (traceSourceFilter.value && item.trace_source !== traceSourceFilter.value) return false
         if (traceProjectFilter.value
-          && ![String(item.project_id || ''), String(item.project_name || '')].includes(traceProjectFilter.value)) return false
+          && ![String(item.project_id || ''), String(item.project_name || ''), ...(item.projects || []).flatMap(project => [project.id, project.name])].includes(traceProjectFilter.value)) return false
         if (traceUserFilter.value
           && ![String(item.user_id || ''), traceActorLabel(item)].includes(traceUserFilter.value)) return false
-        if (traceAuditMarkerFilter.value && !String(item.audit_marker || '').includes(traceAuditMarkerFilter.value)) return false
+        if (traceAuditMarkerFilter.value && ![item.audit_marker, item.trace_id].some(value => String(value || '').toLowerCase().includes(traceAuditMarkerFilter.value.toLowerCase()))) return false
         if (traceContentFilter.value && !String(item.input_text || '').includes(traceContentFilter.value)) return false
         return true
       })
@@ -1459,6 +1483,8 @@ function tracePayloadFromFile(file: any): any {
 
 function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceId: string): VibeDialogueTraceDetail {
   const manifest = remote?.manifest || {}
+  const source = remote?.trace_source || selected.trace_source || 'electron'
+  const isMcp = source === 'mcp'
   const metadata = manifest?.metadata && typeof manifest.metadata === 'object' ? manifest.metadata : {}
   const bundle = remote?.bundle || {}
   const sourceEvents = Array.isArray(remote?.events)
@@ -1510,18 +1536,18 @@ function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceI
     trace_id: String(event.trace_id || remote?.trace_id || manifest.trace_id || selected.trace_id || ''),
     seq: index + 1,
     recorded_sequence: Number(event.recorded_sequence ?? event.sequence ?? index + 1),
-    stage: 'electron',
+    stage: String(event.stage || (isMcp ? 'mcp' : 'electron')),
     event_type: String(event.name || 'agent.event'),
-    title: String(event.name || ''),
-    reason: '',
+    title: String(event.title || event.name || ''),
+    reason: String(event.reason || ''),
     severity: String(event.status || 'info'),
-    elapsed_ms: Number.isFinite(startedMs) && event.timestamp
+    elapsed_ms: isMcp && Number.isFinite(event.elapsed_ms) ? event.elapsed_ms : Number.isFinite(startedMs) && event.timestamp
       ? Math.max(0, new Date(event.timestamp).getTime() - startedMs)
       : null,
     created_at: String(event.timestamp || ''),
     payload: event.payload ?? event.attributes ?? {},
   }))
-  if (finalText) {
+  if (finalText && !isMcp) {
     projectedEvents.push({
       seq: projectedEvents.length + 1,
       stage: 'electron',
@@ -1546,15 +1572,18 @@ function electronTraceDetail(remote: any, selected: VibeDialogueTraceRun, traceI
     username: String(remote?.username || selected.username || ''),
     user_display_name: String(remote?.user_display_name || selected.user_display_name || ''),
     input_text: String(remote?.input_text || metadata.request_text || startPayload.prompt || startPayload.user_text || providerUserContent || ''),
-    final_status: String(remote?.status || manifest.status || selected.final_status || ''),
+    final_status: String(remote?.runtime_status || manifest.status || selected.final_status || 'unknown'),
     started_at: startedAt,
     ended_at: endedAt,
-    elapsed_ms: Number.isFinite(startedMs) && Number.isFinite(endedMs) ? Math.max(0, endedMs - startedMs) : null,
+    elapsed_ms: isMcp ? Number(remote?.elapsed_ms ?? manifest.elapsed_ms ?? 0) : Number.isFinite(startedMs) && Number.isFinite(endedMs) ? Math.max(0, endedMs - startedMs) : null,
     summary: finalText || '本机任务 Trace',
     attachment_summary: remote?.attachment_summary || {},
     side_effects: remote?.side_effects || {},
     events: projectedEvents,
-    trace_source: 'electron',
+    trace_source: source,
+    projects: remote?.projects || manifest.projects || [],
+    capture_truncated: !!(remote?.capture_truncated || manifest.capture_truncated),
+    trace_upload_status: selected.trace_local ? 'local' : String(remote?.status || ''),
   }
 }
 
@@ -1592,7 +1621,7 @@ async function selectTrace(traceId: string) {
   traceDetailLoading.value = true
   try {
     const selected = traceRuns.value.find(item => traceRunReference(item) === traceId)
-    if (!selected || selected.trace_source !== 'electron') throw new Error('Trace 不存在')
+    if (!selected || !['electron', 'mcp'].includes(selected.trace_source || '')) throw new Error('Trace 不存在')
     const remote: any = await loadElectronTraceSource(selected, traceId)
     selectedTrace.value = electronTraceDetail(remote, selected, traceId)
     if (selectedTrace.value) {
@@ -1622,6 +1651,7 @@ async function selectTrace(traceId: string) {
 }
 
 function clearTraceFilters() {
+  traceSourceFilter.value = ''
   traceAuditMarkerFilter.value = ''
   traceContentFilter.value = ''
   traceProjectFilter.value = ''
@@ -1795,7 +1825,7 @@ function saveAttachmentBlob(blob: Blob, name: string) {
 
 async function downloadElectronTraceRaw() {
   const traceId = String(selectedTrace?.value?.trace_id || selectedTraceId.value || '').trim()
-  if (!traceId || selectedTrace?.value?.trace_source !== 'electron' || traceRawDownloading.value) return
+  if (!traceId || !['electron', 'mcp'].includes(selectedTrace?.value?.trace_source || '') || traceRawDownloading.value) return
   traceRawDownloading.value = true
   try {
     const selected = traceRuns.value.find(item => traceRunReference(item) === selectedTraceId.value)
@@ -1814,7 +1844,8 @@ async function downloadElectronTraceRaw() {
     }
     const raw = await getRemoteAgentTrace(traceId, 'raw')
     if (!(raw instanceof Blob) || raw.size <= 0) throw new Error('Trace 原始包不可用')
-    saveAttachmentBlob(raw, `electron-trace-${traceAuditMarker(selectedTrace.value)}.framed`)
+    const isMcp = selectedTrace.value?.trace_source === 'mcp'
+    saveAttachmentBlob(raw, `${isMcp ? 'mcp' : 'electron'}-trace-${traceAuditMarker(selectedTrace.value)}.${isMcp ? 'json' : 'framed'}`)
   } catch {
     window.$toast?.({ title: '原始 Trace 下载失败', type: 'error', position: 'bottom-right', duration: 4000, actionText: '关闭' })
   } finally {
@@ -2151,12 +2182,13 @@ function formatTime(value?: string | null) {
 function traceAuditMarker(trace?: Partial<VibeDialogueTraceRun> | null) {
   const explicit = String(trace?.audit_marker || '').trim()
   if (explicit) return explicit
+  if (/^mcp_[0-9a-f]{32}$/i.test(String(trace?.trace_id || ''))) return `MCP-${String(trace?.trace_id).slice(4, 12).toUpperCase()}`
   const raw = String(trace?.trace_id || '').replace(/[^a-z0-9]/gi, '')
   return raw ? `DTA-${raw.slice(0, 8).toUpperCase()}` : 'DTA-UNKNOWN'
 }
 
 function traceRunReference(trace?: Partial<VibeDialogueTraceRun> | null) {
-  return String(trace?.audit_marker || trace?.trace_id || '').trim()
+  return String(trace?.trace_id || trace?.audit_marker || '').trim()
 }
 
 async function copyText(value: string) {
@@ -2199,6 +2231,7 @@ function traceActorLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
 
 function traceSessionLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
   if (!trace) return '未知会话'
+  if (trace.trace_source === 'mcp') return 'MCP 单次工具请求'
   const title = String(trace.session_title || '').trim()
   if (title) return title
   const sid = String(trace.session_id || '').trim()
@@ -2207,6 +2240,7 @@ function traceSessionLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
 
 function traceProjectLabel(trace?: Partial<VibeDialogueTraceRun> | null) {
   if (!trace) return '未知项目'
+  if (trace.projects?.length) return trace.projects.map(project => project.name || project.id).join('、')
   const name = String(trace.project_name || '').trim()
   if (name) return name
   const id = String(trace.project_id || '').trim()
@@ -2217,6 +2251,11 @@ function traceStatusText(status?: string) {
   const s = String(status || '')
   if (s === 'completed') return '完成'
   if (s === 'failed') return '失败'
+  if (s === 'retryable_failure') return '失败（可重试）'
+  if (s === 'non_retryable_failure') return '失败（需处理）'
+  if (s === 'input_required' || s === 'waiting_user') return '等待输入'
+  if (s === 'needs_follow_up') return '未完成'
+  if (s === 'unknown') return '状态未知'
   if (s === 'cancelled') return '已停止'
   if (s === 'running') return '处理中'
   return s || '未知'
@@ -2225,8 +2264,8 @@ function traceStatusText(status?: string) {
 function traceStatusClass(status?: string) {
   const s = String(status || '')
   if (s === 'completed') return 'ok'
-  if (s === 'failed') return 'bad'
-  if (s === 'cancelled') return 'warn'
+  if (['failed', 'retryable_failure', 'non_retryable_failure'].includes(s)) return 'bad'
+  if (['cancelled', 'input_required', 'waiting_user', 'needs_follow_up'].includes(s)) return 'warn'
   return 'neutral'
 }
 
@@ -2962,6 +3001,7 @@ onBeforeUnmount(() => {
   align-items: end;
 }
 
+.trace-source-filter,
 .trace-marker-filter,
 .trace-content-filter {
   grid-column: 1 / -1;
@@ -2980,7 +3020,8 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
-.trace-filter-field input {
+.trace-filter-field input,
+.trace-filter-field select {
   width: 100%;
   height: 27px;
   border: 1px solid rgba(18, 18, 18, 0.1);
@@ -2993,7 +3034,8 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.trace-filter-field input:focus {
+.trace-filter-field input:focus,
+.trace-filter-field select:focus {
   border-color: rgba(18, 18, 18, 0.34);
   box-shadow: 0 0 0 2px rgba(18, 18, 18, 0.055);
 }
