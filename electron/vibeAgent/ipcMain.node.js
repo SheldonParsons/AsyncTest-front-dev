@@ -494,7 +494,6 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (!traceId) return;
     const resolvedStatus = String(status || "ok");
     const runAccountId = run.account_id ?? run.accountId;
-    const runSessionId = String(run.session_id ?? run.sessionId ?? "").trim();
     if (resolvedStatus !== "waiting_user") {
       const current = await traceStore.ensure(traceId, {
         accountId: run.account_id ?? run.accountId,
@@ -537,10 +536,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       ...(payload === undefined ? {} : { payload }),
     }).catch(() => undefined);
     const normalized = validContext(context);
+    // 删除会话同样需要上传终止审计；退出账号的凭据隔离仍然保留。
+    // 等待入队完成（不是等待网络完成），使删除流程的 wait 能观察到上传任务。
     if (normalized.authToken && normalized.traceUploadBaseUrl
-      && !accountBinding.isReleasing(runAccountId)
-      && (!runSessionId || !host?.isSessionTerminating(runAccountId, runSessionId))) {
-      void traceUploadQueue.enqueue(traceId, {
+      && !accountBinding.isReleasing(runAccountId)) {
+      await traceUploadQueue.enqueue(traceId, {
         accountId: run.account_id ?? run.accountId,
         baseUrl: normalized.traceUploadBaseUrl,
         headers: { ...normalized.traceHeaders, Authorization: `token=${normalized.authToken}` },
