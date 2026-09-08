@@ -62,7 +62,7 @@ class Http {
           );
           // 如果获取不到token，直接跳转至login页面
           if (currentCookie === false) {
-            void navigateToUnauthenticated();
+            if (config.astAuthNavigation !== false) void navigateToUnauthenticated();
           } else {
             const headers: any = config.headers;
             headers.Authorization = `token=${currentCookie}`;
@@ -83,15 +83,24 @@ class Http {
         return response;
       },
       async (err: any) => {
-        console.log(err);
+
         if (axios.isCancel(err)) {
           return Promise.reject({ isCanceled: true });
         }
         // 如果需要身份验证，且后端返回无身份验证的响应，直接跳转至login页面
         const responseStatus = err.response?.status;
         const responseData = err.response?.data;
-        if (await handleAuthenticationFailure(responseStatus, responseData)) {
+        if (await handleAuthenticationFailure(responseStatus, responseData, {
+          navigate: err.config?.astAuthNavigation !== false,
+          requestToken: String(err.config?.headers?.Authorization || '').replace(/^token=/, '') || null,
+        })) {
           return Promise.reject(err);
+        }
+        if (responseStatus === 403 && responseData?.code === 'project_access_denied') {
+          const route = asyncTest.router.router.currentRoute.value
+          if (route.params.project) {
+            await asyncTest.router.router.replace({ name: 'teamManagement', query: { tab: 'unjoined' } })
+          }
         }
         // 非项目成员鉴权保持原有项目页语义，不作为登录失效处理。
         if (responseStatus === 403 && Number(responseData?.code) === 302) {
@@ -196,6 +205,10 @@ class Http {
           };
         }
       });
+  }
+
+  public request<T>(config: AxiosRequestConfig): Promise<T> {
+    return Http.axiosInstance.request<T>(config).then(response => response.data)
   }
 
   public httpGetResponse(url: string, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {

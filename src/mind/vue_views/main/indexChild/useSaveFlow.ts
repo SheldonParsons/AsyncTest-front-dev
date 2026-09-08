@@ -290,7 +290,8 @@ export function useSaveFlow(options: UseSaveFlowOptions) {
     const docId = options.getDocId();
     if (!docId) return false;
     const remoteBinding = options.getRemoteBinding?.() ?? null;
-    const hasRemoteTarget = !!(remoteBinding && options.saveRemoteDocument);
+    // 本地保存/关闭不隐式联网；仅用户明确触发上传时使用远程绑定。
+    const hasRemoteTarget = !!(saveOptions?.forceRemoteSave && remoteBinding && options.saveRemoteDocument);
     const hasLocalTarget = !!options.getFilePath();
     let nextFilePath = options.getFilePath() ?? null;
     const startedAt = Date.now();

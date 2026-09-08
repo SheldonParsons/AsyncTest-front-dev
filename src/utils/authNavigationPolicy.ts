@@ -39,6 +39,11 @@ export function isVibeContext(path: string, query: RouteQueryLike = {}): boolean
   return isVibePath(path) || isVibeWindowKey(query.windowKey)
 }
 
+export function isLocalMindContext(path: string, query: RouteQueryLike = {}): boolean {
+  const key = firstQueryValue(query.windowKey)
+  return path === '/mind' || path === '/mindDashboard' || key === 'mind-workspace' || key === 'mind' || key.startsWith('mind-') || key.startsWith('mind:')
+}
+
 export function isProtectedVibePath(path: string): boolean {
   return VIBE_PROTECTED_PATHS.has(path)
 }
@@ -48,7 +53,9 @@ export function isAuthenticationFailure(status: unknown, payload: any): boolean 
   if (responseStatus === 401) return true
   if (responseStatus !== 403) return false
   if (Number(payload?.code) === 302) return false
-  return Boolean(payload?.detail)
+  const code = String(payload?.code ?? payload?.detail?.code ?? '')
+  if (code) return code === '1001'
+  return ['Authentication credentials were not provided.', 'Invalid token.', 'Token has expired.', 'token expired'].includes(payload?.detail)
 }
 
 export function vibeWelcomeQuery(query: RouteQueryLike = {}): Record<string, string> {

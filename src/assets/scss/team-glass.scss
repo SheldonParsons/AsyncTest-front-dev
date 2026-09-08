@@ -1,0 +1,148 @@
+/* Team/account surfaces are intentionally isolated from legacy Element overrides. */
+.ast-glass-dialog,
+.ast-glass-drawer,
+.ast-glass-message,
+.team-page,
+.ast-account-menu,
+.backup-form {
+  --el-color-primary: #252525;
+  --el-color-primary-light-3: #606060;
+  --el-color-primary-light-5: #939393;
+  --el-color-primary-light-7: #bdbdbd;
+  --el-color-primary-light-8: #d7d7d7;
+  --el-color-primary-light-9: #f0f0f0;
+  --el-color-primary-dark-2: #111111;
+  --el-color-success: #555555;
+  --el-color-success-light-9: #eeeeee;
+  --el-color-warning: #666666;
+  --el-color-warning-light-9: #f3f3f3;
+  --el-color-danger: #444444;
+  --el-color-danger-light-9: #eeeeee;
+  --el-color-error: #444444;
+  --el-color-error-light-9: #eeeeee;
+  --el-text-color-primary: #252525;
+  --el-text-color-regular: #555555;
+  --el-text-color-secondary: #6a6a6a;
+  --el-border-color: rgba(95,95,95,.19);
+  --el-border-color-light: rgba(95,95,95,.13);
+  --el-fill-color-blank: rgba(255,255,255,.68);
+  --el-mask-color: rgba(245,245,245,.7);
+  color: #252525;
+}
+
+.ast-glass-mask.el-overlay {
+  background: radial-gradient(ellipse at 28% 25%, rgba(204,204,204, .15), transparent 65%), rgba(41,41,41, .24);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.ast-glass-mask .el-overlay-dialog { min-width: 0; padding: 20px; }
+.el-dialog.ast-glass-dialog {
+  width: min(var(--el-dialog-width, 480px), calc(100vw - 40px));
+  margin: auto;
+  padding: 0;
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  border: 1px solid rgba(255,255,255, .86);
+  border-radius: 26px;
+  background: linear-gradient(145deg, rgba(255,255,255,.85), rgba(249,249,249,.72));
+  backdrop-filter: blur(32px) saturate(0);
+  -webkit-backdrop-filter: blur(32px) saturate(0);
+  box-shadow: 0 32px 90px rgba(36,36,36,.22), 0 6px 20px rgba(36,36,36,.06), inset 0 1px 0 #ffffff;
+}
+.ast-glass-dialog .el-dialog__header { margin: 0; padding: 28px 60px 20px 30px; }
+.ast-glass-dialog .el-dialog__title { font-size: 21px; line-height: 1.4; font-weight: 650; color: #353535; }
+.ast-glass-dialog .el-dialog__body { padding: 0 30px 26px; color: #525252; }
+.ast-glass-dialog .el-dialog__footer { padding: 18px 30px 24px; border-top: 1px solid rgba(134,134,134,.13); background: rgba(255,255,255,.24); }
+.ast-glass-dialog .el-dialog__headerbtn { top: 17px; right: 17px; width: 38px; height: 38px; border-radius: 12px; }
+.ast-glass-dialog .el-dialog__headerbtn,
+.ast-glass-drawer .el-drawer__close-btn { display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; flex-shrink: 0; }
+.ast-glass-dialog .el-dialog__headerbtn .el-icon,
+.ast-glass-drawer .el-drawer__close-btn .el-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0; line-height: 1; vertical-align: middle; }
+.ast-glass-dialog .el-dialog__headerbtn svg,
+.ast-glass-drawer .el-drawer__close-btn svg { display: block; width: 18px; height: 18px; }
+.ast-glass-dialog .el-dialog__headerbtn:hover { background: rgba(255,255,255,.72); }
+.ast-glass-dialog .el-dialog__headerbtn .el-dialog__close { color: #7c7c7c; font-size: 18px; }
+.ast-glass-dialog .el-dialog__headerbtn:focus-visible { outline: 2px solid #696969; outline-offset: 2px; }
+
+.ast-glass-drawer.el-drawer {
+  border: 1px solid rgba(255,255,255,.86);
+  border-radius: 24px 0 0 24px;
+  background: rgba(250,250,250,.88);
+  backdrop-filter: blur(28px) saturate(0);
+  -webkit-backdrop-filter: blur(28px) saturate(0);
+  box-shadow: -18px 0 70px rgba(44,44,44,.12);
+}
+.ast-glass-drawer .el-drawer__header { padding: 28px 28px 22px !important; margin: 0 !important; color: #353535; border-bottom: 1px solid rgba(124,124,124,.12); }
+.ast-glass-drawer .el-drawer__title { font-size: 20px; font-weight: 650; line-height: 1.45; }
+.ast-glass-drawer .el-drawer__body { padding: 24px 28px; }
+.ast-glass-drawer .el-drawer__close-btn { width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.6); }
+.el-message-box.ast-glass-message {
+  padding: 26px;
+  border: 1px solid rgba(255,255,255,.88);
+  border-radius: 22px;
+  background: rgba(252,252,252,.91);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 24px 70px rgba(45,45,45,.18);
+}
+.ast-glass-message .el-message-box__header { padding-bottom: 14px; }
+.ast-glass-message .el-message-box__title { font-weight: 650; color: #353535; }
+.ast-glass-message .el-message-box__btns { padding-top: 22px; }
+
+:is(.ast-glass-dialog, .ast-glass-drawer, .ast-glass-message, .team-page, .backup-form) {
+  .el-button { min-height: 36px; border-radius: 10px; font-weight: 500; transition: background .16s, box-shadow .16s, border-color .16s; }
+  .el-button:not(.is-link):not(.el-button--primary):not(.el-button--danger) { color: #575757; background: rgba(255,255,255,.64); border-color: rgba(136,136,136,.2); }
+  .el-button:not(.is-link):not(.el-button--primary):not(.el-button--danger):hover { background: rgba(255,255,255,.94); border-color: rgba(115,115,115,.35); }
+  .el-button--primary:not(.is-link):not(.is-plain) { background: linear-gradient(135deg,#383838,#181818); border-color: transparent; color: white; box-shadow: 0 4px 12px rgba(95,95,95,.13), inset 0 1px 0 rgba(255,255,255,.16); }
+  .el-button--primary:not(.is-link):not(.is-plain):hover { background: linear-gradient(135deg,#272727,#080808); box-shadow: 0 5px 16px rgba(95,95,95,.2); }
+  .el-button--primary.is-plain { color: #626262; background: rgba(241,241,241,.75); border-color: rgba(124,124,124,.25); }
+  .el-button--primary.is-plain:hover { background: #eeeeee; color: #4f4f4f; }
+  .el-button.is-link { padding: 3px 5px; min-height: 30px; background: transparent; }
+  .el-button--primary.is-link { color: #696969; }
+  .el-button--danger.is-link { color: #616161; }
+  .el-button.is-disabled { opacity: .45; }
+  .el-button:focus-visible { outline: 2px solid #696969; outline-offset: 3px; }
+  .el-input__wrapper, .el-select__wrapper, .el-textarea__inner { border-radius: 11px; background: rgba(255,255,255,.62); box-shadow: 0 0 0 1px rgba(107,107,107,.17) inset; }
+  .el-input__wrapper.is-focus, .el-select__wrapper.is-focused, .el-textarea__inner:focus { box-shadow: 0 0 0 1px #787878 inset, 0 0 0 3px rgba(122,122,122,.09) !important; }
+  .el-input__inner, .el-textarea__inner { color: #393939; }
+  .el-form-item__label { font-weight: 550; color: #545454; }
+  .el-table { --el-table-border-color: rgba(119,119,119,.12); --el-table-header-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-bg-color: transparent; --el-table-row-hover-bg-color: rgba(255,255,255,.58); background: transparent; }
+  .el-table tr, .el-table th.el-table__cell { background: transparent; }
+  .el-table td.el-table__cell { padding: 14px 0 !important; background: transparent; }
+  .el-table th.el-table__cell { color: #767676; font-size: 12px; font-weight: 550; padding: 12px 0 !important; }
+  .el-table__empty-text { line-height: 1.6; color: #8b8b8b; }
+  .el-table__empty-block { min-height: 180px; }
+  .el-avatar { background: linear-gradient(145deg,#e1e1e1,#ebebeb); border: 1px solid rgba(255,255,255,.8); color: #5d5d5d; font-size: 13px; font-weight: 600; }
+  .el-tag { height: 26px; line-height: 24px; border-radius: 8px; font-weight: 500; padding: 0 9px; }
+  .el-tag--success { color: #5c5c5c; background: rgba(240,240,240,.8); border-color: rgba(163,163,163,.25); }
+  .el-tag--warning { color: #686868; background: rgba(243,243,243,.8); border-color: rgba(164,164,164,.2); }
+  .el-tag--info { color: #6e6e6e; background: rgba(237,237,237,.7); border-color: rgba(149,149,149,.18); }
+  .el-tag--primary { color: #5d5d5d; background: rgba(239,239,239,.8); border-color: rgba(135,135,135,.2); }
+  .el-tag--danger { color: #595959; background: rgba(240,240,240,.8); border-color: rgba(136,136,136,.2); }
+  .el-radio-button { --el-radio-button-checked-bg-color: #333333 !important; --el-radio-button-checked-border-color: #333333 !important; }
+  .el-radio-button__inner { padding: 10px 18px; background: rgba(255,255,255,.55); }
+  .el-pagination { --el-pagination-bg-color: transparent; --el-pagination-button-disabled-bg-color: transparent; }
+}
+.el-popper.ast-account-menu { padding: 0; border: 1px solid rgba(255,255,255,.9); border-radius: 14px; background: rgba(252,252,252,.9); backdrop-filter: blur(24px) saturate(0); box-shadow: 0 10px 34px rgba(0,0,0,.13); overflow: hidden; }
+.ast-account-menu .el-dropdown-menu { background: transparent; padding: 6px; min-width: 150px; }
+.ast-account-menu .el-dropdown-menu__item { box-sizing: border-box; gap: 9px; min-height: 32px; height: 32px; line-height: 20px; padding: 6px 10px; border-radius: 8px; font-size: 12px; color: #444; margin: 1px 0; }
+.ast-account-menu .el-dropdown-menu__item .el-icon { margin: 0; font-size: 13px; }
+.ast-account-menu .el-dropdown-menu__item:not(.is-disabled):is(:hover,:focus) { color: #fff; background: #202020; }
+.ast-account-menu .el-dropdown-menu__item--divided { margin-top: 8px; border-top: 0; position: relative; }
+.ast-account-menu .el-dropdown-menu__item--divided::before { content: ''; position: absolute; top: -5px; left: 4px; right: 4px; height: 1px; background: rgba(0,0,0,.065); }
+.ast-account-menu .el-popper__arrow { display: none; }
+@supports not (backdrop-filter: blur(1px)) {
+  .el-dialog.ast-glass-dialog, .ast-glass-drawer.el-drawer, .el-message-box.ast-glass-message { background: #f9f9f9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.ast-glass-dialog,.ast-glass-drawer,.team-page,.backup-form) * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+
+.el-dialog.ast-profile-dialog { overflow: hidden; }
+.ast-profile-dialog .el-dialog__header { height: 0; padding: 0; margin: 0; }
+.ast-profile-dialog .el-dialog__body { padding: 0; }
+
+/* Lucide uses outline strokes and inherits the surrounding control color. */
+:is(.team-page,.ast-glass-dialog,.ast-glass-drawer,.ast-glass-message,.ast-account-menu) svg.lucide { flex-shrink: 0; vertical-align: middle; }
+.ast-account-menu svg.lucide { width: 15px; height: 15px; }
+:is(.team-page,.ast-glass-dialog,.ast-glass-drawer) .el-icon > svg.lucide { width: 1em; height: 1em; }

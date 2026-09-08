@@ -27,7 +27,7 @@ export function ApiCheckPermission(params: any): Promise<String> {
 
 export async function ApiCheckPermissionStatus(params: any): Promise<PermissionCheckStatus> {
   try {
-    const response = await http.httpGetResponse('/token/check', { params })
+    const response = await http.httpGetResponse('/token/check', { params, timeout: 5000, astAuthNavigation: false } as any)
     return Number(response.data?.result) === 1
       ? { status: 'authorized' }
       : { status: 'unauthorized' }

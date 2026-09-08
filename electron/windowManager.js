@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, dialog } from 'electron';
 
 /**
  * WindowManager:
@@ -63,13 +63,28 @@ export class WindowManager {
       });
     }
 
-    const TIMEOUT_MS = 60000;
+    const TIMEOUT_MS = this.options.closeResponseTimeoutMs ?? 10000;
 
     const p = new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this._closeRequests.delete(key);
-        // 超时策略：默认取消关闭，避免未保存确认在无明确响应时被强制放行。
-        resolve(false);
+      const timer = setTimeout(async () => {
+        const timedOutRequest = this._closeRequests.get(key);
+        if (!timedOutRequest) return;
+        // 渲染器未响应时给出原生退出通道，不静默丢弃未保存内容。
+        let allow = false;
+        try {
+          const response = await dialog.showMessageBox(win, {
+            type: 'warning', title: '窗口未响应',
+            message: '此窗口未能响应关闭请求。',
+            detail: '可以继续等待，或关闭此窗口。强制关闭可能丢失尚未保存的内容，磁盘上的文件不会被删除。',
+            buttons: ['继续等待', '关闭此窗口'], defaultId: 0, cancelId: 0, noLink: true,
+          });
+          allow = response.response === 1;
+        } catch { allow = false; }
+        const request = this._closeRequests.get(key);
+        if (request === timedOutRequest) {
+          this._closeRequests.delete(key);
+          request.resolve(allow);
+        }
       }, TIMEOUT_MS);
 
     this._closeRequests.set(key, { resolve, timer });

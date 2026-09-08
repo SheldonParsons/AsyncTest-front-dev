@@ -1,16 +1,19 @@
 <template>
   <div style="height: 100%;display: flex;flex-direction: column;">
-    <div class="header-affix" v-if="route.path !== '/login' && isMainWindow" @mouseenter="switchWindowBtn(true)"
+    <div class="header-affix" v-if="flag && route.path !== '/login' && isMainWindow" @mouseenter="switchWindowBtn(true)"
       @mouseleave="switchWindowBtn(false)">
       <div class="drag-layer"></div>
-      <commonHeader ref="commonHeaderRef" style="height: inherit;" @up="upZIndex" class="ui-layer" />
+      <commonHeader ref="commonHeaderRef" @up="upZIndex" class="ui-layer" />
     </div>
     <router-view v-if="flag" class="main-router" @doubleCheckLoginStatus="check_login_status" />
     <ToastView ref="toastRef" />
+    <BackupPasswordPrompt />
     <UpdateDialog v-if="isMainWindow"></UpdateDialog>
   </div>
 </template>
 <script setup lang="ts">
+import "@/assets/scss/team-glass.scss";
+import BackupPasswordPrompt from "@/components/layout/dialogs/BackupPasswordPrompt.vue";
 import commonHeader from "./components/layout/headers/commonHeader.vue";
 import { useRoute, useRouter } from 'vue-router'
 import { onBeforeUnmount, onMounted, ref, computed } from "vue";
@@ -34,8 +37,9 @@ const flag = ref(false);
 let removeVibeAuthLogoutListener: (() => void) | null = null
 let removeVibeAuthLoginListener: (() => void) | null = null
 
-onMounted(() => {
-  // 异步延缓main-router加载时机
+onMounted(async () => {
+  // 等首个真实路由解析完成，避免子窗口短暂挂载主窗口 header 并触发认证请求。
+  await router.isReady()
   flag.value = true;
   // 全局挂载方法，供全项目调用
   if (toastRef.value?.showToast) {
@@ -51,8 +55,8 @@ onMounted(() => {
   refreshLocalAuthState()
   if (isElectron && window.electronAPI?.on) {
     removeVibeAuthLogoutListener = window.electronAPI.on('auth:logout', () => {
-      if (!isVibeWorkbench.value) return
       clearLocalAuthState()
+      if (!isVibeWorkbench.value) return
       void navigateToUnauthenticated({ forceVibe: true })
     })
     removeVibeAuthLoginListener = window.electronAPI.on('auth:login', () => {
@@ -93,20 +97,29 @@ function upZIndex(flag: boolean) {
 
 // .header-affix {
 //   width: 100%;
-//   border-bottom: 1px solid #dcdfe6;
+//   border-bottom: 1px solid rgba(0, 0, 0, 0.07);
 //   -webkit-app-region: no-drag;
 // }
 
 .header-affix {
   width: 100%;
   height: 55px;
-  /* 【必须】：显式给一个高度，否则内部 inherit 会失效 */
+  flex: 0 0 55px;
+  box-sizing: border-box;
+  /* 固定外框高度，避免路由内容的 100vh 或最小高度挤压公共顶栏。 */
   position: relative;
   background-color: transparent;
   /* 这一层必须是 no-drag，否则 mouseenter 会被拦截 */
   -webkit-app-region: no-drag;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
   z-index: 100;
+}
+
+/* 仅约束带公共顶栏的页面；登录页和独立 Vibe 窗口保留原布局。 */
+.header-affix + .main-router {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
 }
 
 </style>

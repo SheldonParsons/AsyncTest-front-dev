@@ -568,10 +568,10 @@ function validateUser() {
         remember: loginForm.value.checked,
         privateKey: res.data.private_key,
       };
-      console.log(userStatus);
+
 
       store.dispatch("saveUser", userStatus).then((userRes:any) => {
-        console.log(res.data.default_project_id);
+
         const projectId = res.data.default_project_id;
         if (projectId === null) {
           router.push({ name: "project" });

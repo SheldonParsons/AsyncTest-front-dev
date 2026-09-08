@@ -3,10 +3,12 @@
         <MindHeader>
             <div class="mind-header-user-section">
                 <div class="mind-header-action-item">
-                    <button class="mind-header-avatar-container" type="button" aria-label="打开个人设置"
-                        title="打开个人设置" @click="handleAvatarClick">
+                    <AccountMenu :logged-in="isLoggedIn" @profile="handleAvatarClick" @login="handleAvatarClick">
+                    <button class="mind-header-avatar-container" type="button" aria-label="账户菜单"
+                        title="账户菜单" >
                         <el-avatar :key="userAvatarRenderKey" :size="36" :src="userImage" class="mind-header-user-avatar" />
                     </button>
+                    </AccountMenu>
                 </div>
                 <div v-if="isLoggedIn" class="mind-header-action-item">
                     <button class="mind-header-user-action-btn mind-header-logout-btn" type="button"
@@ -130,6 +132,8 @@ import MindFooter from '@/mind/vue_views/footer.vue/index.vue'
 import MindDocumentTabs from '@/mind/vue_views/components/MindDocumentTabs.vue'
 import SaveActionsMenu from '@/mind/vue_views/components/SaveActionsMenu.vue'
 import RemoteBindingDialog from '@/mind/vue_views/components/RemoteBindingDialog.vue'
+import { isSessionAuthorized, setAuthStatus, readLocalAuthToken, clearLocalAuthState, vibeAuthState } from '@/utils/authNavigation'
+import AccountMenu from '@/components/layout/AccountMenu.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
 import AnimatedLogoutIcon from "@/assets/svg/header/AnimatedLogoutIcon.vue"
 import DialogAnimation from '@/components/common/general/dialog.vue'
@@ -149,7 +153,7 @@ import { ensureAmindFileName, getRemoteBinding, type MindRemoteBinding } from '@
 import { onMounted, onBeforeUnmount, ref, computed, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from '@/store'
-import { ApiCheckPermission, ClearServerCookie } from '@/api/layout/cookies'
+import { ApiCheckPermissionStatus, ClearServerCookie } from '@/api/layout/cookies'
 import asyncTest from '@/db'
 import GlobalStatus from '@/global'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
@@ -239,7 +243,7 @@ const saveState = computed(() => activeSession.value?.saveState ?? {
 const mindMainRef = computed(() => {
     return activeDocumentId.value ? mindMainRefs.get(activeDocumentId.value) ?? null : null;
 });
-const isLoggedIn = ref(checkLoginStatus());
+const isLoggedIn = computed(() => { void vibeAuthState.status; return isSessionAuthorized(); });
 const {
     avatarUrl: userImage,
     avatarRenderKey: userAvatarRenderKey,
@@ -437,6 +441,8 @@ async function handleWorkspaceBeforeClose(key: string) {
             }
         }
         await window.electronAPI.wm.closeResponse({ key, allow: true });
+    } catch {
+        await window.electronAPI.wm.closeResponse({ key, allow: false });
     } finally {
         handlingWorkspaceClose = false;
     }
@@ -514,7 +520,6 @@ onMounted(async () => {
     const workspace = await window.electronAPI.amind.workspaceGet();
     applyWorkspaceSnapshot(workspace);
     await reportMindMcpRendererReady();
-    if (isLoggedIn.value) await getUserImage();
     await loadRecentPaths();
 });
 
@@ -646,49 +651,37 @@ async function ensureShareLoginReady() {
         return false;
     }
 
-    const response: any = await ApiCheckPermission({});
-    if (response?.result === 0) {
+    const response = await ApiCheckPermissionStatus({});
+    if (response.status === 'unavailable') {
+        window.$toast({ title: '当前无法连接服务器，请联网后上传；本地编辑和保存不受影响', type: 'warning' });
+        return false;
+    }
+    if (response.status === 'unauthorized') {
         await applyLoggedOutStateAndBroadcast();
         loginDialogRef.value?.open();
         return false;
     }
 
+    setAuthStatus('authorized');
     return true;
 }
 
-async function getUserImage(force = false) {
-    const loaded = await fetchProfile(force);
-    if (loaded) return;
-    const cachedUser = await store.dispatch("getUser");
-    if (cachedUser?.userId) {
-        applyProfile({
-            id: cachedUser.userId,
-            username: cachedUser.username,
-            nick_name: cachedUser.nickName,
-        });
-    }
-}
-
-function handleAvatarClick() {
-    if (checkLoginStatus()) {
-        userProfileDialogRef.value?.open();
-    } else {
-        loginDialogRef.value?.open();
-    }
+async function handleAvatarClick() {
+    if (!readLocalAuthToken()) { loginDialogRef.value?.open(); return; }
+    const loaded = await fetchProfile(true);
+    if (loaded) { await userProfileDialogRef.value?.open(false); return; }
+    if (!readLocalAuthToken()) loginDialogRef.value?.open();
+    else window.$toast({ title: '离线状态下无法获取个人信息，本地思维导图可正常使用', type: 'warning' });
 }
 
 function applyLoggedOutState() {
-    isLoggedIn.value = false;
+    clearLocalAuthState();
     clearProfile();
 }
 
 function updateLoginStatus() {
-    isLoggedIn.value = checkLoginStatus();
-    if (isLoggedIn.value) {
-        void getUserImage(true);
-    } else {
-        clearProfile();
-    }
+    setAuthStatus(readLocalAuthToken() ? 'unknown' : 'unauthorized');
+    if (!readLocalAuthToken()) clearProfile();
 }
 
 async function logout() {
@@ -741,8 +734,8 @@ async function onShareClick() {
 
 function handleLoginSuccess() {
     loginDialogRef.value?.close();
-    isLoggedIn.value = true;
-    void getUserImage(true);
+    setAuthStatus('authorized');
+
     if (window.electronAPI?.wm?.broadcast) {
         void window.electronAPI.wm.broadcast('auth:login', { sourceWindow: windowKey.value || 'mind' });
     }

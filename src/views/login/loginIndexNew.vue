@@ -235,7 +235,7 @@ function validateUser() {
     password: password.value,
   };
   ApiLogin(data).then((res: any) => {
-    console.log(res);
+
     if (res.result === 1) {
       window.$toast({ title: t("notice.successLogin"), type: "success" });
       const userStatus = {

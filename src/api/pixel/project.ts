@@ -1,10 +1,7 @@
-import { http } from '@/utils/http'
+import { teamRequest } from '@/api/team'
 
-// 创建触发帧，创建审批事件
-export function ApiCreateTouchPixel(data:any):Promise<String> {
-  return new Promise(resolve => {
-    http.httpPost('/event/touchpixel/', data).then((res:any) => {
-      resolve(res)
-    })
-  })
+export async function ApiCreateTouchPixel(data: { project: number | string; desc?: string; type?: number }) {
+  const result = await teamRequest('/team/join-requests/', 'POST', { project: Number(data.project), reason: data.desc || '' })
+  window.dispatchEvent(new CustomEvent('ast:team-changed'))
+  return { result: 1, data: result }
 }

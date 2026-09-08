@@ -4,6 +4,7 @@ import asyncTest from '@/db'
 import {
   isAuthenticationFailure,
   isVibeContext,
+  isLocalMindContext,
   type RouteQueryLike,
   unauthenticatedLocation,
 } from '@/utils/authNavigationPolicy'
@@ -12,7 +13,25 @@ const isElectron = import.meta.env.VITE_IS_ELECTRON === 'true'
 
 const authState = reactive({
   hasLocalToken: false,
+  status: 'unknown' as 'unknown' | 'checking' | 'authorized' | 'unauthorized' | 'unavailable',
 })
+
+let verifiedToken: string | null = null
+export const AUTH_STATE_EVENT = 'ast:auth-state-changed'
+
+export function setAuthStatus(status: typeof authState.status, token = readLocalAuthToken()): void {
+  if (token !== readLocalAuthToken()) return
+  if (status === 'authorized') verifiedToken = token
+  else if (status !== 'checking' || verifiedToken !== token) verifiedToken = null
+  authState.hasLocalToken = Boolean(token)
+  authState.status = status
+  window.dispatchEvent(new CustomEvent(AUTH_STATE_EVENT))
+}
+
+export function isSessionAuthorized(): boolean {
+  return (authState.status === 'authorized' || authState.status === 'checking')
+    && Boolean(verifiedToken) && verifiedToken === readLocalAuthToken()
+}
 
 let navigationInFlight: Promise<void> | null = null
 
@@ -33,12 +52,17 @@ export function readLocalAuthToken(): string | null {
 
 export function refreshLocalAuthState(): boolean {
   authState.hasLocalToken = Boolean(readLocalAuthToken())
+  if (!authState.hasLocalToken) { authState.status = 'unauthorized'; verifiedToken = null }
+  else if (verifiedToken !== readLocalAuthToken() && authState.status === 'authorized') authState.status = 'unknown'
   return authState.hasLocalToken
 }
 
 export function clearLocalAuthState(): void {
   asyncTest.cookies.clearCookie(GlobalStatus.cookieTag)
   authState.hasLocalToken = false
+  authState.status = 'unauthorized'
+  verifiedToken = null
+  window.dispatchEvent(new CustomEvent(AUTH_STATE_EVENT))
 }
 
 export function isCurrentVibeContext(): boolean {
@@ -60,6 +84,9 @@ export async function navigateToUnauthenticated(options: {
   } else {
     refreshLocalAuthState()
   }
+
+  // 本地编辑器及其新窗口不能被认证请求改成 dashboard。
+  if (isLocalMindContext(context.path, context.query)) return
 
   const target = unauthenticatedLocation({
     ...context,
@@ -84,12 +111,14 @@ export async function navigateToUnauthenticated(options: {
 export async function handleAuthenticationFailure(
   status: unknown,
   payload: unknown,
-  options: { forceVibe?: boolean } = {},
+  options: { forceVibe?: boolean; navigate?: boolean; requestToken?: string | null } = {},
 ): Promise<boolean> {
   if (!isAuthenticationFailure(status, payload)) return false
-  await navigateToUnauthenticated({
-    forceVibe: options.forceVibe,
-    clearAuth: options.forceVibe || isCurrentVibeContext(),
-  })
+  if (options.requestToken !== undefined && options.requestToken !== readLocalAuthToken()) return true
+  clearLocalAuthState()
+  if (window.electronAPI?.wm?.broadcast) {
+    void window.electronAPI.wm.broadcast('auth:logout', { sourceWindow: currentRouteContext().query.windowKey || 'main' }).catch(() => {})
+  }
+  if (options.navigate !== false) await navigateToUnauthenticated({ forceVibe: options.forceVibe })
   return true
 }

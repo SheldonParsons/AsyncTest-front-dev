@@ -94,7 +94,7 @@
       </section>
 
       <section class="side-user-card" aria-label="用户与知识库入口">
-        <button class="side-user-profile" type="button" @click="openVibeSettings">
+        <button class="side-user-profile" type="button" aria-label="打开知识库设置" @click="openVibeSettings">
           <span class="side-user-avatar avatar-container">
             <el-avatar :key="currentUserAvatarRenderKey" :size="24" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
           </span>

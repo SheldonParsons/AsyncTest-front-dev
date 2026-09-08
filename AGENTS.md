@@ -103,3 +103,7 @@ src/
 2. 开发时需要配合后端服务运行（默认端口 6001）
 3. 全局组件 `AstLoading` 已注册，可直接使用
 4. Element Plus 图标组件已全局注册
+
+## 图标约定（2026-09-08）
+
+新增功能统一使用 `@lucide/vue` 图标；按需从 `src/components/icons/lucide.ts` 导出，菜单／工具栏默认 16px、stroke-width 1.8～2、颜色继承 currentColor。禁止全量注册 Lucide 图标或继续新增 Element Plus 图标引用。已有业务逐步替换，品牌 Logo 保留原资源。使用 Element Plus 控件时，通过 close-icon、prefix-icon、suffix-icon、clear-icon、loading-icon 或具名插槽替换其可见图标；纯图标按钮必须有中文 aria-label。

@@ -167,18 +167,7 @@
         </div>
       </section>
     </main>
-    <DialogAnimation ref="approveProjectRef" :bgtype="'white'" :title="t('project.approve.requestDesc')"
-      :cancel_title="t('project.approve.cancelDesc')" :confirm_title="t('project.approve.confirmDesc')"
-      :before_comfirm="checkApproveProject">
-      <div class="approve-project-form">
-        <div class="form-group">
-          <label class="form-label-no-required">申请理由</label>
-          <textarea class="form-textarea" v-model="approveDesc"
-            :placeholder="$t('project.approve.requestDescPlaceHolder')" rows="6" maxlength="500"></textarea>
-          <span class="form-hint">{{ approveDesc.length }} / 500</span>
-        </div>
-      </div>
-    </DialogAnimation>
+    <ApplyDialog ref="applyDialogRef" />
     <DialogAnimation ref="createProjectRef" :bgtype="'white'" title="创建项目" cancel_title="取消" :confirm_title="'创建'"
       :before_comfirm="checkCreateProject">
       <div class="create-project-form">
@@ -209,7 +198,7 @@ import {
   User,
 } from "@element-plus/icons-vue";
 import tools from "@/utils/tools";
-import { ApiCreateTouchPixel } from "@/api/pixel/project";
+import ApplyDialog from "@/views/team/ApplyDialog.vue";
 import DialogAnimation from "@/components/common/general/dialog.vue";
 import { createProjects } from "@/api/project/index";
 import {
@@ -230,7 +219,7 @@ const { t } = useI18n();
 // 创建项目ref
 const createProjectRef: any = ref(null);
 // 申请加入项目ref
-const approveProjectRef: any = ref(null);
+const applyDialogRef = ref<InstanceType<typeof ApplyDialog>>();
 // 项目名称
 const project_name = ref("");
 // 项目描述
@@ -248,7 +237,7 @@ const isLoadingProjects = ref(false);
 const hasMoreProjects = ref(true);
 const disInfinite = computed(() => isLoadingProjects.value || !hasMoreProjects.value);
 // 申请理由
-const approveDesc = ref("");
+
 // 当前项目
 const currentProject = ref(0);
 // 防抖定时器
@@ -272,10 +261,12 @@ onMounted(async () => {
   ]);
   // 监听滚动事件
   window.addEventListener("scroll", handleScroll);
+  window.addEventListener("ast:team-changed", performSearch);
 });
 
 onUnmounted(() => {
   window.removeEventListener("scroll", handleScroll);
+  window.removeEventListener("ast:team-changed", performSearch);
   if (searchTimer) {
     clearTimeout(searchTimer);
   }
@@ -365,12 +356,7 @@ async function enterProject(project: any) {
     window.$toast({ title: `进入项目：${project.name}` })
     router.push({ name: "interface", params: { project: project.id } });
   } else {
-    currentProject.value = project.id;
-    const result = await approveProjectRef.value.open();
-    if (result.action !== 'cancel') {
-      confirmApproveProject();
-    }
-    approveDesc.value = '';
+    applyDialogRef.value?.open({ id: Number(project.id), name: project.name });
   }
 }
 // 获取收藏项目
@@ -450,31 +436,6 @@ async function getProjects(
       isLoadingProjects.value = false;
     }
   }
-}
-
-function checkApproveProject() {
-  if (approveDesc.value.trim() === "") {
-    window.$toast({ title: t("project.approve.emptyApproveReason") });
-    return false;
-  }
-  return true;
-}
-
-function confirmApproveProject() {
-  const data = {
-    type: 1,
-    project: currentProject.value,
-    desc: approveDesc.value,
-  };
-  ApiCreateTouchPixel(data).then((data: any) => {
-    if (data.non_field_errors) {
-      window.$toast({ title: t("project.approve.dupApprove") });
-    } else if (data.result === 0) {
-      window.$toast({ title: t("project.approve.abandonApplySystem") });
-    } else {
-      window.$toast({ title: t("project.approve.successApply") });
-    }
-  });
 }
 
 // 滚动加载

@@ -78,15 +78,17 @@
 
       <section v-if="activeKey === 'profile'" class="profile-panel">
         <div class="profile-hero">
+          <AccountMenu :logged-in="true" @profile="openUserProfile">
           <button
             class="profile-avatar avatar-container"
             type="button"
-            aria-label="打开个人设置"
-            title="打开个人设置"
-            @click="openUserProfile"
+            aria-label="账户菜单"
+            title="账户菜单"
+
           >
             <el-avatar :key="currentUserAvatarRenderKey" :size="68" :src="currentUserAvatar" class="user-avatar">{{ userInitials }}</el-avatar>
           </button>
+          </AccountMenu>
           <h1>{{ currentUserName }}</h1>
           <p>@{{ currentUsername }} · <em>{{ canViewTraceAudit ? '特权用户' : '用户' }}</em></p>
         </div>
@@ -607,6 +609,7 @@ import VibeKnowledgeApiModelSettings from './VibeKnowledgeApiModelSettings.vue'
 import VibeMcpSettings from './VibeMcpSettings.vue'
 import VibeWindowControls from '../knowledge/components/VibeWindowControls.vue'
 import AppSelect from '@/components/common/select/AppSelect.vue'
+import AccountMenu from '@/components/layout/AccountMenu.vue'
 import UserProfileDialog from '@/components/layout/dialogs/UserProfileDialog.vue'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 import { createVibeLLMProvider, createVibeSystemKnowledge, deleteVibeLLMProvider, deleteVibeSystemKnowledge, exportVibeAdminConfig, exportVibeSystemKnowledge, getVibeCapabilities, getRemoteAgentTrace, getVibeLLMAdminModelDefaults, getVibeLLMAdminModelScenes, importVibeAdminConfig, importVibeSystemKnowledge, listRemoteAgentTraces, listVibeSystemKnowledge, previewVibeSystemKnowledgeImport, setVibeLLMAdminSystemDefaults, testVibeLLMProvider, updateVibeLLMAdminModelScenes, updateVibeLLMProvider, updateVibeSystemKnowledge, type VibeAttachment, type VibeCapabilityUser, type VibeDialogueTraceDetail, type VibeDialogueTraceEvent, type VibeDialogueTraceRun, type VibeLLMProviderConfig, type VibeLLMProviderPayload, type VibeLLMSceneConfig, type VibeSystemKnowledgeBundle, type VibeSystemKnowledgeImportPlan, type VibeSystemKnowledgeItem, type VibeSystemKnowledgePayload } from '../api'

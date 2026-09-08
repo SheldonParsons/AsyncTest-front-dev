@@ -1,16 +1,12 @@
 <template>
-  <AstDialog
-    ref="dialogRef"
-    :title="cropSourceUrl ? '调整您的图片' : ''"
-    :accessibleTitle="cropSourceUrl ? '调整您的图片' : '个人设置'"
-    :modalClass="cropSourceUrl ? 'avatar-crop-modal' : ''"
-    bgtype="white"
-    topMove="0 !important"
-    :showCancel="false"
-    :showComfirm="false"
-    :closeOnPressEscape="!cropSourceUrl && !avatarUploading && !saving"
-    @cancel="handleDialogDismiss"
-  >
+  <el-dialog v-model="profileDialogVisible" append-to-body align-center destroy-on-close
+    class="ast-glass-dialog ast-profile-dialog" modal-class="ast-glass-mask"
+    :width="cropSourceUrl ? '540px' : '780px'" :title="cropSourceUrl ? '调整您的图片' : '个人信息'"
+    :show-close="!cropSourceUrl && !saving && !avatarUploading && !backupSaving"
+    :close-on-press-escape="!cropSourceUrl && !saving && !avatarUploading && !backupSaving"
+    :close-on-click-modal="!cropSourceUrl && !saving && !avatarUploading && !backupSaving"
+    :before-close="beforeDialogClose" @closed="handleDialogDismiss">
+    <template #header><span class="profile-dialog-label">个人信息</span></template>
     <div class="profile-sheet" :class="{ 'profile-sheet--avatar-editor': cropSourceUrl }">
       <input
         ref="fileInputRef"
@@ -126,7 +122,7 @@
             </button>
 
             <div class="profile-sheet__headline">
-              <div class="profile-sheet__eyebrow">PROFILE</div>
+              <div class="profile-sheet__eyebrow">个人信息</div>
               <h2 class="profile-sheet__name">{{ profile.nick_name || profile.username || '未命名用户' }}</h2>
               <div class="profile-sheet__subline">@{{ profile.username || '--' }}</div>
             </div>
@@ -144,11 +140,15 @@
           </div>
         </div>
 
-        <div class="profile-sheet__content" v-loading="loading">
+        <div class="profile-sheet__tabs" role="tablist" aria-label="个人信息设置">
+          <button type="button" role="tab" :id="`${profileId}-profile-tab`" :aria-controls="`${profileId}-profile-panel`" :aria-selected="profileTab === 'profile'" :class="{ active: profileTab === 'profile' }" :disabled="backupSaving" @click="profileTab = 'profile'">个人资料</button>
+          <button type="button" role="tab" :id="`${profileId}-security-tab`" :aria-controls="`${profileId}-security-panel`" :aria-selected="profileTab === 'security'" :class="{ active: profileTab === 'security' }" :disabled="saving" @click="profileTab = 'security'">账号安全</button>
+        </div>
+        <div v-show="profileTab === 'profile'" class="profile-sheet__content" v-loading="loading" role="tabpanel" :id="`${profileId}-profile-panel`" :aria-labelledby="`${profileId}-profile-tab`">
           <section class="profile-card profile-card--readonly">
             <div class="profile-card__header">
               <div>
-                <p class="profile-card__kicker">Account</p>
+
                 <h3 class="profile-card__title">账户信息</h3>
               </div>
             </div>
@@ -176,7 +176,7 @@
           <section class="profile-card">
             <div class="profile-card__header">
               <div>
-                <p class="profile-card__kicker">Editable</p>
+
                 <h3 class="profile-card__title">个人资料</h3>
               </div>
               <p class="profile-card__hint">可修改头像、昵称、邮箱、手机号和性别</p>
@@ -214,7 +214,13 @@
           </section>
         </div>
 
-        <div class="profile-sheet__footer">
+        <div v-if="profileTab === 'security'" class="profile-sheet__security" role="tabpanel" :id="`${profileId}-security-panel`" :aria-labelledby="`${profileId}-security-tab`">
+          <section class="profile-card profile-card--security">
+            <div class="profile-card__header"><h3 class="profile-card__title">备用密码</h3><el-tag type="info" effect="plain">{{ profile.has_backup_password ? '已设置' : '未设置' }}</el-tag></div>
+            <div class="profile-security-form"><BackupPasswordForm variant="panel" :key="profile.id ?? undefined" :has-password="profile.has_backup_password" @busy="backupSaving = $event" /></div>
+          </section>
+        </div>
+        <div v-if="profileTab === 'profile'" class="profile-sheet__footer">
           <button type="button" class="profile-btn profile-btn--ghost" :disabled="saving" @click="close">关闭</button>
           <button type="button" class="profile-btn profile-btn--secondary" :disabled="loading || saving || !dirty" @click="resetForm">
             重置
@@ -225,15 +231,15 @@
         </div>
       </template>
     </div>
-  </AstDialog>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import BackupPasswordForm from "./BackupPasswordForm.vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { CircleStencil, Cropper } from 'vue-advanced-cropper'
 import 'vue-advanced-cropper/dist/style.css'
-import AstDialog from '@/components/common/general/dialog.vue'
 import {
   createCroppedAvatarFile,
   revokeObjectUrl,
@@ -260,6 +266,8 @@ const EMPTY_PROFILE: CurrentUserProfile = {
   sex: 0,
   last_login: '',
   is_superuser: false,
+  has_backup_password: false,
+  capabilities: { manage_all_users: false, review_all_join_requests: false },
   is_staff: false,
   is_active: true,
   date_joined: '',
@@ -271,7 +279,10 @@ const emit = defineEmits<{
   updated: [profile: CurrentUserProfile]
 }>()
 
-const dialogRef = ref<InstanceType<typeof AstDialog> | null>(null)
+const profileDialogVisible = ref(false)
+const profileTab = ref<'profile' | 'security'>('profile')
+const backupSaving = ref(false)
+const profileId = useId()
 const formRef = ref<FormInstance | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const cropperRef = ref<(AvatarCropperLike & {
@@ -508,17 +519,23 @@ async function submitForm() {
   }
 }
 
-async function open() {
+async function open(forceRefresh = true) {
   ensureProfileSync()
   try {
-    const loadedProfile = await fetchProfile(true)
+    const loadedProfile = await fetchProfile(forceRefresh)
     if (profileError.value || !loadedProfile) throw new Error(profileError.value || '获取用户信息失败')
     syncForm(loadedProfile)
   } catch (error) {
     window.$toast({ title: errorMessage(error, '获取用户信息失败'), type: 'error' })
     return
   }
-  return dialogRef.value?.open()
+  profileTab.value = 'profile'
+  profileDialogVisible.value = true
+}
+
+function beforeDialogClose(done: () => void) {
+  if (avatarUploading.value || saving.value || backupSaving.value) return
+  done()
 }
 
 function handleDialogDismiss() {
@@ -526,9 +543,9 @@ function handleDialogDismiss() {
 }
 
 function close() {
-  if (avatarUploading.value) return
+  if (avatarUploading.value || saving.value || backupSaving.value) return
   cancelCrop()
-  dialogRef.value?.close()
+  profileDialogVisible.value = false
 }
 
 function handleEscape(event: KeyboardEvent) {
@@ -553,8 +570,12 @@ defineExpose({ open, close })
 
 <style lang="scss" scoped>
 .profile-sheet {
-  width: 720px;
-  max-width: calc(100vw - 48px);
+  width: 100%;
+  height: min(660px, calc(100dvh - 48px));
+  max-width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   color: #111111;
   background: #ffffff;
@@ -562,9 +583,9 @@ defineExpose({ open, close })
 }
 
 .profile-sheet--avatar-editor {
-  width: 540px;
-  height: min(580px, calc(100vh - 40px));
-  min-height: 500px;
+  width: 100%;
+  height: min(580px, calc(100dvh - 48px));
+  min-height: 0;
   max-width: calc(100vw - 40px);
   border-radius: 24px;
 }
@@ -714,12 +735,15 @@ defineExpose({ open, close })
 }
 
 .profile-sheet__content {
-  display: grid;
-  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  display: flex;
+  flex-direction: column;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px 16px;
-  background: #ffffff;
+  gap: 16px;
+  padding: 20px 24px;
+  background: transparent;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .profile-card {
@@ -1316,4 +1340,29 @@ defineExpose({ open, close })
     transition-duration: 0.01ms !important;
   }
 }
+
+.profile-dialog-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.profile-sheet { width: 100%; max-width: 100%; background: transparent; border-radius: 0; }
+.profile-sheet__hero { flex-shrink: 0; padding: 25px 58px 22px 24px; background: rgba(255,255,255,.3); }
+.profile-sheet__tabs { display: flex; flex-shrink: 0; gap: 5px; padding: 15px 24px 0; }
+.profile-sheet__tabs button { padding: 10px 18px; border: 1px solid transparent; border-radius: 10px; color: #777; background: transparent; cursor: pointer; font-size: 13px; }
+.profile-sheet__tabs button.active { background: rgba(255,255,255,.8); border-color: rgba(0,0,0,.06); color: #222; box-shadow: 0 2px 8px rgba(0,0,0,.025); }
+.profile-sheet__tabs button:focus-visible { outline: 2px solid #777; outline-offset: 2px; }
+.profile-sheet__tabs button:disabled { opacity: .5; cursor: not-allowed; }
+.profile-sheet__security { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; padding: 20px 24px 26px; }
+.profile-card--security { width: 100%; max-width: none; margin: 0; box-sizing: border-box; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.profile-card--security .profile-card__header { flex-shrink: 0; }
+.profile-security-form { padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.profile-card { background: rgba(255,255,255,.62); border-color: rgba(0,0,0,.07); }
+.profile-card__header { align-items: center; padding: 16px; }
+.profile-card__hint { max-width: 210px; font-size: 11px; }
+.profile-sheet__footer { flex-shrink: 0; padding: 16px 24px; border-top: 1px solid rgba(0,0,0,.07); background: rgba(255,255,255,.38); }
+.profile-sheet--avatar-editor { width: 100%; min-height: 0; max-height: calc(100dvh - 48px); }
+@media (max-width: 760px) { .profile-sheet__content { grid-template-columns: 1fr; } .profile-sheet__hero { grid-template-columns: 1fr; } .profile-sheet__summary { display: none; } }
+
+.profile-sheet__content > .profile-card { flex-shrink: 0; width: 100%; box-sizing: border-box; }
+.profile-sheet__content > .profile-card:not(.profile-card--readonly) { flex: 1 0 auto; }
+.profile-sheet__content .profile-readonly-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 12px 16px 16px; }
+.profile-sheet__content .profile-form { padding: 16px; }
+@media(max-width: 580px) { .profile-sheet__content .profile-readonly-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 </style>

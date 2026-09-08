@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import type { AxiosRequestConfig } from 'axios'
 import { http } from '@/utils/http'
+import { readLocalAuthToken, setAuthStatus, AUTH_STATE_EVENT } from '@/utils/authNavigation'
+import { isLocalMindContext } from '@/utils/authNavigationPolicy'
 
 export const CURRENT_USER_PROFILE_EVENT = 'user:profile-updated'
 export const DEFAULT_AVATAR_USER_ID = 99
@@ -16,6 +18,8 @@ export interface CurrentUserProfile {
   sex: number
   last_login: string
   is_superuser: boolean
+  has_backup_password: boolean
+  capabilities: { manage_all_users: boolean; review_all_join_requests: boolean }
   is_staff: boolean
   is_active: boolean
   date_joined: string
@@ -33,6 +37,8 @@ export interface CurrentUserProfilePayload {
   sex?: number | string | null
   last_login?: string | null
   is_superuser?: boolean | null
+  has_backup_password?: boolean
+  capabilities?: { manage_all_users?: boolean; review_all_join_requests?: boolean }
   is_staff?: boolean | null
   is_active?: boolean | null
   date_joined?: string | null
@@ -64,9 +70,13 @@ interface CurrentUserProfileBroadcast {
 }
 
 const profile = ref<CurrentUserProfile | null>(null)
+if (typeof window !== 'undefined') window.addEventListener(AUTH_STATE_EVENT, () => {
+  if (!readLocalAuthToken()) clearCurrentUserProfile()
+})
 const loading = ref(false)
 const error = ref('')
 let profileFetched = false
+let profileToken: string | null = null
 let profileEpoch = 0
 let profileRevision = 0
 let activeFetch: Promise<CurrentUserProfile | null> | null = null
@@ -111,6 +121,11 @@ export function normalizeCurrentUserProfile(
     sex: normalizedSex(merged.sex),
     last_login: normalizedString(merged.last_login),
     is_superuser: merged.is_superuser === true,
+    has_backup_password: merged.has_backup_password === true,
+    capabilities: {
+      manage_all_users: merged.capabilities?.manage_all_users === true,
+      review_all_join_requests: merged.capabilities?.review_all_join_requests === true,
+    },
     is_staff: merged.is_staff === true,
     is_active: merged.is_active !== false,
     date_joined: normalizedString(merged.date_joined),
@@ -195,6 +210,7 @@ export function clearCurrentUserProfile(): void {
   profileRevision += 1
   activeFetch = null
   profileFetched = false
+  profileToken = null
   loading.value = false
   error.value = ''
   profile.value = null
@@ -264,13 +280,15 @@ export function ensureCurrentUserProfileSync(): void {
   window.electronAPI.on('auth:login', () => {
     // Keep the immediately-applied login identity visible while replacing any
     // in-flight request with a fresh profile request for the new token.
-    void fetchCurrentUserProfile(true)
+    if (!isLocalMindContext(window.location.hash.split('?')[0].replace(/^#/, ''), {})) void fetchCurrentUserProfile(true)
   })
 }
 
 export async function fetchCurrentUserProfile(force = false): Promise<CurrentUserProfile | null> {
   ensureCurrentUserProfileSync()
-  if (!force && profileFetched && profile.value) return profile.value
+  const requestToken = readLocalAuthToken()
+  if (!requestToken) { clearCurrentUserProfile(); setAuthStatus('unauthorized'); return null }
+  if (!force && profileFetched && profile.value && profileToken === requestToken) { setAuthStatus('authorized', requestToken); return profile.value }
   if (activeFetch) {
     if (!force) return activeFetch
     // A forced refresh must not reuse a request that started before the
@@ -283,21 +301,29 @@ export async function fetchCurrentUserProfile(force = false): Promise<CurrentUse
   const requestRevision = profileRevision
   if (force) profileFetched = false
   loading.value = true
+  setAuthStatus('checking', requestToken)
   error.value = ''
   const request = (async () => {
     try {
-      const response = await http.httpGet<CurrentUserProfileResponse>('/user/me/', force
-        ? ({ _profile_refresh: `${avatarRefreshRevision.value}-${++profileRefreshNonce}` } as unknown as AxiosRequestConfig)
-        : {})
+      const response = await http.request<CurrentUserProfileResponse>({
+        url: '/user/me/', timeout: 5000, astAuthNavigation: false,
+        params: force ? { _profile_refresh: `${avatarRefreshRevision.value}-${++profileRefreshNonce}` } : {},
+      } as AxiosRequestConfig)
       const data = responseProfile(response, '获取用户信息失败')
-      if (requestEpoch !== profileEpoch || requestRevision !== profileRevision) return profile.value
+      if (requestToken !== readLocalAuthToken() || requestEpoch !== profileEpoch || requestRevision !== profileRevision) return null
+      setAuthStatus('authorized', requestToken)
+      profileToken = requestToken
       profileFetched = true
-      return applyCurrentUserProfile(data, { refreshAvatar: force })
+      const avatarChanged = data.avatar_url !== undefined && data.avatar_url !== profile.value?.avatar_url
+      return applyCurrentUserProfile(data, { refreshAvatar: avatarChanged })
     } catch (reason) {
       if (requestEpoch === profileEpoch && requestRevision === profileRevision) {
-        error.value = reason instanceof Error ? reason.message : String(reason)
+        if (requestToken === readLocalAuthToken()) {
+          setAuthStatus('unavailable', requestToken)
+          error.value = '暂时无法连接服务器，个人信息不可用；本地功能仍可使用'
+        } else error.value = '登录已失效，请重新登录'
       }
-      return profile.value
+      return null
     }
   })()
   activeFetch = request
@@ -330,6 +356,7 @@ export function syncCurrentUserAfterLogin(payload: CurrentUserProfilePayload = {
     },
     { refreshAvatar: true },
   )
+  setAuthStatus('authorized')
   void fetchCurrentUserProfile()
 }
 

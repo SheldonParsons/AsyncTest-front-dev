@@ -13,6 +13,12 @@ export function ApiLogin(data:ILogin):Promise<String> {
         }
         asyncTest.cookies.setCookie(GlobalStatus.cookieTag, res.data.token, 60 * 60 * 24 * 7)
         syncCurrentUserAfterLogin(res.data)
+        const token = res.data.token
+        window.setTimeout(() => {
+          if (asyncTest.cookies.getCookie(GlobalStatus.cookieTag) === token) {
+            window.dispatchEvent(new CustomEvent('ast:login-succeeded'))
+          }
+        }, 350)
       }
       resolve(res)
     })

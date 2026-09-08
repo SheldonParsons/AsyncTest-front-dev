@@ -222,9 +222,23 @@ const routes = [
         component: () => import('@/views/home/project/projectView.vue')
       },
       {
+        path: '/home/team', name: 'teamManagement',
+        component: () => import('@/views/team/TeamPage.vue'), meta: { requiresTeamAuth: true },
+      },
+      {
+        path: '/home/admin/users', name: 'globalUserManagement',
+        component: () => import('@/views/team/GlobalUsersPage.vue'),
+        meta: { requiresTeamAuth: true, teamCapability: 'manage_all_users' },
+      },
+      {
+        path: '/home/admin/approvals', name: 'globalApprovalManagement',
+        component: () => import('@/views/team/GlobalApprovalsPage.vue'),
+        meta: { requiresTeamAuth: true, teamCapability: 'review_all_join_requests' },
+      },
+      {
         path: '/home/task',
         name: 'task',
-        component: () => import('@/views/home/task/taskView.vue')
+        redirect: { name: 'teamManagement', query: { tab: 'approvals' } }
       },
     ]
   }
@@ -245,7 +259,18 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to, from) => {
+  if (to.meta.requiresTeamAuth) {
+    if (!readLocalAuthToken()) return { name: isElectron ? 'dashboard' : 'login' }
+    const { isSessionAuthorized } = await import('@/utils/authNavigation')
+    if (to.path === from.path && isSessionAuthorized()) return true
+    const { fetchCurrentUserProfile } = await import('@/composables/useCurrentUserProfile')
+    const profile = await fetchCurrentUserProfile(true)
+    if (!profile) return { name: isElectron ? 'dashboard' : 'login' }
+    const capability = to.meta.teamCapability as 'manage_all_users' | 'review_all_join_requests' | undefined
+    if (capability && !profile.capabilities[capability]) return { name: 'teamManagement', query: to.query.windowKey ? { windowKey: to.query.windowKey } : {} }
+    return true
+  }
   if (!to.meta.requiresVibeAuth || readLocalAuthToken()) return true
   return {
     name: 'vibeWorkbench',

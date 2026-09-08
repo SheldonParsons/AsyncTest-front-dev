@@ -223,9 +223,9 @@ const bindingHintText = computed(() => {
     return "原绑定文件已不存在，当前仅保留提示信息，保存前需要重新选择目标文件。";
   }
   if (props.binding) {
-    return "当前文档按 Ctrl+S 时会优先覆盖这个远程 amind 文件。";
+    return "此处用于上传到项目；Ctrl+S 始终保存本地文件。";
   }
-  return "当前文档还没有远程绑定，绑定后 Ctrl+S 会优先保存到远程。";
+  return "选择项目目录后可以上传；本地编辑和保存不需要登录。";
 });
 
 const normalizedDraftName = computed(() => ensureAmindFileName(draftFileName.value, props.defaultFileName));
