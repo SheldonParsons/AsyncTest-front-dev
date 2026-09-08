@@ -172,7 +172,7 @@
             <CodexPanelToggleMirroredStatic
               v-if="sideCollapsed"
               class="main-head-side-toggle"
-              :class="{ mac: isMacPlatform }"
+              :class="{ mac: isMacPlatform, 'reserve-window-controls': showWinControls }"
               :collapsed="sideCollapsed"
               @panel-toggle="setSideCollapsed"
             />
@@ -8483,6 +8483,11 @@ function isStreamingUnderEvent(event: any) {
 .main-head-side-toggle.mac {
   // 主标题已有 20px 左内边距；再补 52px，与展开态的 72px macOS 安全起点对齐。
   margin-left: 52px;
+}
+
+.main-head-side-toggle.reserve-window-controls {
+  // 标题左内边距 20px + 78px = 展开态的 98px，避开左上窗口三键。
+  margin-left: 78px;
 }
 
 .main-head-side-toggle:hover {
