@@ -1,20 +1,30 @@
-/** HTTP 响应头不是生成完成；期限必须覆盖流式正文直到 result 完成。 */
+/** 检测生成无进展，不限制持续产生有效增量的请求总时长。 */
 export function providerDeadline({ signal, timeoutMs, onTimeout }) {
   const controller = new AbortController();
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-  const timer = setTimeout(() => {
+  let timer;
+  let disposed = false;
+  const expire = () => {
     if (!combined.aborted) {
       onTimeout();
-      controller.abort(new DOMException("Provider stream deadline exceeded", "TimeoutError"));
+      controller.abort(new DOMException("Provider stream made no progress", "TimeoutError"));
     }
-  }, timeoutMs);
-  timer.unref?.();
+  };
+  const progress = () => {
+    clearTimeout(timer);
+    if (disposed || combined.aborted) return;
+    timer = setTimeout(expire, timeoutMs);
+    timer.unref?.();
+  };
+  progress();
   const clear = () => clearTimeout(timer);
   combined.addEventListener("abort", clear, { once: true });
   if (combined.aborted) clear();
   return {
     signal: combined,
+    progress,
     dispose() {
+      disposed = true;
       clear();
       combined.removeEventListener("abort", clear);
     },

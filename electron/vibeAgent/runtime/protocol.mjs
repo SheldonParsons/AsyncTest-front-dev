@@ -16,7 +16,7 @@ const RESPONSE_TYPES = new Set([
 const OUTBOUND_TYPES = new Set([
   "ready", "session_open", "session_checkpoint", "provider_payload", "assistant_delta",
   "assistant_end", "tool_preparation", "tool_wave", "local_tool_start", "local_tool_update", "local_tool_end", "tool_rejected", "skill_loaded",
-  "interaction_request", "candidate_final", "compaction_start", "compaction_end",
+  "interaction_request", "candidate_final", "compaction_start", "compaction_end", "retry_status",
   "complete_no_tools_result", "session_title", "done", "error", "aborted",
 ]);
 
@@ -191,12 +191,12 @@ function validateOptions(value) {
     "temperature", "max_tokens", "timeout_ms", "max_retries", "max_retry_delay_ms",
     "sampling_params", "payload_overrides", "payload_capture", "session_id", "tool_choice",
     "transport", "ipc_timeout_ms", "generate_session_title", "thinking_level",
-    "max_model_calls", "max_wall_clock_ms", // 旧 max_model_calls 仅兼容读取，不再限制执行。
+    "max_model_calls", "max_wall_clock_ms", // 旧字段仅兼容读取，不再限制执行。
   ]), new Set(), "start_options_invalid");
   if (row.temperature !== undefined) finiteNumber(row.temperature, "start_temperature_invalid", { min: 0, max: 2 });
   if (row.max_tokens !== undefined) finiteNumber(row.max_tokens, "start_max_tokens_invalid", { min: 1, integer: true });
-  if (row.timeout_ms !== undefined) finiteNumber(row.timeout_ms, "start_timeout_invalid", { min: 1, max: 1_200_000, integer: true });
-  if (row.max_retries !== undefined && row.max_retries !== 0) fail("start_max_retries_must_be_zero");
+  if (row.timeout_ms !== undefined) finiteNumber(row.timeout_ms, "start_timeout_invalid", { min: 1, max: 3_600_000, integer: true });
+  if (row.max_retries !== undefined) finiteNumber(row.max_retries, "start_max_retries_invalid", { min: 0, max: 3, integer: true });
   if (row.max_retry_delay_ms !== undefined) finiteNumber(row.max_retry_delay_ms, "start_retry_delay_invalid", { min: 0, max: 60_000, integer: true });
   if (row.ipc_timeout_ms !== undefined) finiteNumber(row.ipc_timeout_ms, "start_ipc_timeout_invalid", { min: 1_000, max: 1_200_000, integer: true });
   if (row.payload_capture !== undefined) boolean(row.payload_capture, "start_payload_capture_invalid");
@@ -515,6 +515,12 @@ function validateOutboundPayload(frame) {
     finiteNumber(row.characters, "provider_payload_characters_invalid", { min: 0, integer: true });
     jsonValue(row.tool_names, "provider_payload_tools_invalid");
     if (row.body !== undefined) jsonValue(row.body, "provider_payload_body_invalid");
+  } else if (frame.type === "retry_status") {
+    const row = exact(payload, new Set(["phase", "attempt", "delay_ms", "code"]), new Set(["phase", "attempt", "delay_ms", "code"]), "retry_status_invalid");
+    if (!["waiting", "recovered", "exhausted", "parked", "blocked"].includes(row.phase)) fail("retry_status_phase_invalid");
+    finiteNumber(row.attempt, "retry_status_attempt_invalid", { min: 0, integer: true });
+    finiteNumber(row.delay_ms, "retry_status_delay_invalid", { min: 0 });
+    string(row.code, "retry_status_code_invalid", { max: 160 });
   } else if (frame.type === "assistant_delta") {
     const row = exact(payload, new Set(["text", "public"]), new Set(["text"]), "assistant_delta_payload_invalid");
     string(row.text, "assistant_delta_text_invalid", { allowEmpty: true, max: 2_000_000 });

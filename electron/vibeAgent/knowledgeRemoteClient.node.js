@@ -7,6 +7,7 @@
  * 发送给 Knowledge Capability。
  */
 import { createHash, randomUUID } from "node:crypto";
+import { retryTransport, retryAfterMs } from "./transportRetry.node.js";
 
 const REQUEST_SCHEMA = "knowledge_tool_request.v1";
 const RESPONSE_SCHEMA = "knowledge_tool_response.v1";
@@ -343,7 +344,7 @@ function publicRemoteErrorMessage(value, fallback = "知识服务请求失败") 
 }
 
 export class KnowledgeRemoteClient {
-  constructor({ baseUrl, authToken, agentBinding = "", bindingToken = "", fetchImpl = globalThis.fetch, isDevelopment = false } = {}) {
+  constructor({ baseUrl, authToken, agentBinding = "", bindingToken = "", fetchImpl = globalThis.fetch, isDevelopment = false, onRetry } = {}) {
     if (baseUrl !== undefined && baseUrl !== null && typeof baseUrl !== "string") {
       throw new Error("vibe_agent_knowledge_base_url_invalid");
     }
@@ -373,6 +374,7 @@ export class KnowledgeRemoteClient {
       agentBinding || bindingToken,
     );
     this.fetch = fetchImpl;
+    this.onRetry = onRetry;
   }
 
   endpoint(suffix) {
@@ -396,7 +398,16 @@ export class KnowledgeRemoteClient {
     return base.toString();
   }
 
-  async call({
+  async call(options = {}) {
+    const stable = { ...options, requestId: options.requestId || randomUUID().replaceAll('-', '') };
+    // 正式写操作不做传输层盲重放；确认恢复由原确认ID和回执负责。
+    const readOnly = ['search', 'overview', 'read_source', 'get_receipt'].includes(options.operation);
+    const idempotentPreview = options.operation === 'prepare_change' && options.idempotencyKey && options.turnId && options.toolCallId;
+    if (!readOnly && !idempotentPreview) return this.callOnce(stable);
+    return retryTransport(() => this.callOnce(stable), { signal: options.signal, onRetry: this.onRetry, continuous: readOnly });
+  }
+
+  async callOnce({
     operation,
     projectId,
     sessionId,
@@ -462,12 +473,14 @@ export class KnowledgeRemoteClient {
           nested?.code || parsed?.code || parsed?.detail,
           response.status,
         );
-        throw new KnowledgeRemoteError(
+        const error = new KnowledgeRemoteError(
           code,
           publicRemoteErrorMessage(nested?.message || parsed?.detail, "知识服务请求失败"),
           response.status,
           parsed,
         );
+        error.retryAfterMs = retryAfterMs(response.headers?.get?.('retry-after'));
+        throw error;
       }
       if (!parsed || parsed.schema !== RESPONSE_SCHEMA || parsed.operation !== op || parsed.request_id !== body.request_id) {
         throw new KnowledgeRemoteError("knowledge_response_contract_invalid", "知识服务响应合同无效", response.status, parsed);
@@ -484,7 +497,11 @@ export class KnowledgeRemoteClient {
     }
   }
 
-  async callWave({ calls = [], signal } = {}) {
+  async callWave(options = {}) {
+    return retryTransport(() => this.callWaveOnce(options), { signal: options.signal, onRetry: this.onRetry, continuous: true });
+  }
+
+  async callWaveOnce({ calls = [], signal } = {}) {
     if (!Array.isArray(calls) || !calls.length || calls.length > 20) {
       throw new Error("vibe_agent_knowledge_wave_calls_invalid");
     }
@@ -533,12 +550,14 @@ export class KnowledgeRemoteClient {
       const parsed = await readJsonBounded(response);
       if (!response.ok) {
         const code = publicRemoteErrorCode(parsed?.code || parsed?.detail, response.status);
-        throw new KnowledgeRemoteError(
+        const error = new KnowledgeRemoteError(
           code,
           publicRemoteErrorMessage(parsed?.detail, "知识服务批处理失败"),
           response.status,
           parsed,
         );
+        error.retryAfterMs = retryAfterMs(response.headers?.get?.('retry-after'));
+        throw error;
       }
       if (!parsed || parsed.schema !== WAVE_RESPONSE_SCHEMA || !Array.isArray(parsed.results)
         || parsed.results.length !== requestCalls.length) {

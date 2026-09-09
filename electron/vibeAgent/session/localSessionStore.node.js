@@ -503,12 +503,13 @@ export class LocalSessionStore {
     return output;
   }
 
-  async history(sessionId, { accountId: rawAccountId } = {}) {
-    return projectHistory(await this.events(sessionId, {
+  async history(sessionId, { accountId: rawAccountId, excludeUserRunId = '' } = {}) {
+    const rows = await this.events(sessionId, {
       accountId: rawAccountId,
       afterSequence: 0,
       limit: 100_000,
-    }));
+    });
+    return projectHistory(excludeUserRunId ? rows.filter(event => event.meta?.local_event_key !== `${id(excludeUserRunId, 'run_id')}:user`) : rows);
   }
 
   async update(sessionId, { accountId: rawAccountId, title, providerId, draft } = {}) {

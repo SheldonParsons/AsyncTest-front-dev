@@ -54,7 +54,7 @@ const ACTIVE_PHASES = new Set([
   "starting", "running", "provider_in_flight", "tool_in_flight", "candidate_in_flight",
   "response_in_flight",
 ]);
-const RECOVERABLE_PHASES = new Set(["waiting_user", "resume_ready"]);
+const RECOVERABLE_PHASES = new Set(["waiting_user", "resume_ready", "retry_wait", "blocked"]);
 const TERMINAL_STATES = new Set(["completed", "failed", "aborted", "cancelled", "closed"]);
 function runId(value) {
   const id = String(value ?? "").trim();
@@ -232,7 +232,7 @@ export class LocalRunStore {
     return { ...clean };
   }
 
-  async create({ run, startPayload, localContext = {}, replace = false } = {}) {
+  async create({ run, startPayload, localContext = {}, replace = false, admissionPending = false, replaceAdmission = false } = {}) {
     if (!run || typeof run !== "object" || Array.isArray(run)) throw new Error("vibe_agent_run_descriptor_run_missing");
     const id = runId(run.run_id ?? run.runId);
     const owner = accountId(run.account_id ?? run.accountId);
@@ -284,12 +284,15 @@ export class LocalRunStore {
       state: "starting",
       phase: "starting",
       pending: null,
-      attempt: 1,
+      recovery_version: 1,
+      admission_pending: Boolean(admissionPending),
+      attempt: admissionPending ? 0 : 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     return this.enqueue(id, async () => {
       const existing = await readJson(descriptorPath(this.rootPath, id));
+      const replacingAdmission = Boolean(replaceAdmission && existing?.admission_pending);
       if (existing) {
         const existingState = String(existing.state || "");
         const existingPhase = String(existing.phase || existingState || "");
@@ -297,13 +300,18 @@ export class LocalRunStore {
         // checkpoint may be replaced for cold continuation; terminal or
         // in-flight descriptors must never be overwritten/reanimated by a
         // renderer replay.
-        if (!replace || !RECOVERABLE_PHASES.has(existingPhase)
+        if ((!replacingAdmission && (!replace || !RECOVERABLE_PHASES.has(existingPhase)))
           || TERMINAL_STATES.has(existingState)) {
           throw new Error("vibe_agent_run_descriptor_conflict");
         }
+        if (replacingAdmission && ['account_id', 'session_id', 'project_id', 'turn_id', 'request_id'].some(
+          key => String(existing.run?.[key] || '') !== String(descriptor.run[key] || ''))) {
+          throw new Error('vibe_agent_run_descriptor_identity_invalid');
+        }
       }
-      if (existing && replace) {
-        descriptor.attempt = Math.max(1, Number(existing.attempt || 1) + 1);
+      if (existing && (replace || replacingAdmission)) {
+        descriptor.attempt = Math.max(1, Number(existing.attempt ?? 1) + 1);
+        descriptor.recovery = existing.recovery;
         // Keep the original pending card/known result until the resumed child
         // reaches its next interaction or terminal state. If startup fails in
         // that narrow window, the user can retry without submitting again.
@@ -351,6 +359,12 @@ export class LocalRunStore {
       const next = {
         ...current,
         ...cloneWithoutCredentials(patch),
+        ...(patch.pending === null && requestedState !== 'completed'
+          && current.pending?.kind === 'knowledge_confirmation' && current.response?.action
+          ? { interrupted_confirmation: {
+            confirmation_id: current.pending.confirmation_id,
+            action: current.response.action, tool_call_id: current.pending.tool_call_id,
+          } } : {}),
         run_id: id,
         updated_at: new Date().toISOString(),
       };
@@ -402,6 +416,7 @@ export class LocalRunStore {
       terminal_reason: String(reason || "").slice(0, 256),
       terminal_at: new Date().toISOString(),
       runtime_lost: false,
+      recovery: null,
     });
     // Terminal descriptors remain on disk for diagnostics/recovery audits,
     // but no longer need a hot in-memory copy for every historical Run.
@@ -425,7 +440,9 @@ export class LocalRunStore {
       if (!String(raw?.run?.account_id || "").trim()) continue;
       const value = normalize(raw);
       if (owner && String(value.run.account_id || "") !== owner) continue;
-      if (recoverableOnly && (!RECOVERABLE_PHASES.has(value.phase) || !value.pending)) continue;
+      if (recoverableOnly && !(value.recovery_version === 1 && value.phase === 'blocked')
+        && (!RECOVERABLE_PHASES.has(value.phase)
+        || (value.phase !== "retry_wait" && !value.pending))) continue;
       if (!includeTerminal && TERMINAL_STATES.has(value.state)) continue;
       values.push(value);
     }
@@ -485,6 +502,11 @@ export class LocalRunStore {
   async reconcileAfterRestart() {
     const values = await this.list({ includeTerminal: false });
     for (const item of values) {
+      if (item.recovery_version === 1 && ["retry_wait", "blocked"].includes(item.phase)) continue;
+      if (item.recovery_version === 1 && item.phase === "resume_ready" && item.pending && item.response) {
+        await this.markRecovery(item.run_id, "confirmed_result_ready", { delayMs: 0 });
+        continue;
+      }
       if (RECOVERABLE_PHASES.has(item.phase) && item.pending) {
         await this.phase(item.run_id, item.phase, {
           state: "waiting_user",
@@ -493,10 +515,25 @@ export class LocalRunStore {
         continue;
       }
       if (ACTIVE_PHASES.has(item.phase) || !TERMINAL_STATES.has(item.state)) {
-        await this.markTerminal(item.run_id, "failed", phaseFailure(item.phase)).catch(() => undefined);
+        if (item.recovery_version === 1) {
+          await this.markRecovery(item.run_id, phaseFailure(item.phase), {
+            blocked: item.phase === "tool_in_flight" || (item.phase === "response_in_flight"
+              && !(item.pending?.kind === "knowledge_confirmation" && item.response)),
+          });
+        } else await this.markTerminal(item.run_id, "failed", phaseFailure(item.phase)).catch(() => undefined);
       }
     }
     return this.list({ recoverableOnly: true, includeTerminal: false });
+  }
+
+  async markRecovery(rawId, reason, { blocked = false, delayMs } = {}) {
+    const current = await this.get(rawId);
+    const attempt = Number(current?.recovery?.attempt || 0) + 1;
+    const delay = delayMs ?? Math.round(Math.min(60_000, 15_000 * 2 ** Math.min(attempt - 1, 2)) * (0.8 + Math.random() * 0.4));
+    return this.phase(rawId, blocked ? "blocked" : "retry_wait", {
+      state: "waiting_user", runtime_lost: true,
+      recovery: { automatic: !blocked, reason: String(reason), attempt, next_at: Date.now() + delay },
+    });
   }
 
   async close() {

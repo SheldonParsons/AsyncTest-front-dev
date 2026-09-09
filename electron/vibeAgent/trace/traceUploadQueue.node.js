@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import { TRACE_UPLOAD_SCHEMA, sha256, withoutCredentials } from "./traceModel.mjs";
+import { retryTransport, retryAfterMs, waitForRetry } from "../transportRetry.node.js";
 
 // Stay below Django's default request-body ceiling; deployments may opt into
 // larger chunks (up to the server's 8MiB contract) explicitly.
@@ -193,6 +194,7 @@ async function responseJson(response, code) {
       const error = new Error(String(payload.code || `${code}_http_${response.status}`));
       error.code = String(payload.code || `${code}_http_${response.status}`);
       error.status = response.status;
+      error.retryAfterMs = retryAfterMs(response.headers?.get?.('retry-after'));
       throw error;
     }
     return payload;
@@ -213,6 +215,7 @@ export class TraceUploadQueue {
     this.pending = new Map();
     this.running = new Map();
     this.abortControllers = new Set();
+    this.closeController = new AbortController();
     this.closed = false;
     this.closing = false;
     this.closePromise = null;
@@ -456,6 +459,10 @@ export class TraceUploadQueue {
   }
 
   async postBegin(baseUrl, headers, body, bindingToken = "") {
+    return retryTransport(() => this.postBeginOnce(baseUrl, headers, body, bindingToken), { signal: this.closeController.signal });
+  }
+
+  async postBeginOnce(baseUrl, headers, body, bindingToken = "") {
     const response = await this.request(this.endpoint(baseUrl, "/agent-traces/uploads"), {
       method: "POST",
       headers: trustedHeaders({ ...headers, "Content-Type": "application/json", Accept: "application/json" }, bindingToken),
@@ -494,16 +501,17 @@ export class TraceUploadQueue {
         const status = Number(error?.status || 0);
         const retryable = !status || status === 408 || status === 429 || status >= 500;
         if (!retryable || attempt >= MAX_ATTEMPTS) break;
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, 250 * attempt);
-          timer.unref?.();
-        });
+        await waitForRetry(Math.max(250 * attempt, Number(error?.retryAfterMs || 0)), this.closeController.signal);
       }
     }
     throw lastError;
   }
 
   async postComplete(baseUrl, headers, state, bindingToken = "") {
+    return retryTransport(() => this.postCompleteOnce(baseUrl, headers, state, bindingToken), { signal: this.closeController.signal });
+  }
+
+  async postCompleteOnce(baseUrl, headers, state, bindingToken = "") {
     const uploadId = requireUploadId(state.upload_id);
     const url = this.endpoint(baseUrl, `/agent-traces/uploads/${encodeURIComponent(uploadId)}/complete`);
     const response = await this.request(url, {
@@ -543,6 +551,7 @@ export class TraceUploadQueue {
         ]);
       }
       this.closed = true;
+      this.closeController.abort();
       for (const controller of this.abortControllers) controller.abort();
       await Promise.allSettled([...this.running.values()]);
       this.pending.clear();

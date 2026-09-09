@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { validatedBackendUrl } from "./backendUrl.node.js";
 import { PROTOCOL_VERSION } from "./runtime/protocol.mjs";
+import { retryTransport, retryAfterMs } from "./transportRetry.node.js";
 
 const REQUEST_SCHEMA = "electron_pi_runtime_snapshot_request.v1";
 const RESPONSE_SCHEMA = "electron_pi_runtime_snapshot.v1";
@@ -271,7 +272,11 @@ function runtimeSnapshot(payload, run) {
 }
 
 /** Main-only, one-shot exchange. The returned secret is never cached here. */
-export async function fetchRuntimeSnapshot({
+export async function fetchRuntimeSnapshot(options) {
+  return retryTransport(() => fetchRuntimeSnapshotOnce(options), { signal: options.signal });
+}
+
+async function fetchRuntimeSnapshotOnce({
   baseUrl, authToken, isDevelopment = false, run, providerId = "", identity = {},
   fetchImpl = globalThis.fetch,
 } = {}) {
@@ -317,6 +322,7 @@ export async function fetchRuntimeSnapshot({
     if (!response.ok) {
       const error = new Error(String(payload?.code || `vibe_agent_runtime_snapshot_http_${response.status}`));
       error.status = response.status;
+      error.retryAfterMs = retryAfterMs(response.headers?.get?.('retry-after'));
       throw error;
     }
     return runtimeSnapshot(payload, run);

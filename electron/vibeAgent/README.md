@@ -1,5 +1,18 @@
 # Electron 本地 Pi Agent（Vibe v2）
 
+## 对话恢复（2026-09-09）
+
+- 不再执行整轮六分钟限制。Provider 建连期限20秒；等待响应和生成无进展期限沿用 Provider read 配置，缺省600秒。有效生成增量刷新无进展计时，持续输出没有总时长上限。
+- Pi 负责三次短期模型重试；仍失败时保存 `retry_wait`，释放子进程，由 Main 按15/30/60秒基准退避恢复，遵守 Retry-After。不可重试的模型错误保留为 `blocked`，不会冒充完成。
+- `LocalRunStore` 仍是恢复状态唯一所有者，Pi JSONL 仍是模型上下文唯一所有者。不新增后台服务或数据库表。旧的失败记录不会被自动启动。
+- 用户停止当前执行后不自动恢复；在同一对话发“继续”时，正常会话携带原历史和恢复信息，主脑决定下一步。不按关键词强制执行上个工具，也不重新批准已取消的确认。
+- 关闭应用保留待处理记录；重新取得有效身份后通过 `vibeAgent:recoverPending` 恢复安全步骤。任务恢复与 Trace 补传是两个独立 IPC 入口。
+- 已确认写入结果未知时沿原确认ID核实/补取，停止时保留待核实确认身份。任意本地写文件或命令的未知结果不会自动重放。
+- 知识读取传输故障可持续退避重试；预览只在有稳定调用身份时做短期重试；正式写入不使用通用传输重试。运行快照以及 Trace 开始/完成阶段具有短期传输重试。
+- 删除会话和退出账号清除待调度恢复，重新检查账号、项目、服务地址及文件身份。不能把服务器授权失败当作临时网络故障无限重试。
+
+首次运行快照请求前会保存原输入及已验证文件描述。暂时故障可跨重启恢复；恢复时重新鉴权、校验文件身份，取得完整快照后才启动模型。取消预检会中断请求且不会启动模型。验证与限制见外置测试数据目录 `audits/20260909-conversation-reliability`。前后端需配套更新并重启 Electron；旧客户端仍可能执行旧时长限制。没有安全重放依据的文件/命令故障需要用户处理。
+
 这组模块把 Pi 的进程、普通本机文件引用、会话日志和 Trace 放到 Electron Main；后端不
 启动 Agent 循环，只提供版本化的 Knowledge Tool、被动 Trace 接收，以及每个 Goal
 开始时的一次 Provider/Skill 运行快照。
@@ -68,8 +81,9 @@ PDF、Excel、PPTX（旧版 PPT 不做转换）和图片是普通本机能力，
 
 上下文管理、截断工具调用恢复和压缩续跑由官方 `AgentSession` 完成。模型能力优先取
 Provider 明确配置；未配置时按 Provider family + 精确 model id 使用 Pi 0.84.4 官方模型目录，
-不再继承旧服务端 ReAct 的 12 次调用、275K 上下文、8192 输出或 360 秒预算。Provider
-自动重试保持关闭；Thinking 未显式配置时保持 `off`。
+不再继承旧服务端 ReAct 的 12 次调用、275K 上下文、8192 输出或 360 秒预算。暂时性模型故障
+先由 AgentSession 短重试，耗尽后由 Main 持久化退避续跑；不叠加 Provider SDK 内部重试。
+Thinking 未显式配置时保持 `off`。
 
 本地会话第一次 Goal 真正完成后，同一个 Pi 子进程会用同一份 Provider 快照执行一次
 无工具的私有标题总结；标题最多 12 个字符，只写入 LocalSessionStore，不进入聊天正文。
@@ -107,7 +121,7 @@ system prompt 摘要。
 后续不再把完整历史跨 IPC 发送。
 
 自动压缩使用 Pi 0.84.4 默认边界（`reserveTokens=16384`、
-`keepRecentTokens=20000`），Thinking 和 Provider 自动重试仍关闭。压缩摘要只进入 Pi Session
+`keepRecentTokens=20000`）；Thinking 默认关闭，重试由上述单一分层路径负责。压缩摘要只进入 Pi Session
 和 Trace，不成为用户可见回答。产品 `events.jsonl` 继续负责 UI、附件、确认卡与生命周期，
 不再承担模型上下文或自研 checkpoint。
 
@@ -142,13 +156,19 @@ payload 文件。Provider 调用默认只保留请求摘要、hash、大小、�
 ## 重启与崩溃恢复
 
 Main 会在 `userData/vibe-agent/runs/<run_id>/descriptor.json` 保存不含凭据的运行描述：
-Provider key、Provider headers、登录 token、Cookie 和一次性票据永不落盘。描述只在已经形成完整
-`interaction_request` 时可恢复；重启后 Renderer 打开对应本地会话即可重新显示卡片，
-用户作答时 Main 重新打开该产品会话绑定的 Pi 官方 JSONL Session，只补入已完成且尚未交付的工具结果，并用同一个 `run_id` 冷启动
-续跑，不重放原来的 Provider/tool wave。Provider 或工具处于进行中时一律标记
-`provider_outcome_unknown` / `tool_outcome_unknown`（或 `runner_interrupted`），不自动
-重试。确认结果已经返回但子进程尚未接收时会保存 `resume_ready`，再次操作只复用已知
-结果，避免重复写入。
+Provider key、Provider headers、登录 token、Cookie 和一次性票据永不落盘。首次认证取配置前先保存
+用户请求和运行身份；此时允许缺省 `provider_mode`，Main 认证注入后仍严格要求 `direct`。
+新描述带 `recovery_version: 1`；认证有效时可恢复配置获取和模型暂时故障，旧描述不自动复活。
+完整 `interaction_request` 会恢复原确认卡；尚未确认的操作不会自动执行。
+
+用户作答后保存 `response_in_flight`。知识确认响应丢失时，只沿同一确认 ID、用户选择和幂等键
+重试取回事务结果，业务失败及权限拒绝不自动重试；普通反问与任意工具不套用此规则。
+已知结果保存为 `resume_ready`；冷恢复重新认证并打开原 Pi Session，补入结果而不创建新写入。
+若退出时 SDK 留下同一工具调用的 `operation_aborted` 占位，且后面仅有空错误消息，沿原生
+Session 分支从占位前接入正式回执；旧日志保留，已有成功结果或后续有效消息不会被替换。
+未知工具副作用保留为待处理状态，不盲目重放。普通退出保留任务；主动停止不会自动续跑，
+后续用户消息仍由 Agent 根据历史决定如何继续。删除会话及登出遵守现有清理边界。
+任务恢复与 Trace 上传分离，上传失败不决定任务成功或失败。
 
 ## 打包布局
 

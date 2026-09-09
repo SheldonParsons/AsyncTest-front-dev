@@ -14,6 +14,7 @@ import {
   parseOutboundLine,
 } from "./runtime/protocol.mjs";
 import { localRunConstants } from "./run/localRunStore.node.js";
+import { retryTransport } from "./transportRetry.node.js";
 
 const AGENT_CORE_VERSION = "0.84.4";
 const PI_AI_VERSION = "0.84.4";
@@ -143,8 +144,7 @@ function responseSignature(value) {
   });
 }
 
-function validateLocalRun(input) {
-  const source = input?.run;
+export function validateLocalRunIdentity(source, { requireProvider = true } = {}) {
   if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("vibe_agent_run_invalid");
   if (source.schema !== RUN_SCHEMA || source.execution_host !== "electron") throw new Error("vibe_agent_run_schema_invalid");
   if (source.execution_mode !== "local") throw new Error("vibe_agent_local_mode_required");
@@ -172,13 +172,21 @@ function validateLocalRun(input) {
   if (run.account_id && !/^[A-Za-z0-9._:-]{1,160}$/.test(run.account_id)) {
     throw new Error("vibe_agent_account_id_invalid");
   }
-  if (run.provider_mode !== "direct") throw new Error("vibe_agent_provider_mode_invalid");
+  // Renderer 尚未取得运行快照；仅前置身份校验允许缺省，认证注入后仍必须为 direct。
+  if ((requireProvider || run.provider_mode !== "") && run.provider_mode !== "direct") {
+    throw new Error("vibe_agent_provider_mode_invalid");
+  }
   for (const [key, label] of [["trace_id", "trace_id"], ["goal_id", "goal_id"]]) {
     if (run[key] !== "" && !/^[A-Za-z0-9._:-]{1,160}$/.test(String(run[key]))) {
       throw new Error(`vibe_agent_${label}_invalid`);
     }
     run[key] = String(run[key] || "");
   }
+  return run;
+}
+
+function validateLocalRun(input) {
+  const run = validateLocalRunIdentity(input?.run);
   const payload = input?.start_payload ?? input?.start ?? input?.payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("vibe_agent_local_start_payload_missing");
   // Reuse the child protocol validator at this trust boundary instead of
@@ -331,7 +339,7 @@ class HostedRun {
     // The handler writes the authoritative user-message journal before the
     // child can call a Provider. Its Trace append is already best-effort;
     // any remaining error must stop startup rather than lose context.
-    await this.localHandlers.onStart?.({ run: this.run, payload: traceStart, context: this.localContext });
+    await this.localHandlers.onStart?.({ run: this.run, payload: traceStart, context: this.localContext, resume: this.resume });
     if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || ""))) {
       throw new Error("vibe_agent_account_releasing");
     }
@@ -346,6 +354,7 @@ class HostedRun {
       startPayload: this.startPayload,
       localContext: this.localContext,
       replace: this.resume,
+      replaceAdmission: true,
     });
     const sessionTerminating = this.host.isSessionTerminating(this.run.account_id, this.run.session_id);
     if (this.closed || this.host.terminatingAccounts.has(String(this.run.account_id || "")) || sessionTerminating) {
@@ -443,6 +452,17 @@ class HostedRun {
             const unknown = phase === "provider_in_flight" || phase === "response_in_flight"
               ? "provider_outcome_unknown"
               : phase === "tool_in_flight" ? "tool_outcome_unknown" : "runner_interrupted";
+            if (descriptor?.recovery_version === 1) {
+              await this.runStore.markRecovery(this.run.run_id, unknown, {
+                blocked: phase === "tool_in_flight" || (phase === "response_in_flight"
+                  && !(descriptor.pending?.kind === "knowledge_confirmation" && descriptor.response)),
+              });
+              this.setState("waiting_user", unknown);
+              await this.localHandlers.onPark?.({ run: this.run, context: this.localContext,
+                sender: this.sender, reason: unknown, code, signal });
+              await this.close({ state: "waiting_user", fromExit: true, preserveWaiting: true });
+              return;
+            }
             await this.runStore.markTerminal(this.run.run_id, "failed", unknown).catch(() => undefined);
             this.fail(unknown);
             return;
@@ -467,6 +487,7 @@ class HostedRun {
             run: this.run,
             context: this.localContext,
             reason: "waiting_child_exit",
+            sender: this.sender,
           })).catch(() => undefined);
           await this.close({ state: "waiting_user", fromExit: true, preserveWaiting: true });
           return;
@@ -549,7 +570,15 @@ class HostedRun {
       }
     }
     if (this.runStore) {
-      if (frame.type === "provider_payload") {
+      if (frame.type === "retry_status" && ["parked", "blocked"].includes(frame.payload.phase)) {
+        const previous = await this.runStore.get(this.run.run_id);
+        const delayMs = Math.max(Number(frame.payload.delay_ms || 0),
+          Math.round(Math.min(60000, 15000 * 2 ** Math.min(Number(previous?.recovery?.attempt || 0), 2)) * (0.8 + Math.random() * 0.4)));
+        const waiting = await this.runStore.markRecovery(this.run.run_id, frame.payload.code,
+          { delayMs, blocked: frame.payload.phase === "blocked" });
+        this.recoveryState = waiting.recovery;
+        this.setState("waiting_user");
+      } else if (frame.type === "provider_payload") {
         await this.runStore.phase(this.run.run_id, "provider_in_flight", {
           state: "running",
           last_call: {
@@ -557,6 +586,11 @@ class HostedRun {
             purpose: frame.payload?.purpose,
             frame_type: frame.type,
           },
+        });
+      } else if (frame.type === "local_tool_start") {
+        await this.runStore.phase(this.run.run_id, "tool_in_flight", {
+          state: "running", last_call: { frame_type: frame.type,
+            tool_name: frame.payload.tool_name, tool_call_id: frame.payload.tool_call_id },
         });
       } else if (frame.type === "tool_wave") {
         await this.runStore.phase(this.run.run_id, "tool_in_flight", {
@@ -605,6 +639,12 @@ class HostedRun {
       this.event("trace_error", { frameType: frame.type });
     }
     if (frame.type === "assistant_end") this.assistantPartialText = "";
+    if (frame.type === "local_tool_end") {
+      await this.runStore?.phase(this.run.run_id, "running", {
+        last_call: { frame_type: frame.type, tool_name: frame.payload.tool_name,
+          tool_call_id: frame.payload.tool_call_id, result_known: true },
+      });
+    }
     if (this.closed) return;
     if (frame.type === "session_open") {
       const outcome = await this.localHandlers.onSessionOpen?.({
@@ -718,7 +758,8 @@ class HostedRun {
       this.event("done", { ...frame.payload, payload: frame.payload });
       if (this.runStore) {
         if (frame.payload.status === "waiting_user") {
-          await this.runStore.phase(this.run.run_id, "waiting_user", { state: "waiting_user" }).catch(() => undefined);
+          const descriptor = await this.runStore.get(this.run.run_id);
+          if (!["retry_wait", "blocked"].includes(descriptor?.phase)) await this.runStore.phase(this.run.run_id, "waiting_user", { state: "waiting_user" });
         } else {
           await this.runStore.markTerminal(this.run.run_id, this.localTerminalState, frame.payload.code || "").catch(() => undefined);
         }
@@ -791,7 +832,23 @@ class HostedRun {
       // transaction: a later retry would otherwise be unable to distinguish a
       // committed result from an unknown side effect.
       await this.runStore?.markResponseInFlight(this.run.run_id, projected);
-      const outcome = await callback({ run: this.run, request: pending.payload, response: projected, context: this.localContext });
+      const resolve = () => callback({ run: this.run, request: pending.payload, response: projected, context: this.localContext });
+      // 用户已经选择过的同一确认，沿原 confirmation_id 和幂等键恢复回执。
+      // 不重做预览，不重放任意工具；业务失败结果仍直接交回 Agent。
+      const recoverableConfirmation = pending.payload.kind === "knowledge_confirmation"
+        && Boolean(pending.payload.confirmation_id) && ["apply", "cancel"].includes(projected.action);
+      const outcome = recoverableConfirmation ? await retryTransport(resolve, {
+        signal: this.abortController.signal,
+        continuous: true,
+        onRetry: async (retry) => {
+          const frame = { type: "retry_status", payload: {
+            ...retry, phase: "waiting", code: "confirmation_result_pending",
+          } };
+          this.event("pi_frame", { frameType: frame.type, payload: frame.payload });
+          await Promise.resolve(this.localHandlers.onFrame?.({ run: this.run, frame, context: this.localContext }))
+            .catch(() => undefined);
+        },
+      }) : await resolve();
       if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) throw new Error("vibe_agent_local_interaction_result_invalid");
       const result = outcome.result;
       if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("vibe_agent_local_interaction_tool_result_missing");
@@ -847,7 +904,8 @@ class HostedRun {
       const resolved = this.localResolved.get(pendingId);
       if (resolved) {
         await this.runStore?.markResumeReady(this.run.run_id, projected, resolved).catch(() => undefined);
-      } else {
+      } else if (!this.abortController.signal.aborted) {
+        // 停止/退出由生命周期收口；不要把已确认的进行中检查点改回未作答状态。
         await this.runStore?.phase(this.run.run_id, "waiting_user", {
           state: "waiting_user",
           runtime_lost: true,
@@ -893,6 +951,7 @@ class HostedRun {
       executionMode: "local",
       startedAt: this.startedAt,
       assistantPartialText: this.assistantPartialText,
+      ...(this.recoveryState ? { recovery: this.recoveryState } : {}),
       ...(this.run.trace_id ? { traceId: this.run.trace_id } : {}),
       ...(this.run.goal_id ? { goalId: this.run.goal_id } : {}),
       ...(pending
@@ -912,7 +971,13 @@ class HostedRun {
     const recoverable = Boolean(pending) || localRunConstants.RECOVERABLE_PHASES.has(phase);
     if (!recoverable) return false;
     const pendingPayload = pending?.payload || descriptor?.pending;
-    if (phase === "resume_ready" && descriptor?.response && descriptor?.resolved_result) {
+    if (["retry_wait", "blocked"].includes(phase)) {
+      // 已有自动恢复/阻塞原因不能被无待确认项的 waiting_user 覆盖。
+    } else if (descriptor?.recovery_version === 1 && descriptor.response
+      && pendingPayload?.kind === "knowledge_confirmation"
+      && ["response_in_flight", "resume_ready"].includes(phase)) {
+      await this.runStore.markRecovery(this.run.run_id, "confirmation_result_pending");
+    } else if (phase === "resume_ready" && descriptor?.response && descriptor?.resolved_result) {
       await this.runStore?.phase(this.run.run_id, "resume_ready", {
         state: "waiting_user",
         runtime_lost: true,
@@ -937,6 +1002,7 @@ class HostedRun {
       run: this.run,
       context: this.localContext,
       reason: "runner_crashed",
+      sender: this.sender,
       code,
       signal,
     })).catch(() => undefined);
@@ -1007,7 +1073,7 @@ class HostedRun {
     }
     if (String(state) === "aborted") {
       try {
-        await this.localHandlers.onClose?.({ run: this.run, context: this.localContext, state });
+        await this.localHandlers.onClose?.({ run: this.run, context: this.localContext, state, reason });
       } catch {
         // Trace finalization is observational. A broken local disk or upload
         // observer must not leave the child/Host lifecycle half-closed.
@@ -1015,6 +1081,16 @@ class HostedRun {
       }
     }
     const preserveFailedResumeCheckpoint = this.resume && !this.readyReached && String(state) === "failed";
+    if (this.runStore && reason === "app_exit") {
+      const saved = await this.runStore.get(this.run.run_id);
+      if (saved?.recovery_version === 1 && !["completed", "cancelled", "aborted", "failed"].includes(saved.state)) {
+        if (!saved.pending) await this.runStore.markRecovery(this.run.run_id, "app_exit", {
+          blocked: saved.phase === "tool_in_flight" || (saved.phase === "response_in_flight"
+            && !(saved.pending?.kind === "knowledge_confirmation" && saved.response)),
+        });
+        preserveWaiting = true;
+      }
+    }
     if (this.runStore && !preserveWaiting && !preserveFailedResumeCheckpoint && String(state) !== "waiting_user") {
       const terminalState = ["completed", "failed", "aborted", "cancelled", "closed"].includes(String(state))
         ? String(state) : "failed";
@@ -1359,6 +1435,7 @@ export class VibeAgentHost {
         sessionId: String(run.session_id || ""),
         state: "waiting_user",
         lifecycle: "waiting_user",
+        ...(descriptor.recovery ? { recovery: descriptor.recovery, phase: descriptor.phase } : {}),
         protocolVersion: PROTOCOL_VERSION,
         agentCoreVersion: AGENT_CORE_VERSION,
         piAgentCoreVersion: AGENT_CORE_VERSION,
@@ -1460,7 +1537,7 @@ export class VibeAgentHost {
 
   async cleanup() {
     const runs = [...this.runs.values()];
-    await Promise.allSettled(runs.map((run) => run.close({ state: "aborted" })));
+    await Promise.allSettled(runs.map((run) => run.close({ state: "aborted", reason: "app_exit" })));
     for (const reservation of [...this.localReservations.values()]) {
       this.releaseLocalReservation(reservation.runId, reservation.reservationId);
     }

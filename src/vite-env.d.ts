@@ -95,6 +95,7 @@ export interface IElectronAPI {
       };
     }) => Promise<ElectronAgentStatus>;
     recoverableLocal?: (payload: { accountId: string }) => Promise<Array<Record<string, unknown>>>;
+    recoverPending?: (payload: { accountId: string; baseUrl: string; headers: Record<string, string> }) => Promise<{ accepted: boolean }>;
     recoverLocal?: (payload: {
       runId: string;
       accountId: string;

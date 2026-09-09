@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   VibeAgentHost,
+  validateLocalRunIdentity,
   vibeAgentChildEnvironment,
   vibeAgentRuntimePath,
 } from "./agentHost.node.js";
@@ -34,6 +35,7 @@ const CHANNELS = [
   "vibeAgent:readinessExport",
   "vibeAgent:startLocal",
   "vibeAgent:recoverableLocal",
+  "vibeAgent:recoverPending",
   "vibeAgent:recoverLocal",
   "vibeAgent:attach",
   "vibeAgent:respond",
@@ -195,6 +197,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // the explicit user intent until the runner's terminal `done` frame arrives
   // so an `aborted` status can be distinguished from an app-exit/crash abort.
   const localUserCancelRequests = new Map();
+  const automaticRecoveryTimers = new Map();
+  let shuttingDown = false;
   const LOCAL_CANCELLATION_RECEIPT = "已停止本轮处理，本轮未产生任何录入或改动。";
   const localPromptText = (value) => {
     if (typeof value === "string") return value;
@@ -228,6 +232,14 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       internal: true,
     });
   };
+  const persistLocalUserIntent = (run, payload, files = []) => appendLocalSessionEvent(run, 'user',
+    localPromptText(payload?.user_text ?? payload?.prompt),
+    { local_event_key: `${String(run.run_id)}:user` },
+    files.map(item => ({ schema: 'local_file_ref.v1', id: String(item.ref_id || ''),
+      resource_id: String(item.ref_id || ''), ref_id: String(item.ref_id || ''),
+      name: String(item.name || ''), filename: String(item.name || ''),
+      mime: String(item.mime || 'application/octet-stream'), size: Number(item.size || 0), kind: 'local-file' })),
+  );
   // Cancellation is a lifecycle receipt, not a model answer. Persist it under
   // its own idempotent key so it survives reload and never replaces a partial
   // or completed assistant message from the same Run.
@@ -596,6 +608,12 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           authToken: normalized.authToken,
           agentBinding: bindingToken,
           isDevelopment,
+          onRetry: async event => {
+            await appendTrace(run, "knowledge.transport_retry", event, "running");
+            host.runs.get(key)?.event("pi_frame", { frameType: "retry_status", payload: {
+              phase: "waiting", attempt: event.attempt, delay_ms: event.delay_ms, code: "knowledge_transport_retry",
+            } });
+          },
         })
       : null;
     const router = new LocalToolRouter({
@@ -650,27 +668,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
   };
   const builtInLocalHandlers = {
-    onStart: async ({ run, payload, context }) => {
+    onStart: async ({ run, payload, context, resume = false }) => {
       // Main owns the durable journal write as well as the child lifecycle.
       // Renderer still writes an optimistic copy for instant UI feedback;
       // local_event_key makes the two paths one idempotent event.
-      const localFiles = Array.isArray(payload?.local_files) ? payload.local_files.map((item) => ({
-        schema: "local_file_ref.v1",
-        id: String(item.ref_id || ""),
-        resource_id: String(item.ref_id || ""),
-        ref_id: String(item.ref_id || ""),
-        name: String(item.name || ""),
-        filename: String(item.name || ""),
-        mime: String(item.mime || "application/octet-stream"),
-        size: Number(item.size || 0),
-        kind: "local-file",
-      })) : [];
-      const userText = payload?.user_text !== undefined
-        ? localPromptText(payload.user_text)
-        : localPromptText(payload?.prompt);
-      await appendLocalSessionEvent(run, "user", userText, {
-        local_event_key: `${String(run?.run_id || run?.runId || "")}:user`,
-      }, localFiles);
+      if (!resume) await persistLocalUserIntent(run, payload, payload.local_files || []);
       const traceId = await ensureTrace(run);
       if (traceId) {
         await traceStore.updateMetadata(traceId, {
@@ -707,14 +709,16 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       });
       return { accepted: true };
     },
-    onPark: async ({ run, reason, code, signal }) => {
+    onPark: async ({ run, context, sender, reason, code, signal }) => {
+      await scheduleAutomaticRecovery(run.run_id, context, sender);
       return appendTrace(run, "agent.run.parked", {
         reason: String(reason || "waiting_child_exit"),
         ...(code === undefined ? {} : { code: String(code) }),
         ...(signal === undefined ? {} : { signal: String(signal) }),
       }, "waiting_user");
     },
-    onClose: async ({ run, context, state }) => {
+    onClose: async ({ run, context, state, reason }) => {
+      if (reason === "app_exit") return finishTrace(run, context, "waiting_user", { code: "app_exit", preserved: true });
       // A normal app quit closes the child before it can emit its own `done`
       // frame. Finalize the local Trace from the Host lifecycle so an abort
       // is still visible and can be uploaded; finishTrace is idempotent when
@@ -802,7 +806,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         const purpose = String(frame.payload?.purpose || "main_agent");
         const toolCalls = Array.isArray(frame.payload?.tool_calls) ? frame.payload.tool_calls : [];
         if (purpose === "main_agent") {
-          const key = !toolCalls.length
+          const interrupted = ["error", "aborted"].includes(String(frame.payload?.stop_reason));
+          const key = interrupted ? `assistant-interrupted:${messageId}` : !toolCalls.length
             ? `${String(run?.run_id || run?.runId || "")}:assistant`
             : messageId
               ? `assistant:${messageId}`
@@ -1005,6 +1010,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         run,
         providerId,
         identity: host.identity(),
+        signal: controller.signal,
         fetchImpl: (url, init = {}) => globalThis.fetch(url, {
           ...init,
           signal: init.signal
@@ -1044,7 +1050,12 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
     const dynamic = Object.fromEntries(Object.entries(start).filter(([key]) => dynamicKeys.has(key)));
     const requestedLocalRefs = candidate?.local_file_refs;
-    const selectedLocalFiles = candidate?.resume
+    const admission = candidate?._admissionResume
+      ? await runStore.get(String(run.run_id), { accountId: context.accountId }) : null;
+    if (candidate?._admissionResume && (!admission?.admission_pending || admission.phase !== 'retry_wait')) {
+      throw new Error('vibe_agent_admission_resume_invalid');
+    }
+    const selectedLocalFiles = admission ? (admission.start_payload.local_files || []) : candidate?.resume
       ? null
       : requestedLocalRefs === undefined
         ? []
@@ -1052,6 +1063,25 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const providerId = String(candidate?.provider_id ?? "").trim();
     if ((candidate?._runtime_snapshot || candidate?._pi_resume) && !candidate?.resume) {
       throw new Error("vibe_agent_local_start_renderer_field_forbidden");
+    }
+    if (admission) {
+      for (const file of selectedLocalFiles) {
+        const stat = await fs.stat(file.absolute_path).catch(() => null);
+        if (!stat?.isFile() || Number(stat.dev) !== file.dev || Number(stat.ino) !== file.ino
+          || Number(stat.size) !== file.size || Math.trunc(stat.mtimeMs) !== file.last_modified) {
+          throw new Error('vibe_agent_local_file_changed');
+        }
+      }
+    } else if (!candidate?.resume) {
+      await sessionStore.manifest(String(run.session_id), { accountId: context.accountId });
+      await runStore.create({ run, admissionPending: true,
+        startPayload: { provider: { id: providerId }, pending_input: localPromptText(dynamic.user_text ?? dynamic.prompt),
+          local_files: selectedLocalFiles || [] }, localContext: localContextPayload(context) });
+      await persistLocalUserIntent(run, dynamic, selectedLocalFiles || []);
+    }
+    const beforeSnapshot = await runStore.get(String(run.run_id), { accountId: context.accountId });
+    if (shuttingDown || ['cancelled', 'aborted', 'completed', 'failed'].includes(beforeSnapshot?.state)) {
+      throw new Error('bootstrap_interrupted');
     }
     const snapshot = candidate?._runtime_snapshot
       || await fetchRunSnapshot(run, context, providerId, { resume: Boolean(candidate?.resume) });
@@ -1084,12 +1114,13 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       throw new Error("vibe_agent_pi_session_missing");
     }
     const bootstrapHistory = piSession.mode === "create"
-      ? await sessionStore.history(String(run.session_id || ""), { accountId: snapshot.account_id })
+      ? await sessionStore.history(String(run.session_id || ""), { accountId: snapshot.account_id, excludeUserRunId: run.run_id })
       : [];
     const bootstrapSequence = Math.max(0, Number(sessionManifest.next_sequence || 1) - 1);
     const piResume = candidate?.resume ? candidate?._pi_resume : null;
     if (candidate?.resume && (!piResume || typeof piResume !== "object" || Array.isArray(piResume)
-      || !Array.isArray(piResume.messages) || !piResume.messages.length
+      || !Array.isArray(piResume.messages) || (!piResume.messages.length
+        && !(piResume.context_only === true && priorDescriptor?.phase === "retry_wait"))
       || typeof piResume.resume_key !== "string" || !piResume.resume_key.trim())) {
       throw new Error("vibe_agent_pi_session_resume_invalid");
     }
@@ -1133,6 +1164,43 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     // No local copy is created or persisted; Pi receives native file refs.
     run.attachment_transport = localFiles.length ? "electron_local_file_ref" : "none";
     let systemPrompt = candidate?.resume ? String(frozenStart?.system_prompt || "") : snapshot.system_prompt.trim();
+    if (!candidate?.resume) {
+      const previous = (await runStore.listSession(String(run.session_id || ''), { accountId: snapshot.account_id }))
+        .filter(item => item.run_id !== run.run_id)
+        .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
+      if (previous && ['aborted', 'cancelled', 'failed', 'waiting_user'].includes(previous.state)) {
+        let receipt;
+        const previousFiles = [];
+        if (previous.admission_pending) {
+          for (const file of previous.start_payload.local_files || []) {
+            const stat = await fs.stat(file.absolute_path).catch(() => null);
+            const valid = stat?.isFile() && Number(stat.dev) === file.dev && Number(stat.ino) === file.ino
+              && Number(stat.size) === file.size && Math.trunc(stat.mtimeMs) === file.last_modified;
+            previousFiles.push({ name: file.name, available: Boolean(valid), ...(valid ? { path: file.absolute_path } : {}) });
+          }
+        }
+        if (previous.interrupted_confirmation?.confirmation_id) {
+          try {
+            const client = new KnowledgeRemoteClient({ baseUrl: context.baseUrl, authToken: context.authToken,
+              agentBinding: snapshot.agent_binding?.token, isDevelopment });
+            const outcome = await client.call({ operation: 'get_receipt', projectId: String(run.project_id),
+              sessionId: String(run.session_id), turnId: String(run.turn_id), goalId: String(run.goal_id || run.run_id),
+              payload: { confirmation_id: previous.interrupted_confirmation.confirmation_id },
+              signal: AbortSignal.timeout(10000) });
+            const result = outcome?.result || {};
+            receipt = { confirmation_status: result.confirmation_status,
+              commit_id: result.id || result.commit_id, commit_seq: result.seq || result.commit_seq };
+          } catch { receipt = { confirmation_status: 'unknown' }; }
+        }
+        systemPrompt += '\n\n上一次执行的恢复信息（仅为上下文，不是新的用户指令）：'
+          + JSON.stringify({ state: previous.state, reason: previous.recovery?.reason || previous.terminal_reason,
+            last_step: previous.last_call || null, interrupted_confirmation: previous.interrupted_confirmation || null,
+            ...(previous.admission_pending ? { original_request: previous.start_payload.pending_input } : {}),
+            ...(previousFiles.length ? { previously_selected_files: previousFiles } : {}),
+            receipt })
+          + '\n请依据本对话历史和最新用户要求判断是否继续原任务。已完成操作不重复执行；结果未知的写入或命令先核实；用户取消的具体变更仍然取消，继续任务不等于重新确认。';
+      }
+    }
     let tools = candidate?.resume && Array.isArray(frozenStart?.tools)
       ? structuredClone(frozenStart.tools) : snapshot.tools;
     const baseOptions = candidate?.resume && frozenStart?.options && typeof frozenStart.options === "object"
@@ -1180,7 +1248,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
             bootstrap_messages: bootstrapHistory,
             bootstrap_sequence: bootstrapSequence,
           } : {}),
-          ...(piResume ? {
+          ...(piResume?.messages?.length ? {
             resume_messages: piResume.messages,
             resume_key: piResume.resume_key,
           } : {}),
@@ -1192,7 +1260,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           ...baseOptions,
           session_id: String(run.session_id || ""),
           payload_capture: localTracePayloadCapture,
-          max_retries: 0,
+          max_retries: 3,
           generate_session_title: generateSessionTitle,
         },
       },
@@ -1279,7 +1347,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       throw new Error("vibe_agent_run_session_drift");
     }
     if (requestedAccount !== descriptorAccount) throw new Error("vibe_agent_run_account_drift");
-    if (!new Set(["waiting_user", "resume_ready"]).has(String(descriptor.phase || ""))) {
+    if (!new Set(["waiting_user", "resume_ready"]).has(String(descriptor.phase || ""))
+      && !(descriptor.phase === "retry_wait" && descriptor.pending && descriptor.response)) {
       throw new Error("vibe_agent_run_not_recoverable");
     }
     const suppliedContext = payload?.local_context ?? {};
@@ -1341,7 +1410,9 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) throw new Error("vibe_agent_local_interaction_result_invalid");
         await runStore.markResumeReady(runId, response, outcome);
       } catch (error) {
-        await runStore.markWaiting(runId, pending, { runtime_lost: true }).catch(() => undefined);
+        // 响应失败不撤销已经保存的用户选择；自动恢复仍复用同一确认与幂等键。
+        await runStore.phase(runId, "waiting_user", { state: "waiting_user", runtime_lost: true })
+          .catch(() => undefined);
         throw error;
       }
     }
@@ -1468,6 +1539,86 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   // reload is settling. Serialize recovery per logical run so only one
   // snapshot exchange and one child are ever created.
   const recoveryInFlight = new Map();
+  async function scheduleAutomaticRecovery(runId, rawContext, sender) {
+    if (shuttingDown || automaticRecoveryTimers.has(runId)) return;
+    const context = validContext(rawContext);
+    const descriptor = await runStore.get(runId, { accountId: context.accountId });
+    if (descriptor?.phase !== "retry_wait" || !descriptor.recovery?.automatic) return;
+    const timer = setTimeout(() => {
+      automaticRecoveryTimers.delete(runId);
+      void resumeAutomatic(runId, context, sender).catch(() => undefined);
+    }, Math.min(2_147_000_000, Math.max(250, Number(descriptor.recovery.next_at || 0) - Date.now())));
+    timer.unref?.();
+    automaticRecoveryTimers.set(runId, timer);
+  }
+  async function resumeAutomatic(runId, context, sender) {
+    if (shuttingDown || recoveryInFlight.has(runId)) return;
+    const descriptor = await runStore.get(runId, { accountId: context.accountId });
+    if (descriptor?.phase !== "retry_wait" || !descriptor.recovery?.automatic) return;
+    if (Number(descriptor.recovery.next_at || 0) > Date.now()) {
+      return scheduleAutomaticRecovery(runId, localContextPayload(context), sender);
+    }
+    accountForLocalOperation(context.accountId);
+    if (host.runs.has(runId)) {
+      await runStore.markRecovery(runId, "waiting_previous_process", { delayMs: 1000 });
+      return scheduleAutomaticRecovery(runId, localContextPayload(context), sender);
+    }
+    const run = descriptor.run;
+    const task = (async () => {
+      let reservation;
+      try {
+        const saved = validContext({ ...descriptor.local_context, auth_token: context.authToken });
+        if (saved.baseUrl !== context.baseUrl) throw new Error("vibe_agent_recovery_backend_drift");
+        if (descriptor.pending && descriptor.response) {
+          // 已明确确认过的同一操作，沿原确认ID补取/重放回执，不新增一笔写入。
+          return await recoverLocalUnsafe({ runId, accountId: context.accountId,
+            project_id: run.project_id, session_id: run.session_id,
+            local_context: localContextPayload(saved), response: descriptor.response }, sender);
+        }
+        reservation = await host.reserveLocal({ runId, turnId: run.turn_id, sessionId: run.session_id,
+          projectId: run.project_id, accountId: run.account_id, resume: true }, sender);
+        const candidate = descriptor.admission_pending ? {
+          run: { ...run }, _admissionResume: true, provider_id: descriptor.start_payload.provider?.id,
+          local_context: localContextPayload(saved),
+          start_payload: { execution_mode: 'local', prompt: descriptor.start_payload.pending_input },
+        } : {
+          run: { ...run }, resume: true, provider_id: descriptor.start_payload.provider?.id,
+          local_context: localContextPayload(saved),
+          start_payload: { ...descriptor.start_payload, execution_mode: "local",
+            prompt: "上次执行因暂时故障中断。请基于本对话已保存的原任务、工具结果与用户要求继续；已完成的操作不要重复执行，已取消的变更仍然取消。"
+              + (!descriptor.last_call ? `\n原始请求：${saved.requestText}` : '') },
+          _pi_resume: { messages: [], context_only: true, resume_key: `automatic:${runId}:${descriptor.attempt}` },
+        };
+        const enriched = await injectLocalStartPayload(candidate, sender);
+        // 重新获取配置期间用户可能已停止或删除，启动前再次核验持久状态。
+        const current = await runStore.get(runId, { accountId: context.accountId });
+        if (shuttingDown || current?.phase !== "retry_wait" || !current.recovery?.automatic) return;
+        await host.bindLocalReservation({ runId, reservationId: reservation.reservationId,
+          accountId: run.account_id, sessionId: run.session_id });
+        await appendTrace(run, "agent.run.automatic_resume", { attempt: descriptor.attempt + 1 });
+        return await host.startLocal(enriched, sender, { reservationId: reservation.reservationId });
+      } catch (error) {
+        const current = await runStore.get(runId, { accountId: context.accountId }).catch(() => null);
+        if (!current || !["retry_wait", "starting", "waiting_user"].includes(current.phase)) return;
+        const reason = String(error?.code || error?.message || "recovery_failed");
+        const transient = [408, 429, 500, 502, 503, 504].includes(Number(error?.status))
+          || /fetch|network|timeout|abort|http_50[234]|http_429|host_busy|session_busy|runner_ready_timeout|ECONN|ENOTFOUND/i.test(reason);
+        await runStore.markRecovery(runId, reason, { blocked: !transient });
+        await appendTrace(run, "agent.run.recovery_wait", { code: reason, automatic: transient }, "waiting_user");
+        const event = { schema: 'vibe_agent_event.v1', runId, turnId: run.turn_id, sessionId: run.session_id };
+        host.emitTo(sender, { ...event, type: 'pi_frame', frameType: 'retry_status', payload: {
+          phase: transient ? 'parked' : 'blocked', attempt: descriptor.attempt, delay_ms: 15000, code: reason,
+        } });
+        host.emitTo(sender, { ...event, type: 'state', state: 'waiting_user' });
+        if (transient) await scheduleAutomaticRecovery(runId, localContextPayload(context), sender);
+      } finally {
+        if (reservation) host.releaseLocalReservation(runId, reservation.reservationId);
+      }
+    })();
+    recoveryInFlight.set(runId, { accountId: context.accountId, sessionId: run.session_id,
+      ...(descriptor.response ? { signature: responseSignature(descriptor.response) } : {}), promise: task });
+    try { return await task; } finally { recoveryInFlight.delete(runId); }
+  }
   const recoverLocal = (payload, sender) => {
     const runId = String(payload?.run_id ?? payload?.runId ?? "").trim();
     if (!runId) return recoverLocalUnsafe(payload, sender);
@@ -1528,6 +1679,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     }
     accountBinding.beginRelease(accountId);
     accountContextEpoch += 1;
+    for (const timer of automaticRecoveryTimers.values()) clearTimeout(timer);
+    automaticRecoveryTimers.clear();
     const task = (async () => {
       await Promise.allSettled([...sessionRemovalInFlight.values()]);
       const before = await runStore.list({ accountId, includeTerminal: false }).catch(() => []);
@@ -1652,7 +1805,8 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   });
   register("vibeAgent:startLocal", async (payload, sender) => {
     await runReconcilePromise;
-    if (payload?.resume === true) throw new Error("vibe_agent_resume_internal_only");
+    if (payload?.resume === true || payload?._admissionResume) throw new Error("vibe_agent_resume_internal_only");
+    payload = { ...payload, run: validateLocalRunIdentity(payload?.run, { requireProvider: false }) };
     const runId = String(payload?.run?.run_id ?? "").trim();
     if (!runId) throw new Error("vibe_agent_run_invalid");
     const requestedAccountId = accountForLocalOperation(
@@ -1669,11 +1823,20 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const active = localStartInFlight.get(runId);
     if (active) {
       if (active.accountId !== requestedAccountId) throw new Error("vibe_agent_run_account_drift");
-      await active.promise;
-      return host.attach({ runId, accountId: requestedAccountId }, sender);
+      const result = await active.promise;
+      try { return host.attach({ runId, accountId: requestedAccountId }, sender); }
+      catch (error) { if (String(error?.message) !== 'vibe_agent_run_not_found') throw error; return result; }
     }
     const task = (async () => {
       const requestedRun = payload?.run || {};
+      // 用户的新消息接替自动恢复等待，由原生会话历史承接语义；不匹配“继续”关键词。
+      const previousRuns = await runStore.listSession(requestedRun.session_id, { accountId: requestedAccountId });
+      for (const previous of previousRuns) {
+        if (!["retry_wait", "blocked"].includes(previous.phase) || previous.run_id === runId) continue;
+        clearTimeout(automaticRecoveryTimers.get(previous.run_id));
+        automaticRecoveryTimers.delete(previous.run_id);
+        await runStore.markTerminal(previous.run_id, "aborted", "superseded_by_user_message");
+      }
       const reservation = await host.reserveLocal({
         runId,
         turnId: requestedRun.turn_id,
@@ -1686,6 +1849,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         const suppliedKey = candidate?.provider?.api_key ?? candidate?.provider?.apiKey;
         if (suppliedKey !== undefined) throw new Error("vibe_agent_local_provider_key_renderer_forbidden");
         const enriched = await injectLocalStartPayload(payload, sender);
+        if (shuttingDown) throw new Error('bootstrap_interrupted');
         if (!enriched || typeof enriched !== "object" || Array.isArray(enriched)) {
           throw new Error("vibe_agent_local_start_payload_invalid");
         }
@@ -1719,6 +1883,23 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
           }
           throw error;
         }
+      } catch (error) {
+        const saved = await runStore.get(runId, { accountId: requestedAccountId }).catch(() => null);
+        if (!saved?.admission_pending || ['cancelled', 'aborted', 'failed', 'completed'].includes(saved.state)) throw error;
+        const reason = String(error?.code || error?.message || 'bootstrap_failed');
+        const transient = [408, 429, 500, 502, 503, 504].includes(Number(error?.status))
+          || /fetch|network|timeout|abort|interrupted|ECONN|ENOTFOUND/i.test(reason)
+          || error?.name === 'AbortError';
+        await runStore.markRecovery(runId, reason, { blocked: !transient });
+        const code = transient ? 'bootstrap_retry' : 'bootstrap_attention_required';
+        const event = { schema: 'vibe_agent_event.v1', runId, turnId: requestedRun.turn_id, sessionId: requestedRun.session_id };
+        host.emitTo(sender, { ...event, type: 'pi_frame', frameType: 'retry_status', payload: {
+          phase: transient ? 'parked' : 'blocked', attempt: 3, delay_ms: 15000, code,
+        } });
+        host.emitTo(sender, { ...event, type: 'state', state: 'waiting_user' });
+        host.emitTo(sender, { ...event, type: 'done', payload: { status: 'waiting_user', code } });
+        await scheduleAutomaticRecovery(runId, payload.local_context, sender);
+        return { accepted: true, state: 'waiting_user', runId };
       } finally {
         host.releaseLocalReservation(runId, reservation.reservationId);
       }
@@ -1765,6 +1946,9 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     if (!runId) throw new Error("vibe_agent_cancel_identity_drift");
     const descriptorIdentity = await runStore.get(runId, { accountId });
     if (!descriptorIdentity) throw new Error("vibe_agent_run_descriptor_not_found");
+    clearTimeout(automaticRecoveryTimers.get(runId));
+    automaticRecoveryTimers.delete(runId);
+    runtimeSnapshotRequests.get(runId)?.controller?.abort();
     try {
       const liveStatus = host.status({ runId, accountId });
       const pending = liveStatus?.pending_interaction || liveStatus?.pendingInteraction;
@@ -1800,7 +1984,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       // Agent endpoint (which does not own local runs).
       if (String(error?.message || "") !== "vibe_agent_run_not_found") throw error;
       const descriptor = descriptorIdentity;
-      if (!descriptor || !["waiting_user", "resume_ready"].includes(String(descriptor.phase || ""))) {
+      if (!descriptor || (!descriptor.admission_pending && !["waiting_user", "resume_ready", "retry_wait", "blocked"].includes(String(descriptor.phase || "")))) {
         localUserCancelRequests.delete(runId);
         throw error;
       }
@@ -1810,6 +1994,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         throw new Error("vibe_agent_cancel_identity_drift");
       }
       await runStore.markTerminal(runId, "cancelled", "user_cancelled");
+      runtimeSnapshotRequests.get(runId)?.controller?.abort();
       const pending = descriptor.pending;
       if (pending && typeof pending === "object") {
         const pendingId = String(pending.confirmation_id || pending.interaction_id || "");
@@ -1908,7 +2093,24 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   register("vibeAgent:traceExport", async (payload) => traceStore.export(payload?.traceId ?? payload?.trace_id, payload?.destinationPath ?? payload?.destination_path, accountBoundPayload(payload)));
   register("vibeAgent:traceRemove", async (payload) => traceStore.remove(payload?.traceId ?? payload?.trace_id, accountBoundPayload(payload)));
   register("vibeAgent:traceUpload", async (payload) => traceUploadQueue.enqueue(payload?.traceId ?? payload?.trace_id, rendererTraceUploadPayload(payload)));
-  register("vibeAgent:traceResume", async (payload) => {
+  register("vibeAgent:recoverPending", async (payload, sender) => {
+    await runReconcilePromise;
+    const bound = rendererTraceUploadPayload(payload);
+    const authorization = String(bound.headers?.Authorization || "");
+    if (authorization.startsWith("token=")) {
+      const context = { account_id: bound.accountId, auth_token: authorization.slice(6), knowledge_base_url: bound.baseUrl };
+      const descriptors = await runStore.list({ accountId: bound.accountId, recoverableOnly: true, includeTerminal: false });
+      for (const descriptor of descriptors) {
+        if (descriptor.local_context.knowledge_base_url !== bound.baseUrl) continue;
+        if (descriptor.phase === 'blocked' && /unauthenticated|authentication|auth_missing|http_401|provider_key_missing/.test(String(descriptor.recovery?.reason || ''))) {
+          await runStore.markRecovery(descriptor.run_id, 'authentication_recheck', { delayMs: 0 });
+        }
+        await scheduleAutomaticRecovery(descriptor.run_id, context, sender);
+      }
+    }
+    return { accepted: true };
+  });
+  register("vibeAgent:traceResume", async payload => {
     await runReconcilePromise;
     await reconcileTracePromise;
     return traceUploadQueue.resumePending(rendererTraceUploadPayload(payload));
@@ -1964,6 +2166,10 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     operation = (async () => {
       const before = await runStore.listSession(sessionId, { accountId });
       const runIds = new Set(before.map((item) => String(item.run_id || "")).filter(Boolean));
+      for (const runId of runIds) {
+        clearTimeout(automaticRecoveryTimers.get(runId));
+        automaticRecoveryTimers.delete(runId);
+      }
       const first = await host.terminateSession(accountId, sessionId, { reason: "session_deleted" });
       for (const runId of [...(first.runIds || []), ...(first.reservationRunIds || [])]) runIds.add(String(runId));
       for (const runId of runIds) runtimeSnapshotRequests.get(runId)?.controller?.abort();
@@ -2033,35 +2239,17 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
   return {
     host,
     async cleanup() {
+      shuttingDown = true;
+      for (const timer of automaticRecoveryTimers.values()) clearTimeout(timer);
+      automaticRecoveryTimers.clear();
+      for (const request of runtimeSnapshotRequests.values()) request.controller.abort();
+      await Promise.allSettled([...localStartInFlight.values()].map(item => item.promise));
+      await Promise.allSettled([...recoveryInFlight.values()].map(item => item.promise));
       await accountLogoutInFlight?.promise?.catch(() => undefined);
       await Promise.allSettled([...sessionRemovalInFlight.values()]);
       await host.cleanup();
-      // Runs whose child already parked at a waiting interaction are no
-      // longer present in Host's in-memory map. An intentional app exit still
-      // cancels those logical Goals so a later launch does not resurrect a
-      // card that the user explicitly closed the application for.
-      const parked = await runStore.list({ recoverableOnly: true, includeTerminal: false }).catch(() => []);
-      for (const descriptor of parked) {
-        await runStore.markTerminal(descriptor.run_id, "aborted", "app_exit").catch(() => undefined);
-        const pending = descriptor.pending;
-        if (pending && typeof pending === "object") {
-          const pendingId = String(pending.confirmation_id || pending.interaction_id || "");
-          if (pendingId) {
-            await appendLocalSessionEvent(
-              descriptor.run,
-              "user",
-              "本轮已因应用退出取消",
-              {
-                local_event_key: `response:${pendingId}:app_exit`,
-                interaction_id: pending.interaction_id,
-                ...(pending.confirmation_id ? { confirmation_id: pending.confirmation_id } : {}),
-                interaction_response: { action: "stop_all", reason: "app_exit" },
-              },
-            );
-          }
-        }
-        await finishTrace(descriptor.run, descriptor.local_context || {}, "aborted", { code: "app_exit" }).catch(() => undefined);
-      }
+      // 关闭应用不等于用户取消任务。已落盘的确认与自动恢复等待保留，
+      // 下次取得有效身份后再恢复；删除会话仍走显式终止路径。
       // Host shutdown may persist one final local user/assistant/interaction
       // event. Drain the session journal only after all children have reached
       // their terminal state.

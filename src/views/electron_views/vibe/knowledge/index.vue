@@ -71,11 +71,11 @@
               </span>
               <span
                 v-if="sessionRuntimeState(item.id)"
-                :class="['session-running', { 'waiting-user': sessionRuntimeState(item.id) === 'waiting_user' }]"
+                :class="['session-running', { 'waiting-user': ['waiting_user', 'retry_wait', 'blocked'].includes(sessionRuntimeState(item.id)) }]"
                 :aria-label="sessionRuntimeLabel(item.id)"
                 :title="sessionRuntimeLabel(item.id)"
               >
-                <span v-if="sessionRuntimeState(item.id) === 'waiting_user'" aria-hidden="true">需要用户输入</span>
+                <span v-if="['waiting_user', 'retry_wait', 'blocked'].includes(sessionRuntimeState(item.id))" aria-hidden="true">{{ sessionRuntimeLabel(item.id) }}</span>
                 <RingSpinner v-else />
               </span>
             </button>
@@ -1134,9 +1134,14 @@ function loadKbStats(): Promise<void> {
   return allKbStatsRequest
 }
 
-function loadCurrentKbStats(projectValue = selectedProjectId.value): Promise<void> {
+function loadCurrentKbStats(projectValue = selectedProjectId.value, fresh = false): Promise<void> {
   const projectId = knowledgeStatsProjectId(projectValue)
   if (!projectId) return Promise.resolve()
+  // 提交前的统计请求可能仍在途；先等旧读取结束，再取权威计数，避免旧结果覆盖新值。
+  if (fresh) {
+    return Promise.all([allKbStatsRequest, currentKbStatsRequests.get(projectId)])
+      .then(() => loadCurrentKbStats(projectId))
+  }
   const existing = currentKbStatsRequests.get(projectId)
   if (existing) return existing
   const request = (async () => {
@@ -2622,7 +2627,7 @@ async function loadWorkspaceKnowledgeSource(
 
 // 当前项目读数（项目卡 + 底部概览卡共用）：按外层 AsyncTest project.id 取。
 const kbStats = computed(() => readKnowledgeStats(projectStatsMap, selectedProjectId.value))
-type LocalSessionRunState = 'queued' | 'running' | 'waiting_user'
+type LocalSessionRunState = 'queued' | 'running' | 'waiting_user' | 'retry_wait' | 'blocked'
 const localSessionRunStates = ref<Record<string, LocalSessionRunState>>({})
 function sessionRuntimeState(id: string): LocalSessionRunState | '' {
   const local = localSessionRunStates.value[id]
@@ -2633,6 +2638,8 @@ function sessionRuntimeLabel(id: string): string {
   const state = sessionRuntimeState(id)
   if (state === 'queued') return '任务排队中'
   if (state === 'waiting_user') return '需要用户输入'
+  if (state === 'retry_wait') return '等待自动恢复'
+  if (state === 'blocked') return '任务待处理'
   return state === 'running' ? '对话运行中' : ''
 }
 const preparingSend = ref(false)
@@ -2762,6 +2769,7 @@ interface ElectronAgentRunContext {
   localInteractionEventId?: string
   localStartAccepted: boolean
   cancelRequested: boolean
+  recovery?: { automatic: boolean }
 }
 const electronAgentRuns = new Map<string, ElectronAgentRunContext>()
 const electronAgentWaiters = new Map<string, {
@@ -2940,6 +2948,26 @@ function showElectronAgentDelta(context: ElectronAgentRunContext, text: string) 
 function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: VibeAgentEvent): void {
   const frameType = String(event.frameType || '').trim()
   const payload = event.payload && typeof event.payload === 'object' ? event.payload as Record<string, any> : {}
+  if (frameType === 'retry_status') {
+    if (context.cancelRequested) return
+    if (['parked', 'blocked'].includes(payload.phase)) context.recovery = { automatic: payload.phase === 'parked' }
+    const title = payload.phase === 'waiting'
+      ? payload.code === 'confirmation_result_pending'
+        ? `确认结果暂未收到，${Math.ceil(Number(payload.delay_ms || 0) / 1000)} 秒后自动核对，无需重复确认`
+        : `${payload.code === 'knowledge_transport_retry' ? '知识服务' : '模型'}连接暂时异常，${Math.ceil(Number(payload.delay_ms || 0) / 1000)} 秒后重试`
+      : payload.phase === 'recovered' ? '模型连接已恢复'
+      : payload.phase === 'blocked' ? `任务已保留。${localAgentErrorMessage(String(payload.code || 'provider_attention_required'))}`
+      : '模型暂时不可用，任务已保留并等待自动恢复。'
+    context.preparingTool = undefined
+    context.processEphemeralSteps = context.processEphemeralSteps.filter(step => !String(step.key || '').startsWith('retry-'))
+    context.processEphemeralSteps.push({
+      kind: 'message', key: `retry-${context.providerCallSequence}-${payload.phase}-${payload.attempt}`,
+      text: title, streaming: false,
+      phase: 'commentary', source: 'runtime', authority: 'ephemeral',
+    })
+    projectElectronAgentProgress(context)
+    return
+  }
   if (frameType === 'provider_payload') {
     context.preparingTool = undefined
     cancelElectronDeltaProjection(context)
@@ -2981,6 +3009,17 @@ function handleElectronAgentPiFrame(context: ElectronAgentRunContext, event: Vib
     const text = String(payload.text ?? context.ephemeralText ?? '')
     const hasToolCalls = payload.has_tool_calls === true
       || (Array.isArray(payload.tool_calls) && payload.tool_calls.length > 0)
+    if (['error', 'aborted'].includes(String(payload.stop_reason))) {
+      if (text) context.processEphemeralSteps.push({
+        kind: 'message', key: `interrupted-${context.run.run_id}-${payload.call_id}`,
+        text, phase: 'commentary', source: 'model', authority: 'ephemeral', streaming: false,
+      })
+      context.ephemeralText = ''
+      context.liveAnswerText = ''
+      context.assistantStreamMode = 'process'
+      projectElectronAgentProgress(context)
+      return
+    }
     context.assistantStreamPurpose = purpose
     if (purpose !== 'main_agent') {
       const preserveAnswer = purpose === 'session_title' && !!context.liveAnswerText
@@ -3124,6 +3163,9 @@ function settleElectronAgentRun(context: ElectronAgentRunContext, event: VibeAge
 }
 
 async function finalizeElectronAgentPresentation(context: ElectronAgentRunContext) {
+  // 本轮可能已提交部分知识后失败/停止；不猜测增减，也不依赖变更推送及时到达。
+  // 后台会话刷新它自己的项目，不能误更新用户刚切换到的项目。
+  void loadCurrentKbStats(context.run.project_id, true)
   if (!electronPresentationOwnedBy(context)
     || streamingOwnerSessionId.value !== context.run.session_id) return
   // 终态历史比先前打开会话时的读取更新；一并使那些旧读取失效。
@@ -3159,6 +3201,14 @@ function electronAgentStateIsTerminal(state: unknown): boolean {
 
 function consumeElectronAgentStatus(context: ElectronAgentRunContext, status: any) {
   if (!status || typeof status !== 'object') return
+  if (status.recovery) {
+    context.recovery = status.recovery
+    const key = `recovery-state:${context.run.run_id}`
+    context.processEphemeralSteps = context.processEphemeralSteps.filter(step => step.key !== key)
+    context.processEphemeralSteps.push({ kind: 'message', key, phase: 'commentary', source: 'runtime', authority: 'ephemeral', streaming: false,
+      text: status.recovery.automatic ? '任务已保留，正在等待自动恢复。' : '任务已保留，需要先核实上一步结果或处理连接、权限问题，再继续。' })
+    projectElectronAgentProgress(context)
+  }
   if (Number.isFinite(Number(status.startedAt)) && Number(status.startedAt) > 0) {
     context.startedAt = Number(status.startedAt)
   }
@@ -3289,6 +3339,7 @@ function localInteractionPendingId(payload: any): string {
 }
 
 async function materializeLocalWaitingRun(context: ElectronAgentRunContext, payload?: any): Promise<string> {
+  if (['provider_retry_exhausted', 'provider_attention_required', 'provider_output_incomplete', 'provider_empty_response', 'bootstrap_retry', 'bootstrap_attention_required'].includes(String(payload?.code || ''))) return ''
   const sessionId = String(context.run.session_id || '')
   const pendingId = localInteractionPendingId(payload)
   const predictedId = localInteractionEventId(context.run.run_id, pendingId)
@@ -3417,6 +3468,9 @@ function localAgentErrorMessage(error: unknown): string {
     provider_strong_model_invalid: '当前 Provider 没有可用的增强模型。',
     provider_protocol_unsupported: '当前 Provider 不支持客户端对话协议。',
     provider_config_drift: '模型配置在本轮处理中发生变化，请重新发起。',
+    provider_attention_required: '请检查模型凭据、配额及配置后继续。',
+    provider_empty_response: '模型没有返回有效正文，请重试或检查模型配置。',
+    bootstrap_attention_required: '运行配置不可用，请检查登录状态、项目权限或模型配置后继续。',
     model_call_budget_exhausted: '本轮模型调用次数已达到安全上限。',
     context_budget_exhausted: '本轮上下文已达到安全上限。',
     total_token_budget_exhausted: '本轮模型用量已达到安全上限。',
@@ -3478,9 +3532,11 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   const previousState = context.state
   if (event.type === 'state') {
     const nextState = String(event.state || context.state)
+    if (['queued', 'connecting', 'running'].includes(nextState)) context.recovery = undefined
     setLocalSessionRuntimeState(context.run.session_id, nextState)
     const ownsPresentation = electronPresentationOwnedBy(context)
     if (['queued', 'connecting', 'running'].includes(nextState) && ownsPresentation) {
+      if (context.localDescriptor?.recovery) context.localCold = false
       endClarificationSubmission(context.run.session_id, clarificationSubmissionForSession(context.run.session_id)?.pendingId || '', false, context.run.turn_id)
       streamingOwnerSessionId.value = context.run.session_id
       activeTurnId.value = context.run.turn_id
@@ -3639,7 +3695,7 @@ async function recoverElectronAgentRunUnsafe(sessionId: string) {
       const descriptors: any = await bridge.recoverableLocal({ accountId: localAccountId() }).catch(() => [])
       descriptor = (Array.isArray(descriptors) ? descriptors : []).find((item: any) =>
         String(item?.run?.session_id || item?.run?.sessionId || item?.session_id || '') === sessionId
-        && ['waiting_user', 'resume_ready'].includes(String(item?.phase || item?.state || '')))
+        && ['waiting_user', 'resume_ready', 'retry_wait', 'blocked'].includes(String(item?.phase || item?.state || '')))
       if (descriptor?.run) {
         run = {
           ...descriptor.run,
@@ -3663,6 +3719,9 @@ async function recoverElectronAgentRunUnsafe(sessionId: string) {
     if (descriptor) {
       context.localDescriptor = descriptor
       context.localCold = true
+    } else if ((run as any).recovery) {
+      context.localDescriptor = { recovery: (run as any).recovery }
+      context.localCold = true
     }
   }
   streamingOwnerSessionId.value = sessionId
@@ -3674,6 +3733,7 @@ async function recoverElectronAgentRunUnsafe(sessionId: string) {
     setLocalSessionRuntimeState(sessionId, 'waiting_user')
     const pending = context.localDescriptor?.pending
     if (pending) showLocalInteraction(context, pending)
+    if (context.localDescriptor?.recovery) consumeElectronAgentStatus(context, { state: 'waiting_user', recovery: context.localDescriptor.recovery })
     return
   }
   await bridge.attach({ runId: context.run.run_id, accountId: localAccountId() }).catch(() => null)
@@ -4334,7 +4394,16 @@ function replayIntro(event: MouseEvent) {
   el.play().catch(() => {})
 }
 
+function recoverPendingLocalTasks() {
+  const authToken = readLocalAuthToken()
+  if (!authToken || !currentUser.value?.id) return
+  void electronAgentBridge()?.recoverPending?.({ accountId: localAccountId(), baseUrl: localKnowledgeBaseUrl(),
+    headers: { Authorization: `token=${authToken}` } }).catch(() => undefined)
+}
+
 onMounted(() => {
+  window.addEventListener('online', recoverPendingLocalTasks)
+  window.addEventListener('ast:login-succeeded', recoverPendingLocalTasks)
   ensureProfileSync()
   initializeInfoRail()
   startShellResizeObserver()
@@ -4348,6 +4417,7 @@ onMounted(() => {
     }
     await bootstrap()
     if (authToken && currentUser.value?.id) {
+      recoverPendingLocalTasks()
       const resumeTraces = electronAgentBridge()?.trace?.resume?.({
         accountId: localAccountId(),
         baseUrl: localKnowledgeBaseUrl(),
@@ -4360,6 +4430,10 @@ onMounted(() => {
   trackMaximizeState()
   ensureVibeAgentEventListener()
 })
+
+onBeforeUnmount(() => window.removeEventListener('online', recoverPendingLocalTasks))
+onBeforeUnmount(() => window.removeEventListener('ast:login-succeeded', recoverPendingLocalTasks))
+watch(() => currentUser.value?.id, () => recoverPendingLocalTasks())
 
 watch(
   () => [events.value.length, streamingAssistantContent.value],
@@ -5012,7 +5086,10 @@ function setLocalSessionRuntimeState(sessionId: string, state: string) {
   if (!id) return
   const next = { ...localSessionRunStates.value }
   if (['queued', 'connecting'].includes(state)) next[id] = 'queued'
-  else if (state === 'waiting_user') next[id] = 'waiting_user'
+  else if (state === 'waiting_user') {
+    const recovery = [...electronAgentRuns.values()].find(run => run.run.session_id === id && run.recovery)?.recovery
+    next[id] = recovery ? recovery.automatic ? 'retry_wait' : 'blocked' : 'waiting_user'
+  }
   else if (['running', 'cancelling'].includes(state)) next[id] = 'running'
   else delete next[id]
   localSessionRunStates.value = next
@@ -5033,7 +5110,8 @@ async function refreshLocalAgentStatuses() {
     const sessionId = String(item?.session_id || item?.sessionId || '')
     const lifecycle = String(item?.lifecycle || item?.state || '')
     if (!sessionId || lifecycle === 'terminal' || electronAgentStateIsTerminal(item?.state)) continue
-    if (lifecycle === 'waiting_user' || String(item?.state || '') === 'waiting_user') next[sessionId] = 'waiting_user'
+    if (item.recovery) next[sessionId] = item.recovery.automatic ? 'retry_wait' : 'blocked'
+    else if (lifecycle === 'waiting_user' || String(item?.state || '') === 'waiting_user') next[sessionId] = 'waiting_user'
     else if (lifecycle === 'queued' || ['queued', 'connecting'].includes(String(item?.state || ''))) next[sessionId] = 'queued'
     else next[sessionId] = 'running'
   }
@@ -5805,7 +5883,7 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
   }
   const liveRuns = (Array.isArray(admitted) ? admitted : Array.isArray(admitted?.items) ? admitted.items : [])
     .filter((item: any) => !electronAgentStateIsTerminal(item?.state) && item?.lifecycle !== 'terminal')
-  if (liveRuns.some((item: any) => String(item?.session_id || item?.sessionId || '') === sessionId)) {
+  if (liveRuns.some((item: any) => String(item?.session_id || item?.sessionId || '') === sessionId && !item.recovery)) {
     throw new Error('vibe_agent_session_busy')
   }
   if (liveRuns.filter((item: any) => ['queued', 'running'].includes(String(item?.lifecycle || item?.state || ''))).length >= 5) {
@@ -5947,6 +6025,9 @@ async function sendLocalPiTurn(content: string, opts: SendFoundationTurnOptions 
     // This was only an optimistic renderer projection. Main writes the real
     // user event after local capacity and backend admission succeed, so a
     // rejected start must remove the unsent bubble as well as restore draft.
+    if (context.cancelRequested && ['cancelled', 'aborted'].includes(context.state)) {
+      return { userEventSaved: true, cancelled: true, unresolved: false, attachmentSelectionReusable: true }
+    }
     if (!localStartAccepted && activeSessionId.value === sessionId) {
       events.value = events.value.filter(item => item.id !== context.localUserEventId)
     }

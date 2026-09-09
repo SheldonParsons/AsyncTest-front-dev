@@ -31,6 +31,7 @@ import {
 import { createLocalFileTools, LOCAL_FILE_TOOL_NAMES } from "./localFileTools.mjs";
 import { materializeKnowledgeContent } from "./knowledgeContentSource.mjs";
 import { providerDeadline } from "./providerDeadline.mjs";
+import { retryAfterMs } from "../transportRetry.node.js";
 
 for (const method of ["log", "info", "warn", "error", "debug"]) console[method] = () => {};
 process.removeAllListeners("warning");
@@ -183,7 +184,7 @@ function openPiSession(codingAgent, descriptor, model) {
     }
 
     if (descriptor.resume_messages) {
-      const existingRecovery = manager.getEntries().find((entry) => entry.type === "custom"
+      const existingRecovery = manager.getBranch().find((entry) => entry.type === "custom"
         && entry.customType === PI_RECOVERY_ENTRY
         && entry.data?.resume_key === descriptor.resume_key);
       if (!existingRecovery) {
@@ -196,7 +197,27 @@ function openPiSession(codingAgent, descriptor, model) {
           .flatMap((message) => message.content)
           .filter((block) => block?.type === "toolCall")
           .map((block) => String(block.id || "")));
-        const existingToolResults = new Set(manager.getEntries()
+        // 正常退出时 SDK 可能已记录 operation_aborted 占位结果；它不是知识事务回执。
+        // 仅恢复单个同 ID 结果，且其后没有有效消息时，从占位前续接原生分支。
+        // 旧分支仍保留在 append-only 日志中，成功结果、用户消息和其他调用不被覆盖。
+        if (messages.length === 1) {
+          const branch = manager.getBranch();
+          const index = branch.findIndex((entry) => entry.type === "message"
+            && entry.message?.role === "toolResult"
+            && entry.message.toolCallId === messages[0].toolCallId);
+          const interrupted = branch[index];
+          const content = interrupted?.message?.content;
+          const emptyTail = branch.slice(index + 1).every((entry) => entry.type !== "message"
+            || (entry.message?.role === "assistant" && ["error", "aborted"].includes(entry.message.stopReason)
+              && Array.isArray(entry.message.content) && entry.message.content.length === 0));
+          if (index >= 0 && interrupted.parentId && knownToolCalls.has(messages[0].toolCallId)
+            && Array.isArray(content) && content.length === 1 && content[0].type === "text"
+            && content[0].text === "operation_aborted"
+            && Object.keys(interrupted.message.details || {}).length === 0 && emptyTail) {
+            manager.branch(interrupted.parentId);
+          }
+        }
+        const existingToolResults = new Set(manager.getBranch()
           .filter((entry) => entry.type === "message" && entry.message?.role === "toolResult")
           .map((entry) => String(entry.message.toolCallId || "")));
         if (messages.some((message) => !knownToolCalls.has(String(message.toolCallId || ""))
@@ -485,7 +506,10 @@ class BridgeSession {
 
   async request(type, payload, expectedTypes) {
     const { frame, serialized } = makeFrame(this.identity, type, payload);
-    const timeoutMs = type === "interaction_request" ? undefined : Number(this.options.ipc_timeout_ms ?? 360_000);
+    // 业务调用各自负责可取消的网络期限；IPC 不再以六分钟终结有效长操作。
+    // 父进程死亡由独立 orphan guard 处理。
+    const timeoutMs = ["interaction_request", "tool_wave", "candidate_final"].includes(type)
+      ? undefined : Number(this.options.ipc_timeout_ms ?? 360_000);
     const result = new Promise((resolve, reject) => {
       const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
         this.pending.delete(frame.message_id);
@@ -617,13 +641,14 @@ class BridgeSession {
 
   async loadRuntime() {
     const importPackage = (specifier) => import(pathToFileURL(resolvePackageFile(specifier)).href);
-    const [core, node, ai, openAI, codingAgent, undici] = await Promise.all([
+    const [core, node, ai, openAI, codingAgent, undici, compat] = await Promise.all([
       importPackage("@earendil-works/pi-agent-core"),
       importPackage("@earendil-works/pi-agent-core/node"),
       importPackage("@earendil-works/pi-ai"),
       importPackage("@earendil-works/pi-ai/api/openai-completions"),
       importPackage("@earendil-works/pi-coding-agent"),
       importPackage("undici"),
+      importPackage("@earendil-works/pi-ai/compat"),
     ]);
     const [xlsx, jszip, pdfjs] = await Promise.all([
       importPackage("xlsx"),
@@ -643,6 +668,7 @@ class BridgeSession {
       openAI,
       codingAgent,
       undici,
+      compat,
       documentParsers,
     };
   }
@@ -686,16 +712,10 @@ class BridgeSession {
     ) => async (model, context, options = {}) => {
       if (this.fatalProtocolError) throw this.fatalProtocolError;
       if (this.abortReason) throw new ProtocolError("operation_aborted");
-      const callId = requestedCallId || `call-${++this.callNumber}`;
+      const callId = requestedCallId || `call-${this.startFrame.message_id.slice(0, 12)}-${++this.callNumber}`;
       if (this.seenProviderCallIds.has(callId)) throw new ProtocolError("provider_call_id_duplicate");
       this.seenProviderCallIds.add(callId);
-      // 主脑决定调用步数；宿主只保留时间与用户取消边界。
-      // 标题在用户可见任务之后生成，不占用本轮运行时长。
-      if (purpose !== "session_title") {
-        const maxWallClockMs = Number(this.options.max_wall_clock_ms ?? 360_000);
-        const elapsedMs = Math.max(0, Date.now() - this.runStartedAt - this.userWaitMs);
-        if (elapsedMs >= maxWallClockMs) throw new ProtocolError("wall_clock_exhausted");
-      }
+      // 旧快照的 max_wall_clock_ms 仅兼容读取，不再终结长任务。
       const strictTools = (context.tools ?? []).map((tool) => this.providerTools.get(tool.name) ?? tool);
       const providerContext = { ...context, tools: strictTools };
       const startOverrides = this.options.payload_overrides ?? {};
@@ -714,16 +734,19 @@ class BridgeSession {
       const callModel = { ...model, baseUrl: endpoint };
       const directKey = String(providerConfig.api_key ?? "");
       if (!directKey) throw new ProtocolError("provider_direct_key_missing");
+      const requestMs = Number(this.options.timeout_ms ?? 600_000);
+      const transportOptions = { connect: { timeout: 20_000 }, headersTimeout: requestMs, bodyTimeout: 0 };
       let directProxyAgent;
       if (providerConfig.proxy_url) {
         try {
           const parsedProxy = new URL(String(providerConfig.proxy_url));
           if (!new Set(["http:", "https:"]).has(parsedProxy.protocol) || parsedProxy.username || parsedProxy.password || parsedProxy.hash || parsedProxy.search) throw new Error();
-          directProxyAgent = new this.runtime.undici.ProxyAgent(parsedProxy.toString());
+          directProxyAgent = new this.runtime.undici.ProxyAgent({ uri: parsedProxy.toString(), ...transportOptions });
         } catch {
           throw new ProtocolError("provider_direct_proxy_url_invalid");
         }
       }
+      directProxyAgent ??= new this.runtime.undici.Agent(transportOptions);
       const callProvider = this.runtime.ai.createProvider({
         id: callModel.provider,
         name: "Vibe local Provider",
@@ -733,17 +756,11 @@ class BridgeSession {
         models: [callModel],
         api: this.runtime.openAI,
       });
-      const remainingMs = purpose === "session_title" ? Infinity : Math.max(1,
-        Number(this.options.max_wall_clock_ms ?? 360_000) - (Date.now() - this.runStartedAt - this.userWaitMs));
-      const requestMs = Number(this.options.timeout_ms ?? 600_000);
+      let idleTimedOut = false;
       const deadline = providerDeadline({
         signal: options.signal,
-        timeoutMs: Math.min(requestMs, remainingMs),
-        onTimeout: () => {
-          if (!this.abortReason && purpose !== "session_title") {
-            this.fatalProtocolError = new ProtocolError(remainingMs <= requestMs ? "wall_clock_exhausted" : "provider_timeout");
-          }
-        },
+        timeoutMs: requestMs,
+        onTimeout: () => { idleTimedOut = true; },
       });
       let stream;
       try {
@@ -751,13 +768,19 @@ class BridgeSession {
           ...options,
           apiKey: directKey,
           signal: deadline.signal,
-          fetch: (input, init = {}) => this.runtime.undici.fetch(
-            input,
-            directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init,
-          ),
+          fetch: async (input, init = {}) => {
+            const response = await this.runtime.undici.fetch(input,
+              directProxyAgent ? { ...init, dispatcher: directProxyAgent } : init);
+            if ([429, 503].includes(response.status)) {
+              const delay = retryAfterMs(response.headers.get('retry-after'));
+              if (delay > 0) this.providerRetryNotBefore = Date.now() + delay;
+            }
+            return response;
+          },
           temperature: this.options.temperature,
           maxTokens: requestedMaxTokens ?? (useRunMaxTokens ? this.options.max_tokens : undefined) ?? model.maxTokens,
-          timeoutMs: this.options.timeout_ms,
+          // SDK 的 timeout 覆盖等响应头，不能把模型排队误当成20秒建连失败。
+          timeoutMs: requestMs,
           maxRetries: 0,
           maxRetryDelayMs: this.options.max_retry_delay_ms ?? 0,
           samplingParams: this.options.sampling_params,
@@ -784,11 +807,35 @@ class BridgeSession {
         await directProxyAgent?.close();
         throw error;
       }
-      void stream.result().finally(async () => {
-        deadline.dispose();
-        await directProxyAgent?.close();
-      }).catch(() => undefined);
-      return stream;
+      const observed = new this.runtime.ai.AssistantMessageEventStream();
+      void (async () => {
+        try {
+          for await (const event of stream) {
+            if (["text_delta", "thinking_delta", "toolcall_delta"].includes(event.type)
+              && typeof event.delta === "string" && event.delta.length) deadline.progress();
+            // SDK 将 AbortSignal 都投影为 aborted。只有无进展超时转成可重试错误，
+            // 用户取消仍保持 aborted；错误尝试永远不提交为成功输出。
+            if (event.type === "error" && this.providerRetryNotBefore > Date.now()
+              && !this.abortReason && !options.signal?.aborted) {
+              observed.push({ type: "error", reason: "error", error: {
+                ...event.error, stopReason: "error", errorMessage: "provider_retry_deferred",
+              } });
+            } else if (event.type === "error" && idleTimedOut && !this.abortReason && !options.signal?.aborted) {
+              const failed = { ...event.error, stopReason: "error", errorMessage: "Request timed out: provider_idle_timeout" };
+              observed.push({ type: "error", reason: "error", error: failed });
+            } else observed.push(event);
+          }
+        } catch (error) {
+          observed.push({ type: "error", reason: "error", error: {
+            ...assistantMessage(callModel, [], "error", emptyUsage()),
+            errorMessage: String(error?.message || "Connection error"),
+          } });
+        } finally {
+          deadline.dispose();
+          await directProxyAgent?.close();
+        }
+      })().catch(() => undefined);
+      return observed;
     };
     this.modelRuntime.registerProvider(this.model.provider, {
       name: "Vibe run-scoped Provider",
@@ -1059,8 +1106,9 @@ class BridgeSession {
       defaultThinkingLevel: "off",
       compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
       retry: {
-        enabled: false,
-        maxRetries: 0,
+        enabled: true,
+        maxRetries: 3,
+        baseDelayMs: 1000,
         provider: { maxRetries: 0, maxRetryDelayMs: 0 },
       },
     });
@@ -1136,7 +1184,14 @@ class BridgeSession {
     }
     this.activeAgents.add(session);
     session.subscribe(async (event) => {
-      if (event.type === "compaction_start") {
+      if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
+        await this.emit("retry_status", {
+          phase: event.type === "auto_retry_start" ? "waiting" : event.success ? "recovered" : "exhausted",
+          attempt: Number(event.attempt || 0),
+          delay_ms: Number(event.delayMs || 0),
+          code: "provider_retry",
+        });
+      } else if (event.type === "compaction_start") {
         this.compactionReason = event.reason;
         await this.emit("compaction_start", { reason: event.reason });
       } else if (event.type === "compaction_end") {
@@ -1203,7 +1258,7 @@ class BridgeSession {
         }
       } else if (event.type === "message_end" && event.message.role === "assistant") {
         preparingTools.clear();
-        const calls = extractToolCalls(event.message);
+        const calls = ["error", "aborted"].includes(event.message.stopReason) ? [] : extractToolCalls(event.message);
         if (calls.some((call) => !this.providerTools.has(call.name))) {
           this.fatalProtocolError = new ProtocolError("unknown_tool_rejected");
           abortQuietly(agent);
@@ -1267,8 +1322,29 @@ class BridgeSession {
       });
       return;
     }
-    if (!final || final.stopReason === "error") throw new ProtocolError("agent_provider_failed");
+    if (final?.stopReason === "error" && (this.providerRetryNotBefore > Date.now()
+      || this.runtime.compat.isRetryableAssistantError(final))) {
+      await this.emitSessionCheckpoint("waiting_user");
+      await this.emit("retry_status", { phase: "parked", attempt: 3,
+        delay_ms: Math.max(15000, (this.providerRetryNotBefore || 0) - Date.now()), code: "provider_retry_exhausted" });
+      await this.emit("done", { status: "waiting_user", code: "provider_retry_exhausted" });
+      return;
+    }
+    if (final?.stopReason === "error") {
+      await this.emitSessionCheckpoint("waiting_user");
+      await this.emit("retry_status", { phase: "blocked", attempt: 0, delay_ms: 0, code: "provider_attention_required" });
+      await this.emit("done", { status: "waiting_user", code: "provider_attention_required" });
+      return;
+    }
+    if (!final) throw new ProtocolError("agent_provider_failed");
     if (extractToolCalls(final).length) throw new ProtocolError("agent_final_tool_calls_unresolved");
+    if (final.stopReason === "length" || !extractAssistantText(final).trim()) {
+      await this.emitSessionCheckpoint("waiting_user");
+      await this.emit("retry_status", { phase: final.stopReason === "length" ? "parked" : "blocked",
+        attempt: 0, delay_ms: 15000, code: final.stopReason === "length" ? "provider_output_incomplete" : "provider_empty_response" });
+      await this.emit("done", { status: "waiting_user", code: final.stopReason === "length" ? "provider_output_incomplete" : "provider_empty_response" });
+      return;
+    }
     await this.finishCandidate(extractAssistantText(final), final.usage, final.stopReason);
   }
 
@@ -1342,6 +1418,8 @@ class BridgeSession {
       const final = [...agent.state.messages].reverse().find((message) => message.role === "assistant");
       if (this.fatalProtocolError) throw this.fatalProtocolError;
       if (this.abortReason) throw new ProtocolError("operation_aborted");
+      if (final?.stopReason === 'error' && (this.runtime.compat.isRetryableAssistantError(final)
+        || this.providerRetryNotBefore > Date.now())) throw new ProtocolError('provider_retry_exhausted');
       if (!final || final.stopReason !== "stop" || extractToolCalls(final).length) throw new ProtocolError("private_completion_failed");
       const text = extractAssistantText(final);
       await this.emit("assistant_end", {
@@ -1409,6 +1487,11 @@ class BridgeSession {
         } catch {
           // Host child-close handling remains the final fail-closed boundary.
         }
+      } else if (code === 'provider_retry_exhausted' && this.piSessionManager) {
+        await this.emitSessionCheckpoint('waiting_user');
+        await this.emit('retry_status', { phase: 'parked', attempt: 0,
+          delay_ms: Math.max(15000, (this.providerRetryNotBefore || 0) - Date.now()), code });
+        await this.emit('done', { status: 'waiting_user', code });
       } else {
         const correlation = this.runtime ? {} : { reply_to: this.startFrame.message_id };
         try {

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
                 ...(localFileRefs ? { local_file_refs: localFileRefs } : {}),
             }),
         recoverableLocal: (payload = {}) => ipcRenderer.invoke('vibeAgent:recoverableLocal', payload),
+        recoverPending: (payload = {}) => ipcRenderer.invoke('vibeAgent:recoverPending', payload),
         recoverLocal: ({ runId, accountId, projectId, sessionId, response, local_context: localContext }) =>
             ipcRenderer.invoke('vibeAgent:recoverLocal', {
                 run_id: runId,
