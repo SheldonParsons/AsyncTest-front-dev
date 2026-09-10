@@ -81,6 +81,7 @@
     ],
     "asarUnpack": [
       "**/*.node",
+      "electron/vibeAgent/transportRetry.node.js",
       "electron/vibeAgent/runtime/**/*"
     ],
     "mac": {
