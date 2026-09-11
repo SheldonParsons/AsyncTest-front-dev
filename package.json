@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.3.9",
+  "version": "3.3.10",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n### 前端更新内容\\n#### 优化：AsyncTest 系列 Logo 统一性\\n#### 优化：长任务不再因固定运行时长限制自动结束\\n#### 优化：连接暂时异常时自动重试，保留任务进度\\n#### 优化：重启客户端后可恢复待确认任务\\n#### 修复：确认结果丢失时自动核对，避免重复录入\\n#### 修复：知识录入后，侧栏数量未及时刷新\\n#### 修复：部分情况下对话无法启动\\n\\n\\n### 后端与 MCP 更新内容\\n\\n#### 新增：新增 MCP 审计\\n#### 优化：重复登录复用有效登录凭证，减少多端登录相互影响\\n#### 优化：配合桌面端支持长任务重试与恢复\",\"publishDate\":\"2026-09-08\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n### 前端更新内容\\n#### 优化：优化知识新增、修改、删除确认，统一展示 diff\\n#### 修复：修复处理计时包含用户等待的问题，旧记录明确标注“总历时”\\n#### 优化：优化失败步骤说明，展示具体动作、退出码及后续执行情况\\n\\n### 后端与 MCP 更新内容\\n\\n#### 新增：修复批量新增知识时，预览错误显示红色删除内容的问题\",\"publishDate\":\"2026-09-11\"}"
     },
     "publish": [
       {
