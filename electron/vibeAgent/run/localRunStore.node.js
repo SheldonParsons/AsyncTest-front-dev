@@ -56,6 +56,30 @@ const ACTIVE_PHASES = new Set([
 ]);
 const RECOVERABLE_PHASES = new Set(["waiting_user", "resume_ready", "retry_wait", "blocked"]);
 const TERMINAL_STATES = new Set(["completed", "failed", "aborted", "cancelled", "closed"]);
+
+// 只记录耗时，不参与任务调度。运行描述仍是唯一的持久化所有者。
+export function runTimingSnapshot(timing, now = Date.now()) {
+  if (timing?.schema !== 'vibe.run_timing.v1'
+    || !['active_ms', 'waiting_ms', 'paused_ms', 'observed_at_ms'].every(key => Number.isFinite(timing[key]) && timing[key] >= 0)) return undefined;
+  const at = Math.max(timing.observed_at_ms, now);
+  const elapsed = at - timing.observed_at_ms;
+  return { ...timing, observed_at_ms: at,
+    active_ms: timing.active_ms + (timing.phase === 'active' ? elapsed : 0),
+    waiting_ms: timing.waiting_ms + (timing.phase === 'waiting' ? elapsed : 0),
+    paused_ms: timing.paused_ms + (timing.phase === 'paused' ? elapsed : 0) };
+}
+
+function timingPhase(descriptor) {
+  if (TERMINAL_STATES.has(descriptor.state)) return 'done';
+  if (descriptor.phase === 'waiting_user') return 'waiting';
+  if (['retry_wait', 'blocked'].includes(descriptor.phase)) return 'paused';
+  return 'active';
+}
+
+function advanceTiming(timing, descriptor, now) {
+  const value = runTimingSnapshot(timing, now);
+  return value ? { ...value, phase: timingPhase(descriptor) } : undefined;
+}
 function runId(value) {
   const id = String(value ?? "").trim();
   if (!ID_PATTERN.test(id)) throw new Error("vibe_agent_run_descriptor_id_invalid");
@@ -206,11 +230,12 @@ function phaseFailure(phase) {
  * enable cold attach.
  */
 export class LocalRunStore {
-  constructor({ rootPath } = {}) {
+  constructor({ rootPath, now = Date.now } = {}) {
     if (!rootPath) throw new Error("vibe_agent_run_descriptor_root_required");
     this.rootPath = path.resolve(rootPath);
     this.chains = new Map();
     this.cache = new Map();
+    this.now = now;
   }
 
   enqueue(id, task) {
@@ -321,6 +346,12 @@ export class LocalRunStore {
           if (existing.resolved_result !== undefined) descriptor.resolved_result = cloneWithoutCredentials(existing.resolved_result);
         }
       }
+      // 旧记录没有等待边界，不能根据首尾时间伪造净耗时。
+      descriptor.timing = existing ? advanceTiming(existing.timing, descriptor, this.now()) : {
+        schema: 'vibe.run_timing.v1', active_ms: 0, waiting_ms: 0, paused_ms: 0,
+        phase: 'active', observed_at_ms: this.now(), complete: true,
+      };
+      if (existing) descriptor.created_at = existing.created_at;
       return this.write(descriptor);
     });
   }
@@ -368,8 +399,34 @@ export class LocalRunStore {
         run_id: id,
         updated_at: new Date().toISOString(),
       };
+      next.timing = patch.timing ?? advanceTiming(current.timing, next, this.now());
       return this.write(next);
     });
+  }
+
+  timingSnapshot(rawId) {
+    return runTimingSnapshot(this.cache.get(runId(rawId))?.timing, this.now());
+  }
+
+  async readTiming(rawId) {
+    const id = runId(rawId);
+    const descriptor = this.cache.get(id) || await readJson(descriptorPath(this.rootPath, id));
+    return runTimingSnapshot(descriptor?.timing, this.now());
+  }
+
+  async resumeTiming(rawId) {
+    const current = await this.get(rawId);
+    const timing = runTimingSnapshot(current?.timing, this.now());
+    if (timing && timing.phase !== 'done') await this.update(rawId, { timing: { ...timing, phase: 'active' } });
+  }
+
+  async pauseTiming(rawId, { interrupted = false } = {}) {
+    const current = await this.get(rawId);
+    if (!current?.timing || current.timing.phase === 'done') return;
+    // 非正常退出缺少停止时刻，只保留最后已记录区间，不把离线时间算作执行。
+    const timing = runTimingSnapshot(current.timing, interrupted ? current.timing.observed_at_ms : this.now());
+    await this.update(rawId, { timing: { ...timing, phase: 'paused', observed_at_ms: this.now(),
+      complete: timing.complete && !(interrupted && current.timing.phase === 'active') } });
   }
 
   async phase(rawId, phase, fields = {}) {
@@ -502,6 +559,7 @@ export class LocalRunStore {
   async reconcileAfterRestart() {
     const values = await this.list({ includeTerminal: false });
     for (const item of values) {
+      if (item.timing?.phase === 'active') await this.pauseTiming(item.run_id, { interrupted: true });
       if (item.recovery_version === 1 && ["retry_wait", "blocked"].includes(item.phase)) continue;
       if (item.recovery_version === 1 && item.phase === "resume_ready" && item.pending && item.response) {
         await this.markRecovery(item.run_id, "confirmed_result_ready", { delayMs: 0 });

@@ -308,6 +308,7 @@
                 :running="threadRunning(event)"
                 :awaiting="threadAwaiting(event)"
                 :duration-ms="threadDurationMs(event)"
+                :duration-scope="threadDurationScope(event)"
                 @layout-change="syncTimelineNavigationAfterLayout"
               />
               <!-- 候选答案始终在思考竖线之外流式展示；工具调用旁白仍由
@@ -347,6 +348,7 @@
                 :running="false"
                 :awaiting="isPendingClarification(event)"
                 :duration-ms="eventProcessDuration(event)"
+                :duration-scope="eventDurationScope(event)"
                 @layout-change="syncTimelineNavigationAfterLayout"
               /><!-- 0703:挂反问时后端已收工,是"等你选择"不是"正在思考"(两分支口径统一) -->
               <TurnOutcomeNotice v-if="eventOutcomeNotice(event)" v-bind="eventOutcomeNotice(event)!" />
@@ -465,6 +467,7 @@
                     v-if="eventProcessSteps(responseEvent).length"
                     :steps="eventProcessSteps(responseEvent)"
                     :duration-ms="eventProcessDuration(responseEvent)"
+                    :duration-scope="eventDurationScope(responseEvent)"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="eventOutcomeNotice(responseEvent)" v-bind="eventOutcomeNotice(responseEvent)!" />
@@ -484,6 +487,7 @@
                     :steps="streamingProcess.steps"
                     :running="procRunning"
                     :duration-ms="procDurationMs"
+                    :duration-scope="procDurationScope"
                     @layout-change="syncTimelineNavigationAfterLayout"
                   />
                   <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -539,6 +543,7 @@
               :steps="streamingProcess.steps"
               :running="procRunning"
               :duration-ms="procDurationMs"
+              :duration-scope="procDurationScope"
               @layout-change="syncTimelineNavigationAfterLayout"
             />
             <TurnOutcomeNotice v-if="streamingOutcomeNotice" v-bind="streamingOutcomeNotice" />
@@ -750,7 +755,11 @@ import {
   preferredProcessDuration,
   interactionThreadDuration,
   shouldShowMissingTerminalNotice,
+  readRunTiming,
+  activeRunDuration,
+  type RunTiming,
 } from './turnPresentationPolicy'
+import { localToolFailureSummary } from './processDisclosurePolicy'
 import {
   getVibeCapabilities,
   getVibeProjectByAsyncProject,
@@ -2761,6 +2770,7 @@ interface ElectronAgentRunContext {
   providerCallSequence: number
   preparingTool?: { callId: string; name: string; index: number }
   startedAt: number
+  timing?: RunTiming
   acceptCanonical?: (model: TurnProtocolReadModel) => void
   localUserEventId?: string
   localAssistantEventId?: string
@@ -3201,6 +3211,7 @@ function electronAgentStateIsTerminal(state: unknown): boolean {
 
 function consumeElectronAgentStatus(context: ElectronAgentRunContext, status: any) {
   if (!status || typeof status !== 'object') return
+  consumeRunTiming(context, status.timing)
   if (status.recovery) {
     context.recovery = status.recovery
     const key = `recovery-state:${context.run.run_id}`
@@ -3320,7 +3331,8 @@ function localDisplayEvent(
     attachments: Array.isArray(attachments) ? attachments : [],
     event_order: nextOrder,
     mode: 'local_pi',
-    meta: { local_agent: true, run_id: context.run.run_id, trace_id: (context.run as any).trace_id || '', ...meta },
+    meta: { local_agent: true, run_id: context.run.run_id, trace_id: (context.run as any).trace_id || '', ...meta,
+      ...(context.timing ? { run_timing: { ...context.timing, active_ms: activeRunDuration(context.timing, Date.now()), observed_at_ms: Date.now() } } : {}) },
     created_at: new Date().toISOString(),
   }
 }
@@ -3529,6 +3541,7 @@ function handleVibeAgentEvent(event: VibeAgentEvent) {
   if (event?.schema !== 'vibe_agent_event.v1' || !event.runId) return
   const context = electronAgentRuns.get(event.runId)
   if (!context || event.turnId !== context.run.turn_id || event.sessionId !== context.run.session_id) return
+  consumeRunTiming(context, event.timing)
   const previousState = context.state
   if (event.type === 'state') {
     const nextState = String(event.state || context.state)
@@ -3730,6 +3743,7 @@ async function recoverElectronAgentRunUnsafe(sessionId: string) {
   setSessionRunning(sessionId, true)
   setLocalSessionRuntimeState(sessionId, String((context as any).state || 'running'))
   if (context.localCold) {
+    consumeRunTiming(context, context.localDescriptor?.timing)
     setLocalSessionRuntimeState(sessionId, 'waiting_user')
     const pending = context.localDescriptor?.pending
     if (pending) showLocalInteraction(context, pending)
@@ -3834,10 +3848,24 @@ async function stopFoundationTurn() {
 // “已处理”计时由 Canonical 业务生命周期驱动，不使用旧 process_done，也不以 SSE 关闭代替 terminal。
 const streamingElapsedMs = ref(0)
 let _elapsedTimer: ReturnType<typeof setInterval> | null = null
+function consumeRunTiming(context: ElectronAgentRunContext, value: unknown) {
+  const timing = readRunTiming(value)
+  if (!timing || (context.timing && timing.observed_at_ms < context.timing.observed_at_ms)) return
+  context.timing = timing
+  if (!electronPresentationOwnedBy(context)) return
+  streamingElapsedMs.value = activeRunDuration(timing, Date.now())
+  streamingProcess.durationMs = streamingElapsedMs.value
+  if (timing.phase !== 'active') stopElapsedTicker()
+  else if (!_elapsedTimer) startElapsedTicker(context.startedAt)
+}
 function startElapsedTicker(startedAt: number) {
   stopElapsedTicker()
-  streamingElapsedMs.value = Math.max(0, Date.now() - startedAt)
-  _elapsedTimer = setInterval(() => { streamingElapsedMs.value = Math.max(0, Date.now() - startedAt) }, 500)
+  const update = () => {
+    const timing = electronRunForTurn(activeTurnId.value, activeSessionId.value)?.timing
+    streamingElapsedMs.value = timing ? activeRunDuration(timing, Date.now()) : Math.max(0, Date.now() - startedAt)
+  }
+  update()
+  _elapsedTimer = setInterval(update, 500)
 }
 function stopElapsedTicker() {
   if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null }
@@ -3858,6 +3886,12 @@ const thinkingOrbVisible = computed(() => procRunning.value
   && !streamingAssistantEventId.value)
 const procDurationMs = computed(() =>
   procRunning.value ? streamingElapsedMs.value : streamingProcess.durationMs)
+const procDurationScope = computed(() => {
+  // Main 运行上下文不是响应式对象，沿用秒表更新驱动口径标签。
+  void streamingElapsedMs.value
+  const timing = electronRunForTurn(activeTurnId.value, activeSessionId.value)?.timing
+  return timing ? (timing.complete ? 'active' : 'recorded') : 'elapsed'
+})
 const processExpanded = ref(false)
 const streamingProcess = createProcessState()
 // 历史事件渲染（eventDisplayContent）仍需读取方案包状态展示，保留只读覆盖表
@@ -4110,9 +4144,7 @@ const composerQuestion = computed(() => {
     return {
       title: String(raw.title),
       description: contentCentricDisplayText(raw.description),
-      ...(preparation || (raw.content_preview_version ?? raw.preview?.content_preview_version) === 1 ? { preview: { content: String(raw.new_body || ''),
-        original: (preparation?.items || []).map((item: any) => String(item.original || '')).join('\n\n'), renderMarkdown } } : {}),
-      ...(hasDiff ? { diff: { breadcrumb: preparation ? '录入前后对照' : '现行知识', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
+      ...(hasDiff ? { diff: { breadcrumb: preparation ? '录入前后对照' : '内容变更', oldBody: raw.old_body, newBody: raw.new_body } } : {}),
       items: [
         ...options.map((item: any) => ({
           type: 'choice' as const,
@@ -6488,6 +6520,10 @@ function isBlockingClarificationEvent(event: any): boolean {
 }
 
 const LOCAL_TOOL_ACTION_TITLES: Record<string, string> = {
+  bash: '执行本地命令',
+  read: '读取本机文件',
+  write: '写入本机文件',
+  edit: '修改本机文件',
   search_knowledge: '检索知识库',
   search_vibe_platform_docs: '检索平台资料',
   read_knowledge: '读取知识内容',
@@ -6512,6 +6548,8 @@ function localRunProcessRows(event: any): any[] {
 function localRunProcessSteps(event: any): ProcessStep[] {
   if (event?.role !== 'assistant' || event?.meta?.local_agent !== true) return []
   const rows = localRunProcessRows(event)
+  const lastSuccessfulOrder = rows.reduce((latest: number, row: any) => row.role === 'tool' && row.meta?.is_error === false
+    ? Math.max(latest, Number(row.event_order || row.sequence || 0)) : latest, 0)
   const toolResults = new Map(rows
     .filter((item: any) => item?.role === 'tool' && item?.meta?.tool_call_id)
     .map((item: any) => [String(item.meta.tool_call_id), item]))
@@ -6547,7 +6585,8 @@ function localRunProcessSteps(event: any): ProcessStep[] {
         actionId: String(call?.id || ''),
         actionType: name || 'tool_call',
         title: LOCAL_TOOL_ACTION_TITLES[name] || '执行任务步骤',
-        summary: status === 'error' ? '该步骤执行失败。' : '',
+        summary: status === 'error' ? localToolFailureSummary(name, result?.content,
+          lastSuccessfulOrder > Number(result?.event_order || result?.sequence || 0)) : '',
         status,
         phase: 'tool',
         source: 'runtime',
@@ -6597,6 +6636,8 @@ function eventVerification(event: any): any | null {
 }
 
 function eventProcessDuration(event: any): number {
+  const timing = readRunTiming(event?.meta?.run_timing)
+  if (timing) return activeRunDuration(timing)
   const canonical = eventTurnProtocol(event)
   const projected = preferredProcessDuration(
     canonical?.processSummary?.duration_ms,
@@ -6609,6 +6650,18 @@ function eventProcessDuration(event: any): number {
   const started = new Date(rows[0]?.created_at || '').getTime()
   const ended = new Date(rows[rows.length - 1]?.created_at || '').getTime()
   return Number.isFinite(started) && Number.isFinite(ended) ? Math.max(0, ended - started) : 0
+}
+
+function eventDurationScope(event: any): 'active' | 'elapsed' | 'recorded' {
+  const timing = readRunTiming(event?.meta?.run_timing)
+  return timing ? (timing.complete ? 'active' : 'recorded') : event?.meta?.local_agent ? 'elapsed' : 'active'
+}
+
+function threadDurationScope(root: any): 'active' | 'elapsed' | 'recorded' {
+  const scopes = interactionThreadNodes(root).map(eventDurationScope)
+  if (threadRunning(root)) scopes.push(procDurationScope.value)
+  return scopes.every(scope => scope === 'active') ? 'active'
+    : scopes.every(scope => scope === 'elapsed') ? 'elapsed' : 'recorded'
 }
 
 function eventAnswerSupplement(event: any) {

@@ -341,6 +341,7 @@ export interface ElectronAgentStatus {
   piCodingAgentVersion: string;
   executionMode?: 'local';
   startedAt?: number;
+  timing?: Record<string, unknown>;
   assistantPartialText?: string;
   traceId?: string;
   goalId?: string;
@@ -362,6 +363,7 @@ export interface VibeAgentEvent {
   runId: string;
   turnId: string;
   sessionId: string;
+  timing?: Record<string, unknown>;
   type: 'state' | 'assistant_delta' | 'canonical_delta' | 'interaction' | 'interaction_request' | 'pi_frame' | 'session_title' | 'session_title_error' | 'done' | 'error' | 'terminal' | 'trace_error' | 'interaction_observer_error' | 'candidate_observer_error';
   state?: string;
   text?: string;

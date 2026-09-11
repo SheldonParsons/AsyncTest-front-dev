@@ -8,10 +8,10 @@
     >
       <span v-if="running" class="proc-head-icon"><RunningDots /></span>
       <!-- 0704:运行中头部也带"已处理 Xs"活秒表(父组件每 0.5s 推 durationMs),全轮没结束就一直数 -->
-      <span v-if="running" class="proc-thinking">正在思考 · 已处理 {{ durationLabel }}</span>
+      <span v-if="running" class="proc-thinking" :title="durationHint">正在思考 · {{ durationPrefix }} {{ durationLabel }}</span>
       <!-- 第三态(0703):后端已收工、在等用户对反问/勾选做决定——既不是"在思考"也不只是"已处理" -->
-      <span v-else-if="awaiting" class="proc-done">已处理 {{ durationLabel }} · <b class="proc-awaiting">等你选择</b></span>
-      <span v-else class="proc-done">已处理 {{ durationLabel }}</span>
+      <span v-else-if="awaiting" class="proc-done" :title="durationHint">{{ durationPrefix }} {{ durationLabel }} · <b class="proc-awaiting">等你选择</b></span>
+      <span v-else class="proc-done" :title="durationHint">{{ durationPrefix }} {{ durationLabel }}</span>
       <svg
         v-if="!running && steps.length"
         class="proc-chevron"
@@ -84,10 +84,12 @@ const props = withDefaults(defineProps<{
   steps: ProcessStep[]
   running?: boolean
   durationMs?: number
+  durationScope?: 'active' | 'elapsed' | 'recorded'
   awaiting?: boolean   // 0703:轮次以反问/勾选收尾、等用户决定(第三态,与"正在思考"区分)
 }>(), {
   running: false,
   durationMs: 0,
+  durationScope: 'active',
   awaiting: false,
 })
 
@@ -107,6 +109,10 @@ const bodyVisible = computed(() => (
   props.running || (open.value ?? props.awaiting)
 ))
 const durationLabel = computed(() => formatDuration(props.durationMs || 0))
+const durationPrefix = computed(() => props.durationScope === 'elapsed' ? '总历时' : props.durationScope === 'recorded' ? '已记录耗时' : '已处理')
+const durationHint = computed(() => props.durationScope === 'elapsed' ? '旧记录缺少等待边界，此时间可能包含用户等待。'
+  : props.durationScope === 'recorded' ? '仅统计已记录区间，部分历史或异常退出区间无法准确还原。'
+  : '不含等待你回答、确认及离线暂停；包含确认后的写入和索引处理。')
 
 watch(() => props.running, (running, wasRunning) => {
   if (wasRunning && !running && !props.awaiting) open.value = false

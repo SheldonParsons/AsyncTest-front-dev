@@ -291,6 +291,7 @@ class HostedRun {
       runId: this.run.run_id,
       turnId: this.run.turn_id,
       sessionId: this.run.session_id,
+      timing: this.runStore?.timingSnapshot(this.run.run_id) || this.finalTiming,
       type,
       ...fields,
     };
@@ -755,15 +756,16 @@ class HostedRun {
       this.localTerminalState = frame.payload.status === "completed"
         ? "completed"
         : frame.payload.status === "aborted" ? "aborted" : frame.payload.status;
-      this.event("done", { ...frame.payload, payload: frame.payload });
       if (this.runStore) {
         if (frame.payload.status === "waiting_user") {
           const descriptor = await this.runStore.get(this.run.run_id);
           if (!["retry_wait", "blocked"].includes(descriptor?.phase)) await this.runStore.phase(this.run.run_id, "waiting_user", { state: "waiting_user" });
         } else {
-          await this.runStore.markTerminal(this.run.run_id, this.localTerminalState, frame.payload.code || "").catch(() => undefined);
+          const ended = await this.runStore.markTerminal(this.run.run_id, this.localTerminalState, frame.payload.code || "").catch(() => undefined);
+          this.finalTiming = ended?.timing;
         }
       }
+      this.event("done", { ...frame.payload, payload: frame.payload });
       return;
     }
     if (frame.type === "error") this.event("error", { ...frame.payload, payload: frame.payload });
@@ -832,6 +834,7 @@ class HostedRun {
       // transaction: a later retry would otherwise be unable to distinguish a
       // committed result from an unknown side effect.
       await this.runStore?.markResponseInFlight(this.run.run_id, projected);
+      this.event('pi_frame', { frameType: 'run_timing', payload: {} });
       const resolve = () => callback({ run: this.run, request: pending.payload, response: projected, context: this.localContext });
       // 用户已经选择过的同一确认，沿原 confirmation_id 和幂等键恢复回执。
       // 不重做预览，不重放任意工具；业务失败结果仍直接交回 Agent。
@@ -950,6 +953,7 @@ class HostedRun {
       piCodingAgentVersion: PI_CODING_AGENT_VERSION,
       executionMode: "local",
       startedAt: this.startedAt,
+      timing: this.runStore?.timingSnapshot(this.run.run_id) || this.finalTiming,
       assistantPartialText: this.assistantPartialText,
       ...(this.recoveryState ? { recovery: this.recoveryState } : {}),
       ...(this.run.trace_id ? { traceId: this.run.trace_id } : {}),
@@ -1067,6 +1071,7 @@ class HostedRun {
     try { child?.stdin?.destroy(); } catch {}
     try { child?.stdout?.destroy(); } catch {}
     try { child?.stderr?.destroy(); } catch {}
+    if (reason === 'app_exit') await this.runStore?.pauseTiming(this.run.run_id).catch(() => undefined);
     if (this.startPayload?.provider && typeof this.startPayload.provider === "object") {
       delete this.startPayload.provider.api_key;
       delete this.startPayload.provider.apiKey;
@@ -1094,7 +1099,8 @@ class HostedRun {
     if (this.runStore && !preserveWaiting && !preserveFailedResumeCheckpoint && String(state) !== "waiting_user") {
       const terminalState = ["completed", "failed", "aborted", "cancelled", "closed"].includes(String(state))
         ? String(state) : "failed";
-      await this.runStore.markTerminal(this.run.run_id, terminalState, reason || terminalState).catch(() => undefined);
+      const ended = await this.runStore.markTerminal(this.run.run_id, terminalState, reason || terminalState).catch(() => undefined);
+      this.finalTiming = ended?.timing;
     }
     this.localPending.clear();
     this.localResolving.clear();

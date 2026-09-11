@@ -27,20 +27,11 @@
       <div v-if="isQuestion" class="question-view" aria-label="提问和选项列表">
         <h1 class="question-title">{{ question?.title }}</h1>
         <div v-if="question?.description" class="question-description">{{ question?.description }}</div>
-        <div v-if="question?.preview || showDiff || cascadeRows.length || deleteManyRows.length" class="question-content" tabindex="0" aria-label="确认内容预览">
-        <div v-if="question?.preview" class="prepared-preview" aria-label="待确认的完整正文">
-          <strong>最终正文</strong>
-          <ConversationMarkdown class="message-md" :content="question.preview.content" :render-markdown="question.preview.renderMarkdown" />
-          <details v-if="question.preview.original">
-            <summary class="preview-disclosure"><span>查看提交原文</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
-            <pre class="prepared-original">{{ question.preview.original }}</pre>
-          </details>
-        </div>
-        <!-- 改原文·diff 预览：确认前看清红删绿增 -->
-        <details v-if="showDiff && question?.diff" class="edit-diff" :open="!question?.preview" @toggle="onDiffToggle">
-          <summary class="preview-disclosure"><span>查看改动</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
+        <div v-if="question?.diff || cascadeRows.length || deleteManyRows.length" class="question-content" tabindex="0" aria-label="确认内容预览">
+        <!-- 新增、修改、删除统一直接展示冻结内容的红删绿增，不重复渲染最终正文。 -->
+        <div v-if="question?.diff" class="edit-diff" role="region" aria-label="内容差异">
           <div v-if="question.diff.breadcrumb" class="edit-diff-bc">{{ question.diff.breadcrumb }}</div>
-          <div v-if="diffOpen || !question?.preview" class="edit-diff-body">
+          <div class="edit-diff-body">
             <div
               v-for="(ln, i) in diffLines(question.diff.oldBody, question.diff.newBody)"
               :key="i"
@@ -48,7 +39,7 @@
               :class="'d-' + ln.t"
             >{{ ln.t === 'del' ? '− ' : ln.t === 'add' ? '+ ' : '  ' }}{{ ln.text }}</div>
           </div>
-        </details>
+        </div>
         <!-- 连锁·多处 diff：逐项勾选要不要一起改 -->
         <div v-if="cascadeRows.length" class="cascade-list" aria-label="连锁影响的多处原文">
           <label
@@ -295,7 +286,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { admitAttachmentSelection } from '../composables/attachmentAdmission'
 import ChatMarkdownEditor from './ChatMarkdownEditor.vue'
 import FileTextIcon from './icons/FileTextIcon.vue'
-import ConversationMarkdown from './ConversationMarkdown.vue'
 
 interface QuestionItem { type: 'choice' | 'input'; label?: string; description?: string; value?: string; placeholder?: string; required?: boolean; showSkip?: boolean; submitLabel?: string }
 interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
@@ -303,21 +293,7 @@ interface EditDiff { breadcrumb?: string; oldBody?: string; newBody?: string }
 interface CascadeRow { id: number; breadcrumb?: string; oldBody?: string; newBody?: string; reason?: string; mode?: string; checked?: boolean }
 interface DeleteManyRow { id: number; breadcrumb?: string; title?: string; bodyPreview?: string }
 interface ModelOption { value: string; label: string; hint?: string }
-interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; preview?: { content: string; original: string; renderMarkdown: (text: string) => string }; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
-const diffOpen = ref(false)
-// 新增内容已有最终正文预览，不再重复展示“空白到全文”的 diff；旧式仅 diff 预览仍保留。
-const showDiff = computed(() => !!props.question?.diff
-  && (!props.question.preview || (props.question.diff.oldBody || '').length > 0))
-function onDiffToggle(event: Event) {
-  const details = event.target as HTMLDetailsElement
-  diffOpen.value = details.open
-  if (details.open && props.question?.preview) void nextTick(() => {
-    const container = details.closest<HTMLElement>('.question-content')
-    if (container && details.isConnected) {
-      container.scrollTop += details.getBoundingClientRect().top - container.getBoundingClientRect().top
-    }
-  })
-}
+interface Question { title: string; description?: string; items: QuestionItem[]; diff?: EditDiff; cascade?: CascadeRow[]; deleteMany?: { prefix?: string; items: DeleteManyRow[] } }
 interface ComposerNotice { title: string; type: 'error' | 'info'; duration?: number }
 interface PersistedLocalAttachment {
   schema: 'local_file_ref.v1'
@@ -398,6 +374,7 @@ function diffLines(oldT?: string, newT?: string): { t: 'ctx' | 'del' | 'add'; te
   const oldText = String(oldT || '')
   const newText = String(newT || '')
   if (!oldText) return newText ? newText.split('\n').map(text => ({ t: 'add', text })) : []
+  if (!newText) return oldText.split('\n').map(text => ({ t: 'del', text }))
   const a = oldText.split('\n'); const b = newText.split('\n')
   let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++
   let e = 0; while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++
@@ -489,7 +466,6 @@ function restoreAttachmentDraft(): void {
 }
 
 watch(() => props.question, () => {
-  diffOpen.value = !props.question?.preview
   void nextTick(() => rootEl.value?.querySelector('.question-content')?.scrollTo({ top: 0 }))
   activeIndex.value = 0
   menuOpen.value = false
@@ -850,19 +826,6 @@ defineExpose({ clearAttachmentDraft, clearAttachments, clearInput: () => inputEl
 .question-view > .question-list { flex-shrink: 0; max-height: 24dvh; overflow: auto; overscroll-behavior: contain; border-top: 1px solid #eef0f2; padding-top: 10px; }
 .question-title { margin: 0; color: #20242b; font-size: 15px; font-weight: 600; line-height: 1.45; }
 .question-description { color: #8d929a; font-size: 13px; line-height: 1.4; }
-.prepared-preview { min-width: 0; padding: 14px; border: 1px solid #e5e7eb; border-radius: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-.prepared-preview :deep(h1), .prepared-preview :deep(h2), .prepared-preview :deep(h3) { font-size: 1.1em; margin: .7em 0 .35em; }
-.prepared-preview :deep(table) { border-collapse: collapse; }
-.prepared-preview :deep(th), .prepared-preview :deep(td) { border: 1px solid #e5e7eb; padding: 4px 8px; }
-.prepared-original { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
-.preview-disclosure { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; cursor: pointer; padding: 10px 12px; color: #555d68; font-size: 13px; font-weight: 500; border-radius: 9px; }
-.preview-disclosure::-webkit-details-marker { display: none; }
-.preview-disclosure::marker { content: ''; }
-.preview-disclosure:hover { color: #20242b; background: #f2f3f5; }
-.preview-disclosure:focus-visible { outline: 2px solid #9ba3ae; outline-offset: -2px; }
-.preview-disclosure svg { width: 16px; height: 16px; flex-shrink: 0; transition: transform 140ms ease; }
-details[open] > .preview-disclosure svg { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) { .preview-disclosure svg { transition: none; } }
 
 /* 改原文 diff 预览 */
 .edit-diff { border: 1px solid #e4e6ea; border-radius: 10px; overflow: hidden; background: #fcfcfd; }

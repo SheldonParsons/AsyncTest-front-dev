@@ -4,6 +4,13 @@ export interface VisibleProcessActionStat {
   value: number
 }
 
+/** 保留失败事实；后续步骤成功不等于原操作已修复，不输出未经筛选的命令/错误内容。 */
+export function localToolFailureSummary(tool: string, content: unknown, laterSuccess: boolean): string {
+  const action = ({ bash: '本地命令', read: '文件读取', write: '文件写入', edit: '文件修改' } as Record<string, string>)[tool] || '该步骤'
+  const code = tool === 'bash' ? String(content || '').match(/Command exited with code (\d+)\s*$/)?.[1] : undefined
+  return `${action}本次尝试失败${code ? `（退出码 ${code}）` : ''}。${laterSuccess ? '后续已有步骤成功执行，原失败记录保留。' : '详细原因可在 Trace 中查看。'}`
+}
+
 export interface ProcessActionMetaInput {
   status?: string
   stats?: Record<string, unknown>

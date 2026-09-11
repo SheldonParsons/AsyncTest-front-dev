@@ -1,5 +1,27 @@
 import type { TurnProtocolReadModel } from './composables/turnProtocol'
 
+export interface RunTiming {
+  schema: 'vibe.run_timing.v1'
+  active_ms: number
+  waiting_ms: number
+  paused_ms: number
+  observed_at_ms: number
+  phase: 'active' | 'waiting' | 'paused' | 'done'
+  complete: boolean
+}
+
+export function readRunTiming(value: any): RunTiming | null {
+  return value?.schema === 'vibe.run_timing.v1'
+    && ['active_ms', 'waiting_ms', 'paused_ms', 'observed_at_ms'].every(key => Number.isFinite(value[key]) && value[key] >= 0)
+    && ['active', 'waiting', 'paused', 'done'].includes(value.phase) ? value : null
+}
+
+/** 历史快照不外推；仅实时显示传 now，让活动区间的秒表继续走。 */
+export function activeRunDuration(timing: RunTiming, now?: number): number {
+  return Math.round(timing.active_ms + (now !== undefined && timing.phase === 'active'
+    ? Math.max(0, now - timing.observed_at_ms) : 0))
+}
+
 export interface LocalTurnPresentation {
   model: TurnProtocolReadModel
   observedDurationMs: number

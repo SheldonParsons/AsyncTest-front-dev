@@ -227,6 +227,7 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
         run_id: runId,
         trace_id: traceIdFor(run),
         ...meta,
+        run_timing: await runStore.readTiming(runId),
       },
       attachments: Array.isArray(attachments) ? attachments : [],
       internal: true,
@@ -539,12 +540,13 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       }).catch(() => undefined);
       return;
     }
+    const timing = await runStore.readTiming(run.run_id ?? run.runId);
     await traceStore.finish({
       traceId,
       accountId: run.account_id ?? run.accountId,
       projectId: run.project_id ?? run.projectId ?? run.project,
       status: resolvedStatus,
-      attributes,
+      attributes: { ...attributes, ...(timing ? { run_timing: { ...timing, phase: 'done' } } : {}) },
       ...(payload === undefined ? {} : { payload }),
     }).catch(() => undefined);
     const normalized = validContext(context);
@@ -936,6 +938,11 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
       return outcome;
     },
     onInteractionResponse: async ({ run, request, response, context }) => {
+      // dispatch 与 resolved 分开：后者包含后端写入/索引，不能用来代表用户点击时间。
+      await appendTrace(run, 'interaction.response_started', {
+        interaction_id: request.interaction_id, confirmation_id: request.confirmation_id,
+        action: response.action || 'answer', run_timing: runStore.timingSnapshot(run.run_id),
+      });
       const outcome = await routerFor(run, context).resolveInteraction(
         request.interaction_id,
         response,
@@ -1386,12 +1393,16 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     // Acquire the fresh signed binding before resolving the pending business
     // interaction. The same snapshot is passed into injectLocalStartPayload
     // below, so a cold continuation performs one bootstrap exchange only.
+    // 用户响应已通过本机身份/内容校验，冷启动取配置也属于处理时间。
+    await runStore.resumeTiming(runId);
+    host.emitTo(sender, { schema: 'vibe_agent_event.v1', runId, turnId: run.turn_id,
+      sessionId: run.session_id, type: 'pi_frame', frameType: 'run_timing', payload: {}, timing: runStore.timingSnapshot(runId) });
     const recoverySnapshot = await fetchRunSnapshot(
       run,
       context,
       String(basePayload.provider?.id || ""),
       { resume: true },
-    );
+    ).catch(async error => { await runStore.pauseTiming(runId).catch(() => undefined); throw error; });
     let outcome = descriptor.resolved_result;
     // Always refresh the per-run router with the recovery caller's current
     // authenticated context.  Even a resume_ready checkpoint may continue
@@ -1400,6 +1411,9 @@ export function initVibeAgentMain({ windowManager, isDevelopment, localHandlers,
     const recoveryRouter = routerFor(run, context, { refresh: true });
     if (!outcome) {
       await runStore.markResponseInFlight(runId, response);
+      host.emitTo(sender, { schema: 'vibe_agent_event.v1', runId, turnId: run.turn_id,
+        sessionId: run.session_id, type: 'pi_frame', frameType: 'run_timing', payload: {},
+        timing: runStore.timingSnapshot(runId) });
       recoveryRouter.restorePending(pending, {
         toolCallId: pending.tool_call_id,
         toolName: pending.tool_name,
