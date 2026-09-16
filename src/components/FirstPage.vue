@@ -1414,11 +1414,12 @@ watch(isLoginActive, (newVal) => {
     font-size: 0.9rem;
 
     a {
-      color: inherit;
+      color: var(--color-accent);
       text-decoration: none;
 
       &:hover,
       &:focus-visible {
+        color: var(--color-accent-hover);
         text-decoration: underline;
       }
     }
