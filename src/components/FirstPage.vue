@@ -180,7 +180,7 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <p class="footer-copyright">© 2025 AsyncTest. All rights reserved（粤ICP备2024322282号-1）.</p>
+            <p class="footer-copyright">© 2025 AsyncTest. All rights reserved（<a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">粤ICP备2024322282号-1</a>）.</p>
           </div>
         </div>
       </footer>
@@ -1412,6 +1412,16 @@ watch(isLoginActive, (newVal) => {
   .footer-copyright {
     color: var(--color-text-tertiary);
     font-size: 0.9rem;
+
+    a {
+      color: inherit;
+      text-decoration: none;
+
+      &:hover,
+      &:focus-visible {
+        text-decoration: underline;
+      }
+    }
   }
 
   /* Responsive */
