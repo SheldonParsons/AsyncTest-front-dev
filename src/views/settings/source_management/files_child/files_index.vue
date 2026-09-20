@@ -234,16 +234,12 @@
       </div>
     </div>
 
-    <DialogAnimation
+    <FileActionDialog
       ref="createDirectoryDialogRef"
       title="新建目录"
-      cancel_title="取消"
-      :confirm_title="creatingDirectory ? '创建中...' : '创建'"
-      :showCancel="!creatingDirectory"
-      :before_comfirm="createDirectory"
-      :bgtype="'white'"
-      :topMove="'0% !important'"
-      :z-index="2600"
+      :confirm-title="creatingDirectory ? '创建中...' : '创建'"
+      :busy="creatingDirectory"
+      :before-confirm="createDirectory"
     >
       <div class="files-dialog-panel files-dialog-panel-compact">
         <div class="files-dialog-block">
@@ -257,18 +253,14 @@
           />
         </div>
       </div>
-    </DialogAnimation>
+    </FileActionDialog>
 
-      <DialogAnimation
-        ref="uploadDialogRef"
-        title="上传文件"
-      cancel_title="取消"
-      :confirm_title="uploadingFiles ? '上传中...' : '开始上传'"
-      :showCancel="!uploadingFiles"
-      :before_comfirm="submitUploadFiles"
-      :bgtype="'white'"
-      :topMove="'0% !important'"
-      :z-index="2600"
+    <FileActionDialog
+      ref="uploadDialogRef"
+      title="上传文件"
+      :confirm-title="uploadingFiles ? '上传中...' : '开始上传'"
+      :busy="uploadingFiles"
+      :before-confirm="submitUploadFiles"
     >
       <div class="files-dialog-panel files-dialog-panel-upload">
         <div class="files-dialog-block files-dialog-block-upload">
@@ -291,18 +283,14 @@
           </el-upload>
         </div>
       </div>
-    </DialogAnimation>
+    </FileActionDialog>
 
-    <DialogAnimation
+    <FileActionDialog
       ref="folderExportDialogRef"
       title="批量下载"
-      cancel_title="取消"
-      :confirm_title="exportingCurrentFolderZip ? '处理中...' : '下载 ZIP'"
-      :showCancel="!exportingCurrentFolderZip"
-      :before_comfirm="submitCurrentFolderExport"
-      :bgtype="'white'"
-      :topMove="'0% !important'"
-      :z-index="2600"
+      :confirm-title="exportingCurrentFolderZip ? '处理中...' : '下载 ZIP'"
+      :busy="exportingCurrentFolderZip"
+      :before-confirm="submitCurrentFolderExport"
     >
       <div
         class="files-dialog-panel files-export-panel"
@@ -364,7 +352,7 @@
           </el-checkbox>
         </div>
       </div>
-    </DialogAnimation>
+    </FileActionDialog>
 
     <Teleport to="body">
       <div v-if="uploadProgressItems.length" class="files-upload-progress-overlay">
@@ -414,16 +402,12 @@
       </Transition>
     </Teleport>
 
-    <DialogAnimation
+    <FileActionDialog
       ref="renameDialogRef"
       title="重命名"
-      cancel_title="取消"
-      :confirm_title="renamingInProgress ? '保存中...' : '保存'"
-      :showCancel="!renamingInProgress"
-      :before_comfirm="submitRename"
-      :bgtype="'white'"
-      :topMove="'0% !important'"
-      :z-index="2600"
+      :confirm-title="renamingInProgress ? '保存中...' : '保存'"
+      :busy="renamingInProgress"
+      :before-confirm="submitRename"
     >
       <div class="files-dialog-panel files-dialog-panel-compact">
         <div class="files-dialog-block">
@@ -437,7 +421,7 @@
           />
         </div>
       </div>
-    </DialogAnimation>
+    </FileActionDialog>
   </section>
 </template>
 
@@ -446,7 +430,7 @@ import { computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, watch, wi
 import { useRoute, useRouter } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import type { UploadInstance } from "element-plus";
-import DialogAnimation from "@/components/common/general/dialog.vue";
+import FileActionDialog from "./FileActionDialog.vue";
 import {
   Download,
   Document,
