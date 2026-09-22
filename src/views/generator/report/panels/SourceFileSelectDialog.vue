@@ -33,6 +33,7 @@
 
     <div class="source-file-dialog-body">
       <FilesPage
+        v-if="!projectsLoading && projects.some(item => item.value === selectedProjectId)"
         ref="filesPageRef"
         :selectable="true"
         :sync-route="false"
@@ -40,6 +41,7 @@
         :allowed-extensions="allowedExtensions"
         :single-selection="singleSelection"
       />
+      <p v-else>{{ projectsLoading ? '正在加载可访问项目…' : '暂无可访问项目，请先加入项目。' }}</p>
     </div>
 
     <template #footer>
@@ -118,7 +120,7 @@ function handleClose() {
 }
 
 function submitSelection() {
-  if (!selectedProjectId.value) {
+  if (!selectedProjectId.value || !props.projects.some(item => item.value === selectedProjectId.value)) {
     window.$toast({ title: "请先选择项目", type: "warning" });
     return;
   }

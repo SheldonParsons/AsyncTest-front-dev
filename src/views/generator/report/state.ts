@@ -3,7 +3,7 @@ import { onBeforeUnmount, reactive, toRaw, watch } from "vue";
 import asyncTest from "@/db";
 import GlobalStatus from "@/global";
 import { ApiCheckPermission } from "@/api/layout/cookies";
-import { ApiGetProjects } from "@/api/project/index";
+import { ApiGetJoinProjects } from "@/api/project/index";
 import { EMPTY_MODULE_LABEL } from "./types";
 import type {
   ReportAmindParseResult,
@@ -441,7 +441,9 @@ export function useReportWorkspaceState() {
       })
       : null;
 
+  let projectListRequest = 0;
   onBeforeUnmount(() => {
+    projectListRequest += 1;
     removeZendaoRunLogListener?.();
   });
 
@@ -790,29 +792,43 @@ export function useReportWorkspaceState() {
   }
 
   async function loadAsyncTestProjects() {
+    const request = ++projectListRequest;
     state.asyncTestProjectsLoading = true;
     try {
-      const response: any = await ApiGetProjects({
-        page: 1,
-        size: 200,
-        name: "",
+      const response: any = await ApiGetJoinProjects({});
+      if (request !== projectListRequest) return false;
+      const items = Array.isArray(response) ? response : response?.results;
+      if (response?.result === 0 || !Array.isArray(items)) {
+        throw new Error('获取可访问项目失败，请重试');
+      }
+      const nameCounts = new Map<string, number>();
+      items.forEach((item: any) => {
+        if (item?.name) nameCounts.set(`${item.name}`, (nameCounts.get(`${item.name}`) || 0) + 1);
       });
-      const items = Array.isArray(response?.results) ? response.results : [];
       state.asyncTestProjects = items
         .map((item: any) => {
           if (item?.id === undefined || item?.id === null || !item?.name) return null;
           return {
             value: `${item.id}`,
-            label: `${item.name}`,
+            label: (nameCounts.get(`${item.name}`) || 0) > 1 ? `${item.name} · #${item.id}` : `${item.name}`,
           };
         })
         .filter((item): item is ReportSelectOption => !!item);
 
-      if (!state.asyncTestProjectId && state.asyncTestProjects.length) {
-        state.asyncTestProjectId = state.asyncTestProjects[0].value;
+      if (!state.asyncTestProjects.some(item => item.value === state.asyncTestProjectId)) {
+        state.asyncTestProjectId = state.asyncTestProjects[0]?.value || '';
+        persistDraft();
       }
+      return true;
+    } catch {
+      if (request !== projectListRequest) return false;
+      state.asyncTestProjects = [];
+      state.asyncTestProjectId = '';
+      persistDraft();
+      showToast('error', '获取可访问项目失败，请重试');
+      return false;
     } finally {
-      state.asyncTestProjectsLoading = false;
+      if (request === projectListRequest) state.asyncTestProjectsLoading = false;
     }
   }
 
@@ -823,7 +839,8 @@ export function useReportWorkspaceState() {
   }
 
   function setAsyncTestProjectId(projectId: string) {
-    state.asyncTestProjectId = `${projectId ?? ""}`;
+    const id = `${projectId ?? ""}`;
+    state.asyncTestProjectId = state.asyncTestProjects.some(item => item.value === id) ? id : '';
     persistDraft();
   }
 
@@ -1003,9 +1020,7 @@ export function useReportWorkspaceState() {
     const loggedIn = await checkAsyncTestLoginStatus(true);
     if (!loggedIn) return;
 
-    if (!state.asyncTestProjects.length) {
-      await loadAsyncTestProjects();
-    }
+    if (!await loadAsyncTestProjects()) return;
 
     state.amindDialogVisible = true;
     setActiveStep("sources");
@@ -1017,9 +1032,7 @@ export function useReportWorkspaceState() {
     const loggedIn = await checkAsyncTestLoginStatus(true);
     if (!loggedIn) return;
 
-    if (!state.asyncTestProjects.length) {
-      await loadAsyncTestProjects();
-    }
+    if (!await loadAsyncTestProjects()) return;
 
     state.excelDialogVisible = true;
     setActiveStep("sources");

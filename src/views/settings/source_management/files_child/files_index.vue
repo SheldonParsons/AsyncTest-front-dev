@@ -107,7 +107,7 @@
           <template #empty>
             <div class="files-empty-state">
               <el-empty :description="emptyDescription">
-                <div v-if="!loading" class="files-empty-actions">
+                <div v-if="!loading && !directoryError" class="files-empty-actions">
                   <el-button class="files-tool-btn" plain @click="openCreateDirectoryDialog">
                     <el-icon><FolderAdd /></el-icon>
                     <span>新建目录</span>
@@ -524,6 +524,7 @@ const multipleTableRef = ref<any>(null);
 const uploadRef = ref<UploadInstance | null>(null);
 
 const loading = ref(false);
+const directoryError = ref('');
 const creatingDirectory = ref(false);
 const uploadingFiles = ref(false);
 const deletingEntryKey = ref<string | null>(null);
@@ -605,7 +606,7 @@ const directoryCount = computed(
   () => entries.value.filter((entry) => entry.kind === "directory").length
 );
 const fileCount = computed(() => entries.value.filter((entry) => entry.kind === "file").length);
-const emptyDescription = computed(() => "当前目录还没有文件或目录");
+const emptyDescription = computed(() => directoryError.value || "当前目录还没有文件或目录");
 const activeUploadCount = computed(() =>
   uploadProgressItems.value.filter((item) =>
     item.status === "pending" || item.status === "uploading" || item.status === "processing"
@@ -1072,15 +1073,14 @@ function enterDirectory(entry: FileManagerEntry) {
 }
 
 async function loadDirectory() {
+  const requestId = ++loadRequestId;
+  directoryError.value = '';
+  if (listCancelTokenSource) listCancelTokenSource.cancel("取消重复请求");
   if (!projectId.value) {
     entries.value = [];
-    await syncTableSelectionFromCache();
+    loading.value = false;
+    await clean_select();
     return;
-  }
-
-  const requestId = ++loadRequestId;
-  if (listCancelTokenSource) {
-    listCancelTokenSource.cancel("取消重复请求");
   }
 
   listCancelTokenSource = HttpClass.createCancelToken();
@@ -1096,15 +1096,26 @@ async function loadDirectory() {
     });
 
     if (requestId !== loadRequestId || response?.msg === "cancel") return;
-    if (!ensureApiSuccess(response, "获取目录失败")) {
+    if (response?.code === 'project_access_denied') {
+      directoryError.value = '没有该项目的访问权限，请重新选择有权限的项目。';
       entries.value = [];
-      await syncTableSelectionFromCache();
+      await clean_select();
+      return;
+    }
+    if (!ensureApiSuccess(response, "获取目录失败")) {
+      directoryError.value = '文件列表加载失败，请重新选择项目或重试。';
+      entries.value = [];
+      await clean_select();
       return;
     }
 
     entries.value = normalizeEntries(response, currentDirectorySegments.value);
     await syncTableSelectionFromCache();
   } catch (error) {
+    if (requestId !== loadRequestId) return;
+    entries.value = [];
+    directoryError.value = '文件列表加载失败，请重新选择项目或重试。';
+    await clean_select();
     console.log(error);
     tools.message("获取目录失败", proxy, "error");
   } finally {
