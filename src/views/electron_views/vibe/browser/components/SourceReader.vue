@@ -32,7 +32,7 @@
       <div ref="scrollEl" class="document-scroll" @scroll.passive="syncActiveSpan">
         <p v-if="detailLoading" class="empty">正在读取正文…</p>
         <p v-else-if="readerError" class="empty error-text">{{ readerError }}</p>
-        <article v-else-if="detail && isMarkdown" class="markdown-body" v-html="renderedContent" />
+        <article v-else-if="detail && isMarkdown" class="markdown-body" @click="openDocumentExternalLink" @auxclick="openDocumentExternalLink" v-html="renderedContent" />
         <article v-else-if="detail" class="plain-body">{{ detail.content }}</article>
         <p v-else-if="documentLoading" class="empty">正在读取知识列表…</p>
         <p v-else class="empty">尚无知识项。确认录入后的知识会显示在这里。</p>
@@ -54,6 +54,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { openDocumentExternalLink } from '@/utils/documentExternalLinks'
 import {
   getKnowledgeDocument,
   getKnowledgeDocuments,

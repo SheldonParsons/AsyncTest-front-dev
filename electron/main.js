@@ -328,7 +328,14 @@ async function requestAppQuit() {
 
 // ===== 通用 IPC（放 createMainWindow 外，防重复绑定）=====
 ipcMain.on('open-url', (event, url) => {
-  shell.openExternal(url);
+  if (typeof url !== 'string') return;
+  try {
+    const target = new URL(url);
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return;
+    void shell.openExternal(target.href).catch(() => {
+      console.warn('Unable to open external web link');
+    });
+  } catch { /* Ignore malformed URLs from renderer content. */ }
 });
 ipcMain.handle('ping', async () => 'pong');
 

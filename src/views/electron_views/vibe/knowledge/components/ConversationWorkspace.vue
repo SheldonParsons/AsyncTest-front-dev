@@ -123,7 +123,7 @@
           <strong>{{ activeFileNoun }}内容为空</strong>
           <span>该{{ activeFileNoun }}没有可显示的正文。</span>
         </div>
-        <article v-else-if="activeFileMode === 'markdown'" class="markdown-body" v-html="renderedMarkdown" />
+        <article v-else-if="activeFileMode === 'markdown'" class="markdown-body" @click="openDocumentExternalLink" @auxclick="openDocumentExternalLink" v-html="renderedMarkdown" />
         <pre v-else class="plain-body">{{ activeTab.content }}</pre>
       </div>
     </section>
@@ -140,6 +140,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { openDocumentExternalLink } from '@/utils/documentExternalLinks'
 import CommitDiffDetail from '../../browser/components/CommitDiffDetail.vue'
 import KnowledgeChangesViewer from './KnowledgeChangesViewer.vue'
 import SessionFilesViewer from './SessionFilesViewer.vue'
