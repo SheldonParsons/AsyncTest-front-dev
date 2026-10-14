@@ -909,7 +909,7 @@ function armMindRendererIdleTimeout(pending) {
     if (pending.timeoutPolicy.keepWaitingAfterIdle) {
       pending.idleTimer = null;
       pending.idleExceededAt = Date.now();
-      void appendDebugLog('renderer-request-idle-but-running', {
+      void appendBridgeLog('renderer-request-idle-but-running', {
         requestId: pending.requestId,
         method: pending.method,
         transactionId: pending.transactionId,
