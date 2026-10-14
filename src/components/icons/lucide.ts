@@ -1,5 +1,6 @@
 // 按需导出，避免全量图标注册。新增业务图标统一来自 @lucide/vue。
 export {
+  Copy, ArrowLeft, Check, Plus, Upload, FileText, FileSpreadsheet, GitBranch, Trash2, RefreshCw, History, Play, ListChecks, Activity, Layers, ArrowUpRight,
   UserRound, UsersRound, UserRoundCog, ClipboardCheck, Settings2, Compass,
   Download, LayoutDashboard, Folders, BookOpen,
   Building2, FolderOpen, X, Search, ChevronDown, ChevronLeft, ChevronRight, ArrowRight,

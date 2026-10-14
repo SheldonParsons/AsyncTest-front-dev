@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // These are deliberately explicit channels.  Agent-private frames must not
 // travel through the legacy generic `send/invoke` bridge.
@@ -170,6 +170,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
         assetGetBytes: (payload) => ipcRenderer.invoke('amind:assetGetBytes', payload),
     },
 
+    report: {
+        getLocalFilePath: (file) => webUtils.getPathForFile(file),
+        call: (name, args = {}) => ipcRenderer.invoke('report:call', { name, args }),
+        migrate: (legacy) => ipcRenderer.invoke('report:migrate', legacy),
+        importFiles: (args) => ipcRenderer.invoke('report:import', args),
+        importProjectFiles: (args) => ipcRenderer.invoke('report:importProject', args),
+        setAuth: (auth) => ipcRenderer.invoke('report:auth', auth),
+        getMcpConfig: () => ipcRenderer.invoke('report:mcpConfig'),
+        control: (action) => ipcRenderer.invoke('report:control', action),
+        saveArtifact: (artifactId) => ipcRenderer.invoke('report:saveArtifact', artifactId),
+        onChanged: (callback) => { const listener = (_event, payload) => callback(payload); ipcRenderer.on('report:changed', listener); return () => ipcRenderer.removeListener('report:changed', listener); },
+    },
     generator: {
         runZendao: (payload) => ipcRenderer.invoke('generator:runZendao', payload),
         getLatestZendaoRun: () => ipcRenderer.invoke('generator:getLatestZendaoRun'),

@@ -107,6 +107,8 @@ export type ReportZendaoRunResult = {
 };
 
 export type ReportAmindSourceFile = {
+  source?: "project" | "local";
+  localContentBase64?: string;
   id: string;
   backendFileId: string | number | null;
   projectId: string;
@@ -123,6 +125,8 @@ export type ReportAmindSourceFile = {
 };
 
 export type ReportExcelSourceFile = {
+  source?: "project" | "local";
+  localContentBase64?: string;
   id: string;
   backendFileId: string | number | null;
   projectId: string;
@@ -160,6 +164,12 @@ export type ReportExcelColumnMapping = {
   owner: string;
 };
 
+export type ReportExcelRowFilter = {
+  column: string;
+  // null 表示尚未选择值；空字符串表示筛选空单元格。
+  value: string | null;
+};
+
 export type ReportExcelPreviewRow = {
   id: string;
   module: string;
@@ -185,6 +195,10 @@ export type ReportExcelParseResult = {
   requirementColumnOptions: ReportSelectOption[];
   moduleColumnOptions: ReportSelectOption[];
   ownerColumnOptions: ReportSelectOption[];
+  filterColumnOptions: ReportSelectOption[];
+  filterValueOptions: ReportSelectOption[];
+  rowFilter: ReportExcelRowFilter | null;
+  sourceRowCount: number;
   columnMapping: ReportExcelColumnMapping;
   previewRows: ReportExcelPreviewRow[];
   uniqueOwners: string[];
@@ -203,6 +217,17 @@ export type ReportStep = {
 };
 
 export type ReportDraftState = {
+  serviceReady?: boolean;
+  passwordConfigured?: boolean;
+  workspaceId?: string;
+  saveStatus?: string;
+  reportIds?: string[];
+  operationId?: string;
+  sourceRevisions?: Record<string, number>;
+  assignmentCandidates?: ReportSelectOption[];
+  snapshots?: Array<{ id: string; dataAsOf: string; complete: boolean }>;
+  dataPolicy?: "refresh" | "cached" | "snapshot";
+  selectedSnapshotId?: string;
   form: ReportDraftForm;
   environments: ReportEnvironmentConfig[];
   customFields: ReportCustomFields;
@@ -234,6 +259,11 @@ export type ReportDraftState = {
     builds: boolean;
   };
   runningZendaoRun: boolean;
+  generatingReport: boolean;
+  importingLocal: boolean;
+  importingDirectory: boolean;
+  sourceDirectoryUrl: string;
+  directoryImportStatus: ReportStatusState;
   latestZendaoRunResult: ReportZendaoRunResult | null;
   asyncTestLoggedIn: boolean;
   checkingAsyncTestLogin: boolean;

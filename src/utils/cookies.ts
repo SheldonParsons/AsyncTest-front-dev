@@ -73,6 +73,7 @@ export default class COOKIE {
       } else {
         localStorage.setItem(name, value);
       }
+      window.dispatchEvent(new Event('asynctest:auth-changed'));
     }
   }
 }

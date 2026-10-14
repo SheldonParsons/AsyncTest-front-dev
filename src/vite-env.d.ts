@@ -63,6 +63,7 @@ export interface IElectronAPI {
   },
   amind: any,
   generator: any,
+  report: any,
   projectFiles?: {
     saveCurrentFolderZip: (payload: {
       zipBytes: Uint8Array;

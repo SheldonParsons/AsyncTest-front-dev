@@ -9,6 +9,7 @@ import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
 import { initAmindMain } from './amind/ipcMain.node.js';
 import { initGeneratorMain } from './generator/ipcMain.node.js';
+import { initReportMain } from './generator/reportMain.node.js';
 import { initProjectFilesMain } from './projectFiles.node.js';
 import { initLspMain, cleanupLsp } from './lsp/pyrightServer.js';
 import { initPythonRunnerMain, cleanupPythonRunner } from './pythonRunner.js';
@@ -93,6 +94,7 @@ let mainCloseRequestedFromRenderer = false;
 let mindNodesClipboardPayload = null;
 let mindNodesClipboardText = null;
 let mindMcpBridge = null;
+let reportMain = null;
 let vibeAgentMain = null;
 let vibeAgentCleanupPromise = null;
 let vibeAgentCleanupComplete = false;
@@ -660,6 +662,7 @@ ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
 
 // ===== App 生命周期 =====
 app.whenReady().then(async () => {
+  reportMain = await initReportMain();
   const win = await createMainWindow();
 
   amindMain = initAmindMain({
@@ -669,7 +672,7 @@ app.whenReady().then(async () => {
   });
   mindMcpBridge = initMindMcpAppBridgeServer({ amindMain, windowManager });
 
-  initGeneratorMain();
+  initGeneratorMain(reportMain.service);
   initProjectFilesMain();
   initLspMain();
   initPythonRunnerMain();
@@ -725,6 +728,7 @@ app.on('before-quit', (event) => {
       return;
     }
     mindMcpBridge?.close?.();
+    void reportMain?.close?.();
     isQuitting = true;
     return;
   }

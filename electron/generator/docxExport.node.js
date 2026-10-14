@@ -25,6 +25,7 @@ const BUG_RESOLUTION_MAPPING = {
 
 function xmlEscape(value) {
   return `${value ?? ''}`
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -55,7 +56,7 @@ function runText(text, options = {}) {
   const fontFamily = options.fontFamily || '微软雅黑';
   const fontXml = `<w:rFonts w:ascii="${xmlEscape(fontFamily)}" w:hAnsi="${xmlEscape(fontFamily)}" w:eastAsia="${xmlEscape(fontFamily)}" w:cs="${xmlEscape(fontFamily)}"/>`;
   const size = options.size ? `<w:sz w:val="${options.size}"/><w:szCs w:val="${options.size}"/>` : '<w:sz w:val="20"/><w:szCs w:val="20"/>';
-  const bold = options.bold ? '<w:b/><w:bCs/>' : '';
+  const bold = (options.bold ? '<w:b/><w:bCs/>' : '') + (options.italic ? '<w:i/>' : '');
   const lines = `${text ?? ''}`.split(/\r?\n/);
   const content = lines
     .map((line, index) => `${index > 0 ? '<w:br/>' : ''}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`)
@@ -299,7 +300,7 @@ function buildDetailRows(payload) {
   ]);
 }
 
-function buildBodyTable(payload, environment, attachments) {
+function buildBodyRows(payload, environment, attachments) {
   const rows = [
     [
       { content: '项目名称', options: { bold: true, width: 1500 } },
@@ -379,11 +380,15 @@ function buildBodyTable(payload, environment, attachments) {
     ],
   ];
 
-  return table(rows, [1500, 3000, 1500, 3000]);
+  return rows;
 }
 
-function buildDocumentXml(payload, environment, attachments) {
-  const sections = [
+function buildBodyTable(payload, environment, attachments) {
+  return table(buildBodyRows(payload, environment, attachments), [1500, 3000, 1500, 3000]);
+}
+
+function buildDocumentXml(payload, environment, attachments, document) {
+  const sections = document ? renderDocumentBlocks(document, attachments) : [
     paragraph(payload?.customFields?.secrecyLevel || '', {
       fontFamily: '微软雅黑',
       size: 20,
@@ -421,8 +426,8 @@ function buildDocumentXml(payload, environment, attachments) {
     <w:body>
       ${sections.join('')}
       <w:sectPr>
-        <w:pgSz w:w="11906" w:h="16838"/>
-        <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+        <w:pgSz w:w="${document?.page?.width || 11906}" w:h="${document?.page?.height || 16838}"/>
+        <w:pgMar w:top="${document?.page?.marginTop ?? 1440}" w:right="${document?.page?.marginRight ?? 1440}" w:bottom="${document?.page?.marginBottom ?? 1440}" w:left="${document?.page?.marginLeft ?? 1440}" w:header="708" w:footer="708" w:gutter="0"/>
       </w:sectPr>
     </w:body>
   </w:document>`;
@@ -525,14 +530,19 @@ function buildAppXml() {
   </Properties>`;
 }
 
-export async function writeReportDocx(filePath, payload, environment, attachments) {
-  const title = buildEnvironmentReportTitle(payload, environment);
+export async function writeReportDocx(filePath, payload, environment, attachments, document) {
+  const title = document?.blocks?.find(block => block.id === 'title')?.content || buildEnvironmentReportTitle(payload, environment);
   const zip = new JSZip();
-  const activeAttachments = Object.values(attachments || {}).filter((item) => item?.buffer?.length);
+  const referencedAttachments = new Set();
+  for (const block of document?.blocks || []) if (block.visible !== false) {
+    if (block.type === 'attachment') referencedAttachments.add(block.assetId || block.attachment);
+    for (const row of block.rows || []) if (row.visible !== false) for (const cell of row.cells) if (cell.visible !== false && cell.attachment) referencedAttachments.add(cell.attachment);
+  }
+  const activeAttachments = Object.entries(attachments || {}).filter(([key, item]) => item?.buffer?.length && (!document || referencedAttachments.has(key))).map(([, item]) => item);
   const hasAttachment = activeAttachments.length > 0;
   zip.file('[Content_Types].xml', buildContentTypesXml(hasAttachment));
   zip.folder('_rels')?.file('.rels', buildRootRelsXml());
-  zip.folder('word')?.file('document.xml', buildDocumentXml(payload, environment, attachments));
+  zip.folder('word')?.file('document.xml', buildDocumentXml(payload, environment, attachments, document));
   zip.folder('word')?.folder('_rels')?.file('document.xml.rels', buildDocumentRelsXml(activeAttachments));
   zip.folder('word')?.file('styles.xml', buildStylesXml());
   if (hasAttachment) {
@@ -654,7 +664,7 @@ function buildAttachmentDescriptor(type, attachment) {
   return descriptor;
 }
 
-export async function exportEnvironmentReportPackage({ tempDir, payload }) {
+export async function exportEnvironmentReportPackage({ tempDir, payload, documents = [] }) {
   const docxDir = path.join(tempDir, 'docx');
   await fs.mkdir(docxDir, { recursive: true });
   const testCaseAttachment = buildAttachmentDescriptor('package', await buildAmindAttachmentZip(payload, tempDir));
@@ -663,13 +673,18 @@ export async function exportEnvironmentReportPackage({ tempDir, payload }) {
   const docxFiles = [];
 
   for (const environment of enabledEnvironments) {
-    const fileName = buildEnvironmentReportDocxName(payload, environment);
+    const document = documents.find(item => item.environmentId === environment.id);
+    const desiredName = document?.blocks?.find(block => block.id === 'title')?.content;
+    const baseName = desiredName ? `${sanitizeFileNamePart(desiredName)}.docx` : buildEnvironmentReportDocxName(payload, environment);
+    let fileName = baseName, number = 2;
+    while (docxFiles.some(file => file.fileName === fileName)) fileName = `${path.parse(baseName).name}-${number++}.docx`;
     const filePath = path.join(docxDir, fileName);
     const bugZipAttachment = buildAttachmentDescriptor('bug-zip', await buildBugZipAttachment(payload, environment, tempDir));
     await writeReportDocx(filePath, payload, environment, {
       testCase: testCaseAttachment,
       bugZip: bugZipAttachment,
-    });
+      ...(document?.extraAttachments || {}),
+    }, document);
     docxFiles.push({ envName: environment?.name || '', fileName, filePath });
   }
 
@@ -691,4 +706,51 @@ export async function exportEnvironmentReportPackage({ tempDir, payload }) {
     docxFiles,
     attachmentZipPath: testCaseAttachment?.filePath || '',
   };
+}
+
+// The default document is the former fixed template expressed as editable data.
+export function buildDefaultReportDocument(payload, environment) {
+  const counts = new Map();
+  const rows = buildBodyRows(payload, environment, {}).map((cells, index) => {
+    const label = String(cells[0]?.content || '详细功能');
+    const count = counts.get(label) || 0; counts.set(label, count + 1);
+    const rowId = `row-${encodeURIComponent(label)}-${count}`;
+    return { id: rowId, cells: cells.map((cell, column) => ({ id: `col-${column}`, content: String(cell.content ?? ''), style: cell.options || {}, ...(column === 1 && label === '测试用例' ? { attachment: 'testCase' } : {}), ...(column === 1 && label === '缺陷汇总' ? { attachment: 'bugZip' } : {}) })) };
+  });
+  const blocks = [
+    { id: 'secrecy', type: 'paragraph', content: payload.customFields?.secrecyLevel || '', style: { size: 20, spacingAfter: 160 } },
+    { id: 'title', type: 'heading', content: buildEnvironmentReportTitle(payload, environment), style: { size: 26, bold: true, align: 'center', spacingAfter: 200 } },
+    { id: 'report-body', type: 'keyValueTable', rows, style: { columnWidths: [1500, 3000, 1500, 3000] } },
+  ];
+  if (payload.incomplete) blocks.unshift({ id: 'incomplete-notice', type: 'paragraph', content: '初稿：缺陷数据采集不完整，以下统计仅覆盖已采集部分。', style: { bold: true } });
+  return { templateVersion: '1', environmentId: environment.id, page: { width: 11906, height: 16838, marginTop: 1440, marginBottom: 1440, marginLeft: 1440, marginRight: 1440 }, blocks: blocks.map(block => ({ ...block, visible: true, binding: block.id, manualOverride: false, automatic: structuredClone(block) })) };
+}
+function renderDocumentBlocks(document, attachments) {
+  return document.blocks.filter(block => block.visible !== false).map(block => {
+    const style = block.style || {};
+    if (block.type === 'pageBreak') return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+    if (block.type === 'attachment') {
+      const attachment = attachments[block.assetId || block.attachment];
+      if (!attachment) throw new Error(`报告附件不可用：${block.id}`);
+      return paragraph(block.content || attachment.fileName, style) + attachmentObjectParagraph(attachment);
+    }
+    if (block.type === 'list') return (block.items || []).map(item => paragraph(`• ${item}`, style)).join('');
+    if (['table', 'keyValueTable'].includes(block.type)) {
+      const rows = (block.rows || []).filter(row => row.visible !== false).map(row => row.cells.filter(cell => cell.visible !== false).map(cell => {
+        const content = [paragraph(cell.content, { ...style, ...cell.style })];
+        if (cell.attachment) {
+          if (!attachments[cell.attachment]) throw new Error(`单元格附件不可用：${cell.attachment}`);
+          content.push(attachmentObjectParagraph(attachments[cell.attachment]));
+        }
+        return { content, options: { ...style, ...cell.style } };
+      }));
+      let xml = table(rows, style.columnWidths || rows[0]?.map(cell => cell.options.width || 1500) || [9000]);
+      if (style.border === 'nil') xml = xml.replace(/w:val="single"/g, 'w:val="nil"');
+      return xml;
+    }
+    return paragraph(block.content || '', style);
+  });
+}
+export function describeDocumentAttachment(assetId, fileName, buffer, index) {
+  return { ...buildAttachmentDescriptor('package', { fileName, buffer }), objectRelId: `rId${10 + index * 2}`, imageRelId: `rId${11 + index * 2}`, shapeId: `_x0000_i${1100 + index}`, objectId: `_${1500000000 + index}`, embeddingName: `asset-${index}.bin`, imageName: `asset-${index}.png`, assetId };
 }

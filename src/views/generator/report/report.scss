@@ -1,0 +1,806 @@
+/* ============================================================================
+   生成测试报告 · 工作台设计系统
+   ----------------------------------------------------------------------------
+   结构：令牌 → 外壳 → 侧栏 → 舞台 → 页头 → 按钮 → 通用件 → 响应式 → 降级动效
+   原则：
+   1. 单一令牌层。旧版把同一批选择器写了两遍再叠加媒体查询，
+      导致 padding / 边框 / 强调色互相抵消；这里只定义一次。
+   2. 一屏一页。舞台高度锁定为可视区，字段按容量重排，靠布局而不是滚动定位。
+   3. 黑白灰为主，绿色只做「已就绪 / 成功」语义点缀，不做大面积按钮底色。
+   ========================================================================== */
+
+.report-workspace {
+  /* ── 令牌 ───────────────────────────────────────────────────────────── */
+  --rw-radius-sm: 7px;
+  --rw-radius: 10px;
+  --rw-radius-lg: 14px;
+
+  --rw-ink: #171717;
+  --rw-ink-2: #2b2b2b;
+  --rw-ink-3: #5c5c5c;
+  --rw-muted: #8a8a8a;
+  --rw-muted-2: #a0a0a0;
+  --rw-muted-3: #b8b8b8;
+
+  --rw-surface: #ffffff;
+  --rw-surface-sunken: #fafafa;
+  --rw-surface-sunken-2: #f4f4f4;
+  --rw-line: #ededed;
+  --rw-line-2: #f2f2f2;
+  --rw-border: #dcdcdc;
+
+  --rw-ready: #009879;
+  --rw-ready-ink: #0b6b57;
+  --rw-ready-bg: #f0faf7;
+  --rw-alert: #b42318;
+  --rw-alert-ink: #8f1d12;
+  --rw-alert-bg: #fdeceb;
+
+  --rw-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --rw-fast: 0.16s;
+  --rw-base: 0.24s;
+
+  --rw-header-h: 62px;
+  --rw-footer-h: 60px;
+  --rw-sidebar-w: 268px;
+
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--rw-ink);
+  background: var(--rw-surface);
+  border: 1px solid var(--rw-line);
+  border-radius: var(--rw-radius-lg);
+  font-size: 13px;
+
+  * {
+    box-sizing: border-box;
+  }
+  button,
+  input,
+  textarea {
+    font-family: inherit;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    margin: 0;
+  }
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+  button:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--rw-ink);
+    outline-offset: 2px;
+  }
+  /* 聚焦态只画一次。
+     之前全局的 input:focus-visible 会额外画一圈 offset 的正黑框，叠在
+     输入框自身的边框与外环阴影之上，于是出现「两层选中框」，而且那圈
+     黑框凸到框外，把左侧相邻元素盖住。
+     现在的分工：鼠标/程序聚焦 = 深边框 + 柔和外环（都贴在框上）；
+     键盘聚焦 = 同一套，再加一圈偏移描边以补足可见性。 */
+  /* 注意：Chromium 对文本框的鼠标点击也会命中 :focus-visible，
+     所以文本框一律不画 outline，可见性由「近黑边框 + 外环」承担。
+     复选框仍保留 outline。 */
+  input:not([type="checkbox"]):focus,
+  input:not([type="checkbox"]):focus-visible,
+  textarea:focus,
+  textarea:focus-visible {
+    outline: none;
+  }
+  input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--rw-ink);
+    outline-offset: 2px;
+  }
+  /* 下拉框的输入框只是锚点内部的一部分，聚焦环由锚点整体负责，
+     否则会在框内画出一个直角黑框，把箭头单独隔开。 */
+  .report-select-anchor .report-select-input:focus,
+  .report-select-anchor .report-select-input:focus-visible,
+  .report-select-anchor .report-select-trigger:focus,
+  .report-select-anchor .report-select-trigger:focus-visible {
+    outline: none;
+  }
+  fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  /* ── 外壳 ───────────────────────────────────────────────────────────── */
+  .report-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    height: var(--rw-header-h);
+    padding: 0 20px;
+    border-bottom: 1px solid var(--rw-line);
+    background: var(--rw-surface);
+  }
+  .report-back {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--rw-ink-3);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--rw-radius-sm);
+    cursor: pointer;
+    transition:
+      color var(--rw-fast) ease,
+      background var(--rw-fast) ease,
+      border-color var(--rw-fast) ease,
+      transform var(--rw-fast) var(--rw-ease);
+  }
+  .report-back:hover:not(:disabled) {
+    color: var(--rw-ink);
+    background: var(--rw-surface-sunken-2);
+    border-color: var(--rw-line);
+  }
+  .report-back:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+  .report-header-copy {
+    flex: 1;
+    min-width: 0;
+  }
+  .report-header-copy h1 {
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .report-header-copy span {
+    display: block;
+    margin-top: 1px;
+    font-size: 11px;
+    color: var(--rw-muted-2);
+  }
+  .report-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .report-header-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    font-size: 11px;
+    color: var(--rw-muted);
+    background: var(--rw-surface-sunken);
+    border: 1px solid var(--rw-line);
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .report-header-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--rw-ready);
+  }
+
+  .report-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
+  /* ── 侧栏 ───────────────────────────────────────────────────────────── */
+  .report-sidebar {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: var(--rw-sidebar-w);
+    padding: 18px 14px 16px;
+    background: var(--rw-surface-sunken);
+    border-right: 1px solid var(--rw-line);
+  }
+  .report-sidebar-caption {
+    display: block;
+    padding: 0 11px;
+    margin-bottom: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--rw-muted-3);
+  }
+  .report-history-link {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    margin-top: 10px;
+    padding: 9px 11px;
+    font-size: 12px;
+    font-weight: 550;
+    color: var(--rw-muted);
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--rw-line);
+    border-radius: 0 0 var(--rw-radius) var(--rw-radius);
+    padding-top: 14px;
+    cursor: pointer;
+    transition:
+      color var(--rw-fast) ease,
+      background var(--rw-fast) ease;
+  }
+  .report-history-link > span:first-of-type {
+    flex: 1;
+    text-align: left;
+  }
+  .report-history-link:hover {
+    color: var(--rw-ink-2);
+  }
+  .report-history-link.is-active {
+    color: var(--rw-ink);
+    background: var(--rw-surface);
+  }
+  .report-history-count {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--rw-muted);
+    background: var(--rw-surface-sunken-2);
+    border-radius: 5px;
+  }
+  /* 摘要放进侧栏 nav 与进度之间的空白区：正文因此保持整宽，不产生第二列。 */
+  .report-sidebar-rail {
+    margin-top: 14px;
+    min-height: 0;
+    flex: 1 1 auto;
+    max-height: 340px;
+  }
+  .report-progress {
+    flex-shrink: 0;
+    margin-top: 16px;
+    padding: 14px 11px 0;
+    border-top: 1px solid var(--rw-line);
+  }
+  .report-progress-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--rw-muted-2);
+  }
+  .report-progress-head strong {
+    font-size: 13px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    color: var(--rw-ink);
+  }
+  .report-progress-head strong i {
+    font-style: normal;
+    font-weight: 500;
+    color: var(--rw-muted-3);
+  }
+  /* 用四段而不是一条连续进度条：段数直接对应四个步骤，走到哪一段一目了然。 */
+  .report-progress-track {
+    display: flex;
+    gap: 3px;
+    margin-top: 9px;
+  }
+  .report-progress-seg {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: #e6e6e6;
+    transition: background var(--rw-base) var(--rw-ease);
+  }
+  .report-progress-seg.is-on {
+    background: var(--rw-ready);
+  }
+  .report-progress p {
+    margin-top: 11px;
+    font-size: 10px;
+    line-height: 1.7;
+    color: var(--rw-muted-3);
+  }
+
+  /* ── 舞台 ───────────────────────────────────────────────────────────── */
+  .report-main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .report-stage {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #d8d8d8 transparent;
+  }
+  .report-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: 22px 28px 24px;
+    outline: none;
+  }
+  .report-page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+  }
+  .report-page-head-copy h2 {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
+  .report-page-head-copy p {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--rw-muted);
+  }
+  .report-page-head-aside {
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .report-page-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .report-page-body > .report-fields {
+    min-width: 0;
+  }
+  .report-issue-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 550;
+    color: var(--rw-alert-ink);
+    background: var(--rw-alert-bg);
+    border: 1px solid #f4d6d3;
+    border-radius: 20px;
+    cursor: pointer;
+    transition:
+      background var(--rw-fast) ease,
+      border-color var(--rw-fast) ease,
+      transform var(--rw-fast) var(--rw-ease);
+  }
+  .report-issue-pill:hover {
+    background: #fce3e0;
+    border-color: #e8bdb8;
+  }
+  .report-issue-pill:active {
+    transform: scale(0.97);
+  }
+  .report-ready-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px 5px 9px;
+    font-size: 11px;
+    font-weight: 550;
+    color: var(--rw-ready-ink);
+    background: var(--rw-ready-bg);
+    border: 1px solid #d9efe9;
+    border-radius: 20px;
+  }
+  .report-ready-dot {
+    flex-shrink: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--rw-ready);
+    box-shadow: 0 0 0 3px rgb(0 152 121 / 12%);
+  }
+
+  /* ── 按钮 ───────────────────────────────────────────────────────────── */
+  .report-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    flex-shrink: 0;
+    min-height: 34px;
+    padding: 7px 13px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    transition:
+      background var(--rw-fast) ease,
+      border-color var(--rw-fast) ease,
+      color var(--rw-fast) ease,
+      box-shadow var(--rw-fast) ease,
+      transform 0.12s var(--rw-ease);
+  }
+  .report-button:active:not(:disabled) {
+    transform: scale(0.975);
+  }
+  /* 主按钮仍是近黑，不用绿色。 */
+  .report-button.solid {
+    color: #ffffff;
+    background: var(--rw-ink);
+    border-color: var(--rw-ink);
+    box-shadow: 0 1px 2px rgb(16 16 16 / 16%);
+  }
+  .report-button.solid:hover:not(:disabled) {
+    background: #000000;
+    border-color: #000000;
+  }
+  .report-button.outline {
+    color: var(--rw-ink-2);
+    background: var(--rw-surface);
+    border-color: var(--rw-border);
+  }
+  .report-button.outline:hover:not(:disabled) {
+    color: var(--rw-ink);
+    background: var(--rw-surface-sunken);
+    border-color: #b4b4b4;
+  }
+  .report-button.ghost {
+    color: var(--rw-ink-3);
+    background: transparent;
+    border-color: var(--rw-line);
+  }
+  .report-button.ghost:hover:not(:disabled) {
+    color: var(--rw-ink);
+    background: var(--rw-surface-sunken);
+    border-color: var(--rw-border);
+  }
+  .report-button.tone-snug {
+    min-height: 30px;
+    padding: 5px 10px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+  .report-button.text-inline {
+    min-height: 0;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 550;
+    color: var(--rw-ink-3);
+    background: none;
+    border: 0;
+    text-decoration: underline;
+    text-decoration-color: #d4d4d4;
+    text-underline-offset: 3px;
+  }
+  .report-button.text-inline:hover:not(:disabled) {
+    color: var(--rw-ink);
+    text-decoration-color: var(--rw-ink);
+  }
+  /* 「下一步：生成环境」里的分隔线，让标题与动作分属两段。 */
+  .report-button-divider {
+    width: 1px;
+    height: 12px;
+    margin: 0 1px;
+    background: currentColor;
+    opacity: 0.28;
+  }
+  .report-icon-button {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: var(--rw-muted);
+    background: var(--rw-surface);
+    border: 1px solid var(--rw-line);
+    border-radius: var(--rw-radius-sm);
+    cursor: pointer;
+    transition:
+      color var(--rw-fast) ease,
+      background var(--rw-fast) ease,
+      border-color var(--rw-fast) ease;
+  }
+  .report-icon-button:hover:not(:disabled) {
+    color: var(--rw-ink);
+    background: var(--rw-surface-sunken-2);
+    border-color: var(--rw-border);
+  }
+  .report-icon-button.is-danger:hover:not(:disabled) {
+    color: var(--rw-alert);
+    background: #fffbfa;
+    border-color: #e8bfba;
+  }
+  .spin {
+    animation: report-spin 0.85s linear infinite;
+  }
+
+  /* ── 通用件 ─────────────────────────────────────────────────────────── */
+  .report-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 34px;
+    height: 20px;
+    padding: 2px;
+    background: #d4d4d4;
+    border: 0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background var(--rw-base) var(--rw-ease);
+  }
+  .report-switch[data-state="checked"] {
+    background: var(--rw-ready);
+  }
+  .report-switch-thumb {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background: #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgb(16 16 16 / 18%);
+    transition: transform var(--rw-base) var(--rw-ease);
+  }
+  .report-switch-thumb[data-state="checked"] {
+    transform: translateX(14px);
+  }
+  .report-fields {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* ── 页脚 ───────────────────────────────────────────────────────────── */
+  .report-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+    min-height: var(--rw-footer-h);
+    padding: 12px 24px;
+    background: var(--rw-surface);
+    border-top: 1px solid var(--rw-line);
+    z-index: 2;
+  }
+  .report-footer-status {
+    min-width: 0;
+  }
+  .report-footer-message {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--rw-muted);
+  }
+  .report-footer-message.is-ready {
+    color: var(--rw-ready-ink);
+    font-weight: 550;
+  }
+  .report-footer-message.is-pending {
+    color: var(--rw-ink-3);
+  }
+  .report-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* ── 过渡 ───────────────────────────────────────────────────────────── */
+  /* 步骤转场带方向：前进从下方推入，后退从上方推入，
+     让「下一步 / 上一步」在视觉上和操作方向一致。 */
+  .report-step-forward-enter-active,
+  .report-step-back-enter-active {
+    transition:
+      opacity 0.26s ease,
+      transform 0.36s var(--rw-ease);
+  }
+  .report-step-forward-leave-active,
+  .report-step-back-leave-active {
+    transition:
+      opacity 0.14s ease,
+      transform 0.2s ease-in;
+  }
+  .report-step-forward-enter-from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  .report-step-forward-leave-to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  .report-step-back-enter-from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  .report-step-back-leave-to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  /* 文案换字时用交叉淡入，不产生位移，避免整行抖动。 */
+  .report-swap-enter-active {
+    transition:
+      opacity 0.2s ease,
+      transform 0.26s var(--rw-ease);
+  }
+  .report-swap-leave-active {
+    transition:
+      opacity 0.1s ease,
+      transform 0.16s ease-in;
+  }
+  .report-swap-enter-from,
+  .report-swap-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  .report-fade-enter-active,
+  .report-fade-leave-active {
+    transition: opacity 0.2s ease;
+  }
+  .report-fade-enter-from,
+  .report-fade-leave-to {
+    opacity: 0;
+  }
+  /* 条件字段展开：高度 + 淡入，出现时不挤压同排其他字段。 */
+  .report-reveal-enter-active {
+    transition:
+      opacity 0.26s ease,
+      transform 0.3s var(--rw-ease);
+  }
+  .report-reveal-leave-active {
+    transition: opacity 0.14s ease;
+  }
+  .report-reveal-enter-from,
+  .report-reveal-leave-to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes report-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes report-expand {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--reka-collapsible-content-height);
+    opacity: 1;
+  }
+}
+@keyframes report-collapse {
+  from {
+    height: var(--reka-collapsible-content-height);
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+/* ── 响应式 ─────────────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .report-workspace {
+    --rw-sidebar-w: 232px;
+  }
+  .report-workspace .report-page {
+    padding: 20px 22px;
+  }
+}
+@media (max-width: 900px) {
+  .report-workspace {
+    --rw-sidebar-w: 100%;
+    --rw-header-h: 56px;
+    border-radius: var(--rw-radius);
+  }
+  .report-workspace .report-layout {
+    flex-direction: column;
+  }
+  .report-workspace .report-sidebar {
+    width: 100%;
+    padding: 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rw-line);
+  }
+  .report-workspace .report-sidebar-caption,
+  .report-workspace .report-sidebar-rail,
+  .report-workspace .report-progress {
+    display: none;
+  }
+  .report-workspace .report-history-link {
+    margin: 0;
+    padding: 8px 11px;
+    border-top: 0;
+    border-radius: var(--rw-radius);
+  }
+  .report-workspace .report-page {
+    padding: 18px 16px;
+  }
+  .report-workspace .report-footer {
+    padding: 10px 16px;
+  }
+}
+@media (max-width: 620px) {
+  .report-workspace .report-header {
+    padding: 0 12px;
+  }
+  .report-workspace .report-header-meta {
+    display: none;
+  }
+  .report-workspace .report-page-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+  /* 窄屏上长句会撑高页脚，只保留状态本身。 */
+  .report-workspace .report-footer-message {
+    max-width: 38%;
+    line-height: 1.4;
+  }
+  .report-workspace .report-footer-message .report-footer-verbose {
+    display: none;
+  }
+  .report-workspace .report-button {
+    padding: 7px 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .report-workspace {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* 工作台接管整页时解除宿主的最小宽度限制，并隐藏外层滚动条。 */
+html:has(.report-workspace),
+body:has(.report-workspace),
+#app:has(.report-workspace) {
+  min-width: 0;
+}
+body:has(.report-workspace) .el-scrollbar__bar {
+  display: none !important;
+}
+.source-file-dialog {
+  width: min(1240px, calc(100vw - 40px)) !important;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+
+.report-service-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 18px; color: #777; font-size: 12px; label { display: flex; gap: 10px; align-items: center; } select { max-width: 100%; border: 1px solid #ddd; background: #fafafa; color: #333; padding: 8px 10px; border-radius: 6px; } small { width: 100%; color: #888; } }

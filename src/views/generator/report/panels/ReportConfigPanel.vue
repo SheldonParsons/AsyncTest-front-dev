@@ -1,557 +1,332 @@
 <template>
-  <section id="report-anchor-basic" data-report-anchor="basic" class="report-config-panel">
-    <header class="report-config-panel-head">
-      <div>
-        <h3>报告基础信息</h3>
+  <section class="basic-panel">
+    <div class="basic-row">
+      <div class="basic-block">
+        <div class="basic-block-head">
+          <h3>报告人员</h3>
+        </div>
+        <div class="basic-grid is-2">
+          <ReportField
+            name="reporter"
+            label="报告人"
+            v-model="form.reporter"
+            placeholder="填写报告人姓名"
+          />
+          <ReportField
+            name="reviewer"
+            label="复审人"
+            v-model="form.reviewer"
+            placeholder="填写复审人姓名"
+          />
+        </div>
       </div>
-    </header>
 
-    <div class="form-grid">
-      <label class="field">
-        <span>报告人</span>
-        <input v-model="form.reporter" type="text" placeholder="请输入报告人" />
-      </label>
-
-      <label class="field">
-        <span>复审人</span>
-        <input v-model="form.reviewer" type="text" placeholder="请输入复审人" />
-      </label>
-
-      <label class="field">
-        <span>禅道账号</span>
-        <input v-model="form.zentaoUsername" type="text" placeholder="请输入禅道账号" />
-      </label>
-
-      <label class="field">
-        <span>禅道密码</span>
-        <input v-model="form.zentaoPassword" type="password" placeholder="请输入禅道密码" />
-      </label>
-    </div>
-
-    <div class="config-actions">
-      <button class="test-btn" type="button" :disabled="testingConnection" @click="$emit('test-connection')">
-        {{ testingConnection ? "连接中..." : "测试连接" }}
-      </button>
-      <span class="status-text" :class="`is-${connectionStatus.type}`">{{ connectionStatus.message }}</span>
-    </div>
-
-    <div class="linked-grid">
-      <label class="field">
-        <span>产品</span>
-        <GeneratorDropdown
-          v-model="form.productId"
-          :options="zentaoOptions.products"
-          :placeholder="zentaoLoading.products ? '加载中...' : '请选择产品'"
-          trigger-label="选项"
-          @open="$emit('ensure-products')"
-          @change="$emit('change-product')"
-        />
-      </label>
-
-      <label class="field">
-        <span>项目</span>
-        <GeneratorDropdown
-          v-model="form.projectId"
-          :options="zentaoOptions.projects"
-          :placeholder="zentaoLoading.projects ? '加载中...' : '请选择项目'"
-          :disabled="!form.productId || zentaoLoading.projects"
-          trigger-label="选项"
-          @change="$emit('change-project')"
-        />
-      </label>
-
-      <label class="field">
-        <span>执行</span>
-        <GeneratorDropdown
-          v-model="form.executionId"
-          :options="zentaoOptions.executions"
-          :placeholder="zentaoLoading.executions ? '加载中...' : '请选择执行'"
-          :disabled="!form.projectId || zentaoLoading.executions"
-          trigger-label="选项"
-          @change="$emit('change-execution')"
-        />
-      </label>
-
-      <label class="field">
-        <span>测试单</span>
-        <GeneratorDropdown
-          v-model="form.testTaskId"
-          :options="zentaoOptions.testTasks"
-          :placeholder="zentaoLoading.testTasks ? '加载中...' : '请选择测试单'"
-          :disabled="!form.productId || zentaoLoading.testTasks"
-          trigger-label="选项"
-        />
-      </label>
-
-      <label class="field field-span-2">
-        <span>所属执行版本</span>
-        <GeneratorDropdown
-          v-model="form.buildId"
-          :options="zentaoOptions.builds"
-          :placeholder="zentaoLoading.builds ? '加载中...' : '请选择版本'"
-          :disabled="!form.executionId || zentaoLoading.builds"
-          trigger-label="选项"
-        />
-      </label>
-    </div>
-
-    <div class="status-text linkage-status" :class="`is-${linkageStatus.type}`">
-      {{ linkageStatus.message }}
-    </div>
-
-    <div id="report-anchor-environment" data-report-anchor="environment" class="environment-head">
-      <div>
-        <h4>生成环境</h4>
-        <p>默认保留测试环境和生产环境；新增其他环境后，后续会额外生成对应环境的测试报告。</p>
-      </div>
-      <button class="small-action-btn" type="button" @click="$emit('add-environment')">新增环境</button>
-    </div>
-
-    <div class="environment-list">
-      <article v-for="(environment, index) in environments" :key="environment.id" class="environment-card">
-        <div class="environment-card-head">
-          <div class="environment-card-title">
-            <label class="toggle-field">
-              <input v-model="environment.enabled" type="checkbox" />
-              <span>{{ environment.name || `环境 ${index + 1}` }} 启用</span>
-            </label>
-            <span v-if="isFixedEnvironment(environment)" class="fixed-tag">固定环境</span>
-          </div>
+      <div class="basic-block">
+        <div class="basic-block-head">
+          <h3>禅道连接</h3>
+          <span class="basic-block-note">仅用于读取测试数据</span>
+        </div>
+        <div class="basic-grid is-2">
+          <ReportField
+            name="zentaoUsername"
+            label="禅道账号"
+            v-model="form.zentaoUsername"
+            placeholder="输入禅道账号"
+          />
+          <ReportField
+            name="zentaoPassword"
+            label="禅道密码"
+            v-model="form.zentaoPassword"
+            type="password"
+            :placeholder="passwordConfigured ? '密码已保存，输入以替换' : '输入禅道密码'"
+          />
+        </div>
+        <div class="basic-inline">
+          <button v-if="passwordConfigured" type="button" class="report-button ghost" @click="$emit('clear-password')">清除已保存密码</button>
           <button
-            v-if="!isFixedEnvironment(environment)"
-            class="small-action-btn small-action-btn-danger"
             type="button"
-            @click="$emit('remove-environment', environment.id)"
+            class="report-button outline tone-snug"
+            :disabled="
+              testingConnection ||
+              !form.zentaoUsername.trim() ||
+              (!form.zentaoPassword && !passwordConfigured)
+            "
+            @click="$emit('test-connection')"
           >
-            删除
+            <LoaderCircle v-if="testingConnection" class="spin" :size="14" />
+            <CircleCheck v-else-if="connectionStatus.type === 'success'" :size="14" />
+            <RefreshCw v-else :size="14" />
+            {{ testingConnection ? "正在连接" : "测试连接" }}
+          </button>
+          <Transition name="report-swap" mode="out-in">
+            <span
+              :key="connectionStatus.message + connectionStatus.type"
+              class="basic-inline-status"
+              :class="`is-${connectionStatus.type}`"
+              aria-live="polite"
+            >
+              <span
+                v-if="connectionStatus.type === 'success'"
+                class="report-ready-dot"
+              />{{ connectionStatus.message }}
+            </span>
+          </Transition>
+        </div>
+      </div>
+    </div>
+
+    <div class="basic-block">
+      <div class="basic-block-head">
+        <h3>测试范围</h3>
+        <span class="basic-block-note">下拉支持输入搜索</span>
+      </div>
+      <div class="basic-grid is-3">
+        <ReportField name="productId" label="产品" v-slot="field">
+          <GeneratorDropdown
+            v-bind="field"
+            v-model="form.productId"
+            :options="zentaoOptions.products"
+            :loading="zentaoLoading.products"
+            :disabled="zentaoLoading.products"
+            :placeholder="zentaoLoading.products ? '加载中…' : '选择或搜索产品'"
+            @open="$emit('ensure-products')"
+            @change="$emit('change-product')"
+          />
+        </ReportField>
+        <ReportField name="projectId" label="项目" v-slot="field">
+          <GeneratorDropdown
+            v-bind="field"
+            v-model="form.projectId"
+            :options="zentaoOptions.projects"
+            :loading="zentaoLoading.projects"
+            :disabled="!form.productId || zentaoLoading.projects"
+            :placeholder="
+              zentaoLoading.projects
+                ? '加载中…'
+                : !form.productId
+                  ? '先选择产品'
+                  : '选择或搜索项目'
+            "
+            @open="$emit('ensure-projects')"
+            @change="$emit('change-project')"
+          />
+        </ReportField>
+        <ReportField name="executionId" label="执行" v-slot="field">
+          <GeneratorDropdown
+            v-bind="field"
+            v-model="form.executionId"
+            :options="zentaoOptions.executions"
+            :loading="zentaoLoading.executions"
+            :disabled="!form.projectId || zentaoLoading.executions"
+            :placeholder="
+              zentaoLoading.executions
+                ? '加载中…'
+                : !form.projectId
+                  ? '先选择项目'
+                  : '选择或搜索执行'
+            "
+            @open="$emit('ensure-executions')"
+            @change="$emit('change-execution')"
+          />
+        </ReportField>
+        <ReportField name="testTaskId" label="测试单" v-slot="field">
+          <GeneratorDropdown
+            v-bind="field"
+            v-model="form.testTaskId"
+            :options="zentaoOptions.testTasks"
+            @open="$emit('ensure-test-tasks')"
+            :loading="zentaoLoading.testTasks"
+            :disabled="!form.productId || zentaoLoading.testTasks"
+            :placeholder="
+              zentaoLoading.testTasks
+                ? '加载中…'
+                : !form.productId
+                  ? '先选择产品'
+                  : '选择或搜索测试单'
+            "
+          />
+        </ReportField>
+        <ReportField
+          name="buildId"
+          label="所属执行版本"
+          :required="versionRequired"
+          :optional-badge="!versionRequired"
+          :hint="
+            versionRequired ? '按版本统计缺陷时需要选择' : '当前环境按执行统计'
+          "
+          v-slot="field"
+        >
+          <GeneratorDropdown
+            v-bind="field"
+            v-model="form.buildId"
+            :options="zentaoOptions.builds"
+            :loading="zentaoLoading.builds"
+            :disabled="!form.executionId || zentaoLoading.builds"
+            :placeholder="
+              zentaoLoading.builds
+                ? '加载中…'
+                : !form.executionId
+                  ? '先选择执行'
+                  : '选择或搜索版本'
+            "
+            empty-text="该执行下没有版本，可在禅道中为执行创建版本后重试"
+            @open="$emit('ensure-builds')"
+          />
+        </ReportField>
+        <div class="basic-grid-note">
+          <Transition name="report-swap" mode="out-in">
+            <p
+              :key="linkageStatus.message + linkageStatus.type"
+              class="basic-linkage"
+              :class="`is-${linkageStatus.type}`"
+              aria-live="polite"
+            >
+              {{ linkageStatus.message }}
+            </p>
+          </Transition>
+          <button
+            v-if="linkageStatus.type === 'error'"
+            type="button"
+            class="report-button text-inline"
+            @click="$emit('test-connection')"
+          >
+            <RefreshCw :size="13" />重新连接
           </button>
         </div>
-
-        <div class="environment-grid">
-          <label class="field">
-            <span>环境名称</span>
-            <input
-              v-model="environment.name"
-              type="text"
-              :disabled="isFixedEnvironment(environment)"
-              :placeholder="isFixedEnvironment(environment) ? '' : '例如：UAT / 灰度环境'"
-            />
-            <small v-if="isFixedEnvironment(environment)" class="field-hint">固定环境名称，不可修改。</small>
-          </label>
-
-          <label class="field">
-            <span>缺陷名称包含字符</span>
-            <input v-model="environment.bugFilterKeyword" type="text" placeholder="用于后续过滤缺陷名称" />
-            <small class="field-hint">可以通过逗号分隔，设置多个缺陷标题中包含的字符。</small>
-          </label>
-
-          <label class="field">
-            <span>缺陷标题中不包含的字符</span>
-            <input v-model="environment.bugExcludeKeyword" type="text" placeholder="用于排除缺陷标题" />
-            <small class="field-hint">可以通过逗号分隔，设置多个缺陷标题中不包含的字符。</small>
-          </label>
-
-          <label class="field">
-            <span>环境地址</span>
-            <input v-model="environment.envUrl" type="text" placeholder="请输入环境地址" />
-          </label>
-
-          <label class="field">
-            <span>GitLab 地址</span>
-            <input v-model="environment.gitlabUrl" type="text" placeholder="请输入 GitLab 地址" />
-          </label>
-
-          <label class="field">
-            <span>缺陷统计范围</span>
-            <GeneratorDropdown
-              v-model="environment.bugRange"
-              :options="[
-                { value: 'version', label: '按版本统计' },
-                { value: 'execution', label: '按执行统计' },
-              ]"
-              placeholder="请选择统计范围"
-              trigger-label="选项"
-            />
-            <small class="field-hint">按版本统计会使用当前选择的“所属执行版本”，按执行统计会使用当前执行。</small>
-          </label>
-
-          <label class="field field-span-2 checkbox-panel">
-            <span>缺陷过滤策略</span>
-            <label class="toggle-field">
-              <input v-model="environment.filterBugWithoutSolution" type="checkbox" />
-              <span>过滤不存在解决方案的 BUG</span>
-            </label>
-          </label>
-
-          <label class="field field-span-2 checkbox-panel">
-            <span>日期</span>
-            <div class="date-row">
-              <label class="toggle-field">
-                <input v-model="environment.includeDate" type="checkbox" />
-                <span>启用日期</span>
-              </label>
-              <input
-                class="date-text-input"
-                v-model="environment.reportDate"
-                type="text"
-                :disabled="!environment.includeDate"
-                placeholder="例如：2026-03-24 或 2026-03-01 ~ 2026-03-24"
-              />
-            </div>
-            <small class="field-hint">{{ getDateHint(environment) }}</small>
-          </label>
-
-          <label class="field field-span-2">
-            <span>测试结论</span>
-            <input v-model="environment.conclusion" type="text" placeholder="测试通过" />
-          </label>
-
-          <label class="field field-span-2">
-            <span>项目风险</span>
-            <input v-model="environment.projectRisk" type="text" placeholder="暂无" />
-          </label>
-        </div>
-      </article>
+      </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import GeneratorDropdown from "./GeneratorDropdown.vue";
+import ReportField from "./ReportField.vue";
+import {
+  CircleCheck,
+  LoaderCircle,
+  RefreshCw,
+} from "@/components/icons/lucide";
 import type {
+  ReportDraftState,
   ReportDraftForm,
-  ReportEnvironmentConfig,
-  ReportSelectOption,
   ReportStatusState,
 } from "../types";
 
 defineProps<{
   form: ReportDraftForm;
-  environments: ReportEnvironmentConfig[];
-  zentaoOptions: {
-    products: ReportSelectOption[];
-    projects: ReportSelectOption[];
-    executions: ReportSelectOption[];
-    testTasks: ReportSelectOption[];
-    builds: ReportSelectOption[];
-  };
-  zentaoLoading: {
-    products: boolean;
-    projects: boolean;
-    executions: boolean;
-    testTasks: boolean;
-    builds: boolean;
-  };
+  passwordConfigured?: boolean;
+  zentaoOptions: ReportDraftState["zentaoOptions"];
+  zentaoLoading: ReportDraftState["zentaoLoading"];
   testingConnection: boolean;
   connectionStatus: ReportStatusState;
   linkageStatus: ReportStatusState;
+  versionRequired: boolean;
 }>();
-
 defineEmits<{
+  "clear-password": [];
   "test-connection": [];
   "ensure-products": [];
+  "ensure-projects": [];
+  "ensure-executions": [];
+  "ensure-test-tasks": [];
+  "ensure-builds": [];
   "change-product": [];
   "change-project": [];
   "change-execution": [];
-  "add-environment": [];
-  "remove-environment": [id: string];
 }>();
-
-function isFixedEnvironment(environment: ReportEnvironmentConfig) {
-  return environment.kind === "test" || environment.kind === "production";
-}
-
-function getDateHint(environment: ReportEnvironmentConfig) {
-  if (environment.kind === "test") {
-    return "测试环境：如果不填写将使用测试单的周期时间，否则使用该值作为报告的测试时间。";
-  }
-
-  if (environment.kind === "production") {
-    return "生产环境：如果不填写将使用当天时间，否则使用该值作为报告的测试时间。";
-  }
-
-  return "其他环境：如果不填写将使用当天时间，否则使用该值作为报告的测试时间。";
-}
 </script>
 
-<style scoped lang="scss">
-.report-config-panel {
-  padding: 22px;
-}
-
-.report-config-panel-head {
+<style lang="scss">
+.basic-panel {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 18px;
+  flex-direction: column;
+  gap: 18px;
 }
-
-.report-config-panel-kicker,
-.report-config-panel-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(34, 197, 94, 0.1);
-  color: #166534;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.report-config-panel-head h3 {
-  margin: 10px 0 0;
-  color: #0f172a;
-  font-size: 20px;
-}
-
-.form-grid,
-.linked-grid,
-.environment-grid {
+.basic-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 28px;
+  align-items: start;
 }
-
-.field {
+.basic-block {
+  min-width: 0;
+}
+.basic-block-head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field span {
-  color: #334155;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.field input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #ffffff;
-  color: #0f172a;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
-}
-
-.field input:focus {
-  border-color: rgba(34, 197, 94, 0.45);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
-}
-
-.field-span-2 {
-  grid-column: 1 / -1;
-}
-
-.config-actions {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.test-btn,
-.small-action-btn {
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #111827;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.test-btn {
-  border-color: #111827;
-  background: #111827;
-  color: #ffffff;
-}
-
-.test-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: #000000;
-  border-color: #000000;
-  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.2);
-}
-
-.small-action-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(15, 23, 42, 0.18);
-  background: #f8fafc;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
-}
-
-.test-btn:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
-.linked-grid {
-  margin-top: 16px;
-}
-
-.status-text {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.linkage-status {
-  margin-top: 12px;
-}
-
-.status-text.is-success {
-  color: #15803d;
-}
-
-.status-text.is-error,
-.small-action-btn-danger {
-  color: #b91c1c;
-}
-
-.small-action-btn-danger:hover {
-  border-color: rgba(185, 28, 28, 0.22);
-  background: rgba(254, 242, 242, 0.96);
-  box-shadow: 0 10px 18px rgba(127, 29, 29, 0.12);
-}
-
-.environment-head {
-  margin-top: 18px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.environment-head h4 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.environment-head p {
-  margin: 6px 0 0;
-  color: #6b7280;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.environment-list {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.environment-card {
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #fafafa;
-}
-
-.environment-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  align-items: baseline;
+  gap: 10px;
   margin-bottom: 12px;
 }
-
-.environment-card-title {
+.basic-block-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: #1f1f1f;
+}
+.basic-block-note {
+  font-size: 11px;
+  color: #a0a0a0;
+}
+.basic-grid {
+  display: grid;
+  gap: 2px 20px;
+}
+.basic-grid.is-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.basic-grid.is-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.basic-grid-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 18px;
+  padding-top: 5px;
+}
+.basic-linkage {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #969696;
+}
+.basic-linkage.is-error {
+  color: #b42318;
+}
+.basic-inline {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  min-height: 30px;
+  margin-top: 6px;
 }
-
-.fixed-tag {
+.basic-inline-status {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.06);
-  color: #475569;
+  gap: 5px;
   font-size: 11px;
-  font-weight: 600;
+  color: #969696;
 }
-
-.toggle-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+.basic-inline-status.is-success {
+  color: #0b6b57;
 }
-
-.toggle-field input {
-  width: 14px;
-  height: 14px;
-  accent-color: #111827;
-  cursor: pointer;
+.basic-inline-status.is-error {
+  color: #b42318;
 }
-
-.checkbox-panel {
-  padding: 10px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
-  background: #ffffff;
-}
-
-.date-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.date-text-input {
-  max-width: 280px;
-}
-
-.field-hint {
-  color: #6b7280;
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-@media (max-width: 720px) {
-  .form-grid,
-  .linked-grid,
-  .environment-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 1100px) {
+  .basic-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
   }
-
-  .field-span-2 {
-    grid-column: auto;
+  .basic-grid.is-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .environment-head,
-  .environment-card-head {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .date-text-input {
-    max-width: none;
+}
+@media (max-width: 680px) {
+  .basic-grid.is-2,
+  .basic-grid.is-3 {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

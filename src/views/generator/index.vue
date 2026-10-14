@@ -1,5 +1,5 @@
 <template>
-  <section class="generator-page" :class="{ 'is-mobile-messages': currentView === 'mobile-messages' }">
+  <section class="generator-page" :class="{ 'is-mobile-messages': currentView === 'mobile-messages', 'is-report': currentView === 'test-report' }">
     <div class="generator-shell">
       <div v-if="currentView === 'home'" class="generator-home">
         <section class="tool-grid">
@@ -130,8 +130,13 @@ async function checkLoginStatus() {
 
 async function openTool(tool: ToolCard) {
   if (tool.disabled) return;
+  // 本地报告无需先登录；项目文件选择仍逐次校验登录与项目权限。
+  if (tool.key === "test-report") {
+    currentView.value = "test-report";
+    return;
+  }
   if (tool.key === "mobile-messages" && currentUsername.value !== mobileMessagesAccount) return;
-  if (tool.key === "test-report" || tool.key === "mobile-messages") {
+  if (tool.key === "mobile-messages") {
     const nextView = tool.key as GeneratorView;
     pendingView.value = nextView;
     const loggedIn = await checkLoginStatus().catch(() => false);
@@ -191,6 +196,27 @@ async function handleLoginSuccess() {
   height: 100%;
   min-height: 0;
   max-width: none;
+}
+
+.generator-page.is-report {
+  flex: 1 1 auto;
+  height: calc(100dvh - 56px);
+  min-height: 0;
+  padding: 20px 24px;
+  overflow: hidden;
+  background: #f6f6f6;
+}
+.generator-page.is-report .generator-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: 1480px;
+}
+@media (max-width: 860px) {
+  .generator-page.is-report { padding: 12px; }
+}
+@media (max-width: 600px) {
+  .generator-page.is-report { padding: 8px; }
 }
 
 .tool-card {

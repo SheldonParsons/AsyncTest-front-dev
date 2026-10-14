@@ -1,225 +1,334 @@
 <template>
-  <div ref="rootRef" class="generator-search-export-dropdown" :class="{ 'is-open': open }">
-    <button class="generator-search-export-trigger" type="button" :disabled="disabled" @click="toggleOpen" @mousedown="$emit('open')">
-      <span v-if="triggerLabel" class="generator-search-export-trigger-label">{{ triggerLabel }}</span>
-      <span class="generator-search-export-trigger-value">{{ currentLabel }}</span>
-      <span class="generator-search-export-trigger-caret" aria-hidden="true"></span>
-    </button>
-
-    <transition name="generator-search-export-menu">
-      <div v-if="open" class="generator-search-export-menu" @click.stop>
-        <button
-          v-for="option in options"
-          :key="option.value"
-          class="generator-search-export-option"
-          :class="{ 'is-active': modelValue === option.value }"
-          type="button"
-          @click.stop="selectOption(option.value)"
-        >
-          <span class="generator-search-export-option-title">{{ option.label }}</span>
-          <span class="generator-search-export-option-check" aria-hidden="true">{{ modelValue === option.value ? "✓" : "" }}</span>
-        </button>
-      </div>
-    </transition>
-  </div>
+  <ComboboxRoot
+    :model-value="modelValue"
+    :open="open"
+    :disabled="disabled"
+    open-on-click
+    class="report-select-root"
+    @update:model-value="selectOption"
+    @update:open="onOpen"
+  >
+    <ComboboxAnchor
+      class="report-select-anchor"
+      :class="{ 'is-disabled': disabled, 'has-value': !!modelValue }"
+    >
+      <ComboboxInput
+        v-bind="$attrs"
+        v-model="inputText"
+        :display-value="displayValue"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        class="report-select-input"
+      />
+      <span v-if="loading" class="report-select-spinner" aria-hidden="true" />
+      <ComboboxTrigger
+        class="report-select-trigger"
+        :disabled="disabled"
+        :aria-label="`展开${triggerLabel || placeholder}`"
+        ><ChevronDown :size="15"
+      /></ComboboxTrigger>
+    </ComboboxAnchor>
+    <ComboboxPortal>
+      <ComboboxContent
+        class="report-select-content"
+        position="popper"
+        :side-offset="6"
+        :collision-padding="12"
+      >
+        <ComboboxViewport class="report-select-viewport">
+          <ComboboxEmpty class="report-select-empty">
+            <span
+              v-if="loading"
+              class="report-select-spinner"
+              aria-hidden="true"
+            />
+            <span v-else class="report-select-empty-mark" aria-hidden="true" />
+            {{
+              loading
+                ? "正在加载…"
+                : options.length
+                  ? "没有匹配项，换个关键词试试"
+                  : emptyText || "暂无可选项"
+            }}
+          </ComboboxEmpty>
+          <ComboboxItem
+            v-for="option in options"
+            :key="option.value"
+            :value="option.value"
+            :text-value="option.label"
+            class="report-select-item"
+          >
+            <span class="report-select-item-text">{{ option.label }}</span>
+            <ComboboxItemIndicator class="report-select-item-indicator">
+              <Check :size="14" />
+            </ComboboxItemIndicator>
+          </ComboboxItem>
+        </ComboboxViewport>
+      </ComboboxContent>
+    </ComboboxPortal>
+  </ComboboxRoot>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import {
+  ComboboxRoot,
+  ComboboxAnchor,
+  ComboboxInput,
+  ComboboxTrigger,
+  ComboboxPortal,
+  ComboboxContent,
+  ComboboxViewport,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxItemIndicator,
+} from "reka-ui";
+import { Check, ChevronDown } from "@/components/icons/lucide";
 import type { ReportSelectOption } from "../types";
 
+defineOptions({ inheritAttrs: false });
 const props = defineProps<{
   modelValue: string;
   options: ReportSelectOption[];
   placeholder: string;
   disabled?: boolean;
+  loading?: boolean;
   triggerLabel?: string;
+  /** 已满足上级条件但确实没有数据时显示的文案。 */
+  emptyText?: string;
 }>();
-
 const emit = defineEmits<{
   "update:modelValue": [value: string];
   change: [value: string];
   open: [];
 }>();
-
-const rootRef = ref<HTMLElement | null>(null);
 const open = ref(false);
+const inputText = ref("");
+const selectedLabel = computed(() => displayValue(props.modelValue));
 
-const currentLabel = computed(() => {
-  const matched = props.options.find((option) => option.value === props.modelValue);
-  return matched?.label ?? props.placeholder;
-});
-
-function closeDropdown() {
-  open.value = false;
+// 旧草稿先恢复 ID，禅道选项稍后返回。Reka 不会因 options 改变重算
+// 输入框文字，因此显式同步显示值；搜索过程中不覆盖用户正在输入的内容。
+watch(
+  [() => props.modelValue, selectedLabel],
+  ([value], previous) => {
+    if (!open.value || value !== previous?.[0]) {
+      inputText.value = selectedLabel.value;
+    }
+  },
+  { immediate: true },
+);
+function displayValue(value: unknown) {
+  return (
+    props.options.find((option) => option.value === value)?.label ||
+    (value ? "已保存的选择，等待加载" : "")
+  );
 }
-
-function toggleOpen() {
-  if (props.disabled) return;
-  open.value = !open.value;
-}
-
-function selectOption(value: string) {
+function selectOption(value: unknown) {
+  if (typeof value !== "string" || value === props.modelValue) return;
   emit("update:modelValue", value);
   emit("change", value);
-  open.value = false;
 }
-
-function handleDocumentPointerDown(event: Event) {
-  const target = event.target as Node | null;
-  if (!rootRef.value || !target || rootRef.value.contains(target)) return;
-  closeDropdown();
+function onOpen(value: boolean) {
+  open.value = value;
+  if (value) emit("open");
+  else inputText.value = selectedLabel.value;
 }
-
-onMounted(() => {
-  document.addEventListener("mousedown", handleDocumentPointerDown);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", handleDocumentPointerDown);
-});
 </script>
 
-<style scoped lang="scss">
-.generator-search-export-dropdown {
-  position: relative;
+<style lang="scss">
+/* ComboboxRoot 没有自己的盒子，若不显式撑满，它会按内容宽度收缩，
+   导致下拉框比同列的输入框窄、长文案被截断。 */
+.report-select-root {
+  display: block;
   width: 100%;
+  min-width: 0;
 }
-
-.generator-search-export-trigger {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 12px;
+/* 锚点与 ReportField 的 input 共用同一套高度 / 边框 / 圆角 / 聚焦环，
+   因此下拉与文本框混排在同一列时，上下边缘必然重合。 */
+.report-select-anchor {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
-  cursor: pointer;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  background: #ffffff;
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
   transition:
     border-color 0.16s ease,
-    background-color 0.16s ease,
-    box-shadow 0.16s ease;
+    box-shadow 0.2s ease,
+    background 0.16s ease;
 }
-
-.generator-search-export-trigger:hover:not(:disabled) {
-  border-color: rgba(14, 116, 144, 0.28);
-  background: rgba(248, 250, 252, 0.98);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+/* 与 ReportField 的输入框同规则：hover 与 focus 各只画一条边界，
+   都贴在框上，不外扩。 */
+.report-select-anchor:hover:not(.is-disabled):not(:focus-within) {
+  border-color: #b4b4b4;
 }
-
-.generator-search-export-trigger:disabled {
-  opacity: 0.56;
-  cursor: not-allowed;
+.report-select-anchor:focus-within,
+.report-select-anchor:has(.report-select-trigger[data-state="open"]) {
+  border-color: #171717;
+  box-shadow: inset 0 0 0 0.5px #171717;
 }
-
-.generator-search-export-trigger-label {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
+.report-select-anchor.is-disabled {
+  background: #f6f6f6;
+  border-color: #e6e6e6;
 }
-
-.generator-search-export-trigger-value {
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.report-select-anchor.is-disabled .report-select-input {
+  color: #a0a0a0;
 }
-
-.generator-search-export-trigger-caret {
-  position: relative;
-  margin-left: auto;
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  overflow: visible;
-}
-
-.generator-search-export-trigger-caret::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 1px;
-  width: 7px;
-  height: 7px;
-  box-sizing: border-box;
-  border-right: 1.5px solid rgba(15, 23, 42, 0.72);
-  border-bottom: 1.5px solid rgba(15, 23, 42, 0.72);
-  transform: rotate(45deg);
-  transform-origin: center;
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.generator-search-export-dropdown.is-open .generator-search-export-trigger-caret::before {
-  transform: rotate(-135deg);
-}
-
-.generator-search-export-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 12;
-  padding: 5px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.12);
-  max-height: 240px;
-  overflow: auto;
-}
-
-.generator-search-export-option {
+.report-select-input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
+  height: 100%;
+  padding: 0 12px !important;
+  font-family: inherit;
+  font-size: 13px;
+  color: #171717;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none;
+}
+.report-select-input::placeholder {
+  color: #adadad;
+}
+.report-select-spinner {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-right: 2px;
+  border: 1.5px solid #dcdcdc;
+  border-top-color: #6b6b6b;
+  border-radius: 50%;
+  animation: report-select-spin 0.7s linear infinite;
+}
+.report-select-trigger {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 100%;
+  color: #8a8a8a;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.report-select-anchor:hover:not(.is-disabled) .report-select-trigger {
+  color: #171717;
+}
+.report-select-anchor:has(.report-select-trigger[data-state="open"]) .report-select-trigger {
+  color: #171717;
+  transform: rotate(180deg);
+}
+.report-select-content {
+  z-index: 12000;
+  width: var(--reka-combobox-trigger-width);
+  max-height: min(300px, var(--reka-combobox-content-available-height));
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgb(16 16 16 / 4%),
+    0 10px 32px rgb(16 16 16 / 12%);
+  font-family: inherit;
+  transform-origin: var(--reka-combobox-content-transform-origin);
+}
+.report-select-content[data-state="open"] {
+  animation: report-select-in 0.17s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.report-select-content[data-state="closed"] {
+  animation: report-select-out 0.12s ease-in forwards;
+}
+@keyframes report-select-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes report-select-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .report-select-content[data-state="open"],
+  .report-select-content[data-state="closed"] {
+    animation: none;
+  }
+}
+.report-select-viewport {
+  padding: 5px;
+  max-height: inherit;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d4 transparent;
+}
+.report-select-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #0f172a;
+  gap: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3d3d3d;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease;
+  outline: none;
+  transition: background 0.12s ease;
 }
-
-.generator-search-export-option:hover {
-  background: rgba(241, 245, 249, 0.95);
+.report-select-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.generator-search-export-option.is-active {
-  background: rgba(226, 232, 240, 0.95);
+.report-select-item[data-highlighted] {
+  background: #f4f4f4;
+  color: #171717;
 }
-
-.generator-search-export-option-title {
+.report-select-item[data-state="checked"] {
+  color: #171717;
+  font-weight: 600;
+}
+.report-select-item-indicator {
+  flex-shrink: 0;
+  color: #171717;
+}
+.report-select-item-indicator:empty {
+  display: none;
+}
+.report-select-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px;
+  color: #969696;
   font-size: 12px;
-  font-weight: 700;
-  text-align: left;
+  line-height: 1.5;
 }
-
-.generator-search-export-option-check {
-  min-width: 12px;
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 700;
+.report-select-empty-mark {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #cfcfcf;
 }
-
-.generator-search-export-menu-enter-active,
-.generator-search-export-menu-leave-active {
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-
-.generator-search-export-menu-enter-from,
-.generator-search-export-menu-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
+@keyframes report-select-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

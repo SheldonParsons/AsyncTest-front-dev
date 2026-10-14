@@ -3,9 +3,10 @@ import os from 'os';
 import path from 'path';
 import { readAmindFile } from '../amind/amindFileService.node.js';
 import { writeXmindFile } from '../amind/xmindFileService.node.js';
+import { persistLocalReportSource, withoutLocalFileContent } from './localSource.node.js';
 import { persistZendaoArtifacts } from './zendaoRun.node.js';
 
-const GENERATOR_TEMP_ROOT = path.join(os.tmpdir(), 'asynctest-generator-cache');
+const GENERATOR_TEMP_ROOT = path.join(process.env.ASYNCTEST_RUNTIME_DATA_ROOT || os.tmpdir(), 'asynctest-generator-cache');
 
 function sanitizeFileNamePart(value) {
   return `${value ?? ''}`.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'file';
@@ -30,10 +31,7 @@ async function ensureDirectory(dirPath) {
   await fs.mkdir(dirPath, { recursive: true });
 }
 
-async function resetTempRoot() {
-  await fs.rm(GENERATOR_TEMP_ROOT, { recursive: true, force: true });
-  await ensureDirectory(GENERATOR_TEMP_ROOT);
-}
+
 
 async function downloadFileFromBackend(backendFileId, auth, targetPath) {
   const url = `${auth.baseURL}/project/file/download?id=${backendFileId}`;
@@ -63,7 +61,6 @@ async function downloadFileToPath(url, targetPath) {
 }
 
 async function persistSourceFileList(files, tempDir, subDirName, auth) {
-  console.log('[DOCX-DEBUG][main] persistSourceFileList auth:', JSON.stringify(auth));
   const targetDir = path.join(tempDir, subDirName);
   await ensureDirectory(targetDir);
 
@@ -73,12 +70,15 @@ async function persistSourceFileList(files, tempDir, subDirName, auth) {
     const ext = path.extname(file?.name || '') || '';
     const baseName = sanitizeFileNamePart(path.basename(file?.name || `file-${index + 1}`, ext));
     const targetPath = path.join(targetDir, `${String(index + 1).padStart(2, '0')}_${baseName}${ext}`);
-    console.log(`[DOCX-DEBUG][main] file[${index}] backendFileId=${file.backendFileId}, hasAuth=${!!auth}, willUseBackend=${!!(file.backendFileId && auth)}`);
-    const downloadResult = file.backendFileId && auth
+    const downloadResult = file.assetPath
+      ? await fs.copyFile(file.assetPath, targetPath).then(() => ({path: targetPath, size: file.size}))
+      : file.source === 'local'
+      ? await persistLocalReportSource(file, targetPath)
+      : file.backendFileId && auth
       ? await downloadFileFromBackend(file.backendFileId, auth, targetPath)
       : await downloadFileToPath(file.downloadUrl, targetPath);
     persisted.push({
-      ...file,
+      ...withoutLocalFileContent(file),
       tempPath: downloadResult.path,
       tempSize: downloadResult.size,
     });
@@ -88,7 +88,6 @@ async function persistSourceFileList(files, tempDir, subDirName, auth) {
 }
 
 async function persistAmindFileList(files, tempDir, auth) {
-  console.log('[DOCX-DEBUG][main] persistAmindFileList auth:', JSON.stringify(auth));
   const targetDir = path.join(tempDir, 'amind');
   await ensureDirectory(targetDir);
 
@@ -97,8 +96,11 @@ async function persistAmindFileList(files, tempDir, auth) {
     const file = files[index];
     const originalBaseName = sanitizeFileNamePart(path.basename(file?.name || `amind-${index + 1}`, '.amind'));
     const originalTempPath = await buildUniquePath(targetDir, `${originalBaseName}.amind`);
-    console.log(`[DOCX-DEBUG][main] amind[${index}] backendFileId=${file.backendFileId}, hasAuth=${!!auth}, willUseBackend=${!!(file.backendFileId && auth)}`);
-    const originalDownload = file.backendFileId && auth
+    const originalDownload = file.assetPath
+      ? await fs.copyFile(file.assetPath, originalTempPath).then(() => ({path: originalTempPath, size: file.size}))
+      : file.source === 'local'
+      ? await persistLocalReportSource(file, originalTempPath)
+      : file.backendFileId && auth
       ? await downloadFileFromBackend(file.backendFileId, auth, originalTempPath)
       : await downloadFileToPath(file.downloadUrl, originalTempPath);
 
@@ -107,7 +109,7 @@ async function persistAmindFileList(files, tempDir, auth) {
     const xmindResult = await writeXmindFile(xmindTempPath, doc, null);
 
     persisted.push({
-      ...file,
+      ...withoutLocalFileContent(file),
       originalTempPath,
       originalTempSize: originalDownload.size,
       xmindTempPath: xmindResult.path,
@@ -127,10 +129,8 @@ async function persistZendaoCache(zendaoPayload, tempDir) {
   return persistZendaoArtifacts(zendaoPayload, targetDir);
 }
 
-export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth }) {
-  await resetTempRoot();
-
-  const tempDir = path.join(GENERATOR_TEMP_ROOT, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth, jobDir }) {
+  const tempDir = jobDir || path.join(GENERATOR_TEMP_ROOT, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const snapshotPath = targetPath || path.join(tempDir, 'file.md');
 
   await ensureDirectory(tempDir);
@@ -143,7 +143,7 @@ export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth
   const snapshot = {
     exportedAt: new Date().toISOString(),
     tempDir,
-    tempCleanupPolicy: '每次重新导出缓存前会清空旧的 generator 临时目录；当前这次导出的临时目录会保留到下一次导出或系统清理 temp 目录为止。',
+    tempCleanupPolicy: '每个作业独立目录；仅显式清理当前作业，历史产物按引用保留。',
     ...payload,
     amindFiles: persistedAmindFiles,
     excelFile: persistedExcelFiles[0] || null,

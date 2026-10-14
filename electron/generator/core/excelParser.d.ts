@@ -1,0 +1,4 @@
+import type { ReportExcelSourceFile, ReportExcelParseResult, ReportExcelColumnMapping, ReportExcelRowFilter, ReportSelectOption } from '../../../src/views/generator/report/types';
+export type ExcelWorkbookSnapshot = { sheetOptions: ReportSelectOption[]; sheets: Record<string, { name: string; headers: string[]; rows: string[][]; columns: Array<{ value: string; header: string; label: string }>; firstDataRow: number }> };
+export function loadExcelWorkbookBytes(bytes: ArrayBuffer | Uint8Array): ExcelWorkbookSnapshot;
+export function buildExcelParseResult(source: ReportExcelSourceFile, workbook: ExcelWorkbookSnapshot, overrides?: { sheetName?: string; columnMapping?: Partial<ReportExcelColumnMapping>; excludedModules?: string[]; excludedOwners?: string[]; rowFilter?: ReportExcelRowFilter | null }): ReportExcelParseResult;

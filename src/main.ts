@@ -1,3 +1,4 @@
+import { initializeReportService, syncReportAuth } from './views/generator/report/serviceClient'
 import { createApp } from 'vue' // 从 createSSRApp 改为 createApp
 import { createSSRi18n } from './lang/i18n'
 import App from './App.vue'
@@ -27,6 +28,8 @@ async function bootstrap() {
 
   // 1. 初始化工具类
   asyncTest.cookies.setDocument(window.document)
+  await initializeReportService().catch(() => console.warn('报告配置迁移未完成，原配置已保留'))
+  window.addEventListener('asynctest:auth-changed', () => { void syncReportAuth().catch(() => {}) })
   asyncTest.router.setRouter(router)
 
   try {
