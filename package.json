@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.4.2",
+  "version": "3.4.3",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 新增：生成测试报告支持 MCP，可以让 AI 助手通过对话完成配置、导入材料和生成报告。\\n#### 优化：测试报告页面重新设计，操作步骤更清晰，配置、检查和生成更方便。\\n#### 新增：数据源支持本地文件导入、AsyncTest 目录地址自动下载与归类，任务分配表支持按列筛选。\",\"publishDate\":\"2026-10-14\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 修复：生成测试报告时，输入禅道密码不会再因短暂停顿而提前保存、清空输入，输入完成后离开密码框或点击“测试连接”即可保存。\\n#### 优化：测试范围每次展开都会重新获取最新选项，查询完成前暂不可选择，避免误选旧数据。\\n#### 修复：快速反复展开测试范围下拉框时，旧结果覆盖最新选项的问题；查询失败后，重新展开即可重试。\",\"publishDate\":\"2026-10-15\"}"
     },
     "publish": [
       {

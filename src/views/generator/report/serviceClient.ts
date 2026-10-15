@@ -33,6 +33,9 @@ export function useReportServiceProjection(state: ReportDraftState) {
   state.serviceReady = false; state.saveStatus = '正在读取共享草稿';
   let context: any, baseline: any, expected: any, applying = false, disposed = false, timer: ReturnType<typeof setTimeout> | undefined;
   let localGeneration = false;
+  let passwordEditing = false;
+  const scopeRequests: Partial<Record<keyof ReportDraftState['zentaoOptions'], number>> = {};
+  state.zentaoQueryErrors = {};
   let pending = false, saving = false, conflicted = false, queue: Promise<any> = Promise.resolve();
   const toast = (type: 'error' | 'success' | 'info', title: string) => window.$toast({ type, title });
   const local = () => copy({ ...state.form, asyncTestProjectId: state.asyncTestProjectId, environments: state.environments, customFields: state.customFields });
@@ -56,7 +59,11 @@ export function useReportServiceProjection(state: ReportDraftState) {
     try {
       if (!pending && !saving) {
         context = result;
-        for (const key of Object.keys(state.form)) (state.form as any)[key] = key === 'zentaoPassword' ? '' : projection.config[key] || '';
+        for (const key of Object.keys(state.form)) {
+          if (key === 'zentaoPassword') {
+            if (!passwordEditing) state.form.zentaoPassword = '';
+          } else (state.form as any)[key] = projection.config[key] || '';
+        }
         state.asyncTestProjectId = projection.config.asyncTestProjectId || '';
         state.environments = projection.config.environments; state.customFields = projection.config.customFields; baseline = local(); expected = copy(result.revisions);
       }
@@ -100,7 +107,12 @@ export function useReportServiceProjection(state: ReportDraftState) {
     try {
       const result = await call('report_update_settings', { ...metadata(), expectedRevisions: expected, target: 'defaults_and_workspace', ...patch });
       context.revisions = result.revisions; expected = copy(result.revisions); baseline = captured;
-      applying = true; if (state.form.zentaoPassword === captured.zentaoPassword) state.form.zentaoPassword = ''; baseline.zentaoPassword = ''; applying = false;
+      applying = true;
+      // 保存响应不能清除重新聚焦后仍在编辑的密码，也不能清除较新的输入。
+      if (!passwordEditing && state.form.zentaoPassword === captured.zentaoPassword) {
+        state.form.zentaoPassword = ''; baseline.zentaoPassword = '';
+      }
+      applying = false;
       pending = !equal(local(), baseline); state.saveStatus = pending ? '尚未提交' : '配置已保存';
     } catch (error: any) { conflicted = error.code === 'REVISION_CONFLICT'; state.saveStatus = conflicted ? '保存冲突 · 本地输入已保留' : '尚未提交'; throw error; }
     finally { saving = false; }
@@ -108,28 +120,56 @@ export function useReportServiceProjection(state: ReportDraftState) {
   }
   function serialized<T>(action: () => Promise<T>): Promise<T> { const result = queue.then(action); queue = result.catch(() => {}); return result; }
   const flush = () => serialized(save);
+  function setPasswordEditing(editing: boolean) {
+    passwordEditing = editing;
+    clearTimeout(timer);
+    if (editing) return;
+    if (pending) void flush().catch((error: Error) => toast('error', error.message));
+    else if (baseline) {
+      // 显式操作已保存、但焦点一直留在密码框时，等失焦后再清除显示。
+      applying = true;
+      state.form.zentaoPassword = ''; baseline.zentaoPassword = '';
+      applying = false;
+    }
+  }
   watch(local, () => {
     if (applying || !baseline) return;
     pending = !equal(local(), baseline); state.saveStatus = pending ? '尚未提交' : '配置已保存';
-    clearTimeout(timer); timer = setTimeout(() => void flush().catch((error: Error) => toast('error', error.message)), 400);
+    clearTimeout(timer);
+    // 密码在失焦或显式操作时提交，输入期间不因短暂停顿保存半截内容。
+    if (!passwordEditing) timer = setTimeout(() => void serialized(async () => {
+      if (!passwordEditing) await save();
+    }).catch((error: Error) => toast('error', error.message)), 400);
   }, { deep: true, flush: 'sync' });
   async function mutate(name: string, args: any = {}) {
     return serialized(async () => { await save(); const result = await call(name, { ...metadata(), ...args }); await pull(); return result; });
   }
   async function action(name: string, args: any = {}) { try { return await mutate(name, args); } catch (error: any) { toast('error', error.message); return null; } }
   const removeListener = api.onChanged(() => { if (!disposed && !saving) void serialized(async () => { await pull(); await loadRecentExports(); }).catch(() => {}); });
-  onBeforeUnmount(() => { disposed = true; clearTimeout(timer); removeListener(); void flush().catch(() => {}); });
+  onBeforeUnmount(() => { disposed = true; passwordEditing = false; clearTimeout(timer); removeListener(); void flush().catch(() => {}); });
   async function reloadServiceState() { pending = false; conflicted = false; await serialized(pull); }
   async function query(entity: keyof ReportDraftState['zentaoOptions'], parent = {}) {
-    await flush(); const account = state.form.zentaoUsername; state.zentaoLoading[entity] = true;
+    const request = (scopeRequests[entity] || 0) + 1;
+    scopeRequests[entity] = request;
+    // 展开时立即遮住上次候选，等待保存/接口期间也不能选择缓存结果。
+    state.zentaoLoading[entity] = true;
+    state.zentaoQueryErrors![entity] = '';
+    state.linkageStatus = { type: 'idle', message: '正在重新查询候选…' };
     try {
+      await flush();
+      if (disposed || scopeRequests[entity] !== request) return;
+      const account = state.form.zentaoUsername;
       const items: ReportSelectOption[] = []; let cursor: string | undefined;
       do { const result = await call('report_query_scope', { workspaceId: context.workspaceId, entity, parent, readPolicy: 'online', limit: 100, ...(cursor ? { cursor } : {}) }); items.push(...result.data.items.map((item: any) => ({ value: item.id, label: item.name }))); cursor = result.data.nextCursor || undefined; } while (cursor);
       const parentKey = ({ projects: 'productId', executions: 'projectId', testTasks: 'productId', builds: 'executionId' } as Record<string, string>)[entity];
-      if (account !== state.form.zentaoUsername || parentKey && (parent as any)[parentKey] !== (state.form as any)[parentKey]) return;
+      if (disposed || scopeRequests[entity] !== request || account !== state.form.zentaoUsername || parentKey && (parent as any)[parentKey] !== (state.form as any)[parentKey]) return;
       state.zentaoOptions[entity] = items; state.linkageStatus = { type: 'success', message: `已加载 ${items.length} 个候选` };
-    } catch (error: any) { state.linkageStatus = { type: 'error', message: error.message }; }
-    finally { state.zentaoLoading[entity] = false; }
+    } catch (error: any) {
+      if (disposed || scopeRequests[entity] !== request) return;
+      state.zentaoQueryErrors![entity] = error.message;
+      state.linkageStatus = { type: 'error', message: error.message };
+    }
+    finally { if (!disposed && scopeRequests[entity] === request) state.zentaoLoading[entity] = false; }
   }
   async function testZentaoConnection() {
     state.testingConnection = true;
@@ -217,7 +257,7 @@ export function useReportServiceProjection(state: ReportDraftState) {
   }
   void initializeReportService().then(pull).then(loadRecentExports).catch((error: Error) => { state.saveStatus = '服务尚未就绪'; toast('error', error.message); });
   return {
-    state, reloadServiceState, flushReportSettings: flush, reportCall: call, reportMutation: mutate,
+    state, setPasswordEditing, reloadServiceState, flushReportSettings: flush, reportCall: call, reportMutation: mutate,
     addEnvironment: () => state.environments.push({ id: `env-${crypto.randomUUID()}`, kind: 'custom', name: '', enabled: true, bugFilterKeyword: '', bugExcludeKeyword: '', bugRange: 'version', filterBugWithoutSolution: true, includeDate: false, reportDate: '', envUrl: '', gitlabUrl: '', conclusion: '测试通过', projectRisk: '暂无' }),
     removeEnvironment: (id: string) => { state.environments = state.environments.filter(env => env.id !== id || env.kind !== 'custom'); },
     ensureProjectsLoaded: () => query('projects', { productId: state.form.productId }),

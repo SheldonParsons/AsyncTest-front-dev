@@ -22,6 +22,8 @@
           :rows="multiline ? 3 : undefined"
           :min="type === 'number' ? 1 : undefined"
           @input="update"
+          @focus="emit('focus')"
+          @blur="emit('blur')"
         />
       </slot>
     </div>
@@ -59,7 +61,11 @@ const props = withDefaults(
   }>(),
   { type: "text", required: true, optionalBadge: false },
 );
-const emit = defineEmits<{ "update:modelValue": [value: string | number] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: string | number];
+  focus: [];
+  blur: [];
+}>();
 const context = inject(reportFormContext, undefined);
 const error = computed(() => context?.issue(props.name));
 const filled = computed(

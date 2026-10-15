@@ -130,6 +130,7 @@
                     :password-configured="state.passwordConfigured"
                     :zentao-options="state.zentaoOptions"
                     :zentao-loading="state.zentaoLoading"
+                    :zentao-query-errors="state.zentaoQueryErrors"
                     :testing-connection="state.testingConnection"
                     :connection-status="state.connectionStatus"
                     :linkage-status="state.linkageStatus"
@@ -144,6 +145,8 @@
                     @change-execution="handleExecutionChange"
                     @test-connection="testZentaoConnection"
                     @clear-password="clearPassword"
+                    @password-focus="setPasswordEditing(true)"
+                    @password-blur="setPasswordEditing(false)"
                   />
                   <ReportEnvironmentPanel
                     v-else-if="page === 'environments'"
@@ -405,6 +408,7 @@ const {
   handleExecutionChange,
   testZentaoConnection,
   clearPassword,
+  setPasswordEditing,
   handleLoginSuccess,
   setAsyncTestProjectId,
   addAmindFiles,

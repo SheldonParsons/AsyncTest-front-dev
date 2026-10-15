@@ -36,23 +36,16 @@
         :collision-padding="12"
       >
         <ComboboxViewport class="report-select-viewport">
-          <ComboboxEmpty class="report-select-empty">
-            <span
-              v-if="loading"
-              class="report-select-spinner"
-              aria-hidden="true"
-            />
-            <span v-else class="report-select-empty-mark" aria-hidden="true" />
-            {{
-              loading
-                ? "正在加载…"
-                : options.length
-                  ? "没有匹配项，换个关键词试试"
-                  : emptyText || "暂无可选项"
-            }}
+          <div v-if="loading || loadError" class="report-select-empty" role="status">
+            <span v-if="loading" class="report-select-spinner" aria-hidden="true" />
+            {{ loading ? "正在重新查询…" : loadError }}
+          </div>
+          <ComboboxEmpty v-else class="report-select-empty">
+            <span class="report-select-empty-mark" aria-hidden="true" />
+            {{ options.length ? "没有匹配项，换个关键词试试" : emptyText || "暂无可选项" }}
           </ComboboxEmpty>
           <ComboboxItem
-            v-for="option in options"
+            v-for="option in loading || loadError ? [] : options"
             :key="option.value"
             :value="option.value"
             :text-value="option.label"
@@ -93,6 +86,7 @@ const props = defineProps<{
   placeholder: string;
   disabled?: boolean;
   loading?: boolean;
+  loadError?: string;
   triggerLabel?: string;
   /** 已满足上级条件但确实没有数据时显示的文案。 */
   emptyText?: string;
@@ -124,7 +118,7 @@ function displayValue(value: unknown) {
   );
 }
 function selectOption(value: unknown) {
-  if (typeof value !== "string" || value === props.modelValue) return;
+  if (props.loading || props.loadError || typeof value !== "string" || value === props.modelValue) return;
   emit("update:modelValue", value);
   emit("change", value);
 }

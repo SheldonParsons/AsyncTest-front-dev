@@ -258,6 +258,7 @@ export type ReportDraftState = {
     testTasks: boolean;
     builds: boolean;
   };
+  zentaoQueryErrors?: Partial<Record<keyof ReportDraftState["zentaoOptions"], string>>;
   runningZendaoRun: boolean;
   generatingReport: boolean;
   importingLocal: boolean;

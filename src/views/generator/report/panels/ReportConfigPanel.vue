@@ -39,6 +39,8 @@
             v-model="form.zentaoPassword"
             type="password"
             :placeholder="passwordConfigured ? '密码已保存，输入以替换' : '输入禅道密码'"
+            @focus="$emit('password-focus')"
+            @blur="$emit('password-blur')"
           />
         </div>
         <div class="basic-inline">
@@ -87,7 +89,7 @@
             v-model="form.productId"
             :options="zentaoOptions.products"
             :loading="zentaoLoading.products"
-            :disabled="zentaoLoading.products"
+            :load-error="zentaoQueryErrors?.products"
             :placeholder="zentaoLoading.products ? '加载中…' : '选择或搜索产品'"
             @open="$emit('ensure-products')"
             @change="$emit('change-product')"
@@ -99,7 +101,8 @@
             v-model="form.projectId"
             :options="zentaoOptions.projects"
             :loading="zentaoLoading.projects"
-            :disabled="!form.productId || zentaoLoading.projects"
+            :load-error="zentaoQueryErrors?.projects"
+            :disabled="!form.productId"
             :placeholder="
               zentaoLoading.projects
                 ? '加载中…'
@@ -117,7 +120,8 @@
             v-model="form.executionId"
             :options="zentaoOptions.executions"
             :loading="zentaoLoading.executions"
-            :disabled="!form.projectId || zentaoLoading.executions"
+            :load-error="zentaoQueryErrors?.executions"
+            :disabled="!form.projectId"
             :placeholder="
               zentaoLoading.executions
                 ? '加载中…'
@@ -136,7 +140,8 @@
             :options="zentaoOptions.testTasks"
             @open="$emit('ensure-test-tasks')"
             :loading="zentaoLoading.testTasks"
-            :disabled="!form.productId || zentaoLoading.testTasks"
+            :load-error="zentaoQueryErrors?.testTasks"
+            :disabled="!form.productId"
             :placeholder="
               zentaoLoading.testTasks
                 ? '加载中…'
@@ -161,7 +166,8 @@
             v-model="form.buildId"
             :options="zentaoOptions.builds"
             :loading="zentaoLoading.builds"
-            :disabled="!form.executionId || zentaoLoading.builds"
+            :load-error="zentaoQueryErrors?.builds"
+            :disabled="!form.executionId"
             :placeholder="
               zentaoLoading.builds
                 ? '加载中…'
@@ -217,12 +223,15 @@ defineProps<{
   passwordConfigured?: boolean;
   zentaoOptions: ReportDraftState["zentaoOptions"];
   zentaoLoading: ReportDraftState["zentaoLoading"];
+  zentaoQueryErrors?: ReportDraftState["zentaoQueryErrors"];
   testingConnection: boolean;
   connectionStatus: ReportStatusState;
   linkageStatus: ReportStatusState;
   versionRequired: boolean;
 }>();
 defineEmits<{
+  "password-focus": [];
+  "password-blur": [];
   "clear-password": [];
   "test-connection": [];
   "ensure-products": [];

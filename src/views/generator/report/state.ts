@@ -1754,9 +1754,8 @@ export function useReportWorkspaceState() {
   }
 
   async function ensureProductsLoaded() {
-    if (state.zentaoLoading.products || state.zentaoOptions.products.length > 0)
-      return;
-    await loadProducts();
+    if (state.zentaoLoading.products) return;
+    await loadProducts(true);
   }
 
   async function handleProductChange() {
@@ -1800,15 +1799,9 @@ export function useReportWorkspaceState() {
     await loadBuilds(executionId);
   }
 
-  /**
-   * 版本列表只在“执行”下拉触发 change 时才拉取，因此以下两种情况会
-   * 留下一个永远为空的下拉框：草稿恢复后直接带着 executionId、以及
-   * 任何清空了 builds 却没有重新触发的路径。
-   * 这里兜底：只要当前有执行、却一个版本都没有，就补一次请求。
-   */
+  // 每次展开都重新查询当前执行的版本；已加载的选项不能阻止刷新。
   async function ensureBuildsLoaded() {
     if (state.zentaoLoading.builds) return;
-    if (state.zentaoOptions.builds.length) return;
     const executionId = state.form.executionId;
     if (!executionId) return;
     await loadBuilds(executionId);
@@ -2144,6 +2137,7 @@ export function useReportWorkspaceState() {
   return {
     state,
     clearPassword: () => { state.form.zentaoPassword = ""; },
+    setPasswordEditing: (_editing: boolean) => {},
     reloadServiceState: async () => {},
     cancelGeneration: async () => {},
     activateAssignment: (_id: string) => {},
