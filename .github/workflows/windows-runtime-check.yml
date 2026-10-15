@@ -1,0 +1,63 @@
+name: Windows runtime check (external harness)
+run-name: Windows runtime check - ${{ inputs.label }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: Human-readable verification label
+        required: true
+        type: string
+      script_base64:
+        description: UTF-8 PowerShell harness supplied by ast-testing-core
+        required: true
+        type: string
+      script_sha256:
+        description: SHA-256 of the decoded harness
+        required: true
+        type: string
+      request_base64:
+        description: UTF-8 JSON request supplied by ast-testing-core
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      # The product owns only this isolated execution interface. Tests and
+      # fixtures are authored by ast-testing-core, never stored in this repo.
+      - name: Run supplied external harness in isolation
+        shell: pwsh
+        env:
+          HARNESS_BASE64: ${{ inputs.script_base64 }}
+          HARNESS_SHA256: ${{ inputs.script_sha256 }}
+          REQUEST_BASE64: ${{ inputs.request_base64 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $coreRoot = Join-Path $env:RUNNER_TEMP 'ast-testing-core'
+          $dataRoot = Join-Path $env:RUNNER_TEMP 'ast-testing-core-data'
+          New-Item -ItemType Directory -Force $coreRoot, $dataRoot | Out-Null
+          $scriptPath = Join-Path $coreRoot 'windows-runtime-harness.ps1'
+          $requestPath = Join-Path $dataRoot 'request.json'
+          [IO.File]::WriteAllBytes($scriptPath, [Convert]::FromBase64String($env:HARNESS_BASE64))
+          if ((Get-FileHash $scriptPath -Algorithm SHA256).Hash -ne $env:HARNESS_SHA256) {
+            throw 'External harness checksum mismatch'
+          }
+          [IO.File]::WriteAllBytes($requestPath, [Convert]::FromBase64String($env:REQUEST_BASE64))
+          Remove-Item Env:HARNESS_BASE64, Env:REQUEST_BASE64
+          & $scriptPath -RequestPath $requestPath -DataRoot $dataRoot
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Upload verification evidence only
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-runtime-evidence
+          path: ${{ runner.temp }}/ast-testing-core-data/evidence/
+          if-no-files-found: warn
+          retention-days: 7
