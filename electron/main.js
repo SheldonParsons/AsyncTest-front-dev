@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, ipcMain, shell, clipboard } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, shell, clipboard, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { installProcessOutputSafety } from './processOutputSafety.node.js';
+import { writeStartupFailure } from './startupFailure.node.js';
 
 import { initUpdater } from './updater.js';
 import { WindowManager } from './windowManager.js';
@@ -661,10 +662,14 @@ ipcMain.handle('wm:popupMenu', async (event, options = {}) => {
 });
 
 // ===== App 生命周期 =====
+let startupStage = '等待应用准备';
 app.whenReady().then(async () => {
+  startupStage = '初始化报告服务';
   reportMain = await initReportMain();
+  startupStage = '创建主窗口';
   const win = await createMainWindow();
 
+  startupStage = '初始化功能模块';
   amindMain = initAmindMain({
     userDataPath: app.getPath('userData'),
     recentFallbackUserDataPaths,
@@ -681,6 +686,7 @@ app.whenReady().then(async () => {
     isDevelopment: isDevelopmentRuntime,
   });
 
+  startupStage = '恢复待打开的文件';
   await flushPendingOpenQueue();
 
   const argvFiles = extractAmindPathsFromArgv(process.argv);
@@ -696,8 +702,21 @@ app.whenReady().then(async () => {
     await flushPendingOpenQueue();
   }
 
+  startupStage = '初始化自动更新';
   initUpdater(win);
   ipcMain.emit('check-for-update');
+}).catch(error => {
+  const { message, logPath } = writeStartupFailure({
+    error, stage: startupStage, version: app.getVersion(),
+    userDataPath: app.getPath('userData'), fallbackDirectory: app.getPath('temp'),
+  });
+  try {
+    dialog.showErrorBox('AsyncTest 启动失败', [
+      '应用未能完成启动。请将此提示和日志文件发给开发人员。',
+      `发生位置：${startupStage}`, `错误信息：${message}`,
+      logPath ? `日志文件：${logPath}` : '日志无法保存，请保留此提示。',
+    ].join('\n\n'));
+  } finally { app.exit(1); }
 });
 
 app.on('activate', () => {

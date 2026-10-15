@@ -21,7 +21,7 @@ export function reportLaunchConfig({ appPath, executable, bindingPath, identity,
 export async function startReportBridge(service) {
   const token = randomBytes(32).toString('hex'); const clients = new Set();
   const socketDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'ast-report-')); await fs.chmod(socketDirectory, 0o700);
-  const endpoint = process.platform === 'win32' ? `\\.\pipe\asynctest-report-${hash(service.identity).slice(0, 32)}` : path.join(socketDirectory, 'report.sock');
+  const endpoint = process.platform === 'win32' ? String.raw`\\.\pipe\asynctest-report-${hash(service.identity).slice(0, 32)}` : path.join(socketDirectory, 'report.sock');
   const bindingPath = path.join(service.store.root, 'bridge.json');
   const server = net.createServer(socket => {
     socket.setEncoding('utf8');
