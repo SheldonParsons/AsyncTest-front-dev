@@ -37,7 +37,7 @@
           收起
         </button>
 
-        <div class="mind-agent-control-actions">
+        <div v-if="['connected', 'executing', 'restore_requested'].includes(state.status)" class="mind-agent-control-actions">
           <button
             v-if="['connected', 'executing'].includes(state.status)"
             class="mind-agent-control-action mind-agent-control-action--exit"
@@ -111,8 +111,8 @@ const compactTitle = computed(() =>
 );
 
 const detail = computed(() => {
-  if (props.state.status === 'restore_requested') return '确认后 Agent 才能继续调用 AsyncTest Mind';
-  if (props.state.status === 'revoked') return '后续 AsyncTest Mind MCP 调用已阻止';
+  if (props.state.status === 'restore_requested') return '点击“允许恢复”，再回到 Agent 继续';
+  if (props.state.status === 'revoked') return '对 Agent 说“重新连接思维导图”即可申请恢复';
   if (props.state.hasVersionMismatch) return '请重启 AI Agent，使其加载 AsyncTest 内置的最新 MCP';
   if (props.state.status === 'executing') return '写操作执行时目标窗口会暂时锁定';
   return '等待下一次操作，导图仍可正常编辑';
@@ -195,6 +195,17 @@ const detail = computed(() => {
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mind-agent-control[data-status='revoked'] .mind-agent-control-copy span,
+.mind-agent-control[data-status='restore_requested'] .mind-agent-control-copy span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mind-agent-control[data-status='restore_requested'] .mind-agent-control-actions {
+  grid-column: 2 / -1;
+  justify-content: flex-end;
 }
 
 .mind-agent-control-actions {

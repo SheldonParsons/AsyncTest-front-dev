@@ -10,7 +10,7 @@ import {
 } from '@/mind/mcp/documentPatch';
 
 const MCP_CONTROL_REVOKED_MESSAGE =
-  '用户已主动退出 AsyncTest Mind MCP 控制。请立即停止调用 AsyncTest Mind 工具，不要在当前对话中自行恢复。只有用户明确要求恢复后，才可以调用 mind_request_control_restore；该函数仍需用户在 AsyncTest 中确认。';
+  '用户已暂停思维导图的 Agent 控制，读取和编辑操作暂不可用。用户说“重新连接思维导图”“恢复 Agent 连接”或明确允许继续时，由 Agent 查询 mind_get_control_status 并调用 mind_request_control_restore 发起恢复申请，无需用户输入工具名或再次在对话中确认。申请后引导用户在思维导图右上角点击“允许恢复”；确认 controlEnabled=true 后才能继续。尚未获得用户恢复意愿时，不要自行申请。';
 
 export type MindTransactionPlaybackPolicy = {
   mode: 'single' | 'step' | 'progressive';
@@ -57,7 +57,7 @@ function throwStopped(cancellation: boolean | { code?: string; message?: string 
   error.recoverable = true;
   if (controlRevoked) {
     error.retryAllowed = false;
-    error.suggestedAction = 'Stop all AsyncTest Mind tool calls. Wait until the user explicitly asks to restore control.';
+    error.suggestedAction = 'Stop business calls. If the user clearly asks to reconnect or resume Mind control in ordinary language, read mind_get_control_status and call mind_request_control_restore when revoked. Guide them to click 允许恢复 in Mind, then check controlEnabled before continuing. Users do not need to type tool names; never restore without their request.';
   }
   throw error;
 }

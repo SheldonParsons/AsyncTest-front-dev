@@ -39,7 +39,11 @@ export const ASYNCTEST_MIND_MCP_INSTRUCTIONS = [
   'If a write is slow, times out, or has an uncertain result, call mind_get_operation_status and follow agentAction; never repeat a write while inProgress=true.',
   'The first tool call establishes an Agent connection. Only active write calls lock their target Mind window.',
   'Call mind_end_agent_session when finishing; transport close and idle timeout also clean up stale sessions automatically.',
-  'If MCP_CONTROL_REVOKED is returned, stop all AsyncTest Mind calls immediately. Only call mind_request_control_restore after the user explicitly asks to restore control; restoration still requires approval in AsyncTest.',
+  'If MCP_CONTROL_REVOKED is returned, stop business calls. mind_get_control_status and mind_end_agent_session remain available. Reconnecting the MCP transport alone does not restore control.',
+  'Understand restoration intent from ordinary language and conversation context, such as “重新连接思维导图”, “恢复 Agent 连接”, or “刚才我停了，现在接着改吧”. These are examples, not required keywords. Users do not need to know or type a tool name.',
+  'When the user clearly asks to reconnect or resume Mind control, read mind_get_control_status. If control is revoked, call mind_request_control_restore yourself without asking for the same authorization again. A status question alone is not permission to restore.',
+  'When approvalRequired=true or status=restore_requested, the request is waiting for desktop approval even if ok=false. Tell the user “请在思维导图右上角点击‘允许恢复’，然后回来告诉我继续”. Do not resend the request or tell the user to find a restore button before you have requested it.',
+  'After the user says they approved, read mind_get_control_status and resume business calls only when controlEnabled=true. For an interrupted write, check mind_get_operation_status and wait while inProgress=true, then read the current document before continuing. Do not blindly replay the cancelled write.',
 ].join('\n');
 
 const TOOL_TIERS = {
@@ -65,6 +69,7 @@ const TOOL_TIERS = {
     'mind_get_operation_status',
   ],
   control: [
+    'mind_get_control_status',
     'mind_end_agent_session',
     'mind_request_control_restore',
   ],
@@ -97,6 +102,8 @@ export function getAsyncTestMindMcpCapabilities() {
       'tools/list 仅公开核心、控制和诊断工具；旧工具名继续接受调用，用于兼容已缓存工具定义的会话。',
       '窗口和概要中的 nodeCount 仅统计从画板 roots 可达的节点；totalNodeCount 和 detachedNodeCount 用于诊断孤立记录。',
       '用户退出控制后，所有业务工具统一返回 MCP_CONTROL_REVOKED；恢复必须由 Agent 发起请求并由用户在 AsyncTest 中确认。',
+      '用户可用自然语言要求重新连接或继续已暂停的思维导图操作；Agent 负责查询控制状态、申请恢复并引导桌面确认，无需用户输入工具名。',
+      '对外公开 mind_get_control_status，暂停与等待恢复确认期间均可查询；允许恢复时同步解除因退出控制留下的窗口阻止标记。',
       '多窗口环境下写工具必须显式传入 windowKey；Agent 只锁定实际写入的窗口。',
     ],
     recommendedUsage: [
@@ -109,6 +116,7 @@ export function getAsyncTestMindMcpCapabilities() {
       '收到 USER_STOPPED 后停止当前操作，不要重试被暂停的窗口；其他窗口不受影响。',
       '写调用结果未知或客户端超时时，先调用 mind_get_operation_status；状态为 working 时等待，failed 时遵循 retryAllowed 和 suggestedAction。',
       '完成当前用户任务时调用 mind_end_agent_session；异常断开和长时间空闲也会自动清理状态。',
+      '用户说“重新连接思维导图”等明确恢复意图时，先查询 mind_get_control_status；revoked 时调用 mind_request_control_restore，restore_requested 时引导点击“允许恢复”，controlEnabled=true 后读取当前文档再继续。',
       '同时打开多个 Mind 窗口时，先使用 mind_list_windows 确认目标，再把明确的 windowKey 传给所有写工具。',
       '向用户报告节点数量时使用 nodeCount；只有排查数据问题时才使用 totalNodeCount 和 detachedNodeCount。',
     ],
@@ -119,11 +127,11 @@ export function getAsyncTestMindMcpCapabilities() {
       'mind_save_document or mind_save_as_document',
     ],
     toolTiers: TOOL_TIERS,
-    advertisedToolCount: 17,
+    advertisedToolCount: 18,
     errorProtocol: {
       shape: '{ ok: false, error: { code, message, recoverable, retryAllowed, suggestedAction, details? } }',
       userStopped: 'USER_STOPPED only stops the current window operation.',
-      controlRevoked: 'MCP_CONTROL_REVOKED blocks all AsyncTest Mind calls until approved restoration.',
+      controlRevoked: 'MCP_CONTROL_REVOKED blocks business calls. Control status, session cleanup, and user-authorized restoration requests remain available; desktop approval is required before resuming.',
     },
     compactResponseDefaults: {
       node: ['id', 'text', 'parentId', 'childIds', 'hasChildren'],
@@ -161,7 +169,7 @@ export function getAsyncTestMindAgentBriefing() {
       'Write responses already contain the compact decision summary.',
       'If USER_STOPPED is returned, stop the current operation and do not retry that paused window. Other windows remain available.',
       'Call mind_end_agent_session before finishing when possible; disconnect and idle timeout are automatic fallbacks.',
-      'If MCP_CONTROL_REVOKED is returned, stop every Mind call. Request restoration only after the user explicitly asks, and wait for AsyncTest approval.',
+      'If MCP_CONTROL_REVOKED is returned, stop business calls. Natural-language requests to reconnect or resume Mind control authorize you to request restoration; users never need to type a tool name. Use mind_get_control_status, request restoration when revoked, and guide the user to click 允许恢复 in AsyncTest. Resume only after controlEnabled=true.',
       'When multiple Mind windows are open, call mind_list_windows and pass the intended windowKey to every write tool. Never choose a destructive target from focus alone.',
     ],
     toolTiers: TOOL_TIERS,
@@ -214,7 +222,7 @@ const tools = [
   },
   {
     name: 'mind_get_control_status',
-    description: '[Control] Read the application-wide Agent control state. This is one of the only tools allowed after MCP_CONTROL_REVOKED.',
+    description: '[Control] Read the application-wide Mind control state when the user asks to reconnect or says they approved restoration. Allowed while paused. If controlEnabled=true, continue from the current document; if revoked and the user authorized restoration, call mind_request_control_restore; if restore_requested, guide the user to click 允许恢复 in Mind. Do not call before every normal edit.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     bridgeMethod: 'mind.controlStatus',
   },
@@ -232,7 +240,7 @@ const tools = [
   },
   {
     name: 'mind_request_control_restore',
-    description: '[Control] Call only after MCP_CONTROL_REVOKED and only when the user explicitly asks to restore control. This merely requests restoration; the user must still approve it inside AsyncTest before business tools work again.',
+    description: '[Control] Request restoration when Mind control is revoked and the user clearly asks in ordinary language to reconnect or resume, for example “重新连接思维导图”, “恢复 Agent 连接”, or “刚才我停了，现在接着改吧”. Infer intent from context; do not require keywords, tool names, or another chat confirmation. This sends an approval request to Mind, not an immediate reconnection. When approvalRequired=true, tell the user to click 允许恢复 in the top-right of Mind and return to continue; check mind_get_control_status before resuming. Do not request restoration merely because a previous call was blocked or the user asked about status.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     bridgeMethod: 'mind.requestControlRestore',
   },
@@ -1066,6 +1074,7 @@ const ADVERTISED_TOOL_NAMES = new Set([
   'mind_import_file_subtree',
   'mind_read_file',
   'mind_manage_windows',
+  'mind_get_control_status',
   'mind_end_agent_session',
   'mind_request_control_restore',
 ]);

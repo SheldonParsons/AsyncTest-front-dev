@@ -109,7 +109,7 @@ export function useMindAgentControl(getWindowKey: () => string | null | undefine
     } else if (nextState.status === 'restore_requested' && previousStatus !== 'restore_requested') {
       isCollapsed.value = false;
     } else if (nextState.status === 'revoked' && previousStatus !== 'revoked') {
-      isCollapsed.value = true;
+      isCollapsed.value = false;
     }
   };
 

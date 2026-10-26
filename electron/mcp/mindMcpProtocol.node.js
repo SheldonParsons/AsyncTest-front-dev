@@ -1,9 +1,9 @@
-export const ASYNCTEST_MIND_MCP_VERSION = '0.7.2';
-export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 14;
+export const ASYNCTEST_MIND_MCP_VERSION = '0.7.3';
+export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 15;
 export const ASYNCTEST_MIND_MCP_MIN_COMPATIBLE_CAPABILITY_REVISION = 12;
 export const ASYNCTEST_MIND_MCP_PROTOCOL_REVISION = 2;
 export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
-export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-08-19';
+export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-10-26';
 export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
 
 const ERROR_DEFINITIONS = {
@@ -15,7 +15,7 @@ const ERROR_DEFINITIONS = {
   MCP_CONTROL_REVOKED: {
     recoverable: true,
     retryAllowed: false,
-    suggestedAction: 'Stop all AsyncTest Mind tool calls. Wait until the user explicitly asks to restore control.',
+    suggestedAction: 'Stop business calls. If the user clearly asks to reconnect or resume Mind control in ordinary language, read mind_get_control_status and call mind_request_control_restore when revoked. Guide them to click 允许恢复 in Mind, then check controlEnabled before continuing. Users do not need to type tool names; never restore without their request.',
   },
   REVISION_MISMATCH: {
     recoverable: true,

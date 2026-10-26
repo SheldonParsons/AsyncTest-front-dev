@@ -8,8 +8,8 @@ const latestTransactionByWindow = new Map();
 const MAX_JOURNAL_ENTRIES = 100;
 const POSSIBLY_STALLED_AFTER_MS = 15000;
 
-function userStoppedError(windowKey) {
-  const blocked = blockedWindows.get(windowKey);
+function userStoppedError(windowKey, operation = operationByWindow.get(windowKey)) {
+  const blocked = blockedWindows.get(windowKey) || (operation?.cancelRequested ? operation.stop : null);
   if (blocked?.reason === 'control-exited') {
     const error = createMindControlRevokedError();
     error.stop = blocked;
@@ -88,7 +88,7 @@ export function startMindOperation(operation, { totalCount } = {}) {
 
 export function assertMindOperationActive(operation) {
   if (!operation || operation.cancelRequested || blockedWindows.has(operation.windowKey)) {
-    throw userStoppedError(operation?.windowKey);
+    throw userStoppedError(operation?.windowKey, operation);
   }
 }
 
@@ -183,6 +183,7 @@ export function stopMindOperation(windowKey, reason = 'user') {
     totalCount: operation?.totalCount ?? 0,
     completedCount: operation?.completedCount ?? 0,
   };
+  if (operation) operation.stop = stop;
   blockedWindows.set(windowKey, stop);
   return { ok: true, code: 'USER_STOPPED', ...stop };
 }
@@ -196,6 +197,17 @@ export function resumeMindOperations(windowKey) {
     operation.cancelRequested = false;
   }
   return { ok: true, windowKey, resumed };
+}
+
+export function resumeMindControlStoppedOperations() {
+  const resumedWindowKeys = [];
+  for (const [windowKey, stop] of blockedWindows) {
+    if (stop.reason !== 'control-exited') continue;
+    blockedWindows.delete(windowKey);
+    // 仅恢复新操作的权限，保留旧事务的取消状态与停止原因。
+    resumedWindowKeys.push(windowKey);
+  }
+  return { ok: true, resumedWindowKeys };
 }
 
 export function getMindOperationStatus(windowKey) {
@@ -255,6 +267,16 @@ export function getMindOperationStatus(windowKey) {
       retryAllowed = false;
       suggestedAction = 'The final renderer outcome is uncertain. Read the current document and changed summary before deciding whether a retry is needed.';
     }
+  } else if (status === 'stopping' && !blocked) {
+    health = 'stopping';
+    agentAction = 'wait';
+    retryAllowed = false;
+    suggestedAction = 'Control has been restored. Wait for the interrupted transaction to finish cancelling, then read the current document before continuing.';
+  } else if (status === 'stopped' && !blocked) {
+    health = 'stopped';
+    agentAction = 'verify';
+    retryAllowed = false;
+    suggestedAction = 'Control has been restored, but the interrupted transaction remains cancelled. Read the current document before continuing; do not replay the old write.';
   } else if (['stopping', 'stopped'].includes(status)) {
     health = status;
     agentAction = 'stop';
@@ -289,7 +311,7 @@ export function getMindOperationStatus(windowKey) {
     agentAction,
     suggestedAction,
     recommendedPollAfterMs: inProgress ? 1000 : null,
-    stop: blocked || null,
+    stop: blocked || (operation?.status === 'stopping' ? operation.stop : null) || null,
   };
 }
 

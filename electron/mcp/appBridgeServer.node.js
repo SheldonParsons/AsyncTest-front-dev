@@ -548,7 +548,7 @@ async function commitMindOperations(context, openEntry, operations, params = {})
       preparingOperation,
     });
   } catch (error) {
-    if (preparingOperation?.status === 'preparing') failMindOperation(preparingOperation, error);
+    if (preparingOperation && ['preparing', 'stopping'].includes(preparingOperation.status)) failMindOperation(preparingOperation, error);
     throw error;
   }
 }
@@ -740,7 +740,7 @@ async function handleOpenMindDocumentRequest(context, method, params = {}) {
           preparingOperation,
         });
       } catch (error) {
-        if (preparingOperation?.status === 'preparing') failMindOperation(preparingOperation, error);
+        if (preparingOperation && ['preparing', 'stopping'].includes(preparingOperation.status)) failMindOperation(preparingOperation, error);
         throw error;
       }
     }

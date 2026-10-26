@@ -28,7 +28,7 @@ function emitChange() {
 export function createMindControlRevokedError() {
   return createMindMcpError(
     'MCP_CONTROL_REVOKED',
-    '用户已主动退出 AsyncTest Mind MCP 控制。请立即停止调用 AsyncTest Mind 工具，不要在当前对话中自行恢复。只有用户明确要求恢复后，才可以调用 mind_request_control_restore；该函数仍需用户在 AsyncTest 中确认。'
+    '用户已暂停思维导图的 Agent 控制，读取和编辑操作暂不可用。用户说“重新连接思维导图”“恢复 Agent 连接”或明确允许继续时，由 Agent 查询 mind_get_control_status 并调用 mind_request_control_restore 发起恢复申请，无需用户输入工具名或再次在对话中确认。申请后引导用户在思维导图右上角点击“允许恢复”；确认 controlEnabled=true 后才能继续。尚未获得用户恢复意愿时，不要自行申请。'
   );
 }
 
@@ -144,7 +144,7 @@ export function requestMindAgentControlRestore(clientId) {
   return {
     ok: false,
     approvalRequired: true,
-    message: '已向 AsyncTest 请求恢复 MCP 控制。必须由用户在 AsyncTest 中确认，Agent 不得继续调用其他 Mind 工具。',
+    message: '恢复连接申请已发送。请在思维导图右上角点击“允许恢复”，然后回到 Agent 继续。等待期间可以查询控制状态，确认允许后才能继续读取或编辑。',
     ...emitChange(),
   };
 }

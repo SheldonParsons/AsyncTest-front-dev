@@ -23,6 +23,7 @@ import {
 } from './mcp/appBridgeServer.node.js';
 import {
   getMindOperationStatus,
+  resumeMindControlStoppedOperations,
   resumeMindOperations,
   stopMindOperation,
   updateMindOperationProgressForWindow,
@@ -506,16 +507,9 @@ ipcMain.handle('mind:mcpExitControl', async () => {
 });
 
 ipcMain.handle('mind:mcpApproveControlRestore', async () => {
-  const controlStateBeforeRestore = getMindAgentControlState();
-  const result = approveMindAgentControlRestore();
-  const mindOperationKeys = [...new Set([
-    ...(controlStateBeforeRestore.executingWindowKeys || []),
-    ...(controlStateBeforeRestore.lockedWindowKeys || []),
-  ])];
-  for (const operationKey of mindOperationKeys) {
-    resumeMindOperations(operationKey);
-  }
-  return result;
+  // 退出控制后活动记录已清空，按窗口实际停止原因恢复，避免残留阻止标记。
+  resumeMindControlStoppedOperations();
+  return approveMindAgentControlRestore();
 });
 
 ipcMain.handle('mind:mcpRejectControlRestore', async () => {
