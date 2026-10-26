@@ -6,7 +6,7 @@ import { AMIND_SCHEMA_VERSION } from './constants.js';
 import { guessMimeFromPath } from '../shared/assetService.node.js';
 
 const XMIND_EXT = '.xmind';
-const MAX_XMIND_SHEETS = 3;
+const AMIND_NODE_EXTENSION = 'org.asynctest.mind.node';
 const DEFAULT_ROOT_POS = { x: 200, y: 140 };
 const DEFAULT_LAYOUT = { direction: 'right', hGap: 60, vGap: 18 };
 const EMPTY_THUMBNAIL_PNG_BASE64 =
@@ -68,8 +68,20 @@ function createBaseManifest(title) {
 }
 
 function sanitizeTitle(value, fallback = '主题') {
-    const title = typeof value === 'string' ? value.trim() : '';
-    return title || fallback;
+    return typeof value === 'string' ? value : fallback;
+}
+
+function warn(warnings, code, message, details = {}) {
+    warnings.push({ code, message, ...details });
+}
+
+function plainNotes(notes) {
+    if (typeof notes?.plain?.content === 'string') return notes.plain.content;
+    const paragraphs = notes?.html?.content?.paragraphs;
+    if (Array.isArray(paragraphs)) {
+        return paragraphs.map((paragraph) => (paragraph.spans || []).map((span) => span.text || '').join('')).join('\n');
+    }
+    return '';
 }
 
 function cloneJson(value) {
@@ -313,6 +325,8 @@ function createNodeFromTopic(topic, fallbackTitle = '主题') {
         children: [],
         images: [],
         image: null,
+        ...(topic.notes ? { note: plainNotes(topic.notes) } : {}),
+        ...(topic.branch === 'folded' ? { collapsed: true } : {}),
     };
 }
 
@@ -706,21 +720,21 @@ function toDataUrl(bytes, mime) {
 
 function normalizeResourcePath(src) {
     if (typeof src !== 'string' || !src) return null;
-    if (src.startsWith('xap:')) return src.slice('xap:'.length);
-    return src;
+    const value = src.startsWith('xap:') ? src.slice('xap:'.length) : src;
+    try { return decodeURIComponent(value).replace(/^\/+/, ''); } catch { return value.replace(/^\/+/, ''); }
 }
 
 function createNodeImageFromXmindTopic(topic, resourceBytesMap) {
     const resourcePath = normalizeResourcePath(topic?.image?.src);
     if (!resourcePath) return null;
     const bytes = resourceBytesMap.get(resourcePath);
-    if (!bytes?.length) return null;
+    if (!bytes?.length) throw new Error(`Invalid XMind: missing image resource ${resourcePath}`);
     const mime = guessMimeFromPath(resourcePath) || 'application/octet-stream';
     const dimensions = getImageDimensions(bytes, mime);
     const naturalWidth = Math.max(1, dimensions?.width ?? 320);
     const naturalHeight = Math.max(1, dimensions?.height ?? 180);
-    const initialWidth = Math.min(naturalWidth, 320);
-    const initialHeight = naturalWidth > 0 ? Math.max(1, Math.round(naturalHeight * (initialWidth / naturalWidth))) : naturalHeight;
+    const initialWidth = Number(topic.image.width) > 0 ? Number(topic.image.width) : Math.min(naturalWidth, 320);
+    const initialHeight = Number(topic.image.height) > 0 ? Number(topic.image.height) : Math.max(1, Math.round(naturalHeight * (initialWidth / naturalWidth)));
     return {
         src: toDataUrl(bytes, mime),
         mime,
@@ -731,37 +745,7 @@ function createNodeImageFromXmindTopic(topic, resourceBytesMap) {
     };
 }
 
-function createDefaultBoard(boardIndex, title) {
-    const boardTitle = sanitizeTitle(title, `画板 ${boardIndex + 1}`);
-    const rootNode = createNodeFromTopic(
-        {
-            id: 'root',
-            title: boardTitle,
-        },
-        boardTitle
-    );
-    return {
-        id: `mind-${boardIndex + 1}`,
-        title: boardTitle,
-        roots: [
-            {
-                rootId: rootNode.id,
-                pos: { ...DEFAULT_ROOT_POS },
-                layout: { ...DEFAULT_LAYOUT },
-                rootKind: 'main',
-            },
-        ],
-        nodes: {
-            [rootNode.id]: rootNode,
-        },
-        view: {
-            viewport: {},
-        },
-        xmindMeta: {},
-    };
-}
-
-function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
+function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap, warnings) {
     const rootTopic = sheet?.rootTopic;
     if (!rootTopic || typeof rootTopic !== 'object') {
         throw new Error(`Invalid XMind sheet at index ${boardIndex}: missing rootTopic`);
@@ -772,17 +756,50 @@ function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
 
     const visitTopic = (topic, options = {}) => {
         const node = createNodeFromTopic(topic, options.fallbackTitle ?? '主题');
+        if (nodes[node.id]) throw new Error(`Invalid XMind: duplicate topic id ${node.id}`);
         if (options.isSummary || topic?.class === 'summary') {
             node.nodeKind = 'summary';
         }
         applyXmindMarkersToNode(topic, node);
         node.image = createNodeImageFromXmindTopic(topic, resourceBytesMap);
+        const retained = {};
+        const mappedKeys = new Set(['id', 'title', 'class', 'children', 'summaries', 'markers', 'markerRefs', 'image', 'branch', 'attributedTitle']);
+        for (const [key, value] of Object.entries(topic)) {
+            if (!mappedKeys.has(key) && value != null) retained[key] = cloneJson(value);
+            if (!mappedKeys.has(key) && !['style', 'labels', 'href', 'numbering', 'boundaries', 'structureClass', 'extensions', 'customWidth', 'notes', 'position'].includes(key)) {
+                warn(warnings, 'XMIND_FIELD_RETAINED', `XMind 的 ${key} 已保留在文件中，AsyncTest 暂不提供等价编辑。`, { nodeId: node.id, field: key });
+            }
+        }
+        if (typeof topic.href === 'string' && /^(xap:|attachments\/|resources\/)/.test(topic.href)) throw new Error(`Unsupported XMind attachment on node ${node.id}; conversion stopped to avoid losing its resource`);
+        const extension = topic.extensions?.find((item) => item.provider === AMIND_NODE_EXTENSION)?.content;
+        if (extension?.secrecy && formatSecrecyLabel(extension.secrecy)) node.secrecy = cloneJson(extension.secrecy);
+        if (extension?.metadata) node.metadata = cloneJson(extension.metadata);
+        if (extension?.style) node.style = cloneJson(extension.style);
+        if (Array.isArray(extension?.markers)) node.markers = [...new Set([...(node.markers || []), ...extension.markers])];
+        if (extension?.secrecyLabel && Array.isArray(retained.labels)) retained.labels = retained.labels.filter((label) => label !== extension.secrecyLabel);
+        const unknownMarkers = (topic.markers || topic.markerRefs || []).filter((item) => item.markerId && !mapXmindMarkerIdToAmind(item.markerId));
+        node.xmindMeta = { ...node.xmindMeta, retained, unknownMarkers };
+        for (const key of ['labels', 'href', 'numbering', 'boundaries']) {
+            if (retained[key]?.length || retained[key] && !Array.isArray(retained[key])) warn(warnings, 'XMIND_METADATA_RETAINED', `XMind 的 ${key} 已保留在文件中，AsyncTest 暂不提供等价显示或编辑。`, { nodeId: node.id, field: key });
+        }
+        if (topic.style || topic.structureClass || topic.customWidth) warn(warnings, 'XMIND_LAYOUT_ADAPTED', '样式和布局使用 AsyncTest 的显示方式，原 XMind 设置保留供再次导出。', { nodeId: node.id });
+        if (topic.notes?.html) warn(warnings, 'NOTE_FORMAT_ADAPTED', '备注正文已保留；富文本备注在 AsyncTest 中显示为纯文本。', { nodeId: node.id });
+        if (topic.notes && !topic.notes.plain && !Array.isArray(topic.notes.html?.content?.paragraphs)) throw new Error(`Unsupported notes on node ${node.id}; conversion stopped to avoid losing note text`);
+        if (topic.extensions?.some((item) => item.provider !== AMIND_NODE_EXTENSION)) warn(warnings, 'XMIND_EXTENSION_RETAINED', 'XMind 自定义扩展已保留，AsyncTest 不执行其中的行为。', { nodeId: node.id });
+        if (unknownMarkers.length) warn(warnings, 'XMIND_MARKER_RETAINED', '部分 XMind 标记没有对应图标，原标记已保留供再次导出。', { nodeId: node.id, markers: unknownMarkers.map((item) => item.markerId) });
         nodes[node.id] = node;
         if (typeof topic?.id === 'string' && topic.id) {
             topicIdToNodeId.set(topic.id, node.id);
         }
 
-        const attachedTopics = getTopicChildren(topic);
+        const attachedTopics = [...getTopicChildren(topic)];
+        for (const [kind, children] of Object.entries(topic.children || {})) {
+            if (['attached', 'summary', 'summaries'].includes(kind) || kind === 'detached' && topic === rootTopic) continue;
+            if (Array.isArray(children) && children.length) {
+                attachedTopics.push(...children);
+                warn(warnings, 'TOPIC_STRUCTURE_ADAPTED', `${kind} 主题已作为普通子主题保留，内容和顺序保留，布局可能不同。`, { nodeId: node.id });
+            }
+        }
         node.children = attachedTopics.map((childTopic) => visitTopic(childTopic).id);
 
         const summaryTopics = getTopicSummaryChildren(topic);
@@ -799,7 +816,11 @@ function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
                 return topicId === summaryTopic?.id;
             }) ?? summaryEntries[index] ?? null;
             const range = resolveSummaryRange(matchedEntry, attachedTopics);
-            if (!range) return;
+            if (!range) {
+                node.children.push(summaryNode.id);
+                warn(warnings, 'SUMMARY_RANGE_INVALID', '概要范围无法对应，已作为普通子主题保留。', { nodeId: summaryNode.id });
+                return;
+            }
             summaryMetas.push({
                 id: typeof matchedEntry?.id === 'string' && matchedEntry.id ? matchedEntry.id : randomUUID(),
                 summaryNodeId: summaryNode.id,
@@ -839,6 +860,10 @@ function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
         });
     });
     const relations = extractRelationsFromSheet(sheet, topicIdToNodeId);
+    if (relations.length !== (sheet.relationships || []).length) throw new Error(`Invalid XMind relationships in sheet ${boardIndex}: unresolved or duplicate endpoints`);
+    for (const key of Object.keys(sheet)) {
+        if (!['id', 'title', 'class', 'revisionId', 'rootTopic', 'relationships', 'floatingTopics', 'topicPositioning', 'topicOverlapping', 'zones', 'extensions', 'theme'].includes(key)) warn(warnings, 'XMIND_SHEET_FIELD_UNMAPPED', `画板字段 ${key} 暂不转换。`, { boardId, field: key });
+    }
 
     return {
         id: boardId,
@@ -873,18 +898,29 @@ function buildBoardFromSheet(sheet, boardIndex, resourceBytesMap) {
 
 function extractNodePlainText(node, fallback = '主题') {
     if (!node || typeof node !== 'object') return fallback;
-    if (typeof node.title === 'string' && node.title.trim()) return node.title.trim();
-    if (typeof node.text === 'string' && node.text.trim()) return node.text.trim();
-    if (node.text && typeof node.text === 'object' && typeof node.text.plain === 'string' && node.text.plain.trim()) {
-        return node.text.plain.trim();
+    if (typeof node.title === 'string') return node.title;
+    if (typeof node.text === 'string') return node.text;
+    if (node.text && typeof node.text === 'object' && typeof node.text.plain === 'string') {
+        return node.text.plain;
     }
-    if (typeof node.textPlain === 'string' && node.textPlain.trim()) return node.textPlain.trim();
+    if (typeof node.textPlain === 'string') return node.textPlain;
     return fallback;
 }
 
 function normalizeNodeRichText(node, fallbackTitle = '主题') {
     const richText = node?.richText;
     if (richText?.blocks?.length) return richText;
+    if (Array.isArray(node?.textLexical?.root?.children)) {
+        const visit = (item) => {
+            if (item.type === 'linebreak') return [{ text: '\n' }];
+            if (typeof item.text === 'string') {
+                const format = typeof item.format === 'number' ? item.format : 0;
+                return [{ text: item.text, marks: { bold: !!(format & 1), italic: !!(format & 2), strike: !!(format & 4), underline: !!(format & 8) } }];
+            }
+            return (item.children || []).flatMap(visit);
+        };
+        return { blocks: node.textLexical.root.children.map((block) => ({ align: block.format || 'left', inlines: visit(block) })) };
+    }
     return {
         blocks: [
             {
@@ -930,7 +966,7 @@ function buildXmindTextPayload(node, fallbackTitle = '主题') {
         segment['fo:font-weight'] || segment['fo:font-style'] || segment['fo:text-decoration']
     );
     if (!hasMarks) {
-        return { title: title || fallbackTitle };
+        return { title };
     }
     const nonEmptySegments = flattened.filter((segment) => segment.text !== '');
     const styleSegments = nonEmptySegments.length ? nonEmptySegments : [{ text: title || fallbackTitle }];
@@ -960,7 +996,7 @@ function buildXmindTextPayload(node, fallbackTitle = '主题') {
         });
     if (hasUniformMarks && Object.keys(topicStyle).length) {
         return {
-            title: title || fallbackTitle,
+            title,
             style: {
                 id: randomUUID(),
                 properties: topicStyle,
@@ -968,7 +1004,7 @@ function buildXmindTextPayload(node, fallbackTitle = '主题') {
         };
     }
     return {
-        title: title || fallbackTitle,
+        title,
         attributedTitle: flattened,
         style: Object.keys(topicStyle).length
             ? {
@@ -1001,13 +1037,18 @@ function mimeToExtension(mime) {
 function attachNodeImageToTopic(topic, node, resourceEntries) {
     const imageSrc = typeof node?.image?.src === 'string' ? node.image.src : '';
     const parsed = parseDataUrl(imageSrc);
-    if (!parsed?.bytes?.length) return;
+    if (!parsed?.bytes?.length) {
+        if (node?.image) throw new Error(`Invalid image on node ${node.id}: image must be embedded before XMind export`);
+        return;
+    }
     const extension = mimeToExtension(parsed.mime);
     const fileName = `${randomUUID().replace(/-/g, '')}.${extension}`;
     const resourcePath = `resources/${fileName}`;
     resourceEntries.push({ path: resourcePath, bytes: parsed.bytes });
     topic.image = {
         src: `xap:${resourcePath}`,
+        ...(Number(node.image.width ?? node.image.w) > 0 ? { width: Number(node.image.width ?? node.image.w) } : {}),
+        ...(Number(node.image.height ?? node.image.h) > 0 ? { height: Number(node.image.height ?? node.image.h) } : {}),
     };
 }
 
@@ -1058,32 +1099,6 @@ function buildXmindRelationships(board, nodeIdMap) {
         .filter(Boolean);
 }
 
-function buildExportSecrecyFloatingTopics(board) {
-    const roots = Array.isArray(board?.roots) ? board.roots : [];
-    return roots
-        .map((root, index) => {
-            const rootNode = board?.nodes?.[root?.rootId];
-            const label = formatSecrecyLabel(rootNode?.secrecy);
-            if (!label) return null;
-            const basePos = root?.pos && typeof root.pos === 'object'
-                ? {
-                    x: toFiniteNumber(root.pos.x) ?? DEFAULT_ROOT_POS.x,
-                    y: toFiniteNumber(root.pos.y) ?? DEFAULT_ROOT_POS.y,
-                }
-                : DEFAULT_ROOT_POS;
-            return {
-                id: randomUUID(),
-                class: 'topic',
-                title: label,
-                position: {
-                    x: basePos.x,
-                    y: basePos.y - 120 - index * 20,
-                },
-            };
-        })
-        .filter(Boolean);
-}
-
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isValidUuid(value) {
@@ -1118,9 +1133,36 @@ function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEnt
     const node = nodes?.[nodeId];
     const textPayload = buildXmindTextPayload(node, fallbackTitle);
     const topic = {
+        ...cloneJson(node?.xmindMeta?.retained || {}),
         id: toXmindTopicId(nodeId, nodeIdMap),
         title: textPayload.title,
     };
+    for (const key of ['structureClass', 'customWidth', 'position']) {
+        if (topic[key] == null) delete topic[key];
+    }
+    const note = node?.note ?? node?.notes ?? node?.remark;
+    if (typeof note === 'string') {
+        // 编辑过纯文本后不能把旧富文本备注重新带回。
+        topic.notes = plainNotes(topic.notes) === note && topic.notes ? topic.notes : { plain: { content: note } };
+    } else if (note != null) {
+        throw new Error(`Invalid note on node ${nodeId}: expected plain text`);
+    }
+    if (node?.collapsed) topic.branch = 'folded';
+    else delete topic.branch;
+    const extension = {};
+    if (node?.metadata) extension.metadata = cloneJson(node.metadata);
+    if (node?.style) extension.style = cloneJson(node.style);
+    const secrecyLabel = formatSecrecyLabel(node?.secrecy);
+    if (secrecyLabel) {
+        extension.secrecy = cloneJson(node.secrecy);
+        extension.secrecyLabel = secrecyLabel;
+        topic.labels = [...new Set([...(Array.isArray(topic.labels) ? topic.labels : []), secrecyLabel])];
+    }
+    const unmappedMarkers = (node?.markers || []).filter((key) => !mapAmindMarkerKeyToXmind(key));
+    if (unmappedMarkers.length) extension.markers = unmappedMarkers;
+    topic.extensions = (topic.extensions || []).filter((item) => item.provider !== AMIND_NODE_EXTENSION);
+    if (Object.keys(extension).length) topic.extensions.push({ provider: AMIND_NODE_EXTENSION, content: extension });
+    if (!topic.extensions.length) delete topic.extensions;
     if (typeof options.className === 'string' && options.className) {
         topic.class = options.className;
     } else if (options.forceTopicClass === true) {
@@ -1133,7 +1175,7 @@ function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEnt
         };
     }
     if (textPayload.attributedTitle?.length) topic.attributedTitle = textPayload.attributedTitle;
-    if (textPayload.style) topic.style = textPayload.style;
+    if (textPayload.style) topic.style = { ...topic.style, ...textPayload.style, properties: { ...topic.style?.properties, ...textPayload.style.properties } };
     const markerIdsByKey =
         node?.xmindMeta?.markerIdsByKey && typeof node.xmindMeta.markerIdsByKey === 'object'
             ? node.xmindMeta.markerIdsByKey
@@ -1149,6 +1191,7 @@ function buildTopicFromNode(nodes, nodeId, fallbackTitle = '主题', resourceEnt
             .filter(Boolean)
             .map((markerId) => ({ markerId }))
         : [];
+    markerRefs.push(...(node?.xmindMeta?.unknownMarkers || []));
     if (markerRefs.length) topic.markers = markerRefs;
     attachNodeImageToTopic(topic, node, resourceEntries);
 
@@ -1235,8 +1278,7 @@ function buildSheetFromBoard(board, index, resourceEntries) {
             nodeIdMap,
             { position: getTopicPosition(root, root?.pos ?? DEFAULT_ROOT_POS) }
         ));
-    const secrecyTopics = buildExportSecrecyFloatingTopics(board);
-    const allDetachedTopics = [...detachedTopics, ...secrecyTopics];
+    const allDetachedTopics = detachedTopics;
     if (allDetachedTopics.length) {
         rootTopic.children = rootTopic.children && typeof rootTopic.children === 'object' ? rootTopic.children : {};
         rootTopic.children.detached = allDetachedTopics;
@@ -1249,6 +1291,7 @@ function buildSheetFromBoard(board, index, resourceEntries) {
         title: sanitizeTitle(board?.title, `画板 ${index + 1}`),
         rootTopic,
         relationships,
+        ...(Array.isArray(sheetMeta.zones) ? { zones: cloneJson(sheetMeta.zones) } : {}),
         topicPositioning: typeof sheetMeta.topicPositioning === 'string' && sheetMeta.topicPositioning
             ? sheetMeta.topicPositioning
             : 'fixed',
@@ -1270,16 +1313,40 @@ function buildSheetFromBoard(board, index, resourceEntries) {
 }
 
 function buildCompatibilityContentXml(sheets) {
-    const timestamp = Date.now();
-    const xmlSheets = sheets.map((sheet, index) => {
-        const sheetId = typeof sheet?.id === 'string' && sheet.id ? sheet.id : `sheet-${index + 1}`;
-        const themeId = `theme-${randomUUID().replace(/-/g, '')}`;
-        const topicId = `compat-${randomUUID().replace(/-/g, '')}`;
-        const noticeId = `notice-${randomUUID().replace(/-/g, '')}`;
-        const title = escapeXml(sanitizeTitle(sheet?.title, `Sheet ${index + 1}`));
-        return `<sheet id="${escapeXml(sheetId)}" modified-by="AsyncTest Mind" theme="${themeId}" timestamp="${timestamp}"><topic id="${topicId}" modified-by="AsyncTest Mind" structure-class="org.xmind.ui.logic.right" timestamp="${timestamp}"><title>Compatibility Notice</title><children><topics type="attached"><topic id="${noticeId}" modified-by="AsyncTest Mind" timestamp="${timestamp}"><title>This workbook is intended for XMind apps that support content.json.</title></topic></topics></children></topic><title>${title}</title></sheet>`;
+    const attrs = (entries) => Object.entries(entries).filter(([, value]) => value != null)
+        .map(([key, value]) => ` ${key}="${escapeXml(value)}"`).join('');
+    const topicXml = (topic) => {
+        const children = Object.entries(topic.children || {}).map(([kind, topics]) =>
+            `<topics type="${escapeXml(kind)}">${topics.map(topicXml).join('')}</topics>`).join('');
+        const markers = (topic.markers || []).map((marker) => `<marker-ref marker-id="${escapeXml(marker.markerId)}"/>`).join('');
+        const labels = (Array.isArray(topic.labels) ? topic.labels : []).map((label) => `<label>${escapeXml(label)}</label>`).join('');
+        const summaries = (topic.summaries || []).map((item) => `<summary${attrs({ id: item.id, 'topic-id': item.topicId, range: item.range })}/>`).join('');
+        const extensions = (topic.extensions || []).map((item) => `<extension provider="${escapeXml(item.provider)}"><content>${escapeXml(JSON.stringify(item.content))}</content></extension>`).join('');
+        return `<topic${attrs({ id: topic.id, branch: topic.branch, 'structure-class': topic.structureClass, 'xlink:href': topic.href })}>` +
+            `<title>${escapeXml(topic.title)}</title>` +
+            (topic.position ? `<position svg:x="${escapeXml(topic.position.x)}" svg:y="${escapeXml(topic.position.y)}"/>` : '') +
+            (topic.notes ? `<notes><plain>${escapeXml(plainNotes(topic.notes))}</plain></notes>` : '') +
+            (markers ? `<marker-refs>${markers}</marker-refs>` : '') +
+            (labels ? `<labels>${labels}</labels>` : '') +
+            (topic.image ? `<xhtml:img${attrs({ 'xhtml:src': topic.image.src, 'svg:width': topic.image.width, 'svg:height': topic.image.height })}/>` : '') +
+            (summaries ? `<summaries>${summaries}</summaries>` : '') +
+            (extensions ? `<extensions>${extensions}</extensions>` : '') +
+            (children ? `<children>${children}</children>` : '') + '</topic>';
+    };
+    const xmlSheets = sheets.map((sheet) => {
+        const relationships = (sheet.relationships || []).map((item) =>
+            `<relationship${attrs({ id: item.id, end1: item.end1Id, end2: item.end2Id })}><title>${escapeXml(item.title || '')}</title></relationship>`).join('');
+        return `<sheet id="${escapeXml(sheet.id)}"><title>${escapeXml(sheet.title)}</title>${topicXml(sheet.rootTopic)}` +
+            (relationships ? `<relationships>${relationships}</relationships>` : '') + '</sheet>';
     }).join('');
-    return `<?xml version="1.0" encoding="UTF-8" standalone="no"?><xmap-content xmlns="urn:xmind:xmap:xmlns:content:2.0" xmlns:fo="http://www.w3.org/1999/XSL/Format" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xlink="http://www.w3.org/1999/xlink" modified-by="AsyncTest Mind" timestamp="${timestamp}" version="2.0">${xmlSheets}</xmap-content>`;
+    return `<?xml version="1.0" encoding="UTF-8"?><xmap-content xmlns="urn:xmind:xmap:xmlns:content:2.0" xmlns:fo="http://www.w3.org/1999/XSL/Format" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xlink="http://www.w3.org/1999/xlink" version="2.0">${xmlSheets}</xmap-content>`;
+}
+
+function decodeXml(value) {
+    return value.replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, (_, token) => {
+        if (token[0] === '#') return String.fromCodePoint(parseInt(token.slice(token[1].toLowerCase() === 'x' ? 2 : 1), token[1].toLowerCase() === 'x' ? 16 : 10));
+        return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[token];
+    });
 }
 
 // ── Legacy XMind 8 XML parser ──────────────────────────────────────────────
@@ -1288,61 +1355,51 @@ function buildCompatibilityContentXml(sheets) {
 // the import pipeline works unchanged.
 
 function parseXmindLegacyXml(xmlString) {
-    // Minimal streaming XML parser – no external dependency needed.
-    // We only need to extract the tree of <sheet> → <topic> with their
-    // attributes, <title> text, <marker-ref> markers, and <children>/<topics>.
-
-    const SELF_CLOSING = /<([a-zA-Z][\w:-]*)((?:\s+[^>]*?)?)\/>/g;
-    const normalized = xmlString.replace(SELF_CLOSING, '<$1$2></$1>');
-
-    // Simple DOM-like parse using regex (sufficient for well-formed XMind XML)
-    const tagRe = /<\/?([a-zA-Z][\w:-]*)([^>]*)>/g;
-    const attrRe = /([\w:-]+)\s*=\s*"([^"]*)"/g;
-
+    // 只解析文件内 XML；不解析 DTD 或外部实体。保留空白、实体、CDATA，拒绝未闭合内容。
+    const tokens = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[[\s\S]*?\]\]>|<\/?[\w:-]+(?:\s+[^<>]*?)?\s*\/?>|[^<]+/gy;
     const stack = [];
     let root = null;
-    let textBuf = '';
-    let lastIndex = 0;
-
-    let m;
-    while ((m = tagRe.exec(normalized)) !== null) {
-        const rawText = normalized.slice(lastIndex, m.index);
-        lastIndex = m.index + m[0].length;
-
-        if (stack.length > 0 && rawText.trim()) {
-            textBuf += rawText;
+    let offset = 0;
+    let match;
+    while ((match = tokens.exec(xmlString)) !== null) {
+        const token = match[0];
+        offset = tokens.lastIndex;
+        if (token.startsWith('<?') || token.startsWith('<!--')) continue;
+        if (token.startsWith('<![CDATA[') || !token.startsWith('<')) {
+            const text = token.startsWith('<![CDATA[') ? token.slice(9, -3) : decodeXml(token);
+            if (stack.length) stack.at(-1).text += text;
+            else if (text.trim()) throw new Error('Invalid XMind XML text outside root');
+            continue;
         }
-
-        const isClose = m[0][1] === '/';
-        const tagName = m[1];
-        const attrStr = m[2];
-
-        if (isClose) {
+        const tagName = token.match(/^<\/?([\w:-]+)/)?.[1];
+        if (token.startsWith('</')) {
             const node = stack.pop();
-            if (!node) continue;
-            if (textBuf.trim()) {
-                node.text = textBuf.trim();
-            }
-            textBuf = '';
-            if (stack.length > 0) {
-                const parent = stack[stack.length - 1];
-                if (!parent.childNodes) parent.childNodes = [];
-                parent.childNodes.push(node);
-            } else {
-                root = node;
-            }
-        } else {
-            const attrs = {};
-            let am;
-            while ((am = attrRe.exec(attrStr)) !== null) {
-                attrs[am[1]] = am[2];
-            }
-            stack.push({ tag: tagName, attrs, childNodes: [], text: '' });
-            textBuf = '';
+            if (!node || node.tag !== tagName) throw new Error('Invalid XMind XML closing tag');
+            if (stack.length) stack.at(-1).childNodes.push(node);
+            else if (root) throw new Error('Invalid XMind XML: multiple roots');
+            else root = node;
+            continue;
         }
+        const attributes = {};
+        const attrText = token.slice(tagName.length + 1).replace(/\/?\s*>$/, '');
+        const attrRe = /\s+([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/gy;
+        let end = 0;
+        let attr;
+        while ((attr = attrRe.exec(attrText))) {
+            attributes[attr[1]] = decodeXml(attr[2] ?? attr[3]);
+            end = attrRe.lastIndex;
+        }
+        if (attrText.slice(end).trim()) throw new Error('Invalid XMind XML attributes');
+        const node = { tag: tagName, attrs: attributes, childNodes: [], text: '' };
+        if (token.endsWith('/>')) {
+            if (stack.length) stack.at(-1).childNodes.push(node);
+            else if (root) throw new Error('Invalid XMind XML: multiple roots');
+            else root = node;
+        } else stack.push(node);
     }
-
-    if (!root) throw new Error('Invalid XMind legacy XML: could not parse root element');
+    if (offset !== xmlString.length || stack.length || !root || root.tag !== 'xmap-content') {
+        throw new Error('Invalid XMind legacy XML: malformed or unsupported XML');
+    }
 
     // Helper to find child elements by tag
     function findChildren(node, tag) {
@@ -1396,8 +1453,10 @@ function parseXmindLegacyXml(xmlString) {
         const notesNode = findChild(xmlTopic, 'notes');
         if (notesNode) {
             const plainNode = findChild(notesNode, 'plain');
-            if (plainNode?.text) {
+            if (plainNode) {
                 topic.notes = { plain: { content: plainNode.text } };
+            } else if (notesNode.childNodes.length) {
+                throw new Error('Unsupported legacy rich-text-only note; conversion stopped to avoid losing note content');
             }
         }
 
@@ -1421,6 +1480,18 @@ function parseXmindLegacyXml(xmlString) {
             if (xmlTopic.attrs['svg:x']) topic.position.x = parseInt(xmlTopic.attrs['svg:x'], 10);
             if (xmlTopic.attrs['svg:y']) topic.position.y = parseInt(xmlTopic.attrs['svg:y'], 10);
         }
+
+        const positionNode = findChild(xmlTopic, 'position');
+        if (positionNode) topic.position = { x: Number(positionNode.attrs['svg:x']) || 0, y: Number(positionNode.attrs['svg:y']) || 0 };
+        const summaryNode = findChild(xmlTopic, 'summaries');
+        if (summaryNode) topic.summaries = findChildren(summaryNode, 'summary').map((item) => ({ id: item.attrs.id, topicId: item.attrs['topic-id'], range: item.attrs.range }));
+        const extensionsNode = findChild(xmlTopic, 'extensions');
+        if (extensionsNode) topic.extensions = findChildren(extensionsNode, 'extension').map((item) => {
+            const raw = findChild(item, 'content')?.text || '';
+            let content = raw;
+            try { content = JSON.parse(raw); } catch { /* 第三方扩展不一定使用 JSON。 */ }
+            return { provider: item.attrs.provider, content };
+        });
 
         // children
         const childrenNode = findChild(xmlTopic, 'children');
@@ -1480,6 +1551,11 @@ function parseXmindLegacyXml(xmlString) {
 export async function readXmindWorkbook(filePath) {
     const abs = path.resolve(filePath);
     const buf = await fs.readFile(abs);
+    return readXmindWorkbookBuffer(buf, abs);
+}
+
+export async function readXmindWorkbookBuffer(buf, sourcePath = 'document.xmind') {
+    const abs = path.resolve(sourcePath);
     const zip = await JSZip.loadAsync(buf);
 
     // Try new format first (content.json), then legacy XML (content.xml)
@@ -1498,13 +1574,17 @@ export async function readXmindWorkbook(filePath) {
     if (!Array.isArray(workbook) || !workbook.length) {
         throw new Error('Invalid .xmind: workbook is empty');
     }
+    const warnings = [];
+    if (!contentJsonRaw) warn(warnings, 'LEGACY_XML_PRESENTATION', '已读取旧版 XMind 的正文、备注、标记、图片和主题关系；旧版样式表及富文本样式暂不还原。');
     const resourceBytesMap = new Map();
     for (const [name, entry] of Object.entries(zip.files)) {
         if (entry.dir) continue;
-        if (!name.startsWith('resources/')) continue;
+        if (!name.startsWith('resources/') && !name.startsWith('attachments/')) continue;
         resourceBytesMap.set(name, await entry.async('uint8array'));
     }
-    return { path: abs, workbook, resourceBytesMap };
+    const metadataRaw = await zip.file('metadata.json')?.async('string');
+    const activeSheetId = metadataRaw ? JSON.parse(metadataRaw).activeSheetId : null;
+    return { path: abs, workbook, resourceBytesMap, warnings, activeSheetId };
 }
 
 export function convertXmindWorkbookToAmindDoc(workbook, options = {}) {
@@ -1512,13 +1592,8 @@ export function convertXmindWorkbookToAmindDoc(workbook, options = {}) {
         throw new Error('Cannot import XMind: workbook is empty');
     }
     const resourceBytesMap = options.resourceBytesMap instanceof Map ? options.resourceBytesMap : new Map();
-    const importedBoards = workbook
-        .slice(0, MAX_XMIND_SHEETS)
-        .map((sheet, index) => buildBoardFromSheet(sheet, index, resourceBytesMap));
-    const boards = [...importedBoards];
-    while (boards.length < MAX_XMIND_SHEETS) {
-        boards.push(createDefaultBoard(boards.length, `画板 ${boards.length + 1}`));
-    }
+    const warnings = options.warnings || [];
+    const boards = workbook.map((sheet, index) => buildBoardFromSheet(sheet, index, resourceBytesMap, warnings));
     const order = boards.map((board) => board.id);
     const manifestTitle = sanitizeTitle(
         options.title,
@@ -1528,7 +1603,7 @@ export function convertXmindWorkbookToAmindDoc(workbook, options = {}) {
         manifest: createBaseManifest(manifestTitle),
         mind: {
             version: 1,
-            activeMindId: order[0],
+            activeMindId: order[workbook.findIndex((sheet) => sheet.id === options.activeSheetId)] || order[0],
             order,
             minds: Object.fromEntries(boards.map((board) => [board.id, board])),
         },
@@ -1536,38 +1611,71 @@ export function convertXmindWorkbookToAmindDoc(workbook, options = {}) {
 }
 
 export async function readXmindAsAmindDoc(filePath) {
-    const { path: abs, workbook, resourceBytesMap } = await readXmindWorkbook(filePath);
+    const { path: abs, workbook, resourceBytesMap, warnings = [], activeSheetId } = await readXmindWorkbook(filePath);
     const titleFromPath = path.basename(abs, XMIND_EXT);
     return {
         path: abs,
+        warnings,
         doc: convertXmindWorkbookToAmindDoc(workbook, {
             title: titleFromPath,
             sourcePath: abs,
             resourceBytesMap,
+            warnings,
+            activeSheetId,
         }),
     };
 }
 
-export function convertAmindDocToXmindWorkbook(doc) {
+export function convertAmindDocToXmindWorkbook(doc, { warnings = [] } = {}) {
     const order = Array.isArray(doc?.mind?.order) ? doc.mind.order : [];
     const minds = doc?.mind?.minds && typeof doc.mind.minds === 'object' ? doc.mind.minds : {};
     const resourceEntries = [];
+    if (new Set(order).size !== order.length || Object.keys(minds).some((id) => !order.includes(id))) throw new Error('Invalid board order: duplicate or omitted boards');
+    for (const boardId of order) {
+        const board = minds[boardId];
+        if (!board?.nodes || !board.roots?.length) throw new Error(`Invalid board ${boardId}`);
+        const seen = new Set();
+        const visit = (id) => {
+            if (seen.has(id) || !board.nodes[id]) throw new Error(`Invalid tree reference: ${boardId}/${id}`);
+            seen.add(id);
+            const node = board.nodes[id];
+            for (const child of node.children || []) visit(child);
+            for (const summary of node.summaries || []) {
+                if (!Number.isInteger(summary.startIndex) || !Number.isInteger(summary.endIndex) || summary.startIndex < 0 || summary.endIndex < summary.startIndex || summary.endIndex >= (node.children || []).length) throw new Error(`Invalid summary range: ${boardId}/${id}`);
+                visit(summary.summaryNodeId);
+            }
+            if (node.secrecy) warn(warnings, 'SECRECY_AS_LABEL', '密级以 XMind 标签显示，同时保留结构信息供回转。', { boardId, nodeId: id });
+            if (node.style || node.metadata) warn(warnings, 'AMIND_PRESENTATION_EXTENSION', '节点自定义样式或 metadata 已保存在扩展中，XMind 使用自身的显示方式。', { boardId, nodeId: id });
+            if (!node.richText && node.textLexical) warn(warnings, 'LEXICAL_FORMAT_ADAPTED', '已读取节点编辑器正文和常见文字标记，部分编辑器排版可能不同。', { boardId, nodeId: id });
+            if (node.richText?.blocks?.some((block) => block.align && block.align !== 'left' || block.inlines?.some((inline) => Object.keys(inline.marks || {}).some((key) => !['bold', 'italic', 'strike', 'underline'].includes(key))))) warn(warnings, 'RICH_TEXT_STYLE_ADAPTED', '正文和粗体、斜体、下划线、删除线保留；段落对齐及部分字体、颜色可能不同。', { boardId, nodeId: id });
+            if ((node.markers || []).some((key) => !mapAmindMarkerKeyToXmind(key))) warn(warnings, 'AMIND_MARKER_EXTENSION', '部分标记在 XMind 中没有对应图标，已保存在扩展中供回转。', { boardId, nodeId: id });
+            if (node.images?.length) throw new Error(`Unsupported multiple/legacy images on node ${id}; conversion stopped to avoid losing images`);
+            for (const key of Object.keys(node)) {
+                if (!['id', 'text', 'title', 'textPlain', 'richText', 'textLexical', 'children', 'images', 'image', 'note', 'notes', 'remark', 'markers', 'collapsed', 'secrecy', 'nodeKind', 'summaries', 'style', 'metadata', 'xmindMeta'].includes(key)) warn(warnings, 'AMIND_FIELD_UNMAPPED', `节点字段 ${key} 暂不转换。`, { boardId, nodeId: id, field: key });
+            }
+        };
+        board.roots.forEach((root) => visit(root.rootId));
+        const orphanIds = Object.keys(board.nodes).filter((id) => !seen.has(id));
+        if (orphanIds.length) throw new Error(`Invalid board ${boardId}: ${orphanIds.length} unreachable nodes; conversion stopped to avoid data loss`);
+        if (!board.xmindMeta) warn(warnings, 'LAYOUT_ADAPTED', '画板使用 XMind 布局，字体、主题和自由定位可能与 AsyncTest 不同。', { boardId });
+        if ((board.relations || []).some((relation) => !board.nodes[relation.fromNodeId] || !board.nodes[relation.toNodeId] || relation.fromNodeId === relation.toNodeId)) throw new Error(`Invalid relationship in board ${boardId}`);
+    }
     const sheets = order
         .map((boardId) => minds?.[boardId])
         .filter(Boolean)
-        .slice(0, MAX_XMIND_SHEETS)
         .map((board, index) => buildSheetFromBoard(board, index, resourceEntries));
     if (!sheets.length) {
         throw new Error('Cannot export XMind: no boards found');
     }
-    return { sheets, resourceEntries };
+    return { sheets, resourceEntries, warnings };
 }
 
-export async function buildXmindBuffer(doc, thumbnailBuffer = null) {
-    const { sheets, resourceEntries } = convertAmindDocToXmindWorkbook(doc);
+export async function buildXmindBuffer(doc, thumbnailBuffer = null, options = {}) {
+    const { sheets, resourceEntries } = convertAmindDocToXmindWorkbook(doc, options);
     const zip = new JSZip();
     const thumbnailPath = 'Thumbnails/thumbnail.png';
-    const activeSheetId = typeof sheets?.[0]?.id === 'string' && sheets[0].id ? sheets[0].id : randomUUID();
+    const activeIndex = doc.mind.order.indexOf(doc.mind.activeMindId);
+    const activeSheetId = sheets[Math.max(0, activeIndex)].id;
     zip.file('content.json', JSON.stringify(sheets, null, 2), { compression: 'STORE' });
     zip.file('content.xml', buildCompatibilityContentXml(sheets), { compression: 'STORE' });
     zip.file('metadata.json', JSON.stringify({
@@ -1582,11 +1690,15 @@ export async function buildXmindBuffer(doc, thumbnailBuffer = null) {
     zip.file('manifest.json', JSON.stringify({
         'file-entries': {
             'content.json': {},
+            'content.xml': {},
             'metadata.json': {},
             [thumbnailPath]: {},
             ...Object.fromEntries(resourceEntries.map((entry) => [entry.path, {}])),
         },
     }, null, 2), { compression: 'STORE' });
+    const xmlEntries = ['content.xml', 'meta.xml', thumbnailPath, ...resourceEntries.map((entry) => entry.path)];
+    zip.file('META-INF/manifest.xml', `<?xml version="1.0" encoding="UTF-8"?><manifest xmlns="urn:xmind:xmap:xmlns:manifest:1.0">${xmlEntries.map((name) => `<file-entry full-path="${escapeXml(name)}"/>`).join('')}</manifest>`);
+    zip.file('meta.xml', '<?xml version="1.0" encoding="UTF-8"?><meta xmlns="urn:xmind:xmap:xmlns:meta:2.0"><Creator><Name>AsyncTest Mind</Name></Creator></meta>');
     const thumbBytes = thumbnailBuffer ?? Buffer.from(EMPTY_THUMBNAIL_PNG_BASE64, 'base64');
     zip.file(thumbnailPath, thumbBytes, { compression: 'STORE' });
     for (const entry of resourceEntries) {

@@ -2,8 +2,8 @@ export function createDocStore() {
   // docId -> { doc, filePath, windowKey }
   const map = new Map();
 
-  function create(docId, { doc, filePath = null, windowKey = null }) {
-    map.set(docId, { doc, filePath, windowKey });
+  function create(docId, { doc, filePath = null, windowKey = null, importedFrom = null }) {
+    map.set(docId, { doc, filePath, windowKey, importedFrom });
     return map.get(docId);
   }
 

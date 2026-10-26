@@ -434,7 +434,7 @@ export async function readAmindAsset(filePath, { assetId, ext }) {
  * @param doc {manifest, mind}
  * @param assetsToWrite [{assetId, ext, bytes}]
  */
-export async function buildAmindBuffer(filePath, doc, { assetsToWrite = [] } = {}) {
+export async function buildAmindBuffer(filePath, doc, { assetsToWrite = [], preserveExisting = true } = {}) {
     validateDoc(doc);
 
     const abs = path.resolve(ensureAmindExt(filePath));
@@ -446,8 +446,10 @@ export async function buildAmindBuffer(filePath, doc, { assetsToWrite = [] } = {
     // 1) 复制旧 zip 的所有条目（保留旧 assets、以及未来可能有的其它文件）
     let oldZip = null;
     try {
-        const oldBuf = await fs.readFile(abs);
-        oldZip = await JSZip.loadAsync(oldBuf);
+        if (preserveExisting) {
+            const oldBuf = await fs.readFile(abs);
+            oldZip = await JSZip.loadAsync(oldBuf);
+        }
     } catch {
         // 新文件，忽略
     }

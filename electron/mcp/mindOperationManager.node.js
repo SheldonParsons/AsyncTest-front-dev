@@ -28,6 +28,12 @@ function trimJournal() {
   while (journalByTransaction.size > MAX_JOURNAL_ENTRIES) {
     const oldest = journalByTransaction.keys().next().value;
     journalByTransaction.delete(oldest);
+    for (const [key, operation] of operationByWindow) {
+      if (operation.kind === 'file-conversion' && operation.transactionId === oldest && !['preparing', 'running', 'stopping'].includes(operation.status)) {
+        operationByWindow.delete(key);
+        latestTransactionByWindow.delete(key);
+      }
+    }
   }
 }
 
@@ -42,7 +48,7 @@ function compactChangedCounts(changed) {
   };
 }
 
-export function beginMindOperation({ windowKey, transactionId, clientId, totalCount = 0, status = 'running' }) {
+export function beginMindOperation({ windowKey, transactionId, clientId, totalCount = 0, status = 'running', kind = 'window', filePaths = null }) {
   if (blockedWindows.has(windowKey)) throw userStoppedError(windowKey);
   const current = operationByWindow.get(windowKey);
   if (['preparing', 'running', 'stopping'].includes(current?.status)) {
@@ -73,6 +79,8 @@ export function beginMindOperation({ windowKey, transactionId, clientId, totalCo
     lastProgressAt: startedAt,
     finishedAt: null,
     cancelRequested: false,
+    kind,
+    filePaths,
   };
   operationByWindow.set(windowKey, operation);
   return operation;
@@ -98,6 +106,7 @@ export function updateMindOperationProgress(operation, progress = {}) {
     completedCount: progress.completedCount ?? operation.completedCount,
     currentNodeId: progress.currentNodeId ?? operation.currentNodeId,
     lastProgressAt: new Date().toISOString(),
+    phase: progress.phase ?? operation.phase,
   });
 }
 
@@ -117,7 +126,10 @@ export function completeMindOperation(operation, result = {}) {
   operation.finishedAt = new Date().toISOString();
   operation.lastProgressAt = operation.finishedAt;
   operation.retryAllowed = false;
-  operation.suggestedAction = 'The transaction completed. Continue from the returned revision; do not repeat the same write.';
+  if (operation.kind === 'file-conversion') operation.result = result;
+  operation.suggestedAction = operation.kind === 'file-conversion'
+    ? 'The conversion completed. Use the returned output file and review warnings; do not repeat the conversion.'
+    : 'The transaction completed. Continue from the returned revision; do not repeat the same write.';
   const journal = {
     transactionId: operation.transactionId,
     windowKey: operation.windowKey,
@@ -130,6 +142,7 @@ export function completeMindOperation(operation, result = {}) {
     finishedAt: operation.finishedAt,
   };
   journalByTransaction.set(operation.transactionId, journal);
+  if (operation.kind === 'file-conversion') journal.operationStatus = getMindOperationStatus(operation.windowKey);
   latestTransactionByWindow.set(operation.windowKey, operation.transactionId);
   trimJournal();
 }
@@ -164,6 +177,10 @@ export function failMindOperation(operation, error, result = {}) {
     };
     journalByTransaction.set(operation.transactionId, journal);
     latestTransactionByWindow.set(operation.windowKey, operation.transactionId);
+    trimJournal();
+  }
+  if (operation.kind === 'file-conversion') {
+    journalByTransaction.set(operation.transactionId, { operationStatus: getMindOperationStatus(operation.windowKey) });
     trimJournal();
   }
 }
@@ -291,7 +308,14 @@ export function getMindOperationStatus(windowKey) {
   return {
     status,
     health,
-    windowKey,
+    windowKey: operation?.kind === 'file-conversion' ? null : windowKey,
+    ...(operation?.kind === 'file-conversion' ? {
+      kind: operation.kind,
+      operationId: operation.transactionId,
+      filePaths: operation.filePaths,
+      phase: operation.phase || status,
+      result: operation.result || null,
+    } : {}),
     blocked: !!blocked,
     inProgress,
     terminal: !inProgress,
@@ -309,10 +333,25 @@ export function getMindOperationStatus(windowKey) {
     errorMessage: operation?.errorMessage ?? null,
     retryAllowed,
     agentAction,
-    suggestedAction,
+    suggestedAction: operation?.kind === 'file-conversion' && inProgress
+      ? 'File conversion is still running. Poll mind_get_operation_status with operationId or outputFilePath; do not repeat the conversion.'
+      : suggestedAction,
     recommendedPollAfterMs: inProgress ? 1000 : null,
     stop: blocked || (operation?.status === 'stopping' ? operation.stop : null) || null,
   };
+}
+
+export function getMindFileOperationStatus({ operationId, operationKey }) {
+  const operation = operationId
+    ? [...operationByWindow.values()].find((item) => item.kind === 'file-conversion' && item.transactionId === operationId)
+    : operationByWindow.get(operationKey);
+  if (operation?.kind === 'file-conversion') return getMindOperationStatus(operation.windowKey);
+  const saved = operationId ? journalByTransaction.get(operationId)?.operationStatus : null;
+  if (saved) return saved;
+  const error = new Error('No retained file conversion status. Inspect the output file before considering another write.');
+  error.code = 'TRANSACTION_NOT_FOUND';
+  error.retryAllowed = false;
+  throw error;
 }
 
 export function getMindChangedSummary({ transactionId, windowKey } = {}) {

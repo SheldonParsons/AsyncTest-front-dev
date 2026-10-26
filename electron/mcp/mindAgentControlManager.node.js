@@ -206,6 +206,10 @@ export function getMindAgentControlState() {
     controlEnabled: controlMode === 'enabled',
     activeSessionCount: sessions.length,
     activeExecutionCount: executions.length,
+    activeFileConversionCount: executions.filter((execution) => [
+      'mind_convert_xmind_to_amind', 'mind_convert_amind_to_xmind',
+      'mind.convertXmindToAmind', 'mind.convertAmindToXmind',
+    ].includes(execution.toolName)).length,
     executingWindowKeys,
     lockedWindowKeys,
     startedAt: sessions.length

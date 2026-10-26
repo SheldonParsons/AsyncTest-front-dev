@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.4.4",
+  "version": "3.4.5",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 优化：手动停止思维导图的 Agent 控制后，可以直接对 AI 助手说“重新连接思维导图”或“恢复 Agent 连接”，由助手发起恢复申请，无需记住操作指令。\\n#### 优化：暂停后会显示恢复方法，申请恢复后提供“允许恢复”按钮，操作指引更清楚。\\n#### 修复：允许恢复后，思维导图操作仍可能被拦截的问题；已取消的操作不会自动重复执行。\",\"publishDate\":\"2026-10-26\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 新增：可以让 AI 助手将本地 XMind 文件转为 AsyncTest 思维导图，也可以反向转换，无需先打开导图或手动选择保存位置。\\n#### 修复：导入、导出 XMind 时备注和折叠状态丢失，以及超过三个画板时内容不完整的问题。\\n#### 优化：文件转换保留原文件，默认不覆盖同名文件；正在编辑的目标文件会受到保护，未保存的源文件修改不会被自动保存。\\n#### 优化：转换结果会说明样式等兼容性差异；转换过程中可以查看状态或退出控制，避免重复操作。\",\"publishDate\":\"2026-10-26\"}"
     },
     "publish": [
       {

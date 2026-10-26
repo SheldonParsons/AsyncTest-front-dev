@@ -94,6 +94,7 @@ const title = computed(() => {
   if (props.state.status === 'restore_requested') return 'Agent 请求恢复控制';
   if (props.state.status === 'revoked') return 'Agent 控制已退出';
   if (props.state.hasVersionMismatch) return '当前 Agent 使用的是旧版 MCP';
+  if (props.state.activeFileConversionCount > 0 && !props.state.lockedWindowKeys.length) return 'Agent 正在转换文件';
   if (props.state.status === 'executing') return 'Agent 操作中...';
   return 'Agent 已连接';
 });
@@ -114,6 +115,7 @@ const detail = computed(() => {
   if (props.state.status === 'restore_requested') return '点击“允许恢复”，再回到 Agent 继续';
   if (props.state.status === 'revoked') return '对 Agent 说“重新连接思维导图”即可申请恢复';
   if (props.state.hasVersionMismatch) return '请重启 AI Agent，使其加载 AsyncTest 内置的最新 MCP';
+  if (props.state.activeFileConversionCount > 0 && !props.state.lockedWindowKeys.length) return '正在转换本地文件，导图仍可正常编辑';
   if (props.state.status === 'executing') return '写操作执行时目标窗口会暂时锁定';
   return '等待下一次操作，导图仍可正常编辑';
 });

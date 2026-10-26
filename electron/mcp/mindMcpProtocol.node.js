@@ -1,5 +1,5 @@
-export const ASYNCTEST_MIND_MCP_VERSION = '0.7.3';
-export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 15;
+export const ASYNCTEST_MIND_MCP_VERSION = '0.8.0';
+export const ASYNCTEST_MIND_MCP_CAPABILITY_REVISION = 16;
 export const ASYNCTEST_MIND_MCP_MIN_COMPATIBLE_CAPABILITY_REVISION = 12;
 export const ASYNCTEST_MIND_MCP_PROTOCOL_REVISION = 2;
 export const ASYNCTEST_MIND_MCP_RESPONSE_PROFILE = 'compact-by-default';
@@ -7,6 +7,38 @@ export const ASYNCTEST_MIND_MCP_UPDATED_AT = '2026-10-26';
 export const ASYNCTEST_MIND_MCP_TIMEZONE = 'Asia/Shanghai';
 
 const ERROR_DEFINITIONS = {
+  FILE_IN_USE: {
+    recoverable: true, retryAllowed: false,
+    suggestedAction: 'Choose another outputFilePath, or ask the user to save and close the target document. Never auto-close an open document to bypass this protection.',
+  },
+  FILE_ALREADY_EXISTS: {
+    recoverable: true, retryAllowed: true,
+    suggestedAction: 'Choose another outputFilePath, or pass overwrite=true only when overwriting is intended.',
+  },
+  SAME_FILE: {
+    recoverable: true, retryAllowed: true,
+    suggestedAction: 'Choose a distinct output file; symbolic and hard-link aliases of the source are not allowed.',
+  },
+  FILE_NOT_FOUND: {
+    recoverable: true, retryAllowed: true,
+    suggestedAction: 'Check the absolute source path and that the output parent directory exists.',
+  },
+  FILE_PERMISSION_DENIED: {
+    recoverable: true, retryAllowed: true,
+    suggestedAction: 'Choose a readable source and a writable output directory.',
+  },
+  FILE_CHANGED: {
+    recoverable: true, retryAllowed: false,
+    suggestedAction: 'Inspect the latest source and output files before requesting another conversion.',
+  },
+  INVALID_FILE: {
+    recoverable: true, retryAllowed: false,
+    suggestedAction: 'Inspect or repair the source file. Conversion produced no new output; do not retry the same damaged or unsupported content.',
+  },
+  UNSUPPORTED_CONTENT: {
+    recoverable: true, retryAllowed: false,
+    suggestedAction: 'Explain the unsupported content to the user. Do not remove content or report successful conversion.',
+  },
   USER_STOPPED: {
     recoverable: true,
     retryAllowed: false,

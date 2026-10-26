@@ -27,6 +27,7 @@ import {
 } from './mindMcpDiagnostics.node.js';
 import { assertMindMcpIdentityCompatible, normalizeMindMcpError } from './mindMcpProtocol.node.js';
 import { getMindRendererTimeoutPolicy } from './mindRendererTimeoutPolicy.node.js';
+import { convertMindFile, mindFileConversionKey } from './mindFileConversion.node.js';
 import {
   isMindWindowWriteMethod,
   resolveMindExecutionWindowKey,
@@ -44,6 +45,7 @@ import {
   failMindOperation,
   getMindChangedSummary,
   getMindOperationStatus,
+  getMindFileOperationStatus,
   startMindOperation,
 } from './mindOperationManager.node.js';
 import {
@@ -1045,9 +1047,18 @@ async function handleMindBridgeRequest(context, method, params = {}) {
       return getMindMcpDiagnostics(params || {});
 
     case 'mind.operationStatus': {
+      if (params.operationId || params.outputFilePath) {
+        return getMindFileOperationStatus({ operationId: params.operationId, operationKey: params.outputFilePath ? mindFileConversionKey(params.outputFilePath) : null });
+      }
       const windowKey = params?.windowKey || resolveWindowKeyFromParams(context, params || {});
       return getMindOperationStatus(windowKey);
     }
+
+    case 'mind.convertXmindToAmind':
+    case 'mind.convertAmindToXmind':
+      return await convertMindFile(params, method === 'mind.convertXmindToAmind' ? 'xmind-to-amind' : 'amind-to-xmind', {
+        getOpenDocuments: () => amindMain.docStore.entries().map(([docId, entry]) => ({ docId, filePath: entry.filePath, importedFrom: entry.importedFrom })),
+      });
 
     case 'mind.changedSummary': {
       const windowKey = params?.windowKey || (!params?.transactionId ? resolveWindowKeyFromParams(context, params || {}) : null);

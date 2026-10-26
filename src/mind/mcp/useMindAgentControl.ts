@@ -17,6 +17,7 @@ export type MindAgentControlState = {
   controlEnabled: boolean;
   activeSessionCount: number;
   activeExecutionCount: number;
+  activeFileConversionCount: number;
   executingWindowKeys: string[];
   lockedWindowKeys: string[];
   startedAt: string | null;
@@ -35,6 +36,7 @@ const IDLE_STATE: MindAgentControlState = {
   controlEnabled: true,
   activeSessionCount: 0,
   activeExecutionCount: 0,
+  activeFileConversionCount: 0,
   executingWindowKeys: [],
   lockedWindowKeys: [],
   startedAt: null,
@@ -58,6 +60,7 @@ function normalizeState(payload: any): MindAgentControlState {
     controlEnabled: payload?.controlEnabled !== false,
     activeSessionCount: Number(payload?.activeSessionCount) || 0,
     activeExecutionCount: Number(payload?.activeExecutionCount) || 0,
+    activeFileConversionCount: Number(payload?.activeFileConversionCount) || 0,
     executingWindowKeys: Array.isArray(payload?.executingWindowKeys)
       ? [...new Set(payload.executingWindowKeys.map((value: unknown) => String(value || '').trim()).filter(Boolean))]
       : [],
@@ -95,7 +98,7 @@ export function useMindAgentControl(getWindowKey: () => string | null | undefine
   });
   const isVisible = computed(() =>
     (state.value.status !== 'idle' || state.value.hasVersionMismatch)
-    && (state.value.status !== 'executing' || isCurrentWindowExecuting.value)
+    && (state.value.status !== 'executing' || isCurrentWindowExecuting.value || state.value.activeFileConversionCount > 0)
   );
 
   const applyState = (payload: any) => {

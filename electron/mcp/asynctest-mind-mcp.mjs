@@ -33,6 +33,8 @@ export const ASYNCTEST_MIND_MCP_INSTRUCTIONS = [
   'Prefer outline -> subtree when needed -> one batched write -> save.',
   'Use mind_apply_node_operations for mixed edits and mind_create_nodes for large additions.',
   'Write tools edit the open window and already return a compact changed summary.',
+  'For disk file conversion use mind_convert_xmind_to_amind or mind_convert_amind_to_xmind with absolute sourceFilePath and outputFilePath. No document window or dialog is needed. Read the saved disk version, never autosave a dirty source. An open output document is protected even with overwrite=true.',
+  'For a slow or uncertain file conversion, query mind_get_operation_status with outputFilePath (known before dispatch) or the returned operationId; never repeat an in-progress conversion. Report conversion warnings and do not confuse node counts or priority counts with business case counts.',
   'When multiple Mind windows are open, every write must pass the intended windowKey. Never infer a destructive target from window focus.',
   'Do not close an open document or rewrite its .amind file offline unless the user explicitly asks.',
   'Do not call diagnostic tools in the normal edit path unless a result requires investigation.',
@@ -62,6 +64,8 @@ const TOOL_TIERS = {
     'mind_manage_windows',
     'mind_create_document',
     'mind_import_file_subtree',
+    'mind_convert_xmind_to_amind',
+    'mind_convert_amind_to_xmind',
   ],
   diagnostic: [
     'mind_get_mcp_capabilities',
@@ -105,11 +109,14 @@ export function getAsyncTestMindMcpCapabilities() {
       '用户可用自然语言要求重新连接或继续已暂停的思维导图操作；Agent 负责查询控制状态、申请恢复并引导桌面确认，无需用户输入工具名。',
       '对外公开 mind_get_control_status，暂停与等待恢复确认期间均可查询；允许恢复时同步解除因退出控制留下的窗口阻止标记。',
       '多窗口环境下写工具必须显式传入 windowKey；Agent 只锁定实际写入的窗口。',
+      '新增两个磁盘文件转换工具：XMind 与 amind 双向转换；保留全部画板、备注、标记、折叠与内嵌图片，返回格式差异 warnings。',
+      '文件转换默认禁止覆盖，拒绝覆盖已打开的目标；源文档的未保存编辑不参与转换。状态查询支持 operationId 或 outputFilePath。',
     ],
     recommendedUsage: [
       '读取精简树结构时，优先使用 mind_get_subtree 或 mind_get_document_outline。',
       '在已打开窗口中批量创建节点时，优先使用 mind_create_nodes。',
       '需要把 .amind 或 .xmind 文件中的分支导入已打开窗口时，使用 mind_import_file_subtree。',
+      '转换整份磁盘文件时使用 mind_convert_xmind_to_amind 或 mind_convert_amind_to_xmind；不需要先打开文件，也不要自行改后缀或解包重打包。',
       '编辑已打开且已有文件路径的文档后，使用 mind_save_document 保存。',
       '未保存窗口需要指定保存路径时，使用 mind_save_as_document。',
       '除非用户明确要求关闭窗口，否则不要关闭窗口后离线编辑 .amind 文件。',
@@ -127,7 +134,7 @@ export function getAsyncTestMindMcpCapabilities() {
       'mind_save_document or mind_save_as_document',
     ],
     toolTiers: TOOL_TIERS,
-    advertisedToolCount: 18,
+    advertisedToolCount: 20,
     errorProtocol: {
       shape: '{ ok: false, error: { code, message, recoverable, retryAllowed, suggestedAction, details? } }',
       userStopped: 'USER_STOPPED only stops the current window operation.',
@@ -246,10 +253,10 @@ const tools = [
   },
   {
     name: 'mind_get_operation_status',
-    description: '[Recovery and progress] Inspect a visual write transaction after a slow, timed-out, or uncertain call. Returns progress, health, whether to wait or verify, and whether retry is safe. Do not repeat a write while inProgress=true.',
+    description: '[Recovery and progress] Inspect a visual write by windowKey or disk conversion by operationId/outputFilePath after a slow, timed-out, or uncertain call. For conversion, outputFilePath is known before dispatch, so use it when no response arrived. Returns progress, health, terminal result and warnings, and whether retry is safe. Do not repeat a write while inProgress=true. Status is retained in this desktop process; an unknown status requires checking the output file, never blind replay.',
     inputSchema: {
       type: 'object',
-      properties: { windowKey: { type: 'string' } },
+      properties: { windowKey: { type: 'string' }, operationId: { type: 'string' }, outputFilePath: { type: 'string', description: 'Absolute output path of the file conversion.' } },
       additionalProperties: false,
     },
     bridgeMethod: 'mind.operationStatus',
@@ -1057,8 +1064,28 @@ const tools = [
   },
 ];
 
+for (const [from, to, bridgeMethod] of [['xmind', 'amind', 'mind.convertXmindToAmind'], ['amind', 'xmind', 'mind.convertAmindToXmind']]) {
+  tools.push({
+    name: `mind_convert_${from}_to_${to}`,
+    description: `Convert a saved .${from} disk file into a .${to} file locally, without opening a window or showing a dialog. Supply absolute sourceFilePath/outputFilePath with the correct extensions. Source is preserved; unsaved source edits are excluded and reported. overwrite defaults to false; open target documents and aliases of the source are always rejected. Returns operationId, actual paths, board/node/note/priority/image counts and warnings. If slow or uncertain, query mind_get_operation_status with outputFilePath before retrying. Review and report warnings; node/priority counts do not establish business case counts.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceFilePath: { type: 'string', description: `Absolute path to an existing .${from} file.` },
+        outputFilePath: { type: 'string', description: `Absolute .${to} output path in an existing directory.` },
+        overwrite: { type: 'boolean', default: false },
+      },
+      required: ['sourceFilePath', 'outputFilePath'],
+      additionalProperties: false,
+    },
+    bridgeMethod,
+  });
+}
+
 const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
 const ADVERTISED_TOOL_NAMES = new Set([
+  'mind_convert_xmind_to_amind',
+  'mind_convert_amind_to_xmind',
   'mind_get_mcp_capabilities',
   'mind_get_diagnostics',
   'mind_get_operation_status',

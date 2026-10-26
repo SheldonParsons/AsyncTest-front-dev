@@ -539,7 +539,7 @@ export function initAmindMain({ userDataPath, recentFallbackUserDataPaths = [], 
       title: doc?.manifest?.title ?? null,
     });
     const docId = newDocId();
-    docStore.create(docId, { doc, filePath: null, windowKey: null });
+    docStore.create(docId, { doc, filePath: null, windowKey: null, importedFrom: abs });
     await openMindWindow({
       docId,
       filePath: null,
