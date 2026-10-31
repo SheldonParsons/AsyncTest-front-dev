@@ -105,8 +105,5 @@ export function collectReportIssues(state) {
         if (!String(state.customFields[key] ?? "").trim())
             add(key, "review", `请填写${label}`);
     }
-    if (!Number.isSafeInteger(Number(state.customFields.zendaoBugLimit)) ||
-        Number(state.customFields.zendaoBugLimit) <= 0)
-        add("zendaoBugLimit", "review", "缺陷统计上限必须是大于 0 的整数");
     return issues;
 }

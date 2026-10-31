@@ -86,7 +86,6 @@ function createEnvironment(
 
 function createDefaultCustomFields(): ReportCustomFields {
   return {
-    zendaoBugLimit: 5000,
     qualityResult: "通过",
     secrecyLevel: "秘密▲",
     testTypes: "功能测试，兼容性测试，易用性测试，回归测试",
@@ -234,10 +233,6 @@ function readPersistedDraft() {
       asyncTestProjectId: `${parsed.asyncTestProjectId ?? ""}`,
       environments: normalizeEnvironments(parsed.environments),
       customFields: {
-        zendaoBugLimit:
-          typeof parsed.customFields?.zendaoBugLimit === "number"
-            ? parsed.customFields.zendaoBugLimit
-            : defaultCustomFields.zendaoBugLimit,
         qualityResult: `${parsed.customFields?.qualityResult ?? defaultCustomFields.qualityResult}`,
         secrecyLevel: `${parsed.customFields?.secrecyLevel ?? defaultCustomFields.secrecyLevel}`,
         testTypes: `${parsed.customFields?.testTypes ?? defaultCustomFields.testTypes}`,

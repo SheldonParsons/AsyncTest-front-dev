@@ -28,7 +28,6 @@ export type ReportEnvironmentConfig = {
 };
 
 export type ReportCustomFields = {
-  zendaoBugLimit: number;
   qualityResult: string;
   secrecyLevel: string;
   testTypes: string;

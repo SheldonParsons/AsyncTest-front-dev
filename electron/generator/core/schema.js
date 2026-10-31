@@ -1,5 +1,5 @@
 // Shared by Main, the renderer and stdio. No network or Electron dependency.
-export const REPORT_VERSION = '1.0.0';
+export const REPORT_VERSION = '1.1.0';
 export const PARSER_VERSION = 'report-2';
 export const scopeKeys = ['productId', 'projectId', 'executionId', 'testTaskId', 'buildId'];
 export const descendants = { productId: ['projectId', 'executionId', 'testTaskId', 'buildId'], projectId: ['executionId', 'buildId'], executionId: ['buildId'] };
@@ -16,7 +16,7 @@ export const environmentFields = {
   bugRange: enumeration('version', 'execution'), filterBugWithoutSolution: bool,
   includeDate: bool, reportDate: str, envUrl: str, gitlabUrl: str, conclusion: str, projectRisk: str,
 };
-export const customFields = { zendaoBugLimit: { type: 'integer', minimum: 1, maximum: 100000 }, qualityResult: str, secrecyLevel: str, testTypes: str, actualResult: str };
+export const customFields = { qualityResult: str, secrecyLevel: str, testTypes: str, actualResult: str };
 export const formFields = Object.fromEntries(['reporter', 'reviewer', 'zentaoUsername', 'asyncTestProjectId', ...scopeKeys].map(key => [key, str]));
 export const settingsPatch = object({ ...formFields, zentaoPassword: nullable(str), customFields: object(customFields) });
 export const environmentOperation = { anyOf: [
@@ -46,7 +46,7 @@ export const documentOperation = { anyOf: [
   object({ op: enumeration('replace_text'), blockId: id, find: id, replacement: str }, ['op', 'blockId', 'find', 'replacement']),
   object({ op: enumeration('set_page'), patch: pageSchema }, ['op', 'patch']),
 ] };
-const names = { asyncTestProjectId: 'AsyncTest 来源项目', reporter: '报告人', reviewer: '复审人', zentaoUsername: '禅道账号', zentaoPassword: '禅道密码（只写）', productId: '产品', projectId: '项目', executionId: '执行', testTaskId: '测试单', buildId: '所属执行版本', enabled: '启用环境', name: '环境名称', bugFilterKeyword: '缺陷包含关键字', bugExcludeKeyword: '缺陷排除关键字', bugRange: '缺陷范围', filterBugWithoutSolution: '排除未解决缺陷', includeDate: '指定日期', reportDate: '报告日期', envUrl: '环境地址', gitlabUrl: 'GitLab 地址', conclusion: '测试结论', projectRisk: '项目风险', zendaoBugLimit: '缺陷采集上限', qualityResult: '质检结果', secrecyLevel: '秘密级别', testTypes: '测试类型', actualResult: '实际结果', selectedSheet: '工作表', requirement: '需求列', module: '模块列', owner: '负责人列', column: '筛选列', value: '等于值', rowFilter: '行筛选', docxFileType: '附件格式', excludedModules: '排除模块', excludedOwners: '排除负责人', includeFreeNodes: '包含自由节点', selectedBoardIds: '选中画板' };
+const names = { asyncTestProjectId: 'AsyncTest 来源项目', reporter: '报告人', reviewer: '复审人', zentaoUsername: '禅道账号', zentaoPassword: '禅道密码（只写）', productId: '产品', projectId: '项目', executionId: '执行', testTaskId: '测试单', buildId: '所属执行版本', enabled: '启用环境', name: '环境名称', bugFilterKeyword: '缺陷包含关键字', bugExcludeKeyword: '缺陷排除关键字', bugRange: '缺陷范围', filterBugWithoutSolution: '排除未解决缺陷', includeDate: '指定日期', reportDate: '报告日期', envUrl: '环境地址', gitlabUrl: 'GitLab 地址', conclusion: '测试结论', projectRisk: '项目风险', qualityResult: '质检结果', secrecyLevel: '秘密级别', testTypes: '测试类型', actualResult: '实际结果', selectedSheet: '工作表', requirement: '需求列', module: '模块列', owner: '负责人列', column: '筛选列', value: '等于值', rowFilter: '行筛选', docxFileType: '附件格式', excludedModules: '排除模块', excludedOwners: '排除负责人', includeFreeNodes: '包含自由节点', selectedBoardIds: '选中画板' };
 export function getConfigSchema() {
   return {
     version: REPORT_VERSION, settings: settingsPatch, environmentOperations: environmentOperation, assignment: assignmentSchema, document: blockSchema, documentOperations: documentOperation,
@@ -64,7 +64,7 @@ export function defaultEnvironment(kind, customId) {
   return { id: customId || `generator-fixed-${kind}-environment`, kind, enabled: true, name: kind === 'test' ? '测试环境' : kind === 'production' ? '生产环境' : '', bugFilterKeyword: '', bugExcludeKeyword: '', bugRange: 'version', filterBugWithoutSolution: true, includeDate: false, reportDate: '', envUrl: '', gitlabUrl: '', conclusion: kind === 'test' ? '可提交审核，并发布生产版本' : '测试通过', projectRisk: '暂无' };
 }
 export function defaultConfig() {
-  return { ...Object.fromEntries(Object.keys(formFields).map(key => [key, ''])), environments: [defaultEnvironment('test'), defaultEnvironment('production')], customFields: { zendaoBugLimit: 5000, qualityResult: '通过', secrecyLevel: '秘密▲', testTypes: '功能测试，兼容性测试，易用性测试，回归测试', actualResult: '测试通过率100%' } };
+  return { ...Object.fromEntries(Object.keys(formFields).map(key => [key, ''])), environments: [defaultEnvironment('test'), defaultEnvironment('production')], customFields: { qualityResult: '通过', secrecyLevel: '秘密▲', testTypes: '功能测试，兼容性测试，易用性测试，回归测试', actualResult: '测试通过率100%' } };
 }
 export class ReportError extends Error {
   constructor(code, message, details = {}) { super(message); this.code = code; this.details = details; }

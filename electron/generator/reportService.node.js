@@ -7,7 +7,7 @@ import { REPORT_VERSION, PARSER_VERSION, ReportError, assert, getConfigSchema, f
 import { collectReportIssues } from './core/validation.js';
 import { editDocument, mergeDocument, templateFromDocument, applyTemplate } from './core/document.js';
 import { ReportStore, newWorkspace, clone, uid, now, hash, stable, atomicWrite } from './reportStore.node.js';
-import { ZentaoAdapter, projectBugs } from './adapters/zentao.node.js';
+import { ZentaoAdapter, projectBugs, ZENTAO_BUG_COLLECTION_VERSION } from './adapters/zentao.node.js';
 import { validateTool } from '../mcp/reportProtocol.node.js';
 
 const terminal = status => ['completed', 'failed', 'cancelled', 'interrupted'].includes(status);
@@ -18,7 +18,14 @@ function merge(base, patch) {
   for (const [key, value] of Object.entries(patch || {})) next[key] = value && typeof value === 'object' && !Array.isArray(value) ? merge(next[key] || {}, value) : clone(value);
   return next;
 }
-function safeConfig(config, partial = false) { const next = clone(config); if (!partial || Object.hasOwn(next, 'passwordRef')) next.passwordConfigured = !!next.passwordRef; delete next.passwordRef; delete next.zentaoPassword; return next; }
+function safeConfig(config, partial = false) {
+  const next = clone(config);
+  if (!partial || Object.hasOwn(next, 'passwordRef')) next.passwordConfigured = !!next.passwordRef;
+  delete next.passwordRef; delete next.zentaoPassword;
+  // 保留历史存储和快照，只在当前配置投影中隐藏已停用的采集上限。
+  if (next.customFields) delete next.customFields.zendaoBugLimit;
+  return next;
+}
 function effective(state, ws) {
   const override = clone(ws.overrides); const environments = override.environments; delete override.environments;
   const config = merge(state.settings.values, override);
@@ -500,7 +507,7 @@ export class ReportService extends EventEmitter {
     });
   }
   coverageMatches(raw, config) {
-    return raw.complete && raw.coverage.baseURL === this.zentao.baseURL && raw.coverage.username === config.zentaoUsername && ['productId', 'executionId', 'testTaskId', 'buildId'].every(key => raw.coverage[key] === config[key]);
+    return raw.complete && raw.coverage?.collectionVersion === ZENTAO_BUG_COLLECTION_VERSION && raw.coverage.baseURL === this.zentao.baseURL && raw.coverage.username === config.zentaoUsername && ['productId', 'executionId', 'testTaskId', 'buildId'].every(key => raw.coverage[key] === config[key]);
   }
   async performJob(id) {
     const op = clone(this.store.state.operations[id]);
@@ -573,7 +580,7 @@ export class ReportService extends EventEmitter {
         await this.progress(id, `复用 ${raw.fetchedAt} 的缺陷数据，无网络请求`, 'cached');
       }
       this.ensureRunning(id);
-      assert(raw.complete || frozen.dataPolicy.allowIncomplete, 'INCOMPLETE_DATA', '缺陷达到采集上限或分页不完整；请提高上限重新获取，或明确生成不完整初稿');
+      assert(raw.complete || frozen.dataPolicy.allowIncomplete, 'INCOMPLETE_DATA', '禅道缺陷尚未完整获取，请重新获取后生成报告');
       const payload = await this.frozenPayload(frozen.workspace, config); payload.zendao = projectBugs(raw, config); payload.testTask = raw.task; payload.incomplete = !raw.complete;
       for (const env of payload.environments) if (!env.bugFilterKeyword.trim()) await this.progress(id, `${env.name}的标题包含为空，按既有规则不匹配任何缺陷`, 'filter_notice');
       snapshot = { id: uid('snap'), workspaceId: op.workspaceId, config: safeConfig(config), inputFingerprint: frozen.inputFingerprint, scopeFingerprint: hash(Object.fromEntries(scopeKeys.map(key => [key, config[key]]))), assets: frozen.workspace.sources.map(source => ({ sourceId: source.id, assetId: source.assetId, hash: source.hash, parseRevision: source.parseRevision })), parserVersion: PARSER_VERSION, templateVersion: '1', revisions: frozen.revisions, dataAsOf: raw.fetchedAt, createdAt: now(), complete: raw.complete, raw, payload };

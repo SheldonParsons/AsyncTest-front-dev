@@ -63,13 +63,6 @@
             placeholder="例如：秘密▲"
           />
           <ReportField
-            name="zendaoBugLimit"
-            label="缺陷统计上限"
-            type="number"
-            v-model="state.customFields.zendaoBugLimit"
-            hint="限制本次读取的缺陷数量"
-          />
-          <ReportField
             name="testTypes"
             label="测试类型"
             v-model="state.customFields.testTypes"
@@ -86,6 +79,9 @@
         </div>
         <p class="review-note">
           <Info :size="13" />这些文字会写入报告正文，请结合实际测试结果核对。
+        </p>
+        <p class="review-note">
+          <Info :size="13" />重新获取禅道数据时会自动读取全部缺陷，再按所选范围筛选统计。
         </p>
       </div>
 

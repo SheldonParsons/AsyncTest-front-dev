@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.4.5",
+  "version": "3.4.6",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 新增：可以让 AI 助手将本地 XMind 文件转为 AsyncTest 思维导图，也可以反向转换，无需先打开导图或手动选择保存位置。\\n#### 修复：导入、导出 XMind 时备注和折叠状态丢失，以及超过三个画板时内容不完整的问题。\\n#### 优化：文件转换保留原文件，默认不覆盖同名文件；正在编辑的目标文件会受到保护，未保存的源文件修改不会被自动保存。\\n#### 优化：转换结果会说明样式等兼容性差异；转换过程中可以查看状态或退出控制，避免重复操作。\",\"publishDate\":\"2026-10-26\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 修复：生成测试报告时，缺陷数量达到读取上限后无法继续生成的问题。\\n#### 优化：自动获取完整的禅道缺陷数据，无需再填写缺陷统计上限。\\n#### 优化：批量并行读取缺陷，取齐后立即停止，减少不必要的请求。\\n#### 修复：缺陷分页数据不完整时可能漏算的问题，并补充清晰的异常提示。\\n#### 提示：更新后首次生成请使用“重新获取禅道数据”，原有报告和配置继续保留。\",\"publishDate\":\"2026-10-31\"}"
     },
     "publish": [
       {
