@@ -10,6 +10,8 @@ export type MindBoardPatch = {
   afterTitle: string | null;
   beforeRoots: any[];
   afterRoots: any[];
+  beforeRelations?: any[];
+  afterRelations?: any[];
   nodes: MindNodePatch[];
 };
 
@@ -70,8 +72,10 @@ export function buildMindDocumentPatch(beforeDoc: any, afterDoc: any): MindDocum
     const afterTitle = afterBoard?.title ?? null;
     const beforeRoots = clonePlain(beforeBoard?.roots ?? []);
     const afterRoots = clonePlain(afterBoard?.roots ?? []);
-    if (nodes.length || beforeTitle !== afterTitle || !equalJson(beforeRoots, afterRoots)) {
-      boards.push({ boardId, beforeTitle, afterTitle, beforeRoots, afterRoots, nodes });
+    const beforeRelations = clonePlain(beforeBoard?.relations ?? []);
+    const afterRelations = clonePlain(afterBoard?.relations ?? []);
+    if (nodes.length || beforeTitle !== afterTitle || !equalJson(beforeRoots, afterRoots) || !equalJson(beforeRelations, afterRelations)) {
+      boards.push({ boardId, beforeTitle, afterTitle, beforeRoots, afterRoots, beforeRelations, afterRelations, nodes });
     }
   }
 
@@ -98,6 +102,8 @@ export function applyMindDocumentPatch(target: any, patch: MindDocumentPatch, di
     const board = ensureBoard(target, boardPatch.boardId);
     board.title = direction === 'after' ? boardPatch.afterTitle : boardPatch.beforeTitle;
     board.roots = clonePlain(direction === 'after' ? boardPatch.afterRoots : boardPatch.beforeRoots);
+    const relations = direction === 'after' ? boardPatch.afterRelations : boardPatch.beforeRelations;
+    if (Array.isArray(relations)) board.relations = clonePlain(relations);
     for (const nodePatch of boardPatch.nodes) {
       const value = direction === 'after' ? nodePatch.after : nodePatch.before;
       if (value == null) delete board.nodes[nodePatch.nodeId];
@@ -203,6 +209,10 @@ export function applyMindDocumentPatchNodeSubset(
     if (!selected.has(nodePatch.nodeId) && !after.children.some((childId: string) => selected.has(childId))) continue;
     current.children = after.children.filter((childId: string) => !!board.nodes[childId]);
   }
+  // 删除节点的动画分组也同步关系线，避免过渡状态或保存时留下悬空端点。
+  if (Array.isArray(boardPatch.afterRelations)) {
+    board.relations = clonePlain(boardPatch.afterRelations).filter((relation: any) => board.nodes[relation.fromNodeId] && board.nodes[relation.toNodeId]);
+  }
 }
 
 export function getMindDocumentPatchSubsetMutationOptions(
@@ -255,7 +265,7 @@ export function getMindDocumentPatchMutationOptions(
     addedNodeInfos,
     removedNodeIds,
     touchedParentIds: [...touchedParentIds],
-    forceFullEdgeRebuild: hasMove,
+    forceFullEdgeRebuild: hasMove || !!boardPatch && !equalJson(boardPatch.beforeRelations, boardPatch.afterRelations),
     markDirty: false,
   };
 }

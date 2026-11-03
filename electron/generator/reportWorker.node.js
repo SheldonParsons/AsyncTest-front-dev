@@ -45,7 +45,7 @@ async function run() {
   if (task === 'export') {
     for (const source of [...(input.payload.amindFiles || []), ...(input.payload.excelFile ? [input.payload.excelFile] : [])]) if (source.assetId) assert(hash(await fs.readFile(source.assetPath)) === source.assetId, 'FILE_CHANGED', '冻结报告来源校验失败');
     parentPort.postMessage({ progress: '准备本地附件' });
-    const workspace = await prepareGeneratorCacheWorkspace({ payload: input.payload, jobDir: input.jobDir });
+    const workspace = await prepareGeneratorCacheWorkspace({ payload: input.payload, jobDir: input.jobDir, onWarning: warning => parentPort.postMessage({ progress: `附件提醒：${warning.message}` }) });
     const documents = input.documents;
     for (const doc of documents) {
       doc.extraAttachments = {};
@@ -69,7 +69,7 @@ async function run() {
       }
       file.size = bytes.length; file.hash = hash(bytes);
     }
-    return { files, zipFilePath: output.zipFilePath };
+    return { files, zipFilePath: output.zipFilePath, warnings: workspace.snapshot.attachmentWarnings };
   }
   throw new Error(`未知报告 Worker 任务：${task}`);
 }

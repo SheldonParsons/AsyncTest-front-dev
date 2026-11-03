@@ -860,6 +860,7 @@ import {
 import { richTextFromPlain } from '@/mind/core/richText';
 import { compareSelectionTargetInfo, getSelectionTargetInfo, type SelectionTargetInfo } from '@/mind/core/selection/normalizeSelection';
 import { getNodeSummaries, getRegularChildIds, getStructuralChildIds, hasSummaryRange, isSummaryNode, setNodeSummaries, type MindSummaryMeta } from '@/mind/core/summaryMeta';
+import { createSummaryTransition, createMoveSummaryTransition, remapSummariesByChildren } from '../../../../electron/amind/summaryTransition.js';
 import { DEFAULT_ROOT_H_GAP, DEFAULT_ROOT_V_GAP, ensureMindRoots, ensureMultiMindDoc, getActiveMind, setActiveMindId, toPlainDoc } from './actions/useDocUtils';
 import { useLayout } from './actions/useLayout';
 import { MAX_CAMERA_SCALE, getAxisConstraint, useCamera } from './actions/useCamera';
@@ -9303,11 +9304,12 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
         afterChildren
       )
     );
+    const summaryChange = createSummaryChangeForCommand(beforeSummariesByParent, afterSummariesByParent);
     const command = createMoveSubtreesCommand(
       {
         getNodes: getMindNodes,
         setSelection,
-        applyMutation: applyDocumentMutation,
+        applyMutation: summaryChange.applyMutation,
       },
       {
         movingRootIds: [freeRootId],
@@ -9328,7 +9330,7 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
           currentMind.roots = Array.isArray(currentMind.roots)
             ? currentMind.roots.filter((root: any) => root?.rootId !== freeRootId)
             : [];
-          applySummarySnapshotsByParent(afterSummariesByParent, currentNodes);
+          summaryChange.apply();
         },
         applyUndoState: (currentNodes) => {
           const currentMind = getActiveMind(props.doc);
@@ -9341,7 +9343,7 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
               JSON.parse(JSON.stringify(previousRootEntry))
             );
           }
-          applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes);
+          summaryChange.undo();
         },
       }
     );
@@ -9485,11 +9487,12 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
     });
     afterSummariesByParent.set(dropTarget.toParentId, currentTargetSummaries);
   });
+  const summaryChange = createSummaryChangeForCommand(beforeSummariesByParent, afterSummariesByParent);
   const command = createMoveSubtreesCommand(
     {
       getNodes: getMindNodes,
       setSelection,
-      applyMutation: applyDocumentMutation,
+      applyMutation: summaryChange.applyMutation,
     },
     {
       movingRootIds,
@@ -9508,14 +9511,14 @@ function buildMoveCommand(dropTarget: DragDropTarget): {
         if (currentMind && previousMovingRootEntries.length) {
           currentMind.roots = removeMindRootEntriesByNodeIds(currentMind.roots, movingRootIds);
         }
-        applySummarySnapshotsByParent(afterSummariesByParent, currentNodes);
+        summaryChange.apply();
       },
       applyUndoState: (currentNodes) => {
         const currentMind = getActiveMind(props.doc);
         if (currentMind && previousMovingRootEntries.length) {
           currentMind.roots = restoreMindRootEntries(currentMind.roots, previousMovingRootEntries);
         }
-        applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes);
+        summaryChange.undo();
       },
     }
   );
@@ -9640,11 +9643,12 @@ function buildMoveRootsToFreeTopicsCommand(): {
     };
   });
 
+  const summaryChange = createSummaryChangeForCommand(beforeSummariesByParent, afterSummariesByParent);
   const command = createMoveSubtreesCommand(
     {
       getNodes: getMindNodes,
       setSelection,
-      applyMutation: applyDocumentMutation,
+      applyMutation: summaryChange.applyMutation,
     },
     {
       movingRootIds,
@@ -9667,7 +9671,7 @@ function buildMoveRootsToFreeTopicsCommand(): {
             currentMind.roots.push(JSON.parse(JSON.stringify(rootEntry)));
           }
         });
-        applySummarySnapshotsByParent(afterSummariesByParent, currentNodes);
+        summaryChange.apply();
       },
       applyUndoState: (currentNodes) => {
         const currentMind = getActiveMind(props.doc);
@@ -9676,7 +9680,7 @@ function buildMoveRootsToFreeTopicsCommand(): {
           removeMindRootEntriesByNodeIds(currentMind.roots, movingRootIds),
           previousMovingRootEntries
         );
-        applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes);
+        summaryChange.undo();
       },
     }
   );
@@ -10479,30 +10483,6 @@ function adjustSummariesForSiblingInsert(
   });
 }
 
-function remapSummariesByChildren(
-  summaries: MindSummaryMeta[],
-  beforeChildren: string[],
-  afterChildren: string[]
-): MindSummaryMeta[] {
-  return summaries
-    .map((summary) => {
-      const coveredIds = beforeChildren
-        .slice(summary.startIndex, summary.endIndex + 1)
-        .filter((childId) => afterChildren.includes(childId));
-      if (!coveredIds.length) return null;
-      const nextIndexes = coveredIds
-        .map((childId) => afterChildren.indexOf(childId))
-        .filter((index) => index >= 0)
-        .sort((a, b) => a - b);
-      if (!nextIndexes.length) return null;
-      return {
-        ...summary,
-        startIndex: nextIndexes[0],
-        endIndex: nextIndexes[nextIndexes.length - 1],
-      };
-    })
-    .filter((summary): summary is MindSummaryMeta => !!summary);
-}
 
 type CompleteSummaryDragInfo = {
   sourceParentId: string;
@@ -10581,6 +10561,22 @@ function isBlockedByCompleteSummaryDrag(
   blockedNodeIds: Set<string>
 ) {
   return blockedNodeIds.has(targetNodeId);
+}
+
+function wrapSummaryTransition(change: ReturnType<typeof createSummaryTransition>) {
+  return {
+    apply: () => change.apply(getActiveMind(props.doc)),
+    undo: () => change.undo(getActiveMind(props.doc)),
+    applyMutation: (reason: string, options?: Parameters<typeof applyDocumentMutation>[1]) => applyDocumentMutation(reason, {
+      ...options,
+      removedNodeIds: [...new Set([...(options?.removedNodeIds || []), ...change.removedNodeIds])],
+      ...(change.hasRemovedSummaries ? { forceFullEdgeRebuild: true } : {}),
+    }),
+  };
+}
+
+function createSummaryChangeForCommand(before: Map<string, MindSummaryMeta[]>, after: Map<string, MindSummaryMeta[]>) {
+  return wrapSummaryTransition(createSummaryTransition(getActiveMind(props.doc), before, after));
 }
 
 function snapshotSummariesByParent(parentIds: Iterable<string>) {
@@ -10924,12 +10920,13 @@ function createDeleteCommand(targetNodeId: string): Command | null {
   const beforeChildren = getRegularChildIds(parentNode);
   const afterChildren = beforeChildren.filter((childId) => childId !== targetNodeId);
   const afterSummaries = remapSummariesByChildren(beforeSummaries, beforeChildren, afterChildren);
+  const summaryChange = createSummaryChangeForCommand(new Map([[parentId, beforeSummaries]]), new Map([[parentId, afterSummaries]]));
 
   const subtreeDeleteCommand = createDeleteSubtreeCommand(
     {
       getNodes: getMindNodes,
       setSingleSelected,
-      applyMutation: applyDocumentMutation,
+      applyMutation: summaryChange.applyMutation,
       setLastDeletedNodeId,
       debugEnabled: DEBUG_CANVAS_OVERLAY,
     },
@@ -10941,16 +10938,8 @@ function createDeleteCommand(targetNodeId: string): Command | null {
       previousSelectionId,
       nextSelectionId,
       deleteMutationOptions,
-      applyDoState: (currentNodes) => {
-        const currentParent = currentNodes[parentId];
-        if (!currentParent) return;
-        setNodeSummaries(currentParent, afterSummaries);
-      },
-      applyUndoState: (currentNodes) => {
-        const currentParent = currentNodes[parentId];
-        if (!currentParent) return;
-        setNodeSummaries(currentParent, beforeSummaries);
-      },
+      applyDoState: summaryChange.apply,
+      applyUndoState: summaryChange.undo,
     }
   );
   return createCommandSequence('DeleteNodeWithRelationsCommand', [relatedRelationsDeleteCommand, subtreeDeleteCommand]);
@@ -11447,11 +11436,12 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
     );
   });
 
+  const summaryChange = createSummaryChangeForCommand(beforeSummariesByParent, afterSummariesByParent);
   const regularDeleteCommand = createBatchDeleteSubtreesCommand(
     {
       getNodes: getMindNodes,
       setSelection,
-      applyMutation: applyDocumentMutation,
+      applyMutation: summaryChange.applyMutation,
       setLastDeletedNodeId,
     },
     {
@@ -11460,8 +11450,8 @@ function createBatchDeleteSelectionCommand(targetNodeIds: string[]): Command | n
       nextSelectionId,
       lastDeletedNodeId: primaryDeleteTarget?.nodeId ?? null,
       deleteMutationOptions,
-      applyDoState: (currentNodes) => applySummarySnapshotsByParent(afterSummariesByParent, currentNodes),
-      applyUndoState: (currentNodes) => applySummarySnapshotsByParent(beforeSummariesByParent, currentNodes),
+      applyDoState: summaryChange.apply,
+      applyUndoState: summaryChange.undo,
     }
   );
   return createCommandSequence('BatchDeleteMixedSelectionCommand', [
@@ -14354,67 +14344,43 @@ function mcpDeleteNode(nodeId: string, params: any = {}) {
 
 function mcpCollectSubtreeIds(nodeId: string) {
   const nodes = getMindNodes();
-  const result: string[] = [];
-  const walk = (currentId: string) => {
-    if (!nodes?.[currentId]) return;
-    result.push(currentId);
-    const children = Array.isArray(nodes[currentId].children) ? nodes[currentId].children : [];
-    children.forEach(walk);
-  };
-  walk(nodeId);
-  return result;
+  return nodes ? collectSubtreeNodeIds(nodes, nodeId) : [];
 }
 
 function mcpMoveNode(nodeId: string, newParentId: string, index?: number) {
+  const board = getActiveMind(props.doc);
   const nodes = getMindNodes();
   const node = nodes?.[nodeId];
-  const newParent = nodes?.[newParentId];
-  if (!node) throw new Error(`Node not found: ${nodeId}`);
-  if (!newParent) throw new Error(`Parent node not found: ${newParentId}`);
+  if (!board || !node) throw new Error(`Node not found: ${nodeId}`);
+  if (!nodes?.[newParentId]) throw new Error(`Parent node not found: ${newParentId}`);
+  if (isRootNode(nodeId)) throw new Error('Cannot move root node');
   if (nodeId === newParentId || mcpCollectSubtreeIds(nodeId).includes(newParentId)) {
     throw new Error('Cannot move a node into itself or its descendants');
   }
-  const oldParentId = node.parentId;
-  const oldParent = oldParentId ? nodes?.[oldParentId] : null;
-  const oldIndex = Array.isArray(oldParent?.children) ? oldParent.children.indexOf(nodeId) : -1;
-  const nextIndex = Number.isInteger(index) ? Math.max(0, index as number) : Number.MAX_SAFE_INTEGER;
-  const command: Command = {
-    name: 'McpMoveNodeCommand',
-    do: () => {
-      const currentNodes = getMindNodes();
-      const current = currentNodes?.[nodeId];
-      const target = currentNodes?.[newParentId];
-      if (!current || !target) return;
-      const currentOldParent = current.parentId ? currentNodes?.[current.parentId] : null;
-      if (Array.isArray(currentOldParent?.children)) {
-        currentOldParent.children = currentOldParent.children.filter((id: string) => id !== nodeId);
-      }
-      target.children = Array.isArray(target.children) ? target.children.filter((id: string) => id !== nodeId) : [];
-      target.children.splice(Math.min(nextIndex, target.children.length), 0, nodeId);
-      current.parentId = newParentId;
-      void applyDocumentMutation('mcp:move-node', { ensureVisibleNodeId: nodeId, forceFullEdgeRebuild: true });
-    },
-    undo: () => {
-      const currentNodes = getMindNodes();
-      const current = currentNodes?.[nodeId];
-      const target = currentNodes?.[newParentId];
-      if (!current) return;
-      if (Array.isArray(target?.children)) target.children = target.children.filter((id: string) => id !== nodeId);
-      if (oldParent) {
-        const restoredParent = currentNodes?.[oldParentId as string];
-        if (restoredParent) {
-          restoredParent.children = Array.isArray(restoredParent.children) ? restoredParent.children.filter((id: string) => id !== nodeId) : [];
-          restoredParent.children.splice(Math.max(0, oldIndex), 0, nodeId);
-        }
-      }
-      current.parentId = oldParentId ?? null;
-      void applyDocumentMutation('mcp:undo-move-node', { ensureVisibleNodeId: nodeId, forceFullEdgeRebuild: true });
-    },
-    redo: () => {
-      this.do?.();
-    },
-  };
-  command.redo = command.do;
+  if (findSummaryHostInfo(nodeId)) throw new Error('概要请连同覆盖的分支一起移动，不能单独改变概要归属。');
+  const oldParentId = findParentAndIndex(nodeId)?.parentId ?? null;
+  const hadParentId = Object.hasOwn(node, 'parentId');
+  const previousParentId = node.parentId;
+  const parentIds = [...new Set([oldParentId, newParentId].filter((id): id is string => !!id))];
+  const beforeChildren = Object.fromEntries(parentIds.map(id => [id, [...getRegularChildIds(nodes[id])]]));
+  const afterChildren = Object.fromEntries(parentIds.map(id => [id, beforeChildren[id].filter(child => child !== nodeId)]));
+  const insertIndex = Number.isInteger(index) ? Math.max(0, Math.min(index as number, afterChildren[newParentId].length)) : afterChildren[newParentId].length;
+  afterChildren[newParentId].splice(insertIndex, 0, nodeId);
+  const summaryChange = wrapSummaryTransition(createMoveSummaryTransition(board, beforeChildren, afterChildren, [nodeId], newParentId));
+  const command = createMoveSubtreesCommand(
+    { getNodes: getMindNodes, setSelection, applyMutation: summaryChange.applyMutation },
+    {
+      movingRootIds: [nodeId], beforeChildrenByParent: beforeChildren, afterChildrenByParent: afterChildren,
+      touchedParentIds: parentIds, invalidateSubtreeHeightNodeIds: parentIds, forceFullEdgeRebuild: true,
+      previousSelection: snapshotSelection(), nextSelection: { ids: [nodeId], primaryId: nodeId },
+      applyDoState: currentNodes => { currentNodes[nodeId].parentId = newParentId; summaryChange.apply(); },
+      applyUndoState: currentNodes => {
+        summaryChange.undo();
+        if (hadParentId) currentNodes[nodeId].parentId = previousParentId;
+        else delete currentNodes[nodeId].parentId;
+      },
+    }
+  );
   executeCommand(command);
   return { ok: true, node: mcpSerializeNode(nodeId, { includeMetadata: true }) };
 }

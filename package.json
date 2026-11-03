@@ -3,7 +3,7 @@
   "description": "AsyncTest Platform",
   "author": "Sheldon <leesheldonparsons@gmail.com>",
   "private": true,
-  "version": "3.4.6",
+  "version": "3.4.7",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "engines": {
@@ -33,7 +33,7 @@
       }
     ],
     "releaseInfo": {
-      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 修复：生成测试报告时，缺陷数量达到读取上限后无法继续生成的问题。\\n#### 优化：自动获取完整的禅道缺陷数据，无需再填写缺陷统计上限。\\n#### 优化：批量并行读取缺陷，取齐后立即停止，减少不必要的请求。\\n#### 修复：缺陷分页数据不完整时可能漏算的问题，并补充清晰的异常提示。\\n#### 提示：更新后首次生成请使用“重新获取禅道数据”，原有报告和配置继续保留。\",\"publishDate\":\"2026-10-31\"}"
+      "releaseNotes": "{\"isForce\":false,\"notes\":\"## AsyncTest 桌面端\\n\\n#### 修复：删除或剪切带概要的分支后，可能留下不可见节点、影响文件导出的问题。\\n#### 修复：移动分支、撤销或重做时，概要内容和相关连线未能同步处理的问题。\\n#### 修复：历史用例文件含有未关联节点时，测试报告生成中断的问题。此类文件会保留原始 .amind 附件并给出说明，避免丢失内容。\\n#### 优化：选择原始 .amind 附件时直接使用原文件，不再进行不必要的 XMind 转换。\",\"publishDate\":\"2026-11-03\"}"
     },
     "publish": [
       {

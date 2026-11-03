@@ -241,7 +241,7 @@ export function useReportServiceProjection(state: ReportDraftState) {
       while (!disposed) {
         const operation = await call('report_get_operation', { operationId: result.operationId, afterEvent });
         for (const event of operation.data.events || []) { log(event.message); afterEvent = event.sequence; }
-        if (operation.status === 'completed') { await pull(); await loadRecentExports(); state.recentExportsFlashToken++; toast('success', '报告已生成，可编辑正文或保存'); return true; }
+        if (operation.status === 'completed') { await pull(); await loadRecentExports(); state.recentExportsFlashToken++; toast(operation.data.warnings?.length ? 'info' : 'success', operation.data.warnings?.length ? operation.data.summary : '报告已生成，可编辑正文或保存'); return true; }
         if (['failed', 'interrupted', 'cancelled'].includes(operation.status)) throw new Error(operation.data.summary);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }

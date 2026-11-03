@@ -5,6 +5,7 @@ import { readAmindFile } from '../amind/amindFileService.node.js';
 import { writeXmindFile } from '../amind/xmindFileService.node.js';
 import { persistLocalReportSource, withoutLocalFileContent } from './localSource.node.js';
 import { persistZendaoArtifacts } from './zendaoRun.node.js';
+import { ReportError } from './core/schema.js';
 
 const GENERATOR_TEMP_ROOT = path.join(process.env.ASYNCTEST_RUNTIME_DATA_ROOT || os.tmpdir(), 'asynctest-generator-cache');
 
@@ -87,7 +88,7 @@ async function persistSourceFileList(files, tempDir, subDirName, auth) {
   return persisted;
 }
 
-async function persistAmindFileList(files, tempDir, auth) {
+async function persistAmindFileList(files, tempDir, auth, onWarning) {
   const targetDir = path.join(tempDir, 'amind');
   await ensureDirectory(targetDir);
 
@@ -105,15 +106,35 @@ async function persistAmindFileList(files, tempDir, auth) {
       : await downloadFileToPath(file.downloadUrl, originalTempPath);
 
     const { doc } = await readAmindFile(originalTempPath);
-    const xmindTempPath = await buildUniquePath(targetDir, `${originalBaseName}.xmind`);
-    const xmindResult = await writeXmindFile(xmindTempPath, doc, null);
+    let xmindTempPath = null;
+    let attachmentWarning = null;
+    // 原始 amind 附件不需要转换；转换不应成为保留原件的前置条件。
+    if (file.docxFileType !== 'amind') {
+      const destination = await buildUniquePath(targetDir, `${originalBaseName}.xmind`);
+      try {
+        const result = await writeXmindFile(destination, doc, null);
+        xmindTempPath = result.path;
+      } catch (error) {
+        if (error.details?.reason !== 'UNREACHABLE_NODES') {
+          throw new ReportError('ATTACHMENT_CONVERSION_FAILED', `用例文件「${file.name}」转为 XMind 失败：${error.message}`, { sourceId: file.id, fileName: file.name });
+        }
+        // 无法判断未关联节点的原有位置，完整保留原文件，既不丢内容也不猜测层级。
+        attachmentWarning = {
+          code: 'XMIND_ORIGINAL_PRESERVED', sourceId: file.id, fileName: file.name,
+          requestedFormat: 'xmind', actualFormat: 'amind', ...error.details,
+          message: `用例文件「${file.name}」的画板 ${error.details.boardId} 有 ${error.details.unreachableNodeCount} 个未关联节点，无法完整转为 XMind；附件已保留原始 .amind 文件，所有内容均保留，请使用 AsyncTest Mind 打开。`,
+        };
+        onWarning?.(attachmentWarning);
+      }
+    }
 
     persisted.push({
       ...withoutLocalFileContent(file),
       originalTempPath,
       originalTempSize: originalDownload.size,
-      xmindTempPath: xmindResult.path,
-      exportTempPath: file.docxFileType === 'amind' ? originalTempPath : xmindResult.path,
+      xmindTempPath,
+      exportTempPath: xmindTempPath || originalTempPath,
+      ...(attachmentWarning ? { attachmentWarning } : {}),
     });
   }
 
@@ -129,14 +150,18 @@ async function persistZendaoCache(zendaoPayload, tempDir) {
   return persistZendaoArtifacts(zendaoPayload, targetDir);
 }
 
-export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth, jobDir }) {
+export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth, jobDir, onWarning }) {
   const tempDir = jobDir || path.join(GENERATOR_TEMP_ROOT, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const snapshotPath = targetPath || path.join(tempDir, 'file.md');
 
   await ensureDirectory(tempDir);
   await ensureDirectory(path.dirname(snapshotPath));
 
-  const persistedAmindFiles = await persistAmindFileList(payload?.amindFiles || [], tempDir, auth);
+  const attachmentWarnings = [];
+  const persistedAmindFiles = await persistAmindFileList(payload?.amindFiles || [], tempDir, auth, warning => {
+    attachmentWarnings.push(warning);
+    onWarning?.(warning);
+  });
   const persistedExcelFiles = payload?.excelFile ? await persistSourceFileList([payload.excelFile], tempDir, 'excel', auth) : [];
   const persistedZendao = await persistZendaoCache(payload?.zendao, tempDir);
 
@@ -145,6 +170,7 @@ export async function prepareGeneratorCacheWorkspace({ targetPath, payload, auth
     tempDir,
     tempCleanupPolicy: '每个作业独立目录；仅显式清理当前作业，历史产物按引用保留。',
     ...payload,
+    attachmentWarnings,
     amindFiles: persistedAmindFiles,
     excelFile: persistedExcelFiles[0] || null,
     zendao: persistedZendao,

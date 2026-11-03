@@ -588,6 +588,10 @@ async function buildAmindAttachmentZip(payload, tempDir) {
     const bytes = await fs.readFile(filePath);
     attachmentFolder?.file(archiveName, bytes);
   }
+  const warnings = sourceFiles.map(file => file.attachmentWarning).filter(Boolean);
+  if (warnings.length) {
+    attachmentFolder?.file('附件格式说明.txt', `部分用例附件保留为 AsyncTest 思维导图原始格式（.amind）。\n原文件内容未修改，请使用 AsyncTest Mind 打开。\n\n${warnings.map(item => item.message).join('\n\n')}\n`);
+  }
 
   const attachmentDir = path.join(tempDir, 'attachments');
   await fs.mkdir(attachmentDir, { recursive: true });

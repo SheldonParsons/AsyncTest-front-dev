@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readAmindFile } from '../amind/amindFileService.node.js';
 import { readXmindAsAmindDoc } from '../amind/xmindFileService.node.js';
+import { structuralChildIds, remapSummariesByChildren, createSummaryTransition, createMoveSummaryTransition } from '../amind/summaryTransition.js';
 
 export function cloneJson(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -66,7 +67,7 @@ export function getImageSummary(node) {
 
 function findParentId(board, nodeId) {
   for (const [parentId, parent] of Object.entries(board?.nodes || {})) {
-    if (Array.isArray(parent?.children) && parent.children.includes(nodeId)) return parentId;
+    if (structuralChildIds(parent).includes(nodeId)) return parentId;
   }
   return null;
 }
@@ -334,10 +335,14 @@ function touchDoc(doc) {
 }
 
 function collectSubtreeIds(board, nodeId, result = []) {
-  if (!board?.nodes?.[nodeId]) return result;
-  result.push(nodeId);
-  const children = Array.isArray(board.nodes[nodeId].children) ? board.nodes[nodeId].children : [];
-  children.forEach((childId) => collectSubtreeIds(board, childId, result));
+  const seen = new Set(result), pending = [nodeId];
+  while (pending.length) {
+    const id = pending.pop();
+    if (!board?.nodes?.[id]) continue;
+    if (seen.has(id)) throw new Error(`Invalid repeated or circular node reference: ${id}`);
+    seen.add(id); result.push(id);
+    pending.push(...structuralChildIds(board.nodes[id]).reverse());
+  }
   return result;
 }
 
@@ -486,13 +491,22 @@ export function deleteMindDocNode(doc, nodeId, options = {}) {
   const node = board?.nodes?.[nodeId];
   if (!node) throw new Error(`Node not found: ${nodeId}`);
   if ((board.roots || []).some((root) => root.rootId === nodeId)) throw new Error('Cannot delete root node');
-  const childIds = Array.isArray(node.children) ? node.children : [];
+  const childIds = structuralChildIds(node);
   if (childIds.length && options.deleteSubtree !== true) throw new Error('Node has children; set deleteSubtree=true');
-  const parentId = node.parentId ?? findParentId(board, nodeId);
+  const parentId = findParentId(board, nodeId);
   const parent = parentId ? board.nodes?.[parentId] : null;
-  if (parent && Array.isArray(parent.children)) parent.children = parent.children.filter((id) => id !== nodeId);
+  const beforeChildren = Array.isArray(parent?.children) ? [...parent.children] : [];
+  const beforeSummaries = cloneJson(parent?.summaries || []);
+  const afterChildren = beforeChildren.filter(id => id !== nodeId);
+  const afterSummaries = remapSummariesByChildren(beforeSummaries.filter(summary => summary.summaryNodeId !== nodeId), beforeChildren, afterChildren);
+  const summaryChange = createSummaryTransition(board, new Map(parent ? [[parentId, beforeSummaries]] : []), new Map(parent ? [[parentId, afterSummaries]] : []));
   const deletedIds = collectSubtreeIds(board, nodeId, []);
+  if (parent && Array.isArray(parent.children)) parent.children = parent.children.filter((id) => id !== nodeId);
   deletedIds.forEach((id) => delete board.nodes[id]);
+  summaryChange.apply(board);
+  deletedIds.push(...summaryChange.removedNodeIds);
+  const deleted = new Set(deletedIds);
+  if (Array.isArray(board.relations)) board.relations = board.relations.filter(relation => !deleted.has(relation.fromNodeId) && !deleted.has(relation.toNodeId));
   touchDoc(doc);
   const result = { boardId, ok: true, nodeId, deletedCount: deletedIds.length, dirty: true };
   if (options.includeDeletedIds === true) result.deletedIds = deletedIds;
@@ -507,13 +521,18 @@ export function moveMindDocNode(doc, nodeId, newParentId, index, options = {}) {
   if (!newParent) throw new Error(`New parent node not found: ${newParentId}`);
   if ((board.roots || []).some((root) => root.rootId === nodeId)) throw new Error('Cannot move root node');
   if (collectSubtreeIds(board, nodeId, []).includes(newParentId)) throw new Error('Cannot move a node under its own subtree');
-  const oldParentId = node.parentId ?? findParentId(board, nodeId);
+  const oldParentId = findParentId(board, nodeId);
   const oldParent = oldParentId ? board.nodes?.[oldParentId] : null;
-  if (oldParent && Array.isArray(oldParent.children)) oldParent.children = oldParent.children.filter((id) => id !== nodeId);
-  if (!Array.isArray(newParent.children)) newParent.children = [];
-  const insertIndex = Number.isInteger(index) ? Math.max(0, Math.min(index, newParent.children.length)) : newParent.children.length;
-  newParent.children.splice(insertIndex, 0, nodeId);
+  if (oldParent?.summaries?.some(summary => summary.summaryNodeId === nodeId)) throw new Error('概要请连同覆盖的分支一起移动，不能单独改变概要归属。');
+  const parentIds = [...new Set([oldParentId, newParentId].filter(Boolean))];
+  const beforeChildren = Object.fromEntries(parentIds.map(id => [id, [...(board.nodes[id]?.children || [])]]));
+  const afterChildren = Object.fromEntries(parentIds.map(id => [id, beforeChildren[id].filter(child => child !== nodeId)]));
+  const insertIndex = Number.isInteger(index) ? Math.max(0, Math.min(index, afterChildren[newParentId].length)) : afterChildren[newParentId].length;
+  afterChildren[newParentId].splice(insertIndex, 0, nodeId);
+  const summaryChange = createMoveSummaryTransition(board, beforeChildren, afterChildren, [nodeId], newParentId);
+  for (const id of parentIds) board.nodes[id].children = afterChildren[id];
   node.parentId = newParentId;
+  summaryChange.apply(board);
   touchDoc(doc);
   const result = { boardId, ok: true, nodeId, oldParentId, newParentId, index: insertIndex, dirty: true };
   if (options.includeNode === true) {

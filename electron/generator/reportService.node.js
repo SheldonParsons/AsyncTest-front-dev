@@ -616,23 +616,30 @@ export class ReportService extends EventEmitter {
     await this.store.transaction(state => {
       const operation = state.operations[id]; assert(!terminal(operation.status), 'CANCELLED', '作业已结束');
       for (const artifact of artifacts) state.exports[artifact.id] = artifact;
-      Object.assign(operation, { status: 'completed', finishedAt: now(), snapshotId: snapshot.id, reportIds: documents.map(item => item.document.id), artifactIds: artifacts.map(item => item.id), dataAsOf: snapshot.dataAsOf, summary: '报告生成完成' });
-      operation.events.push({ sequence: operation.events.length + 1, at: now(), stage: 'completed', message: `已完成 ${documents.length} 个环境` }); return ok();
+      const summary = operation.warnings?.length ? `报告生成完成，${operation.warnings.length} 份用例附件保留为原始 .amind，请查看附件提醒` : '报告生成完成';
+      Object.assign(operation, { status: 'completed', finishedAt: now(), snapshotId: snapshot.id, reportIds: documents.map(item => item.document.id), artifactIds: artifacts.map(item => item.id), dataAsOf: snapshot.dataAsOf, summary });
+      operation.events.push({ sequence: operation.events.length + 1, at: now(), stage: 'completed', message: operation.warnings?.length ? summary : `已完成 ${documents.length} 个环境` }); return ok();
     });
   }
   async renderArtifacts(operationId, payload, documents, jobDir, format) {
     const assets = Object.fromEntries(Object.entries(this.store.state.assets).map(([id, asset]) => [id, { name: asset.name, path: path.join(this.store.root, asset.relative) }]));
     const result = await this.runWorker('export', { payload, documents, jobDir, assets }, operationId); this.ensureRunning(operationId);
+    if (result.warnings?.length) await this.store.transaction(state => {
+      const operation = state.operations[operationId];
+      assert(!terminal(operation.status), 'CANCELLED', '作业已结束');
+      operation.warnings = [...new Map([...(operation.warnings || []), ...result.warnings].map(item => [`${item.code}:${item.sourceId || item.fileName}`, item])).values()];
+      return ok();
+    });
     const artifacts = [];
     for (const file of result.files.filter(file => file.format === format)) {
       const id = uid('export'), relative = `exports/${id}/${file.fileName}`; await atomicWrite(path.join(this.store.root, relative), await fs.readFile(file.filePath));
       this.running.get(operationId)?.artifactDirectories.push(path.join(this.store.root, 'exports', id));
-      artifacts.push({ id, workspaceId: this.store.state.operations[operationId].workspaceId, operationId, fileName: file.fileName, title: payload.title, createdAt: now(), format, size: file.size, hash: file.hash, path: path.join(this.store.root, relative), reports: documents.map(doc => ({ reportId: doc.id, revision: doc.revision, snapshotId: doc.snapshotId })), envNames: payload.environments.map(env => env.name), dataAsOf: payload.zendao?.fetchedAt });
+      artifacts.push({ id, workspaceId: this.store.state.operations[operationId].workspaceId, operationId, fileName: file.fileName, title: payload.title, createdAt: now(), format, size: file.size, hash: file.hash, path: path.join(this.store.root, relative), reports: documents.map(doc => ({ reportId: doc.id, revision: doc.revision, snapshotId: doc.snapshotId })), envNames: payload.environments.map(env => env.name), dataAsOf: payload.zendao?.fetchedAt, warnings: result.warnings || [] });
     }
     return artifacts;
   }
   async commitArtifacts(id, artifacts, extra) {
-    return this.store.transaction(state => { const op = state.operations[id]; assert(!terminal(op.status), 'CANCELLED', '作业已取消'); for (const artifact of artifacts) state.exports[artifact.id] = artifact; Object.assign(op, extra, { status: 'completed', finishedAt: now(), artifactIds: artifacts.map(artifact => artifact.id), summary: '本地导出完成' }); op.events.push({ sequence: op.events.length + 1, at: now(), stage: 'completed', message: '产物已保存' }); return ok(); });
+    return this.store.transaction(state => { const op = state.operations[id]; assert(!terminal(op.status), 'CANCELLED', '作业已取消'); for (const artifact of artifacts) state.exports[artifact.id] = artifact; const summary = op.warnings?.length ? `本地导出完成，${op.warnings.length} 份用例附件保留为原始 .amind，请查看附件提醒` : '本地导出完成'; Object.assign(op, extra, { status: 'completed', finishedAt: now(), artifactIds: artifacts.map(artifact => artifact.id), summary }); op.events.push({ sequence: op.events.length + 1, at: now(), stage: 'completed', message: op.warnings?.length ? summary : '产物已保存' }); return ok(); });
   }
   async readDocumentVersion(id, revision) {
     const meta = this.store.state.documents[id]; assert(meta, 'NOT_FOUND', '报告正文不存在');

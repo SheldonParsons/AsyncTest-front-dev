@@ -1656,7 +1656,11 @@ export function convertAmindDocToXmindWorkbook(doc, { warnings = [] } = {}) {
         };
         board.roots.forEach((root) => visit(root.rootId));
         const orphanIds = Object.keys(board.nodes).filter((id) => !seen.has(id));
-        if (orphanIds.length) throw new Error(`Invalid board ${boardId}: ${orphanIds.length} unreachable nodes; conversion stopped to avoid data loss`);
+        if (orphanIds.length) {
+            const error = new Error(`Invalid board ${boardId}: ${orphanIds.length} unreachable nodes; conversion stopped to avoid data loss`);
+            error.details = { reason: 'UNREACHABLE_NODES', boardId, unreachableNodeCount: orphanIds.length };
+            throw error;
+        }
         if (!board.xmindMeta) warn(warnings, 'LAYOUT_ADAPTED', '画板使用 XMind 布局，字体、主题和自由定位可能与 AsyncTest 不同。', { boardId });
         if ((board.relations || []).some((relation) => !board.nodes[relation.fromNodeId] || !board.nodes[relation.toNodeId] || relation.fromNodeId === relation.toNodeId)) throw new Error(`Invalid relationship in board ${boardId}`);
     }
